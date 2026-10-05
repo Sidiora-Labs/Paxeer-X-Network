@@ -10,7 +10,7 @@ parent:
 ## Abstract
 
 This section specifies the slashing module of the Cosmos SDK, which implements functionality
-first outlined in the [Cosmos Whitepaper](https://cosmos.network/about/whitepaper) in June 2016.
+first outlined in the Cosmos whitepaper.
 
 The slashing module enables Cosmos SDK-based blockchains to disincentivize any attributable action
 by a protocol-recognized actor with value at stake by penalizing them ("slashing").
@@ -20,7 +20,7 @@ Penalties may include, but are not limited to:
 - Burning some amount of their stake
 - Removing their ability to vote on future blocks for a period of time.
 
-This module will be used by the Cosmos Hub, the first hub in the Cosmos ecosystem.
+In this repository the module is wired into the Paxeer X chain application in [`node/app.go`](../../../../node/app.go). Implementation notes for this fork are in [`../README.md`](../README.md).
 
 ## Contents
 

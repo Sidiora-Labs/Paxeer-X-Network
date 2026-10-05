@@ -5,28 +5,29 @@ parent:
 
 # List of Modules
 
-Here are some production-grade modules that can be used in Cosmos SDK applications, along with their respective documentation:
+These are the base modules of the SDK fork under `sdk/x`. The Paxeer X chain application wires all of them in [`node/app.go`](../../node/app.go). Each links to its specification:
 
-- [Auth](auth/spec/README.md) - Authentication of accounts and transactions for Cosmos SDK application.
+- [Auth](auth/spec/README.md) - Authentication of accounts and transactions.
 - [Authz](authz/spec/README.md) - Authorization for accounts to perform actions on behalf of other accounts.
 - [Bank](bank/spec/README.md) - Token transfer functionalities.
 - [Capability](capability/spec/README.md) - Object capability implementation.
 - [Distribution](distribution/spec/README.md) - Fee distribution, and staking token provision distribution.
 - [Evidence](evidence/spec/README.md) - Evidence handling for double signing, misbehaviour, etc.
+- [Feegrant](feegrant/spec/README.md) - Fee allowances granted from one account to another.
 - [Governance](gov/spec/README.md) - On-chain proposals and voting.
-- [Mint](mint/spec/README.md) - Creation of new units of staking token.
 - [Params](params/spec/README.md) - Globally available parameter store.
-- [Slashing](slashing/spec/README.md) - Validator punishment mechanisms.
+- [Slashing](slashing/spec/README.md) - Validator punishment mechanisms ([implementation notes](slashing/README.md)).
 - [Staking](staking/spec/README.md) - Proof-of-Stake layer for public blockchains.
 - [Upgrade](upgrade/spec/README.md) - Software upgrades handling and coordination.
+- `genutil` - Genesis transaction and genesis file utilities (no spec).
 
-To learn more about the process of building modules, visit the [building modules reference documentation](../docs/building-modules/README.md).
+The mint module is not here: it lives in [`modules/mint`](../../modules/mint/README.md) with the other chain-specific modules in [`modules/`](../../modules/README.md).
 
 ## IBC
 
-The IBC module for the SDK has moved to its [own repository](https://github.com/cosmos/ibc-go).
+IBC is not part of `sdk/x`. It lives in [`interchain/`](../../interchain/README.md).
 
-### FeesParams
+## FeesParams
 
 To query for current fee params:
 
@@ -34,7 +35,7 @@ To query for current fee params:
 paxd q params feesparams
 ```
 
-To update the feesparams, use a governance proposal like such:
+To update the fees params, submit a `param-change` governance proposal with `paxd tx gov submit-proposal param-change <proposal.json> --from <key>` and a proposal file like this:
 
 ```json
 {

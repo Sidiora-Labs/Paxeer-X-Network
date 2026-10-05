@@ -20,7 +20,7 @@ interaction with other modules which must alter user balances.
 In addition, the bank module tracks and provides query support for the total
 supply of all assets used in the application.
 
-This module will be used in the Cosmos Hub.
+In this repository the module is wired into the Paxeer X chain application in [`node/app.go`](../../../../node/app.go).
 
 ## Supply
 

@@ -1,8 +1,6 @@
 libsecp256k1
 ============
 
-[![Build Status](https://travis-ci.org/bitcoin-core/secp256k1.svg?branch=master)](https://travis-ci.org/bitcoin-core/secp256k1)
-
 Optimized C library for EC operations on curve secp256k1.
 
 This library is a work in progress and is being used to research best practices. Use at your own risk.
@@ -52,7 +50,9 @@ Implementation details
 Build steps
 -----------
 
-libsecp256k1 is built using autotools:
+This is a vendored copy of the bitcoin-core libsecp256k1 sources. The Go
+package in the parent directory compiles it through cgo, so `go build` needs
+no separate step. To build the library on its own with autotools:
 
     $ ./autogen.sh
     $ ./configure

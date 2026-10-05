@@ -10,16 +10,14 @@ parent:
 ## Abstract
 
 This paper specifies the Staking module of the Cosmos-SDK, which was first
-described in the [Cosmos Whitepaper](https://cosmos.network/about/whitepaper)
-in June 2016.
+described in the Cosmos whitepaper.
 
 The module enables Cosmos-SDK based blockchain to support an advanced
 Proof-of-Stake system. In this system, holders of the native staking token of
 the chain can become validators and can delegate tokens to validators,
 ultimately determining the effective validator set for the system.
 
-This module will be used in the Cosmos Hub, the first Hub in the Cosmos
-network.
+In this repository the module is wired into the Paxeer X chain application in [`node/app.go`](../../../../node/app.go).
 
 ## Contents
 

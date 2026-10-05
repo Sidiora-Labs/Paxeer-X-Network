@@ -1,21 +1,27 @@
 # Git hooks
 
-Installation:
+Installation, from the repository root:
 
 ```
-git config core.hooksPath contrib/githooks
+git config core.hooksPath sdk/contrib/githooks
 ```
 
 ## pre-commit
 
-The hook automatically runs `gofmt`, `goimports`, and `misspell`
-to correctly format the `.go` files included in the commit, provided
-that all the aforementioned commands are installed and available
-in the user's search `$PATH` environment variable:
+The hook runs `gofmt -s`, `misspell` and `goimports` on the staged `.go`
+files and adds them back to the commit. It skips paths matching `vendor/`,
+`client/docs/statik/`, `tests/mocks/` and `*.pb.go`. It then runs
+`go mod tidy` and stages `go.mod` and `go.sum`.
+
+If any of `git`, `go`, `gofmt`, `goimports` or `misspell` is missing from
+`$PATH`, the hook prints which one and exits without changing anything.
+Install the two tools that do not ship with Go:
 
 ```
-go get golang.org/x/tools/cmd/goimports
-go get github.com/golangci/misspell/cmd/misspell@master
+go install golang.org/x/tools/cmd/goimports@latest
+go install github.com/golangci/misspell/cmd/misspell@latest
 ```
 
-It also runs `go mod tidy` and `golangci-lint` if available.
+The hook still passes the upstream `-local github.com/cosmos/cosmos-sdk`
+prefix to `goimports`, so it does not group imports of
+`github.com/sidiora-labs/paxeer-network` as local.

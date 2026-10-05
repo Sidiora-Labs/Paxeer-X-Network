@@ -30,7 +30,7 @@ occurs, withdrawal of rewards must also occur.
 - Whenever a validator chooses to change the commission on rewards, all accumulated
    commission rewards must be simultaneously withdrawn.
 
-The above scenarios are covered in `hooks.md`.
+The above scenarios are covered in [Hooks](05_hooks.md).
 
 The distribution mechanism outlined herein is used to lazily distribute the
 following rewards between validators and associated delegators:
@@ -63,7 +63,7 @@ reward withdrawal by other delegators.
 
 If you happen to know that incoming rewards are about to significantly increase,
 you are incentivized to not withdraw until after this event, increasing the
-worth of your existing _accum_. See [#2764](https://github.com/cosmos/cosmos-sdk/issues/2764)
+worth of your existing _accum_. See upstream Cosmos SDK issue #2764
 for further details.
 
 ## Effect on Staking

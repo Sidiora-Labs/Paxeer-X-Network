@@ -1,7 +1,7 @@
 # x/slashing
 
 ## Overview
-To understand how the slashing module works, refer to the [slashing spec](../staking/spec/).
+To understand how the slashing module works, refer to the [slashing spec](spec/README.md). This page describes how this fork's implementation differs from it.
 
 The slashing module enables Cosmos SDK-based blockchains to disincentivize any attributable action
 by a protocol-recognized actor with value at stake by penalizing them ("slashing").
@@ -21,7 +21,7 @@ Information about validator's liveness activity is tracked through ValidatorSign
 // ValidatorSigningInfo defines the signing info for a validator
 type ValidatorSigningInfo struct {
     // validator consensus address
-    Address             sdk.ConsAddress `json:"address" yaml:"address"`
+    Address             string          `json:"address,omitempty"`
     // height at which validator was first a candidate OR was unjailed
     StartHeight         int64           `json:"start_height" yaml:"start_height"`   
     // index offset into signed block bit array
@@ -38,7 +38,7 @@ type ValidatorSigningInfo struct {
 ### MissedBlocksBitArray
 `MissedBlocksBitArray` acts as a bitpack-array of size SignedBlocksWindow that tells us if the validator missed the block for a given index in the bit-array. 
 
-Different from open source, each uint64 has 64 bits, and each bit represent a bool value of either 0 or 1, where 0 indicates the validator did not miss (did sign) the corresponding block, and 1 indicates they missed the block (did not sign).
+Unlike upstream Cosmos SDK, which stores one bool per block, the missed blocks are packed into `uint64`s. Each uint64 has 64 bits, and each bit represent a bool value of either 0 or 1, where 0 indicates the validator did not miss (did sign) the corresponding block, and 1 indicates they missed the block (did not sign).
 
 Note that the `MissedBlocksBitArray` is not explicitly initialized up-front. Keys are added as we progress through the first SignedBlocksWindow blocks for a newly bonded validator. 
 
@@ -73,7 +73,7 @@ The slashing module contains the following parameters:
 | SlashFractionDoubleSign | string (dec)   | "0.050000000000000000" |
 | SlashFractionDowntime   | string (dec)   | "0.010000000000000000" |
 
-Those parameters can be updated via gov proposal.
+Those parameters can be updated with a `param-change` governance proposal on the `slashing` subspace.
 
 ```go
 // Params - used for initializing default parameter for slashing at genesis
@@ -87,11 +87,6 @@ type Params struct {
 }
 
 ```
-
-## Governance Proposal
-
-TODO
-
 
 ## Begin-Block
 At the beginning of each block, we update the ValidatorSigningInfo for each validator and check if they've crossed below the liveness threshold over a sliding window.
@@ -109,12 +104,13 @@ Here we parallelize the logic of fetching the existing validators to gather `Val
 // this allows us to preserve the original ordering for writing purposes
 var wg sync.WaitGroup
 
-slashingWriteInfo := make([]*SlashingWriteInfo, len(req.LastCommitInfo.GetVotes()))
+slashingWriteInfo := make([]*SlashingWriteInfo, len(votes))
 
-for i, voteInfo := range req.LastCommitInfo.GetVotes() {
+for i := range votes {
     wg.Add(1)
-    go func(valIndex int, vInfo abci.VoteInfo) {
+    go func(valIndex int) {
         defer wg.Done()
+        vInfo := votes[valIndex]
         consAddr, missedInfo, signInfo, shouldSlash, slashInfo := k.HandleValidatorSignatureConcurrent(ctx, vInfo.Validator.Address, vInfo.Validator.Power, vInfo.SignedLastBlock)
         slashingWriteInfo[valIndex] = &SlashingWriteInfo{
             ConsAddr:    consAddr,
@@ -123,7 +119,7 @@ for i, voteInfo := range req.LastCommitInfo.GetVotes() {
             ShouldSlash: shouldSlash,
             SlashInfo:   slashInfo,
         }
-    }(i, voteInfo)
+    }(i)
 }
 wg.Wait()
 ```
@@ -137,17 +133,16 @@ for _, writeInfo := range slashingWriteInfo {
     // Update the validator missed block bit array by index if different from last value at the index
     if writeInfo.ShouldSlash {
         k.ClearValidatorMissedBlockBitArray(ctx, writeInfo.ConsAddr)
+        writeInfo.SigningInfo = k.SlashJailAndUpdateSigningInfo(ctx, writeInfo.ConsAddr, writeInfo.SlashInfo, writeInfo.SigningInfo)
     } else {
         k.SetValidatorMissedBlocks(ctx, writeInfo.ConsAddr, writeInfo.MissedInfo)
-    }
-    if writeInfo.ShouldSlash {
-        writeInfo.SigningInfo = k.SlashJailAndUpdateSigningInfo(ctx, writeInfo.ConsAddr, writeInfo.SlashInfo, writeInfo.SigningInfo)
     }
     k.SetValidatorSigningInfo(ctx, writeInfo.ConsAddr, writeInfo.SigningInfo)
 }
 ```
 
 ## Metrics
-- `missing_signature` is a per validator counter metric, which is incremented everytime a validator is slashed or jailed due to missing too many signatures.
-- `begin_blocker` is a per module histogram metric, for slashing it measures the latency for BeginBlock execution.
-- `double_sign` is a per validator counter metric, which is incremented everytime a validator got slashed for double sign.
+- `validator_slashed` is a counter incremented each time a validator is slashed or jailed, with a `type` attribute of `missing_signature` (too many missed blocks) or `double_sign`, and a `validator` attribute with its consensus address.
+- `slashing_begin_blocker_duration` is a histogram of the module's BeginBlock latency in seconds.
+
+Slashing events carry the same `missing_signature` or `double_sign` value in their `reason` attribute.

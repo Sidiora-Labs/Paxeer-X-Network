@@ -10,7 +10,7 @@ parent:
 ## Abstract
 
 `x/upgrade` is an implementation of a Cosmos SDK module that facilitates smoothly
-upgrading a live Cosmos chain to a new (breaking) software version. It accomplishes this by
+upgrading a live chain to a new (breaking) software version. It accomplishes this by
 providing a `BeginBlocker` hook that prevents the blockchain state machine from
 proceeding once a pre-defined upgrade block height has been reached.
 

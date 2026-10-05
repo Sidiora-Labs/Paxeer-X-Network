@@ -1,29 +1,38 @@
 # rosetta
 
-This directory contains the files required to run the rosetta CI. It builds `simapp` based on the current codebase.
+This directory holds the upstream Cosmos SDK files for the Rosetta CI run.
+The `test-rosetta` target in [`sdk/Makefile`](../../Makefile) builds
+`node/Dockerfile` as `rosetta-ci:latest` and then runs `docker-compose.yaml`.
+
+It does not run in this repository as-is: `node/Dockerfile` builds
+`./simapp/simd/`, and there is no `simapp` here. The Rosetta API server code
+itself is in [`sdk/server/rosetta`](../../server/rosetta), and `paxd`
+writes a `[rosetta]` section into `app.toml` with the server disabled by
+default.
 
 ## docker-compose.yaml
 
-Builds:
+Services:
 
-- cosmos-sdk simapp node, with prefixed data directory, keys etc. This is required to test historical balances.
-- faucet is required so we can test construction API, it was literally impossible to put there a deterministic address to request funds for
-- rosetta is the rosetta node used by rosetta-cli to interact with the cosmos-sdk app
-- test_rosetta runs the rosetta-cli test against construction API and data API
+- `cosmos`: a `simd` node with gRPC and the Tendermint RPC exposed
+- `rosetta`: `simd rosetta` pointed at the `cosmos` node
+- `faucet`: `configuration/faucet.py`, which the construction API test uses to fund accounts
+- `test_rosetta`: the `tendermintdev/rosetta-cli:v0.6.7` image running `configuration/run_tests.sh`, which runs `rosetta-cli check:data` and `rosetta-cli check:construction`
 
 ## configuration
 
-Contains the required files to set up rosetta cli and make it work against its workflows
+`rosetta.json`, `bootstrap.json` and `transfer.ros` configure `rosetta-cli`.
+`run_tests.sh` waits for the Rosetta server and runs both checks.
+`send_funds.sh` and `faucet.py` fund test accounts. `data.sh` recreates the
+deterministic node data.
 
 ## node
 
-Contains the files for a deterministic network, with fixed keys and some actions on there, to test parsing of msgs and historical balances.  This image is used to run a simapp node and to run the rosetta server.
+`data.tar.gz` holds node data for a deterministic network with fixed keys,
+used to test message parsing and historical balances. The keyring password
+for that data is `12345678`.
 
-## Rosetta-cli
+## rosetta-cli
 
-The docker image for ./rosetta-cli/Dockerfile is on [docker hub](https://hub.docker.com/r/tendermintdev/rosetta-cli).  Whenever rosetta-cli releases a new version, rosetta-cli/Dockerfile should be updated to reflect the new version and pushed to docker hub.
-
-## Notes
-
-- Keyring password is 12345678
-- data.sh creates node data, it's required in case consensus breaking changes are made to quickly recreate replicable node data for rosetta
+`rosetta-cli/Dockerfile` builds `rosetta-cli` at tag `v0.6.7` from the
+upstream Coinbase repository.
