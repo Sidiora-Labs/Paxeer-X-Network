@@ -4,7 +4,8 @@ use layerx_programs_runtime::{
 };
 use std::cell::RefCell;
 
-use crate::usage::{record_expiry_occupancy_settlement, record_host_settlement_reserved};
+use crate::expiry;
+use crate::usage::record_host_settlement_reserved;
 use crate::{
     ActivityOutcome, DurableUsageState, Escrow, Lease, LeaseUsage, UsageLedger, UsageObservation,
 };
@@ -86,100 +87,58 @@ fn destroy_host(
 ) -> Result<(), i32> {
     let mut state =
         read_destroy_state(token, lease_id, expected_root, expected_sequence, boundary)?;
-    let prior_batch = state
-        .ledger
-        .latest()
-        .map_or(state.lease.opened_at(), crate::UsageReceipt::observed_batch);
-    let final_occupancy = occupancy_charge(
-        state.lease.usage().namespace_bytes,
-        state
-            .lease
-            .expiry()
-            .checked_sub(prior_batch)
-            .ok_or(NON_CANONICAL)?,
-        state.lease.fee_schedule().occupancy_byte_batch_price(),
+    let plan = expiry::plan_teardown(
+        &state,
+        expiry::DestroyAuthority {
+            activity_id,
+            expected_lease_root: expected_root,
+            expected_sequence,
+            boundary,
+        },
     )
-    .ok_or(NON_CANONICAL)?;
-    let mut final_usage_receipt_digest = [0u8; 32];
-    let mut usage_lease_bytes = state
-        .lease
-        .canonical_state_bytes()
-        .map_err(|_| NON_CANONICAL)?;
-    if final_occupancy != 0 {
-        let mut charge_root = [0u8; 32];
-        if unsafe {
+    .map_err(|_| NON_CANONICAL)?;
+    let mut charge_root = [0u8; 32];
+    if plan.occupancy_charge() != 0
+        && unsafe {
             layerx_programs_sandbox_destroy_charge(
                 token,
                 state.lease.escrow_account().as_ptr(),
                 state.lease.fee_destination().as_ptr(),
                 state.lease.escrow_asset().as_ptr(),
-                (final_occupancy >> 64) as u64,
-                low_word(final_occupancy),
+                (plan.occupancy_charge() >> 64) as u64,
+                low_word(plan.occupancy_charge()),
                 charge_root.as_mut_ptr(),
             )
         } != OK
-        {
-            return Err(NON_CANONICAL);
-        }
-        let mut receipt_bytes = Vec::with_capacity(4096);
-        let receipt = record_expiry_occupancy_settlement(
-            &mut state,
-            activity_id,
-            charge_root,
-            &mut usage_lease_bytes,
-            &mut receipt_bytes,
-        )
-        .map_err(|_| NON_CANONICAL)?;
-        if receipt.charged() != final_occupancy {
-            return Err(NON_CANONICAL);
-        }
-        final_usage_receipt_digest = receipt.digest();
+    {
+        return Err(NON_CANONICAL);
     }
-    let ledger_bytes = state.ledger.canonical_state().map_err(|_| NON_CANONICAL)?;
-    let mut receipt_preimage = Vec::new();
-    receipt_preimage.extend_from_slice(b"LayerX/programs/sandbox/destroy/v1\0");
-    receipt_preimage.extend_from_slice(&activity_id);
-    receipt_preimage.extend_from_slice(&lease_id);
-    receipt_preimage.extend_from_slice(&expected_root);
-    receipt_preimage.extend_from_slice(&expected_sequence.to_be_bytes());
-    receipt_preimage.extend_from_slice(&boundary.to_be_bytes());
-    receipt_preimage.extend_from_slice(&final_usage_receipt_digest);
-    let mut receipt_digest =
-        hash_bytes(HashAlgorithm::Sha256, &receipt_preimage).map_err(|_| NON_CANONICAL)?;
-    receipt_digest[0] ^= 0x40;
-    state
-        .lease
-        .terminalize_by_sweep(activity_id, receipt_digest, boundary)
-        .map_err(|_| NON_CANONICAL)?;
-    let amount = state.escrow.remaining().map_err(|_| NON_CANONICAL)?;
     let mut transfer_root = [0u8; 32];
-    if amount != 0
+    if plan.refund() != 0
         && unsafe {
             layerx_programs_sandbox_destroy_refund(
                 token,
                 state.lease.escrow_account().as_ptr(),
                 state.lease.tenant().bytes().as_ptr(),
                 state.lease.escrow_asset().as_ptr(),
-                (amount >> 64) as u64,
-                low_word(amount),
+                (plan.refund() >> 64) as u64,
+                low_word(plan.refund()),
                 transfer_root.as_mut_ptr(),
             )
         } != OK
     {
         return Err(NON_CANONICAL);
     }
-    state
-        .escrow
-        .finalize_refund(&state.lease, amount, transfer_root)
+    let settlement = expiry::settle_teardown(&mut state, plan, charge_root, transfer_root)
         .map_err(|_| NON_CANONICAL)?;
     publish_destroy(
         token,
         &state,
-        &ledger_bytes,
-        &usage_lease_bytes,
-        receipt_digest,
+        settlement.ledger_state(),
+        settlement.usage_lease_state(),
+        settlement.receipt_digest(),
         transfer_root,
-        amount,
+        plan.refund(),
     )
 }
 

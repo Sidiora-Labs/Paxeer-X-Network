@@ -33,9 +33,12 @@ static uint16_t take_u16(const uint8_t *p){return (uint16_t)(((uint16_t)p[0]<<8U
 static uint32_t take_u32(const uint8_t *p){return ((uint32_t)p[0]<<24U)|((uint32_t)p[1]<<16U)|((uint32_t)p[2]<<8U)|p[3];}
 static void put_u32(uint8_t *p,uint32_t v){p[0]=(uint8_t)(v>>24U);p[1]=(uint8_t)(v>>16U);p[2]=(uint8_t)(v>>8U);p[3]=(uint8_t)v;}
 
+/* lease_scope also skips the other storage head of the lease being torn down: both heads
+ * are dropped together in its final settlement, so neither may pin the other's blobs. */
 static lxp_result blob_referenced_elsewhere(
     lxp_module_ctx *ctx, const uint8_t *current_key,
-    size_t current_key_length, const uint8_t digest[32], bool *referenced)
+    size_t current_key_length, const uint8_t digest[32], bool lease_scope,
+    bool *referenced)
 {
     size_t index;
     if (ctx == NULL || current_key == NULL || digest == NULL ||
@@ -58,6 +61,11 @@ static lxp_result blob_referenced_elsewhere(
             memcmp(entry->key, "progstor", 8U) != 0 ||
             (entry->key_length == current_key_length &&
              memcmp(entry->key, current_key, current_key_length) == 0))
+            continue;
+        if (lease_scope && current_key_length == 73U &&
+            (entry->key[40] == 0U || entry->key[40] == 2U) &&
+            memcmp(entry->key + 8U, current_key + 8U, 32U) == 0 &&
+            memcmp(entry->key + 41U, current_key + 41U, 32U) == 0)
             continue;
         status = lxp_ctx_kv_get(ctx, entry->key, entry->key_length,
                                 &head, &head_length);
@@ -102,7 +110,7 @@ static lxp_result blob_referenced_elsewhere(
 }
 
 static lxp_result reclaim_storage_head(lxp_module_ctx *ctx,const uint8_t *key,size_t key_length,
-    uint32_t *next,uint8_t root[32],uint64_t *cells,uint64_t *bytes,bool *complete){
+    bool lease_scope,uint32_t *next,uint8_t root[32],uint64_t *cells,uint64_t *bytes,bool *complete){
     const uint8_t *head,*manifest;size_t head_len,manifest_len,cursor=6U;uint32_t i,count,removed=0U;lxp_result s;
     *complete=false;s=lxp_ctx_kv_get(ctx,key,key_length,&head,&head_len);if(s==LXP_ERR_UNKNOWN_FIELD){*complete=true;return LXP_OK;}if(s!=LXP_OK)return s;
     if (head_len != 38U) return LXP_FATAL_INVARIANT;
@@ -116,15 +124,31 @@ static lxp_result reclaim_storage_head(lxp_module_ctx *ctx,const uint8_t *key,si
             uint32_t value_length=take_u32(manifest+cursor+n+32U);
             bool referenced=false;
             *bytes+=(uint64_t)n+(uint64_t)value_length;
-            if(value_length!=0U){s=blob_referenced_elsewhere(ctx,key,key_length,manifest+cursor+n,&referenced);if(s!=LXP_OK)return s;
+            if(value_length!=0U){s=blob_referenced_elsewhere(ctx,key,key_length,manifest+cursor+n,lease_scope,&referenced);if(s!=LXP_OK)return s;
                 if(!referenced){s=lxp_ctx_blob_del(ctx,manifest+cursor+n);if(s!=LXP_OK)return s;}}
             ++removed;++*next;}
         cursor+=(size_t)n+36U;}
     if(cursor!=manifest_len)return LXP_FATAL_INVARIANT;
     if(*next!=count)return LXP_OK;
-    {bool referenced=false;s=blob_referenced_elsewhere(ctx,key,key_length,head+6U,&referenced);if(s!=LXP_OK)return s;
-        if(!referenced){s=lxp_ctx_blob_del(ctx,head+6U);if(s!=LXP_OK)return s;}}
-    s=lxp_ctx_kv_del(ctx,key,key_length);if(s==LXP_OK){*cells+=count;*complete=true;}return s;
+    *cells+=count;*complete=true;return LXP_OK;
+}
+/* The head and its manifest stay readable until the final settlement drops both heads,
+ * settles occupancy and refunds the escrow in one activity. */
+static lxp_result drop_storage_head(lxp_module_ctx *ctx,const uint8_t *key,size_t key_length){
+    const uint8_t *head;size_t head_len;bool referenced=false;lxp_result s;
+    s=lxp_ctx_kv_get(ctx,key,key_length,&head,&head_len);if(s==LXP_ERR_UNKNOWN_FIELD)return LXP_OK;if(s!=LXP_OK)return s;
+    if (head_len != 38U) return LXP_FATAL_INVARIANT;
+    s=blob_referenced_elsewhere(ctx,key,key_length,head+6U,true,&referenced);if(s!=LXP_OK)return s;
+    if(!referenced){s=lxp_ctx_blob_del(ctx,head+6U);if(s!=LXP_OK)return s;}
+    return lxp_ctx_kv_del(ctx,key,key_length);
+}
+lxp_result lxp_programs_sandbox_lease_terminal(lxp_module_ctx *ctx,const uint8_t lease[32]){
+    uint8_t key[34];const uint8_t *v;size_t n;lxp_result s;
+    if(ctx==NULL||lease==NULL)return LXP_ERR_NON_CANONICAL;
+    key[0]=(uint8_t)'t';key[1]=(uint8_t)'s';(void)memcpy(key+2U,lease,32U);
+    s=lxp_ctx_kv_get(ctx,key,sizeof(key),&v,&n);
+    if(s==LXP_ERR_UNKNOWN_FIELD)return LXP_OK;
+    return s==LXP_OK?LXP_ERR_IDEMPOTENT_REPLAY:s;
 }
 static _Thread_local const sandbox_destroy_activity *active_destroy;
 static _Thread_local lxp_module_ctx *active_destroy_ctx;
@@ -252,11 +276,15 @@ lxp_result lxp_programs_sandbox_destroy_execute(lxp_module_ctx *ctx,
         (void)memcpy(storage_key+8U,lease+103U,32U);
         (void)memcpy(storage_key+41U,lease+167U,32U);
         storage_key[40U]=cleanup[5U]==0U?0U:2U;
-        status=reclaim_storage_head(ctx,storage_key,sizeof(storage_key),&next,
+        status=reclaim_storage_head(ctx,storage_key,sizeof(storage_key),cleanup[5U]!=0U,&next,
             cleanup[5U]==0U?namespace_root:snapshot_root,&cells,&bytes,&complete);
         if(status!=LXP_OK)return status;
         if(complete){++cleanup[5U];next=0U;}
         if(cleanup[5U]<2U){put_u32(cleanup+6U,next);put_u64(cleanup+10U,cells);put_u64(cleanup+18U,bytes);(void)memcpy(cleanup+26U,namespace_root,32U);(void)memcpy(cleanup+58U,snapshot_root,32U);return lxp_ctx_kv_put(ctx,cleanup_key,sizeof(cleanup_key),cleanup,sizeof(cleanup));}
+        /* Namespace drop, final occupancy, refund and terminal record share this one activity. */
+        storage_key[40U]=0U;status=drop_storage_head(ctx,storage_key,sizeof(storage_key));
+        storage_key[40U]=2U;if(status==LXP_OK)status=drop_storage_head(ctx,storage_key,sizeof(storage_key));
+        if(status!=LXP_OK)return status;
     }
     /* Rust owns exact decoding, namespace/blob enumeration and refund derivation. */
     active_destroy=value;active_destroy_ctx=ctx;

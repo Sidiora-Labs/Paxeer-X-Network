@@ -29,5 +29,6 @@ lxp_result layerx_programs_sandbox_destroy_refund(uint64_t token,
     uint64_t amount_hi,uint64_t amount_lo,uint8_t root[32]);
 int32_t layerx_programs_sandbox_sweep_host(uint64_t token,uint64_t boundary,uint32_t limit);
 lxp_result lxp_programs_sandbox_finalize_expiry_batch(lxp_module_ctx *ctx,uint64_t batch_number);
+lxp_result lxp_programs_sandbox_lease_terminal(lxp_module_ctx *ctx,const uint8_t lease[32]);
 
 #endif

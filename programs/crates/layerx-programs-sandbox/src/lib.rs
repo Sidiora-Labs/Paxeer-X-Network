@@ -38,8 +38,9 @@ pub use execute::{
     LeaseCapabilities, SandboxExecutionRecord, SandboxExecutionRequest, SandboxRefusal,
 };
 pub use expiry::{
-    destroy, sweep, AuthenticatedTerminalRecord, ExpiryQueue, ExpiryRefusal, SweepEvidence,
-    SweepPage, TerminalLeaseRecord, TerminalReceiptEvidence, MAX_SWEEP_LEASES_PER_BATCH,
+    sweep, AuthenticatedTerminalRecord, DestroyAuthority, ExpiryQueue, ExpiryRefusal, SweepPage,
+    TeardownPlan, TeardownSettlement, TerminalLeaseRecord, TerminalReceiptEvidence,
+    MAX_SWEEP_LEASES_PER_BATCH,
 };
 pub use usage::{
     ActivityOutcome, AuthenticatedUsageReceipt, DurableUsageState, UsageLedger, UsageObservation,

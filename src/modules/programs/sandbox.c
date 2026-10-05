@@ -331,6 +331,8 @@ lxp_result lxp_programs_sandbox_execute(
                 if (status == LXP_ERR_UNKNOWN_FIELD) status = LXP_OK;
                 else if (status == LXP_OK) status = LXP_ERR_IDEMPOTENT_REPLAY;
             }
+            if (status == LXP_OK)
+                status = lxp_programs_sandbox_lease_terminal(ctx, key + 2U);
         } else {
             status = sandbox_state_key(value, 0U, key);
             if (status == LXP_OK)

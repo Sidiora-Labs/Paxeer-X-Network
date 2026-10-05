@@ -30929,7 +30929,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.5]
 title = "Destroy the sandbox and reclaim its state"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 10
 requires = ["0.2", "104.34.4", "104.29.4"]
@@ -30957,6 +30957,12 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.34.5.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.34.5.json"
+qualification_note = "Gate passed after one repair; C sweep-path changes (head drop in the refund activity, FUND guard in sandbox.c) compile under strict flags but are not exercised by the task gate; four files outside the touch list carried the wiring"
 
 [task.108.3.7]
 title = "Point the wallet PWA at api-hull.paxeer.network and prove the authenticated human-api path"
