@@ -26007,7 +26007,7 @@ qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-re
 
 [task.12.2]
 title = "Supply movement with its authenticated Human KMS execution service"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["0.2", "24.10", "24.12", "24.2", "12.3", "12.4"]
