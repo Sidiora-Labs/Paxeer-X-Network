@@ -595,6 +595,9 @@ pub fn restore(
     if occupied > target.limits().namespace_bytes {
         return Err(SnapshotRefusal::TargetBoundExceeded);
     }
+    if live_namespace_cells(&candidate_storage, target.namespace())? != supplied.namespace_cells {
+        return Err(SnapshotRefusal::DigestMismatch);
+    }
     let mut candidate_meter = meter.clone();
     candidate_meter
         .charge_storage_write(
