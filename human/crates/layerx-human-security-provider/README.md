@@ -112,6 +112,14 @@ provided. Permissions protect secret material; hashes detect corruption, not
 malicious rewriting of the whole state by its privileged owner. Rollback of an
 entire consistent backup cannot be detected without an external monotonic anchor.
 
+## Probe
+
+```sh
+layerx-human-security-provider probe
+```
+
+The probe sends LXSP operation 0 to the running provider at SOCKET and exits 0 only when it answers ready within DEADLINE_SECONDS (default 5). It reads only SOCKET and DEADLINE_SECONDS.
+
 ## Recovery administration
 
 Stop the provider (administration requires the same exclusive writer lock), then:

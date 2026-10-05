@@ -24,12 +24,8 @@ The service retains its existing authentication, custody, agent and movement soc
 | `LAYERX_HUMAN_EVM_MAX_FEE_PER_GAS` | Exact maximum gas price in wei |
 | `LAYERX_HUMAN_EVM_MAX_PRIORITY_FEE_PER_GAS` | Exact priority fee in wei, at most maximum fee |
 
-Withdrawal and emergency-exit finality retain the production minimum of two independent votes. A beta cluster must supply at least two independent Paxeer RPC endpoints. A single endpoint cannot make these journeys ready.
-
-The native identity interface does not yet supply a canonical active textual authority reference bound to its verified key. Its account-sequence lookup does not authenticate the configured authority string. This remaining planning-authority contract must be supplied before the complete movement service is ready.
-
-The movement provider's on-chain witness publication gap is recorded in the lane status and qualification observations. Endpoint reachability alone is insufficient for movement readiness. No cluster or live-chain qualification is implied by this source.
-
-API and lint refactors retain checks: authentication helpers without receiver state are associated functions; credential-bearing wrappers remain redacted; bounded parsing and operation dispatch use smaller helpers; canonical wire bounds remain checked. Qualification commands and actual results belong in retained qualification logs, not inferred from these changes.
+Withdrawal and emergency-exit finality retain the production minimum of two independent votes. A deployment must configure at least two independent Paxeer RPC endpoints. A single endpoint cannot make these journeys ready.
 
 Service integration suites retain their original Cargo target names and share the `layerx-human-test-support` development library. Run a suite with `cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test withdraw`, or add `-- --list` to list its cases. Existing archive and reclaim includes continue executing their original journey-fault checks.
+
+The crate builds three binaries from `src/bin`: `layerx-human-components`, `layerx-human-kms-gateway` and `layerx-human-onboarding`.

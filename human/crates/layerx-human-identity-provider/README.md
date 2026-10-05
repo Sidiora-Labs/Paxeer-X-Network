@@ -14,8 +14,19 @@ cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-identity-p
 ```
 
 Binary: `human/target/debug/layerx-human-identity-provider` (release builds use
-`human/target/release/layerx-human-identity-provider`). No arguments, or `serve`,
-starts the listener. Required environment:
+`human/target/release/layerx-human-identity-provider`). It takes at most one
+command:
+
+| Command | Effect |
+| --- | --- |
+| none, `serve` | Starts the listener |
+| `probe` | Sends operation 0 to the running listener |
+| `bind-device` | Imports one trusted device enrollment (below) |
+| `provision-owner` | Runs operation 1 against the exclusively held state from at most 16384 bytes of JSON on stdin and prints the provisioned fields as JSON |
+| `provision-account` | Reads a JSON request with an exported `did:layerx:` DID on stdin and prints the protocol 3 account id of `agent:<did>:main` as hex |
+| `validate-account-head` | Reads at most 1 MiB of JSON on stdin and verifies the account head's receipt, proof and signed batch header against the given sequencer key |
+
+Required environment for `serve`:
 
 | Variable | Meaning |
 | --- | --- |
@@ -75,10 +86,13 @@ control characters, and imposes the narrower account rules below.
 | 1 `provision` | email UTF-8; display name UTF-8; idempotency key UTF-8; timestamp u64 (8 bytes) | principal UTF-8; DID bytes; recovery root (32 bytes); approval threshold u16 (2 bytes); challenge delay u64 (8 bytes) |
 | 2 `resolve_email` | email UTF-8 | principal UTF-8 |
 | 3 `device_for_assertion` | principal UTF-8; assertion ID UTF-8 | device ID UTF-8; label UTF-8; platform UTF-8 |
+| 4 `assertion` | identity token UTF-8; optional producer-signed wallet binding (JWS) | principal UTF-8; DID UTF-8 when a wallet binding is recorded |
 
-Status 0 means success; status 1 is refusal with zero fields. The client treats
-**every** nonzero status as `ProviderRefused`; it defines no finer error code
-contract. Bad framing/inputs, missing bindings, idempotency conflicts, unknown
+Status 0 means success; status 1 is refusal with zero fields. Operation 4
+adds typed refusals with zero fields: 2 for a refused token, 3 for a wallet DID
+bound to another account, 4 for a disabled principal or unavailable key set.
+The client maps status 4 to `ProviderUnavailable` and every other nonzero
+status to `ProviderRefused`. Bad framing/inputs, missing bindings, idempotency conflicts, unknown
 operations and capacity limits receive status 1 if the connection remains
 writable within its deadline. Wrong-UID peers are disconnected before reading
 a frame. I/O failure or timeout appears to the client as
@@ -98,6 +112,30 @@ policy; timestamp may change on retry, but email/display name may not. A new
 key cannot take over an existing email. The client constructs its onboarding
 idempotency digest with SHA-256 of the original key.
 
+## Identity assertions
+
+Operation 4 is served only when the assertion section is configured. The
+section is optional but all-or-nothing:
+
+| Variable | Meaning |
+| --- | --- |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_JWKS_URL` | Key set of the token issuer |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_ISSUER` | Required token issuer |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_AUDIENCE` | Required token audience |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_CLOCK_SKEW_SECONDS` | Allowed clock skew; default 60, at most 300 |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_REFRESH_INTERVAL_SECONDS` | Key set refresh interval; default 300, at most 3600 |
+| `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_BINDING_PRODUCER_KEY` | ES256 (P-256) public key, SEC1 hex, that signs wallet bindings |
+
+A verified token opens or resumes the principal for its issuer and subject. The
+second field, when present, is a wallet binding signed by the producer key,
+never caller-selected DID text.
+
+`LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_SOCKET`,
+`LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT` and
+`LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_ALLOWED_UIDS` (comma-separated, at most
+16) together open an optional read-only socket that answers whether a principal
+of that tenant has a recorded wallet DID. Setting any of them requires all three.
+
 ## Trusted device enrollment
 
 LXIP has no device enrollment operation or device metadata fields. Operation 3
@@ -114,8 +152,7 @@ device. Exact repeated enrollment is idempotent. The library exposes the same
 operation as `State::bind_device`. Exclusive state locking prevents concurrent
 imports while serving. No enrollment endpoint is exposed to LXIP callers.
 
-The production client currently has no enrollment integration; connecting the
-verified assertion authority is required for automatic session flows. The client module and error type are private to the service crate. Integration
+The client module and error type are private to the service crate. Integration
 tests compile the unchanged original `identity_dispatch.rs` through a path
 module, with all its imports bound to the real service types. They execute
 `RemoteIdentityProvider` itself against the real listener; no protocol client

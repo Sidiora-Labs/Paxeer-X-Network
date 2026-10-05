@@ -1,94 +1,28 @@
-# Deployment Guide
+# Deployment
 
-This directory contains deployment-related documentation.
+## Container image
 
-## Overview
+The image is defined in [`docker/wallet-pwa/Dockerfile`](../../../../../docker/wallet-pwa/Dockerfile) and is built from the repository root, because it also copies `agent/sdk/typescript` and `human/wallet` to build the wallet SDK:
 
-The Paxport Wallet can be deployed to various platforms including Vercel, Netlify, and self-hosted environments.
-
-## Vercel Deployment
-
-### Automatic Deployment
-
-1. Connect your GitHub repository to Vercel
-2. Set environment variables in Vercel dashboard
-3. Deploy on push to main branch
-
-### Manual Deployment
-
-```bash
-npm run build
-vercel --prod
+```sh
+docker build -f docker/wallet-pwa/Dockerfile \
+  --build-arg NEXT_PUBLIC_PAXEER_WALLET_API=... \
+  --build-arg NEXT_PUBLIC_PAXEER_RPC_URL=... \
+  -t wallet-pwa .
 ```
 
-### Environment Variables
+The build stage accepts the public network variables as build arguments: `NEXT_PUBLIC_PAXEER_WALLET_API`, `NEXT_PUBLIC_PAXEER_RPC_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_AUTH_REDIRECT_URL`, `NEXT_PUBLIC_PAXEER_HUMAN_API`, `NEXT_PUBLIC_PAXEER_EXPLORER_URL`, `NEXT_PUBLIC_PAXEER_ATTESTOR_URL`, `NEXT_PUBLIC_PNS_API_BASE`, `NEXT_PUBLIC_POINTS_API_BASE`, `NEXT_PUBLIC_MARKET_DATA_API` and `NEXT_PUBLIC_FX_RATES_API`.
 
-Set these in Vercel dashboard:
-- `NEXT_PUBLIC_SENTRY_DSN`
-- `SENTRY_DSN`
-- `NEXT_PUBLIC_RPC_URL`
-- `NEXT_PUBLIC_SIDIORA_API_URL`
-- `NEXT_PUBLIC_CROSSVERSE_API_URL`
-- `NEXT_PUBLIC_BLOCKSCOUT_API_URL`
+The runtime stage runs `deployment/start-wallet.sh` under `tini`: it starts the standalone Next.js server on loopback and nginx with `deployment/nginx.conf` in front of it, and exits when either process stops. The image health check calls `/wallet/api/health?mode=liveness` on the Next.js server.
 
-## Docker Deployment
+Run-time server variables (`BLOCKSCOUT_UPSTREAM_BASE`, S3, VAPID, push, chat, Sentry and `TRUSTED_PROXY_SECRET`) are set on the container; the full list is in the [app README](../../README.md#configuration).
 
-### Build Image
+## Other descriptors
 
-```bash
-docker build -f docker/wallet-pwa/Dockerfile -t paxport-wallet .
-```
+- `railway.json` builds with the same Dockerfile and restarts on failure, at most three retries.
+- `nixpacks.toml` installs with `pnpm install --frozen-lockfile`, builds with `npm run build` and starts with `npm run start`.
+- `ecosystem.config.cjs` runs `next start` under pm2 from the app directory.
 
-### Run Container
+## After a deployment
 
-```bash
-docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_SENTRY_DSN=your-dsn \
-  -e NEXT_PUBLIC_RPC_URL=your-rpc-url \
-  paxport-wallet
-```
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  wallet:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_SENTRY_DSN=${SENTRY_DSN}
-      - NEXT_PUBLIC_RPC_URL=${RPC_URL}
-```
-
-## Environment-Specific Builds
-
-### Development
-
-```bash
-NODE_ENV=development npm run build
-```
-
-### Production
-
-```bash
-NODE_ENV=production npm run build
-```
-
-## Post-Deployment Checklist
-
-- [ ] Verify environment variables are set
-- [ ] Check build output for errors
-- [ ] Test critical user flows
-- [ ] Verify Sentry integration
-- [ ] Check rate limiting is working
-- [ ] Test API proxy routes
-- [ ] Verify CORS settings
-
-## Monitoring
-
-- Check Sentry for errors
-- Monitor API rate limits
-- Track build deployment status
-- Review performance metrics
+`GET /wallet/api/health?mode=readiness` reports process, upstream and push configuration checks; `?mode=liveness` reports only that the process answers. Recovery procedures are in [operations/runbooks.md](../operations/runbooks.md).

@@ -1,17 +1,3 @@
-# Tools Directory
+# tools
 
-This directory contains build tools, scripts, and utilities used during development and build processes.
-
-## Structure
-
-- `build/` - Build-related tools and scripts
-- `scripts/` - Utility scripts for development
-- `generators/` - Code generators and scaffolding tools
-
-## Adding New Tools
-
-When adding new tools:
-1. Create a subdirectory for the tool category
-2. Add a README.md explaining the tool's purpose
-3. Include usage examples
-4. Document any dependencies
+This directory holds no tools. The wallet app's build and maintenance scripts live in [`../scripts`](../scripts): `build-pwa.mjs`, `generate-swap-abi-index.mjs`, `generate-vapid-keys.js`, `release-check.sh`, `scan-secrets.sh` with `scan-secrets.test.sh`, and `seed-sid-campaign.js`.

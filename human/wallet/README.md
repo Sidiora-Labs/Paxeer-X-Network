@@ -12,7 +12,15 @@ One pnpm workspace holding the Paxeer X wallet's TypeScript packages.
 | `deploy/env` | | Every environment variable name the wallet services read, one per line with its purpose, grouped by service; no values |
 | `tsconfig.base.json` | | Compiler options shared by every package |
 
-Other directories under `human/wallet` hold the wallet's Go and deployment components and are not pnpm packages.
+Other directories are not pnpm packages:
+
+| Path | Contents |
+| --- | --- |
+| `attestor/` | Go module: the threshold attestor server (`cmd/attestor`), its load generator (`cmd/loadtest`) and the key dealer (`dealer`) |
+| `ceremony/` | Go module: the `ceremony` command (`plan`, `deliver`, `archive`, `rehearse`, `move`) for custody key ceremonies |
+| `schema/attestor-api` | Attestor API contract (`v1.kvx`) and golden examples |
+| `deploy/` | Attestor, gateway, endpoint and human service configuration files and the cutover material |
+| `docs/` | Cutover notes, runbooks and the security review |
 
 ## Install and test
 
@@ -35,18 +43,20 @@ Configuration is read from environment variables only; no environment file is ke
 
 Gateway:
 
-- `NODE_ENV`, `PORT`, `LOG_LEVEL`, `API_WORKERS`
-- `CORS_ORIGINS`
-- `SUPABASE_URL`
+- `NODE_ENV`, `PORT`, `LOG_LEVEL`, `API_WORKERS`, `CORS_ORIGINS`
+- `SUPABASE_URL`, `WALLET_IDENTITY_BINDING_TENANT`, `WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE`
 - `DATABASE_URL`, `DATABASE_POOL_MAX`
 - `WALLET_MASTER_KEY`, `WALLET_MASTER_KEY_VERSION`
 - `HYPERPAXEER_CHAIN_ID`, `HYPERPAXEER_RPC_URL`, `HYPERPAXEER_EXPLORER_URL`
+- `RPC_URLS`, `RPC_LAG_THRESHOLD_BLOCKS`, `RPC_HEALTH_INTERVAL_MS`, `RPC_TIMEOUT_MS`
 - `POLICY_MAX_TX_VALUE_WEI`, `POLICY_MAX_DAILY_VALUE_WEI`, `POLICY_RATE_LIMIT_PER_MINUTE`
-- `FUNDED_TREASURY_PRIVATE_KEY`, `FUNDED_USDL_ADDRESS`, `FUNDED_USDL_DECIMALS`, `FUNDED_GAS_REFILL_THRESHOLD_WEI`, `FUNDED_GAS_REFILL_AMOUNT_WEI`, `FUNDED_EVALUATOR_INTERVAL_MS`, `FUNDED_BALANCE_READ_QUORUM`, `FUNDED_DAILY_RESET_UTC_HOUR`
-- `PAXSCAN_API_URL`, `PAXSCAN_TIMEOUT_MS`, `PAXSCAN_CACHE_TTL_MS`
-- `AGENT_JWT_SECRET`, `AGENT_TOKEN_TTL_SECONDS`, `AGENT_CHALLENGE_TTL_SECONDS`, `AGENT_DEFAULT_FROZEN`, `AGENT_DEFAULT_MODE`, `AGENT_BIND_OWNER_FROM_DID`, `AGENT_DEFAULT_MAX_TX_VALUE_WEI`, `AGENT_DEFAULT_MAX_DAILY_VALUE_WEI`, `AGENT_DEFAULT_RATE_LIMIT_PER_MINUTE`, `AGENT_DEFAULT_MAX_APPROVE_WEI`
-- `LAYERX_VAULT_ADDRESS`, `LAYER_X_DB_URI`, `LAYERX_SYNC_INTERVAL_MS`
+- `RATE_LIMIT_CLIENT_PER_MINUTE`, `RATE_LIMIT_ACCOUNT_PER_MINUTE`
+- `AGENT_JWT_SECRET`, `AGENT_TOKEN_TTL_SECONDS`, `AGENT_CHALLENGE_TTL_SECONDS`, `AGENT_REQUEST_MAX_TTL_SECONDS`, `AGENT_DEFAULT_FROZEN`, `AGENT_DEFAULT_MODE`, `AGENT_DEFAULT_MAX_TX_VALUE_WEI`, `AGENT_DEFAULT_MAX_DAILY_VALUE_WEI`, `AGENT_DEFAULT_RATE_LIMIT_PER_MINUTE`, `AGENT_DEFAULT_MAX_APPROVE_WEI`
+- `LAYERX_VAULT_ADDRESS`, `LAYERX_USDL_ADDRESS`, `LAYERX_USDL_DECIMALS`, `LAYER_X_DB_URI`, `LAYERX_SYNC_INTERVAL_MS`
 - `ACTION_CONFIRMATIONS`, `ACTION_RECEIPT_TIMEOUT_MS`, `ACTION_WORKER_INTERVAL_MS`, `ACTION_RECONCILE_INTERVAL_MS`, `ACTION_FEE_BUMP_PERCENT`
+- `WALLET_CUSTODY_INVENTORY_FILE`, `WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE`
+- `ATTESTOR_ENDPOINTS`, `ATTESTOR_CLIENT_CERT_FILE`, `ATTESTOR_CLIENT_KEY_FILE`, `ATTESTOR_CA_FILE`, `ATTESTOR_QUORUM`, `ATTESTOR_HEALTH_INTERVAL_MS`, `ATTESTOR_TIMEOUT_MS`
+- `SPONSOR_PRIVATE_KEY_FILE`, `ACCOUNT_SETUP_GAS_CAP_WEI`
 
 Demo:
 

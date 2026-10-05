@@ -1,17 +1,13 @@
 # @layerx/ui
 
-A responsive React component library for **Next.js**, extracted from the LayerX Figma
-design set (280+ mobile fintech screens). One component API renders the right
+A responsive React component library for **Next.js**, used by the human web application in `human/apps/web`. One component API renders the right
 interaction per platform — bottom sheets on mobile, centered modals on desktop;
 month-banded money lists on mobile, sortable tables on desktop; a bottom tab bar
 on mobile, a sidebar on desktop.
 
 ## Install
 
-```bash
-npm install @layerx/ui
-# peer deps: react >= 18.2, react-dom >= 18.2, tailwindcss >= 4
-```
+The package is not published to a registry. `human/apps/web` depends on it as `"@layerx/ui": "file:packages/layerx-ui"` and builds it with `npm run build:ui` before `next build`. Peer dependencies: `react` >= 18.2, `react-dom` >= 18.2, `tailwindcss` >= 4.
 
 ## Setup (Tailwind v4)
 
@@ -82,5 +78,4 @@ export default function Page() {
 npm run build   # tsup → dist/ (ESM + CJS + d.ts), "use client" banner included
 ```
 
-The showcase app at the repo root imports the source directly via the
-`@layerx/ui` path alias — edit components and see them live, no build step.
+Consumers import the built `dist/` output, so rebuild after changing a component (`npm run build:ui` from `human/apps/web`).

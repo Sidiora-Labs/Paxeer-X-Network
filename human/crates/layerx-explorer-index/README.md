@@ -12,7 +12,7 @@ The program service requires `LAYERX_EXPLORER_AUTHORITY_CA_DER` to name a readab
 
 Name reads require `LAYERX_EXPLORER_READ_KEY_FILE` (a file holding the hexadecimal ed25519 seed of the read principal), `LAYERX_EXPLORER_READ_ENDPOINT` (`https://<host>:<port>` of the core boundary), `LAYERX_EXPLORER_READ_CA_DER`, `LAYERX_EXPLORER_READ_SEQUENCER_PUBLIC_KEY_FILE`, `LAYERX_EXPLORER_READ_NETWORK_ID`, `LAYERX_EXPLORER_READ_FEE_LIMIT` and `LAYERX_EXPLORER_NAMING_PROGRAM`. Each missing, unreadable or malformed input refuses startup by name. Under protocol 3 the node admits a program read only for an identity that holds an account in the occupancy asset with a balance of at least the signed fee limit, and only when `LAYERX_EXPLORER_READ_FEE_LIMIT` covers the execution ceiling of the declared read resources (25,117,312 fee units at the reference program prices); otherwise the node returns a sequencer-signed refusal and the resolve route answers `503 name_read_refused`. A read never commits, so the balance is never debited. The sequence document only selects the sequence the read is signed at: a wrong value makes the node refuse the read and can never make an answer verify. Startup and `/healthz` sign one read of a probe name against the naming program and report ready only when the answer carries sequencer-signed evidence for that read, which a node returns only for a registered identity.
 
-Qualification commands from the repository root:
+Test commands from the repository root:
 
 ```sh
 cargo clippy --locked --manifest-path human/Cargo.toml -p layerx-explorer-index --all-targets -- -D warnings

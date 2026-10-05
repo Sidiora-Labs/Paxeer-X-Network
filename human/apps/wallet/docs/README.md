@@ -1,19 +1,10 @@
-# Documentation
+# Wallet app documentation
 
-This directory contains project documentation.
-
-## Structure
-
-- `api/` - API documentation
-- `architecture/` - System architecture documentation
-- `deployment/` - Deployment guides and procedures
-- `development/` - Development setup and guides
-- `user/` - User-facing documentation
-
-## Contributing
-
-When adding documentation:
-1. Use clear, concise language
-2. Include code examples where applicable
-3. Keep it up-to-date with code changes
-4. Follow the existing documentation structure
+| Path | Contents |
+| --- | --- |
+| [architecture](architecture/README.md) | Entry point, routes, providers, server edge, configured origins |
+| [architecture/storage-forensics.md](architecture/storage-forensics.md) | Browser storage registry and lifecycle resets |
+| [api](api/README.md) | Server routes under `src/app/api` |
+| [development](development/README.md) | Local setup, scripts and tests |
+| [deployment](deployment/README.md) | Container image and runtime configuration |
+| [operations/runbooks.md](operations/runbooks.md) | Recovery runbooks |
