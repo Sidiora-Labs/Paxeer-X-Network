@@ -30,31 +30,31 @@ A node that has never migrated starts here. All reads and writes go directly to 
 
 ![MigrateEVM transition](resources/0-1.png)
 
-The first transition. A `ModuleRouter` routes `evm/` keys through the [`MigrationManager`](migration_manager.go), which splits between un-migrated keys still living in memiavl and migrated keys already in flatkv; every other module routes directly to memiavl. Each block migrates `migrationBatchSize` keys forward; the boundary cursor is persisted in the migration metadata store so a restart resumes mid-stream. See `WriteMode = MigrateEVM` in [write_mode.go](write_mode.go), built by `buildMigrateEVMRouter` in [router_builder.go](router_builder.go).
+The first transition. A `ModuleRouter` routes `evm/` keys through the [`MigrationManager`](migration_manager.go), which splits between un-migrated keys still living in memiavl and migrated keys already in flatkv; every other module routes directly to memiavl. Each block migrates `migrationBatchSize` keys forward; the boundary cursor is persisted in the migration metadata store so a restart resumes mid-stream. See `WriteMode = MigrateEVM` in [write_mode.go](../../../config/write_mode.go), built by `buildMigrateEVMRouter` in [router_builder.go](router_builder.go).
 
 ### Version 1: EVMMigrated (V1)
 
 ![Version 1: EVMMigrated](resources/1.png)
 
-Steady state after the EVM migration completes. The `ModuleRouter` sends `evm/` keys directly to flatkv and routes everything else to memiavl; the `MigrationManager` is no longer in the data path for this version. See `WriteMode = EVMMigrated` in [write_mode.go](write_mode.go), built by `buildEVMMigratedRouter` in [router_builder.go](router_builder.go). On disk this maps to `Version1_MigrateEVM` in [migration_versions.go](migration_versions.go).
+Steady state after the EVM migration completes. The `ModuleRouter` sends `evm/` keys directly to flatkv and routes everything else to memiavl; the `MigrationManager` is no longer in the data path for this version. See `WriteMode = EVMMigrated` in [write_mode.go](../../../config/write_mode.go), built by `buildEVMMigratedRouter` in [router_builder.go](router_builder.go). On disk this maps to `Version1_MigrateEVM` in [migration_versions.go](migration_versions.go).
 
 ### MigrateAllButBank (V1 -> V2)
 
 ![MigrateAllButBank transition](resources/1-2.png)
 
-The second transition. The `ModuleRouter` routes `bank/` directly to memiavl (untouched by this transition), `evm/` directly to flatkv (already migrated in V1), and every other module through the [`MigrationManager`](migration_manager.go) so its keys are walked across in batches. See `WriteMode = MigrateAllButBank` in [write_mode.go](write_mode.go), built by `buildMigrateAllButBankRouter` in [router_builder.go](router_builder.go).
+The second transition. The `ModuleRouter` routes `bank/` directly to memiavl (untouched by this transition), `evm/` directly to flatkv (already migrated in V1), and every other module through the [`MigrationManager`](migration_manager.go) so its keys are walked across in batches. See `WriteMode = MigrateAllButBank` in [write_mode.go](../../../config/write_mode.go), built by `buildMigrateAllButBankRouter` in [router_builder.go](router_builder.go).
 
 ### Version 2: AllMigratedButBank (V2)
 
 ![Version 2: AllMigratedButBank](resources/2.png)
 
-Steady state after the second migration. The `ModuleRouter` routes `bank/` to memiavl and every other module directly to flatkv; the `MigrationManager` is again out of the data path. See `WriteMode = AllMigratedButBank` in [write_mode.go](write_mode.go), built by `buildAllMigratedButBankRouter` in [router_builder.go](router_builder.go). On disk this maps to `Version2_MigrateAllButBank` in [migration_versions.go](migration_versions.go).
+Steady state after the second migration. The `ModuleRouter` routes `bank/` to memiavl and every other module directly to flatkv; the `MigrationManager` is again out of the data path. See `WriteMode = AllMigratedButBank` in [write_mode.go](../../../config/write_mode.go), built by `buildAllMigratedButBankRouter` in [router_builder.go](router_builder.go). On disk this maps to `Version2_MigrateAllButBank` in [migration_versions.go](migration_versions.go).
 
 ### MigrateBank (V2 -> V3)
 
 ![MigrateBank transition](resources/2-3.png)
 
-The final transition. The `ModuleRouter` routes `bank/` through the [`MigrationManager`](migration_manager.go) and sends every other module directly to flatkv. When the boundary cursor reaches the end and the version bumps, the node has fully landed in V3. See `WriteMode = MigrateBank` in [write_mode.go](write_mode.go), built by `buildMigrateBankRouter` in [router_builder.go](router_builder.go).
+The final transition. The `ModuleRouter` routes `bank/` through the [`MigrationManager`](migration_manager.go) and sends every other module directly to flatkv. When the boundary cursor reaches the end and the version bumps, the node has fully landed in V3. See `WriteMode = MigrateBank` in [write_mode.go](../../../config/write_mode.go), built by `buildMigrateBankRouter` in [router_builder.go](router_builder.go).
 
 ### Version 3: post-migration (V3)
 
@@ -72,7 +72,7 @@ The data path during an active migration is built from four pieces:
 - [thread_safe_router.go](thread_safe_router.go) wraps a built router so external `Read` calls and `ApplyChangeSets` are serialized.
 
 The `MigrationManager` itself is *not* safe for concurrent use; callers must not share one across goroutines without external synchronization. [`BuildRouter`](router_builder.go) wraps every non-thread safe router it returns in [`NewThreadSafeRouter`](thread_safe_router.go), so callers that go through `BuildRouter` get a thread-safe handle for free. Note that some
-routers are thread innately safe, and so do not need to be wrapped.
+routers are innately thread safe, and so do not need to be wrapped.
 
 ## Migration metadata
 

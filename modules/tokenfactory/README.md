@@ -8,26 +8,29 @@ account can create multiple denoms, by providing a unique subdenom for each
 created denom. Once a denom is created, the original creator is given
 "admin" privileges over the asset. This allows them to:
 
-- Mint their denom to any account
-- Burn their denom from any account
-- Create a transfer of their denom between any two accounts
-- Change the admin. In the future, more admin capabilities may be added. Admins
-  can choose to share admin privileges with other accounts using the authz
-  module. The `ChangeAdmin` functionality, allows changing the master admin
-  account, or even setting it to `""`, meaning no account has admin privileges
-  of the asset.
+- Mint their denom to their own account
+- Burn their denom from their own account
+- Set the denom's bank metadata
+- Update the denom's transfer allow list
+- Change the admin. Admins can choose to share admin privileges with other
+  accounts using the authz module. The `ChangeAdmin` functionality allows
+  changing the admin account, or even setting it to `""`, meaning no account
+  has admin privileges over the asset.
 
 ## Messages
 
 ### CreateDenom
 
 Creates a denom of `factory/{creator address}/{subdenom}` given the denom creator
-address and the subdenom. Subdenoms can contain `[a-zA-Z0-9./]`.
+address and the subdenom. The full denom must pass the SDK denom validation. An
+optional `allow_list` restricts which addresses may send or receive the denom
+(bounded by the `denom_allowlist_max_size` param).
 
-```go
+```protobuf
 message MsgCreateDenom {
-  string sender = 1 [ (gogoproto.moretags) = "yaml:\"sender\"" ];
-  string subdenom = 2 [ (gogoproto.moretags) = "yaml:\"subdenom\"" ];
+  string sender = 1;
+  string subdenom = 2;
+  cosmos.bank.v1beta1.AllowList allow_list = 3;
 }
 ```
 
@@ -60,7 +63,7 @@ message MsgMint {
 - Safety check the following
   - Check that the denom minting is created via `tokenfactory` module
   - Check that the sender of the message is the admin of the denom
-- Mint designated amount of tokens for the denom via `bank` module
+- Mint designated amount of tokens for the denom via `bank` module and send them to the sender
 
 ### Burn
 
@@ -82,7 +85,7 @@ message MsgBurn {
 - Safety check the following
   - Check that the denom is created via `tokenfactory` module
   - Check that the sender of the message is the admin of the denom
-- Burn designated amount of tokens for the denom via `bank` module
+- Burn designated amount of tokens for the denom from the sender's balance via `bank` module
 
 ### ChangeAdmin
 
@@ -92,7 +95,7 @@ Change the admin of a denom. Note, this is only allowed to be called by the curr
 message MsgChangeAdmin {
   string sender = 1 [ (gogoproto.moretags) = "yaml:\"sender\"" ];
   string denom = 2 [ (gogoproto.moretags) = "yaml:\"denom\"" ];
-  string newAdmin = 3 [ (gogoproto.moretags) = "yaml:\"new_admin\"" ];
+  string new_admin = 3 [ (gogoproto.moretags) = "yaml:\"new_admin\"" ];
 }
 ```
 
@@ -101,18 +104,27 @@ message MsgChangeAdmin {
 - Check that sender of the message is the admin of denom
 - Modify `AuthorityMetadata` state entry to change the admin of the denom
 
+### SetDenomMetadata
+
+Sets the bank metadata of a denom. Only allowed for the current admin.
+
+### UpdateDenom
+
+Replaces the transfer allow list of a denom. Only allowed for the current admin.
+
 ## Tokenfactory Denom Restrictions
 
 Tokenfactory denoms are of form `factory/{creator address}/{subdenom}`.
 
 - The Max Subdenom length is 44 characters
 - The Max Creator length is 75 characters
+- The Max bech32 HRP length is 16 characters
 - All tokenfactory denoms will begin with `factory`
 
 Please reference the Appendix for more details on the derivation of these limits.
 
 # Examples
-To create a new token, use the create-denom command from the tokenfactory module. The following example uses the address pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqk from mylocalwallet as the default admin for the new token.
+To create a new token, use the create-denom command from the tokenfactory module. The examples below use a local key named `mylocalwallet`, whose address `<creator address>` becomes the default admin for the new token.
 
 ## Creating a token
 To create a new token we can use the create-denom command.
@@ -125,21 +137,21 @@ paxd tx tokenfactory create-denom ufoo --from mylocalwallet
 Once a new token is created, it can be minted using the mint command in the tokenfactory module. Note that the complete tokenfactory address, in the format of factory/{creator address}/{subdenom}, must be used to mint the token.
 
 ```sh
-paxd tx tokenfactory mint 100000000000factory/pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqk/ufoo --from mylocalwallet
+paxd tx tokenfactory mint 100000000000factory/<creator address>/ufoo --from mylocalwallet
 ```
 
 ## Checking Token metadata
-To view a token's metadata, use the denom-metadata command in the bank module. The following example queries the metadata for the token factory/pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqk/ufoo:
+To view a token's metadata, use the denom-metadata command in the bank module. The following example queries the metadata for the token `factory/<creator address>/ufoo`:
 
 ```sh
-paxd query bank denom-metadata --denom factory/pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqk/ufoo
+paxd query bank denom-metadata --denom factory/<creator address>/ufoo
 ```
 
 ## Check the tokens created by an account
-To see a list of tokens created by a specific account, use the denoms-from-creator command in the tokenfactory module. The following example shows tokens created by the account pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqk:
+To see a list of tokens created by a specific account, use the denoms-from-creator command in the tokenfactory module. The following example shows tokens created by `<creator address>`:
 
 ```sh
-paxd query tokenfactory denoms-from-creator pax166vhptur29s3gw5qr6dm30s06gej6pr4zevkqks
+paxd query tokenfactory denoms-from-creator <creator address>
 ```
 
 ## Appendix: Expectations from the Chain
@@ -173,7 +185,7 @@ longest_subdenom and longest_chain_addr_prefix:
 - longer subdenoms are very helpful for creating human readable denoms
 - chain addresses should prefer being smaller. The longest HRP in cosmos to date is 11 bytes. (`persistence`)
 
-For explicitness, its currently set to `len(longest_subdenom) = 44` and `len(longest_chain_addr_prefix) = 16`.
+For explicitness, it is currently set to `len(longest_subdenom) = 44` and `len(longest_chain_addr_prefix) = 16`.
 
 Please note, if the SDK increases the maximum length of a denom from 128 bytes,
 these caps should increase.

@@ -1,23 +1,7 @@
 ## Abstract
 
-The epoch module gives modules the ability to be signaled once ever period.
-
-TODO: Populate Epoch README Contents below.
+The epoch module signals other modules once every epoch. An epoch is a fixed period of time (one minute by default) measured from genesis; at each epoch boundary the module calls the `AfterEpochEnd` and `BeforeEpochStart` hooks registered by other modules and emits a `new_epoch` event.
 
 ## Contents
 
-## Concepts
-
-## State
-
-## Messages
-
-## Events
-
-## Hooks
-
-## Parameters
-
-## Transactions
-
-## Queries
+The module has no messages and no parameters. Its state, queries, hooks, and events are described in the module [README](../README.md).

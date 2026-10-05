@@ -1,11 +1,11 @@
 # modules/epoch
 
-The `modules/epoch` module is engineered to manage epochs within the pax-chain ecosystem. An epoch is defined as a fixed period of time, defaulting to one minute, relative to the Genesis time. At the commencement of each epoch, registered actions by other modules are triggered.
+The `modules/epoch` module is engineered to manage epochs on the Paxeer X chain. An epoch is defined as a fixed period of time, defaulting to one minute, relative to the Genesis time. At the commencement of each epoch, registered actions by other modules are triggered.
 
-This functionality enables time-centric actions and state transitions to be orchestrated throughout the pax-chain. Other modules can effortlessly register hooks via a simplistic interface provided by modules/epoch, which are then executed at the onset of each epoch. This allows modules to carry out actions such as validator set updates, reward distributions, or parameter adjustments based on the progression of time.
+This functionality enables time-centric actions and state transitions to be orchestrated throughout the Paxeer X chain. Other modules can effortlessly register hooks via a simplistic interface provided by modules/epoch, which are then executed at the onset of each epoch. This allows modules to carry out actions such as validator set updates, reward distributions, or parameter adjustments based on the progression of time.
 
 **Example usage:**
-The Mint module's end blocker employs the epoch hook to distribute inflation rewards to validators on specified dates.
+The mint module implements the `AfterEpochEnd` hook to release scheduled tokens to the fee collector on the dates in its release schedule.
 
 ## State
 
@@ -15,16 +15,16 @@ The modules/epoch module upholds the following state:
 > paxd q epoch epoch --output json
 {
   "epoch": {
-    "genesis_time": "2023-04-27T19:08:11.958027Z",
+    "genesis_time": "<genesis time, RFC 3339>",
     "epoch_duration": "60s",
     "current_epoch": "0",
-    "current_epoch_start_time": "2023-04-27T19:08:11.958027Z",
+    "current_epoch_start_time": "<epoch start time, RFC 3339>",
     "current_epoch_height": "0"
   }
 }
 ```
 
-GenesisTime: The pax-chain's Genesis time.
+GenesisTime: The chain's genesis time.
 EpochDuration: Duration of an epoch, denoted in seconds.
 CurrentEpoch: Current epoch number.
 EpochStartTime: Current epoch's start time.

@@ -1,23 +1,26 @@
 # Local Hardhat mainnet fork
 
-This config spins up a JSON-RPC node on `http://127.0.0.1:9546` that mirrors
-Ethereum mainnet at the latest (or a pinned) block. It's the canonical Ethereum
-reference for `tests/new_rpc_tests/` — we compare Pax's RPC behavior against it
-instead of hitting an upstream Alchemy/Infura endpoint, which is flaky and rate
-limited.
+This config starts a JSON-RPC node on `http://localhost:9546` that mirrors
+Ethereum mainnet at the latest (or a pinned) block. It is an optional, manual
+reference for `integration_test/rpc_tests/`: use it for ad-hoc checks that the
+Paxeer X chain's RPC response shapes hold up against real mainnet data. The
+automated suite asserts only against the geth `--dev` reference (see
+[`../README.md`](../README.md)).
 
 ## Quick start
+
+From `integration_test/rpc_tests/`:
 
 ```bash
 # In a dedicated terminal, leave this running for the duration of your test
 # session.
-yarn rpc:fork
+ETH_MAINNET_UPSTREAM=<your mainnet RPC URL> npm run rpc:fork
 ```
 
 Then in another terminal:
 
 ```bash
-yarn test:rpc
+npm run test:rpc
 ```
 
 ## Environment
@@ -30,8 +33,8 @@ yarn test:rpc
 ## Notes
 
 - `chainId` is `1`, matching mainnet, so `eth_chainId` and `net_version`
-  assertions against the fork agree with the upstream Ethereum semantics.
-- Artifacts and cache live under `.artifacts/`, `.cache/` inside this folder so
-  they do not collide with the repository-level `artifacts/`.
-- This fork is only an RPC reference. Pax deployments still happen on the local
-  Pax node — see `_start/00_bootstrap.spec.ts`.
+  checks against the fork agree with upstream Ethereum semantics.
+- Artifacts and cache live under `.artifacts/` and `.cache/` inside this folder so
+  they do not collide with the module-level `artifacts/`.
+- This fork is only an RPC reference. Test deployments still happen on the local
+  chain; see `_start/00_bootstrap.spec.ts`.

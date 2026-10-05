@@ -1,10 +1,10 @@
 # testdata - .io and .iox RPC fixtures
 
-**What it is:** Request/response fixtures for Ethereum JSON-RPC methods. The `rpc_io_test` package runs them against a Pax EVM RPC node.
+**What it is:** request/response fixtures for Ethereum JSON-RPC methods. The `rpc_io_test` package runs them against a Paxeer X chain EVM RPC node.
 
-- `**.io` files** - Plain request (`>>`) / expected response (`<<`) pairs. Source: curated mix from [ethereum/execution-apis](https://github.com/ethereum/execution-apis) plus Pax-added tests. **97 files** (as of Mar 2026). Data-dependent .io that required Ethereum fixture hashes were removed; equivalent coverage lives in `.iox`.
-- `**.iox` files** - Extended format with `@ bind` and optional `@ ref_pair N`; data comes from a first request. **62 files.** All are Pax-generated and live only in this repo.
+- **`.io` files** - plain request (`>>`) / expected response (`<<`) pairs, curated from [ethereum/execution-apis](https://github.com/ethereum/execution-apis) plus Paxeer X additions. **97 files.** Data-dependent `.io` fixtures that required Ethereum fixture hashes were removed; equivalent coverage lives in `.iox`.
+- **`.iox` files** - extended format with `@ bind` and optional `@ ref_pair N`, where data comes from a first request. **64 files.** All are specific to this repo.
 
-**Total: 159 tests** (97 `.io` + 62 `.iox`). **69** top-level method folders under `testdata/`. See `../RPC_IO_README.md` for how to run and outcome meanings.
+**Total: 161 fixtures** (97 `.io` + 64 `.iox`) in **69** top-level method folders. See [`../RPC_IO_README.md`](../RPC_IO_README.md) for how to run them and what the outcomes mean.
 
-**Important:** This directory is **not** a direct copy of execution-apis. Do **not** replace it by copying from execution-apis (that would remove all .iox and restore removed .io). To add or update **individual** tests from execution-apis, copy only the specific files you need and avoid overwriting existing `.iox` or curated `.io`. The suite expects both .io and .iox under `testdata/` (and subdirs); if the directory is empty, the integration test skips with a clear message.
+**Important:** this directory is **not** a direct copy of execution-apis. Do **not** replace it by copying from execution-apis (that would remove every `.iox` and restore removed `.io`). To add or update individual tests from execution-apis, copy only the files you need and avoid overwriting existing `.iox` or curated `.io`. The suite collects `.io` and `.iox` from `testdata/` and its subdirectories; if none are found, the integration test skips.

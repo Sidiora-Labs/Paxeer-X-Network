@@ -1,6 +1,6 @@
 # Benchmarks
 
-This package contains benchmarks for the state DB commit store.
+This package contains benchmarks for the state commitment (SC) and state store (SS) layers.
 
 ## Run benchmarks
 
@@ -11,19 +11,25 @@ From the repo root:
 - Run a single benchmark:
   - `go test ./storage/state_db/bench -run ^$ -bench BenchmarkMemIAVLWriteWithDifferentBlockSize -benchmem`
 
+SC benchmarks (`bench_sc_test.go`) cover MemIAVL, FlatKV, and the composite store with different block sizes
+and key distributions. SS benchmarks (`bench_ss_test.go`) are `BenchmarkSSCompositeWrite`,
+`BenchmarkSSHistoricalOffloadWrite`, and `BenchmarkCombinedCompositeDualSSCompositeWrite`.
+
 ## Long running benchmark
 
-The long running benchmark is behind the `slow_bench` build tag and is intended
-to run for a long time while you watch the periodic progress report.
+The long running benchmarks (`BenchmarkMemIAVLLongRunningWrite` and
+`BenchmarkFlatKVLongRunningWrite`) are behind the `slow_bench` build tag and are
+intended to run for a long time while you watch the periodic progress report.
 
-- Run it with a long benchtime (interrupt when done):
-  - `go test ./storage/state_db/bench -run ^$ -bench BenchmarkLongRunningWrite -benchmem -benchtime=24h -tags=slow_bench`
+- Run one with a long benchtime (interrupt when done):
+  - `go test ./storage/state_db/bench -run ^$ -bench BenchmarkMemIAVLLongRunningWrite -benchmem -benchtime=24h -tags=slow_bench`
 
 Progress is printed to stdout every few seconds while the benchmark is running.
 
 ### With snapshot pre-population
 
-`BenchmarkMemIAVLLongRunningWriteWithInitialState` loads a Cosmos SDK state sync
+`BenchmarkMemIAVLLongRunningWriteWithInitialState` and
+`BenchmarkFlatKVLongRunningWriteWithInitialState` load a state sync
 snapshot into the database before starting the timed benchmark. This lets you
 measure write throughput on a realistically sized tree instead of an empty one.
 
@@ -32,13 +38,13 @@ numbered chunk files (`0`, `1`, `2`, …). The typical on-disk layout is
 `<node_home>/data/snapshots/<height>/<format>/`.
 
 ```bash
-SNAPSHOT_PATH=/data/snapshots/12345678/1/ \
+SNAPSHOT_PATH=<node_home>/data/snapshots/<height>/<format>/ \
   go test ./storage/state_db/bench -run ^$ \
     -bench BenchmarkMemIAVLLongRunningWriteWithInitialState \
     -benchmem -benchtime=24h -tags=slow_bench
 ```
 
-If `SNAPSHOT_PATH` is not set the benchmark is skipped automatically.
+If `SNAPSHOT_PATH` is not set these benchmarks are skipped automatically.
 
 ## Define new scenarios
 
@@ -49,7 +55,9 @@ Benchmarks are configured via `TestScenario`:
 - `NumBlocks`: number of blocks to commit
 - `DuplicateRatio`: fraction of keys that are updates instead of inserts
 - `Backend`: database backend (`wrappers.MemIAVL`, `wrappers.FlatKV`,
-  `wrappers.CompositeCosmos`, `wrappers.CompositeSplit`, `wrappers.CompositeDual`)
+  `wrappers.CompositeCosmos`, `wrappers.CompositeSplit`, `wrappers.CompositeDual`,
+  `wrappers.SSComposite`, `wrappers.SSHistoricalOffload`,
+  `wrappers.CompositeDual_SSComposite`, or `wrappers.NoOp`)
 - `Distribution`: per-block key distribution function
 - `SnapshotPath`: (optional) path to a state sync snapshot chunks directory;
   when set, the snapshot is imported via the native `Committer.Importer` path

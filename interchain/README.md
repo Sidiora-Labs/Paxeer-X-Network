@@ -1,65 +1,42 @@
-# ibc-go
-<div align="center">
-  <a href="https://github.com/cosmos/ibc-go/releases/latest">
-    <img alt="Version" src="https://img.shields.io/github/tag/cosmos/ibc-go.svg" />
-  </a>
-  <a href="https://github.com/cosmos/ibc-go/blob/main/LICENSE">
-    <img alt="License: Apache-2.0" src="https://img.shields.io/github/license/cosmos/ibc-go.svg" />
-  </a>
-  <a href="https://pkg.go.dev/github.com/cosmos/ibc-go?tab=doc">
-    <img alt="GoDoc" src="https://godoc.org/github.com/cosmos/ibc-go?status.svg" />
-  </a>
-  <a href="https://goreportcard.com/report/github.com/cosmos/ibc-go">
-    <img alt="Go report card" src="https://goreportcard.com/badge/github.com/cosmos/ibc-go" />
-  </a>
-  <a href="https://codecov.io/gh/cosmos/ibc-go">
-    <img alt="Code Coverage" src="https://codecov.io/gh/cosmos/ibc-go/branch/main/graph/badge.svg" />
-  </a>
-</div>
-<div align="center">
-  <a href="https://github.com/cosmos/ibc-go">
-    <img alt="Lines Of Code" src="https://tokei.rs/b1/github/cosmos/ibc-go" />
-  </a>
-  <a href="https://discord.gg/AzefAFd">
-    <img alt="Discord" src="https://img.shields.io/discord/669268347736686612.svg" />
-  </a>
-  <a href="https://sourcegraph.com/github.com/cosmos/ibc-go?badge">
-    <img alt="Imported by" src="https://sourcegraph.com/github.com/cosmos/ibc-go/-/badge.svg" />
-  </a>
-    <img alt="Lint Status" src="https://github.com/cosmos/cosmos-sdk/workflows/Lint/badge.svg" />
-</div>
+# interchain (ibc-go)
 
-The Inter-Blockchain Communication protocol (IBC) allows blockchains to talk to each other. IBC handles transport across different sovereign blockchains. This end-to-end, connection-oriented, stateful protocol provides reliable, ordered, and authenticated communication between heterogeneous blockchains. This IBC implementation in Golang is built as a Cosmos SDK module.
+This directory is the vendored copy of [ibc-go](https://github.com/cosmos/ibc-go), the Golang implementation of the Inter-Blockchain Communication protocol (IBC), as used by the Paxeer X chain (`paxd`). Packages are imported as `github.com/sidiora-labs/paxeer-network/interchain/...`.
+
+IBC allows blockchains to talk to each other. It handles transport across different sovereign blockchains: an end-to-end, connection-oriented, stateful protocol that provides reliable, ordered, and authenticated communication between heterogeneous blockchains. This implementation is built as a Cosmos SDK module.
+
+In this repo, `node/app.go` wires the IBC core module and the ICS 20 transfer application into `paxd`, and the CosmWasm module under [`wasm/x/wasm`](../wasm/x/wasm) uses the core channel and port packages for contract IBC.
 
 ## Contents
 
-1. **[Core IBC Implementation](https://github.com/cosmos/ibc-go/tree/main/modules/core)**
+1. **[Core IBC Implementation](modules/core)**
 
-    1.1 [ICS 02 Client](https://github.com/cosmos/ibc-go/tree/main/modules/core/02-client)
+    1.1 [ICS 02 Client](modules/core/02-client)
 
-    1.2 [ICS 03 Connection](https://github.com/cosmos/ibc-go/tree/main/modules/core/03-connection)
+    1.2 [ICS 03 Connection](modules/core/03-connection)
 
-    1.3 [ICS 04 Channel](https://github.com/cosmos/ibc-go/tree/main/modules/core/04-channel)
+    1.3 [ICS 04 Channel](modules/core/04-channel)
 
-    1.4 [ICS 05 Port](https://github.com/cosmos/ibc-go/tree/main/modules/core/05-port)
+    1.4 [ICS 05 Port](modules/core/05-port)
 
-    1.5 [ICS 23 Commitment](https://github.com/cosmos/ibc-go/tree/main/modules/core/23-commitment/types)
+    1.5 [ICS 23 Commitment](modules/core/23-commitment/types)
 
-    1.6 [ICS 24 Host](https://github.com/cosmos/ibc-go/tree/main/modules/core/24-host)
+    1.6 [ICS 24 Host](modules/core/24-host)
 
 2. **Applications**
 
-    2.1 [ICS 20 Fungible Token Transfers](https://github.com/cosmos/ibc-go/tree/main/modules/apps/transfer)
+    2.1 [ICS 20 Fungible Token Transfers](modules/apps/transfer)
 
-    2.2 [ICS 27 Interchain Accounts](https://github.com/cosmos/ibc-go/tree/main/modules/apps/27-interchain-accounts)
+    2.2 [ICS 27 Interchain Accounts](modules/apps/27-interchain-accounts) (vendored; not wired into `paxd`)
 
 3. **Light Clients**
 
-    3.1 [ICS 07 Tendermint](https://github.com/cosmos/ibc-go/tree/main/modules/light-clients/07-tendermint)
+    3.1 [ICS 07 Tendermint](modules/light-clients/07-tendermint)
 
-    3.2 [ICS 06 Solo Machine](https://github.com/cosmos/ibc-go/tree/main/modules/light-clients/06-solomachine)
+    3.2 [ICS 06 Solo Machine](modules/light-clients/06-solomachine)
 
-Note: The localhost client is currently non-functional. 
+    3.3 [ICS 09 Localhost](modules/light-clients/09-localhost) (non-functional)
+
+Also here: [`proto`](proto) definitions, protobuf generation [`scripts`](scripts), the [`testing`](testing) package with its simapp, and [`third_party`](third_party) proto dependencies.
 
 ## Resources
 

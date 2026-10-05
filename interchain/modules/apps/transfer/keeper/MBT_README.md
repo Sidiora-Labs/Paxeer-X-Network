@@ -17,12 +17,12 @@ E.g. for the test `TestUnescrowTokens` run
 apalache-mc check --inv=TestUnescrowTokensInv relay_tests.tla
 ```
  
-In case there are no error in the TLA+ model or in the test assertions, this will produce a couple of so-called _counterexamples_. 
+In case there are no errors in the TLA+ model or in the test assertions, this will produce a couple of so-called _counterexamples_. 
 This is a terminology from the model-checking community; for the testing purposes they can be considered simply as model executions.
 See the files `counterexample.tla` for human-readable representation, and `counterexample.json` for machine-readable one.
 
 In order to execute the produced test, you need to translate it into another format. 
-For that translation you need the tool [Jsonatr (JSON Arrifact Translator)](https://github.com/informalsystems/jsonatr). 
+For that translation you need the tool [Jsonatr (JSON Artifact Translator)](https://github.com/informalsystems/jsonatr). 
 It performs the translation using this [transformation spec](relay_model/apalache-to-relay-test2.json);
 
 To transform a counterexample into a test, run 
@@ -35,8 +35,8 @@ Now, if you run `go test` in this directory, the file you have produced above sh
 and executed automatically.
 
 
-The easiest way to run Apalache is by 
-[using a Docker image](https://apalache.informal.systems/docs/apalache/installation/docker.html); 
+The easiest way to run Apalache is by using its Docker image
+(see the [Apalache repository](https://github.com/informalsystems/apalache)); 
 to run Jsonatr you need to locally clone the repository, and then, 
 after building it, add the `target/debug` directory into your `PATH`. 
 
@@ -46,6 +46,3 @@ To wrap Apalache docker image into an executable you might create the following 
 #!/bin/bash
 docker run --rm -v $(pwd):/var/apalache apalache/mc $@
 ```    
-
-
-In case of any questions please don't hesitate to contact Andrey Kuprianov (andrey@informal.systems).

@@ -2,11 +2,9 @@
 
 ## Overview
 
-The minting mechanism was designed for creating new tokens according to a predefined schedule. It allows the creation of scheduled token release structures that define the release of tokens over a period of time. The Mint module provides a system for managing token minting, release schedule, and related parameters. It has been designed to be flexible and adaptable to a range of use-cases.
+The minting mechanism was designed for creating new tokens according to a predefined schedule. It allows the creation of scheduled token release structures that define the release of tokens over a period of time. The Mint module provides a system for managing token minting, release schedule, and related parameters. Once every scheduled release has been minted, no further tokens are minted.
 
-A key aim of the minting mechanism is to reach a state where there is no more inflation and the network enters a deflationary state, with no additional tokens being introduced into the network.
-
-Minting is designed to occur over a specified period with a proportion of the total mint amount distributed daily (UTC). This approach incentivizes users to stake their tokens for longer durations.
+Minting occurs over a specified period, with a proportion of the total mint amount distributed daily (UTC).
 
 ### Minting Mechanism
 
@@ -20,21 +18,19 @@ For example, if the `total_mint_amount` is set to 1,000,000 tokens and the minti
 
 ### Minting Process
 
-Every day, at a configured time (typically the start of the day), the daily mint amount is created and distributed to the fee_collector account. From here, it's distributed to stakers in the same manner as transaction fees (percentage-based).
+Minting runs in the epoch module's `AfterEpochEnd` hook. At the first epoch end of each UTC day inside the release period, the daily mint amount is created and sent to the fee_collector account. From here, it's distributed to stakers in the same manner as transaction fees (percentage-based).
 
 ### Updating the Minting Schedule
 
 The minting schedule, including the start date, end date, and `total_mint_amount`, can be updated through a governance proposal. This feature allows network participants to adjust the minting parameters as necessary in response to the network's needs and conditions.
 
-This flexibility ensures that the minting process can be adjusted and managed effectively over time, supporting the growth and sustainability of the Pax-chain network.
-
-Note: Changes to the `total_mint_amount` or `remaining_mint_amont` after the start date will not impact tokens already minted.
+Note: Changes to the `total_mint_amount` or `remaining_mint_amount` after the start date will not impact tokens already minted.
 
 ## State
 
 ### Minter
 
-The minter is a space for holding current inflation information. This can be updated through a proposal, it will be discussed more in the later sections.
+The minter holds the current release information. It can be updated through a governance proposal (see below). Dates use the `YYYY-MM-DD` format.
 
 ```go
 type Minter struct {
@@ -59,7 +55,7 @@ type Minter struct {
 
 ### Params
 
-The mint module stores it's params in state, it can be updated with governance or the address with authority.
+The mint module stores its params in state, it can be updated with governance or the address with authority.
 
 ```go
 type Params struct {
@@ -92,8 +88,8 @@ First, prepare a proposal in JSON format, like the minter_prop.json file below:
   "title": "Test Update Minter",
   "description": "Updating test minter",
   "minter": {
-    "start_date": "2023-10-05",
-    "end_date": "2023-11-22",
+    "start_date": "<YYYY-MM-DD>",
+    "end_date": "<YYYY-MM-DD>",
     "denom": "uhpx",
     "total_mint_amount": 100000
   }
@@ -110,15 +106,15 @@ This command submits a proposal to update the minter. The --deposit flag is used
 
 Before the proposal, the Minter parameters might look like this:
 
-```**bash**
+```bash
 > paxd q mint minter
 denom: uhpx
-end_date: "2023-04-30"
+end_date: "<old end date>"
 last_mint_amount: "333333333333"
-last_mint_date: "2023-04-27"
+last_mint_date: "<last mint date>"
 last_mint_height: "0"
 remaining_mint_amount: "666666666666"
-start_date: "2023-04-27"
+start_date: "<old start date>"
 total_mint_amount: "999999999999"
 ```
 
@@ -127,16 +123,16 @@ After the proposal is passed, the Minter parameters would be updated as per the 
 ```bash
 > paxd q mint minter
 denom: uhpx
-end_date: "2023-11-22"
+end_date: "<new end date>"
 last_mint_amount: "0"
 last_mint_date: ""
 last_mint_height: "0"
 remaining_mint_amount: "0"
-start_date: "2023-10-05"
+start_date: "<new start date>"
 total_mint_amount: "100000"
 ```
 
-In this example, the end_date has been changed to "2023-11-22", start_date is now "2023-10-05", and total_mint_amount has been reduced to "100000".
+In this example, start_date and end_date take the values from the proposal and total_mint_amount has been reduced to "100000".
 
 ### Params Governance Proposal
 
@@ -158,13 +154,13 @@ Here is an example for updating the params for the mint module
       "value": [
         {
           "token_release_amount": 500,
-          "start_date": "2023-10-01",
-          "end_date": "2023-10-30"
+          "start_date": "<YYYY-MM-DD>",
+          "end_date": "<YYYY-MM-DD>"
         },
         {
           "token_release_amount": 1000,
-          "start_date": "2023-11-01",
-          "end_date": "2023-11-30"
+          "start_date": "<YYYY-MM-DD>",
+          "end_date": "<YYYY-MM-DD>"
         }
       ]
     }
@@ -178,9 +174,9 @@ Submit the proposal
 paxd tx gov submit-proposal param-change ./param_change_prop.json --from admin -b block -y --gas 200000 --fees 200000uhpx
 ```
 
-## Begin-Block
+## Epoch hook
 
-At the end of each epoch (defaults to 60s), the chain checks if it's the minting start date, if it is, it will mint the amount of tokens specified in the params or continue the current release period and mint a subset of the remaining amount.
+At the end of each epoch (60s by default), the `AfterEpochEnd` hook picks the active release from the schedule and, if nothing has been minted yet that UTC day, mints that day's share of the remaining amount. On or after the end date, the whole remaining amount is released.
 
 ### Minting events
 
@@ -193,4 +189,4 @@ At the end of each epoch (defaults to 60s), the chain checks if it's the minting
 
 ### Metrics
 
-The minting module emits a `pax_mint_coins{denom}` each time there's a successful minting event.
+Each successful mint records the telemetry gauge `pax_mint_coins{denom}` and the OpenTelemetry gauge `mint_coins_minted` (attribute `denom`).

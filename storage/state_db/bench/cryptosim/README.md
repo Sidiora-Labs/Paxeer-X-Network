@@ -21,8 +21,8 @@ The cryptosim benchmark writes database files. If provided with those database f
 benchmark can continue running with that database. This may be useful when operating on large data sets that require
 significant setup time.
 
-Note that if continuing from an earlier run, you may not alter the `Seed`, `CannedRandomSize`, or 
-`AccountKeySize` parameters, since keys are deterministically derived from these configuration values.
+Note that if continuing from an earlier run, you may not alter the `Seed` or `CannedRandomSize`
+parameters, since keys are deterministically derived from these configuration values.
 
 # Transaction Model
 
@@ -36,22 +36,6 @@ Each "transaction" performs the following operations (in no particular order):
 - Randomly selects a simulated ERC20 contract and reads it
 - Performs a read+write on an account that "collects gas fees"
 
-# Future Work
-
-The following features might be useful to add to this benchmark:
-
-- Metrics collection
-    - Measurements of size of data on disk vs. keys in the database
-    - Detailed latency breakdown
-    - Measurements of variance (e.g. p99 vs. just average)
-    - Memory utilization
-    - Raw disk IO utilization
-    - Compaction overhead
-    - Metrics exported by the underlying DB
-- Prometheus/Grafana dashboards to visualize metrics
-- More exotic key access patterns
-
-
 # Setting Up Prometheus / Grafana
 
 To set up local prometheus/grafana instances, run the following from the repository root. You must have docker 
@@ -62,7 +46,7 @@ docker/monitornode/scripts/start-prometheus.sh
 docker/monitornode/scripts/start-grafana.sh
 ```
 
-Then, navigate to http://localhost:3000/ in a web browser to reach the grafana UI. Username and password are "admin".
+Then, navigate to http://localhost:3000/ in a web browser to reach the grafana UI. Username and password are both "admin".
 
 There is a pre-built dashboard containing visualizations for benchmark metrics in 
 `docker/monitornode/dashboards/cryptosim-dashboard.json` that you can import into grafana.
@@ -82,34 +66,34 @@ To set up this benchmark on an AWS machine, perform the following steps:
 1. Clone the repo
 
 ```
-git clone https://github.com/sidiora-labs/paxeer-network.git
+git clone https://github.com/Sidiora-Labs/Paxeer-X-Network.git
 ```
 
 2. Install dependencies
 
 ```
-cd ./pax-chain/storage/state_db/bench/cryptosim
+cd ./Paxeer-X-Network/storage/state_db/bench/cryptosim
 ./tools/setup-ubuntu.sh
 ```
 
-3: Start Prometheus Server (optional)
+3. Start Prometheus Server (optional)
 
 ```
-cd ./pax-chain
+cd ./Paxeer-X-Network
 ./docker/monitornode/scripts/start-prometheus.sh
 ```
 
-3. Start the Benchmark
+4. Start the Benchmark
 
 Optional: start a tmux session (the install script installs tmux). This will allow the benchmark to run
 even if your connection is interrupted.
 
 ```
-cd pax-chain/storage/state_db/bench/cryptosim
+cd Paxeer-X-Network/storage/state_db/bench/cryptosim
 ./cryptosim.sh ./config/basic-config.json
 ```
 
-4: Connect Local Grafana to Remote Prometheus (optional)
+5. Connect Local Grafana to Remote Prometheus (optional)
 
 Before taking this step, you will need to set up SSH access to the remote VM. The easiest way to do this is to
 copy your public ssh key into the remote machine's `~/.ssh/authorized_keys` file.

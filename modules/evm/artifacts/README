@@ -1,4 +1,4 @@
-The source files are under contracts/src. The artifacts should be updated whenever the source files change. To update run the following (with NativePaxTokensERC20 as an example):
+The source files are under contracts/src. The artifacts should be updated whenever the source files change. contracts/lib is not committed; populate it first with contracts/bootstrap-libs.sh. To update an artifact, run the following (with CW721ERC721Pointer as an example):
 - `solc --overwrite @openzeppelin=contracts/lib/openzeppelin-contracts --bin -o modules/evm/artifacts/cw721 contracts/src/CW721ERC721Pointer.sol`
 - `solc --overwrite @openzeppelin=contracts/lib/openzeppelin-contracts --abi -o modules/evm/artifacts/cw721 contracts/src/CW721ERC721Pointer.sol`
 - (clean up any artifact that is not CW721ERC721Pointer.bin/abi)

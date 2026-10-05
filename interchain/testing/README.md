@@ -111,13 +111,13 @@ It is assumed your application contains an embedded BaseApp and thus implements 
 
 ### Initialize TestingApp
 
-The testing package requires that you provide a function to initialize your TestingApp. This is how ibc-go implements the initialize function with its `SimApp`:
+The testing package requires that you provide a function to initialize your TestingApp. This is how this package implements the initialize function with its `SimApp` (see `app.go`):
 
 ```go
 func SetupTestingApp() (TestingApp, map[string]json.RawMessage) {
 	db := dbm.NewMemDB()
 	encCdc := simapp.MakeTestEncodingConfig()
-	app := simapp.NewSimApp( db, nil, true, map[int64]bool{}, simapp.DefaultNodeHome, 5, encCdc, simapp.EmptyAppOptions{})
+	app := simapp.NewSimApp(db, nil, true, map[int64]bool{}, simapp.DefaultNodeHome, 5, nil, encCdc, simapp.EmptyAppOptions{})
 	return app, simapp.NewDefaultGenesisState(encCdc.Marshaler)
 }
 ```
@@ -244,7 +244,7 @@ Here is a basic example of the testing package being used to simulate IBC functi
 
 ### Transfer Testing Example
 
-If ICS 20 had its own simapp, its testing setup might include a `testing/app.go` file with the following contents:
+An ICS 20 test package built on this package's simapp might include a `testing/app.go` file with the following contents:
 
 ```go
 package transfertesting
@@ -252,17 +252,16 @@ package transfertesting
 import (
 	"encoding/json"
 
-	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/simapp"
+	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
 	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
 )
 
 func SetupTransferTestingApp() (ibctesting.TestingApp, map[string]json.RawMessage) {
 	db := dbm.NewMemDB()
 	encCdc := simapp.MakeTestEncodingConfig()
-	app := simapp.NewSimApp( db, nil, true, map[int64]bool{}, simapp.DefaultNodeHome, 5, encCdc, simapp.EmptyAppOptions{})
+	app := simapp.NewSimApp(db, nil, true, map[int64]bool{}, simapp.DefaultNodeHome, 5, nil, encCdc, simapp.EmptyAppOptions{})
 	return app, simapp.NewDefaultGenesisState(encCdc.Marshaler)
 }
 

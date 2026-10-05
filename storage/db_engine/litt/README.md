@@ -72,8 +72,6 @@ enough need is demonstrated:
 - dynamic multi-drive support: Drives can currently only be added/removed with a DB restart.
   It's currently fast, but not instantaneous. With this feature, drives can be added/removed on the fly.
 - read-only mode from an outside process
-- DB iteration (this is plausible to implement without high overhead, but we don't currently have
-  a good use case to justify the implementation effort)
 - more keymap implementations (e.g. badgerDB, a custom solution, etc.)
 - data check-summing and verification (to protect/detect disk corruption)
 - keys and values up to 2^64 bytes in size
@@ -94,7 +92,7 @@ key-value store.
 - data encryption
 - data compression
 - any sort of query language other than "get me the value associated with this key"
-- ordered data iteration
+- key-ordered data iteration (tables can only be iterated in insertion order or reverse insertion order)
 
 # API
 
@@ -120,8 +118,9 @@ type Table interface {
 	Name() string
 	Put(key []byte, value []byte, secondaryKeys ...*types.SecondaryKey) error
 	PutBatch(batch []*types.PutRequest) error
-	Get(key []byte) ([]byte, bool, error)
-	Exists(key []byte) (bool, error)
+	Get(key []byte) (value []byte, exists bool, err error)
+	CacheAwareGet(key []byte, onlyReadFromCache bool) (value []byte, exists bool, hot bool, err error)
+	Exists(key []byte) (exists bool, err error)
 	Flush() error
 	Size() uint64
 	KeyCount() uint64
@@ -130,8 +129,14 @@ type Table interface {
 	SetWriteCacheSize(size uint64) error
 	SetReadCacheSize(size uint64) error
 	Drop() error
+	Iterator(reverse bool) (Iterator, error)
+	GetOldestKey() (key []byte, exists bool, err error)
+	GetNewestKey() (key []byte, exists bool, err error)
 }
 ```
+
+`Iterator(false)` walks keys in insertion order (oldest first) and `Iterator(true)` in reverse insertion order.
+An iterator sees a snapshot of the keys present when it was created and must be closed when no longer needed.
 
 Both primary keys and secondary keys must not exceed 64 KiB (2^16 - 1 bytes). Values may be up to 2^32 bytes.
 
@@ -166,12 +171,12 @@ Below is a functional example showing how to use LittDB.
 
 ```go
 // Configure and build the database.
-config, err := littbuilder.DefaultConfig("path/to/where/data/is/stored")
+config, err := litt.DefaultConfig("path/to/where/data/is/stored")
 if err != nil {
 	return err
 }
 
-db, err := config.Build(context.Background())
+db, err := littbuilder.NewDB(config)
 if err != nil {
 	return err
 }
@@ -215,8 +220,8 @@ For more information about configuration, see [littdb_config.go](littdb_config.g
 
 ## LittDB CLI
 
-The LittDB has a CLI utility for offline manipulation of DB files. See the [LittDB CLI](docs/littdb_cli.md) docs
-for more information on how to use it.
+The LittDB has a CLI utility for offline manipulation of DB files. Build it with `make build` from this directory
+(the binary lands in `./bin/litt`). See the [LittDB CLI](docs/littdb_cli.md) docs for more information on how to use it.
 
 # Definitions
 

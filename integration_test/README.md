@@ -1,6 +1,6 @@
 # Integration Test Framework
-This page provides an overview of how to use the testing framework
-to quickly add new integration test cases.
+YAML-driven integration tests for the Paxeer X chain (`paxd`). Each test case runs shell commands inside
+the local four-node docker cluster and checks their output with simple verifiers.
 
 ## Getting Started
 These instructions will help you set up the integration test framework
@@ -12,7 +12,7 @@ on your local machine for development and testing purposes.
 - Docker and docker compose installed and running
 
 ### Usage
-1. Ensure docker containers are up and running: `make docker-cluster-start`
+1. Start the local cluster from the repo root: `make docker-cluster-start` (add `DOCKER_DETACH=true` to run it in the background)
 2. Execute a test by passing the path to a test YAML file (from repo root), e.g.:
    ```bash
    python3 integration_test/scripts/runner.py integration_test/startup/startup_test.yaml
@@ -67,14 +67,14 @@ One simple example for verify chain is started and running fine:
 | node       | No       | If given, the command will be executed on a specific container, default to pax-node-0                                                         |
 | verifiers  | Yes      | Contains a list of verify functions to check correctness                                                                                      |
 | type       | Yes      | Currently support either `eval` or `regex`.                                                                                                   |
-| result     | Yes      | Pick any env variables you want to pass in for regex match                                                                                    |
-| expr       | Yes      | If type is eval, then the format is `[env] > \| == \| != \| >= \| > \| <= \| < [number]` <br/> If type is regex, then provide a valid regular expression. |                                                         |
+| result     | regex    | The env variable whose value the regex is matched against                                                                                     |
+| expr       | Yes      | If type is eval, then the format is `[env] > \| == \| != \| >= \| > \| <= \| < [number]` <br/> If type is regex, then provide a valid regular expression. |
 
 ### Notes & Tips
 There are some tricks and tips you should know when adding a new test case:
-1. Try to avoid using sing quote `'` in your command as much as possible, use `"` to replace whenever possible
+1. Try to avoid using single quote `'` in your command as much as possible, use `"` to replace whenever possible
 2. Sometimes you need to escape `"` and make it `\"`
 3. Use jq expressions to simplify the output and make your verification logic easier
-4. Commands will be executed one by one and will be wrapped within `docker exec -ti`
-5. Chain is keep running and is stateful, so some tests might not be idempotent which is fine
+4. Commands run one by one, each wrapped in `docker exec <node> /bin/bash -c '...'`
+5. The chain keeps running and is stateful, so some tests might not be idempotent which is fine
 6. You can define more than one verifier and each one check a different env

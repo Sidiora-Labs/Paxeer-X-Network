@@ -8,10 +8,10 @@ did not degrade over time and with this quantity of data on disk.
 
 | Property          | Value                                        | 
 |-------------------|----------------------------------------------| 
-| commit            | `2625a70cecf0efc239fb9891691b7b179733b5f8`   | 
+| code              | upstream LittDB, before import into this repo | 
 | environment       | OCI (Oracle Cloud Infrastructure)            |
 | region            | US East (Ashburn)                            |
-| OS                | Canonical-Ubuntu-20.04-2025.07.23-0          |
+| OS                | Canonical Ubuntu 20.04                       |
 | shape             | VM.Optimized3.Flex                           |
 | OCPU count        | 1                                            |
 | Network Bandwidth | 4 Gbps                                       |
@@ -70,16 +70,15 @@ in read latency and memory appeared to flatten out and enter a steady state as w
 
 ## Is the benchmark code available?
 
-Yes! To run this benchmark yourself, do the following:
+Yes. The benchmark is part of the LittDB CLI in this repo. To run it yourself:
 
-- install golang 1.24
-- `git clone https://github.com/Layr-Labs/eigenda.git`
-- `cd eigenda/litt && make build`
-  - this will create the LittDB CLI binary at `./eigenda/litt/bin/litt`
-  - you can install this CLI by making sure this binary is on your bash PATH, or you can invoke it directly
+- install the Go version required by the repo's `go.mod`
+- from the repo root, `cd storage/db_engine/litt && make build`
+  - this will create the LittDB CLI binary at `storage/db_engine/litt/bin/litt`
+  - you can install this CLI by making sure this binary is on your PATH, or you can invoke it directly
 - create a benchmark config file
-  - the above example is a good starting point
-  - a complete list of config options can be found at https://github.com/Layr-Labs/eigenda/blob/master/litt/benchmark/config/benchmark_config.go
+  - the above example is a good starting point, as is [basic-config.json](../../../benchmark/config/basic-config.json)
+  - a complete list of config options can be found in [benchmark_config.go](../../../benchmark/config/benchmark_config.go)
 - `litt benchmark /path/to/benchmark_config.json`
 
 ## Why OCI?
