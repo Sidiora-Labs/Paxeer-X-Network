@@ -30013,7 +30013,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.6]
 title = "Schedule non-conflicting program activities in parallel"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 7
 requires = ["0.2", "104.32.5"]
