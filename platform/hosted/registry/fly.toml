@@ -38,6 +38,7 @@ kill_timeout = "30s"
 # action and reused; none is recreated and no key material is printed.
 [env]
   LAYERX_REGISTRY_LISTEN = "[::]:9420"
+  LAYERX_REGISTRY_HEALTH_LISTEN = "[::]:9421"
   LAYERX_REGISTRY_TLS_CERT_DER = "/data/tls/registry/cert.der"
   LAYERX_REGISTRY_TLS_KEY_DER = "/data/tls/registry/key.der"
   LAYERX_REGISTRY_CLIENT_CA_DER = "/data/tls/registry/ca.der"
@@ -99,6 +100,20 @@ kill_timeout = "30s"
     interval = "15s"
     timeout = "5s"
     grace_period = "120s"
+
+# Serving readiness: the exact verdict of the mTLS /healthz route (builder
+# verification, event delivery admission, node authority), computed by the
+# registry in-process and answered on the credential-free health listener
+# that serves nothing else. The TCP check above stays transport liveness.
+[checks.serving]
+  type = "http"
+  port = 9421
+  method = "GET"
+  path = "/healthz"
+  protocol = "http"
+  interval = "10s"
+  timeout = "9s"
+  grace_period = "120s"
 
 [[vm]]
   size = "shared-cpu-4x"

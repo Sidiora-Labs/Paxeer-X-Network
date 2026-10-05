@@ -132,6 +132,18 @@ fi
 flock -u 9
 exec 9>&-
 
+# The readiness verdict listener of the registry: plain HTTP serving only the
+# verdict of the mTLS /healthz route, on a port of its own so the transport
+# check of the mTLS listener stays separate.
+case "${LAYERX_REGISTRY_HEALTH_LISTEN:-}" in
+*:[0-9]*) ;;
+*) missing "LAYERX_REGISTRY_HEALTH_LISTEN" "registry-deployment-material"; exit 1 ;;
+esac
+mtls_listen=${LAYERX_REGISTRY_LISTEN:-127.0.0.1:9420}
+[ "${LAYERX_REGISTRY_HEALTH_LISTEN##*:}" != "${mtls_listen##*:}" ] || {
+	missing "distinct-readiness-and-mtls-ports" "registry-deployment-material"; exit 1;
+}
+
 run=/run/layerx
 builder=$(dirname "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT")
 kernel=$(dirname "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY")

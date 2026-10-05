@@ -9,6 +9,8 @@ import concurrent.futures
 import http.client
 import ssl
 import signal
+import socket
+import threading
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -28,6 +30,7 @@ SCHEMA = 'paxeer-x.candidate.v1'
 RESULT = re.compile(r'^test (\S+) \.\.\. (\S+)$', re.M)
 
 CASES = {
+    'registry-readiness': {'tests': {}},
     'emulator-conformance': {'tests': {'conformance_verifies_actual_signed_observations': 'canonical production receipt verification and comparator refusals'}},
     'guest-abi-discovery': {'tests': {'native_interfaces::guest_abi_discovery': 'real native and served ABI discovery contract'}},
     'durable-verification-idempotency': {
@@ -170,19 +173,7 @@ class ServedRegistry:
         self.logs = []
 
     def start(self):
-        self.group = self.cgroup_parent / ('registry-contract-' + uuid.uuid4().hex)
-        self.group.mkdir()
-        log = self.root / ('registry-' + uuid.uuid4().hex + '.log')
-        output = log.open('xb')
-        os.chmod(log, 0o600)
-        self.logs.append(str(log))
-        group = self.group
-        def attach():
-            (group / 'cgroup.procs').write_text(str(os.getpid()))
-        self.process = subprocess.Popen([str(self.binary)], env=self.environment,
-                                        stdin=subprocess.DEVNULL, stdout=output, stderr=output,
-                                        preexec_fn=attach)
-        output.close()
+        log = self.spawn()
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             require(self.process.poll() is None, 'served registry exited; log: ' + str(log))
@@ -194,6 +185,23 @@ class ServedRegistry:
                 pass
             time.sleep(0.1)
         raise RuntimeError('served registry readiness deadline; log: ' + str(log))
+
+    def spawn(self, environment=None):
+        self.group = self.cgroup_parent / ('registry-contract-' + uuid.uuid4().hex)
+        self.group.mkdir()
+        log = self.root / ('registry-' + uuid.uuid4().hex + '.log')
+        output = log.open('xb')
+        os.chmod(log, 0o600)
+        self.logs.append(str(log))
+        group = self.group
+        def attach():
+            (group / 'cgroup.procs').write_text(str(os.getpid()))
+        self.process = subprocess.Popen([str(self.binary)],
+                                        env=self.environment if environment is None else environment,
+                                        stdin=subprocess.DEVNULL, stdout=output, stderr=output,
+                                        preexec_fn=attach)
+        output.close()
+        return log
 
     def stop(self):
         if self.group is not None and self.group.exists():
@@ -606,6 +614,391 @@ def discovery_contract(artifacts):
                 'discovery artifact changed during execution: ' + role)
     print('registry-contract: private discovery evidence ' + str(output), flush=True)
     return len(markers) + publication_count + 1
+
+
+READINESS_CASES = (
+    'transport-separate', 'mtls-required', 'credential-safe', 'builder-mutation',
+    'dependency-loss-program-events', 'dependency-loss-webhooks-events', 'dependency-loss-node-authority',
+    'restart-recovery', 'operation-record', 'wrong-trust-material', 'replica-identity-mismatch',
+    'missing-material-distinct-credentials', 'missing-material-entrypoint', 'recovery-after-refusal',
+)
+READINESS_DEPENDENCIES = {
+    'program-events': 'LAYERX_EVENTS_PROGRAM_UPSTREAM_URL',
+    'webhooks-events': 'LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL',
+    'node-authority': 'LAYERX_REGISTRY_NODE_ENDPOINT',
+}
+# Declared withdrawal and recovery bounds in seconds: the builder monitor
+# withdraws within its 2 s freshness; event delivery within the 10 s admission
+# freshness, the 5 s admission deadline and the 30 s delivery failure window;
+# node authority on the next verdict, each plus one 10 s probe period.
+READINESS_BOUNDS = {'builder': 3, 'program-events': 55, 'webhooks-events': 55, 'node-authority': 20}
+READINESS_STARTUP = 120
+READINESS_REFUSAL_WINDOW = 30
+READINESS_SOURCES = {
+    'platform/hosted/registry/src/main.rs',
+    'platform/hosted/registry/src/routes.rs',
+    'platform/hosted/registry/src/event_producer.rs',
+    'platform/hosted/registry/fly.toml',
+    'platform/hosted/registry/deployment.yaml',
+    'platform/hosted/registry/tests/readiness.py',
+    'docker/platform-registry/init.sh',
+    'tools/qualification/paxeer-x/registry-contract.py',
+}
+
+
+class Relay:
+    """Owned TCP transport between the registry and one real dependency."""
+
+    def __init__(self, listen, upstream):
+        host, port = listen.rsplit(':', 1)
+        require(host == '127.0.0.1', 'loopback dependency relay')
+        self.address = (host, int(port))
+        upstream_host, upstream_port = upstream.rsplit(':', 1)
+        self.upstream = (upstream_host, int(upstream_port))
+        require(self.upstream != self.address, 'relay forwards to a distinct real dependency')
+        self.server = None
+        self.sockets = set()
+        self.lock = threading.Lock()
+
+    def open(self):
+        require(self.server is None, 'relay opened once')
+        self.server = socket.create_server(self.address)
+        threading.Thread(target=self.accept, args=(self.server,), daemon=True).start()
+
+    def accept(self, server):
+        while True:
+            try:
+                client, _ = server.accept()
+            except OSError:
+                return
+            try:
+                upstream = socket.create_connection(self.upstream, timeout=10)
+                upstream.settimeout(None)
+            except OSError:
+                client.close()
+                continue
+            with self.lock:
+                if self.server is not server:
+                    client.close()
+                    upstream.close()
+                    return
+                self.sockets |= {client, upstream}
+            for source, target in ((client, upstream), (upstream, client)):
+                threading.Thread(target=self.pump, args=(source, target), daemon=True).start()
+
+    @staticmethod
+    def pump(source, target):
+        try:
+            while True:
+                data = source.recv(65536)
+                if not data:
+                    break
+                target.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for item in (source, target):
+                try:
+                    item.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def close(self):
+        with self.lock:
+            server, self.server = self.server, None
+            sockets, self.sockets = self.sockets, set()
+        if server is not None:
+            server.close()
+        for item in sockets:
+            try:
+                item.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            item.close()
+
+
+def readiness_artifacts(candidate_digest):
+    path = os.environ.get('PAXEER_X_REGISTRY_ARTIFACT_MANIFEST')
+    require(path, 'PAXEER_X_REGISTRY_ARTIFACT_MANIFEST is required')
+    private = Path(path).resolve(strict=True)
+    require(private.is_file() and private.stat().st_mode & 0o077 == 0, 'private readiness artifact manifest')
+    document = strict_json(private.read_bytes())
+    exact_fields(document, {'schema', 'candidate_manifest_sha256', 'source_revision', 'source_tree',
+                            'source_files', 'artifacts', 'image', 'served'}, 'readiness artifact manifest')
+    require(document['schema'] == 'paxeer-x.registry-readiness-artifacts.v1', 'registry readiness artifact schema')
+    require(document['candidate_manifest_sha256'] == candidate_digest, 'readiness artifact candidate binding')
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=ROOT, text=True).strip()
+    require(document['source_revision'] == revision and document['source_tree'] == tree,
+            'immutable readiness source binding')
+    require(not subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT),
+            'clean published readiness source required')
+    require(isinstance(document['source_files'], dict) and set(document['source_files']) == READINESS_SOURCES,
+            'exact readiness source inventory')
+    for relative, digest in document['source_files'].items():
+        require(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == digest,
+                'readiness source binding: ' + relative)
+    require(isinstance(document['artifacts'], dict) and set(document['artifacts']) == {'registry'},
+            'served registry artifact required')
+    for role, entry in document['artifacts'].items():
+        exact_fields(entry, {'path', 'sha256'}, 'served artifact')
+        binary = Path(entry['path']).resolve(strict=True)
+        require(binary.is_file() and os.access(binary, os.X_OK), role + ' executable')
+        require(hashlib.sha256(binary.read_bytes()).hexdigest() == entry['sha256'], role + ' digest')
+    exact_fields(document['image'], {'reference', 'digest'}, 'registry image identity')
+    require(isinstance(document['image']['reference'], str) and document['image']['reference']
+            and re.fullmatch('sha256:[0-9a-f]{64}', document['image']['digest'] or '') is not None,
+            'pinned registry image identity')
+    served = document['served']
+    for field in ('health_listen', 'wrong_trust_history', 'deployment_request_file', 'dependencies', 'gateway'):
+        require(field in served, 'readiness fixture input: ' + field)
+    require(isinstance(served['dependencies'], dict) and set(served['dependencies']) == set(READINESS_DEPENDENCIES),
+            'every required readiness dependency relayed')
+    exact_fields(served['gateway'], {'url', 'ca_pem', 'client_cert_pem', 'client_key_pem'}, 'gateway readiness reader')
+    return document
+
+
+def readiness_contract(artifacts, candidate_digest):
+    served = artifacts['served']
+    server = ServedRegistry({'registry': artifacts['artifacts']['registry'], 'served': served})
+    environment = server.environment
+    require(environment.get('LAYERX_REGISTRY_HEALTH_LISTEN') == served['health_listen'],
+            'served readiness listener configured')
+    health_host, health_port = served['health_listen'].rsplit(':', 1)
+    health_port = int(health_port)
+    require(health_host == '127.0.0.1' and health_port != server.port, 'separate loopback readiness listener')
+    request_token = Path(environment['LAYERX_REGISTRY_REQUEST_TOKEN_FILE']).read_text().strip()
+    require(request_token and request_token != server.token, 'distinct request and publication credentials')
+    rootfs = Path(environment['LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT']).resolve(strict=True)
+    require(rootfs.is_relative_to(server.root), 'fixture-owned pinned builder rootfs')
+    trust = Path(environment['LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY']).resolve(strict=True)
+    wrong = Path(served['wrong_trust_history']).resolve(strict=True)
+    require(wrong.is_relative_to(server.root) and wrong.read_bytes() != trust.read_bytes(),
+            'distinct real wrong sequencer trust material')
+    replica = environment['LAYERX_REGISTRY_RECEIPT_AUTHORITY_REPLICA_ID']
+    require(re.fullmatch('[0-9a-f]{64}', replica) is not None, 'configured replica identity')
+    deployment = Path(served['deployment_request_file']).resolve(strict=True).read_bytes()
+    relays = {}
+    for name, variable in READINESS_DEPENDENCIES.items():
+        entry = served['dependencies'][name]
+        exact_fields(entry, {'relay_listen', 'upstream'}, 'dependency relay')
+        relays[name] = Relay(entry['relay_listen'], entry['upstream'])
+        target = urlsplit(environment[variable])
+        require(target.port == relays[name].address[1]
+                and socket.gethostbyname(target.hostname) == '127.0.0.1',
+                'dependency routed through the qualification relay: ' + name)
+    secrets = [server.token.encode(), request_token.encode()] + [key.encode() for key in server.keys]
+    markers = []
+
+    def mark(name, detail):
+        print('REGISTRY_READINESS_CASE %s %s' % (name, detail), flush=True)
+        markers.append(name)
+
+    def verdict(method='GET', path='/healthz', headers=None):
+        connection = http.client.HTTPConnection(health_host, health_port, timeout=12)
+        try:
+            connection.request(method, path, headers=dict(headers or {}, Connection='close'))
+            response = connection.getresponse()
+            body = response.read(65537)
+            require(len(body) <= 65536, 'bounded readiness answer')
+            return response.status, body
+        finally:
+            connection.close()
+
+    def authenticated():
+        return server.request('GET', '/healthz', b'', authenticated=False)
+
+    def code(answer):
+        document = strict_json(answer[1])
+        require(isinstance(document.get('error'), dict) and isinstance(document['error'].get('code'), str),
+                'typed refusal')
+        return document['error']['code']
+
+    def await_verdict(status, bound, label):
+        started = time.monotonic()
+        deadline = started + bound
+        while True:
+            require(server.process is not None and server.process.poll() is None,
+                    'registry exited while awaiting ' + label)
+            try:
+                answer = verdict()
+                if answer[0] == status:
+                    return answer, time.monotonic() - started
+            except (OSError, http.client.HTTPException):
+                pass
+            require(time.monotonic() < deadline, '%s not observed within %ss' % (label, bound))
+            time.sleep(0.1)
+
+    def refused_or_waiting(name, overrides):
+        changed = dict(environment)
+        for key, value in overrides.items():
+            if value is None:
+                changed.pop(key, None)
+            else:
+                changed[key] = value
+        server.spawn(changed)
+        deadline = time.monotonic() + READINESS_REFUSAL_WINDOW
+        outcome = 'waiting'
+        while time.monotonic() < deadline:
+            if server.process.poll() is not None:
+                require(server.process.returncode != 0, name + ' exited zero')
+                outcome = 'refused exit=%d' % server.process.returncode
+                break
+            for probe in (verdict, authenticated):
+                try:
+                    require(probe()[0] != 200, name + ' admitted serving readiness')
+                except (OSError, ssl.SSLError, http.client.HTTPException):
+                    pass
+            time.sleep(0.2)
+        server.stop()
+        mark(name, outcome)
+
+    for relay in relays.values():
+        relay.open()
+    try:
+        server.start()
+        ready, elapsed = await_verdict(200, READINESS_STARTUP, 'startup readiness')
+        require(ready == authenticated(), 'readiness port answers the exact mTLS /healthz verdict')
+        require(strict_json(ready[1]) == {'status': 'ready', 'service': 'program-registry'}, 'ready verdict body')
+        with socket.create_connection((server.host, server.port), timeout=5):
+            pass
+        plain = http.client.HTTPConnection(server.host, server.port, timeout=5)
+        try:
+            plain.request('GET', '/healthz', headers={'Connection': 'close'})
+            answered = plain.getresponse().status
+        except (OSError, http.client.HTTPException):
+            answered = None
+        finally:
+            plain.close()
+        require(answered is None, 'mTLS listener answered plaintext HTTP')
+        mark('transport-separate', 'tcp=open readiness=200 equal=mtls elapsed=%.2f' % elapsed)
+        anonymous = ssl.create_default_context(cafile=server.config['client_ca_pem'])
+        connection = http.client.HTTPSConnection(server.host, server.port, context=anonymous, timeout=10)
+        try:
+            connection.request('GET', '/healthz', headers={'Connection': 'close'})
+            admitted = connection.getresponse().status
+        except (OSError, ssl.SSLError, http.client.HTTPException):
+            admitted = None
+        finally:
+            connection.close()
+        require(admitted is None, 'mTLS listener admitted a client without a certificate')
+        mark('mtls-required', 'certificateless=refused')
+        for method, path in (('GET', '/v1/programs/registry'), ('GET', '/metrics'), ('POST', '/__registry/sources'),
+                             ('POST', '/__registry/deployments'), ('POST', '/healthz'), ('GET', '/')):
+            status, body = verdict(method, path, {'Authorization': 'Bearer ' + request_token})
+            require(status in (404, 405), 'readiness listener served ' + method + ' ' + path)
+            require(not any(secret in body for secret in secrets), 'readiness answer exposes a credential')
+        require(verdict(headers={'Authorization': 'Bearer forged'}) == verdict(), 'readiness ignores credentials')
+        require(not any(secret in verdict()[1] for secret in secrets), 'ready verdict exposes a credential')
+        mark('credential-safe', 'other-routes=404/405 secrets=absent')
+        changed = next(path for path in sorted(rootfs.rglob('*'))
+                       if path.is_file() and not path.is_symlink() and path.stat().st_size)
+        original = changed.read_bytes()
+        try:
+            changed.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+            withdrawn, elapsed = await_verdict(503, READINESS_BOUNDS['builder'], 'builder mutation withdrawal')
+            require(code(withdrawn) == 'builder_unavailable' and authenticated()[0] == 503,
+                    'typed builder withdrawal on both listeners')
+            saved = server.token
+            server.token = request_token
+            try:
+                refused = server.post('readiness-' + uuid.uuid4().hex)
+            finally:
+                server.token = saved
+            require(refused[0] == 503 and code(refused) == 'builder_unavailable', 'typed request refusal while mutated')
+        finally:
+            changed.write_bytes(original)
+        _, recovered = await_verdict(200, READINESS_BOUNDS['builder'], 'builder reverification')
+        require(authenticated()[0] == 200, 'mTLS verdict resumed after reverification')
+        mark('builder-mutation', 'withdrawn=%.2fs recovered=%.2fs refusal=builder_unavailable' % (elapsed, recovered))
+        for name, relay in relays.items():
+            relay.close()
+            try:
+                withdrawn, elapsed = await_verdict(503, READINESS_BOUNDS[name], name + ' loss withdrawal')
+                typed = code(withdrawn)
+                mtls = authenticated()
+                require(mtls[0] == 503 and code(mtls) == typed, 'typed mTLS refusal during ' + name + ' loss')
+            finally:
+                relay.open()
+            _, recovered = await_verdict(200, READINESS_BOUNDS[name], name + ' recovery')
+            mark('dependency-loss-' + name, 'withdrawn=%.2fs code=%s recovered=%.2fs' % (elapsed, typed, recovered))
+        server.stop()
+        try:
+            verdict()
+            raise RuntimeError('readiness answered while the registry was stopped')
+        except (OSError, http.client.HTTPException):
+            pass
+        server.start()
+        restarted, elapsed = await_verdict(200, READINESS_STARTUP, 'restart readiness')
+        require(restarted == authenticated(), 'restart resumes the exact verified verdict')
+        mark('restart-recovery', 'stopped=unanswered ready=%.2fs' % elapsed)
+        saved = server.token
+        server.token = request_token
+        try:
+            deploy = server.request('POST', '/__registry/deployments', deployment, key='readiness-' + uuid.uuid4().hex)
+            discovery = server.request('GET', '/v1/programs/registry/' + server.program, b'')
+        finally:
+            server.token = saved
+        require(deploy[0] == 200, 'real signed deploy admitted')
+        require(discovery[0] == 200 and strict_json(discovery[1]).get('verification')
+                == 'registry-receipt-and-current-head-verified', 'receipt-verified discovery read')
+        gateway = served['gateway']
+        target = urlsplit(gateway['url'])
+        require(target.scheme == 'https' and target.hostname and not target.username, 'gateway readiness origin')
+        context = ssl.create_default_context(cafile=gateway['ca_pem'])
+        context.load_cert_chain(gateway['client_cert_pem'], gateway['client_key_pem'])
+        connection = http.client.HTTPSConnection(target.hostname, target.port or 443, context=context, timeout=20)
+        try:
+            connection.request('GET', target.path.rstrip('/') + '/readyz', headers={'Connection': 'close'})
+            response = connection.getresponse()
+            gateway_answer = (response.status, response.read(65537))
+        finally:
+            connection.close()
+        components = strict_json(gateway_answer[1]).get('components') or {}
+        require(gateway_answer[0] == 200 and components.get('program_registry') == 'ready',
+                'gateway program_registry readiness')
+        record = {
+            'schema': 'paxeer-x.registry-readiness-operation.v1',
+            'candidate_manifest_sha256': candidate_digest,
+            'source_revision': artifacts['source_revision'],
+            'image': artifacts['image'],
+            'registry_sha256': artifacts['artifacts']['registry']['sha256'],
+            'builder_environment_digest': environment['LAYERX_REGISTRY_BUILDER_IMAGE_DIGEST'],
+            'deploy': {'request_sha256': hashlib.sha256(deployment).hexdigest(), 'status': deploy[0],
+                       'response_sha256': hashlib.sha256(deploy[1]).hexdigest()},
+            'discovery': {'program_id': server.program, 'status': discovery[0],
+                          'verification': 'registry-receipt-and-current-head-verified',
+                          'response_sha256': hashlib.sha256(discovery[1]).hexdigest()},
+            'gateway': {'url': gateway['url'], 'status': gateway_answer[0], 'program_registry': 'ready'},
+            'readiness': {'status': restarted[0], 'response_sha256': hashlib.sha256(restarted[1]).hexdigest()},
+        }
+        evidence = server.root / ('registry-readiness-operation-' + uuid.uuid4().hex + '.json')
+        with evidence.open('x') as output:
+            os.chmod(evidence, 0o600)
+            json.dump(record, output, sort_keys=True)
+        mark('operation-record', str(evidence))
+        server.stop()
+        flipped = '%064x' % (int(replica, 16) ^ 1)
+        refused_or_waiting('wrong-trust-material', {'LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY': str(wrong)})
+        refused_or_waiting('replica-identity-mismatch', {'LAYERX_REGISTRY_RECEIPT_AUTHORITY_REPLICA_ID': flipped})
+        refused_or_waiting('missing-material-distinct-credentials', {
+            'LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE': environment['LAYERX_REGISTRY_REQUEST_TOKEN_FILE']})
+        refused_or_waiting('missing-material-entrypoint', {'LAYERX_REGISTRY_BUILDER_ENTRYPOINT': None})
+        server.start()
+        resumed, elapsed = await_verdict(200, READINESS_STARTUP, 'recovery after refusal')
+        require(resumed == authenticated(), 'verified material resumes readiness')
+        mark('recovery-after-refusal', 'ready=%.2fs' % elapsed)
+    finally:
+        server.stop()
+        for relay in relays.values():
+            relay.close()
+        for path in server.logs:
+            print('registry-contract: private served log ' + path)
+    require(tuple(markers) == READINESS_CASES, 'readiness cases absent, duplicated or reordered')
+    for role, entry in artifacts['artifacts'].items():
+        require(hashlib.sha256(Path(entry['path']).read_bytes()).hexdigest() == entry['sha256'],
+                'readiness artifact changed during execution: ' + role)
+    return len(markers)
 
 
 CONFORMANCE_CASES = {f'abi{abi}-{kind}' for abi in range(1, 5)
@@ -1024,6 +1417,8 @@ def main():
         count = conformance_contract(artifacts, corpus)
     elif arguments.case == 'guest-abi-discovery':
         count = discovery_contract(discovery_artifacts(digest))
+    elif arguments.case == 'registry-readiness':
+        count = readiness_contract(readiness_artifacts(digest), digest)
     else:
         artifacts = artifact_manifest(digest)
         count = run(arguments.case, artifacts)

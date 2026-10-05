@@ -27,6 +27,10 @@ use zeroize::{Zeroize as _, Zeroizing};
 const DEFAULT_LISTEN: &str = "127.0.0.1:9420";
 const DEFAULT_ROOT: &str = "/var/lib/layerx-program-registry";
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+static HEALTH_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+const MAX_HEALTH_CONNECTIONS: usize = 4;
+const HEALTH_DEADLINE: Duration = Duration::from_secs(8);
+const BUILDER_READINESS_FRESHNESS: Duration = Duration::from_secs(2);
 
 static WORKER_ROOT: OnceLock<PathBuf> = OnceLock::new();
 const CONTROLLERS: &str = "+cpu +memory +pids +io";
@@ -774,7 +778,90 @@ fn isolated_route(
     complete_worker(&mut child, &worker_group, encoded, deadline)
 }
 
+fn health_listen() -> Result<Option<std::net::SocketAddr>, String> {
+    match env::var("LAYERX_REGISTRY_HEALTH_LISTEN") {
+        Ok(value) => value
+            .parse()
+            .map(Some)
+            .map_err(|_| "LAYERX_REGISTRY_HEALTH_LISTEN is invalid".to_owned()),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err("LAYERX_REGISTRY_HEALTH_LISTEN is invalid".to_owned())
+        }
+    }
+}
+
+struct HealthConnectionGuard;
+
+impl Drop for HealthConnectionGuard {
+    fn drop(&mut self) {
+        HEALTH_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn health_verdict(
+    service: &Service,
+    request: &layerx_platform_registry::Request,
+) -> layerx_platform_registry::Response {
+    if request.path != "/healthz" {
+        return refusal(
+            404,
+            "not_found",
+            "the readiness listener serves only /healthz",
+        );
+    }
+    if request.method != "GET" {
+        return refusal(
+            405,
+            "method_not_allowed",
+            "method is not supported for this route",
+        );
+    }
+    let Some(deadline) = Instant::now().checked_add(HEALTH_DEADLINE.min(service.timeout)) else {
+        return refusal(
+            503,
+            "request_deadline_exceeded",
+            "the readiness deadline is invalid",
+        );
+    };
+    let healthz = layerx_platform_registry::Request {
+        method: "GET".to_owned(),
+        path: "/healthz".to_owned(),
+        headers: std::collections::HashMap::new(),
+        body: Vec::new(),
+    };
+    route_request(service, &healthz, deadline)
+}
+
+fn serve_health(listener: TcpListener, service: &Arc<Service>) {
+    for connection in listener.incoming() {
+        let Ok(mut stream) = connection else {
+            continue;
+        };
+        if HEALTH_CONNECTIONS.fetch_add(1, Ordering::AcqRel) >= MAX_HEALTH_CONNECTIONS {
+            HEALTH_CONNECTIONS.fetch_sub(1, Ordering::AcqRel);
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            continue;
+        }
+        let service = Arc::clone(service);
+        thread::spawn(move || {
+            let _connection = HealthConnectionGuard;
+            if stream.set_read_timeout(Some(HEALTH_DEADLINE)).is_err()
+                || stream.set_write_timeout(Some(HEALTH_DEADLINE)).is_err()
+            {
+                return;
+            }
+            let response = parse_request(&mut stream).map_or_else(
+                |_| refusal(400, "invalid_request", "request could not be parsed"),
+                |request| health_verdict(&service, &request),
+            );
+            let _ = write_response(&mut stream, &response);
+        });
+    }
+}
+
 fn serve(config: &Config) -> Result<(), String> {
+    let health_address = health_listen()?;
     reclaim_worker_cgroups()?;
     let registrar = Registrar::open(config, now())?;
     for unit in registrar.quarantined_units() {
@@ -825,6 +912,18 @@ fn serve(config: &Config) -> Result<(), String> {
         timeout: Duration::from_secs(config.request_timeout_seconds),
     });
     let listener = TcpListener::bind(&config.listen).map_err(|error| error.to_string())?;
+    if let Some(address) = health_address {
+        let health = TcpListener::bind(address)
+            .map_err(|error| format!("registry readiness listen: {error}"))?;
+        let health_service = Arc::clone(&service);
+        thread::Builder::new()
+            .name("registry-readiness".to_owned())
+            .spawn(move || serve_health(health, &health_service))
+            .map_err(|error| format!("registry readiness thread: {error}"))?;
+        eprintln!(
+            "layerx-program-registry: readiness verdict of the mTLS /healthz served on {address}"
+        );
+    }
     if config.deployment_lni_socket.is_none() {
         eprintln!(
             "layerx-program-registry: LAYERX_REGISTRY_LNI_SOCKET is not set; the sequencer discovery proof is requested through the node boundary at LAYERX_REGISTRY_NODE_ENDPOINT"
@@ -1019,7 +1118,7 @@ fn route_request(
         .lock()
         .ok()
         .and_then(|ready| *ready)
-        .is_none_or(|checked| checked.elapsed() >= Duration::from_secs(2))
+        .is_none_or(|checked| checked.elapsed() >= BUILDER_READINESS_FRESHNESS)
     {
         return refusal(
             503,
@@ -1130,7 +1229,19 @@ mod tests {
     const NODE_UNIT: &str = include_str!("../layerx-program-registry-boundary.service");
 
     fn assert_container_delegation_contract() {
-        assert!(REGISTRY_DEPLOYMENT.contains("readinessProbe: {tcpSocket: {port: registry}"));
+        assert!(REGISTRY_DEPLOYMENT.contains(
+            "readinessProbe: {httpGet: {scheme: HTTP, path: /healthz, port: health}, periodSeconds: 10, timeoutSeconds: 9, failureThreshold: 1, successThreshold: 1}"
+        ));
+        assert!(REGISTRY_DEPLOYMENT.contains(
+            "livenessProbe: {tcpSocket: {port: registry}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6}"
+        ));
+        assert!(!REGISTRY_DEPLOYMENT.contains("readinessProbe: {tcpSocket"));
+        assert!(!REGISTRY_DEPLOYMENT.contains("exec:"));
+        assert!(REGISTRY_DEPLOYMENT
+            .contains("{name: LAYERX_REGISTRY_HEALTH_LISTEN, value: \"0.0.0.0:9421\"}"));
+        assert!(REGISTRY_DEPLOYMENT.contains(
+            "ports: [{name: registry, containerPort: 9420}, {name: health, containerPort: 9421}]"
+        ));
         assert!(!REGISTRY_DEPLOYMENT.contains("LAYERX_REGISTRY_BUILDER_CGROUP_ROOT"));
         assert!(REGISTRY_DEPLOYMENT
             .contains("{name: host-cgroup, mountPath: /run/layerx/host-cgroup, readOnly: false}"));
@@ -1254,6 +1365,7 @@ mod tests {
             assert!(REGISTRY_DEPLOYMENT.contains(required));
         }
         assert!(!REGISTRY_DEPLOYMENT.contains("httpGet: {path: /healthz"));
+        assert!(!REGISTRY_DEPLOYMENT.contains("port: registry, scheme"));
         assert_container_delegation_contract();
         assert!(GATEWAY_DEPLOYMENT.contains(
             "{app: layerx-program-registry}}}]\n      ports: [{protocol: TCP, port: 9420}]"

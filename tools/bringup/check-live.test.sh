@@ -2641,32 +2641,35 @@ PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.c
 	"fail machines app=$registry machines=1 started=0 volumes=1" \
 	"fail private-ingress app=$registry public-service=present" \
 	"fail healthz url=https://$registry.internal:9420/healthz from=$kernel curl=0 http=200 anonymous=admitted" \
+	"fail serving app=$registry serving=absent transport=absent" \
 	"fail program-events program=unset want=CHECK_LIVE_REGISTRY_PROGRAM_ID" \
 	"fail router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=unavailable" \
-	"check-live: 5 check(s) failed"
+	"check-live: 6 check(s) failed"
 
 printf 'app = "%s"\n[env]\nLAYERX_REGISTRY_LISTEN = "[::]:9420"\n' "$registry" >"$fx/platform/hosted/registry/fly.toml"
 
 PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_REGISTRY_PROGRAM_ID="$(printf 'e%.0s' $(seq 64))" \
 	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_ready" \
-	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]},"checks":[{"name":"serving","status":"passing"},{"name":"servicecheck-00-tcp-9420","status":"passing"}]}]' \
 	CHECK_LIVE_TEST_IPS='[{"Type":"v4"},{"Type":"v6"}]' \
 	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_no_event_of_the_program "$work/hosts-good.env" 1 registry -- \
 	"pass machines app=$registry machines=1 started=1 volumes=1" \
 	"pass private-ingress app=$registry url=https://$registry.internal:9420/healthz" \
 	"pass healthz url=https://$registry.internal:9420/healthz from=$kernel http=200 status=ready anonymous=refused" \
+	"pass serving app=$registry serving=passing transport=passing" \
 	"fail program-events program=$(printf 'e%.0s' $(seq 64)) events=none next_sequence=13" \
 	"pass router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=ready" \
 	"check-live: 1 check(s) failed"
 
 PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com CHECK_LIVE_REGISTRY_PROGRAM_ID="$registry_program" \
 	CHECK_LIVE_TEST_REGISTRY_READYZ="$registry_ready" \
-	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]},"checks":[{"name":"serving","status":"passing"},{"name":"servicecheck-00-tcp-9420","status":"passing"}]}]' \
 	CHECK_LIVE_TEST_IPS='[{"Type":"v4"},{"Type":"v6"}]' \
 	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_passing "$work/hosts-good.env" 0 registry -- \
 	"pass machines app=$registry machines=1 started=1 volumes=1" \
 	"pass private-ingress app=$registry url=https://$registry.internal:9420/healthz" \
 	"pass healthz url=https://$registry.internal:9420/healthz from=$kernel http=200 status=ready anonymous=refused" \
+	"pass serving app=$registry serving=passing transport=passing" \
 	"pass program-events program=$registry_program sequence=12" \
 	"pass router-readyz url=https://routerfx.example.com/readyz http=200 program_registry=ready" \
 	"check-live: all checks passed"
@@ -2683,12 +2686,13 @@ fi
 # registry-bootstrap runs the registry's own checks with no router: it passes
 # with the router name never asked.
 PATH="$work/registry-bin:$PATH" CHECK_LIVE_ROUTER_URL=https://routerfx.example.com \
-	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]}}]' \
+	CHECK_LIVE_TEST_MACHINES='[{"state":"started","config":{"mounts":[{"path":"/data","volume":"vol_1"}]},"checks":[{"name":"serving","status":"passing"},{"name":"servicecheck-00-tcp-9420","status":"passing"}]}]' \
 	CHECK_LIVE_TEST_IPS='[{"Type":"v4"},{"Type":"v6"}]' \
 	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_registry_bootstrap_needs_no_router "$work/hosts-good.env" 0 registry-bootstrap -- \
 	"pass machines app=$registry machines=1 started=1 volumes=1" \
 	"pass private-ingress app=$registry url=https://$registry.internal:9420/healthz" \
 	"pass healthz url=https://$registry.internal:9420/healthz from=$kernel http=200 status=ready anonymous=refused" \
+	"pass serving app=$registry serving=passing transport=passing" \
 	"check-live: all checks passed"
 if grep -q routerfx "$CHECK_LIVE_TEST_CALLS"; then
 	echo "FAIL check_live_registry_bootstrap_asks_no_router: the bootstrap asked the router"

@@ -3698,6 +3698,27 @@ PYCONFIG
 		failures=$((failures + 1))
 	fi
 
+	# Serving readiness is the Fly check "serving" of the health listener, which
+	# answers the verdict of the mTLS /healthz route; the service TCP check of
+	# the mTLS port is the separate transport liveness. Both must pass on the
+	# started machine.
+	body="${url%/healthz}"
+	answer="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, re, sys
+port = sys.argv[1]
+started = [m for m in json.load(sys.stdin) if m.get("state") == "started"]
+checks = {c.get("name"): c.get("status") for m in started[:1] for c in m.get("checks") or []}
+transport = [s for n, s in checks.items() if re.fullmatch(r"servicecheck-[0-9]+-tcp-" + port, n or "")]
+print(checks.get("serving") or "absent", transport[0] if len(transport) == 1 else "absent")
+' "${body##*:}" 2>/dev/null)" || answer=""
+	read -r status code <<<"${answer:-none none}"
+	if [ "$status" = passing ] && [ "$code" = passing ]; then
+		echo "pass serving app=$app serving=passing transport=passing"
+	else
+		echo "fail serving app=$app serving=$status transport=$code"
+		failures=$((failures + 1))
+	fi
+
 	if [ "${registry_stage:-full}" = bootstrap ]; then
 		finish "$failures"
 	fi
