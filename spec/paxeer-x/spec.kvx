@@ -29829,7 +29829,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.38.7]
 title = "Restore complete SDK generation-lock coverage"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.2", "104.38.6"]
