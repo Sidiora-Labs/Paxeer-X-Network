@@ -1956,38 +1956,1024 @@ symptom = "A POSIX sh loop over /run/human-material/journal/* under set -e fails
 cause   = "sh leaves an unmatched glob as the pattern itself, so the loop body runs once on a path that does not exist."
 do      = "Guard each iteration with [ -e \"$record\" ] || continue and check the directory itself with test -d before the loop."
 
+[gotcha.323]
+area    = "spec-paxeer-x"
+symptom = "A task reqs entry such as 1060.2 looks like a dangling reference because no [req.1060.2] section exists in spec/paxeer-x/spec.kvx."
+cause   = "Legacy feature requirements were renumbered into [req.N] sections; the suffix after the dot is the criterion index, so 1060.2 is [req.1060] ac_2 via the feature's requirement_aliases."
+do      = "Resolve N.M as section [req.N], key ac_M, and plain N as the whole [req.N] section before judging a reference unresolved."
+
+[gotcha.324]
+area    = "toolchain"
+symptom = "go build on a fresh host fails or picks the wrong toolchain because PATH has go 1.21 while go.mod pins 1.25.6."
+cause   = "The distribution Go is older than the module's go directive; without GOTOOLCHAIN=auto the older binary refuses the module."
+do      = "Export GOTOOLCHAIN=auto so the pinned 1.25.6 downloads once, and check shellcheck, shfmt and pnpm are installed before running shell or pnpm-workspace gates (human/wallet and human/apps/wallet use pnpm lockfile v9)."
+
+[gotcha.325]
+area    = "spec-paxeer-x"
+symptom = "Qualification harness paths in spec/paxeer-x/spec.kvx are spelled both tools/qualification/paxeer-x/ and tools/qualification/paxeer_x/."
+cause   = "Task families 6.*, 7.*, 8.*, 9.* and 10.* carried an underscore spelling while the other 184 references use the hyphen; neither directory exists at baseline 0209f71cc."
+do      = "Treat the spelling as one single-writer ruling before creating either directory; register the gate selector only against the ruled path."
+
+[gotcha.326]
+area    = "tools/paxeer-x"
+symptom = "bash -n reports verify-task.sh clean while the Python embedded in its heredoc can still be broken."
+cause   = "bash -n parses shell syntax only; heredoc bodies are opaque strings to it."
+do      = "Treat the test run, not bash -n, as the only check that exercises the embedded Python; compile it separately if a build step must prove it."
+
+[gotcha.327]
+area    = "tools/paxeer-x"
+symptom = "A gate that imports candidate.py leaves __pycache__ in a throwaway test repository and the dispatcher then refuses the run as a dirty source (exit 7)."
+cause   = "Python writes bytecode beside imported modules; temp repos used by the gate tests carry no .gitignore."
+do      = "Set sys.dont_write_bytecode or PYTHONDONTWRITEBYTECODE=1 in every gate and test that imports repository Python before the cleanliness check runs."
+
+[gotcha.328]
+area    = "ops/ssh"
+symptom = "A remote sed or echo run through ssh writes a path with an empty variable (e.g. /toolchain/foundry/bin instead of /root/paxeer-x-build/toolchain/foundry/bin)."
+cause   = "Variables inside a double-quoted ssh command string expand on the local shell, where they are unset, before the remote shell ever sees them."
+do      = "Send remote edits through a quoted heredoc (ssh host 'bash -s' <<'EOF') or escape every remote variable as \$var; grep the edited file back in the same call."
+
+[gotcha.329]
+area    = "programs/arbiter"
+symptom = "A step verifier in a separate crate cannot re-execute an arbitration step even though per-step commitments exist in the runtime."
+cause   = "Snapshot fuel, frame function identity and the host state root depend on private wasmi and runtime internals (CompiledFunc numbering, translation-time instruction_fuel, pub(crate) v2_host_state_commitment)."
+do      = "Expose a single-step re-execution API and a host-state witness API from the runtime before scoping a verifier task to a new crate."
+
+[gotcha.330]
+area    = "programs/runtime"
+symptom = "Trap golden vectors cannot be produced: traced execution fails closed on a trap and emits no trap transition."
+cause   = "The traced executor refuses partial trace evidence by design (runtime/tests/execution_trace.rs)."
+do      = "Any verifier that must judge traps needs an execute.rs change that records the trap step as a terminal transition; scope it explicitly."
+
+[gotcha.331]
+area    = "tools/paxeer-x"
+symptom = "A qualification harness refuses PAXEER_X_EVIDENCE_DIR with 'must be owner-only' although the directory exists."
+cause   = "The evidence directory was created with the default umask (755); the dispatcher and harnesses refuse any group or other permission bit."
+do      = "Create evidence directories with mkdir -m 700 (task-worktree.sh now does) and chmod 700 any pre-existing one before the first gate run."
+
+[gotcha.332]
+area    = "bridge/evm"
+symptom = "forge fmt --root bridge/evm src/X.sol fails with 'file not found'."
+cause   = "forge fmt resolves file arguments against the current directory, not --root."
+do      = "Pass paths relative to the current directory (bridge/evm/src/X.sol) or cd into the project first."
+
+[gotcha.333]
+area    = "ops/ssh"
+symptom = "scp host:'dir/{a,b}' fails with 'No such file or directory'."
+cause   = "Brace expansion happens in the local shell only when unquoted; quoted braces reach the remote as literal characters and the remote sh does not expand them."
+do      = "Copy files one per scp call or use rsync with explicit paths."
+
+[gotcha.334]
+area    = "cmd/layerxd"
+symptom = "Build fails with -Wconversion -Werror when assigning a size_t certificate threshold to a uint32_t field."
+cause   = "Repository CFLAGS treat implicit narrowing as an error."
+do      = "Use an explicit (uint32_t) cast after a bounds check; do not drop -Wconversion."
+
+[gotcha.335]
+area    = "human/wallet/attestor"
+symptom = "A second successful lx_activity sign for the same account is refused in the e2e cluster."
+cause   = "The test cluster kernel policy daily cap is 8,000,000 against a fixture amount of 5,000,000, so only one success per account fits."
+do      = "Use a second key with its own account for recovery or replay cases instead of raising the cap."
+
+[gotcha.336]
+area    = "ops/fleet"
+symptom = "Unstaged edits for in-flight tasks appear in the coordinator checkout /root/Layerx-protocol while their builder worktrees stay clean."
+cause   = "Workers whose working directory is the coordinator checkout used the editor tools on relative paths and edited the integration tree instead of their remote worktree."
+do      = "Dispatch messages must forbid any write to the coordinator checkout; workers author in the scratchpad or over ssh in the worktree, and only move their own diff with git diff -- <paths> | git apply, then git checkout -- <those paths>."
+
+[gotcha.337]
+area    = "ops/ssh"
+symptom = "A bash heredoc ending in EOF nested inside a Python heredoc that also ends in EOF cuts the script short; single quotes inside an ssh '...' heredoc are stripped."
+cause   = "The outer shell matches the first EOF line and the remote shell re-parses quoting."
+do      = "Use distinct heredoc delimiters per level and scp script files instead of inlining them in ssh quotes."
+
+[gotcha.338]
+area    = "platform/hosted/registry"
+symptom = "ProgramOutbox::pending/acknowledge do not resolve, or a test expects an empty outbox after one acknowledge."
+cause   = "Both come from the layerx_platform_internal::producer::Outbox trait, and completion is two-phase: acknowledge(id, true) then acknowledge(id, false)."
+do      = "Import the trait and assert the two-phase sequence; send a child test process stdout to Stdio::null() so its test lines do not count as parent cases."
+
+[gotcha.339]
+area    = "tests/snapshot"
+symptom = "lxp_snapshot_write refuses with -305, or a restored node has no accounts."
+cause   = "lxp_snapshot_write requires next_sequence == global_sequence + 1 and module ctx commits do not advance it; accounts are only included when lxp_state_store_require_account_root is set; lifecycle dispatch does not update current_state_root."
+do      = "Initialise the store sequence explicitly, set the account-root requirement, copy lxp_state_root into current_state_root before writing the snapshot."
+
+[gotcha.340]
+area    = "platform/hosted/runtime-clock"
+symptom = "A cargo test binary with 16 or more tests, each spawning a KMS process, fails one test with an unquoted Error: Unavailable."
+cause   = "server.rs listens with backlog 16 and a nonblocking accept; the test's own clock connections overflow it on a 16-CPU host."
+do      = "Treat it as a clock-authority capacity limit, not a flaky test; fix the backlog or declare the test-thread cap in the gate, never rerun unchanged."
+
+[gotcha.341]
+area    = "tests/relay-archive"
+symptom = "A harness copying tests/relay-archive/e2e.py's native bring-up fails: bootstrap.sh refuses LAYERX_NODE_SETTLEMENT_CONTRACT and the sequencer exits -904 (bootstrap finality authority)."
+cause   = "e2e.py's settlement environment is stale against the current bootstrap.sh and layerxd."
+do      = "Start the replica the way tests/daemon/pay1.py does (source replica.env, wait on the replica port); e2e.py itself is pre-existing breakage to record, not chase."
+
+[gotcha.342]
+area    = "Makefile"
+symptom = "Build writes programs/target inside the worktree although CARGO_TARGET_DIR is exported; make relay-archive-build runs cargo outside the heavy-build wrapper."
+cause   = "The Makefile pins CARGO_TARGET_DIR to programs/target and several make targets wrap cargo builds."
+do      = "Run make targets that reach cargo through the heavy-build wrapper too; the in-tree target dir is gitignored so the tree stays clean."
+
+[gotcha.343]
+area    = "ops/fleet"
+symptom = "A repair edit silently fails to apply and the rerun repeats the unchanged failure."
+cause   = "rustfmt reflowed the lines an exact-match patch script was targeting."
+do      = "Re-read the file after formatting before writing a patch; verify the diff is non-empty before rebuilding."
+
+[gotcha.344]
+area    = "human/wallet/attestor"
+symptom = "lx.Amount decodes as *big.Int and only accepts a raw JSON number; a TypeScript number loses precision above 2^53 and JSON.stringify cannot serialize bigint; u64 sequence fields have the same problem."
+cause   = "No lossless canonical wire representation was defined for u128/u64 across schema, Go, Rust and TypeScript."
+do      = "Define one explicit lossless representation in the schema and use it consistently on every side before signing or binding; never Number(bigint) or truncate."
+
+[gotcha.345]
+area    = "ops/builder"
+symptom = "Builder load climbs past 40 on 16 CPUs while cargo is held to three five-job slots."
+cause   = "go build defaults to -p=GOMAXPROCS, so two concurrent Go module builds alone saturate the host regardless of the cargo semaphore."
+do      = "Export GOFLAGS=-p=5 in every task environment (task-worktree.sh now writes it) and run Go builds through the shared slot wrapper too."
+
+[gotcha.346]
+area    = "node/upgrades"
+symptom = "Deleting a still-mounted store through rootmulti.LoadVersionAndUpgrade with Deleted fails with unknown tree name."
+cause   = "The deletion key and the mounted key share a name, so the delete runs twice."
+do      = "Delete the tree through composite.NewCompositeCommitStore / ApplyUpgrades on the same home; derive the SC home from UpgradeKeeper.GetUpgradeInfoPath()."
+
+[gotcha.347]
+area    = "perps"
+symptom = "A retried IOC or FOK placement re-executes after commit."
+cause   = "Non-resting orders never stored their ids, and module dispatch does not enforce account sequence by itself."
+do      = "Record IOC/FOK ids as spent after execution and refuse reuse; keep GTC behaviour unchanged."
+
+[gotcha.348]
+area    = "ops/builder"
+symptom = "Files copied from the coordinator scratchpad land with mode 600 and commit as such; no clang-format on the builder."
+cause   = "umask 077 in the scratchpad carries through scp; the repo has no .clang-format."
+do      = "chmod 644 copied sources before committing; hand-format C in repo style."
+
+[gotcha.349]
+area    = "build"
+symptom = "A C-only test target takes a minute and needs a heavy slot."
+cause   = "test_* rules carry an order-only programs-build prerequisite that compiles the programs Rust workspace."
+do      = "Run even C test builds through the shared slot wrapper."
+
+[gotcha.350]
+area    = "replay"
+symptom = "New budget Activity ids 0x00030008/0x00030009 are absent from replay id lists."
+cause   = "tests/test_replay_crossarch.c:18 and tests/qualification/lxp_qual_replay.c:37 enumerate budget ids only to 0x00030007."
+do      = "Extend both lists when a budget id is added (release-gate scope, not the module task)."
+
+[gotcha.351]
+area    = "human/build"
+symptom = "cargo reports could not find Cargo.toml; gateway build reports tsc not found."
+cause   = "There is no root Rust workspace, and the builder checkout has no node_modules."
+do      = "Run cargo from human/; run pnpm install --frozen-lockfile in human/wallet before tsc; check ignore patterns with a child path such as node_modules/x."
+
+[gotcha.352]
+area    = "tools/paxeer-x"
+symptom = "verify-task.sh exits 6 (manifest does not identify this checkout) or 7 (dirty source) before any gate runs."
+cause   = "The dispatcher validates the candidate manifest against the committed checkout; a manifest from another pin never matches, and uncommitted changes count as dirty."
+do      = "Commit the exact task source cleanly (no __pycache__, no stray binaries), generate the manifest with tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --mainline refs/heads/main --output <private file>, export PAXEER_X_CANDIDATE_MANIFEST, then run the gate once."
+
+[gotcha.353]
+area    = "tools/specgen"
+symptom = "go build ./tools/specgen from the repo root leaves a specgen binary in the tree and dirties the checkout."
+cause   = "go build writes the binary into the current directory for a main package."
+do      = "Build with -o /dev/null for checks, or into an out-of-tree path."
+
+[gotcha.354]
+area    = "spec"
+symptom = "A spec reference validator reports hundreds of false errors."
+cause   = "References take three forms: N.M in reqs (req.N ac_M), section.key such as req.1159.ac_4, and group prefixes such as capability.105.22."
+do      = "Resolve all three forms before flagging a reference as unknown."
+
+[gotcha.355]
+area    = "ops/builder"
+symptom = "Fragments of a heredoc run as shell commands on the builder."
+cause   = "Heredocs containing Rust &[...] or shell-significant characters were passed inside ssh '...' quoting."
+do      = "scp edit scripts and patches to the builder, then run them there; never inline them through ssh quoting."
+
+[gotcha.356]
+area    = "escrow/tests"
+symptom = "After a state-store snapshot restore into a recreated kernel, module holds are gone."
+cause   = "Module key-value state lives in kernel.module_kv, which lxp_kernel_create resets and snapshots do not carry."
+do      = "A restart test must save and restore module_kv, or go through the daemon restart path."
+
+[gotcha.357]
+context = "builder worktree tooling (task 19.1)"
+symptom = "worker reported forge and solc absent on 161.97.95.102"
+cause = "Foundry lives in /root/.foundry/bin and is only on PATH after sourcing the worktree .task-env; a shell that skips the source sees no forge/solc/cast"
+fix = "always `source .task-env` in the worktree before any build or probe; the dispatch packet now says so"
+
+[gotcha.358]
+context = "fanout.py dispatch helper"
+symptom = "KeyError on a task id published after the lane map was written; the builder worktree was already cut, so the rerun refused with 'exists'"
+cause = "fanout.py cuts the worktree over ssh before it looks the task up in claude-handoff-lanes.json"
+fix = "add a newly published task to its lane in the lanes JSON before running fanout; if the cut already happened, write the ledger reservation and the dispatch .msg header by hand"
+
+[gotcha.359]
+area = "qualification"
+symptom = "An in-process module-state restore is described as durable process recovery."
+cause = "Reconstructing module_kv in a test does not exercise the daemon durable store or process startup."
+do = "For a process-restart acceptance criterion, stop or kill the real daemon and reopen its unchanged disk state; retain in-process coverage without relabeling it."
+
+[gotcha.360]
+area = "tooling"
+symptom = "A result file or helper path is read before it exists."
+cause = "A completion notification can precede the final evidence copy, and a remembered helper filename may be stale."
+do = "Wait for the explicit handoff-ready notification and locate the actual helper path before invoking it. No source or gate outcome is inferred from a missing file."
+
+[gotcha.361]
+text = "cargo test with --lib before --test <name> and no --no-fail-fast stops at the first failing target, so a lib unit failure hides whether the integration test ever ran; read the log for the target list before crediting or blaming the integration target."
+
+[gotcha.362]
+text = "The root package.json declares npm workspaces (agent/sdk/typescript, platform/middleware/*, ...); npm ci inside a workspace member installs into the repo-root node_modules, not the member directory, so check the root for the hoisted package and provision from the root when a tsc run reaches the SDK through a relative import."
+
+[gotcha.363]
+text = "A task whose root status is already in_progress (claimed by the integrator before implementation) is refused by the pending-only guard in the fan-out helper; the one-shot FANOUT_ALLOW_INPROGRESS=<id> override is the explicit path when the integrator orders the dispatch, and an empty prior worktree for that task (zero commits, clean, never pushed) must be removed first because the cut refuses an existing directory."
+
+[gotcha.364]
+text = "Allocate new task identifiers only after checking all existing task sections; section order is not numeric and a later section may already own the proposed identifier."
+
+[gotcha.365]
+text = "A tool orchestration syntax error occurs before nested commands execute; preserve the error and correct the invocation without claiming any command or source mutation ran."
+
+[gotcha.366]
+text = "Default local commit hooks may start background graph or synchronization work. Apply an already authorized per-command hook policy before committing; stop only processes started by the affected commit."
+
+[gotcha.367]
+text = "node App.Close() closes the database it was constructed with; a test that also closes that database afterwards fails with 'leveldb: closed'. Close exactly once, through App.Close."
+
+[gotcha.368]
+text = "forge inspect on precompiles/launchpad/Launchpad.sol fails with 'Could not find source file for contract ILaunchpad' even from a scratch src/ project; an additive ABI entry is written by hand in the go-ethereum ABI JSON shape already used by abi.json."
+
+[gotcha.369]
+text = "Go test binaries built with go test -c carry no VCS revision stamp; a harness binds a prebuilt binary to the source revision through a clean tree, a binary mtime not older than the HEAD commit time, and 'go version -m' showing the expected <pkg>.test path."
+
+[gotcha.370]
+text = "When a production transition starts opening the launchpad holder history itself (ExecuteAirdrop), any test that still opens the same epoch explicitly after that transition hits the strict epoch-follows-recorded rule in OpenHoldingHistory; tests written against the primitive alone must stop opening epochs by hand once the transition owns the open."
+
+[gotcha.371]
+text = "git rebase run on the checked-out branch moves that branch to the rebased commits; to keep the pre-rebase branch intact, create the new branch first (or restore the old one afterwards with git branch -f <old> <pre-rebase sha>)."
+
+[gotcha.372]
+text = "Adapters that run prebuilt test bundles bind the bundle manifest to HEAD; the order is commit, then build the bundle, then write the manifest. Building before the commit makes the gate refuse on a source-identity mismatch and costs the single allowed build."
+
+[gotcha.373]
+text = "tools/paxeer-x/verify-task.sh writes the gate output into evidence/<task>-<rev>-<stamp>-<id>.log beside its JSON; the captured stdout (verify.log) carries only the evidence path, so copy the evidence directory, not just verify.log."
+
+[gotcha.374]
+text = "Adding a crate dependency under cargo --locked fails until Cargo.lock lists it; add the dependency-list entries by hand (no version changes) when the dependency is already present in the lockfile for another crate."
+
+[gotcha.375]
+text = "A per-peer TLS delivery loop that rebuilds the connector for every share and pays a fixed surplus read probe per connection cannot meet a fairness bound over hundreds of shares; build the connector once per peer per sweep and deliver to peers concurrently rather than touching the bound or the probe."
+
+[gotcha.376]
+text = "Requirement references can identify numbered clauses under a parent section; read-only scheduling helpers must not assume every reference names a standalone req section. Preserve unresolved references rather than dropping them."
+
+[gotcha.377]
+text = "Operational filename globs such as *publish* may also match entire generated specification snapshots; search explicit helper files when locating guard or publication code to avoid unrelated truncated output."
+
+[gotcha.376]
+text = "modules/layerxgov NewLayerXProposal only checks that each message type is in the accepted table; the authority check happens in the proposal's ValidateBasic, so a test for a forged authority must assert at validation (or at the message service / handler), not at construction."
+
+[gotcha.377]
+text = "Reading keeper state from a freshly reopened node application before a block has begun dereferences a nil context and panics; open the app, begin a normal block, then read."
+
+[gotcha.378]
+text = "A Go test that re-executes its own binary as a child process (os/exec with an environment flag) needs a helper test that t.Skip()s when the flag is absent; keep that helper out of every gate's required-name list so the gate's skipped count stays a real zero while the parent still drives it."
+
+[gotcha.379]
+text = "bash -n accepts one script path; later path arguments are positional parameters, not additional scripts to parse. Record syntax coverage per actual invocation and use an explicit loop when checking multiple files."
+
+[gotcha.379]
+text = "Never chain a git push after a grep in one && chain: grep returns 1 when nothing matches and the push is silently skipped. Run the push as its own statement and confirm with git ls-remote."
+
+[gotcha.380]
+text = "Evidence build.command must be the literal executed invocation copied from the shell history, never a paraphrase with pseudo-redirections like '-> dir'; integrators reject paraphrased commands and require metadata recovery."
+
+[gotcha.381]
+text = "Verify commit-message claims by reading the test body, not by grepping the diff: 'thread::sleep' and path.join( match concurrency greps and gave a false positive that let an overclaiming message reach origin."
+
+[gotcha.382]
+text = "Intake scope checks must honor declared directory paths and preserve owner bytes exactly, including missing trailing newlines. Legacy cg rendering can overwrite newly qualified workflow adapters; compare source blobs before publication and retain canonical generated pointers."
+
+[gotcha.382]
+symptom = "cargo build from the worktree root exits 101 'could not find Cargo.toml' for interop crates"
+cause = "the interop workspace manifest is interop/Cargo.toml and the human workspace is human/Cargo.toml; the repository root has no Cargo workspace"
+fix = "cd into the workspace directory (or pass --manifest-path interop/Cargo.toml) in every build invocation; the dispatch text must carry the cwd"
+
+[gotcha.383]
+symptom = "forge build exits 0 but <out>/BatchCallAndSponsor.sol/BatchCallAndSponsor.json is absent while sibling artifacts exist"
+cause = "under investigation: the gas-station harness copies foundry.paxeer.toml into a work dir and passes --contracts/--lib-paths/--skip explicitly; one of those selections drops the contract"
+fix = "pending; check the compiled-source list in <out>/../cache/solidity-files-cache.json before trusting a zero exit from forge build"
+
+[gotcha.384]
+symptom = "cargo clippy --all-targets -- -D warnings fails on an integration test file with dozens of unwrap_used errors although cargo test passes"
+cause = "platform/Cargo.toml workspace lints deny clippy::all, pedantic, unwrap_used and expect_used, and --all-targets applies them to test targets; a gate that adds clippy over a crate whose tests were only ever run, never linted, inherits the backlog"
+fix = "lint the test targets before declaring a strict clippy gate; in tests return Result and use ? or explicit match + panic, since expect() is denied too"
+
+[gotcha.385]
+text = "Create private evidence parent directories before writing logs. Bound section reads by the next section rather than an assumed task ID; nonexistent range terminators can flood output. Inventory search paths before rg; missing historical filenames are not source findings."
+
+[gotcha.386]
+text = "Bound aggregate tool output as well as each nested command. Inspect compact metadata before printing large evidence objects, and retrieve any omitted fields before using them. A passed task result can coexist with a stale coordinator result.json; preserve prior evidence and recover literal final commands before publication."
+
+[gotcha.387]
+text = "tools/paxeer-x/gates/24.14.sh is mode 100644 at aa1b6a92a: invoking it directly exits 126; run it with bash."
+
+[gotcha.388]
+text = "RuntimeFixture configures the sequencer with LAYERX_NODE_LNI_ALLOWED_GID=4020 (SO_PEERCRED): a fixture consumer running as root with gid 0 times out at readiness; setgroups([]) + setgid(4020) in the worker."
+
+[gotcha.389]
+text = "Running py_compile on a harness inside the tree leaves __pycache__, which dirty-source checks refuse; remove it before committing or use PYTHONDONTWRITEBYTECODE=1."
+
+[gotcha.390]
+text = "A build.rs that compiles a policy module via #[path] turns any library-only function into dead_code under -D warnings; keep build-script-visible modules minimal."
+
+[gotcha.391]
+text = "Turning a path crate's dev-dependency into a normal dependency changes OTHER workspaces' Cargo.lock (platform/Cargo.lock) because dev-deps of path crates are not recorded there; --locked then fails."
+
+[gotcha.392]
+text = "Builder disk at 100% shows up as ENOSPC in cargo's incremental query cache and as lld 'signal 7 Bus error', and as Go 'write $WORK/.../_pkg_.a: no space left on device'; check df before admitting a heavy build."
+
+[gotcha.393]
+text = "human/wallet/gateway/node_modules is not gitignored and absent from worktrees: an in-tree npm ci dirties the tree; typecheck inside a git archive copy."
+
+[gotcha.394]
+text = "Unix socket paths are limited to 108 bytes; keep harness sockets under a short evidence dir."
+
+[gotcha.395]
+text = "Clippy pedantic (deny) applies to test code too: struct_field_names, verbose_bit_mask, format_push_string, too_many_lines and missing_errors_doc all fail -D warnings builds."
+
+[gotcha.396]
+text = "Shadowing a function parameter with a same-named let binding (progress / SolanaProgress) yields E0609 on field access; rename instead."
+
+[gotcha.397]
+text = "pkill -f with a pattern that also appears in your own ssh command line kills your session (exit 255)."
+
+[gotcha.398]
+text = "solana-test-validator, solana and solana-keygen are not installed on 161.97.95.102; interop Solana cases refuse at precheck."
+
+[gotcha.399]
+text = "RuntimeFixture's client_artifact check requires the client binary at mode 0700 (X_OK); only the manifest may be 0600."
+
+[gotcha.400]
+text = "layerx-agentd authority clients accept https only and need a CA DER plus peer registry; the RuntimeFixture authority replica over plain http is refused."
+
+[gotcha.401]
+summary = "Normalize appended spec EOF before staged whitespace checks; do not launch dependent publication after a failed check."
+
+[gotcha.401]
+text = "Bootstrap guarantor attestation files are named %020d-*.attestation (zero-padded id prefix, singular suffix), not <id>.attestations; fixtures must glob both forms when listing them."
+
+[gotcha.402]
+text = "git treats platform/Cargo.lock as binary in this repo (prints 'Binary files differ'); read lock hunks with git diff --text."
+
+[gotcha.403]
+text = "tools/paxeer-x/verify-task.sh prints only 'evidence: <path>' on stdout; the PAXEER_X_GATE counts and exit code live in the evidence JSON (tests, skipped, exit_code, result). Read the JSON, not verify.log, when recording a gate."
+
+[gotcha.404]
+text = "tests/daemon/lxp_test_budget_lifecycle.c redefines main after its own #undef, so a fixture that #includes it cannot define main. Compile the fixture to an object and run objcopy --redefine-sym main=budget_lifecycle_main --redefine-sym <fixture_main>=main before linking."
+
+[gotcha.405]
+text = "scp -p from a 0600 scratch copy overwrites the mode of a tracked 0755/0644 file in the worktree and shows up as a mode-only diff. Copy without -p, or chmod after the copy."
+
+[gotcha.406]
+text = "tools/bringup/docs-names.sh pointed at spec/paxeer-x-bringup/spec.kvx (archived) and the old [decision.public_names] section names, so it died inside awk before checking anything. Spec-reading scripts must follow the active spec path and section names after a consolidation."
+
+[gotcha.407]
+text = "Adding a Capability variant in agent/crates/layerx-client/src/lni/schema.rs breaks the exhaustive match in lni/report.rs fn absent_behavior (E0004). Any task that adds an LNI capability needs report.rs in its touches."
+
+[gotcha.408]
+text = "Independent disk-space polls do not serialize builds. A shared flock must cover admission, every legacy build slot, and the entire child process lifetime; queue time counts toward the original deadline."
+
+[gotcha.409]
+text = "Candidate and cache inventories can contain large nested records. Parse the complete file, then display bounded source/evidence fields or lossless common-field summaries rather than dumping nested arrays into truncated tool output."
+
+[gotcha.410]
+text = "Programs build and test targets are defined in the repository Makefile; do not assume programs/Makefile.inc exists when constructing a multi-file search."
+
+[gotcha.411]
+text = "Subagent launch latency can reach six minutes between issuing twenty agents and their first remote command. Measure dispatch and due times from each worker's first builder command, not from the launch call, and never set helper due times before confirming the first command ran."
+
+[gotcha.412]
+text = "human/wallet/gateway and human/wallet/sdk carry no package-lock.json and are not root npm workspaces; npm ci --prefix on either fails EUSAGE. The only lockfile is at the repository root, and the builder has no node_modules for them, so single_build steps that call their local tsc need a provisioned install first."
+
+[gotcha.413]
+text = "An apostrophe or heredoc inside a single-quoted ssh command string breaks remote quoting. Write commit messages and scripts to a local file, scp them, and use git commit -F or bash file.sh remotely."
+
+[gotcha.414]
+text = "A sparse checkout for Rust builds needs include/ (layerx-types build.rs reads include/layerx/lxp_result.h), contracts/config (layerx-proof include_str! checkpoint-settlement.json) and migrations in addition to the agent, human, platform, interop and programs cargo roots. Missing them fails the build with exit 101 and burns repair cycles."
+
+[gotcha.415]
+text = "Inspect JSON collection types before mutation; a keyed record mapping must be updated by key rather than with list append."
+
+[gotcha.416]
+text = "one-heavy-build.sh enforces its disk floor in bytes (required_bytes 8589934592) while df -BG rounds 7.82 GiB up to 8G; a builder that reads 8G free is refused with exit 75 and disk-admission-refused before any compiler runs. Check df -B1 --output=avail against 8589934592 before invoking the wrapper."
+
+[gotcha.417]
+text = "A pre-armed poll-then-build shell loop admits the build the instant its precondition clears and cannot see later instructions; poll read-only, return, decide, then invoke the wrapper explicitly."
+
+[gotcha.418]
+text = "cargo --message-format=json reports a lib unit-test executable with target.kind equal to the crate-type list (rlib, staticlib for layerx-programs-runtime), not [lib]; match on target name and executable, not on kind == lib."
+
+[gotcha.419]
+text = "Helper .done markers get rewritten on redelivery; an owner that commits on the first marker commits stale files. Treat a marker as final only when the leader says the helper has handed back."
+
+[gotcha.420]
+text = "An incremental git bundle export needs an included named ref; a raw commit-only request can be rejected as an empty bundle even when the commit exists. Pin an immutable source revision and prepare the transfer method before dispatch."
+
+[gotcha.421]
+text = "git sparse-checkout init --cone and sparse-checkout set reject -q (exit 129, unknown switch q); under set -e the rest of a worktree bootstrap script never runs. Use no -q on sparse-checkout, keep -q on worktree add and reset --hard, and make the bootstrap idempotent (check the worktree exists before add). Also the shared object store is a non-bare repo: info/exclude lives under $(git rev-parse --git-common-dir)/info."
+
+[gotcha.422]
+title = "Synthetic failure counters do not identify the rejecting phase"
+symptom = "A synthetic terminal may copy pre-runtime fee counters after failures from several later stages."
+fix = "Trace the exact constructor and error conversions before claiming execution never reached the guest; preserve ambiguity when receipts omit the branch."
+
+[gotcha.423]
+title = "Successful compiler logs can contain no output"
+symptom = "A successful compiler can leave an empty stdout/stderr log even when the produced artifact is valid."
+fix = "Record the literal command, working directory and actual exit status in the build log; retain artifact checks and never invent compiler output."
+
+[gotcha.424]
+text = "the session scratchpad is shared by every subagent of one session; two helpers overwrote each other's pin copies of main.rs; each helper must work in a private subdirectory named after its role"
+
+[gotcha.425]
+text = "builder ls and stat print local time (UTC+2); use date -u and --time-style with explicit UTC when comparing against claim clocks"
+
+[gotcha.426]
+text = "a cone sparse checkout without cmd/ shows new files under cmd/layerxd as modified but plain git add may refuse them; use git add --sparse <path> rather than widening the cone"
+
+[gotcha.427]
+title = "Host FFI export placement"
+text = "A module with deny(unsafe_code) cannot own the unsafe native export. Keep safe validation logic there and place FFI in the existing host-ffi module with its feature-gated export retention."
+
+[gotcha.428]
+title = "Absence evidence boundary"
+text = "A raw missing-program read has no authenticated absence proof. Preserve direct native state and rollback assertions without labeling an unsigned process response a cryptographic proof."
+
+[gotcha.429]
+title = "Aggregate tool output budget"
+text = "functions.exec has its own output budget in addition to each exec_command budget. Keep result projections bounded or read independent large records separately to avoid truncating the orchestration wrapper."
+
+[gotcha.paxeer_x_makefile_programs_vars]
+observed = "Makefile PROGRAMS_TARGET_DIR and PROGRAMS_RUNTIME_LIB are := assignments; environment values are ignored, pass them on the make command line"
+
+[gotcha.paxeer_x_batch_wal_silent_fail]
+observed = "lxp_test_batch_wal_recovery and lxp_test_log_durability exit 1 with no stderr on failure; the gate counts suites, the failing assertion is not reported"
+
+[gotcha.paxeer_x_rustls_webpki_lib]
+observed = "the rustls-webpki crate's library name is webpki, not rustls_webpki"
+
+[gotcha.paxeer_x_session_authorize_tenants]
+observed = "SessionControl::authorize hardcodes supplied tenants to None; envelope callers must call tenant::require_caller_coordinates explicitly"
+
+[gotcha.paxeer_x_gateway_drops_request_id]
+observed = "the gateway outbound header allowlist drops LayerX-Request-Id, so request_id travels only in the body"
+
+[gotcha.430]
+title = "Failed unchanged test classification"
+text = "An unchanged test source and exit1 do not establish an unrelated or pre-existing cause. Preserve the result, retain the mandatory case, and identify the actual failing operation before assigning cause."
+
+[gotcha.431]
+title = "Task-local commit messages"
+text = "Concurrent task parents must write commit messages to task-owned private paths; a shared scratch filename can attach another task description to the correct source tree."
+
+[gotcha.432]
+title = "Custody governed activation"
+text = "Placing a new governed execution activation guard in shared requireAuthority changes historical direct message behavior. Bind activation at the intended new governed dispatch boundary and preserve existing authority checks."
+
+[gotcha.433]
+title = "Retained requirement references"
+text = "A retained task requirement reference can describe a downstream runtime capability rather than its source prerequisite. Define source acceptance explicitly and retain the full runtime obligation and dependency before granting completion."
+
+[gotcha.434]
+title = "Trait-dispatched owner operations"
+text = "Shared owner operations can be exposed through public trait methods rather than inherent pub fn definitions. Import the trait and preserve one locking boundary; account sequence is not the core chain sequence."
+
+[gotcha.435]
+title = "Resolve gateway paths before lookup"
+text = "A guessed platform/gateway path was absent. Recover the declared path from the task scope before a source lookup."
+
+[gotcha.paxeer_x_trailer_check_tail]
+summary = "A commit-trailer check using tail -1 on git log --format=%B fails falsely because %B ends with an empty line; use tail -n 2 | head -1 or git interpret-trailers --parse."
+
+[gotcha.paxeer_x_rust_probe_ignore_flag]
+summary = "A Rust test kept #[ignore] for env-driven harness runs; the harness must pass --include-ignored (or --ignored) with --exact, otherwise the binary skips it silently."
+
+[gotcha.paxeer_x_human_response_raw_bytes]
+summary = "HumanResponse::bytes() in layerx-agentd is the raw binary payload, not JSON and not the LXHAGT01 frame; decode it with the bounded typed decoders mirrored from layerx-human-service agent_runtime.rs, never hex-string it or default the verification level."
+
+[gotcha.paxeer_x_core_sequence_is_head]
+summary = "core_sequence for SessionControl::authorize is the node head chain_sequence (HumanOperations::head, u64BE chain_sequence + u64BE sealed_batch + 32-byte checkpoint), not HumanOperations::account_sequence which is per account."
+
+[gotcha.paxeer_x_builder_cannot_scp_to_overflow]
+summary = "The 161 builder has no key to scp into the 31 overflow host; relay bundles through the coordinator (fetch from 161, scp to 31) instead of host-to-host."
+
+[gotcha.paxeer_x_run_slot_single_host_lock]
+summary = "run-slot.sh on the overflow host serializes on one host-wide lock; another task's run (for example a diagnostic) can consume a task's whole 30-minute window, so account for slot wait before promising a build plus gate."
+
+[gotcha.paxeer_x_custody_handler_tests_need_v611]
+summary = "Once the custody governance handler checks the v6.11 activation height, every handler test on EVMTestApp at a low height must schedule and apply v6.11 through the real upgrade keeper on a disposable cache branch first, or it fails with ErrGovernanceNotActive."
+
+[gotcha.paxeer_x_protocodec_no_marshaljson]
+summary = "In this repo's cosmos-sdk pin, *codec.ProtoCodec has no MarshalJSON/UnmarshalJSON methods; use MarshalInterfaceJSON/UnmarshalInterfaceJSON or the ProtoMarshalJSON helpers for JSON round trips in tests."
+
+[gotcha.paxeer_x_vendor_complete_module_closure]
+summary = "A Go cache sufficient for selected test builds may still lack test or cross-platform modules required by go mod vendor; preserve the locked module files and materialize the genuine full vendor closure before running a producer that hashes vendor/modules.txt."
+
+[gotcha.paxeer_x_container_dispatcher_context]
+summary = "Container launchers must explicitly pass the task dispatcher candidate-manifest, private evidence-directory and real mainline environment variables; host environment settings are not automatically inherited inside Docker."
+
+[gotcha.paxeer_x_sparse_worktree_check_ignore]
+summary = "git check-ignore inside a sparse-cone worktree can report nothing for paths outside the cone even when the committed root .gitignore covers them; verify ignore rules in a full checkout."
+
+[gotcha.paxeer_x_ssh_heredoc_single_quotes]
+summary = "Writing a file over ssh with a single-quoted command string strips single quotes inside the heredoc body; use a quoted heredoc delimiter through stdin or scp the file instead, and diff before committing."
+
+[gotcha.paxeer_x_copy_lint_base_not_rustfmt_clean]
+summary = "human/tools/copy-lint/src/main.rs is not rustfmt-clean at pin 6c1155c78; formatting a touched file rewraps three unrelated lines, which is whitespace only but shows in the diff."
+
+[gotcha.paxeer_x_human_web_copy_debt_blocks_lint_gate]
+summary = "The copy linter over the whole human/apps/web fails at pin 6c1155c78 with 52 pre-existing violations (31 uncatalogued-copy, 10 uncatalogued-jsx-copy, 11 unknown-status, fee-sponsorship and gas-station strings), so any gate that retains make human-lint-copy semantics fails until that copy is catalogued."
+
+[gotcha.paxeer_x_locate_optional_makefiles]
+observed = "An optional Human Makefile path was passed to rg without checking its existence; rg returned exit 2 while still returning matches from the root Makefile."
+rule = "Discover optional include paths before passing them to a multi-file read. Do not treat partial search output as a successful complete scan."
+
+[gotcha.paxeer_x_explorer_frontend_install_never_completed]
+text = "explorer/frontend yarn install --frozen-lockfile has never completed anywhere: the 161 attempt with --offline timed out (exit 124) in [5/5] Building fresh packages and left no node_modules/.yarn-integrity; a partial tree with linked bins is not an install. The 66 wrapper profile (network none, 4g) cannot host it. Any explorer vitest or browser gate needs a dedicated node 22 plus Chromium material step first; the repository browser image is mcr.microsoft.com/playwright:v1.57.0-noble and only playwright-ct.config.ts exists, so page screenshots use the playwright CLI, not a .pw.tsx."
+
+[gotcha.paxeer_x_explicit_formatter_entrypoint]
+observed = "An inherited Bash container entrypoint interpreted the rustfmt executable as a script and exited 126 before formatting."
+rule = "Set the executable entrypoint explicitly when invoking a tool in an image whose default entrypoint is a shell."
+
+[gotcha.paxeer_x_66_image_entrypoint_bash_exit_126]
+text = "The isolated-host build images carry ENTRYPOINT /bin/bash. docker run <image> <tool> <args> then feeds the tool path to bash as a script and exits 126. Pass --entrypoint <absolute tool path> (for example /usr/local/cargo/bin/rustfmt) or run the command through bash -lc explicitly; the published run-prepared-task.sh wrapper already does this for prepare, build and gate."
+
+[gotcha.paxeer_x_locate_railway_config_before_read]
+text = "Locate deployment configuration paths before named reads; a guessed sibling path can fail while the canonical Dockerfile read succeeds."
+
+[gotcha.paxeer_x_66_owned_task_dir_must_exist_before_transfer]
+text = "Material and browser wrappers on the isolated host assume the owned /root/paxeer-x-toolchains/task-<id>/ parent directory already exists. A first transfer or scp into a fresh task id fails before any pull, install or navigation. Create the owned directory (mkdir -m700 -p) as the first bounded step of every new task on that host and record it in the launcher, so a missing parent never consumes a continuation."
+
+[gotcha.paxeer_x_coordinator_disk_full_blinds_subagents]
+text = "When the coordinator host root filesystem reaches 100 percent, every subagent Bash call loses its output with ENOSPC and the worker goes blind mid-task without a visible error. Check df on the coordinator before dispatching any fleet and refuse to launch below a few GiB free."
+
+[gotcha.paxeer_x_late_launch_eats_window]
+text = "Launching workers 17 minutes into a 30-minute source window left 6.5 minutes before hand-back; nothing non-trivial lands. Compare the remaining window to the work before launching and request a fresh window instead of launching late."
+
+[gotcha.paxeer_x_reread_mailbox_before_fleet_launch]
+text = "A superseding mailbox ruling arrived while fleet packets were being written, and 20 workers had to be stopped seconds after launch. Re-read the mailbox tail immediately before the launch call, not before packet writing."
+
+[gotcha.paxeer_x_rulings_referenced_by_time_not_slug]
+text = "Mailbox rulings cited by clock time (for example 0355) do not carry that time in their section slug. Locate them by keyword such as RpcOwnerContext or AMEND, or take the frozen text from interfaces.md, not by grepping the quoted time."
+
+[gotcha.paxeer_x_role_briefs_must_follow_interfaces_state]
+text = "Role briefs derived from an earlier not_implemented list restated wiring that interfaces.md AMEND entries already recorded as done, wasting the window. Derive briefs from the current interfaces.md AMEND state and the .done markers, then the gap list."
+
+[gotcha.paxeer_x_builder_file_times_are_local]
+text = "ls on the builder prints local time (UTC+2); .done markers written at 07:0x UTC read 09:0x. Use ls --time-style=+%%H:%%M:%%SZ with TZ=UTC or date -u when comparing against UTC window bounds."
+
+[gotcha.paxeer_x_builder_sshd_resets_first_connection]
+text = "The builder sshd sometimes resets or closes the first BatchMode connection of a burst; a retry 5 seconds later succeeds. Treat one reset as transient, not as a failure."
+
+[gotcha.paxeer_x_scp_brace_expansion_remote_source]
+text = "Brace expansion inside a remote scp source path fails with No such file. Copy one file per call or stream with ssh tar cf - | tar xf -."
+
+[gotcha.paxeer_x_launch_latency_eats_window_start]
+text = "A 30-minute source window opened at 07:15:46Z but the 20 role briefs were composed and dispatched only at 07:26:00Z, so ten minutes of the window were spent writing prompts. Pre-draft the role briefs before the window is approved and dispatch within one minute of the start message."
+
+[gotcha.paxeer_x_freeze_deadlines_relative_to_launch]
+text = "Interface freeze cut-offs written into briefs as absolute times (07:21:30Z, 07:22Z, 07:23:30Z) were already past when the workers started at 07:26Z, so every freeze landed late and dependent roles coded against drafts. Set freeze cut-offs relative to the actual launch time or tell roles to freeze immediately on start."
+
+[gotcha.paxeer_x_trait_methods_need_all_impls_same_window]
+text = "Declaring new trait methods without default bodies on HumanOperations, which has three implementors in human_runtime.rs, leaves the crate uncompilable until every implementor carries every method. Plan trait declaration and all implementations in the same role or the same window, or the checkpoint cannot compile."
+
+[gotcha.paxeer_x_amend_headings_grep]
+text = "A retried heredoc appended AMEND 15 twice and AMEND 16 was written without the ## heading, so grep for AMEND numbers over-matches or misses. Roles should grep for ^## AMEND and append with a single verified ssh call, and the parent should normalise headings before composing."
+
+[gotcha.paxeer_x_remote_grep_scope]
+text = "A remote grep -rn over ../ from a worktree walked the whole builder filesystem and timed out. Always scope remote searches to the worktree path and bound the output with head."
+
+[gotcha.paxeer_x_owner_methods_need_upstream_reads]
+text = "Implementing session_list on UnifiedAgentOwner needs a per-tenant listing that SessionRegistry in session.rs does not expose, so the method cannot be written inside human_runtime.rs alone. Owner-method windows must plan read access and, where needed, ownership of session.rs and session_control.rs."
+
+[gotcha.436]
+summary = "Schema generation needs a proven generator artifact before a source-only window; cargo run compiles an absent generator even when the requested operation is code generation."
+
+[gotcha.480]
+name = "paxeer_x_window_close_is_not_idle"
+observed = "After a source window stop I waited for the next root ruling; the owner read that as doing nothing while the peer orchestrator kept working."
+fix = "A window stop ends writes on the worktree, not the work: keep preparing packets, surveys, seam freezes and the next launch, and ask only for the piece that is blocked."
+
+[gotcha.481]
+name = "paxeer_x_launch_ack_before_launch"
+observed = "A mailbox entry said workers were launching while the dispatch prompts were still being composed; the peer orchestrator had to ask for an actual launch acknowledgement."
+fix = "Send the launch call first, then write the acknowledgement with the real launch timestamp; never describe queued work as active."
+
+[gotcha.482]
+name = "paxeer_x_owner_state_survey_scope"
+observed = "A conflicts note claimed the daemon had no owner state for several operation groups after grepping one file; the real owners lived in sibling modules, and a later worker found the opposite problem: types exist but no runtime handle is retained for them."
+fix = "Survey owner state at crate level (types, constructors in main.rs, retained handles on the owner struct) before writing a gap or a plan that depends on it."
+
+[gotcha.paxeer_x_retained_acceptance_coordinates]
+summary = "Retained acceptance references such as1196.1 select ac_1 within [req.1196], not a [req.1196.1] section; parse the section and criterion separately."
+
+[gotcha.485]
+name = "paxeer_x_brief_paths_must_be_verified_at_pin"
+summary = "Worker briefs for task 8.1 window 5 cited files that do not exist at the pinned revision (agent-api export.rs, budget.rs, capability.rs; agentd store.rs) and claimed serde on a type that has none; four workers lost minutes re-locating the real modules (identity.rs re-exports, read.rs, store/mod.rs, capability/mod.rs)."
+fix = "Before launching a window, grep the exact module paths and derive lines at the pin and paste them into the brief; never cite a path from memory."
+
+[gotcha.486]
+title = "paxeer_x_fragment_anchor_impl_header_not_unique"
+observed = "In agent/crates/layerx-agentd/src/human_runtime.rs the impl header impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> { appears three times and a free fn closing brace is never unique, so INSERT AFTER anchors on either silently target the wrong block."
+rule = "Fragment writers open a new inherent impl block anchored on a unique top-level use line, or anchor on a unique field or function signature line; the integrator greps the anchor count and refuses to apply any fragment whose anchor matches more than once."
+
+[gotcha.487]
+title = "ssh_single_quoted_heredoc_breaks_rust_lifetimes"
+observed = "Delivering Rust source to the build host through a single-quoted ssh heredoc truncates at the first '_ lifetime or apostrophe and the first-connection ssh sometimes resets with exit 255."
+rule = "Draft the file locally and scp it, or pipe it over ssh stdin with cat > path; retry a 255 once before treating it as a failure."
+
+[gotcha.488]
+title = "build_host_ls_timestamps_are_local_not_utc"
+observed = "ls --time-style output on the build host prints local time two hours ahead of UTC while the window clock files and mailbox entries are UTC, which made fresh files look late."
+rule = "Compare file times with date -u and ls --time-style=+%s or TZ=UTC ls; never read wall-clock ls output against a UTC deadline."
+
+[gotcha.489]
+title = "Resolve source checkout and codec types before file reads"
+observation = "The subscription schema is stream.kvx; RPC adapter files may exist only on an unintegrated source branch. HistoryCursor is three u64 values plus a32-byte checkpoint, while deployment proof generation is in an included .inc source."
+action = "Discover exact files in the owning checkout and use declared typed layouts; do not infer missing implementations from a .c-only search or compare a text cursor to an unrelated field layout."
+
+[gotcha.490]
+title = "Fragment anchors: prove and apply with the same matching rule"
+observation = "Roles proved anchors with grep -cxF (exact whole line) while the applier matched the anchor as a substring of the stripped line; an indented field line that is unique as a whole line matched twice by substring and the fragment was refused, leaving the integrated revision inconsistent."
+action = "Applier and proof must both use exact whole-line count-1 matching; accept only the frozen directive list and refuse unknown directives instead of treating them as code."
+
+[gotcha.491]
+title = "Struct literal cannot borrow a field already moved into it"
+observation = "An interface contract wrote subscriptions: restored_subscriptions(&store)? inline in the struct literal that also moves store; that is a use-after-move."
+action = "Compute values that borrow a moved field before the literal, after releasing any guard on it, then move."
+
+[gotcha.492]
+title = "Check which impl owns a helper before citing it in a contract"
+observation = "current_core_sequence() lives on SharedAgentOwner, not on the Production owner; Production reaches the sequence through self.node.head().chain_sequence."
+action = "Grep the impl header above a helper before naming it for another role; cite type and line together."
+
+[gotcha.493]
+title = "Builder file writes: scp one file per call, never ssh heredocs"
+observation = "ssh heredoc python edits broke on quoting (rc 1, nothing written) and were blocked as remote shell writes; several files in one quoted scp string failed."
+action = "Write locally, scp exactly one file per call, chmod on the remote afterwards, verify by sha256sum over ssh."
+
+[gotcha.494]
+title = "Public signature with a pub(crate) parameter type triggers private_interfaces"
+observation = "Adding origin: Option<PreparationAuthorization> (pub(crate) type) to the public outbox enqueue raised the private_interfaces lint and forced every legacy caller to change."
+action = "Keep the public signature as a legacy wrapper and add a pub(crate) *_with_origin entry point for the authenticated path; authority-bearing types stay crate-private."
+
+[gotcha.495]
+text = "Launching about twenty ssh sessions to one build host in the same second trips the sshd MaxStartups default (10:30:100): some connections are reset before authentication with exit 255. Stagger launches or keep parallel ssh below ten."
+
+[gotcha.496]
+text = "A git worktree can be missing a tracked top-level directory such as cmd/ when it was created sparse. Read tracked content with git show HEAD:<path> instead of assuming the checkout is complete."
+
+[gotcha.497]
+text = "In the fragment applier used for shared-file integration, REPLACE FN, REPLACE FN IN IMPL and APPEND TO IMPL match the anchor as a substring of the stripped line, while REPLACE LINE, INSERT AFTER and INSERT BEFORE need an exact whole-line match with count 1. Prove anchors with grep -cF versus grep -cxF accordingly."
+
+[gotcha.498]
+text = "agent/crates/layerx-agent-api/src/generated.rs pins schema minor 2 while agent/schema/agent-api/v1.kvx already carries a higher minor, so the build.rs drift assertion fails until generated.rs is regenerated. Pre-existing, not caused by schema edits in the same change."
+
+[gotcha.499]
+text = "On the secondary build box cargo is not on the PATH of a non-login ssh shell. Call ~/.cargo/bin/cargo or the rustup toolchain binary directly; the pinned channel from agent/rust-toolchain.toml is installed there."
+
+[gotcha.500]
+text = "git bundle create with a range such as base..HEAD records only HEAD, so git clone -b <branch> from that bundle fails with exit 128. Name the branch in the range (base..refs/heads/<branch>) when the receiver needs the ref."
+
+[gotcha.501]
+text = "A delta git bundle cannot be fetched on a host that lacks its base commit. Pick the base as the merge-base with a commit the receiver already has, for example public main, or ship a full bundle."
+
+[gotcha.502]
+text = "rustfmt --check on a single Rust file outside its crate fails with failed to resolve mod for out-of-line module declarations. Feed the file on stdin for a pure parse and format check; exit 1 with only Diff in blocks means it parses."
+
+[gotcha.503]
+text = "Fetching source over ssh with git archive and running git log in the same command corrupts the tar stream because both write to stdout. One archive fetch per ssh command."
+
+[gotcha.504]
+text = "The PostToolUse hook cg sync can fail with sql error: cannot commit - no transaction is active after a Write; the file is still written. Verify the file, do not rerun the write."
+
+[gotcha.505]
+text = "Capability-scope proof LXGS2 (209 bytes) carries only expiry_sequence at offset 165; agentd has no verified ms grant expiry, so any timestamp-based capability expiry needs a new proof field from the native side first. Check the proof layout before proposing time-based semantics on a verified record."
+
+[gotcha.506]
+text = "Correction to gotcha.505: LXGS2 does carry the grant not_before ms at offset 185..193 and not_after ms at 193..201 (u64 BE); only the agentd decoder at human_runtime.rs capability_scope ignores them. Before declaring a producer absent, read the native layout producer (lxp_governance.c) not just the Rust consumer."
+
+[gotcha.507]
+text = "The Rust agent workspace manifest is agent/Cargo.toml, not the repository root; cargo invoked from the root exits 101 with 'could not find Cargo.toml' before any build script runs. Use cwd agent/ or --manifest-path agent/Cargo.toml."
+
+[gotcha.508]
+text = "agent-api build.rs writes OUT_DIR/generated.rs and then asserts equality with src/generated.rs; after a schema minor bump the only in-tree regeneration path at this revision is that build script, so a standalone generator-only render path is needed to regenerate without a cargo build that is known to panic on drift."
+
+[gotcha.509]
+text = "rustfmt --edition 2021 --check reading from stdin exits 0 even when it prints 'Diff in' blocks; a parse failure prints 'error' lines. Parse-only checks must read the output, not the exit code (gotcha.4xx-era note that exit 1 means parses was wrong)."
+
+[gotcha.510]
+text = "Every staged-file hand-back api.md needs a 'Staged (sha256)' section listing staged and pinned-original sha256 per file; an integrator that checks shas stops cold without it."
+
+[gotcha.511]
+text = "In bash, `echo ... $(cmd) ... $?` reports the exit status of the command substitution, not the previous command; run the checked command on its own line and read $? immediately."
+
+[gotcha.512]
+text = "Internal window or wave labels leak into test literals and test file names (temp dir prefixes, DIDs, client strings, tests/w9_*.rs); staged tests need the same leak grep as source, widened to the label with any separator, and files are copied under neutral names before commit."
+
+[gotcha.513]
+text = "A whole-line INSERT BEFORE/AFTER fragment anchor on a method-chain continuation line (for example `.restore_writes()`) splits the chain and yields invalid Rust; anchor on the statement that starts the chain or on a neighbouring full statement instead."
+
+[gotcha.514]
+text = "The fragment applier's function-end scan treated any `;` at brace depth 0 as the end of a declaration, so a REPLACE FN whose signature contained `[u8; 32]` kept the old body after the new one; the scan now also tracks bracket and parenthesis depth, and the old copy is kept beside it for provenance."
+
+[gotcha.515]
+text = "Changing a fragment applier's matching semantics invalidates fragments written against the old behaviour (a doc-line REPLACE FN that used to stop at a bracketed header now replaces the whole item); after an applier fix, re-run every not-yet-committed fragment chain before dispatching work on top of it."
+
+[gotcha.516]
+text = "Counting rustfmt errors with `grep -c error` also counts identifiers such as rpc_commit_error inside the printed diff; anchor the pattern at line start (`grep -c '^error'`)."
+
+[gotcha.517]
+text = "A heredoc inside a single-quoted ssh command breaks on Rust lifetimes such as '_; write the file locally and scp it."
+
+[gotcha.518]
+text = "rustfmt reading stdin ignores the workspace configuration and reports Diff blocks in already-formatted code; count only lines starting with error for a parse check and format with the workspace config from the repository root."
+
+[gotcha.519]
+text = "Before briefing a worker to store an identifier, confirm the producing event exists on that code path: a daemon limit create has no confirmed core mutation, so there is no activity id to persist and the schema already names it null."
+
+[gotcha.520]
+text = "The fragment applier INSERT AFTER adds a blank line before the inserted code; harmless for items, stray inside match patterns, removed by the formatting stage."
+
+[gotcha.521]
+text = "The applier hoists use lines into the first import block before the first item; a module whose first lines are mod declarations has no such block, so fragments for it must use fully qualified paths."
+
+[gotcha.522]
+text = "Committed generated SDK outputs can be stale against their own producers at HEAD; verify a producer emulation against the last render commit, not HEAD, and expect a single-operation projection to drag the whole pre-existing drift along."
+
+[gotcha.523]
+text = "The applier hoists every leading use line of a fragment block after the last top-level import, so a fragment that changes an existing import in an earlier group cannot pass rustfmt; stage the whole file instead."
+
+[gotcha.524]
+text = "rustfmt on a scratch copy of a file with #[path] or sibling mod declarations fails to resolve them; check through stdin or keep the siblings beside it."
+
+[gotcha.525]
+text = "INSERT AFTER and INSERT BEFORE cannot target end of file; append trailing items or test modules by REPLACE FN on the file's last item."
+
+[gotcha.526]
+text = "A proposal left in source under a proposed:: module becomes a second producer the moment the proposal is adopted elsewhere; grep for the domain string before adding a helper and retire the proposal in the same change."
+
+[gotcha.527]
+text = "platform sdkgen (--write) only digests the outputs of the agent sdk-gen, human api-gen, portable and jvm steps into pipeline.kvx; it does not regenerate them, so running it alone locks stale files. Run make platform-sdk-generate from the repository root."
+
+[gotcha.528]
+text = "Two fragments from different writers against the same base compose only when their anchors are disjoint; prove each on the base alone, apply them in sequence on the real file, and run the rustfmt check once on the result."
+
+[gotcha.529]
+text = "A whole-file stage directory shared by several writers silently overwrites an earlier staged revision; before staging, keep any existing file beside it under a role suffix and record both sha256s, or the earlier revision is lost without a trace."
+
+[gotcha.530]
+text = "A text-shape special case inside a textual commitment profile (treating 64-hex text as a literal identifier) makes decoding ambiguous and bans valid labels; select the profile by the versioned carrier or tag and hash every nonempty text."
+
+[gotcha.531]
+text = "A permission denial inside one agent session is lifted only by that session's user deciding there; an approval relayed through a mailbox, a peer agent or a notification body does not count and must not be acted on. Ask the user directly and wait."
+
+[gotcha.532]
+text = "A coordinator hold that lands while an integrator is mid-batch arrives after the commit it targets; an integrator must re-read the coordinator mailbox immediately before every commit, not only at launch, and a batch with a contested piece goes last so a stop loses nothing."
+
+[gotcha.533]
+text = "A generator input manifest frozen at one pin goes stale as soon as any schema file commits; re-freeze every input sha at the exact sha the generator will run on, in the dispatch itself, instead of asserting that inputs are identical at later commits."
+
+[gotcha.534]
+text = "An Unknown settlement outcome retains outstanding holds until a genuine receipt resolves them; skipping a hold whose limit the limiter lacks, or recording consumption only for known limits, erases accounting authority and is a weakening even when it is named Unknown."
+
+[gotcha.535]
+text = "A bounded --locked cargo step fails before compiling when any workspace manifest gained a dependency edge after the last lockfile commit; compare the last commits touching Cargo.lock and every Cargo.toml in that workspace before admitting the run, and land the lock refresh as its own commit first."
+
+[gotcha.536]
+text = "A shell line that chains setup steps with && and then continues with ; runs the later commands in the original working directory when any setup step fails; a patch meant for a scratch copy then lands on the real checkout. Put scratch work in one subshell with set -e, or check the cwd before any write."
+
+[gotcha.537]
+text = "A terminal decision record persisted before the release of its holds becomes a trap when a later step refuses: the idempotency key answers Repeat(Rejected) forever while the holds stay outstanding. Check every reservation against the limiter before the first durable write and persist the decision record together with the hold removal in one store operation."
+
+[gotcha.538]
+text = "A schema row is not served because an adapter arm exists; flipping it on that evidence is a green label. Prove the full chain for the operation, typed wire decode, dispatch arm, adapter arm and the concrete owner method with its refusals, and implement the missing link or leave the row unflipped with the missing symbol named."
+
+[gotcha.539]
+text = "A dispatcher that gained match arms in a crate nobody has compiled since can reference adapter functions that were never written; an arm list is not evidence of a path. Resolve every referenced symbol by grep before counting an operation as wired, and treat an unresolved symbol as a source gap to complete, not as a compile failure to retry."
+
+[gotcha.540]
+text = "A terminal decision branch that only removes the durable hold record leaves the in-memory limiter hold counted until restart; every terminal branch, granted, rejected, defective or expired, must stage the limiter release and publish it only after the record write and the hold removal persist together."
+
+[gotcha.541]
+text = "A fallback branch copied from a sibling that has no publish step inherits the wrong order when the new site does publish; after a registry operation stages and publishes a release, the decision persist must already be inside it. Run every durable step inside the operation between the checks and the publish, and review each configuration branch, with and without a store, for publish-after-persist separately."
+
+[gotcha.542]
+text = "Adding RPC adapters for an operation does not serve it when the pre-dispatch object-owner resolution refuses that operation kind by design; check target_object_owner (or its equivalent) for every new operation before counting it wired, and never replace such a refusal with Ok(None) or a caller-supplied owner. A program state proof carries no program-owner leaf and the head policy proves only the upgrade authority, so a wind-down owner needs the real owner witness path."
+
+[gotcha.543]
+text = "A generated operation enum can lag the schema it is generated from while the hand-written code already uses the new variants; grep every Operation:: variant the crate uses against the generated file before assuming the crate compiles, and treat a missing variant as a regeneration gap, not as a failed compile to retry."
+
+[gotcha.544]
+text = "A bookkeeping pass that iterates holds and silently continues past a hold with no index entry drops that hold from the persisted charge without any error; when reading accounting loops, treat every continue on a missing lookup as a silent fallback to record, and make the missing-entry case an explicit refusal or corruption report rather than a skip."
+
+[gotcha.545]
+text = "A brief that forbids every default can forbid the crate's own encoded convention; the disclosure codec already writes a zero asset for asset-less activities (Governance ordinals, ProgramTransfer, RevokeGrant), so a new asset-less arm must reuse that convention rather than stop on it. Before forbidding a sentinel in a brief, grep the crate for how existing arms encode the same absence."
+
+[gotcha.546]
+text = "A source-only diff reader cannot discard everything after the first cfg(test): test modules can appear before production functions, and inserted test blocks can make unchanged production definitions look deleted. Inspect actual Git diff hunks and surrounding definitions before drawing source conclusions."
+
+[gotcha.546]
+text = "A worker whose context compacts mid-window loses its sense of elapsed time and runs far past a 30-minute cap. Put the cap check in the brief as a clock command to run after any compaction, and treat an overrun as implemented-not-qualified with staged partials, not as a failure to retry."
+
+[gotcha.547]
+text = "A pre-dispatch owner gate cannot use facts that only exist after the subject is bound. Before proposing where to fetch an owner witness, locate where binding runs relative to the gate; here bind_rpc_subject and subject::for_did run after authorized(), so upgrade and wind-down owner checks belong after bind, not before the guard."
+
+[gotcha.548]
+text = "Fragment and staging names keyed only by basename collide when two touched files share one (store/mod.rs and outbox/mod.rs). Put the directory in the fragment name from the start, e.g. ROLE-store-mod.rs.frag, so the applier and the integrator never pick the wrong preimage."
+
+[gotcha.549]
+text = "An ABI staging check can be stricter or weaker than the final monetary authorization boundary. Trace composed effects through final transfer-set authorization before concluding that a capability maximum is only per request; root graph aggregation may enforce the actual bound."
+
+[gotcha.550]
+text = "A verification rule inside one KVX operation section does not apply to every response. Read the enclosing section before changing generic status handling; a truthful explicit Unverified result and an operation-specific below-request refusal can coexist."
+
+[gotcha.551]
+text = "Use discovered file paths for bounded source searches. An unmatched shell glob is passed literally to rg and yields a missing-path error even when the other search paths are valid."
+
+[gotcha.552]
+text = "A private task handoff may embed its file manifest in result.json or name the entries changes rather than files. Inspect the actual schema and discovered paths before reading optional files or selecting integration candidates."
+
+[gotcha.553]
+text = "Extract a KVX task through the next section header, not an assumed consecutive task ID: sparse IDs can make a sed range consume the remainder of the file. Discover exact source and artifact paths before lookup."
+
+[gotcha.554]
+text = "Resolve lifecycle operation ordinals from both the native registration and the typed decoder before wiring dispatch. WindDown is Programs ordinal 7; ordinal 4 belongs to Registry and cannot select a WindDown settlement path."
+
+[gotcha.555]
+text = "A dotted requirement reference can identify an acceptance clause rather than a section. Resolve 1060.5 to req.1060 ac_5 when no exact req.1060.5 section exists; handle missing section lookups explicitly."
+
+[gotcha.556]
+text = "Kernel readiness queried archive sync routes on the native receipt-authority port; native404 was misclassified. Candidate separates origins and requires actual recovered status/evidence."
+
+[gotcha.557]
+text = "Existing kernel test setup fabricated authority sync HTTP, supervisor readiness, LNI socket and runtime-clock identity. Candidate preserves its exact assertions while sourcing results from genuine process qualification."
+
+[gotcha.558]
+text = "Ordinary bootstrap genesis cannot use the existing handover-only authority manifest variable; an independent signed status-manifest input preserves that predicate."
+
+[gotcha.559]
+text = "Existing runtime client open-bob actor nonce is 0; third native global batch is 3."
+
+[gotcha.560]
+text = "Runtime clock UNIX socket paths include a generated lxc directory; fixture roots and per-service clock directories use short names."
+
+[gotcha.561]
+text = "Supervisor resolves build/bin and /usr/local/bin before PATH; isolated namespace binds any existing preferred handover/genesis executable paths to manifest-bound staged artifacts."
+
+[gotcha.562]
+text = "Missing status-manifest environment yields listener-live 503; invalid supplied manifest path aborts native startup. Negative uses actual direct native process with status environment absent."
+
+[gotcha.563]
+text = "Session auth can be a directory module rather than auth.rs. Use discovered paths before searching; recover task workers from preserved private source after transient capacity errors rather than discarding partial implementation."
+
+[gotcha.564]
+text = "The task-specific 17.3 packet was absent at initial lookup. Read canonical task17.3 and req168 from spec/paxeer-x/spec.kvx; no scope broadening."
+
+[gotcha.565]
+text = "Historical onboarding.rs and server.rs references denote current module directories. Followed actual production session issuer through production_components.rs and http.rs under explicitly granted ownership."
+
+[gotcha.566]
+text = "Existing enrollment consumer denies unknown response fields. Preserved original three-field enrollment response and added separately authenticated issued-enrollment metadata route."
+
+[gotcha.567]
+text = "Source deployment credential snapshot was mounted read-only and omitted the enrollment-key reference. Protected bootstrap input now reconciles into an owned durable signed snapshot; immutable owned credential copies preserve prior generation integrity."
+
+[gotcha.568]
+text = "Legacy Human browser provisioning replaced the source snapshot with an unsigned bare principal map. Removed obsolete map publication; waits for exact real issued principal, tenant and session enrollment."
+
+[gotcha.569]
+text = "Original standard Ed identity already resides in real attestors referenced by wallet.layerx_key_id; random splitIdentity replacement was invalid and removed from the migration path."
+
+[gotcha.570]
+text = "Historical binding signature uses a consumed nonce; existing lx_bind policy requires current bindNonce. Candidate seals current canonical possession bytes once and never broadcasts or automatically substitutes them."
+
+[gotcha.571]
+text = "External agent identity has no custody share set; existing eligibility/count requirement prevents complete mixed-plan rehearsal and remains unchanged."
+
+[gotcha.572]
+text = "Initial broad source search was noisy and referenced nonexistent verification_test.go/protocol.rs; exact current source paths were recovered without builds or tests."
+
+[gotcha.573]
+text = "Registered-account balance reads need the existing registered-asset authority check as well as canonical receipt and account proofs; the historical initial funding NON_CANONICAL failure remains unresolved."
+
+[gotcha.574]
+text = "Agent runtime source is split across agent_rpc_dispatch.rs and agent_rpc_wire.rs; discover paths rather than assuming runtime.rs."
+
+[gotcha.575]
+text = "A worker may freeze its file manifest directly in result.json; use the named handoff rather than guessing manifest.json."
+
+[gotcha.576]
+text = "Human web API uses the unified /human prefix while retained browser routing expects root /v1; preserve real routing and exact assertions until their fixture contract is resolved."
+
+[gotcha.577]
+text = "Production web helper paths must be discovered rather than guessed under human/apps/web/scripts."
+
+[gotcha.578]
+text = "Inherited ProgramSpend grants must not use the owner-origin shortcut to widen amount, asset, destination or seed; legitimate origination from an empty spending-grant set remains distinct."
+
+[gotcha.579]
+text = "Composition Authority refusal state commits discriminator19 and ABI error bytes but no origin. Distinguishing legacy transfer-stage failure from edge escalation must not use an uncommitted flag or silently change existing-version canonical bytes."
+
+[gotcha.580]
+text = "Enumerating downstream dependencies must summarize dependency readiness before display; release tasks repeat the full dependency closure and can overflow a tool response."
+
+[gotcha.581]
+text = "Capability ABI and storage historical single-file paths resolve to current module directories; no duplicate abi.rs or storage.rs should be introduced."
+
+[gotcha.582]
+text = "Agent SDK transport source lives under agent/sdk/typescript; discover exact paths before searching platform SDK globs."
+
+[gotcha.583]
+text = "Native program interface proofs do not contain registry source-publication status. Join the genuine registry observation to the authenticated program/version/codehash/head; do not infer unpublished from an absent native field. Deployment and current-head receipts are distinct identities."
+
+[gotcha.584]
+text = "Attestor activity signing requires retained original approved disclosure and approval binding; daemon ApprovalHold metadata and canonical bytes cannot manufacture that consent."
+
+[gotcha.585]
+text = "A dependency-ready task can still be refused admission because another in-progress task lists a shared path. Record the refusal; do not assume a private disjoint file lease overrides the Codify claim."
+
+[gotcha.586]
+text = "Qualification log paths can be absent in the current feature directory; discover the current evidence location before reading a historical path."
+
+[gotcha.587]
+text = "A completed implementation on a retained branch may never have reached main. Match the current paths and original source identity before crediting implementation or recovering its missing files."
+
+[gotcha.588]
+text = "Use the exact handoff filename supplied by a worker; a manifest may contain its complete result without a separate result.json."
+
+[gotcha.589]
+title = "Broad historical router reservation blocks disjoint active source work"
+detail = "Task15.3 normal claim refused overlap with task8.1 gateway path; owner explicitly approved the exact forced claim and seven-file source lease. No runtime authority or forced completion follows from that claim."
+
+[gotcha.590]
+title = "Core deployment is embedded in node deployment"
+detail = "A read-only search named nonexistent platform/hosted/core/deployment.yaml and exited2; discovered canonical producer is platform/hosted/node/deployment.yaml. Do not repeat the nonexistent lookup."
+
+[gotcha.591]
+title = "Native proof variant cannot be fabricated for current production coverage"
+detail = "Account proof format1 cannot be freshly produced when protocol3 mandates occupancy maintenance. Preserve its decoder and the recorded coverage conflict; genuine archive verification remains separate from SDK framing."
+
+[gotcha.592]
+title = "Protocol support claims require the actual producer source"
+detail = "An interim signer report inferred native preparation protocol4 without a verified producer. Exact producer supports2/3; retain its current checks and distinguish genuine missing send authorization from an unverified version conflict."
+
+[gotcha.593]
+title = "Consent must follow actual native preparation"
+detail = "Original-wallet approval binds bytes only available after native preparation. Middleware now retains one preparation, exposes exact consent input, then binds the approved artifact once without preparing again; prior intermediate candidate is preserved privately."
+
+[gotcha.594]
+title = "Planned gate paths may be absent"
+detail = "A read named planned tools/paxeer-x/gates/104.16.2.sh before existence was established. It is an absent declared deliverable; author the real gate, do not repeat a guessed read or treat a placeholder as implementation."
+
+[gotcha.595]
+observed = "Dependency inventory included an absent repository .cargo directory and returned exit 2; no code or dependency resolution ran."
+resolution = "Corrected inventory checks existing directories first; continuation requested under RULE_02. Source workers continue independently."
+
+[gotcha.596]
+observed = "Task104.15.4 normal Codify claim refused because task104.16.2 reserves platform/Makefile.inc."
+resolution = "Prepared exact claim continuation with isolated JVM ownership and serialized root-only shared paths; no retry or source implementation before ruling."
+
 [gotcha.597]
 area = "builder"
 symptom = "Migrated source checkout may have no Rust toolchain despite retained build artifacts."
 do = "Provision the exact repository toolchain before qualification; retained artifacts are not build evidence."
-
 
 [gotcha.598]
 area = "spec"
 symptom = "A task claim can reserve unchanged caller files and collide with another task."
 do = "Map ownership to the actual changed producer and transport modules while retaining all caller acceptance cases, then use a normal claim."
 
-
-[gotcha.601]
-area = "events"
-symptom = "Producer readiness harness used a webhook upstream variable group differing from the served producer."
-do = "Use the exact events webhook upstream group while retaining real delivery and readiness assertions."
-
 [gotcha.599]
 area = "node"
 symptom = "Wallet SDK has no standalone npm lockfile and belongs to a pnpm workspace."
 do = "Use the locked wallet workspace and build the SDK directly without recursively rebuilding the root SDK."
-
 
 [gotcha.600]
 area = "node"
 symptom = "Connected conformance imports the agent integration package outside its original declared dependencies."
 do = "Declare the workspace dependency and update the matching lockfile entry without changing package versions."
 
-[gotcha.604]
-area = "wallet"
-symptom = "Capability session changes cannot be represented honestly by an address-only account mismatch refusal."
-do = "Declare the precise session-change refusal through the approved contract while preserving rejection predicates and error code."
+[gotcha.601]
+area = "events"
+symptom = "Producer readiness harness used a webhook upstream variable group differing from the served producer."
+do = "Use the exact events webhook upstream group while retaining real delivery and readiness assertions."
 
 [gotcha.602]
 area = "rust"
@@ -1999,20 +2985,40 @@ area = "rust"
 symptom = "Current local dependency edges can differ from retained Cargo locks after integration."
 do = "Use actual Cargo metadata to reconcile local edges and compare complete external lock records; retain every external version, source and checksum."
 
+[gotcha.604]
+area = "wallet"
+symptom = "Capability session changes cannot be represented honestly by an address-only account mismatch refusal."
+do = "Declare the precise session-change refusal through the approved contract while preserving rejection predicates and error code."
+
+[gotcha.605]
+area = "human"
+symptom = "The browser's unified Human mount can differ from the service's root API routes."
+do = "Map the public Human mount through the real Next rewrite and normalize server requests to the actual service route."
+
+[gotcha.606]
+area = "ssh"
+symptom = "A transferred OpenSSH key without its terminal newline can fail parsing even after secure permissions are restored."
+do = "Restore only the missing terminal newline and secure file mode without exposing or exporting private key material."
+
+[gotcha.607]
+area = "codify"
+symptom = "The remember command accepts help-looking text as a memory rather than displaying command help."
+do = "Use documented Codify commands; do not pass help flags to free-form memory commands."
+
 [gotcha.608]
 area = "rust"
 symptom = "native-tls handshake errors require the custom deadline stream to implement Debug for Display formatting."
 do = "Provide the real stream's Debug trait while retaining original handshake error text and deadline enforcement."
 
+[gotcha.609]
+area = "git"
+symptom = "Advisory Codify Git hooks can block publication while the migrated graph is rebuilding."
+do = "Preserve hook files, terminate only task-owned blocked advisory processes, and publish narrow source checkpoints with qualification state explicit."
+
 [gotcha.610]
 area = "builder"
 symptom = "Migrated native TLS build artifacts may reach linking on a host without OpenSSL development libraries."
 do = "Restore the genuine supported build libraries without replacing TLS or changing service configuration."
-
-[gotcha.619]
-area = "replay"
-symptom = "Execution-prestate version1 authenticates only universal state, Programs state and accounts, not complete Oracle and Web inputs."
-do = "Preserve its closed decoder and refuse post-state substitution; any portable replay producer needs an explicit versioned prestate contract."
 
 [gotcha.611]
 area = "schema"
@@ -2029,15 +3035,15 @@ area = "native"
 symptom = "Integrated Program owners must use the genuine hex codec, explicit stale-read variants and the existing authorization kind catalogue."
 do = "Map every actual variant to its unique canonical tag while retaining legacy tags, encodings and all monetary checks."
 
-[gotcha.615]
-area = "schema"
-symptom = "Canonical Agent operation regeneration exposes missing exhaustive PolicyDryRun authorization and owner mappings."
-do = "Preserve the failed build and repair limit; resolve the actual authenticated session owner rather than treating referenced objects as absent."
-
 [gotcha.614]
 area = "jvm"
 symptom = "A generator patch anchored in java_type instead of record_source can leave a local undefined name."
 do = "Change the exact schema scalar predicate and regenerate canonical JVM declarations before qualification."
+
+[gotcha.615]
+area = "schema"
+symptom = "Canonical Agent operation regeneration exposes missing exhaustive PolicyDryRun authorization and owner mappings."
+do = "Preserve the failed build and repair limit; resolve the actual authenticated session owner rather than treating referenced objects as absent."
 
 [gotcha.616]
 area = "builder"
@@ -2048,6 +3054,21 @@ do = "Provision the pinned verified Go distribution and provide its bin director
 area = "builder"
 symptom = "A release filename with a sha256 suffix may return an HTML page instead of a distribution digest."
 do = "Verify the retained archive digest and size against exact official release JSON metadata before extraction."
+
+[gotcha.618]
+area = "paths"
+symptom = "A guessed schema, adapter or handoff filename may be absent after migration."
+do = "Discover actual tracked paths with rg --files and read the identified file; do not repeat the nonexistent lookup."
+
+[gotcha.619]
+area = "replay"
+symptom = "Execution-prestate version1 authenticates only universal state, Programs state and accounts, not complete Oracle and Web inputs."
+do = "Preserve its closed decoder and refuse post-state substitution; any portable replay producer needs an explicit versioned prestate contract."
+
+[gotcha.620]
+area = "codify"
+symptom = "A low-level task lease can be registered without changing the task status in the feature source."
+do = "Reconcile the owned task status explicitly while keeping unqualified work in_progress."
 
 [gotcha.621]
 area = "rust"
@@ -2064,10 +3085,20 @@ area = "lni"
 symptom = "The native negotiated LNI session explicitly refuses a second NodeInfo request."
 do = "Use an existing authenticated read with a genuine nonzero selector to prove persistent-session liveness while preserving authentic receipts and journal state."
 
-[gotcha.620]
-area = "codify"
-symptom = "A low-level task lease can be registered without changing the task status in the feature source."
-do = "Reconcile the owned task status explicitly while keeping unqualified work in_progress."
+[gotcha.624]
+area = "human"
+symptom = "Finite JSON stream pages and notification deliveries without journal events cannot fulfil the no-polling stream contract."
+do = "Wire a genuine durable notification producer and explicit versioned push transport; retain current JSON operations and all session authorization rules."
+
+[gotcha.625]
+title = "Codify migrated graph inspection needs known commands and bounded projections"
+observed = "spec_claim_status is absent and cg spec start --help treats help as a task; cg state emitted a large migrated snapshot. Lease timestamps were read from the existing graph attempts and leases tables without modifying the rebuilding graph."
+rule = "Discover tools with cg tool list and inspect only task-specific state; do not infer active ownership from broad historical reservations or restart the owner graph."
+
+[gotcha.626]
+title = "Native replay prerequisite has a historical shared kernel reservation"
+observed = "Task104.35.11 normal claim hit task1.3's broad kernel touch declaration despite no live kernel lease or source edits; explicit source start used --force with exclusive new ownership."
+rule = "Root serializes the kernel paths for the admitted additive replay producer. This is source admission, never force qualification or completion."
 
 [gotcha.627]
 title = "Ramp responses and replay must match actual durable rebalance semantics"
@@ -2079,11 +3110,6 @@ title = "SDK consumers must use canonical public type and artifact error owners"
 observed = "Human, explorer and ramp builds hit SDK imports from error instead of public verify/idempotency owners; complete artifact decoding returns a record-context error."
 rule = "Correct real SDK owners without weakening verification or flattening detailed artifact refusals."
 
-[gotcha.624]
-area = "human"
-symptom = "Finite JSON stream pages and notification deliveries without journal events cannot fulfil the no-polling stream contract."
-do = "Wire a genuine durable notification producer and explicit versioned push transport; retain current JSON operations and all session authorization rules."
-
 [gotcha.629]
 title = "Generator isolation prevents blocking the admitted source projection"
 observed = "The Human API generator waited for the explorer target lock; its waiting process was stopped before compiler work, then the same bounded recipe compiled and rendered in an isolated target."
@@ -2094,15 +3120,10 @@ title = "Standalone explorer readiness needs live source availability and real t
 observed = "Retained completeness could survive a lost node; startup required an unavailable authority probe, and the fixture supplied unused head values instead of actual genesis/finality trust."
 rule = "Bind authenticated serving after genuine node handshake, preserve authority refusals, and clear completeness on source loss."
 
-[gotcha.625]
-title = "Codify migrated graph inspection needs known commands and bounded projections"
-observed = "spec_claim_status is absent and cg spec start --help treats help as a task; cg state emitted a large migrated snapshot. Lease timestamps were read from the existing graph attempts and leases tables without modifying the rebuilding graph."
-rule = "Discover tools with cg tool list and inspect only task-specific state; do not infer active ownership from broad historical reservations or restart the owner graph."
-
-[gotcha.626]
-title = "Native replay prerequisite has a historical shared kernel reservation"
-observed = "Task104.35.11 normal claim hit task1.3's broad kernel touch declaration despite no live kernel lease or source edits; explicit source start used --force with exclusive new ownership."
-rule = "Root serializes the kernel paths for the admitted additive replay producer. This is source admission, never force qualification or completion."
+[gotcha.631]
+title = "Migration requires a genuine binding and funded custody producer"
+observed = "The retained v1 migration receipt policy expects an external claim in canonical protocol ContextHash but no real producer implements that contract; the selector was absent."
+rule = "Preserve old checks and ContextHash; source verification alone never proves account binding or asset credit."
 
 [gotcha.632]
 title = "Explicit-path Rust formatting must control child modules"
@@ -2119,11 +3140,6 @@ title = "Native maintained receipt shape still blocks closed client replay verif
 observed = "The bounded replay build and real native capture fixture passed, but all four client cases rejected the maintained receipt with ReceiptShape before the new v2 verifier executed; the second repair limit was reached."
 rule = "Preserve native and client assertions. Resolve the actual receipt contract in a separate bounded prerequisite; never claim client verification or repeat the unchanged failed gate."
 
-[gotcha.631]
-title = "Migration requires a genuine binding and funded custody producer"
-observed = "The retained v1 migration receipt policy expects an external claim in canonical protocol ContextHash but no real producer implements that contract; the selector was absent."
-rule = "Preserve old checks and ContextHash; source verification alone never proves account binding or asset credit."
-
 [gotcha.635]
 observed = "Canonical Human API owns domain kvx files, not guessed types.kvx/operations.kvx paths; rg returned exit2 before source reads."
 resolution = "Discover actual files with rg --files and read complete retrievable output before reasoning."
@@ -2136,6 +3152,11 @@ resolution = "Task19.1 restores signed bytes before any new answer/quorum and pr
 observed = "Ramp build paths and native module-id header names were initially guessed during source admission; no build ran against those guesses."
 resolution = "Resolve actual manifests/headers with rg --files; ramp target is platform/Cargo.toml package layerx-reference-ramp."
 
+[gotcha.638]
+observed = "Human internal tags44 and45 already belong to SUBJECT and OPERATOR; initial proposed metadata tags would collide."
+resolution = "Freeze new authentic Human facts profile on separate verified-unused tags46 through49; preserve all legacy selectors."
+
+
 [gotcha.639]
 observed = "Genuine native pre-execution terminal receipts have no guest outcome; the existing executed-outcome verifier correctly refuses that different shape."
 resolution = "Task10435.14 adds a separate closed refusal verifier with full maintained-chain authentication, preserving all existing executed-outcome checks."
@@ -2143,6 +3164,10 @@ resolution = "Task10435.14 adds a separate closed refusal verifier with full mai
 [gotcha.640]
 observed = "Task20.4 real-process gate refused absent candidate inputs; historical fake-RPC assertions do not establish genuine funded rate publication and were preserved unchanged."
 resolution = "Record build0 and verify1 separately; mark fully implemented source DONE under owner authority without runtime credit or an unchanged rerun."
+
+[gotcha.641]
+observed = "Task6.4 found an ABI3 legacy-negative assertion and differing LXPS1 versus ProgramStateBundle consumers; neither may be loosened to qualify new wiring."
+resolution = "Record both contradictions once; require an explicit additive authenticated profile preserving legacy checks and actual producer formats."
 
 [gotcha.642]
 observed = "A native launcher required the absent migrated /root/lx-cargo lock directory; default build paths lacked the actual warm artifacts."
@@ -2164,10 +3189,6 @@ resolution = "Record each compiler boundary once and repair its own source contr
 observed = "Explorer exact decoder requires settlement and denomination fields that an optional canonical join can represent as absent; browser typecheck and genuine fixture qualification remain unrun or refused."
 resolution = "Preserve existing decoder checks; implement a distinct honest availability contract at the producer/consumer boundary rather than inventing values or widening accepted fields."
 
-[gotcha.638]
-observed = "Human internal tags44 and45 already belong to SUBJECT and OPERATOR; initial proposed metadata tags would collide."
-resolution = "Freeze new authentic Human facts profile on separate verified-unused tags46 through49; preserve all legacy selectors."
-
 [gotcha.647]
 observed = "Codify spec implemented parses --help as a task ID; guessed identity module paths also returned exit2 before any source operation."
 resolution = "Read the actual exposed tool declaration and discover paths with rg --files; do not infer a source conclusion from a failed path read."
@@ -2175,10 +3196,6 @@ resolution = "Read the actual exposed tool declaration and discover paths with r
 [gotcha.648]
 observed = "Runtime boundary identity must bind the actual governed meter fee-schedule version; a declared default does not establish that fact."
 resolution = "Use the read-only actual Meter version accessor; task10435.16 preserves legacy trace/fuel encodings and keeps captured process authority explicitly untrusted."
-
-[gotcha.641]
-observed = "Task6.4 found an ABI3 legacy-negative assertion and differing LXPS1 versus ProgramStateBundle consumers; neither may be loosened to qualify new wiring."
-resolution = "Record both contradictions once; require an explicit additive authenticated profile preserving legacy checks and actual producer formats."
 
 [gotcha.649]
 observed = "Native account-state encoding consumes bounded arena capacity; the additive profile2 wrapper must preserve canonical bytes before adding its root and opt-in proofs."
@@ -2208,13 +3225,17 @@ resolution = "Record this unrelated unit-test boundary once; retain the transfer
 observed = "Admission V3 supplied complete inventories using empty-prefix calls, while the legacy state range verifier deliberately rejects empty prefixes; the sealed admission input could therefore not be constructed."
 resolution = "Retain the existing prefix refusal and all cryptographic bounds; implement a distinct complete-module inventory verifier and use it at the V3 producer-consumer boundary."
 
+[gotcha.656]
+observed = "The legacy NativePrepareRequestV1 Programs-only validator also guards the public prepare adapter, and the guessed agent_rpc_response.rs does not exist."
+resolution = "Discover response ownership in the actual wire adapter; preserve the old Programs-only request and add a distinct authenticated native-effect request discriminator on the existing route."
+
 [gotcha.657]
 observed = "The complete-inventory build passed but native V3 verification stopped at unchanged fresh-versus-retained sidecar equality during serial DEPLOY maintenance publication, before any SDK case."
 resolution = "Record once and preserve the assertion; qualify a distinct native capture correction only after its relevant source change."
 
-[gotcha.656]
-observed = "The legacy NativePrepareRequestV1 Programs-only validator also guards the public prepare adapter, and the guessed agent_rpc_response.rs does not exist."
-resolution = "Discover response ownership in the actual wire adapter; preserve the old Programs-only request and add a distinct authenticated native-effect request discriminator on the existing route."
+[gotcha.658]
+observed = "Captured CPU boundaries and historical host caches were not committed by existing receipt outcome fields; replay KV metadata also cannot contain final receipt digest or resulting root without a hash cycle."
+resolution = "Retain all legacy bytes; activate a signed additive replay profile, commit actual bounded roots/native checked facts before postroot preview, then bind the exact receipt through a genuine postcommit state witness."
 
 [gotcha.659]
 area = "Native admission SDK authentication"
@@ -2230,10 +3251,6 @@ resolution = "Record once without unchanged rerun; qualify only after complete d
 area = "Explorer legacy fixture shape"
 observed = "Task22.10 webbuild passed; focused explorer gate has two existing explorer-account.test.ts inputs omitting mandatory layerx_activity, independent of the changed profile2 caller."
 resolution = "Preserve existing checks and fixtures; record once without unrelated repair or rerun. Source implementation and qualification remain separate."
-
-[gotcha.658]
-observed = "Captured CPU boundaries and historical host caches were not committed by existing receipt outcome fields; replay KV metadata also cannot contain final receipt digest or resulting root without a hash cycle."
-resolution = "Retain all legacy bytes; activate a signed additive replay profile, commit actual bounded roots/native checked facts before postroot preview, then bind the exact receipt through a genuine postcommit state witness."
 
 [gotcha.662]
 area = "Replay canonical key buffer"
@@ -2255,6 +3272,11 @@ area = "Locked gateway runtime dependency"
 observed = "Authority16 and migration24.5 initially stopped on stale shared Cargo.lock entries after the gateway added a direct runtime dependency."
 resolution = "Root added only the existing dependency edges; gateway0.14 locked build and focused gate passed. Prior unrelated failed tasks remain separately unqualified."
 
+[gotcha.666]
+area = "Replay runtime fixture lifetime"
+observed = "Replay24 native fixture compiled; build stopped in existing program_replay.rs on temporary array borrows at lines41-44 with E0716."
+resolution = "Record unrelated failure once and retain assertions; finish actual runtime corpus source under its released exact owner."
+
 [gotcha.667]
 area = "Gateway stream classifier owner"
 observed = "Extracting shared HTTP catalogue classification removed matches_path still used by the existing streaming path; first build failed E0425."
@@ -2265,15 +3287,35 @@ area = "Canonical multi-asset reserve names"
 observed = "Existing canonical account parser forbids uppercase, so per-asset reserve names cannot copy uppercase product symbols."
 resolution = "Preserve canonical character checks and admit only four exact lowercase reserve names; uppercase symbols remain registry metadata."
 
+[gotcha.669]
+area = "Source path lookup"
+observed = "Several resumed reads referenced nonexistent historical authority, account-header, native-approval, runtime-clock and gateway paths; one proposed task number already belonged to the wallet demo."
+resolution = "Resolve exact current paths with rg --files before opening them; no source behavior changed."
+
+[gotcha.670]
+area = "Codify remember invocation"
+observed = "The CLI remember command treated --help as a memory instead of displaying usage."
+resolution = "Removed the accidental record and used the structured Codify remember tool for the actual handoff."
+
 [gotcha.671]
 area = "Custody owner and beneficiary identity"
 observed = "The genuine daemon resolves the owner main account for authority and fees; LXBC4 credits require an independent canonical asset account for the same owner."
 resolution = "Preserve main-account authority and fee checks while binding only the credited beneficiary to the selected asset profile."
 
+[gotcha.672]
+area = "Wallet custody result semantics"
+observed = "Private Human deposit confirmation requires a 32-byte transaction hash while the wallet sign-custody operation returns a 65-byte signature."
+resolution = "Complete exact authorized submission and durable custody-status recovery; never expose the signature as a transaction reference."
+
 [gotcha.673]
 area = "Private Go toolchain PATH"
 observed = "Custody formatting and an HPX build leg could not locate Go tools through PATH; the installed toolchain is /usr/local/go/bin."
 resolution = "Use the existing absolute toolchain path in bounded follow-up work and preserve prior exact unrun/failure records."
+
+[gotcha.674]
+area = "Native Asset evidence header"
+observed = "Task104.13.15 native build failed because the new evidence path referenced LX_ASSET_SEND without its canonical header."
+resolution = "The owning task added layerx/lx_asset.h before its cap; the repaired source remains unqualified until a declared subsequent gate."
 
 [gotcha.675]
 area = "HPX real TLS fixture identity"
@@ -2285,20 +3327,15 @@ area = "Private wallet package preparation"
 observed = "The standalone wallet app has a config-only pnpm workspace file; frozen preparation needs --ignore-workspace, and an interactive prompt can exit zero without installing."
 resolution = "Use the retained pnpm9.15.9 with CI=true and the exact workspace mode; verify actual dependency entrypoints without running package scripts."
 
+[gotcha.677]
+area = "Lost wallet custody signing response"
+observed = "The sign-custody handler creates fresh quorum sessions, while durable wallet custody rows appear only at send; a lost sign response cannot recover its exact authorization."
+resolution = "Retain immutable owner-bound consent evidence and expose typed authenticated retrieval through the unified gateway; ambiguous signing must not trigger blind re-signing."
+
 [gotcha.678]
 area = "Gateway serialized transaction type"
 observed = "Task14.3 SDK compiled, but gateway compilation failed TS2322 at agent/actions/orchestrator.ts:540 because the signer returns Hex while recovery requires the concrete serialized transaction union."
 resolution = "Retain parsing and exact transaction checks; verify the actual EIP1559 discriminant before passing its narrowed serialized type to signature recovery in the explicit follow-up."
-
-[gotcha.672]
-area = "Wallet custody result semantics"
-observed = "Private Human deposit confirmation requires a 32-byte transaction hash while the wallet sign-custody operation returns a 65-byte signature."
-resolution = "Complete exact authorized submission and durable custody-status recovery; never expose the signature as a transaction reference."
-
-[gotcha.666]
-area = "Replay runtime fixture lifetime"
-observed = "Replay24 native fixture compiled; build stopped in existing program_replay.rs on temporary array borrows at lines41-44 with E0716."
-resolution = "Record unrelated failure once and retain assertions; finish actual runtime corpus source under its released exact owner."
 
 [gotcha.679]
 area = "Portable replay Wasmi aliases"
@@ -2315,25 +3352,10 @@ area = "Historical replay inventory"
 observed = "The historical V1 prestate already authenticates every Programs module leaf; treating its retained program_records as prefix-only was incorrect."
 resolution = "Preserve the complete inventory verifier and add only matching historical WASM bytes from the same execution snapshot."
 
-[gotcha.677]
-area = "Lost wallet custody signing response"
-observed = "The sign-custody handler creates fresh quorum sessions, while durable wallet custody rows appear only at send; a lost sign response cannot recover its exact authorization."
-resolution = "Retain immutable owner-bound consent evidence and expose typed authenticated retrieval through the unified gateway; ambiguous signing must not trigger blind re-signing."
-
 [gotcha.682]
 area = "Custody base64 fixture"
 observed = "The real native custody payload in task14.5 has a length divisible by three; its test incorrectly demanded terminal base64 padding."
 resolution = "Preserve strict canonical decoding and use actual malformed encodings for refusal coverage; the recorded failed gate remains failed."
-
-[gotcha.685]
-area = "Native Programs SSL linkage"
-observed = "Task104.35.26 new fixture and existing daemon linkage encountered undefined SSL symbols after the genuine Programs and Client dependency closure expanded."
-resolution = "Keep native checks intact; use the actual SSL system library before crypto for Programs-linked targets in the bounded linker prerequisite."
-
-[gotcha.690]
-area = "Ignored genuine vendor package files"
-observed = "Git ignored39 checksum-required public upstream certificate/key test vectors when publishing the new vendor directories; a clean candidate then failed the strict OpenSSL package checksum."
-resolution = "Stage only the exact genuine upstream checksum-bound files explicitly; keep all operational credentials excluded and retain the prior failed candidate evidence."
 
 [gotcha.683]
 area = "Reset generation access"
@@ -2344,6 +3366,11 @@ resolution = "Preserve node and per-slot isolation with peer-authenticated read-
 area = "Native genesis protected projection"
 observed = "Canonical genesis output uses builder ownership and directory mode2775, while Human private inputs require0700 directories and0600 files."
 resolution = "Validate the genuine producer outputs and create a separate protected projection; preserve native builder ownership and existing strict private input checks."
+
+[gotcha.685]
+area = "Native Programs SSL linkage"
+observed = "Task104.35.26 new fixture and existing daemon linkage encountered undefined SSL symbols after the genuine Programs and Client dependency closure expanded."
+resolution = "Keep native checks intact; use the actual SSL system library before crypto for Programs-linked targets in the bounded linker prerequisite."
 
 [gotcha.686]
 area = "Sparse isolated source candidate"
@@ -2365,6 +3392,11 @@ area = "Private source candidate directory"
 observed = "The isolated generation build refused its newly created worktree because the candidate root did not yet have the required private0700 mode."
 resolution = "Tighten only the owned private candidate directory before its bounded task-scoped repair; preserve the check and original failure evidence."
 
+[gotcha.690]
+area = "Ignored genuine vendor package files"
+observed = "Git ignored39 checksum-required public upstream certificate/key test vectors when publishing the new vendor directories; a clean candidate then failed the strict OpenSSL package checksum."
+resolution = "Stage only the exact genuine upstream checksum-bound files explicitly; keep all operational credentials excluded and retain the prior failed candidate evidence."
+
 [gotcha.691]
 area = "Native candidate build tool PATH"
 observed = "The isolated generation candidate reached the mandatory Programs build but its environment did not include the installed cargo binary."
@@ -2380,15 +3412,15 @@ area = "Human service compiler interfaces"
 observed = "Human Programs integration build exposed a missing existing wire dependency, DID versus string comparison, absent saved-rotation JSON projection, mismatched authentication error owner, and move from a zeroizing response type."
 resolution = "Declare the existing dependency without external version changes; preserve exact identity, receipt, authentication and Drop semantics in the bounded service integration task."
 
-[gotcha.695]
-area = "Prior task source section publication"
-observed = "The narrow Human publication helper found an older in-progress parent section that had not yet been added to HEAD."
-resolution = "Classify existing and new task sections explicitly before staging, and reconstruct any later task edits only in index blobs verified against the earlier frozen source hashes."
-
 [gotcha.694]
 area = "Genuine replay first deployment"
 observed = "After the Client corpus import correction compiled, the real native replay fixture failed its first DEPLOY journal assertion before any SDK case."
 resolution = "Preserve the literal assertion and authenticate the real producer and capture boundary in a distinct bounded native task; do not manufacture a successful receipt."
+
+[gotcha.695]
+area = "Prior task source section publication"
+observed = "The narrow Human publication helper found an older in-progress parent section that had not yet been added to HEAD."
+resolution = "Classify existing and new task sections explicitly before staging, and reconstruct any later task edits only in index blobs verified against the earlier frozen source hashes."
 
 [gotcha.696]
 area = "Native replay predicate placement"
@@ -2415,6 +3447,16 @@ area = "Source path lookup"
 observed = "Narrow inspection used historical include and plural asset module paths that do not exist in the current checkout."
 resolution = "Resolve actual filenames with rg --files before reading and preserve the current production ownership boundaries."
 
+[gotcha.701]
+area = "Current asset native corpus prerequisites"
+observed = "The new real asset inventory fixture initially omitted local helper declarations and then the actual Governance module registration required by module_ctx_init."
+resolution = "Restore exact genuine declarations and register the existing Governance implementation; preserve the original native assertions and bounded repair evidence."
+
+[gotcha.702]
+area = "Current asset updated transport boundary"
+observed = "After the initial SDK inventory case and genuine PAUSE WAL publication passed, the updated real LNI server restart failed its literal serve assertion on the second repair cycle."
+resolution = "Stop without inferring a cause or rerunning; preserve build0 verify1 and the updated SDK phase as unrun."
+
 [gotcha.703]
 area = "Scalar and native approval type boundary"
 observed = "Every genuine native ActivityType has a nonzero module in a u32, whereas the legacy scalar approval Prepared uses u16 and AgentDid counterparties; the checked conversion deliberately refuses it."
@@ -2435,6 +3477,26 @@ area = "Native custody canonical semantics"
 observed = "NativeLocalGrantConsentV1 validation checks record bounds and expiry but does not itself establish full native capability and session semantics."
 resolution = "Parse and bind actual canonical capability and session constraints; signatures remain consent and never replace trusted native authorization."
 
+[gotcha.707]
+area = "Existing task identifier ownership"
+observed = "A proposed task103.6.5 identifier already belonged to an existing contract and its claim failed before any source edit."
+resolution = "Select the verified unused task103.6.12 identifier and preserve the existing task and lease."
+
+[gotcha.708]
+area = "Market corpus temporary lifetime"
+observed = "The new Market corpus initially borrowed a temporary value across the verification call and the focused compiler rejected its lifetime."
+resolution = "Bind the owned value locally and keep all proof predicates unchanged; the single relevant repair compiled successfully."
+
+[gotcha.709]
+area = "Current source path discovery"
+observed = "Narrow lookups assumed absent qualification helper and account paths; actual proof crate is agent/crates/layerx-proof and fixture helper is tests/support/lxgb_metadata.rs."
+resolution = "Discover current paths with rg --files before reading; no source or assertion changes follow an absent guessed path."
+
+[gotcha.710]
+area = "Market capture output lifetime"
+observed = "The runtime capture example borrowed temporary integer output bytes across SHA256 selection; native and Wasm subbuilds passed while the example compile failed."
+resolution = "Apply only the approved local byte binding, preserving the exact output and signed billing digest; preserve original build101 and later build0 evidence separately."
+
 [gotcha.711]
 area = "Native custody audit trace ownership"
 observed = "The native signer passed its TraceId by value to an audit API requiring a shared reference."
@@ -2449,6 +3511,11 @@ resolution = "Retain each cryptographic verifier and its refusal, map errors exp
 area = "Native custody import session contract"
 observed = "The genuine Go signing setup returned HTTP400 because its import session identifier violated the existing no-slash length contract."
 resolution = "Keep the refusal and all predicates; record that Rust custody/passkey cases never ran and do not extend the exhausted task with a neighboring fixture repair."
+
+[gotcha.714]
+area = "Native Market setup preparation"
+observed = "After the approved lifetime repair compiled all capture targets, the genuine setup batch failed its prepared-status assertion before Market profile and billing execution."
+resolution = "Preserve the literal assertion and raw failure without guessing cause; no successful capture or behavior qualification is credited."
 
 [gotcha.715]
 area = "Actual daemon replay lifecycle access"
@@ -2465,20 +3532,55 @@ area = "Generated Agent operation producer and historical count"
 observed = "The operation catalogue marks itself generated but no committed producer was found; the old operation-envelope gate asserts exactly51 operations while new tenant readiness requires an additive named operation."
 resolution = "Restore deterministic schema-driven generation and use an explicit additive contract version. Preserve the old51-operation assertion and record its version conflict without rerunning or loosening it."
 
-[gotcha.720]
-area = "Bounded current-trust build"
-observed = "Task5.2 source was complete but its original08:32UTC deadline expired during actual Go CLI compilation; later focused and native build stages never ran."
-resolution = "Record exit1 at the cutoff and verificationUNRUN; do not infer a compiler defect, restart the build or claim the absent genuine trust fixtures were exercised."
+[gotcha.718]
+area = "Ordinary native Send purpose and consent producer"
+observed = "Native Send preview demands an embedded purpose, but the existing extractor recognizes BudgetCreate, IssueGrant and Receive only; native access provisioning also has no public authenticated caller."
+resolution = "Preserve the strict predicate and closed action contract; keep the journey partial until a distinct authenticated purpose profile and real consent producer are explicitly designed and approved."
 
 [gotcha.719]
 area = "Native Send compiler integration"
 observed = "The deposit build exposed a private effects import, unresolved native amount map type and fixed-array versus vector signing preimage in the earlier Send producer."
 resolution = "Apply the owner-approved public reexports, exact map types and byte-identical vector conversion; retain failed build evidence and use only the approved additional integration build window."
 
+[gotcha.720]
+area = "Bounded current-trust build"
+observed = "Task5.2 source was complete but its original08:32UTC deadline expired during actual Go CLI compilation; later focused and native build stages never ran."
+resolution = "Record exit1 at the cutoff and verificationUNRUN; do not infer a compiler defect, restart the build or claim the absent genuine trust fixtures were exercised."
+
 [gotcha.721]
 area = "Combined caller compiler integration"
 observed = "The approved Agent and Human build each exited101 after the corrected Send preview compiled; MCP still accesses old EvaluationInput fields and omits authorization variants, while four Human native callers use the legacy error mapper."
 resolution = "Retain both exact immutable-revision logs; no repair or rerun under the exhausted build approval. Admit corrections only in their actual caller implementation scopes."
+
+[gotcha.722]
+area = "Private task admission script syntax"
+observed = "A private metadata admission script had one unmatched parenthesis and stopped before any repository write."
+resolution = "Correct the private script and run the intended bounded metadata mutation once; no source or qualification change."
+
+[gotcha.723]
+area = "Codify exact owner identity"
+observed = "Task9.3 release was refused because the supplied owner prefixed the actual claim identity."
+resolution = "Use the reported complete_program_accounts owner; the subsequent release and explicit re-claim preserve original task time and criteria."
+
+[gotcha.724]
+area = "Connected MCP effect authority ownership"
+observed = "MCP executes web/payment effects under a separately restored local session registry and serializes results after that scope; remote status polling cannot linearize those boundaries with daemon revocation."
+resolution = "Implement the actual canonical effect owner and protected result writer under authoritative daemon session control; preserve the unmet requirement and never qualify an authorization-only proxy."
+
+[gotcha.725]
+area = "Scoped metadata publication whitespace"
+observed = "The task-section staging projection added a trailing blank line; diff --check reported it before a local metadata commit was made."
+resolution = "Normalize only the staged spec ending, amend the unpublished metadata commit, and make the private staging helper emit one final newline. Push occurred only after correction."
+
+[gotcha.726]
+area = "Sparse worktree exclusion setup ordering"
+observed = "The task34 exclusion write failed because the worktree info directory was absent, and checkout started before exclusions; no credential values were read, copied, hashed or logged."
+resolution = "Stop that checkout, create the actual worktree info directory and install exclusions before reapplying read-tree; admit source readers only after exclusion verification."
+
+[gotcha.727]
+area = "Available collaboration agent identities"
+observed = "An attempt to restart an agent absent from the live tree was rejected at the31-thread limit."
+resolution = "Reuse an existing completed live-tree agent with the exact task path and disjoint file slice; retain the same parent time and qualification budget."
 
 [gotcha.728]
 area = "Real Programs process fixture prerequisite"
@@ -2495,35 +3597,25 @@ area = "Scoped source formatting sequence"
 observed = "A task35 helper formatted authored regions before parent implementation completed and left one extra wire-file EOF blank line after final formatting."
 resolution = "Retain the sequencing deviation, perform final whole-task formatting before builds and remove only the extra blank line before publication; no assertion or qualification was changed."
 
-[gotcha.732]
-area = "Real attestor key import ceremony producer"
-observed = "The actual Send-purpose signing corpus failed HTTP400 because its inherited import helper omits mandatory ceremony identity, public membership and approved inventory authorization."
-resolution = "Keep production authorization checks intact and record build0 verify1; a genuine ceremony producer is required before another authorized qualification attempt."
-
 [gotcha.731]
 area = "Human native Send type and constructor integration"
 observed = "Human runtime used legacy native amount and signing-preimage representations; the approved correction then exposed an uncalled ApiFailure constructor."
 resolution = "Apply the five approved byte-identical conversions and one exact constructor call; retain the original build failures and separate successful builds from failed behavior gates."
 
-[gotcha.734]
-area = "Governed migration budget authority"
-observed = "The actual daemon installs a null numeric parameter reader, and no existing Governance producer emits the new exact LXMB1 budget state."
-resolution = "Retain the distinct authenticated budget consumer and keep migration partial; require a real governed producer, production activation and explicit historical replay policy before source completion."
-
-[gotcha.724]
-area = "Connected MCP effect authority ownership"
-observed = "MCP executes web/payment effects under a separately restored local session registry and serializes results after that scope; remote status polling cannot linearize those boundaries with daemon revocation."
-resolution = "Implement the actual canonical effect owner and protected result writer under authoritative daemon session control; preserve the unmet requirement and never qualify an authorization-only proxy."
+[gotcha.732]
+area = "Real attestor key import ceremony producer"
+observed = "The actual Send-purpose signing corpus failed HTTP400 because its inherited import helper omits mandatory ceremony identity, public membership and approved inventory authorization."
+resolution = "Keep production authorization checks intact and record build0 verify1; a genuine ceremony producer is required before another authorized qualification attempt."
 
 [gotcha.733]
 area = "Bounded source lookup output"
 observed = "A generator lookup included all build-script filenames and exceeded tool output capacity; two searches also named nonexistent candidate paths."
 resolution = "Use exact known directory and filename queries; recover the full truncated listing through a read-only helper before inferring generator availability."
 
-[gotcha.740]
-area = "Real custody consumer refusal assertion"
-observed = "After genuine five-node ceremony import succeeded, task38 verify reached the actual Rust consumer and failed the existing StepUpMismatch assertion at native_send_purpose.rs603."
-resolution = "Retain the assertion and exact build0 verify1 evidence; no unchanged rerun or unapproved neighboring edit. A concrete source repair or owner contract decision is required."
+[gotcha.734]
+area = "Governed migration budget authority"
+observed = "The actual daemon installs a null numeric parameter reader, and no existing Governance producer emits the new exact LXMB1 budget state."
+resolution = "Retain the distinct authenticated budget consumer and keep migration partial; require a real governed producer, production activation and explicit historical replay policy before source completion."
 
 [gotcha.735]
 area = "Codify lease duration units"
@@ -2540,16 +3632,6 @@ area = "Candidate publication handoff timing"
 observed = "Task7.3 whole source froze10:08 and was pushed, but root delayed sending its immutable candidate to the worker; the original10:18 cutoff interrupted the build before any compiler phase completed."
 resolution = "Record sourceDONE separately from build124 and verifyUNRUN, retain original deadline and require an explicit extension before another build; send publication results promptly."
 
-[gotcha.742]
-area = "Candidate generator command shape"
-observed = "The language worker first omitted the create subcommand and output path from candidate.py, receiving usage exit2 before generating any build candidate."
-resolution = "Invoke candidate.py create with exact repo, spec, immutable mainline and private output; successful candidate generation is source metadata, not a product gate."
-
-[gotcha.749]
-area = "Rust Wasm debug sections"
-observed = "Language guest retained 1218038 bytes of DWARF and exceeded the existing module size limit."
-resolution = "Owner approved removing compiler debug sections during the original link; retain the bound, prior verify1 and separate new build evidence."
-
 [gotcha.738]
 area = "Native state-proof producer discovery"
 observed = "An initial registry lookup missed the genuine deployment bundle encoder in lxp_daemon_deployment.inc and incorrectly reported absent producer authority."
@@ -2560,10 +3642,20 @@ area = "Native signing timestamp units"
 observed = "Canonical protocol3 activity validity is milliseconds while existing Go signing policy uses Unix seconds; new MCP payer cannot satisfy both unchanged contracts."
 resolution = "Keep old profiles intact and prepare an explicit authenticated native millisecond profile with checked approval conversion; require owner approval before the new signing policy is applied."
 
+[gotcha.740]
+area = "Real custody consumer refusal assertion"
+observed = "After genuine five-node ceremony import succeeded, task38 verify reached the actual Rust consumer and failed the existing StepUpMismatch assertion at native_send_purpose.rs603."
+resolution = "Retain the assertion and exact build0 verify1 evidence; no unchanged rerun or unapproved neighboring edit. A concrete source repair or owner contract decision is required."
+
 [gotcha.741]
 area = "Source-complete task claims"
 observed = "Codify refuses a new implementation claim on an already done source task."
 resolution = "Use a separately recorded owner-approved continuation task while preserving original DONE source status, frozen handoffs, time limits and all prior qualification results."
+
+[gotcha.742]
+area = "Candidate generator command shape"
+observed = "The language worker first omitted the create subcommand and output path from candidate.py, receiving usage exit2 before generating any build candidate."
+resolution = "Invoke candidate.py create with exact repo, spec, immutable mainline and private output; successful candidate generation is source metadata, not a product gate."
 
 [gotcha.743]
 area = "Cargo proxy invocation"
@@ -2594,6 +3686,11 @@ resolution = "Use followup_task for completedagents; record unwritten source asp
 area = "Migration fixture native declarations"
 observed = "C fixture compilation needed the actual lxp_crypto.h declaration and explicit bounded byte conversion."
 resolution = "Preserve all assertions; record repaired source c158fab46 and final build0 separately from missing historical fixture verify78."
+
+[gotcha.749]
+area = "Rust Wasm debug sections"
+observed = "Language guest retained 1218038 bytes of DWARF and exceeded the existing module size limit."
+resolution = "Owner approved removing compiler debug sections during the original link; retain the bound, prior verify1 and separate new build evidence."
 
 [gotcha.750]
 area = "External test layout edits"
