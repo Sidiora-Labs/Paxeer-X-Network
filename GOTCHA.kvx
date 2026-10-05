@@ -4558,3 +4558,143 @@ observed = "a local named leg (115-byte kernel leg Vec) in program_settlement.rs
 [gotcha.963]
 title = "task 9.2"
 observed = "issuer proof comes from the state-proven asset record in VerifiedCaps::effective_asset (written by registration, what the kernel checks), not from parsing the registration receipt"
+
+[gotcha.964]
+title = "readme r1-front"
+observed = "lane worktree: git merge --ff-only main failed because main carries the first-pass commit rehashed as 4b717f015 (content-identical to lane commit 1a3c07a9e) -> Confirm git diff between the two commits is empty, then git reset --hard main on the lane branch"
+
+[gotcha.965]
+title = "readme r1-front"
+observed = "docs/wiki/Quickstart.md: Says there is no `layerx faucet` command, but platform/cli/src/main.rs defines Faucet(faucet::FaucetArgs) -> Refresh Quickstart.md in its own lane"
+
+[gotcha.966]
+title = "readme r2-human"
+observed = "tooling: Write tool refuses files not Read in the session -> Read each lane file once before rewriting it, or write via bash heredoc"
+
+[gotcha.967]
+title = "readme r2-human"
+observed = "human/apps/wallet: config/ and tools/ hold only placeholder scaffolding the app never uses -> describe them as unused rather than documenting nonexistent subdirectories"
+
+[gotcha.968]
+title = "readme r2-human"
+observed = "human/apps/wallet: app is served under basePath /wallet, so health is /wallet/api/health -> prefix documented paths with /wallet"
+
+[gotcha.969]
+title = "readme r2-human"
+observed = "git: git commit in the fleet worktree took over two minutes -> run the commit in the background and wait for it"
+
+[gotcha.970]
+title = "readme r2-human"
+observed = "worktree: layerx-ui dist/*.cjs.map files show as modified without any build -> never git add -A; add exact lane paths only"
+
+[gotcha.971]
+title = "readme r3-kernel"
+observed = "readme verify.py: any dotted IPv4 is forbidden but layerx-mcp and agentd require endpoints starting with the IPv4 loopback literal -> describe loopback in words or use localhost where the code accepts it"
+
+[gotcha.972]
+title = "readme r3-kernel"
+observed = "readme verify.py: hostnames in inline code or reference-style links are never curled or name-checked -> grep lane files by hand for hosts not listed in docs/site/docs/reference/public-rpc.md"
+
+[gotcha.973]
+title = "readme r3-kernel"
+observed = "agent/crates/layerx-client/tests/lni_schema.rs: test asserts Version::V1_8 while the client schema is V1_9 (tags 44/45) -> fix in a code-scoped task; README now lists all 45 tags"
+
+[gotcha.974]
+title = "readme r3-kernel"
+observed = "agent/crates/layerx-types ModuleId: READMEs said 8 or 9 modules but ModuleId::ALL has 11 -> derive module counts from ModuleId::ALL"
+
+[gotcha.975]
+title = "readme r3-kernel"
+observed = "programs cargo builds: cargo --manifest-path programs/... from repo root skips programs/.cargo/config.toml -> run cargo under programs/ as scripts/programs/program-fixtures.sh does"
+
+[gotcha.976]
+title = "readme r3-kernel"
+observed = "programs/sdk/abi-manifest.tsv: lists ABI 1-4 though ABI 5 is admitted and pinned -> describe ABI 5 from sdk/rust/src/host.rs"
+
+[gotcha.977]
+title = "readme r3-kernel"
+observed = "platform/sdk/jvm/pom.xml: license says LayerX Protocol License with a sidiora/layerx-protocol URL while root LICENSE is Apache-2.0 -> fix in a pom-scoped task"
+
+[gotcha.978]
+title = "readme r3-kernel"
+observed = "wasm-runtime builders: builders/Makefile builds go-ext-builder:0017 while release targets use libwasmvm-builder:0103 -> do not assume make docker-images feeds make release-build"
+
+[gotcha.979]
+title = "readme r4-sdk"
+observed = "sdk/contrib: localnet-debug and rosetta tooling build ./simapp/simd, which does not exist in this repo -> describe as upstream-only; do not document as runnable"
+
+[gotcha.980]
+title = "readme r4-sdk"
+observed = "sdk spec READMEs: upstream links to docs/architecture ADRs and cosmos.network are broken or off-allowlist -> reference ADRs as plain text 'upstream Cosmos SDK ADR NNN'"
+
+[gotcha.981]
+title = "readme r4-sdk"
+observed = "sdk/contrib/githooks: upstream hooksPath contrib/githooks is wrong because sdk/ is a subdirectory of the repo -> use git config core.hooksPath sdk/contrib/githooks from the repo root"
+
+[gotcha.982]
+title = "readme r4-sdk"
+observed = "git commit in fleet worktrees: git commit --no-verify exceeded the 120s tool timeout -> run it in the background and wait on git log"
+
+[gotcha.983]
+title = "readme r5-docs"
+observed = "bridge docs: bridge/deploy/tests/docs-check.sh allows only https://paxeer.app and repo GitHub links and refuses any hostname or relative link on bridge/*.md pages, so the brief's preferred paxeer.network and docs.paxeer.app cannot appear there -> keep bridge pages to the repository link (or paxeer.app) and backtick repo paths; do not edit docs-check"
+
+[gotcha.984]
+title = "readme r5-docs"
+observed = "bridge docs: bridge/README.md on main carried a relative markdown link (deploy/relayer-solana.example.json) that docs-check.sh refuses -> name repo files as backticked repo-root paths on bridge pages"
+
+[gotcha.985]
+title = "readme r5-docs"
+observed = "bridge/deploy/checklist.sh: header comment still says only the chain's upgrade handler registers the Sidiora pair, while 05-proposal-sidiora-cap.json carries MsgRegisterSidioraPair -> record only; outside README scope"
+
+[gotcha.986]
+title = "readme r6-explorer"
+observed = "readme verify script: link regex treats handlebars template placeholders like ({{{apiDocPath}}}...) as repo-relative links and reports them broken -> insert a handlebars comment {{! }} between ] and ( so rendered output is unchanged"
+
+[gotcha.987]
+title = "readme r6-explorer"
+observed = "readme verify script: IPv4 pattern flags upstream config examples such as <ipv4>:8050 -> describe the listen address in words and point at the config file"
+
+[gotcha.988]
+title = "readme r6-explorer"
+observed = "git in fleet worktrees: git commit in a worktree of the large repo exceeded 300 s -> run commit in background and wait on it"
+
+[gotcha.989]
+title = "readme r7-consensus"
+observed = "consensus build: consensus/Makefile build/install target ./cmd/tendermint has no main package; test/e2e and networks Docker images expect a standalone tendermint binary and COPY go.mod from consensus/ -> Build the engine via make paxeer-build (paxd); treat upstream Docker tooling as not runnable"
+
+[gotcha.990]
+title = "readme r7-consensus"
+observed = "readme verify: verify.py treats `](<https://...>)` angle-bracket links as relative paths and flags every dotted IPv4 literal, including <ipv4> in curl examples -> Use plain URLs in markdown links and localhost in examples"
+
+[gotcha.991]
+title = "readme r7-consensus"
+observed = "link rule: Brief's external-link allowlist conflicts with step 3 for upstream spec prose (arxiv, apalache, ivy, tendermint-rs references) -> Kept live third-party references in upstream spec docs; replaced upstream-project docs links with in-repo spec files"
+
+[gotcha.992]
+title = "readme r8-chain"
+observed = "verify.py: IPv4 regex flags <ipv4> in any README line, including code blocks -> write localhost instead"
+
+[gotcha.993]
+title = "readme r8-chain"
+observed = "wasm/: contrib scripts and wasm/Makefile target cmd/wasmd, which does not exist in this repo -> document them as upstream wasmd references that need an external wasmd binary"
+
+[gotcha.994]
+title = "readme r8-chain"
+observed = "git in lane worktrees: git add/commit on the full repo index can take over two minutes -> run commits in the background or with a long timeout"
+
+[gotcha.995]
+title = "readme r9-toplevel"
+observed = "tools/codebase-map: generate.mjs throws Missing authoritative spec/layerx-platform/spec.kvx; only spec/paxeer-x exists -> point the generator at spec/paxeer-x/spec.kvx or restore the platform spec before relying on the map"
+
+[gotcha.996]
+title = "readme r9-toplevel"
+observed = "Makefile layerx-genesis-build: target lists cmd/layerx-genesis/main.c which does not exist (sources are lxp_genesis_*.c) -> check the target before documenting a genesis CLI build command"
+
+[gotcha.997]
+title = "readme r9-toplevel"
+observed = "migrations/0001_genesis_sections.sql: no source file or make target loads it; only spec.kvx touches it -> treat it as unwired until a loader lands"
+
+[gotcha.998]
+title = "readme r9-toplevel"
+observed = "readme verify: IP regex rejects <ipv4> in commands -> write localhost in README commands"
