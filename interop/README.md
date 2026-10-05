@@ -1,8 +1,8 @@
-# LayerX interoperability workspace
+# Paxeer X Network interoperability workspace
 
-Adapters at the edge. They translate someone else's protocol into evidence shaped for LayerX Network, and they never write balances. `402LXP` remains the only balance writer. Custody and withdrawal guarantees stay on Paxeer.
+Adapters at the edge of Paxeer X Network. They translate someone else's protocol into evidence shaped for the LayerX kernel, and they never write balances: `402LXP` is the only balance writer. Custody and withdrawal guarantees stay on the Paxeer X chain.
 
-This is the Rust workspace in `interop/`. It is not a second ledger.
+This is the Rust workspace in `interop/` (members listed in [`Cargo.toml`](Cargo.toml)). It is not a second ledger.
 
 ## Where to start
 
@@ -14,6 +14,10 @@ This is the Rust workspace in `interop/`. It is not a second ledger.
 | Ethereum / Solana mirrors | Batch archive publication and verification. Pure archives: no vault, no portal, no custody | `crates/layerx-mirror`; contracts in `contracts/ethereum-mirror/` and `contracts/solana-mirror/`; deploy notes in `deploy/mirror/` |
 | Ethereum / Solana migration | Source-chain verifiers and the `migration` adapter | `crates/layerx-migrate` - [OPERATIONS.md](crates/layerx-migrate/OPERATIONS.md) |
 | Portable receipts | Verify LayerX receipts without a live node | `crates/layerx-portable` - [PORTABILITY.md](PORTABILITY.md) |
+| Bridge relayer | Carries `PaxeerXVault` deposits into the bridge precompile and Paxeer X burns into vault releases, plus the `layerx-bridge-cosign` share transport | `crates/layerx-bridge-relayer`; deploy config in `deploy/bridge-relayer/`; operator runbook in [`bridge/README.md`](../bridge/README.md) |
+| Remote signer | Reference signer for the mirror publisher and the bridge relayer | `crates/layerx-mirror-signer`; protocol in [`deploy/mirror/signer-protocol.md`](deploy/mirror/signer-protocol.md) |
+| Gas station | Sponsored submission (`paxeer-gas-station` binary) | `crates/layerx-gas-station`; deploy config in `deploy/gas-station/` |
+| Web search sidecar | `x-websearch`: paid `/search` and `/fetch`, free `/health` | `crates/x-websearch`; deploy files in `deploy/x-websearch/` and `deploy/search-front/` |
 | Other adapters | AP2, UCP, Visa TAP, fiat rails | `crates/layerx-ap2`, `crates/layerx-ucp`, `crates/layerx-visa-tap`, `crates/layerx-fiat` |
 
 There is no standalone `layerx-a2a` crate. A2A is a transport on the gateway and on x402, plus the CLI installer in `platform/cli/`.
@@ -34,7 +38,7 @@ agent status, and per-principal canonical TAP targets, are documented in
 
 ## Mirrors are archives
 
-`layerx-mirror-publisher` and `layerx-mirror-verify` publish and check batch commitments on Ethereum and Solana. Anyone can verify LayerX state from a mirror. Funds do not live on those chains. Settlement stays on Paxeer (EVM chain ID `125`), whose node now lives in the chain directories at the [repository root](..).
+`layerx-mirror-publisher` and `layerx-mirror-verify` publish and check batch commitments on Ethereum and Solana. Anyone can verify LayerX state from a mirror. Funds do not live on those chains. Settlement stays on the Paxeer X chain (EVM chain ID `125`), whose node lives in the chain directories at the [repository root](../README.md).
 
 Remote signer framing: [`deploy/mirror/signer-protocol.md`](deploy/mirror/signer-protocol.md).
 
@@ -42,9 +46,9 @@ Remote signer framing: [`deploy/mirror/signer-protocol.md`](deploy/mirror/signer
 
 | Kind | Location |
 | --- | --- |
-| ETH / Solana source migration into LayerX | this workspace, `crates/layerx-migrate` |
-| LayerX genesis / cutover from the prior Go system | [`spec/layerx-protocol/docs/migration.md`](../spec/layerx-protocol/docs/migration.md) and [`migrations/`](../migrations/) |
-| Paxeer EVM store migrations | `modules/evm/migrations/` (chain-internal; not a LayerX surface) |
+| ETH / Solana source migration into LayerX | this workspace, `crates/layerx-migrate`; wiki page [`docs/wiki/Migration.md`](../docs/wiki/Migration.md) |
+| LayerX kernel genesis import sections and projections | [`migrations/`](../migrations/README.md) |
+| Paxeer X chain EVM store migrations | `modules/evm/migrations/` (chain-internal; not a LayerX surface) |
 
 ## Build and test
 
@@ -65,4 +69,4 @@ cargo build --locked --release --manifest-path interop/Cargo.toml --package laye
 cargo build --locked --release --manifest-path interop/Cargo.toml --package layerx-mirror --bin layerx-mirror-verify
 ```
 
-`make mirror-live` and `make mirror-verify-live` are qualification entrypoints; they require operator configuration and are not a public RPC.
+`make mirror-live` and `make mirror-verify-live` build those binaries and run them against live networks through `scripts/qualify-mirror-live.sh` and `scripts/qualify-mirror-verification-live.sh`; they require operator configuration. Example configurations are `deploy/mirror/config.example.json` and `deploy/mirror/verify-config.example.json`.

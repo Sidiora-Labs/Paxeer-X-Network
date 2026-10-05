@@ -1,7 +1,8 @@
-# LayerX documentation site
+# Paxeer X Network documentation site
 
-MkDocs Material site for LayerX Network. Page sources are under `docs/`.
-Normative protocol text remains in `spec/`.
+MkDocs Material site for Paxeer X Network, configured by `mkdocs.yml` in this
+directory. Page sources are under `docs/`. Normative protocol text remains in
+`spec/`. The hosted documentation is [docs.paxeer.app](https://docs.paxeer.app/).
 
 ## Preview locally
 
@@ -14,7 +15,7 @@ pip install -r requirements.txt
 mkdocs serve
 ```
 
-Then open the URL the command prints (typically `http://127.0.0.1:8000`).
+Then open the local URL the command prints.
 
 A one-shot build:
 
@@ -25,18 +26,19 @@ mkdocs build --strict
 Output lands in `site/`, which is not committed.
 
 `mkdocs serve` and `mkdocs build` must be run from this directory so they
-read `mkdocs.yml` here.
+read `mkdocs.yml` here, or be given it with `-f docs/site/mkdocs.yml` from the
+repository root.
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
 | `mkdocs.yml` | Site configuration and navigation |
-| `requirements.txt` | MkDocs and the Material theme |
+| `requirements.txt` | MkDocs and the Material theme, pinned |
 | `docs/` | Markdown pages |
+| `build_wiki.py` | Standalone wiki HTML export, below |
 
-The former wiki pages remain in `../wiki/` and are copied into `docs/` with
-rewritten relative links. Prefer this tree for new documentation.
+The wiki pages remain in `../wiki/`. Prefer this tree for new documentation.
 
 ## CI
 

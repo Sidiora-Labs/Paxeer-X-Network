@@ -42,35 +42,36 @@ The configuration names the first three; neither the configuration nor the scrip
 | `PAXEER_BRIDGE_SOLANA_KEYPAIR_FILE` | the path of the publisher keypair file, which pays for the deployment and becomes the program's upgrade authority |
 | `PAXEER_BRIDGE_SOLANA_TOOLCHAIN_BIN` | the directory of the pinned Solana toolchain holding `solana`, `solana-keygen` and `cargo-build-sbf` |
 | `PAXEER_BRIDGE_DEPLOYMENT_RECORD` | where the deployment record is written |
-| `PAXEER_BRIDGE_SOLANA_ADMIN_CLI` | the program's admin client, an executable that encodes the initialise and register-asset instructions |
+| `PAXEER_BRIDGE_SOLANA_ADMIN_CLI` | the built `paxeer-x-bridge-solana-admin` binary, the program's admin client that encodes the initialise and register-asset instructions |
 | `PAXEER_BRIDGE_SOLANA_PROGRAM_KEYPAIR_FILE` | optional; the program keypair, so a redeployment keeps its id. Required once `solana.program_id` is filled in |
+| `PAXEER_BRIDGE_SOLANA_EXECUTABLE_WAIT_SECONDS` | optional; the bound, in seconds, on the wait for the deployed program to become executable, `120` when unset |
 | `PAXEER_BRIDGE_SOLANA_CHAINS_ROOT` | optional; a chains root holding `solana/config.json`, in place of `bridge/solana/chains` |
 
 ## Before running the deploy script
 
 - `owner` carries `PLACEHOLDER:owner` and the five `attestors` carry `PLACEHOLDER:` values; every tool refuses them. The owner is a base58 Solana key; the attestors are 20-byte secp256k1 addresses, strictly ascending.
-- `solana.program_id` may stay `PLACEHOLDER:program-id` for the first deployment only. That run prints the id the program landed at; write it into the configuration, and every later run must deploy with the keypair of that id through `PAXEER_BRIDGE_SOLANA_PROGRAM_KEYPAIR_FILE`.
+- `solana.program_id` may stay `PLACEHOLDER:program-id` for the first deployment only. That run deploys, writes a record naming the program id and the vault authority, keeps the program keypair it generated at the record's path with `-program-keypair.json` in place of `.json`, and stops before the initialise step, naming the id. Write the id into the configuration; every later run must deploy with the keypair of that id through `PAXEER_BRIDGE_SOLANA_PROGRAM_KEYPAIR_FILE`. A first run refuses to overwrite a program keypair already at that path.
 - `jq`, `python3`, `cast` and `sha256sum` are on the `PATH`.
-- The toolchain's `cargo-build-sbf` must build `bridge/solana`. Its locked dependency graph, `bridge/solana/Cargo.lock`, includes crates whose manifests declare edition 2024, and a platform-tools cargo that predates edition 2024 refuses to resolve it.
-- `PAXEER_BRIDGE_SOLANA_ADMIN_CLI` names an executable. The script calls it as `initialise` with `--url`, `--keypair`, `--program-id`, `--commitment`, `--owner`, `--attestors` and `--threshold`, then once per asset as `register-asset` with `--url`, `--keypair`, `--program-id`, `--commitment`, `--mint`, `--asset-id`, `--decimals`, `--per-tx-cap` and `--total-cap`. This repository does not ship that executable, and the script refuses to run, `--preflight` included, until the variable names one.
+- The toolchain's `cargo-build-sbf` builds `bridge/solana` with platform tools `v1.56`, passed as `--tools-version` and fetched by `cargo-build-sbf` on first use, because the locked dependency graph, `bridge/solana/Cargo.lock`, includes crates whose manifests declare edition 2024 and the release the Solana toolchain installs by default refuses them.
+- `PAXEER_BRIDGE_SOLANA_ADMIN_CLI` names the admin client, `paxeer-x-bridge-solana-admin` in `bridge/solana/admin`, built with `cargo build --locked --release --manifest-path bridge/solana/Cargo.toml -p paxeer-x-bridge-solana-admin`. The script calls it as `initialise` with `--url`, `--keypair`, `--program-id`, `--commitment`, `--owner`, `--attestors` and `--threshold`, then once per asset as `register-asset` with `--url`, `--keypair`, `--program-id`, `--commitment`, `--mint`, `--asset-id`, `--decimals`, `--per-tx-cap` and `--total-cap`; the client checks every value against the configuration and stops on a disagreement. The script refuses to run, `--preflight` included, until the variable names an executable.
 
 ```sh
 bash bridge/deploy/deploy-solana-program.sh --preflight
 bash bridge/deploy/deploy-solana-program.sh
 ```
 
-The run confirms the endpoint answers a genesis hash, builds the program, deploys it, checks that the upgrade authority is the publisher, that the deployed ELF hashes to the built one and that the deployment is rooted, initialises the program, registers both assets in configuration order, and writes a record naming the program id, the program data account, the ELF hash, the vault-authority address with its handle and the rooted slot.
+The run confirms the endpoint answers a genesis hash, builds the program, deploys it, checks that the upgrade authority is the publisher, that the deployed ELF hashes to the built one, that the deployment is rooted and that the program becomes executable, initialises the program, registers both assets in configuration order, and writes a record naming the program id, the program data account, the ELF hash, the vault-authority address with its handle and the rooted slot.
+
+The admin client also runs on its own against the configuration: `apply`, `initialise`, `register-asset`, `set-cap`, `pause`, `unpause`, `register-recipient` and `show`.
 
 ## The vault handle
 
-The vault Paxeer X Network registers for Solana is the handle of the program's vault-authority PDA, derived from the single seed `vault-authority` - the seed `bridge/solana/src/state.rs` declares and `bridge/ATTESTATION-SOLANA.md` specifies. `bridge/deploy/deploy-solana-program.sh` derives the address it records as `vault_authority`, and the `vault_handle` next to it, from the seed `vault`. Take the vault handle for the Paxeer registration from the program's own seed rather than from the record:
+The vault Paxeer X Network registers for Solana is the handle of the program's vault-authority PDA, derived from the single seed `vault-authority` - the seed `bridge/solana/src/state.rs` declares as `VAULT_SEED` and `bridge/ATTESTATION-SOLANA.md` specifies. `bridge/deploy/deploy-solana-program.sh` derives the address it records as `vault_authority` from that seed, and the `vault_handle` next to it is the last 20 bytes of `keccak256` of that 32-byte address, as `bridge/vectors/solana.go` computes it. The same address can be derived by hand:
 
 ```sh
 "$PAXEER_BRIDGE_SOLANA_TOOLCHAIN_BIN/solana" find-program-derived-address <program id> string:vault-authority
 ```
 
-then take the last 20 bytes of `keccak256` of that 32-byte address, as `bridge/vectors/solana.go` does.
-
 ## The program at a glance
 
-The custody program is a raw `solana-program` crate: no Anchor, fixed-width big-endian account and instruction layouts, spl-token moved by CPI, and custody held by the vault-authority PDA. Its instruction set is initialise, propose and accept ownership, set attestors, register asset, set cap, set pause, deposit and register recipient; it carries no release instruction. A deposit admits the amount against the asset's caps, increments the deposit nonce and writes a receipt account for it; the inbound `logIndex` of that deposit is the nonce, and its inbound `txHash` is `keccak256` of the 64-byte transaction signature.
+The custody program is a raw `solana-program` crate: no Anchor, fixed-width big-endian account and instruction layouts, spl-token moved by CPI, and custody held by the vault-authority PDA. Its instruction set is initialise, propose and accept ownership, set attestors, register asset, set cap, set pause, deposit, register recipient and release. A release pays an attested Paxeer burn out of the vault-authority's token account to the registered recipient, after verifying the attestors' signatures over the outbound digest, and creates a nullifier PDA seeded by the burn so the same burn is never paid twice. A deposit admits the amount against the asset's caps, increments the deposit nonce and writes a receipt account for it; the inbound `logIndex` of that deposit is the nonce, and its inbound `txHash` is `keccak256` of the 64-byte transaction signature.
