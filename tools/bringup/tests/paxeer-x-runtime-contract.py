@@ -334,6 +334,432 @@ print(json.dumps(out,sort_keys=True))'''
                      'ln -s /data/guard /run/human-private/service')
 
 
+class RoleDirectoryEvidenceRead(unittest.TestCase):
+    STEPS = (
+        'layerx=/data/layerx\n',
+        'keys=$layerx/keys\n',
+        'run=/run/layerx\n',
+        'authority_material=/run/authority-private/material\n',
+        'memory "$run" 0755\n',
+        'memory /run/authority-private 0700\n',
+        'chown 4020:4020 "$run"\nchmod 2775 "$run"\n',
+        'install -d -o 0 -g 4020 -m 2775 "$layerx" "$layerx/settlement"\n',
+        'install -d -o 0 -g 4020 -m 0750 "$keys" "$keys/tokens"\n',
+        'if [ "$kernel_profile" = full ]; then\n    install -d -o 0 -g 0 -m 0700 "$keys/human-authority"\nfi\n',
+        'fresh "$keys/tokens/replica-token" 4020:4020 0440 openssl rand -hex 32\n',
+        'for token in backend-admin gateway-component gateway-authority webhooks-component webhooks-authority; do\n'
+        '\tfresh "$keys/tokens/$token" 4020:4020 0440 openssl rand -hex 32\ndone\n'
+        'if [ "$kernel_profile" = full ]; then\n'
+        '    fresh "$keys/human-authority/authority-token" 0:0 0600 openssl rand -hex 32\n'
+        '    fresh "$keys/human-authority/explorer-evidence-read" 0:0 0600 printf %s "$(openssl rand -hex 32)"\nfi\n',
+    )
+    REGISTRY = 'registry_bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION registry-authority\n'
+    FUNCTIONS = ('log', 'memory', 'fresh', 'registry_bearer', 'human_evidence_read_material')
+
+    @classmethod
+    def setUpClass(cls):
+        if os.geteuid() != 0:
+            raise RuntimeError('evidence-read role directories require real root namespace privileges')
+        for executable in ('unshare', 'mount', 'chroot', 'setpriv', 'bash', 'python3', 'openssl', 'ip'):
+            if shutil.which(executable) is None:
+                raise RuntimeError('missing namespace prerequisite: ' + executable)
+        cls.revision = command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).stdout.strip()
+        if command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip():
+            raise RuntimeError('source must be committed before namespace qualification')
+        binary = Path(os.environ.get('PAXEER_X_AUTHORITY_BIN', ''))
+        if not binary.is_absolute() or not binary.is_file() or binary.is_symlink() or not os.access(binary, os.X_OK):
+            raise RuntimeError('PAXEER_X_AUTHORITY_BIN must name the built layerx-receipt-authority executable')
+        source = (ROOT / 'docker/kernel/init.sh').read_text()
+        production = ''
+        for name in cls.FUNCTIONS:
+            found = re.findall(r'^' + name + r'\(\) \{(?:[^\n]*\}\n|\n.*?^\}\n)', source, re.M | re.S)
+            if len(found) != 1:
+                raise RuntimeError('production function extraction boundary changed: ' + name)
+            production += found[0]
+        for step in cls.STEPS + (cls.REGISTRY,):
+            if source.count('\n' + step) != 1:
+                raise RuntimeError('production step extraction boundary changed: ' + step.splitlines()[0])
+        material = re.findall(r'^human_authority_material\(\) \{\n.*?^\}\n', source, re.M | re.S)
+        if len(material) != 1 or '\thuman_evidence_read_material || return 1\n' not in material[0]:
+            raise RuntimeError('human-authority-material no longer installs the evidence-read token')
+        start = '\nif [ "$kernel_profile" = full ]; then\nservice receipt-authority 4021 \\\n'
+        if source.count(start) != 1:
+            raise RuntimeError('full receipt-authority service extraction boundary changed')
+        begin = source.index(start)
+        service = source[begin:source.index('\nfi\n', begin)]
+        for declared in ('$authority_material/human-agent.token $authority_material/evidence-read.token ',
+                         'LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE="$authority_material/evidence-read.token" \\\n',
+                         'LAYERX_AUTHORITY_TOKEN_FILES="$keys/tokens/gateway-authority:$run/registry-authority/token:'
+                         '$keys/tokens/webhooks-authority" \\\n'):
+            if declared not in service:
+                raise RuntimeError('receipt-authority runtime inputs do not declare: ' + declared.strip())
+        cls.production = production + 'kernel_profile=full\n' + ''.join(cls.STEPS[:6]) + \
+            'chown 4021:4020 /run/authority-private\n' + ''.join(cls.STEPS[6:])
+        cls.namespace = os.readlink('/proc/self/ns/mnt')
+        cls.pid_namespace = os.readlink('/proc/self/ns/pid')
+        cls.fixture = Path(tempfile.mkdtemp(prefix='paxeer-x-evidence-read-fixture-'))
+        cls.fixture.chmod(0o755)
+        shutil.copyfile(binary, cls.fixture / 'layerx-receipt-authority')
+        (cls.fixture / 'layerx-receipt-authority').chmod(0o755)
+        tls = cls.fixture / 'tls'
+        tls.mkdir()
+        tls.chmod(0o755)
+        work = Path(tempfile.mkdtemp(prefix='paxeer-x-evidence-read-ca-'))
+        try:
+            for argv in (
+                    ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+                     '-keyout', str(work / 'ca.key'), '-out', str(tls / 'ca.pem'), '-days', '1',
+                     '-subj', '/CN=paxeer-x-evidence-read-ca', '-addext', 'basicConstraints=critical,CA:TRUE',
+                     '-addext', 'keyUsage=critical,keyCertSign'],
+                    ['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+                     '-keyout', str(work / 'server.key'), '-out', str(work / 'server.csr'), '-subj', '/CN=localhost']):
+                command(argv)
+            (work / 'server.ext').write_text('subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\n'
+                                             'extendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature\n')
+            command(['openssl', 'x509', '-req', '-in', str(work / 'server.csr'), '-CA', str(tls / 'ca.pem'),
+                     '-CAkey', str(work / 'ca.key'), '-CAcreateserial', '-days', '1',
+                     '-extfile', str(work / 'server.ext'), '-out', str(work / 'server.pem')])
+            command(['openssl', 'x509', '-in', str(work / 'server.pem'), '-outform', 'DER', '-out', str(tls / 'cert.der')])
+            command(['openssl', 'x509', '-in', str(tls / 'ca.pem'), '-outform', 'DER', '-out', str(tls / 'ca.der')])
+            command(['openssl', 'pkcs8', '-topk8', '-nocrypt', '-in', str(work / 'server.key'), '-outform', 'DER',
+                     '-out', str(tls / 'key.der')])
+        finally:
+            shutil.rmtree(work)
+        for name in ('ca.pem', 'ca.der', 'cert.der'):
+            (tls / name).chmod(0o444)
+        os.chown(tls / 'key.der', 4021, 4020)
+        (tls / 'key.der').chmod(0o400)
+        (cls.fixture / 'probe.py').write_text(PROBE)
+        (cls.fixture / 'probe.py').chmod(0o444)
+        cls.identity = {
+            'LAYERX_AUTHORITY_SEQUENCER_ID': os.urandom(32).hex(),
+            'LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY': os.urandom(32).hex(),
+            'LAYERX_AUTHORITY_REPLICA_ID': os.urandom(32).hex(),
+        }
+        print('evidence-read revision=' + cls.revision + ' production_sha256=' +
+              hashlib.sha256(cls.production.encode()).hexdigest() + ' authority_sha256=' +
+              hashlib.sha256(binary.read_bytes()).hexdigest(), flush=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.fixture)
+
+    def setUp(self):
+        self.scratch = Path(tempfile.mkdtemp(prefix='paxeer-x-evidence-read-'))
+        self.durable = self.scratch / 'durable'
+        self.durable.mkdir()
+        self.durable.chmod(0o755)
+        self.registry = os.urandom(32).hex()
+        self.sequence = 0
+
+    def tearDown(self):
+        shutil.rmtree(self.scratch)
+
+    def namespace_case(self, body, registry=None, before=''):
+        import shlex
+        self.sequence += 1
+        sandbox = self.scratch / ('root-' + str(self.sequence))
+        sandbox.mkdir(mode=0o700)
+        scaffold = '''set -euo pipefail
+root=ROOT_PATH
+[ "$(readlink /proc/self/ns/mnt)" != ORIGINAL_MOUNT ]
+[ "$(readlink /proc/self/ns/pid)" != ORIGINAL_PID ]
+ip link set lo up
+mount --make-rprivate /
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root"
+for directory in usr bin sbin lib lib64 etc; do
+    [ ! -d "/$directory" ] || {
+        mkdir -p "$root/$directory"
+        mount --bind "/$directory" "$root/$directory"
+        mount -o remount,bind,ro "$root/$directory"
+    }
+done
+mkdir -m0755 "$root/proc" "$root/dev" "$root/run" "$root/data" "$root/fixture"
+mkdir -m1777 "$root/tmp"
+for device in null urandom; do
+    touch "$root/dev/$device"
+    mount --bind "/dev/$device" "$root/dev/$device"
+done
+mount -t proc -o nosuid,nodev,noexec proc "$root/proc"
+mount --bind DURABLE_PATH "$root/data"
+mount --bind FIXTURE_PATH "$root/fixture"
+mount -o remount,bind,ro "$root/fixture"
+exec chroot "$root" /bin/bash -se <<'PAXEER_X_EVIDENCE_READ_CASE'
+set -euo pipefail
+umask 077
+'''
+        for name, value in (('ROOT_PATH', str(sandbox)), ('DURABLE_PATH', str(self.durable)),
+                            ('FIXTURE_PATH', str(self.fixture)),
+                            ('ORIGINAL_MOUNT', self.namespace), ('ORIGINAL_PID', self.pid_namespace)):
+            scaffold = scaffold.replace(name, shlex.quote(value))
+        scaffold += before
+        authority = ['setpriv', '--reuid=4021', '--regid=4020', '--clear-groups', '--no-new-privs', 'env', '-i',
+                     'PATH=/usr/bin:/bin', 'LAYERX_AUTHORITY_LISTEN=127.0.0.1:9445',
+                     'LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID=7654321',
+                     'LAYERX_AUTHORITY_NETWORK_ID=paxeer-x-role-directories',
+                     'LAYERX_AUTHORITY_TLS_CERT_DER=/fixture/tls/cert.der',
+                     'LAYERX_AUTHORITY_TLS_KEY_DER=/fixture/tls/key.der',
+                     'LAYERX_AUTHORITY_CLIENT_CA_DER=/fixture/tls/ca.der',
+                     'LAYERX_AUTHORITY_REPLICA_URL=http://127.0.0.1:9402',
+                     'LAYERX_AUTHORITY_FIRST_BATCH=1', 'LAYERX_AUTHORITY_LAST_BATCH=18446744073709551615',
+                     *(key + '=' + value for key, value in self.identity.items())]
+        helpers = ('authority=(' + ' '.join(shlex.quote(item) for item in authority) +
+                   ' "LAYERX_AUTHORITY_TOKEN_FILES=$keys/tokens/gateway-authority:$run/registry-authority/token:'
+                   '$keys/tokens/webhooks-authority"'
+                   ' "LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE=$authority_material/evidence-read.token"'
+                   ' "LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE=$keys/tokens/replica-token"'
+                   ' "LAYERX_AUTHORITY_LNI_SOCKET=$run/node/layerxd.lni.sock"'
+                   ' /fixture/layerx-receipt-authority)\n'
+                   '''refused_start() {
+    local code
+    set +e
+    timeout 20 "${authority[@]}" 2>/tmp/refused.log
+    code=$?
+    set -e
+    cat /tmp/refused.log >&2
+    [ "$code" -eq 2 ] && grep -qF -- "$1" /tmp/refused.log
+}
+probe() {
+    local pid code
+    "${authority[@]}" 2>/tmp/authority.log &
+    pid=$!
+    set +e
+    python3 /fixture/probe.py /fixture/tls/ca.pem 9445 "evidence=$authority_material/evidence-read.token" \\
+        "gateway=$keys/tokens/gateway-authority" "registry=$run/registry-authority/token" >/tmp/probe.json
+    code=$?
+    set -e
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" || true
+    cat /tmp/authority.log >&2
+    [ "$code" -eq 0 ]
+    printf 'PROBE %s\\n' "$(cat /tmp/probe.json)"
+}
+''')
+        registry = self.registry if registry is None else registry
+        script = (scaffold + self.production + 'export LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION=' +
+                  shlex.quote(registry) + '\n' + self.REGISTRY + helpers + body + '\nPAXEER_X_EVIDENCE_READ_CASE\n')
+        argv = ['unshare', '--mount', '--pid', '--fork', '--kill-child=KILL', '--net',
+                '--ipc', '--uts', '--propagation', 'private', '--mount-proc', '/bin/bash', '-se']
+        try:
+            result = subprocess.run(argv, input=script, capture_output=True, text=True, timeout=180,
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+        except subprocess.TimeoutExpired:
+            self.fail('disposable evidence-read namespace exceeded 180 seconds')
+        self.assertEqual(os.readlink('/proc/self/ns/mnt'), self.namespace)
+        self.assertEqual(os.readlink('/proc/self/ns/pid'), self.pid_namespace)
+        return result
+
+    def initialized(self, following, registry=None):
+        result = self.namespace_case('human_evidence_read_material\n' + following, registry)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
+
+    def probed(self, result):
+        lines = [line[6:] for line in result.stdout.splitlines() if line.startswith('PROBE ')]
+        self.assertEqual(len(lines), 1, result.stdout + result.stderr)
+        return json.loads(lines[0])
+
+    def assert_routes(self, routes):
+        self.assertEqual(routes['evidence_relay'][0], 503, routes)
+        self.assertIn('replica_unavailable', routes['evidence_relay'][1])
+        self.assertEqual(routes['evidence_relay_without_digest'][0], 400, routes)
+        for forbidden in ('evidence_by_activity', 'evidence_wait_by_activity', 'evidence_internal_authority',
+                          'anonymous_relay', 'altered_evidence_relay'):
+            self.assertEqual(routes[forbidden][0], 401, (forbidden, routes))
+            self.assertIn('identity_required', routes[forbidden][1])
+        self.assertEqual(routes['gateway_relay'][0], 503, routes)
+        self.assertNotEqual(routes['registry_by_activity'][0], 401, routes)
+
+    def test_01_minted_installed_and_isolated(self):
+        result = self.initialized('''python3 - <<'PY_CHECK'
+import os,re,stat
+source='/data/layerx/keys/human-authority/explorer-evidence-read'
+installed='/run/authority-private/material/evidence-read.token'
+info=os.lstat(source)
+assert stat.S_ISREG(info.st_mode) and (info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode),info.st_nlink)==(0,0,0o600,1)
+token=open(source,'rb').read()
+assert re.fullmatch(rb'[0-9a-f]{64}',token)
+info=os.lstat(installed)
+assert stat.S_ISREG(info.st_mode) and (info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode),info.st_nlink)==(4021,4020,0o600,1)
+assert open(installed,'rb').read()==token
+for directory,expected in (('/run/authority-private',(4021,4020,0o700)),('/run/authority-private/material',(4021,4020,0o700)),('/data/layerx/keys/human-authority',(0,0,0o2700))):
+ info=os.lstat(directory)
+ assert stat.S_ISDIR(info.st_mode) and (info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))==expected,directory
+for path in ('/','/run','/run/authority-private','/run/authority-private/material','/data','/data/layerx','/data/layerx/keys'):
+ assert not os.lstat(path).st_mode&0o002,path
+peers=['/data/layerx/keys/tokens/'+name for name in ('backend-admin','gateway-component','gateway-authority','webhooks-component','webhooks-authority','replica-token')]
+peers+=['/data/layerx/keys/human-authority/authority-token','/run/layerx/registry-authority/token']
+for peer in peers:
+ assert open(peer,'rb').read().strip()!=token.strip(),peer
+PY_CHECK
+setpriv --reuid=4021 --regid=4020 --clear-groups --no-new-privs cmp -s /data/layerx/keys/human-authority/explorer-evidence-read /run/authority-private/material/evidence-read.token 2>/dev/null && exit 1
+setpriv --reuid=4021 --regid=4020 --clear-groups --no-new-privs cat /run/authority-private/material/evidence-read.token >/dev/null
+for uid in 4020 4026; do
+    for action in "cat /run/authority-private/material/evidence-read.token" "ls /run/authority-private/material" \\
+        "touch /run/authority-private/material/foreign" "cat /data/layerx/keys/human-authority/explorer-evidence-read" \\
+        "rm -f /run/authority-private/material/evidence-read.token"; do
+        if setpriv --reuid=$uid --regid=4020 --clear-groups --no-new-privs $action >/dev/null 2>&1; then
+            printf 'cross-uid %s allowed: %s\\n' "$uid" "$action" >&2
+            exit 1
+        fi
+    done
+done
+[ ! -e /run/authority-private/material/foreign ]
+[ -s /run/authority-private/material/evidence-read.token ]
+printf 'evidence-read isolated\\n'
+''')
+        self.assertIn('evidence-read isolated', result.stdout)
+
+    def test_02_authority_accepts_only_receipt_authority_route(self):
+        self.assert_routes(self.probed(self.initialized('probe\n')))
+
+    def test_03_bearer_collisions_refuse_startup(self):
+        token = self.initialized('cat "$authority_material/evidence-read.token"\n').stdout
+        self.assertRegex(token, r'^[0-9a-f]{64}$')
+        result = self.initialized('''printf %s "$LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION_SEEN" | cmp - "$run/registry-authority/token"
+refused_start 'must differ from every general and replica bearer'
+export LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION=DISTINCT
+registry_bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION registry-authority
+tr -d '\\n' <"$keys/tokens/replica-token" >"$keys/human-authority/explorer-evidence-read"
+rm -f "$authority_material/evidence-read.token"
+human_evidence_read_material
+tr -d '\\n' <"$keys/tokens/replica-token" | cmp - "$authority_material/evidence-read.token"
+refused_start 'must differ from every general and replica bearer'
+printf 'collisions refused\\n'
+'''.replace('DISTINCT', os.urandom(32).hex()).replace('$LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION_SEEN', token),
+            registry=token)
+        self.assertIn('collisions refused', result.stdout)
+
+    def test_04_unprotected_source_is_never_installed(self):
+        result = self.initialized('''install -o 0 -g 0 -m 0600 "$keys/human-authority/explorer-evidence-read" /tmp/original
+source=$keys/human-authority/explorer-evidence-read
+for variant in symlink owner group-mode hardlink directory; do
+    rm -rf "$source" "$authority_material/evidence-read.token" "$keys/human-authority/evidence-link"
+    install -o 0 -g 0 -m 0600 /tmp/original "$source"
+    case $variant in
+        symlink) rm "$source"; ln -s "$keys/tokens/gateway-authority" "$source" ;;
+        owner) chown 4021:4020 "$source" ;;
+        group-mode) chmod 0640 "$source" ;;
+        hardlink) ln "$source" "$keys/human-authority/evidence-link" ;;
+        directory) rm "$source"; mkdir -m 0700 "$source" ;;
+    esac
+    set +e
+    human_evidence_read_material 2>/tmp/refused.log
+    code=$?
+    set -e
+    cat /tmp/refused.log >&2
+    [ "$code" -eq 1 ]
+    grep -qF 'explorer evidence-read token refused: owner, type or mode' /tmp/refused.log
+    [ ! -e "$authority_material/evidence-read.token" ]
+    printf 'refused %s\\n' "$variant"
+done
+[ "$(stat -c '%u:%g:%a' "$keys/tokens/gateway-authority")" = 4020:4020:440 ]
+''')
+        for variant in ('symlink', 'owner', 'group-mode', 'hardlink', 'directory'):
+            self.assertIn('refused ' + variant + '\n', result.stdout)
+
+    def test_05_unprotected_installed_token_refuses_startup(self):
+        result = self.initialized('''token=$authority_material/evidence-read.token
+chown 4020:4020 "$token"
+refused_start 'LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE is unavailable or unprotected'
+chown 4021:4020 "$token"
+chmod 0640 "$token"
+refused_start 'LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE is unavailable or unprotected'
+chmod 0600 "$token"
+mv "$token" "$token.moved"
+ln -s "$token.moved" "$token"
+refused_start 'LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE is unavailable or unprotected'
+printf 'installed token refusals\\n'
+''')
+        self.assertIn('installed token refusals', result.stdout)
+
+    def test_06_restart_preserves_durable_token_and_recreates_runtime(self):
+        first = self.initialized('''touch /run/authority-private/ephemeral
+sha256sum "$keys/human-authority/explorer-evidence-read" "$authority_material/evidence-read.token" | sed 's/^/SHA /'
+probe
+''')
+        self.assert_routes(self.probed(first))
+        before = [line.split()[1] for line in first.stdout.splitlines() if line.startswith('SHA ')]
+        self.assertEqual(len(before), 2)
+        self.assertEqual(before[0], before[1])
+        second = self.initialized('''[ ! -e /run/authority-private/ephemeral ]
+sha256sum "$keys/human-authority/explorer-evidence-read" "$authority_material/evidence-read.token" | sed 's/^/SHA /'
+[ "$(stat -c '%u:%g:%a' /run/authority-private/material "$authority_material/evidence-read.token")" = "$(printf '4021:4020:700\\n4021:4020:600')" ]
+probe
+''')
+        after = [line.split()[1] for line in second.stdout.splitlines() if line.startswith('SHA ')]
+        self.assertEqual(after, before)
+        self.assert_routes(self.probed(second))
+
+    def test_07_restart_refuses_redirected_runtime_directory(self):
+        before = self.initialized('sha256sum "$keys/human-authority/explorer-evidence-read"\n').stdout
+        result = self.namespace_case('printf unreachable\\n\n', before='ln -s /data /run/authority-private\n')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('unreachable', result.stdout)
+        self.assertIn('private runtime mount refused: /run/authority-private', result.stderr)
+        self.assertFalse((self.durable / 'material').exists())
+        source = self.durable / 'layerx/keys/human-authority/explorer-evidence-read'
+        self.assertEqual(before.split()[0], hashlib.sha256(source.read_bytes()).hexdigest())
+
+
+PROBE = r'''import json, socket, ssl, sys, time
+ca, port = sys.argv[1], int(sys.argv[2])
+tokens = {}
+for argument in sys.argv[3:]:
+    name, path = argument.split('=', 1)
+    tokens[name] = open(path).read().strip()
+context = ssl.create_default_context(cafile=ca)
+
+
+def get(path, token=None):
+    request = 'GET ' + path + ' HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n'
+    if token is not None:
+        request += 'Authorization: Bearer ' + token + '\r\n'
+    data = b''
+    with socket.create_connection(('127.0.0.1', port), timeout=20) as raw:
+        with context.wrap_socket(raw, server_hostname='localhost') as tls:
+            tls.sendall((request + '\r\n').encode())
+            while True:
+                try:
+                    chunk = tls.recv(65536)
+                except ssl.SSLEOFError:
+                    break
+                if not chunk:
+                    break
+                data += chunk
+    head, _, body = data.partition(b'\r\n\r\n')
+    return [int(head.split(b' ')[1]), body.decode(errors='replace')]
+
+
+deadline = time.monotonic() + 20
+while True:
+    try:
+        if get('/livez')[0] == 200:
+            break
+    except OSError:
+        pass
+    if time.monotonic() > deadline:
+        raise SystemExit('authority did not become live')
+    time.sleep(0.1)
+batch, digest, activity = '11' * 32, '22' * 32, '33' * 32
+relay = '/v1/batches/' + batch + '/receipt-authority?receipt_digest=' + digest
+evidence = tokens['evidence']
+print(json.dumps({
+    'evidence_relay': get(relay, evidence),
+    'evidence_relay_without_digest': get('/v1/batches/' + batch + '/receipt-authority', evidence),
+    'evidence_by_activity': get('/v1/authorized-batches/by-activity/' + activity, evidence),
+    'evidence_wait_by_activity': get('/v1/authorized-batches/wait-by-activity/' + activity, evidence),
+    'evidence_internal_authority': get('/internal/v1/activities/' + activity + '/authority', evidence),
+    'anonymous_relay': get(relay),
+    'altered_evidence_relay': get(relay, evidence[:-1] + ('0' if evidence[-1] != '0' else '1')),
+    'gateway_relay': get(relay, tokens['gateway']),
+    'registry_by_activity': get('/v1/authorized-batches/by-activity/' + activity, tokens['registry']),
+}, sort_keys=True))
+'''
+
+
 class DirectoryPrerequisite(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -3165,7 +3591,8 @@ def main():
         spec.loader.exec_module(module)
         return module.main()
     if arguments.case == 'role-directories':
-        suite = unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories)
+        suite = unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories),
+                                    unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectoryEvidenceRead)])
     elif arguments.case == 'role-directory-prerequisite':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(DirectoryPrerequisite)
     elif arguments.case == 'identity-rotation':

@@ -864,6 +864,7 @@ for token in backend-admin gateway-component gateway-authority webhooks-componen
 done
 if [ "$kernel_profile" = full ]; then
     fresh "$keys/human-authority/authority-token" 0:0 0600 openssl rand -hex 32
+    fresh "$keys/human-authority/explorer-evidence-read" 0:0 0600 printf %s "$(openssl rand -hex 32)"
 fi
 install -d -o 4021 -g 4020 -m 0700 "$layerx/core" "$layerx/agent-boundary"
 fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
@@ -941,10 +942,20 @@ publication_policy() {
 	install -o 4020 -g 4020 -m 0600 "$keys/publication/binding-policy.json" "$run/publication/binding-policy.json"
 }
 
+human_evidence_read_material() {
+	local source=$keys/human-authority/explorer-evidence-read material=/run/authority-private/material
+	if [ -L "$source" ] || [ ! -f "$source" ] || [ "$(stat -c '%u:%g:%a:%h' "$source")" != 0:0:600:1 ]; then
+		log "explorer evidence-read token refused: owner, type or mode"
+		return 1
+	fi
+	install -d -o 4021 -g 4020 -m 0700 "$material"
+	install -o 4021 -g 4020 -m 0600 "$source" "$material/evidence-read.token"
+}
+
 # human_authority_material: the human-authority-material init container.
 human_authority_material() {
 	local input=$keys/human-authority material=/run/authority-private/material
-	install -d -o 4021 -g 4020 -m 0700 "$material"
+	human_evidence_read_material || return 1
 	install -o 4021 -g 4020 -m 0600 "$input/authority-token" "$material/human-agent.token"
 	install -o 4021 -g 4020 -m 0600 "$input/principal-policy.json" "$material/principal-policy.json"
 	install -o 4021 -g 4020 -m 0600 "$input/registry.json" "$material/registry.json"
@@ -1330,7 +1341,7 @@ exec /usr/local/bin/layerx-core-boundary'
 # shellcheck disable=SC2016 # core.env and the material are read when the service starts
 if [ "$kernel_profile" = full ]; then
 service receipt-authority 4021 \
-	"$genesis_files $run/node/generation.sock $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
+	"$genesis_files $run/node/generation.sock $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/evidence-read.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
 	receipt_authority_prepare - -- \
 	env \
 	"LAYERX_AUTHORITY_LISTEN=[::]:9445" \
@@ -1346,6 +1357,7 @@ service receipt-authority 4021 \
 	LAYERX_AUTHORITY_MODULE_REGISTRY_FILE="$authority_material/registry.json" \
 	LAYERX_AUTHORITY_STATE_ROOT="$human_state/authority" \
 	LAYERX_AUTHORITY_TOKEN_FILES="$keys/tokens/gateway-authority:$run/registry-authority/token:$keys/tokens/webhooks-authority" \
+	LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE="$authority_material/evidence-read.token" \
 	LAYERX_AUTHORITY_REPLICA_URL=http://127.0.0.1:9402 \
 	LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE="$keys/tokens/replica-token" \
 	LAYERX_AUTHORITY_LNI_SOCKET="$run/node/layerxd.lni.sock" \

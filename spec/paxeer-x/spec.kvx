@@ -23046,7 +23046,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.1]
 title = "Create isolated Human role runtime directories before privilege drop"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 9
 requires = ["0.2", "24.10", "24.11", "24.8", "24.2", "12.3", "12.2", "24.3", "22.8"]
@@ -23071,6 +23071,12 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 do_5 = "Complete the real fixture envelope from24.11 dependency foundation,24.8 authenticated registry handoff,24.2 owner/native/naming/registry/journal/policy/authority generation,12.3 custody profile and12.2/24.3 KMS/movement integration. Produce provenance.json,data/,secrets/,trust/ca.crt and environment.json through these actual producers; enroll event principals and install matching endpoint credentials. Bind the selected image digest, revision and init/entrypoint bytes before running the unchanged complete role-directories startup/refusal/restart gate."
 completion_policy = "Task24.1 retains every requirement200 criterion and the unchanged full role-directories gate. Directory prerequisite evidence, process existence, partial rosters and missing-fixture refusals do not establish complete role startup or durable-state restart. No criterion or original gate is waived."
 do_6 = "Integrate the scoped evidence-read credential from22.8: mint a separate protected explorer-evidence-read token, install it as4021:4020 mode0600 in receipt-authority material, add it to declared runtime inputs and set LAYERX_AUTHORITY_EVIDENCE_READ_TOKEN_FILE. Preserve general authority token route sets. Exercise ownership, collision, forbidden-route and restart refusals through real processes; never deploy an explorer using the registry all-route bearer."
+completion_basis = "implementation"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/24.1.json"
+qualification_note = "Build exit 0; verify exit 1 after two repairs: the 7 RoleDirectoryEvidenceRead tests pass, the image-based RoleDirectories case needs PAXEER_X_RUNTIME_IMAGE (no selected kernel image on this host, image build exceeds the 30-minute cap, builder unreachable); do_5 fixture envelope not produced because 24.13/24.11/24.2 producer outputs are absent; cross-task contradiction: start_paxeer trusts api[1-16].mainnet-beta.paxeer.network through the system CA while the image gate mounts only /etc/layerx/trust/ca.crt"
 
 [task.24.6]
 title = "Recover precisely quiesced Human processes after export refusal"
