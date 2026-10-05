@@ -2,54 +2,58 @@
 
 <h1 align="center">Paxeer X Network</h1>
 
-Paxeer X Network — 1つのネットワーク：Paxeer EVM チェーンと LayerX エージェントネイティブドメインが1つのインターフェースで接続されます。
-
 [English](../../README.md) · [Español](README.es.md) · 日本語 · [Русский](README.ru.md) · [简体中文](README.zh-CN.md) · [Português](README.pt-BR.md) · [Deutsch](README.de.md) · [Français](README.fr.md)
 
-*内容が異なる場合は、英語版 README を参照版とします。*
+*この版と英語の README の内容が異なる場合は、英語版が優先されます。*
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../LICENSE)
-[![CI](https://github.com/Sidiora-Labs/Paxeer-X-Network/actions/workflows/ci.yml/badge.svg)](../../.github/workflows/ci.yml)
+<p align="center">
+  <!-- ═══ Network Identity ═══ -->
+  <img src="https://img.shields.io/badge/Paxeer%20X-Network-6C3BFF?style=for-the-badge" alt="Paxeer X Network" />
+  <img src="https://img.shields.io/badge/Chain%20ID-125%20(0x7D)-1F6FEB?style=for-the-badge&logo=chainlink&logoColor=white" alt="Chain ID 125" />
+  <img src="https://img.shields.io/badge/EVM-Compatible-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM Compatible" />
+  <img src="https://img.shields.io/badge/LayerX-Kernel%20(C17)-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX kernel" />
+  <img src="https://img.shields.io/badge/Solidity-Smart%20Contracts-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity" />
+</p>
+
+<p align="center">
+  <!-- ═══ Language Stack ═══ -->
+  <img src="https://img.shields.io/badge/C-00599C?style=for-the-badge&logo=c&logoColor=white" alt="C" />
+  <img src="https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white" alt="WebAssembly" />
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+</p>
+
+<p align="center">
+  <!-- ═══ Repo Health ═══ -->
+  <img src="https://img.shields.io/github/actions/workflow/status/Sidiora-Labs/Paxeer-X-Network/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI" />
+  <img src="https://img.shields.io/github/license/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/github/last-commit/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=git&logoColor=white" alt="Last Commit" />
+  <img src="https://img.shields.io/github/stars/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=github" alt="Stars" />
+</p>
 
 ## Paxeer X Network とは
 
-Paxeer X Network は自律エージェント向けの決定的実行および会計ネットワークです。状態を変更する操作はすべて、署名済みで正規符号化された `Activity` として投入されます。プロトコルは行為者と権限を検証し、アカウントシーケンスを消費し、単一のグローバルシーケンス上で Activity を順序付け、決定的な状態遷移を適用し、結果の状態ルートに紐付く署名済みレシートを返します。
+Paxeer X Network は、二つの実行ドメインを持つ一つのネットワークです。Paxeer X チェーン（`paxd`、Go、EVM チェーン ID 125）と、自律エージェントのための決定的な実行・会計ドメインである LayerX カーネル（`layerxd`、C17）から成ります。公式サイト: [paxeer.network](https://paxeer.network/)。ドキュメント: [docs.paxeer.app](https://docs.paxeer.app/)。
 
-追記専用の Activity ログが権威です。データベース索引は破棄可能な射影であり、そのログをリプレイすれば再構築できます。コンセンサスに関わる実行は浮動小数点、ローカル時計による判断、データベースの反復順、その他の非決定性の源を排除します。残高の書き込みが許されるコンポーネントは `402LXP` のみです。プロトコルモジュールは資金を自ら変更せず、検証済みの転送集合を発行します。
+LayerX カーネルでは、状態を変更するすべての操作が、署名済みで正規エンコードされた `Activity` として入ります。カーネルはアクターとその権限を検証し、アカウントのシーケンスを消費し、アクティビティを単一のグローバルシーケンス上に並べ、決定的な状態遷移を適用し、結果の状態ルートに結び付いた署名付きレシートを返します。
 
-通常のエージェント Activity は LayerX 内で実行および順序付けされます。定期チェックポイントは Paxeer に決済され、Paxeer はカストディ、チェックポイント登録、保証人ボンド、チャレンジ、出金、紛争、緊急退出を保持します。通常の LayerX 操作に Paxeer トランザクションは不要です。
+追記専用のアクティビティログが唯一の正です。データベースのインデックスは使い捨てのプロジェクションで、このログを再生すれば再構築できます。コンセンサスに関わる実行では、浮動小数点、ローカル時計に基づく判断、データベースの走査順序など、非決定性の原因をすべて排除します。残高を書き込めるのは `402LXP` だけです。プロトコルモジュールは資金を直接変更せず、検証済みの送金セットを出力します。
 
-本リポジトリは Paxeer X Network および Paxeer Network 向けの Sidiora Labs モノレポです。同一配置により、プロトコル、決済ネットワーク、コントラクト、開発者向け面を一箇所で監査できます。各サブシステムは独自のビルド、リリース、デプロイ、信頼境界を維持します。[`spec/layerx-protocol/design.md`](../../spec/layerx-protocol/design.md) を参照してください。
+通常のエージェントのアクティビティは LayerX カーネル内で実行・順序付けされます。定期的なチェックポイントは Paxeer X チェーンで決済され、Paxeer X チェーンがカストディ、チェックポイント登録、保証人のボンド、チャレンジ、出金、紛争、緊急退出を担います。通常のカーネル操作に Paxeer X チェーンのトランザクションは必要ありません。
 
-## テストネットを試す
+このリポジトリは、Sidiora Labs による Paxeer X Network のモノレポです。Paxeer X チェーンと LayerX カーネルを一つのリポジトリにまとめています。同じ場所に置くことで、カーネル、チェーン、コントラクト、開発者向け機能を一か所で監査できます。各サブシステムは、それぞれ独自のビルド、リリース、デプロイ、信頼の境界を保ちます。基準となる仕様は [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx) で、[`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md) として描画されています。リリースノートは [`CHANGELOG.md`](../../CHANGELOG.md) にあります。
 
-全手順は [`docs/wiki/Quickstart.md`](../wiki/Quickstart.md) です。`platform/cli` から `layerx` CLI をインストールし、クラスタを起動し、`build/beta-cluster/env` を source したうえで、クレデンシャルを作成し、faucet から請求し、Activity を送信し、レシートを検証し、プログラムをデプロイします。
+## ネットワークを試す
 
-公開エンドポイントのチェックリストは
-[`docs/wiki/Getting-Started-Testnet.md`](../wiki/Getting-Started-Testnet.md) です。
-ウォレット、faucet、Asset、Programs、HTTP 402 の完全な経路は
-[`docs/wiki/PaymentsQuickstart.md`](../wiki/PaymentsQuickstart.md) です。Native
-Asset の発行、公開の `POST /rpc`、402 コミットメントの追加機能はこのツリーで
-提供されていますが、`layerx wallet` / `layerx token` コマンドラインと LXT-20
-プログラムトークンインターフェースはまだ含まれていません。エンコーディング:
-[`docs/wiki/Assets.md`](../wiki/Assets.md)。RPC メソッド:
-[`docs/wiki/PublicRpc.md`](../wiki/PublicRpc.md)。エビデンスレベル:
-[`docs/wiki/CommitmentLevels.md`](../wiki/CommitmentLevels.md)。
-公開の決済フローの正確な実プロセストランスクリプトは
-[`docs/wiki/PublicAPI.md`](../wiki/PublicAPI.md) です。
+限定ベータはまだ開始していません。ゲートウェイ API は開始時に利用可能になります。これは実際の価値を扱うメインネットベータのため、一般向けのフォーセットはありません。承認された開発者にはチームからテスト用の割り当てが提供されます。
+
+チェーン ID 125 の公開 EVM JSON-RPC 名は [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md) に掲載されています。公開エンドポイントのチェックリストは [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md) です。ウォレット、カストディクレジットによる入金、Asset、Programs、HTTP 402 の手順は [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md) です。`layerx wallet` と `layerx token` のコマンドは `platform/cli` にあり、プログラム用の LXT-20 トークンインターフェースは `programs/crates/layerx-programs-registry/src/lxt20.rs` にあります。エンコーディング: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)。RPC メソッド: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)。証拠レベル: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)。公開決済 API: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md)。
+
+すべてをローカルで動かすには [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md) に従ってください。`platform/cli` から `layerx` CLI をインストールし、`make platform-beta-cluster-up` で使い捨てのベータクラスタを起動し、`build/beta-cluster/env` を読み込みます。その後、鍵を作成し、そのクラスタのプライベートフォーセットから請求し、支払いを送信し、レシートを検証し、プログラムをデプロイします。
 
 ```sh
 layerx key create quickstart
-```
-
-```sh
-jq -n --arg did "$LAYERX_TEST_SOURCE_DID" --arg public_key "$LAYERX_TEST_SOURCE_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
-curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" \
-  --header "Authorization: Bearer $(tr -d '\r\n' < "$LAYERX_TEST_AUTH_TOKEN_FILE")" \
-  --request POST "$LAYERX_FAUCET_URL/v1/faucet/claims" \
-  --header "Idempotency-Key: faucet-quickstart-01" \
-  --header 'Content-Type: application/json' --data-binary @faucet-request.json
 ```
 
 ```sh
@@ -85,7 +89,7 @@ layerx --json program deploy \
 
 ## ソースからビルドする
 
-コアランタイムは C17 です（ルート `Makefile` の `-std=c17`）。agent、human、platform の各ワークスペースは Rust 1.91.1（`rust-toolchain.toml`）を使用します。LayerX 決済コントラクトは Solidity 0.8.27（`foundry.toml`）を使用します。リプレイ適格化には GCC 13、Clang 18、Docker、amd64 musl ランナー、AArch64 クロスコンパイラと QEMU が必要です。[`docs/QUALIFICATION.md`](../QUALIFICATION.md) を参照してください。
+コアランタイムは C17 です（ルートの `Makefile` に `-std=c17`）。agent、human、platform の各ワークスペースは Rust 1.91.1 を使います（`rust-toolchain.toml`）。`contracts/` にあるカーネルの決済コントラクトは Solidity 0.8.27 を使います（`foundry.toml`）。リプレイ検定には GCC 13、Clang 18、Docker、amd64 の musl ランナー、AArch64 クロスコンパイラと QEMU が必要です。詳しくは [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md) を参照してください。
 
 ```sh
 make build
@@ -94,7 +98,7 @@ make test-contracts
 make ci
 ```
 
-ディレクトリを変更せずに、Paxeer の範囲付きターゲット:
+Paxeer X チェーンのターゲット（`paxd`、`chain.mk` で定義）。ディレクトリを移動せずに実行できます:
 
 ```sh
 make paxeer-build
@@ -103,41 +107,45 @@ make paxeer-test
 make paxeer-ci
 ```
 
-`make ci` は `public-audit`、ネイティブテスト、2 回ビルドのアーカイブ比較、コンセンサスシンボル検査、サニタイザスイートを実行します。`make monorepo-ci` は別のクロスサブシステムゲートです。ローカルでの合格は、コントラクトのデプロイ、カストディの移動、実資産の取り扱いを許可するものではありません。
+`make ci` は `public-audit`、カーネルのテスト、2 回のビルドによるアーカイブ比較、コンセンサスシンボルのチェック、サニタイザースイートを実行します。`make monorepo-ci` は複数のサブシステムにまたがる別のゲートです。ローカルで通っても、コントラクトのデプロイ、カストディの移動、実資産の取り扱いが許可されるわけではありません。
 
 ## リポジトリ構成
 
-| Path | 用途 |
+| パス | 用途 |
 | --- | --- |
-| `src/`, `include/` | C17 プロトコルランタイム、ステートマシン、ストレージ、シーケンシング、リプレイ、決済統合 |
-| `cmd/` | ネイティブデーモンとツール（`layerxd`、`layerxctl`、genesis、verify） |
-| `agent/` | Rust エージェントインタフェース、SDK、デーモン、MCP サーバ、エンコーディング、暗号、証明検証 |
-| `human/` | 人間向けコントロールプレーン、型付きインテントコンパイラ、カストディ境界クライアント、エクスプローラ索引、Web アプリケーション |
-| `platform/` | 開発者プラットフォーム、ホスト型サービス、ミドルウェア、SDK、エミュレータ、CLI、リリーストール |
-| `programs/` | プログラマブル LayerX ランタイムおよびプログラムツール |
-| `interop/` | エージェントコマースおよびクロスネットワーク相互運用面 |
-| `contracts/` | Paxeer のカストディ、チェックポイント、保証人ボンディング、請求、紛争、退出向け Solidity コントラクト |
-| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer Network ノード、EVM/RPC 互換、ストレージエンジン、モジュール、コントラクト、サブシステムローカルビルド |
-| `spec/` | 規範的 KVX 仕様、生成された設計、要件、タスクグラフ |
-| `tests/`, `test/`, `fuzz/` | ネイティブ、コントラクト、リプレイ、不変条件、フォルト、ファズの各スイート |
-| `migrations/` | ジェネシス、マイグレーション、突合、シャドウリプレイの作業 |
-| `docs/` | Wiki、モノレポ注記、適格化ドキュメント |
+| `src/`, `include/` | LayerX カーネルの C17 ランタイム: ステートマシン、ストレージ、シーケンシング、リプレイ、決済連携 |
+| `cmd/` | カーネルのデーモンとツール（`layerxd`、`layerxctl`、`layerx-guarantor`、ジェネシス、検証） |
+| `agent/` | Rust のエージェントインターフェース、SDK、デーモン、MCP サーバー、エンコーディング、暗号、証明検証 |
+| `human/` | 人間向けコントロールプレーン、型付きインテントコンパイラ、KMS、エクスプローラーインデックス、Web アプリとウォレットアプリ |
+| `platform/` | 開発者プラットフォーム、ホスト型サービス、ミドルウェア、SDK、エミュレーター、CLI、リリースツール |
+| `programs/` | LayerX カーネル向けの Programs ランタイム、レジストリ、インタープリター、サンドボックス、マーケット、プログラム SDK |
+| `interop/` | エージェント間コマースとネットワーク間相互運用の機能（ブリッジリレイヤーを含む） |
+| `contracts/` | Paxeer X チェーン上の Solidity コントラクト（カストディ、チェックポイント、保証人ボンド、請求、紛争、退出） |
+| `bridge/` | EVM チェーンと Solana 向けのブリッジ保管庫コントラクトとデプロイ手順書 |
+| `explorer/` | ブロックエクスプローラー。Blockscout のフォークで、モノレポの他の部分とは分離されています |
+| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer X チェーンのノード（`paxd`）、EVM/RPC 互換性、ストレージエンジン、モジュール、プリコンパイル、サブシステム固有のビルド |
+| `spec/` | 規範となる KVX 仕様、生成された設計、要件、タスクグラフ |
+| `tests/`, `fuzz/` | ネイティブ、コントラクト、リプレイ、不変条件、障害、ファズの各テストスイート |
+| `migrations/` | カーネルのジェネシスインポートセクション、再構築可能なプロジェクション、履歴インデックスの SQL |
+| `docs/` | Wiki、ドキュメントサイトのソース、モノレポのメモ、検定ドキュメント |
 
 ## ドキュメント
 
-- Wiki 索引: [`docs/wiki/Home.md`](../wiki/Home.md)
-- テストネットの始め方: [`docs/wiki/Getting-Started-Testnet.md`](../wiki/Getting-Started-Testnet.md)
-- 決済デベロッパーパス: [`docs/wiki/PaymentsQuickstart.md`](../wiki/PaymentsQuickstart.md)
-- 公開 JSON-RPC: [`docs/wiki/PublicRpc.md`](../wiki/PublicRpc.md)
-- Asset とトークン: [`docs/wiki/Assets.md`](../wiki/Assets.md)
-- コミットメントレベル: [`docs/wiki/CommitmentLevels.md`](../wiki/CommitmentLevels.md)
-- モノレポ構成とリリースタグ: [`docs/MONOREPO.md`](../MONOREPO.md)
-- 適格化ゲート: [`docs/QUALIFICATION.md`](../QUALIFICATION.md)
-- 仕様: [`spec/`](../../spec/)
+- ホスト型ドキュメント: [docs.paxeer.app](https://docs.paxeer.app/)
+- Wiki 目次: [`docs/wiki/Home.md`](../../docs/wiki/Home.md)
+- はじめに: [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md)
+- 決済開発者向け手順: [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md)
+- 公開 JSON-RPC: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)
+- Asset とトークン: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)
+- コミットメントレベル: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)
+- モノレポ構成とリリースタグ: [`docs/MONOREPO.md`](../../docs/MONOREPO.md)
+- 検定ゲート: [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md)
+- 仕様: [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx)
+- リリースノート: [`CHANGELOG.md`](../../CHANGELOG.md)
 
-## SDK と統合
+## SDK と連携
 
-| 言語 | Path |
+| 言語 | パス |
 | --- | --- |
 | Rust | `agent/crates/layerx-sdk` |
 | Python | `agent/sdk/python` |
@@ -147,18 +155,184 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` は `agent/crates/layerx-agentd` です。MCP サーバは `agent/crates/layerx-mcp` です。`platform/cli` の開発者 CLI は `layerx install mcp` および `layerx install a2a` でこれらのトランスポートをインストールします。
+`layerx-agentd` は `agent/crates/layerx-agentd` にあります。MCP サーバーは `agent/crates/layerx-mcp` にあります。`platform/cli` の開発者 CLI は、`layerx install mcp` と `layerx install a2a` でこれらのトランスポートをインストールします。
 
-## コントリビューション
+## アーキテクチャ
 
-プルリクエストを開く前に [`CONTRIBUTING.md`](../../CONTRIBUTING.md) を読んでください。プロトコル変更は `spec/` から始めます。疑わしい脆弱性を公開 Issue に記載しないでください。[`SECURITY.md`](../../SECURITY.md) に従ってください。
+Paxeer X Network は、二つの実行ドメインを持つ一つのネットワークです。Paxeer X チェーンのノード（`paxd`、Go）と LayerX カーネル（`layerxd`、C17）が、一方では EVM プリコンパイルで、もう一方ではホスト型プラットフォームサービスでつながっています。角の丸い箱は稼働中のサービス、円柱は永続ストア、六角形はコントラクトと EVM プリコンパイル（アドレス付き）、普通の箱はステートマシン内のモジュールです。矢印はデータの流れる向きを示し、実線は送信または書き込み、点線は読み取り、イベント、証明を運びます。
+
+```mermaid
+flowchart TB
+  subgraph users ["Users and agents"]
+    direction TB
+    human(["Human"])
+    agent(["Autonomous agent"])
+    web("Human web app")
+    hsvc("layerx-human-service")
+    intents("layerx-intents<br/>typed intent compiler")
+    kms("layerx-human-kms")
+    mcp("layerx-mcp")
+    sdk("layerx-sdk<br/>Rust · TypeScript · Python")
+    agentd("layerx-agentd")
+  end
+
+  subgraph platform ["Platform services"]
+    direction TB
+    gateway("layerx-gateway<br/>eth_* relay · px_* · px_getCapabilities")
+    indexer("layerx-indexer<br/>LayerX and Paxeer ingesters")
+    idxdb[("SQLite history")]
+    relay("relay/archive node")
+  end
+
+  subgraph lx ["LayerX kernel · C17"]
+    direction TB
+    layerxd("layerxd<br/>LNI server · sequencer")
+    kernel["Activity kernel<br/>module dispatch"]
+    perps["perps · 6"]
+    spot["spot · 10"]
+    gov["governance · 7"]
+    kbridge["bridge · 8"]
+    ledger["402LXP ledger<br/>sole balance writer"]
+    alog[("Activity log")]
+    guarantor("layerx-guarantor")
+  end
+
+  subgraph px ["Paxeer X node · paxd"]
+    direction TB
+    evm("EVM JSON-RPC<br/>pax-geth")
+    cons("Tendermint consensus")
+    occ("OCC parallel executor")
+    pAnchor{{"layerxAnchor<br/>0x1014"}}
+    pCustody{{"layerxCustody<br/>0x1013"}}
+    pExch{{"layerxExchange<br/>0x1015"}}
+    pBridge{{"layerxBridge<br/>0x1016"}}
+    pLaunch{{"launchpad<br/>0x1017"}}
+    mCustody["layerxcustody module"]
+    mExch["layerxexchange module"]
+    mBridge["layerxbridge module"]
+    mLaunch["launchpad module"]
+    paxdb[("PaxDB state store")]
+  end
+
+  subgraph eth ["Bridge to Ethereum"]
+    direction TB
+    relayer("layerx-bridge-relayer")
+    vault{{"PaxeerXVault"}}
+  end
+
+  human --> web
+  web -->|"HTTPS"| hsvc
+  hsvc -->|"typed intent"| intents
+  hsvc -->|"custody signing"| kms
+  intents -->|"compiled Activity"| agentd
+  agent --> mcp
+  agent --> sdk
+  mcp -->|"tool calls"| agentd
+  sdk -->|"daemon socket"| agentd
+  agentd -->|"LNI frames"| layerxd
+
+  layerxd --> kernel
+  kernel --> perps & spot & gov & kbridge
+  kernel -->|"transfer sets"| ledger
+  ledger -->|"signed receipt"| alog
+  alog -->|"sealed batch"| guarantor
+  guarantor -->|"submitCheckpoint"| pAnchor
+
+  layerxd -.->|"batch sync"| relay
+  relay -.->|"history batches"| indexer
+  evm -.->|"blocks · logs · tx_search"| indexer
+  indexer --> idxdb
+  indexer -.->|"px_getHistory"| gateway
+  layerxd -.->|"lx_* reads"| gateway
+  gateway -->|"eth_* relay"| evm
+  gateway -.->|"eth_call · eth_getLogs"| web
+  gateway -.->|"px_* reads"| hsvc
+
+  evm -->|"txs"| cons
+  cons -->|"ordered blocks"| occ
+  occ --> pAnchor & pCustody & pExch & pBridge & pLaunch
+  pCustody --> mCustody
+  pExch -->|"pending intent"| mExch
+  pExch -->|"margin deposit"| mCustody
+  pBridge --> mBridge
+  pLaunch --> mLaunch
+  occ -->|"state commits"| paxdb
+
+  pExch -.->|"intent logs decoded"| intents
+  mCustody -.->|"custody credit proof"| kbridge
+
+  vault -.->|"Deposit event"| relayer
+  relayer -->|"bridgeIn"| pBridge
+  pBridge -.->|"BridgeOut event"| relayer
+  relayer -->|"release"| vault
+
+  classDef actor fill:#e4dcf2,stroke:#7a68ad,color:#2a2340
+  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
+  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
+  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
+  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
+
+  class human,agent actor
+  class web,hsvc,intents,kms,mcp,sdk,agentd,gateway,indexer,relay,layerxd,guarantor,evm,cons,occ,relayer svc
+  class idxdb,alog,paxdb store
+  class pAnchor,pCustody,pExch,pBridge,pLaunch,vault contract
+  class kernel,perps,spot,gov,kbridge,ledger,mCustody,mExch,mBridge,mLaunch module
+```
+
+Ethereum へのブリッジの詳細: 各リレイヤーインスタンスはリモート署名者の背後に 1 本のアテスター鍵を持ち、観測したすべてのイベントと署名済みトランザクションをブロードキャスト前にジャーナルへ記録し、他のインスタンスと署名を交換することで 1 を超える署名閾値を満たします。
+
+```mermaid
+flowchart LR
+  subgraph ethb ["Ethereum"]
+    bVault{{"PaxeerXVault"}}
+  end
+
+  subgraph relb ["Relayer instance"]
+    direction TB
+    bRelayer("layerx-bridge-relayer")
+    bSigner("Remote signer<br/>one attestor key")
+    bJournal[("Append-only journal")]
+    bCosign[("Cosign directory")]
+  end
+
+  subgraph pxb ["Paxeer X node"]
+    direction TB
+    bPrec{{"layerxBridge<br/>0x1016"}}
+    bModule["layerxbridge module<br/>attestors · caps · nullifiers"]
+    bTf["tokenfactory<br/>bridged denoms"]
+  end
+
+  bVault -.->|"Deposit event"| bRelayer
+  bRelayer -->|"digest to sign"| bSigner
+  bRelayer -->|"events · signed txs"| bJournal
+  bRelayer -->|"threshold signatures"| bCosign
+  bRelayer -->|"bridgeIn + signatures"| bPrec
+  bPrec --> bModule
+  bModule -->|"mint · burn"| bTf
+  bPrec -.->|"BridgeOut event"| bRelayer
+  bRelayer -->|"release + signatures"| bVault
+
+  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
+  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
+  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
+  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
+
+  class bRelayer,bSigner svc
+  class bJournal,bCosign store
+  class bVault,bPrec contract
+  class bModule,bTf module
+```
+
+## コントリビュート
+
+プルリクエストを開く前に [`CONTRIBUTING.md`](../../CONTRIBUTING.md) を読んでください。プロトコルの変更は `spec/` から始まります。脆弱性の疑いを公開 issue で開示しないでください。[`SECURITY.md`](../../SECURITY.md) に従ってください。
 
 ## セキュリティ
 
-脆弱性は GitHub の非公開報告機能で報告してください。手順は [`SECURITY.md`](../../SECURITY.md) にあります。
+脆弱性は [`SECURITY.md`](../../SECURITY.md) に記載のとおり、GitHub のプライベート報告から報告してください。
 
 ## ライセンス
 
-Apache License, Version 2.0 のもとでライセンスされます。[`LICENSE`](../../LICENSE) および [`NOTICE`](../../NOTICE) を参照してください。
+Apache License, Version 2.0 の下でライセンスされています。[`LICENSE`](../../LICENSE) と [`NOTICE`](../../NOTICE) を参照してください。
 
-Paxeer X Network は Sidiora Labs が開発しています。
+Paxeer X Network は Sidiora Labs が開発しています。ソース: [github.com/Sidiora-Labs/Paxeer-X-Network](https://github.com/Sidiora-Labs/Paxeer-X-Network)。

@@ -9,11 +9,10 @@ English · [Español](docs/readme/README.es.md) · [日本語](docs/readme/READM
 </h1>
 <p align="center">
   <!-- ═══ Network Identity ═══ -->
-  <a href="https://mcpvault.io/servers/layerx-network/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report"><img src="https://mcpvault.io/badge/layerx-network.svg?theme=dark" alt="MCPVault: claimed" height="32"></a>
   <img src="https://img.shields.io/badge/Paxeer%20X-Network-6C3BFF?style=for-the-badge" alt="Paxeer X Network" />
   <img src="https://img.shields.io/badge/Chain%20ID-125%20(0x7D)-1F6FEB?style=for-the-badge&logo=chainlink&logoColor=white" alt="Chain ID 125" />
   <img src="https://img.shields.io/badge/EVM-Compatible-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM Compatible" />
-  <img src="https://img.shields.io/badge/LayerX-Settlement%20Layer-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX" />
+  <img src="https://img.shields.io/badge/LayerX-Kernel%20(C17)-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX kernel" />
   <img src="https://img.shields.io/badge/Solidity-Smart%20Contracts-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity" />
 </p>
 
@@ -27,51 +26,46 @@ English · [Español](docs/readme/README.es.md) · [日本語](docs/readme/READM
 </p>
 
 <p align="center">
-  <!-- ═══ Repo Health (dynamic — requires public repo) ═══ -->
-  <img src="https://img.shields.io/github/actions/workflow/status/Sidiora-Labs/paxeer-x-network/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI" />
-  <img src="https://img.shields.io/github/license/Sidiora-Labs/paxeer-x-network?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/github/last-commit/Sidiora-Labs/paxeer-x-network?style=for-the-badge&logo=git&logoColor=white" alt="Last Commit" />
-  <img src="https://img.shields.io/github/stars/Sidiora-Labs/paxeer-x-network?style=for-the-badge&logo=github" alt="Stars" />
+  <!-- ═══ Repo Health ═══ -->
+  <img src="https://img.shields.io/github/actions/workflow/status/Sidiora-Labs/Paxeer-X-Network/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI" />
+  <img src="https://img.shields.io/github/license/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/github/last-commit/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=git&logoColor=white" alt="Last Commit" />
+  <img src="https://img.shields.io/github/stars/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=github" alt="Stars" />
 </p>
 
 ## What Paxeer X Network is
-Paxeer X Network is a deterministic execution and accounting network for autonomous agents. Every state-changing operation enters as a signed, canonically encoded `Activity`. The protocol verifies the actor and its authority, consumes the account sequence, orders the activity on one global sequence, applies a deterministic state transition, and returns a signed receipt tied to the resulting state root.
+Paxeer X Network is one network with two execution domains: the Paxeer X chain (`paxd`, Go, EVM chain ID 125) and the LayerX kernel (`layerxd`, C17), the deterministic execution and accounting domain for autonomous agents. Official site: [paxeer.network](https://paxeer.network/). Documentation: [docs.paxeer.app](https://docs.paxeer.app/).
+
+Inside the LayerX kernel, every state-changing operation enters as a signed, canonically encoded `Activity`. The kernel verifies the actor and its authority, consumes the account sequence, orders the activity on one global sequence, applies a deterministic state transition, and returns a signed receipt tied to the resulting state root.
 
 The append-only activity log is the authority. Database indexes are disposable projections and can be rebuilt by replaying that log. Consensus-critical execution excludes floating point, local clock decisions, database iteration order, and other sources of nondeterminism. `402LXP` is the only component allowed to write balances. Protocol modules emit validated transfer sets rather than mutating funds themselves.
 
-Ordinary agent activity is executed and ordered inside LayerX. Periodic checkpoints settle to Paxeer, which holds custody, checkpoint registration, guarantor bonds, challenges, withdrawals, disputes, and emergency exits. An ordinary LayerX action does not require a Paxeer transaction.
+Ordinary agent activity is executed and ordered inside the LayerX kernel. Periodic checkpoints settle to the Paxeer X chain, which holds custody, checkpoint registration, guarantor bonds, challenges, withdrawals, disputes, and emergency exits. An ordinary kernel action does not require a Paxeer X chain transaction.
 
-This repository is the Sidiora Labs monorepo for Paxeer X Network: the Paxeer chain and the LayerX domain in one repository. Co-location keeps the protocol, settlement network, contracts, and developer surfaces auditable in one place. Each subsystem keeps its own build, release, deployment, and trust boundary. See [`spec/layerx-protocol/design.md`](spec/layerx-protocol/design.md).
+This repository is the Sidiora Labs monorepo for Paxeer X Network: the Paxeer X chain and the LayerX kernel in one repository. Co-location keeps the kernel, the chain, contracts, and developer surfaces auditable in one place. Each subsystem keeps its own build, release, deployment, and trust boundary. The governing specification is [`spec/paxeer-x/spec.kvx`](spec/paxeer-x/spec.kvx), rendered as [`spec/paxeer-x/design.md`](spec/paxeer-x/design.md); release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Try the network
 
-The cluster path is [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md): install the `layerx` CLI from `platform/cli`, bring up the cluster, source `build/beta-cluster/env`, then create a credential, claim from the faucet, submit an activity, verify the receipt, and deploy a program.
+The limited beta has not opened yet. The gateway API becomes available when it does. This is a mainnet beta on real value, so there is no faucet for general use; approved developers receive test allocations from the team.
 
+The public EVM JSON-RPC names for chain ID 125 are listed in
+[`docs/site/docs/reference/public-rpc.md`](docs/site/docs/reference/public-rpc.md).
 The public endpoint checklist is
 [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md).
-The complete wallet, faucet, Asset, Programs, and HTTP 402 path is
-[`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). Native
-Asset issuance, public `POST /rpc`, and 402 commitment extras are served by
-this tree; the `layerx wallet` / `layerx token` command line and the LXT-20
-program token interface are not in it yet. Encodings:
+The wallet, custody-credit funding, Asset, Programs, and HTTP 402 path is
+[`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). The
+`layerx wallet` and `layerx token` commands are in `platform/cli`, and the
+LXT-20 program token interface is in
+`programs/crates/layerx-programs-registry/src/lxt20.rs`. Encodings:
 [`docs/wiki/Assets.md`](docs/wiki/Assets.md). RPC methods:
 [`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md). Evidence levels:
-[`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md).
-An exact real-process transcript of the public payment flow is
-[`docs/wiki/PublicAPI.md`](docs/wiki/PublicAPI.md).
+[`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md). The public
+payment API is [`docs/wiki/PublicAPI.md`](docs/wiki/PublicAPI.md).
+
+To run everything locally, follow [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md): install the `layerx` CLI from `platform/cli`, bring up a disposable beta cluster with `make platform-beta-cluster-up`, source `build/beta-cluster/env`, then create a key, claim from that cluster's private-network faucet, submit a payment, verify the receipt, and deploy a program.
 
 ```sh
 layerx key create quickstart
-```
-
-```sh
-jq -n --arg did "$LAYERX_TEST_SOURCE_DID" --arg public_key "$LAYERX_TEST_SOURCE_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
-curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" \
-  --header "Authorization: Bearer $(tr -d '\r\n' < "$LAYERX_TEST_AUTH_TOKEN_FILE")" \
-  --request POST "$LAYERX_FAUCET_URL/v1/faucet/claims" \
-  --header "Idempotency-Key: faucet-quickstart-01" \
-  --header 'Content-Type: application/json' --data-binary @faucet-request.json
 ```
 
 ```sh
@@ -107,7 +101,7 @@ layerx --json program deploy \
 
 ## Build from source
 
-The core runtime is C17 (`-std=c17` in the root `Makefile`). Agent, human, and platform workspaces use Rust 1.91.1 (`rust-toolchain.toml`). LayerX settlement contracts use Solidity 0.8.27 (`foundry.toml`). Replay qualification needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler plus QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
+The core runtime is C17 (`-std=c17` in the root `Makefile`). Agent, human, and platform workspaces use Rust 1.91.1 (`rust-toolchain.toml`). The kernel settlement contracts in `contracts/` use Solidity 0.8.27 (`foundry.toml`). Replay qualification needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler plus QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
 
 ```sh
 make build
@@ -116,7 +110,7 @@ make test-contracts
 make ci
 ```
 
-Paxeer bounded targets, without changing directories:
+Paxeer X chain targets (`paxd`, defined in `chain.mk`), without changing directories:
 
 ```sh
 make paxeer-build
@@ -125,37 +119,41 @@ make paxeer-test
 make paxeer-ci
 ```
 
-`make ci` runs `public-audit`, native tests, a two-build archive comparison, consensus symbol checks, and sanitizer suites. `make monorepo-ci` is a separate cross-subsystem gate. A local pass is not authorization to deploy contracts, move custody, or handle real assets.
+`make ci` runs `public-audit`, kernel tests, a two-build archive comparison, consensus symbol checks, and sanitizer suites. `make monorepo-ci` is a separate cross-subsystem gate. A local pass is not authorization to deploy contracts, move custody, or handle real assets.
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/`, `include/` | C17 protocol runtime, state machine, storage, sequencing, replay, and settlement integration |
-| `cmd/` | Native daemons and tools (`layerxd`, `layerxctl`, genesis, verify) |
+| `src/`, `include/` | C17 LayerX kernel runtime, state machine, storage, sequencing, replay, and settlement integration |
+| `cmd/` | Kernel daemons and tools (`layerxd`, `layerxctl`, `layerx-guarantor`, genesis, verify) |
 | `agent/` | Rust agent interface, SDK, daemon, MCP server, encoding, cryptography, and proof verification |
-| `human/` | Human control plane, typed intent compiler, custody-boundary client, explorer index, and web application |
+| `human/` | Human control plane, typed intent compiler, KMS, explorer index, and the web and wallet applications |
 | `platform/` | Developer platform, hosted services, middleware, SDKs, emulator, CLI, and release tooling |
-| `programs/` | Programmable LayerX runtime and program tooling |
-| `interop/` | Agent-commerce and cross-network interoperability surfaces |
-| `contracts/` | Solidity contracts for Paxeer custody, checkpoints, guarantor bonding, claims, disputes, and exits |
-| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer Network node, EVM/RPC compatibility, storage engines, modules, contracts, and subsystem-local builds |
-| `spec/` | Normative KVX specifications, generated designs, requirements, and task graphs |
-| `tests/`, `test/`, `fuzz/` | Native, contract, replay, invariant, fault, and fuzz suites |
-| `migrations/` | Genesis, migration, reconciliation, and shadow-replay work |
-| `docs/` | Wiki, monorepo notes, and qualification documentation |
+| `programs/` | Programs runtime, registry, interpreter, sandbox, market, and program SDKs for the LayerX kernel |
+| `interop/` | Agent-commerce and cross-network interoperability surfaces, including the bridge relayer |
+| `contracts/` | Solidity contracts on the Paxeer X chain for custody, checkpoints, guarantor bonding, claims, disputes, and exits |
+| `bridge/` | Bridge vault contracts and deployment runbook for EVM chains and Solana |
+| `explorer/` | Block explorer, a Blockscout fork kept apart from the rest of the monorepo |
+| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Paxeer X chain node (`paxd`), EVM/RPC compatibility, storage engines, modules, precompiles, and subsystem-local builds |
+| `spec/` | Normative KVX specification, generated design, requirements, and task graph |
+| `tests/`, `fuzz/` | Native, contract, replay, invariant, fault, and fuzz suites |
+| `migrations/` | SQL for kernel genesis import sections, rebuildable projections, and the history index |
+| `docs/` | Wiki, documentation site sources, monorepo notes, and qualification documentation |
 
 ## Documentation
 
+- Hosted documentation: [docs.paxeer.app](https://docs.paxeer.app/)
 - Wiki index: [`docs/wiki/Home.md`](docs/wiki/Home.md)
-- Getting started on the network: [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md)
+- Getting started: [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md)
 - Payments developer path: [`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md)
 - Public JSON-RPC: [`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md)
 - Assets and tokens: [`docs/wiki/Assets.md`](docs/wiki/Assets.md)
 - Commitment levels: [`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md)
 - Monorepo layout and release tags: [`docs/MONOREPO.md`](docs/MONOREPO.md)
 - Qualification gates: [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md)
-- Specifications: [`spec/`](spec/)
+- Specification: [`spec/paxeer-x/spec.kvx`](spec/paxeer-x/spec.kvx)
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## SDKs and integrations
 
@@ -349,4 +347,4 @@ Report vulnerabilities through GitHub private reporting, as described in [`SECUR
 
 Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 
-Paxeer X Network is developed by Sidiora Labs.
+Paxeer X Network is developed by Sidiora Labs. Source: [github.com/Sidiora-Labs/Paxeer-X-Network](https://github.com/Sidiora-Labs/Paxeer-X-Network).

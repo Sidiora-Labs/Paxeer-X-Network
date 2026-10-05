@@ -2,55 +2,58 @@
 
 <h1 align="center">Paxeer X Network</h1>
 
-Paxeer X Network — un réseau : la chaîne EVM Paxeer et le domaine agent-natif LayerX derrière une interface unique.
-
 [English](../../README.md) · [Español](README.es.md) · [日本語](README.ja.md) · [Русский](README.ru.md) · [简体中文](README.zh-CN.md) · [Português](README.pt-BR.md) · [Deutsch](README.de.md) · Français
 
-*En cas de divergence, le README anglais est la version de référence.*
+*Si cette version diffère du README en anglais, la version anglaise fait foi.*
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../LICENSE)
-[![CI](https://github.com/Sidiora-Labs/Paxeer-X-Network/actions/workflows/ci.yml/badge.svg)](../../.github/workflows/ci.yml)
+<p align="center">
+  <!-- ═══ Network Identity ═══ -->
+  <img src="https://img.shields.io/badge/Paxeer%20X-Network-6C3BFF?style=for-the-badge" alt="Paxeer X Network" />
+  <img src="https://img.shields.io/badge/Chain%20ID-125%20(0x7D)-1F6FEB?style=for-the-badge&logo=chainlink&logoColor=white" alt="Chain ID 125" />
+  <img src="https://img.shields.io/badge/EVM-Compatible-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" alt="EVM Compatible" />
+  <img src="https://img.shields.io/badge/LayerX-Kernel%20(C17)-FF6B00?style=for-the-badge&logo=databricks&logoColor=white" alt="LayerX kernel" />
+  <img src="https://img.shields.io/badge/Solidity-Smart%20Contracts-363636?style=for-the-badge&logo=solidity&logoColor=white" alt="Solidity" />
+</p>
 
-## Ce qu'est Paxeer X Network
+<p align="center">
+  <!-- ═══ Language Stack ═══ -->
+  <img src="https://img.shields.io/badge/C-00599C?style=for-the-badge&logo=c&logoColor=white" alt="C" />
+  <img src="https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white" alt="WebAssembly" />
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+</p>
 
-Paxeer X Network est un réseau déterministe d'exécution et de comptabilité pour agents autonomes. Toute opération qui modifie l'état entre sous la forme d'une `Activity` signée et encodée de façon canonique. Le protocole vérifie l'acteur et son autorité, consomme la séquence du compte, ordonne l'activité sur une séquence globale unique, applique une transition d'état déterministe, et renvoie un reçu signé lié à la racine d'état résultante.
+<p align="center">
+  <!-- ═══ Repo Health ═══ -->
+  <img src="https://img.shields.io/github/actions/workflow/status/Sidiora-Labs/Paxeer-X-Network/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI" />
+  <img src="https://img.shields.io/github/license/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/github/last-commit/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=git&logoColor=white" alt="Last Commit" />
+  <img src="https://img.shields.io/github/stars/Sidiora-Labs/Paxeer-X-Network?style=for-the-badge&logo=github" alt="Stars" />
+</p>
 
-Le journal d'activités en ajout seul fait autorité. Les index de base de données sont des projections jetables et peuvent être reconstruits en rejouant ce journal. L'exécution critique pour le consensus exclut les flottants, les décisions d'horloge locale, l'ordre d'itération des bases de données, et les autres sources de non-déterminisme. `402LXP` est le seul composant autorisé à écrire les soldes. Les modules du protocole émettent des ensembles de transferts validés plutôt que de muter eux-mêmes les fonds.
+## Ce qu’est Paxeer X Network
 
-L'activité ordinaire des agents est exécutée et ordonnée dans LayerX. Des points de contrôle périodiques se règlent sur Paxeer, qui assure la garde, l'enregistrement des points de contrôle, les cautions de garants, les contestations, les retraits, les litiges et les sorties d'urgence. Une action LayerX ordinaire n'exige pas de transaction Paxeer.
+Paxeer X Network est un seul réseau doté de deux domaines d’exécution : la chaîne Paxeer X (`paxd`, Go, identifiant de chaîne EVM 125) et le noyau LayerX (`layerxd`, C17), le domaine d’exécution et de comptabilité déterministe destiné aux agents autonomes. Site officiel : [paxeer.network](https://paxeer.network/). Documentation : [docs.paxeer.app](https://docs.paxeer.app/).
 
-Ce dépôt est le monorepo Sidiora Labs pour Paxeer X Network et le Paxeer Network. La colocalisation garde le protocole, le réseau de règlement, les contrats et les surfaces développeur auditables en un seul endroit. Chaque sous-système conserve sa propre compilation, publication, déploiement et frontière de confiance. Voir [`spec/layerx-protocol/design.md`](../../spec/layerx-protocol/design.md).
+Dans le noyau LayerX, toute opération qui modifie l’état entre sous la forme d’une `Activity` signée et encodée de manière canonique. Le noyau vérifie l’acteur et son autorité, consomme la séquence du compte, ordonne l’activité dans une séquence globale unique, applique une transition d’état déterministe et renvoie un reçu signé lié à la racine d’état résultante.
+
+Le journal d’activités, en ajout seul, fait autorité. Les index de base de données sont des projections jetables que l’on peut reconstruire en rejouant ce journal. L’exécution critique pour le consensus exclut la virgule flottante, les décisions fondées sur l’horloge locale, l’ordre d’itération de la base de données et toute autre source de non-déterminisme. `402LXP` est le seul composant autorisé à écrire des soldes. Les modules du protocole émettent des ensembles de transferts validés au lieu de modifier eux-mêmes les fonds.
+
+L’activité ordinaire des agents est exécutée et ordonnée dans le noyau LayerX. Des checkpoints périodiques sont réglés sur la chaîne Paxeer X, qui détient la garde des actifs, l’enregistrement des checkpoints, les cautions des garants, les contestations, les retraits, les litiges et les sorties d’urgence. Une action ordinaire du noyau ne nécessite aucune transaction sur la chaîne Paxeer X.
+
+Ce dépôt est le monorepo de Sidiora Labs pour Paxeer X Network : la chaîne Paxeer X et le noyau LayerX dans un même dépôt. Les réunir permet d’auditer au même endroit le noyau, la chaîne, les contrats et les surfaces pour développeurs. Chaque sous-système garde ses propres limites de compilation, de publication, de déploiement et de confiance. La spécification de référence est [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx), rendue sous la forme [`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md) ; les notes de version se trouvent dans [`CHANGELOG.md`](../../CHANGELOG.md).
 
 ## Essayer le réseau
 
-Le parcours complet est [`docs/wiki/Quickstart.md`](../wiki/Quickstart.md) : installer le CLI `layerx` depuis `platform/cli`, démarrer le cluster, sourcer `build/beta-cluster/env`, puis créer un identifiant, réclamer au faucet, soumettre une activité, vérifier le reçu, et déployer un programme.
+La bêta limitée n’est pas encore ouverte. L’API du gateway sera disponible à son ouverture. Il s’agit d’une bêta mainnet sur de la valeur réelle : il n’y a donc pas de faucet pour un usage général ; les développeurs approuvés reçoivent des allocations de test de la part de l’équipe.
 
-La checklist du point de terminaison public est
-[`docs/wiki/Getting-Started-Testnet.md`](../wiki/Getting-Started-Testnet.md).
-Le parcours complet du portefeuille, du faucet, des Assets, des Programs et du
-HTTP 402 est
-[`docs/wiki/PaymentsQuickstart.md`](../wiki/PaymentsQuickstart.md). L'émission
-d'Asset natif, `POST /rpc` public, et les extras de commitment 402 sont
-servis par cet arbre ; la ligne de commande `layerx wallet` / `layerx token`
-et l'interface de token de programme LXT-20 n'y sont pas encore. Encodages :
-[`docs/wiki/Assets.md`](../wiki/Assets.md). Méthodes RPC :
-[`docs/wiki/PublicRpc.md`](../wiki/PublicRpc.md). Niveaux de preuve :
-[`docs/wiki/CommitmentLevels.md`](../wiki/CommitmentLevels.md).
-Une transcription exacte d'un processus réel du parcours de paiement public
-est [`docs/wiki/PublicAPI.md`](../wiki/PublicAPI.md).
+Les noms publics JSON-RPC EVM pour l’identifiant de chaîne 125 figurent dans [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md). La liste de contrôle du point d’accès public est [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md). Le parcours portefeuille, financement par crédit de garde, Asset, Programs et HTTP 402 est [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md). Les commandes `layerx wallet` et `layerx token` se trouvent dans `platform/cli`, et l’interface de jeton LXT-20 pour les programmes dans `programs/crates/layerx-programs-registry/src/lxt20.rs`. Encodages : [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md). Méthodes RPC : [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md). Niveaux de preuve : [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md). L’API publique de paiement : [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md).
+
+Pour tout exécuter en local, suivez [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md) : installez la CLI `layerx` depuis `platform/cli`, lancez un cluster bêta jetable avec `make platform-beta-cluster-up`, chargez `build/beta-cluster/env`, puis créez une clé, réclamez des fonds auprès du faucet privé de ce cluster, soumettez un paiement, vérifiez le reçu et déployez un programme.
 
 ```sh
 layerx key create quickstart
-```
-
-```sh
-jq -n --arg did "$LAYERX_TEST_SOURCE_DID" --arg public_key "$LAYERX_TEST_SOURCE_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
-curl --fail --silent --show-error --max-time 30 --cacert "$LAYERX_TEST_CA_FILE" \
-  --header "Authorization: Bearer $(tr -d '\r\n' < "$LAYERX_TEST_AUTH_TOKEN_FILE")" \
-  --request POST "$LAYERX_FAUCET_URL/v1/faucet/claims" \
-  --header "Idempotency-Key: faucet-quickstart-01" \
-  --header 'Content-Type: application/json' --data-binary @faucet-request.json
 ```
 
 ```sh
@@ -86,7 +89,7 @@ layerx --json program deploy \
 
 ## Compiler depuis les sources
 
-Le runtime cœur est en C17 (`-std=c17` dans le `Makefile` racine). Les espaces de travail agent, human et platform utilisent Rust 1.91.1 (`rust-toolchain.toml`). Les contrats de règlement LayerX utilisent Solidity 0.8.27 (`foundry.toml`). La qualification par rejeu nécessite GCC 13, Clang 18, Docker, un exécuteur musl amd64, et un compilateur croisé AArch64 plus QEMU ; voir [`docs/QUALIFICATION.md`](../QUALIFICATION.md).
+Le runtime principal est en C17 (`-std=c17` dans le `Makefile` racine). Les workspaces agent, human et platform utilisent Rust 1.91.1 (`rust-toolchain.toml`). Les contrats de règlement du noyau dans `contracts/` utilisent Solidity 0.8.27 (`foundry.toml`). La qualification par rejeu nécessite GCC 13, Clang 18, Docker, un runner amd64 musl ainsi qu’un compilateur croisé AArch64 avec QEMU ; voir [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md).
 
 ```sh
 make build
@@ -95,7 +98,7 @@ make test-contracts
 make ci
 ```
 
-Cibles bornées Paxeer, sans changer de répertoire :
+Cibles de la chaîne Paxeer X (`paxd`, définies dans `chain.mk`), sans changer de répertoire :
 
 ```sh
 make paxeer-build
@@ -104,37 +107,41 @@ make paxeer-test
 make paxeer-ci
 ```
 
-`make ci` exécute `public-audit`, les tests natifs, une comparaison d'archives sur deux compilations, les contrôles de symboles de consensus, et les suites sanitizer. `make monorepo-ci` est une porte transversale distincte. Un succès local n'autorise pas à déployer des contrats, déplacer la garde, ou manipuler des actifs réels.
+`make ci` exécute `public-audit`, les tests du noyau, une comparaison de l’archive entre deux compilations, des vérifications des symboles de consensus et des suites avec sanitizers. `make monorepo-ci` est une porte distincte couvrant plusieurs sous-systèmes. Un succès en local n’autorise pas à déployer des contrats, à déplacer des actifs en garde ni à manipuler des actifs réels.
 
 ## Organisation du dépôt
 
-| Chemin | Objet |
+| Chemin | Rôle |
 | --- | --- |
-| `src/`, `include/` | Runtime protocole C17, machine d'état, stockage, séquencement, rejeu et intégration du règlement |
-| `cmd/` | Démons et outils natifs (`layerxd`, `layerxctl`, genesis, verify) |
-| `agent/` | Interface agent Rust, SDK, démon, serveur MCP, encodage, cryptographie et vérification de preuves |
-| `human/` | Plan de contrôle humain, compilateur d'intentions typées, client de frontière de garde, index explorateur et application web |
-| `platform/` | Plateforme développeur, services hébergés, intergiciels, SDK, émulateur, CLI et outillage de publication |
-| `programs/` | Runtime LayerX programmable et outillage des programmes |
-| `interop/` | Surfaces d'interopérabilité agent-commerce et inter-réseaux |
-| `contracts/` | Contrats Solidity pour la garde Paxeer, les points de contrôle, le cautionnement des garants, les réclamations, les litiges et les sorties |
-| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Nœud Paxeer Network, compatibilité EVM/RPC, moteurs de stockage, modules, contrats et compilations locales au sous-système |
-| `spec/` | Spécifications KVX normatives, conceptions générées, exigences et graphes de tâches |
-| `tests/`, `test/`, `fuzz/` | Suites natives, contrats, rejeu, invariants, fautes et fuzz |
-| `migrations/` | Travail de genèse, migration, réconciliation et rejeu parallèle |
-| `docs/` | Wiki, notes du monorepo et documentation de qualification |
+| `src/`, `include/` | Runtime C17 du noyau LayerX : machine à états, stockage, séquencement, rejeu et intégration du règlement |
+| `cmd/` | Démons et outils du noyau (`layerxd`, `layerxctl`, `layerx-guarantor`, genèse, vérification) |
+| `agent/` | Interface agent en Rust, SDK, démon, serveur MCP, encodage, cryptographie et vérification de preuves |
+| `human/` | Plan de contrôle humain, compilateur d’intentions typées, KMS, index de l’explorateur et applications web et portefeuille |
+| `platform/` | Plateforme développeur, services hébergés, middleware, SDK, émulateur, CLI et outils de publication |
+| `programs/` | Runtime Programs, registre, interpréteur, bac à sable, marché et SDK de programmes pour le noyau LayerX |
+| `interop/` | Surfaces de commerce entre agents et d’interopérabilité entre réseaux, y compris le relayer du pont |
+| `contracts/` | Contrats Solidity sur la chaîne Paxeer X pour la garde, les checkpoints, les cautions des garants, les réclamations, les litiges et les sorties |
+| `bridge/` | Contrats de coffre du pont et guide de déploiement pour les chaînes EVM et Solana |
+| `explorer/` | Explorateur de blocs, un fork de Blockscout tenu à l’écart du reste du monorepo |
+| `go.mod`, `chain.mk`, `daemon/`, `node/`, `modules/`, `consensus/`, `sdk/`, `rpc/`, `precompiles/`, `storage/`, `wasm/`, `docker/` | Nœud de la chaîne Paxeer X (`paxd`), compatibilité EVM/RPC, moteurs de stockage, modules, précompilés et compilations propres à chaque sous-système |
+| `spec/` | Spécification KVX normative, conception générée, exigences et graphe de tâches |
+| `tests/`, `fuzz/` | Suites natives, de contrats, de rejeu, d’invariants, de pannes et de fuzzing |
+| `migrations/` | SQL pour les sections d’import de genèse du noyau, les projections reconstructibles et l’index d’historique |
+| `docs/` | Wiki, sources du site de documentation, notes sur le monorepo et documentation de qualification |
 
 ## Documentation
 
-- Index du wiki : [`docs/wiki/Home.md`](../wiki/Home.md)
-- Démarrage sur le testnet : [`docs/wiki/Getting-Started-Testnet.md`](../wiki/Getting-Started-Testnet.md)
-- Parcours développeur des paiements : [`docs/wiki/PaymentsQuickstart.md`](../wiki/PaymentsQuickstart.md)
-- JSON-RPC public : [`docs/wiki/PublicRpc.md`](../wiki/PublicRpc.md)
-- Assets et tokens : [`docs/wiki/Assets.md`](../wiki/Assets.md)
-- Niveaux de preuve : [`docs/wiki/CommitmentLevels.md`](../wiki/CommitmentLevels.md)
-- Organisation du monorepo et étiquettes de publication : [`docs/MONOREPO.md`](../MONOREPO.md)
-- Portes de qualification : [`docs/QUALIFICATION.md`](../QUALIFICATION.md)
-- Spécifications : [`spec/`](../../spec/)
+- Documentation hébergée: [docs.paxeer.app](https://docs.paxeer.app/)
+- Index du wiki: [`docs/wiki/Home.md`](../../docs/wiki/Home.md)
+- Premiers pas: [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md)
+- Parcours développeur pour les paiements: [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md)
+- JSON-RPC public: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)
+- Assets et jetons: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)
+- Niveaux d’engagement: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)
+- Organisation du monorepo et tags de version: [`docs/MONOREPO.md`](../../docs/MONOREPO.md)
+- Portes de qualification: [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md)
+- Spécification: [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx)
+- Notes de version: [`CHANGELOG.md`](../../CHANGELOG.md)
 
 ## SDK et intégrations
 
@@ -148,18 +155,184 @@ make paxeer-ci
 | .NET | `platform/sdk/dotnet` |
 | Swift | `platform/sdk/swift` |
 
-`layerx-agentd` est `agent/crates/layerx-agentd`. Le serveur MCP est `agent/crates/layerx-mcp`. Le CLI développeur dans `platform/cli` installe ces transports avec `layerx install mcp` et `layerx install a2a`.
+`layerx-agentd` se trouve dans `agent/crates/layerx-agentd`. Le serveur MCP se trouve dans `agent/crates/layerx-mcp`. La CLI développeur de `platform/cli` installe ces transports avec `layerx install mcp` et `layerx install a2a`.
+
+## Architecture
+
+Paxeer X Network est un seul réseau doté de deux domaines d’exécution : le nœud de la chaîne Paxeer X (`paxd`, Go) et le noyau LayerX (`layerxd`, C17), reliés d’un côté par des précompilés EVM et de l’autre par des services de plateforme hébergés. Les boîtes arrondies sont des services en fonctionnement, les cylindres des stockages durables, les hexagones des contrats et précompilés EVM (étiquetés avec leur adresse), et les boîtes simples des modules à l’intérieur d’une machine à états. Les flèches suivent le sens de circulation des données : les flèches pleines soumettent ou écrivent, les flèches pointillées transportent lectures, événements et preuves.
+
+```mermaid
+flowchart TB
+  subgraph users ["Users and agents"]
+    direction TB
+    human(["Human"])
+    agent(["Autonomous agent"])
+    web("Human web app")
+    hsvc("layerx-human-service")
+    intents("layerx-intents<br/>typed intent compiler")
+    kms("layerx-human-kms")
+    mcp("layerx-mcp")
+    sdk("layerx-sdk<br/>Rust · TypeScript · Python")
+    agentd("layerx-agentd")
+  end
+
+  subgraph platform ["Platform services"]
+    direction TB
+    gateway("layerx-gateway<br/>eth_* relay · px_* · px_getCapabilities")
+    indexer("layerx-indexer<br/>LayerX and Paxeer ingesters")
+    idxdb[("SQLite history")]
+    relay("relay/archive node")
+  end
+
+  subgraph lx ["LayerX kernel · C17"]
+    direction TB
+    layerxd("layerxd<br/>LNI server · sequencer")
+    kernel["Activity kernel<br/>module dispatch"]
+    perps["perps · 6"]
+    spot["spot · 10"]
+    gov["governance · 7"]
+    kbridge["bridge · 8"]
+    ledger["402LXP ledger<br/>sole balance writer"]
+    alog[("Activity log")]
+    guarantor("layerx-guarantor")
+  end
+
+  subgraph px ["Paxeer X node · paxd"]
+    direction TB
+    evm("EVM JSON-RPC<br/>pax-geth")
+    cons("Tendermint consensus")
+    occ("OCC parallel executor")
+    pAnchor{{"layerxAnchor<br/>0x1014"}}
+    pCustody{{"layerxCustody<br/>0x1013"}}
+    pExch{{"layerxExchange<br/>0x1015"}}
+    pBridge{{"layerxBridge<br/>0x1016"}}
+    pLaunch{{"launchpad<br/>0x1017"}}
+    mCustody["layerxcustody module"]
+    mExch["layerxexchange module"]
+    mBridge["layerxbridge module"]
+    mLaunch["launchpad module"]
+    paxdb[("PaxDB state store")]
+  end
+
+  subgraph eth ["Bridge to Ethereum"]
+    direction TB
+    relayer("layerx-bridge-relayer")
+    vault{{"PaxeerXVault"}}
+  end
+
+  human --> web
+  web -->|"HTTPS"| hsvc
+  hsvc -->|"typed intent"| intents
+  hsvc -->|"custody signing"| kms
+  intents -->|"compiled Activity"| agentd
+  agent --> mcp
+  agent --> sdk
+  mcp -->|"tool calls"| agentd
+  sdk -->|"daemon socket"| agentd
+  agentd -->|"LNI frames"| layerxd
+
+  layerxd --> kernel
+  kernel --> perps & spot & gov & kbridge
+  kernel -->|"transfer sets"| ledger
+  ledger -->|"signed receipt"| alog
+  alog -->|"sealed batch"| guarantor
+  guarantor -->|"submitCheckpoint"| pAnchor
+
+  layerxd -.->|"batch sync"| relay
+  relay -.->|"history batches"| indexer
+  evm -.->|"blocks · logs · tx_search"| indexer
+  indexer --> idxdb
+  indexer -.->|"px_getHistory"| gateway
+  layerxd -.->|"lx_* reads"| gateway
+  gateway -->|"eth_* relay"| evm
+  gateway -.->|"eth_call · eth_getLogs"| web
+  gateway -.->|"px_* reads"| hsvc
+
+  evm -->|"txs"| cons
+  cons -->|"ordered blocks"| occ
+  occ --> pAnchor & pCustody & pExch & pBridge & pLaunch
+  pCustody --> mCustody
+  pExch -->|"pending intent"| mExch
+  pExch -->|"margin deposit"| mCustody
+  pBridge --> mBridge
+  pLaunch --> mLaunch
+  occ -->|"state commits"| paxdb
+
+  pExch -.->|"intent logs decoded"| intents
+  mCustody -.->|"custody credit proof"| kbridge
+
+  vault -.->|"Deposit event"| relayer
+  relayer -->|"bridgeIn"| pBridge
+  pBridge -.->|"BridgeOut event"| relayer
+  relayer -->|"release"| vault
+
+  classDef actor fill:#e4dcf2,stroke:#7a68ad,color:#2a2340
+  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
+  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
+  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
+  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
+
+  class human,agent actor
+  class web,hsvc,intents,kms,mcp,sdk,agentd,gateway,indexer,relay,layerxd,guarantor,evm,cons,occ,relayer svc
+  class idxdb,alog,paxdb store
+  class pAnchor,pCustody,pExch,pBridge,pLaunch,vault contract
+  class kernel,perps,spot,gov,kbridge,ledger,mCustody,mExch,mBridge,mLaunch module
+```
+
+Le pont vers Ethereum en détail : chaque instance du relayer détient une clé d’attestateur derrière un signataire distant, journalise chaque événement observé et chaque transaction signée avant diffusion, et atteint un seuil de signatures supérieur à un en échangeant des signatures avec d’autres instances.
+
+```mermaid
+flowchart LR
+  subgraph ethb ["Ethereum"]
+    bVault{{"PaxeerXVault"}}
+  end
+
+  subgraph relb ["Relayer instance"]
+    direction TB
+    bRelayer("layerx-bridge-relayer")
+    bSigner("Remote signer<br/>one attestor key")
+    bJournal[("Append-only journal")]
+    bCosign[("Cosign directory")]
+  end
+
+  subgraph pxb ["Paxeer X node"]
+    direction TB
+    bPrec{{"layerxBridge<br/>0x1016"}}
+    bModule["layerxbridge module<br/>attestors · caps · nullifiers"]
+    bTf["tokenfactory<br/>bridged denoms"]
+  end
+
+  bVault -.->|"Deposit event"| bRelayer
+  bRelayer -->|"digest to sign"| bSigner
+  bRelayer -->|"events · signed txs"| bJournal
+  bRelayer -->|"threshold signatures"| bCosign
+  bRelayer -->|"bridgeIn + signatures"| bPrec
+  bPrec --> bModule
+  bModule -->|"mint · burn"| bTf
+  bPrec -.->|"BridgeOut event"| bRelayer
+  bRelayer -->|"release + signatures"| bVault
+
+  classDef svc fill:#d8e5f3,stroke:#4d77a8,color:#1b2a3c
+  classDef store fill:#e1ecd4,stroke:#6a8c48,color:#23321a
+  classDef contract fill:#f3e2cc,stroke:#ad7a3e,color:#3b2913
+  classDef module fill:#e6e8eb,stroke:#6b7480,color:#22272e
+
+  class bRelayer,bSigner svc
+  class bJournal,bCosign store
+  class bVault,bPrec contract
+  class bModule,bTf module
+```
 
 ## Contribuer
 
-Lire [`CONTRIBUTING.md`](../../CONTRIBUTING.md) avant d'ouvrir une pull request. Les changements de protocole commencent dans `spec/`. Ne pas divulguer une vulnérabilité suspectée dans une issue publique ; suivre [`SECURITY.md`](../../SECURITY.md).
+Lisez [`CONTRIBUTING.md`](../../CONTRIBUTING.md) avant d’ouvrir une pull request. Les changements de protocole commencent dans `spec/`. Ne divulguez pas une vulnérabilité présumée dans une issue publique ; suivez [`SECURITY.md`](../../SECURITY.md).
 
 ## Sécurité
 
-Signaler les vulnérabilités via le reporting privé GitHub, comme décrit dans [`SECURITY.md`](../../SECURITY.md).
+Signalez les vulnérabilités via le signalement privé de GitHub, comme décrit dans [`SECURITY.md`](../../SECURITY.md).
 
 ## Licence
 
-Distribué sous la licence Apache, version 2.0. Voir [`LICENSE`](../../LICENSE) et [`NOTICE`](../../NOTICE).
+Distribué sous Apache License, version 2.0. Voir [`LICENSE`](../../LICENSE) et [`NOTICE`](../../NOTICE).
 
-Paxeer X Network est développé par Sidiora Labs.
+Paxeer X Network est développé par Sidiora Labs. Code source : [github.com/Sidiora-Labs/Paxeer-X-Network](https://github.com/Sidiora-Labs/Paxeer-X-Network).
