@@ -194,10 +194,15 @@ impl From<SchemaError> for ReceiptError {
     }
 }
 
+const ORDERING_REFUSAL_CLASS: u8 = 4;
+
 /// The result of bounded receipt-only resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Resolution {
     Resolved(Box<VerifiedReceipt>),
+    Refused {
+        result: layerx_types::result::ResultCode,
+    },
     Unknown(Unknown),
 }
 
@@ -428,6 +433,10 @@ pub fn resolve_unknown(
         }
         return match lookup(transport, selector, context) {
             Ok(Lookup::Verified(receipt)) => Ok(Resolution::Resolved(receipt)),
+            Err(ReceiptError::CoreRefusal {
+                class: ORDERING_REFUSAL_CLASS,
+                result,
+            }) => Ok(Resolution::Refused { result }),
             Ok(Lookup::Absent) | Err(ReceiptError::Transport(_)) => {
                 Ok(Resolution::Unknown(unknown.after_resolution_attempts(1)))
             }
@@ -446,6 +455,10 @@ pub fn resolve_unknown(
         attempts = attempts.saturating_add(1);
         match lookup(transport, selector, context) {
             Ok(Lookup::Verified(receipt)) => return Ok(Resolution::Resolved(receipt)),
+            Err(ReceiptError::CoreRefusal {
+                class: ORDERING_REFUSAL_CLASS,
+                result,
+            }) => return Ok(Resolution::Refused { result }),
             Ok(Lookup::Absent) => {}
             Err(ReceiptError::Transport(_)) => {
                 return Ok(Resolution::Unknown(

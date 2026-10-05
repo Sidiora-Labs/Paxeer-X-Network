@@ -24,7 +24,7 @@ static void record_outstanding_locked(lxp_daemon *daemon)
         daemon->queue[at].length = 0U;
         (void)memset(daemon->queue[at].activity_id, 0,
                      sizeof(daemon->queue[at].activity_id));
-        daemon->queue[at].global_sequence = 0U;
+        daemon->queue[at].admission_order = 0U;
         daemon->queue[at].durable_admission = false;
     }
     (void)fprintf(stderr,
@@ -35,6 +35,7 @@ static void record_outstanding_locked(lxp_daemon *daemon)
     daemon->queue_count = 0U;
     daemon->queue_bytes = 0U;
     daemon->reserved_batch_count = 0U;
+    daemon->ordering_refused = false;
 }
 
 lxp_result lxp_daemon_shutdown(lxp_daemon *daemon)

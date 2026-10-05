@@ -4,6 +4,8 @@
 #include "layerx/lxp_genesis.h"
 #include "layerx/lxp_maintenance.h"
 #include "layerx/lx_asset.h"
+#include "layerx/lxp_fee.h"
+#include "layerx/lxp_admission.h"
 #include <unistd.h>
 #define main terminal_rejection_activity_fixture_main
 #include "../programs/test_call_activity.c"
@@ -962,6 +964,438 @@ static int versioned_boundary_vectors(void)
     return 0;
 }
 
+/* Two-class sequence and fee policy at or above the activation parameter
+ * version. Rows print as "TWO_CLASS_ROW" so the harness can compare them
+ * with the archived rejection policy; they are not boundary vectors. */
+typedef struct two_class_snapshot {
+    uint64_t global_sequence;
+    uint64_t identity_sequence;
+    uint64_t idempotency_count;
+    lxp_u128 actor_balance;
+    lxp_u128 recipient_balance;
+    lxp_u128 treasury_balance;
+    uint8_t root[32];
+} two_class_snapshot;
+
+static void two_class_capture(const terminal_fixture *f, two_class_snapshot *s)
+{
+    s->global_sequence = f->state.next_sequence;
+    s->identity_sequence = f->identity->next_sequence;
+    s->idempotency_count = f->state.idempotency_count;
+    s->actor_balance = f->actor->balance;
+    s->recipient_balance = f->recipient->balance;
+    s->treasury_balance = f->treasury->balance;
+    memcpy(s->root, f->kernel.current_state_root, 32U);
+}
+
+static int two_class_same(const terminal_fixture *f, const two_class_snapshot *s)
+{
+    CHECK(f->state.next_sequence == s->global_sequence);
+    CHECK(f->identity->next_sequence == s->identity_sequence);
+    CHECK(f->state.idempotency_count == s->idempotency_count);
+    CHECK(lxp_u128_cmp(f->actor->balance, s->actor_balance) == 0);
+    CHECK(lxp_u128_cmp(f->recipient->balance, s->recipient_balance) == 0);
+    CHECK(lxp_u128_cmp(f->treasury->balance, s->treasury_balance) == 0);
+    CHECK(memcmp(f->kernel.current_state_root, s->root, 32U) == 0);
+    return 0;
+}
+
+static int two_class_resign(lxp_activity *activity, uint8_t signature[64])
+{
+    uint8_t preimage[32];
+    CHECK(lxp_hash_payload(activity->payload.bytes, activity->payload.length,
+                           activity->payload_hash) == LXP_OK);
+    CHECK(lxp_activity_signing_preimage(activity, preimage) == LXP_OK);
+    CHECK(terminal_sign(terminal_actor_seed, preimage, 32U, signature) == 0);
+    activity->signature = (lxp_byte_span){signature, 64U};
+    return 0;
+}
+
+static int two_class_row(uint32_t version, lxp_fee_stage stage, lxp_result result)
+{
+    lxp_fee_transition t;
+    lxp_result status = lxp_fee_transition_lookup(version, stage, result, &t);
+    if (status != LXP_OK) {
+        CHECK(status == LXP_ERR_NON_CANONICAL);
+        printf("TWO_CLASS_ROW version=%u stage=%d result=%d canonical=0\n",
+               (unsigned)version, (int)stage, (int)result);
+        return 0;
+    }
+    printf("TWO_CLASS_ROW version=%u stage=%d result=%d canonical=1 actor=%u "
+           "global=%u fee=%d effects=%d receipt=%d retry=%d\n",
+           (unsigned)version, (int)stage, (int)result,
+           (unsigned)t.actor_sequence, (unsigned)t.global_sequence,
+           t.charge_fee ? 1 : 0, t.module_effects ? 1 : 0,
+           (int)t.receipt, (int)t.retry);
+    CHECK(t.actor_sequence <= 1U && t.global_sequence <= 1U);
+    CHECK(!t.module_effects || (result == LXP_OK && t.charge_fee));
+    if (stage != LXP_FEE_STAGE_EXECUTION) {
+        CHECK(t.actor_sequence == 0U && !t.charge_fee && !t.module_effects);
+        if (lxp_fee_two_class_active(version)) CHECK(t.global_sequence == 0U);
+    } else {
+        CHECK(t.actor_sequence == 1U && t.global_sequence == 1U && t.charge_fee);
+        CHECK(t.receipt == (result == LXP_OK ? LXP_FEE_RECEIPT_SUCCESS :
+                                               LXP_FEE_RECEIPT_FAILURE));
+    }
+    return 0;
+}
+
+static int two_class_table_case(void)
+{
+#define TWO_CLASS_CODE(name, value) name,
+    static const lxp_result codes[] = { LXP_RESULT_CODE_LIST(TWO_CLASS_CODE) };
+#undef TWO_CLASS_CODE
+    static const uint32_t versions[2] = {
+        1U, (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION};
+    static const lxp_result admission[] = {
+        LXP_ERR_TRUNCATED, LXP_ERR_MALFORMED_ENVELOPE, LXP_ERR_WRONG_NETWORK,
+        LXP_ERR_VERSION_UNSUPPORTED, LXP_ERR_BAD_SIGNATURE,
+        LXP_ERR_IDENTITY_FROZEN, LXP_ERR_SEQUENCE_GAP, LXP_ERR_SEQUENCE_REUSED,
+        LXP_ERR_EXPIRED, LXP_ERR_FEE_UNPAYABLE};
+    lxp_fee_transition t;
+    size_t v, i;
+    int stage;
+    CHECK(!lxp_fee_two_class_active(0U));
+    CHECK(!lxp_fee_two_class_active(1U));
+    CHECK(lxp_fee_two_class_active((uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION));
+    CHECK(lxp_fee_transition_lookup(0U, LXP_FEE_STAGE_EXECUTION, LXP_OK, &t) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_EXECUTION, LXP_OK, NULL) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lxp_fee_transition_lookup(2U, (lxp_fee_stage)4, LXP_ERR_EXPIRED, &t) ==
+          LXP_ERR_NON_CANONICAL);
+    for (v = 0U; v < 2U; ++v)
+        for (stage = LXP_FEE_STAGE_SUBMISSION; stage <= LXP_FEE_STAGE_EXECUTION; ++stage)
+            for (i = 0U; i < sizeof(codes) / sizeof(codes[0]); ++i)
+                CHECK(two_class_row(versions[v], (lxp_fee_stage)stage, codes[i]) == 0);
+    for (i = 0U; i < sizeof(admission) / sizeof(admission[0]); ++i) {
+        CHECK(lxp_fee_ordering_refusal(admission[i]));
+        CHECK(lxp_terminal_rejection_applies(admission[i]));
+        CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_ORDERING, admission[i], &t) == LXP_OK);
+        CHECK(t.receipt == LXP_FEE_RECEIPT_QUEUE_DISPOSITION && t.global_sequence == 0U &&
+              t.actor_sequence == 0U && !t.charge_fee && t.retry == LXP_FEE_RETRY_RESUBMIT);
+        CHECK(lxp_fee_transition_lookup(1U, LXP_FEE_STAGE_ORDERING, admission[i], &t) == LXP_OK);
+        CHECK(t.receipt == LXP_FEE_RECEIPT_REFUSAL && t.global_sequence == 1U &&
+              t.actor_sequence == 0U && !t.charge_fee);
+    }
+    CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_ORDERING,
+          LXP_ERR_IDEMPOTENT_REPLAY, &t) == LXP_OK);
+    CHECK(t.receipt == LXP_FEE_RECEIPT_QUEUE_DISPOSITION && t.retry == LXP_FEE_RETRY_NONE);
+    CHECK(lxp_fee_transition_lookup(1U, LXP_FEE_STAGE_ORDERING,
+          LXP_ERR_IDEMPOTENT_REPLAY, &t) == LXP_ERR_NON_CANONICAL);
+    CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_ORDERING, LXP_OK, &t) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_EXECUTION,
+          LXP_ERR_IDEMPOTENT_REPLAY, &t) == LXP_ERR_NON_CANONICAL);
+    CHECK(lxp_fee_transition_lookup(2U, LXP_FEE_STAGE_EXECUTION,
+          LXP_FATAL_INVARIANT, &t) == LXP_ERR_NON_CANONICAL);
+    printf("two-class table case passed\n");
+    return 0;
+}
+
+/* The old terminal refusal is unavailable once the new table is active. */
+static int two_class_terminal_case(void)
+{
+    terminal_fixture *f = malloc(sizeof(*f));
+    lxp_activity activity;
+    lxp_kernel_execution execution;
+    lxp_kernel_prepared_batch *prepared = NULL;
+    lxp_receipt receipt;
+    lxp_byte_span canonical;
+    lxp_batch_roots roots;
+    two_class_snapshot before;
+    uint8_t payload[512], batch_id[32];
+    size_t payload_length = 0U;
+    CHECK(f != NULL);
+    CHECK(terminal_fixture_open(f) == 0);
+    CHECK(terminal_build_send(f, &activity, payload, &payload_length) == 0);
+    CHECK(lxp_activity_encode(&activity, &f->arena, &canonical) == LXP_OK);
+    memset(&execution, 0, sizeof(execution));
+    terminal_execution(f, &execution, f->state.next_sequence, 1U);
+    execution.parameter_version = (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION;
+    CHECK(lxp_daemon_batch_bind_prefix(&canonical, 1U, f->kernel.current_state_root,
+        f->state.next_sequence, 1U, &f->arena, &execution, &roots, batch_id) == LXP_OK);
+    two_class_capture(f, &before);
+    memset(&receipt, 0, sizeof(receipt));
+    CHECK(lxp_kernel_terminal_rejection(&f->kernel, &activity, &execution,
+        LXP_ERR_IDENTITY_FROZEN, &receipt) == LXP_ERR_VERSION_UNSUPPORTED);
+    CHECK(two_class_same(f, &before) == 0);
+    CHECK(lxp_kernel_prepare_terminal_rejection(&f->kernel, &activity, &execution,
+        LXP_ERR_EXPIRED, &prepared) == LXP_ERR_VERSION_UNSUPPORTED);
+    CHECK(prepared == NULL);
+    CHECK(two_class_same(f, &before) == 0);
+    terminal_fixture_close(f);
+    printf("two-class terminal case passed\n");
+    return 0;
+}
+
+enum {
+    TWO_CLASS_MALFORMED = 0,
+    TWO_CLASS_WRONG_NETWORK,
+    TWO_CLASS_BAD_SIGNATURE,
+    TWO_CLASS_SEQUENCE_GAP,
+    TWO_CLASS_SEQUENCE_REUSED,
+    TWO_CLASS_EXPIRED,
+    TWO_CLASS_FEE_UNPAYABLE,
+    TWO_CLASS_LATE_REVOCATION,
+    TWO_CLASS_LATE_EXPIRY,
+    TWO_CLASS_LATE_BALANCE_LOSS,
+    TWO_CLASS_ADMISSION_COUNT
+};
+
+static const char *const two_class_admission_names[TWO_CLASS_ADMISSION_COUNT] = {
+    "malformed", "wrong_network", "bad_signature", "sequence_gap",
+    "sequence_reused", "expired", "fee_unpayable", "late_revocation",
+    "late_expiry", "late_balance_loss"};
+
+/* One refusal before ordering: no sequence, no fee, no state change, and the
+ * queue disposition is the only outcome the table allows. */
+static int two_class_admission_case(int kind)
+{
+    terminal_fixture *f = malloc(sizeof(*f));
+    lxp_activity activity;
+    lxp_kernel_execution execution;
+    lxp_admission_context queued;
+    lxp_admission_result admitted;
+    lxp_fee_transition t;
+    lxp_receipt receipt;
+    two_class_snapshot before;
+    uint8_t payload[512], signature[64];
+    size_t payload_length = 0U;
+    lxp_send decoded;
+    lxp_result expected = LXP_OK, status;
+    CHECK(f != NULL);
+    CHECK(terminal_fixture_open(f) == 0);
+    CHECK(terminal_build_send(f, &activity, payload, &payload_length) == 0);
+    f->identity->next_sequence = f->actor->next_sequence;
+    memset(&execution, 0, sizeof(execution));
+    terminal_execution(f, &execution, f->state.next_sequence, 1U);
+    execution.parameter_version = (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION;
+    activity.fee_limit = (lxp_u128){0U, 2U};
+    CHECK(two_class_resign(&activity, signature) == 0);
+    /* Every case is admissible at queue time. */
+    queued = (lxp_admission_context){7U, 10U, 100U, f->identity->next_sequence,
+        true, false, true};
+    admitted = lxp_admit_activity(&activity, &queued);
+    CHECK(admitted.result_code == LXP_OK);
+    switch (kind) {
+    case TWO_CLASS_MALFORMED:
+        --activity.payload.length;
+        CHECK(two_class_resign(&activity, signature) == 0);
+        expected = lxp_send_decode(payload, activity.payload.length, &decoded);
+        break;
+    case TWO_CLASS_WRONG_NETWORK:
+        execution.network_id = 8U;
+        expected = LXP_ERR_WRONG_NETWORK;
+        break;
+    case TWO_CLASS_BAD_SIGNATURE:
+        execution.signature_valid = false;
+        expected = LXP_ERR_BAD_SIGNATURE;
+        break;
+    case TWO_CLASS_SEQUENCE_GAP:
+        activity.account_sequence += 1U;
+        CHECK(two_class_resign(&activity, signature) == 0);
+        expected = LXP_ERR_SEQUENCE_GAP;
+        break;
+    case TWO_CLASS_SEQUENCE_REUSED:
+        f->identity->next_sequence += 1U;
+        expected = LXP_ERR_SEQUENCE_REUSED;
+        break;
+    case TWO_CLASS_EXPIRED:
+    case TWO_CLASS_LATE_EXPIRY:
+        execution.batch_timestamp_ms = 101U;
+        expected = LXP_ERR_EXPIRED;
+        break;
+    case TWO_CLASS_FEE_UNPAYABLE:
+    case TWO_CLASS_LATE_BALANCE_LOSS:
+        execution.fee_balance = (lxp_u128){0U, 1U};
+        expected = LXP_ERR_FEE_UNPAYABLE;
+        break;
+    case TWO_CLASS_LATE_REVOCATION:
+        f->identity->status = LXP_IDENTITY_FROZEN;
+        expected = LXP_ERR_IDENTITY_FROZEN;
+        break;
+    default:
+        CHECK(false);
+    }
+    CHECK(expected != LXP_OK);
+    two_class_capture(f, &before);
+    memset(&receipt, 0, sizeof(receipt));
+    status = lxp_kernel_execute_activity(&f->kernel, &activity, &execution, &receipt);
+    if (status != expected)
+        fprintf(stderr, "two-class admission %s: expected %d got %d\n",
+                two_class_admission_names[kind], (int)expected, (int)status);
+    CHECK(status == expected);
+    CHECK(two_class_same(f, &before) == 0);
+    CHECK(!f->kernel.publication_poisoned);
+    CHECK(lxp_fee_transition_lookup(execution.parameter_version,
+        LXP_FEE_STAGE_ORDERING, status, &t) == LXP_OK);
+    CHECK(t.receipt == LXP_FEE_RECEIPT_QUEUE_DISPOSITION);
+    CHECK(t.actor_sequence == 0U && t.global_sequence == 0U && !t.charge_fee &&
+          !t.module_effects);
+    CHECK(lxp_fee_transition_lookup(execution.parameter_version,
+        LXP_FEE_STAGE_SUBMISSION, status, &t) == LXP_OK);
+    CHECK(t.actor_sequence == 0U && t.global_sequence == 0U && !t.charge_fee);
+    /* The refused activity is never terminal-refused into a sequence. */
+    CHECK(lxp_kernel_terminal_rejection(&f->kernel, &activity, &execution,
+        status, &receipt) == LXP_ERR_VERSION_UNSUPPORTED);
+    CHECK(two_class_same(f, &before) == 0);
+    terminal_fixture_close(f);
+    printf("two-class admission %s passed\n", two_class_admission_names[kind]);
+    return 0;
+}
+
+static int two_class_failure_open(terminal_fixture *f, lxp_activity *activity,
+    uint8_t payload[512], uint8_t signature[64], lxp_kernel_execution *execution)
+{
+    size_t payload_length = 0U;
+    CHECK(terminal_fixture_open(f) == 0);
+    CHECK(lxp_programs_bind_fee_transaction(&f->kernel) == LXP_OK);
+    f->fees.base_fee = (lxp_u128){0U, 3U};
+    f->identity->next_sequence = f->actor->next_sequence;
+    CHECK(terminal_build_send(f, activity, payload, &payload_length) == 0);
+    activity->fee_limit = (lxp_u128){0U, 2U};
+    CHECK(two_class_resign(activity, signature) == 0);
+    memset(execution, 0, sizeof(*execution));
+    terminal_execution(f, execution, f->state.next_sequence, 1U);
+    execution->parameter_version = (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION;
+    return 0;
+}
+
+/* An ordered failure consumes the actor sequence once, charges the
+ * deterministic fee capped at fee_limit, commits a failure receipt with zero
+ * module effects, and neither retry nor replay charges it again. */
+static int two_class_failure_case(void)
+{
+    terminal_fixture *live = malloc(sizeof(*live));
+    terminal_fixture *restarted = malloc(sizeof(*restarted));
+    lxp_activity activity, replay;
+    lxp_kernel_execution execution, retry, replay_execution;
+    lxp_receipt receipt, duplicate, replayed;
+    lxp_fee_transition t;
+    lxp_byte_span encoded, replay_encoded;
+    two_class_snapshot before, after;
+    uint8_t payload[512], replay_payload[512], signature[64], replay_signature[64];
+    CHECK(live != NULL && restarted != NULL);
+    CHECK(two_class_failure_open(live, &activity, payload, signature, &execution) == 0);
+    CHECK(two_class_failure_open(restarted, &replay, replay_payload, replay_signature,
+                                 &replay_execution) == 0);
+    two_class_capture(live, &before);
+    memset(&receipt, 0, sizeof(receipt));
+    CHECK(lxp_kernel_execute_activity(&live->kernel, &activity, &execution,
+                                      &receipt) == LXP_OK);
+    CHECK(receipt.result_code == LXP_ERR_FEE_LIMIT);
+    CHECK(lxp_fee_transition_lookup(execution.parameter_version,
+        LXP_FEE_STAGE_EXECUTION, receipt.result_code, &t) == LXP_OK);
+    CHECK(t.receipt == LXP_FEE_RECEIPT_FAILURE && t.charge_fee && !t.module_effects);
+    CHECK(receipt.parameter_version == execution.parameter_version);
+    CHECK(receipt.global_sequence == before.global_sequence);
+    CHECK(receipt.fee_charged.hi == 0U && receipt.fee_charged.lo == 2U);
+    CHECK(receipt.effects.count == 0U);
+    CHECK(live->state.next_sequence - before.global_sequence == t.global_sequence);
+    CHECK(live->identity->next_sequence - before.identity_sequence == t.actor_sequence);
+    CHECK(live->actor->balance.lo == before.actor_balance.lo - 2U);
+    CHECK(live->treasury->balance.lo == before.treasury_balance.lo + 2U);
+    CHECK(lxp_u128_cmp(live->recipient->balance, before.recipient_balance) == 0);
+    CHECK(memcmp(live->kernel.current_state_root, receipt.resulting_state_root, 32U) == 0);
+    CHECK(lxp_receipt_verify(&receipt, live->authorization.public_key,
+                             &live->arena) == LXP_OK);
+    two_class_capture(live, &after);
+    /* Retry at the next sequence is a duplicate: same receipt, no charge. */
+    memset(&retry, 0, sizeof(retry));
+    terminal_execution(live, &retry, live->state.next_sequence, 2U);
+    retry.parameter_version = execution.parameter_version;
+    memset(&duplicate, 0, sizeof(duplicate));
+    CHECK(lxp_kernel_execute_activity(&live->kernel, &activity, &retry,
+                                      &duplicate) == LXP_ERR_IDEMPOTENT_REPLAY);
+    CHECK(duplicate.result_code == LXP_ERR_FEE_LIMIT);
+    CHECK(duplicate.global_sequence == before.global_sequence);
+    CHECK(duplicate.fee_charged.lo == 2U);
+    CHECK(two_class_same(live, &after) == 0);
+    CHECK(lxp_fee_transition_lookup(retry.parameter_version, LXP_FEE_STAGE_ORDERING,
+        LXP_ERR_IDEMPOTENT_REPLAY, &t) == LXP_OK);
+    CHECK(t.receipt == LXP_FEE_RECEIPT_QUEUE_DISPOSITION && !t.charge_fee &&
+          t.global_sequence == 0U && t.retry == LXP_FEE_RETRY_NONE);
+    /* Replay on a restarted node from the same base reproduces the receipt
+     * and the single charge byte for byte. */
+    memset(&replayed, 0, sizeof(replayed));
+    CHECK(lxp_kernel_execute_activity(&restarted->kernel, &replay, &replay_execution,
+                                      &replayed) == LXP_OK);
+    CHECK(lxp_receipt_encode(&receipt, true, &live->arena, &encoded) == LXP_OK);
+    CHECK(lxp_receipt_encode(&replayed, true, &restarted->arena, &replay_encoded) == LXP_OK);
+    CHECK(encoded.length == replay_encoded.length);
+    CHECK(memcmp(encoded.bytes, replay_encoded.bytes, encoded.length) == 0);
+    CHECK(restarted->actor->balance.lo == live->actor->balance.lo);
+    CHECK(restarted->treasury->balance.lo == live->treasury->balance.lo);
+    CHECK(restarted->identity->next_sequence == live->identity->next_sequence);
+    CHECK(memcmp(restarted->kernel.current_state_root,
+                 live->kernel.current_state_root, 32U) == 0);
+    terminal_fixture_close(live);
+    terminal_fixture_close(restarted);
+    printf("two-class failure case passed\n");
+    return 0;
+}
+
+static int two_class_disposition_case(void)
+{
+    lxp_queue_disposition disposition, decoded, invalid;
+    uint8_t bytes[LXP_QUEUE_DISPOSITION_BYTES], tampered[LXP_QUEUE_DISPOSITION_BYTES];
+    size_t i;
+    memset(&disposition, 0, sizeof(disposition));
+    disposition.admission_order = 41U;
+    disposition.ordering_sequence = 9U;
+    disposition.result_code = LXP_ERR_EXPIRED;
+    disposition.parameter_version = (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION;
+    for (i = 0U; i < 32U; ++i) {
+        disposition.activity_id[i] = (uint8_t)(i + 1U);
+        disposition.idempotency_key[i] = (uint8_t)(0xA0U + i);
+    }
+    CHECK(lxp_queue_disposition_encode(&disposition, bytes) == LXP_OK);
+    CHECK(lxp_queue_disposition_header(bytes, sizeof(bytes)));
+    CHECK(!lxp_queue_disposition_header(bytes, LXP_QUEUE_DISPOSITION_HEADER_BYTES - 1U));
+    memset(&decoded, 0, sizeof(decoded));
+    CHECK(lxp_queue_disposition_decode(bytes, sizeof(bytes), &decoded) == LXP_OK);
+    CHECK(decoded.admission_order == disposition.admission_order);
+    CHECK(decoded.ordering_sequence == disposition.ordering_sequence);
+    CHECK(decoded.result_code == disposition.result_code);
+    CHECK(decoded.parameter_version == disposition.parameter_version);
+    CHECK(memcmp(decoded.activity_id, disposition.activity_id, 32U) == 0);
+    CHECK(memcmp(decoded.idempotency_key, disposition.idempotency_key, 32U) == 0);
+    CHECK(lxp_queue_disposition_decode(bytes, sizeof(bytes) - 1U, &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    for (i = 0U; i < sizeof(bytes); ++i) {
+        memcpy(tampered, bytes, sizeof(bytes));
+        tampered[i] ^= 1U;
+        CHECK(lxp_queue_disposition_decode(tampered, sizeof(tampered), &decoded) != LXP_OK);
+    }
+    invalid = disposition;
+    invalid.parameter_version = 1U;
+    CHECK(lxp_queue_disposition_encode(&invalid, bytes) != LXP_OK);
+    invalid = disposition;
+    invalid.result_code = LXP_OK;
+    CHECK(lxp_queue_disposition_encode(&invalid, bytes) != LXP_OK);
+    invalid = disposition;
+    invalid.result_code = LXP_FATAL_INVARIANT;
+    CHECK(lxp_queue_disposition_encode(&invalid, bytes) != LXP_OK);
+    invalid = disposition;
+    invalid.admission_order = 0U;
+    CHECK(lxp_queue_disposition_encode(&invalid, bytes) != LXP_OK);
+    printf("two-class disposition case passed\n");
+    return 0;
+}
+
+static int two_class_cases(void)
+{
+    int kind;
+    if (two_class_table_case() != 0) return 1;
+    if (two_class_terminal_case() != 0) return 1;
+    for (kind = 0; kind < TWO_CLASS_ADMISSION_COUNT; ++kind)
+        if (two_class_admission_case(kind) != 0) return 1;
+    if (two_class_failure_case() != 0) return 1;
+    if (two_class_disposition_case() != 0) return 1;
+    return 0;
+}
+
 #ifndef LXP_TEST_TERMINAL_REJECTION_MAIN
 #define LXP_TEST_TERMINAL_REJECTION_MAIN main
 #endif
@@ -971,6 +1405,7 @@ int LXP_TEST_TERMINAL_REJECTION_MAIN(void)
     if (terminal_rejection_case() != 0) return 1;
     if (terminal_maintenance_case() != 0) return 1;
     if (versioned_boundary_vectors() != 0) return 1;
+    if (two_class_cases() != 0) return 1;
     printf("terminal rejection tests passed\n");
     return 0;
 }

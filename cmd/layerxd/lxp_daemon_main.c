@@ -23,7 +23,6 @@ lxp_result lxp_daemon_queue_sequence_locked(
 lxp_result lxp_daemon_reserve_batch_maintenance(lxp_daemon *daemon, size_t count)
 {
     lxp_result status = LXP_OK;
-    size_t index;
     uint64_t tail;
     if (daemon == NULL || count == 0U || count > LXP_DAEMON_MAX_BATCH_ACTIVITIES)
         return LXP_ERR_NON_CANONICAL;
@@ -32,7 +31,7 @@ lxp_result lxp_daemon_reserve_batch_maintenance(lxp_daemon *daemon, size_t count
         status = daemon->reserved_batch_count == count ? LXP_OK : LXP_ERR_CONTEXT_MISMATCH;
         goto done;
     }
-    if (count > daemon->queue_count || daemon->persist_maintenance_reservation == NULL) {
+    if (count > daemon->queue_count || daemon->ordering_refused) {
         status = LXP_ERR_CONTEXT_MISMATCH;
         goto done;
     }
@@ -42,14 +41,47 @@ lxp_result lxp_daemon_reserve_batch_maintenance(lxp_daemon *daemon, size_t count
         goto done;
     }
     daemon->reserved_batch_count = count;
-    for (index = count; index < daemon->queue_count; ++index)
-        ++daemon->queue[(daemon->queue_head + index) % LXP_DAEMON_QUEUE_CAPACITY].global_sequence;
-    status = daemon->persist_maintenance_reservation(daemon->persist_admission_context);
-    if (status != LXP_OK) {
-        daemon->accepting = false;
-        daemon->failure = LXP_FATAL_INVARIANT;
-        status = LXP_FATAL_INVARIANT;
+done:
+    if (pthread_mutex_unlock(&daemon->mutex) != 0) status = LXP_FATAL_INVARIANT;
+    return status;
+}
+
+lxp_result lxp_daemon_refuse_ordering(lxp_daemon *daemon,
+                                      lxp_queue_disposition *disposition)
+{
+    const lxp_daemon_activity *head;
+    lxp_queue_disposition recorded;
+    lxp_fee_transition transition;
+    lxp_result status = LXP_OK;
+    if (daemon == NULL || disposition == NULL ||
+        lxp_fee_transition_lookup(disposition->parameter_version,
+            LXP_FEE_STAGE_ORDERING, disposition->result_code,
+            &transition) != LXP_OK ||
+        transition.receipt != LXP_FEE_RECEIPT_QUEUE_DISPOSITION)
+        return LXP_ERR_NON_CANONICAL;
+    if (pthread_mutex_lock(&daemon->mutex) != 0) return LXP_ERR_IO;
+    head = &daemon->queue[daemon->queue_head];
+    if (daemon->queue_count == 0U || daemon->ordering_refused ||
+        daemon->reserved_batch_count != 0U ||
+        disposition->ordering_sequence != daemon->next_sequence ||
+        head->admission_order == 0U ||
+        lxp_ct_memcmp(head->activity_id, disposition->activity_id, 32U) != 0) {
+        status = LXP_ERR_CONTEXT_MISMATCH;
+        goto done;
     }
+    recorded = *disposition;
+    recorded.admission_order = head->admission_order;
+    if (daemon->persist_disposition != NULL && head->durable_admission)
+        status = daemon->persist_disposition(daemon->persist_admission_context,
+                                             &recorded);
+    if (status != LXP_OK) {
+        daemon->failure = LXP_FATAL_INVARIANT;
+        daemon->accepting = false;
+        status = LXP_FATAL_INVARIANT;
+        goto done;
+    }
+    *disposition = recorded;
+    daemon->ordering_refused = true;
 done:
     if (pthread_mutex_unlock(&daemon->mutex) != 0) status = LXP_FATAL_INVARIANT;
     return status;
@@ -81,13 +113,14 @@ static void release_queue_locked(lxp_daemon *daemon)
         daemon->queue[at].length = 0U;
         (void)memset(daemon->queue[at].activity_id, 0,
                      sizeof(daemon->queue[at].activity_id));
-        daemon->queue[at].global_sequence = 0U;
+        daemon->queue[at].admission_order = 0U;
         daemon->queue[at].durable_admission = false;
     }
     daemon->queue_head = 0U;
     daemon->queue_count = 0U;
     daemon->queue_bytes = 0U;
     daemon->reserved_batch_count = 0U;
+    daemon->ordering_refused = false;
 }
 
 static void *executor_run(void *argument)
@@ -148,7 +181,9 @@ static void *executor_run(void *argument)
         if (status == LXP_OK &&
             (consumed_count == 0U || consumed_count > activity_count ||
              (daemon->reserved_batch_count != 0U &&
-              daemon->reserved_batch_count != consumed_count)))
+              daemon->reserved_batch_count != consumed_count) ||
+             (daemon->ordering_refused &&
+              (consumed_count != 1U || daemon->reserved_batch_count != 0U))))
             status = LXP_FATAL_INVARIANT;
         if (status != LXP_OK) {
             (void)fprintf(stderr, "layerxd: execution failed at sequence %llu with result %d\n",
@@ -169,14 +204,18 @@ static void *executor_run(void *argument)
                 daemon->queue[at].length = 0U;
                 (void)memset(daemon->queue[at].activity_id, 0,
                              sizeof(daemon->queue[at].activity_id));
-                daemon->queue[at].global_sequence = 0U;
+                daemon->queue[at].admission_order = 0U;
                 daemon->queue[at].durable_admission = false;
             }
             daemon->queue_head = (daemon->queue_head + consumed_count) %
                 LXP_DAEMON_QUEUE_CAPACITY;
             daemon->queue_count -= consumed_count;
-            daemon->next_sequence += consumed_count;
-            daemon->executed_count += consumed_count;
+            if (daemon->ordering_refused) {
+                daemon->ordering_refused = false;
+            } else {
+                daemon->next_sequence += consumed_count;
+                daemon->executed_count += consumed_count;
+            }
             if (daemon->reserved_batch_count != 0U) {
                 ++daemon->next_sequence;
                 daemon->reserved_batch_count = 0U;
@@ -249,6 +288,8 @@ static lxp_result daemon_start(
     daemon->apply_batch = apply_batch;
     daemon->apply_context = apply_context;
     daemon->next_sequence = config->start_sequence;
+    daemon->next_admission_order = config->start_sequence == 0U ?
+        1U : config->start_sequence;
     daemon->failure = LXP_OK;
     if (pthread_mutex_init(&daemon->mutex, NULL) != 0)
         return LXP_ERR_IO;
@@ -332,7 +373,7 @@ lxp_result lxp_daemon_submit(
     lxp_daemon *daemon, const uint8_t *activity, size_t activity_length)
 {
     size_t tail;
-    uint64_t global_sequence;
+    uint64_t admission_order;
     uint8_t activity_id[32] = {0};
     uint8_t *retained;
     lxp_result status = LXP_OK;
@@ -351,9 +392,10 @@ lxp_result lxp_daemon_submit(
         return pthread_mutex_unlock(&daemon->mutex) == 0 ?
             LXP_ERR_LENGTH_LIMIT : LXP_FATAL_INVARIANT;
     }
-    status = lxp_daemon_queue_sequence_locked(daemon, daemon->queue_count, &global_sequence);
-    if (status != LXP_OK) {
-        return pthread_mutex_unlock(&daemon->mutex) == 0 ? status : LXP_FATAL_INVARIANT;
+    admission_order = daemon->next_admission_order;
+    if (admission_order == 0U || admission_order == UINT64_MAX) {
+        return pthread_mutex_unlock(&daemon->mutex) == 0 ?
+            LXP_ERR_SEQUENCE_GAP : LXP_FATAL_INVARIANT;
     }
     retained = (uint8_t *)malloc(activity_length);
     if (retained == NULL) {
@@ -365,7 +407,7 @@ lxp_result lxp_daemon_submit(
         status = lxp_activity_id(activity, activity_length, activity_id);
         if (status == LXP_OK)
             status = daemon->persist_admission(
-                daemon->persist_admission_context, global_sequence,
+                daemon->persist_admission_context, admission_order,
                 activity_id, activity, activity_length);
         if (status != LXP_OK) {
             lxp_secure_zero(retained, activity_length);
@@ -387,10 +429,11 @@ lxp_result lxp_daemon_submit(
     daemon->queue[tail].length = activity_length;
     (void)memcpy(daemon->queue[tail].activity_id, activity_id,
                  sizeof(activity_id));
-    daemon->queue[tail].global_sequence = global_sequence;
+    daemon->queue[tail].admission_order = admission_order;
     daemon->queue[tail].durable_admission =
         daemon->persist_admission != NULL;
     ++daemon->queue_count;
+    ++daemon->next_admission_order;
     daemon->queue_bytes += activity_length;
     if (pthread_cond_broadcast(&daemon->queue_changed) != 0) {
         daemon->failure = LXP_FATAL_INVARIANT;

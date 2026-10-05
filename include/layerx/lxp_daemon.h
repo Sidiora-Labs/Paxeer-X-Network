@@ -436,7 +436,7 @@ typedef struct lxp_daemon_lni_observability {
 
 typedef struct lxp_daemon_lni_journal_entry {
     uint8_t activity_id[32];
-    uint64_t global_sequence;
+    uint64_t admission_order;
     uint64_t file_offset;
     uint32_t activity_length;
 } lxp_daemon_lni_journal_entry;
@@ -469,10 +469,8 @@ typedef struct lxp_daemon_lni_server {
     uint64_t journal_device;
     uint64_t journal_inode;
     uint64_t journal_end;
-    uint64_t reserved_first_sequence;
-    uint64_t reserved_maintenance_sequence;
     uint64_t connection_generation;
-    uint64_t expected_admission_sequence;
+    uint64_t expected_admission_order;
     uint8_t expected_admission_activity_id[32];
     uint8_t sequencer_private_key[32];
     bool sequencer_private_key_loaded;
@@ -481,6 +479,11 @@ typedef struct lxp_daemon_lni_server {
     uint64_t evicted_authentication_refusals;
     lxp_daemon_lni_journal_entry
         journal_entries[LXP_DAEMON_QUEUE_CAPACITY];
+    lxp_queue_disposition dispositions[LXP_DAEMON_QUEUE_CAPACITY];
+    size_t disposition_count;
+    size_t disposition_next;
+    size_t journal_disposition_records;
+    size_t journal_admission_records;
     lxp_daemon_lni_peer_observation
         observed_peers[LXP_DAEMON_LNI_MAX_OBSERVED_PEERS];
     size_t journal_entry_count;
@@ -623,12 +626,12 @@ typedef struct lxp_daemon_activity {
     uint8_t *bytes;
     size_t length;
     uint8_t activity_id[32];
-    uint64_t global_sequence;
+    uint64_t admission_order;
     bool durable_admission;
 } lxp_daemon_activity;
 
 typedef lxp_result (*lxp_daemon_admission_persist_fn)(
-    void *context, uint64_t global_sequence,
+    void *context, uint64_t admission_order,
     const uint8_t activity_id[32],
     const uint8_t *activity, size_t activity_length);
 
@@ -644,6 +647,8 @@ typedef lxp_result (*lxp_daemon_apply_batch_fn)(
 lxp_result lxp_daemon_queue_sequence_locked(
     const lxp_daemon *daemon, size_t index, uint64_t *sequence);
 lxp_result lxp_daemon_reserve_batch_maintenance(lxp_daemon *daemon, size_t count);
+lxp_result lxp_daemon_refuse_ordering(lxp_daemon *daemon,
+                                      lxp_queue_disposition *disposition);
 
 struct lxp_daemon {
     lxp_daemon_configuration config;
@@ -660,15 +665,18 @@ struct lxp_daemon {
     size_t queue_bytes;
     lxp_daemon_admission_persist_fn persist_admission;
     void *persist_admission_context;
-    lxp_result (*persist_maintenance_reservation)(void *context);
+    lxp_result (*persist_disposition)(
+        void *context, const lxp_queue_disposition *disposition);
     size_t reserved_batch_count;
     uint64_t next_sequence;
+    uint64_t next_admission_order;
     uint64_t executed_count;
     lxp_result failure;
     bool accepting;
     bool stop_requested;
     bool executor_started;
     bool primitives_initialized;
+    bool ordering_refused;
 };
 
 lxp_result lxp_daemon_config_load(

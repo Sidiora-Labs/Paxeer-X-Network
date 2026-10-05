@@ -78,6 +78,64 @@ typedef struct lxp_fee_replay_entry {
 } lxp_fee_replay_entry;
 #define lxp_fee_replay_entry lxp_fee_replay_entry
 
+enum { LXP_FEE_TWO_CLASS_PARAMETER_VERSION = 2 };
+
+typedef enum lxp_fee_stage {
+    LXP_FEE_STAGE_SUBMISSION = 1,
+    LXP_FEE_STAGE_ORDERING = 2,
+    LXP_FEE_STAGE_EXECUTION = 3
+} lxp_fee_stage;
+
+typedef enum lxp_fee_receipt_kind {
+    LXP_FEE_RECEIPT_NONE = 0,
+    LXP_FEE_RECEIPT_QUEUE_DISPOSITION = 1,
+    LXP_FEE_RECEIPT_REFUSAL = 2,
+    LXP_FEE_RECEIPT_FAILURE = 3,
+    LXP_FEE_RECEIPT_SUCCESS = 4
+} lxp_fee_receipt_kind;
+
+typedef enum lxp_fee_retry {
+    LXP_FEE_RETRY_NONE = 0,
+    LXP_FEE_RETRY_RESUBMIT = 1,
+    LXP_FEE_RETRY_REPLAY = 2
+} lxp_fee_retry;
+
+typedef struct lxp_fee_transition {
+    uint8_t actor_sequence;
+    uint8_t global_sequence;
+    bool charge_fee;
+    bool module_effects;
+    lxp_fee_receipt_kind receipt;
+    lxp_fee_retry retry;
+} lxp_fee_transition;
+#define lxp_fee_transition lxp_fee_transition
+
+enum { LXP_QUEUE_DISPOSITION_MAGIC = 0x4c584144,
+       LXP_QUEUE_DISPOSITION_VERSION = 1,
+       LXP_QUEUE_DISPOSITION_HEADER_BYTES = 64,
+       LXP_QUEUE_DISPOSITION_BODY_BYTES = 48,
+       LXP_QUEUE_DISPOSITION_BYTES = LXP_QUEUE_DISPOSITION_HEADER_BYTES +
+                                     LXP_QUEUE_DISPOSITION_BODY_BYTES };
+
+typedef struct lxp_queue_disposition {
+    uint64_t admission_order;
+    uint64_t ordering_sequence;
+    uint8_t activity_id[32];
+    uint8_t idempotency_key[32];
+    lxp_result result_code;
+    uint32_t parameter_version;
+} lxp_queue_disposition;
+#define lxp_queue_disposition lxp_queue_disposition
+
+bool lxp_fee_two_class_active(uint32_t parameter_version);
+bool lxp_fee_ordering_refusal(lxp_result refusal);
+lxp_result lxp_fee_transition_lookup(uint32_t parameter_version,
+    lxp_fee_stage stage, lxp_result result, lxp_fee_transition *transition);
+lxp_result lxp_queue_disposition_encode(const lxp_queue_disposition *disposition,
+    uint8_t bytes[LXP_QUEUE_DISPOSITION_BYTES]);
+lxp_result lxp_queue_disposition_decode(const uint8_t *bytes, size_t length,
+    lxp_queue_disposition *disposition);
+bool lxp_queue_disposition_header(const uint8_t *bytes, size_t length);
 const char *lxp_asset_fee_name(size_t index);
 const char *lxp_asset_fee_name_for_version(uint16_t version, size_t index);
 const char *lxp_module_fee_name(size_t index);

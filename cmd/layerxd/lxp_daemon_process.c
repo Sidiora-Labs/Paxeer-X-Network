@@ -3157,6 +3157,36 @@ static lxp_result postcommit_stop(lxp_daemon_process *process)
     return status;
 }
 
+static lxp_result refuse_ordering(lxp_daemon_process *process,
+    const lxp_activity *activity, const uint8_t *canonical_activity,
+    size_t activity_length, uint64_t global_sequence, lxp_result refusal)
+{
+    lxp_queue_disposition disposition;
+    lxp_fee_transition transition;
+    lxp_result status;
+    if (lxp_fee_transition_lookup(process->parameter_version,
+            LXP_FEE_STAGE_ORDERING, refusal, &transition) != LXP_OK ||
+        transition.receipt != LXP_FEE_RECEIPT_QUEUE_DISPOSITION)
+        return refusal;
+    (void)memset(&disposition, 0, sizeof(disposition));
+    disposition.ordering_sequence = global_sequence;
+    disposition.result_code = refusal;
+    disposition.parameter_version = process->parameter_version;
+    if (activity != NULL)
+        (void)memcpy(disposition.idempotency_key, activity->idempotency_key, 32U);
+    if (lxp_activity_id(canonical_activity, activity_length,
+                        disposition.activity_id) != LXP_OK)
+        return refusal;
+    status = lxp_daemon_refuse_ordering(&process->daemon, &disposition);
+    if (status != LXP_OK)
+        return lxp_result_is_fatal(status) ? status : refusal;
+    (void)fprintf(stderr,
+        "layerxd: ordering refused admission %llu at sequence %llu with result %d\n",
+        (unsigned long long)disposition.admission_order,
+        (unsigned long long)global_sequence, (int)refusal);
+    return LXP_OK;
+}
+
 static lxp_result apply_canonical_activity(
     void *context, uint64_t global_sequence,
     const uint8_t *canonical_activity, size_t activity_length)
@@ -3235,6 +3265,13 @@ static lxp_result apply_canonical_activity(
                                  activity_id);
     if (status != LXP_OK) {
         lxp_result refusal = status;
+        if (lxp_fee_two_class_active(process->parameter_version)) {
+            stage = "ordering refusal";
+            status = refuse_ordering(process, decoded ? &activity : NULL,
+                                     canonical_activity, activity_length,
+                                     global_sequence, refusal);
+            goto finish;
+        }
         if (!decoded || !lxp_terminal_rejection_applies(refusal) ||
             !terminal_rejection_module_supported(process,
                                                  activity.activity_type)) {
@@ -3350,6 +3387,16 @@ static lxp_result apply_canonical_activity(
                                          &execution, &receipt);
     if (status != LXP_OK || process->kernel.publication_poisoned) {
         if (status == LXP_OK) status = LXP_FATAL_INVARIANT;
+        else if (lxp_fee_two_class_active(process->parameter_version) &&
+                 !process->kernel.publication_poisoned &&
+                 !process->kernel.journal->open &&
+                 process->state.next_sequence == global_sequence &&
+                 memcmp(process->kernel.current_state_root,
+                        base_kernel.current_state_root, 32U) == 0) {
+            stage = "ordering refusal";
+            status = refuse_ordering(process, &activity, canonical_activity,
+                                     activity_length, global_sequence, status);
+        }
         goto finish;
     }
     stage = "receipt encoding";
@@ -3657,6 +3704,7 @@ static lxp_result apply_canonical_batch(
     size_t kernel_consumed = 0U;
     size_t checked_count = 0U;
     bool timestamped = false;
+    bool two_class = false;
     size_t mark;
     size_t i;
     uint32_t maximum_workers;
@@ -3728,6 +3776,7 @@ static lxp_result apply_canonical_batch(
         return LXP_ERR_IO;
     owner_locked = true;
     process->state.writer = pthread_self();
+    two_class = lxp_fee_two_class_active(process->parameter_version);
     mark = lxp_arena_mark(&process->execution_arena);
     status = current_time_ms(&timestamp);
     if (status == LXP_OK) timestamped = true;
@@ -3799,6 +3848,15 @@ static lxp_result apply_canonical_batch(
         executions[i].verified_receipts = &process->verified_receipts;
         ++checked_count;
     }
+    if (two_class && status != LXP_OK && timestamped &&
+        lxp_fee_ordering_refusal(status)) {
+        if (checked_count > 1U) {
+            count = checked_count - 1U;
+            status = LXP_OK;
+        } else {
+            count = 1U;
+        }
+    }
     if (status == LXP_OK)
         status = lxp_daemon_batch_bind_prefix(
             canonical_activities, count,
@@ -3840,6 +3898,9 @@ static lxp_result apply_canonical_batch(
                 lxp_kernel_prepare_serial_activity_batch(
                     &process->kernel, &activities[0], &executions[0], &prepared_batch);
         if (status == LXP_OK) break;
+        if (two_class && prepared_batch == NULL && retry_prefix_count == 0U &&
+            count > 1U && lxp_fee_ordering_refusal(status))
+            retry_prefix_count = 1U;
         if (prepared_batch != NULL || retry_prefix_count == 0U)
             break;
         if (retry_prefix_count >= count) {
@@ -3854,7 +3915,22 @@ static lxp_result apply_canonical_batch(
             &process->execution_arena, executions,
             &scheduling_roots, batch_id);
     }
-    if (status != LXP_OK && prepared_batch == NULL && timestamped &&
+    if (two_class && status != LXP_OK && prepared_batch == NULL &&
+        timestamped && count == 1U &&
+        activities[0].activity_type != LXP_GOVERNANCE_HANDOVER) {
+        lxp_result refusal = status;
+        status = refuse_ordering(process, &activities[0], offered[0].bytes,
+                                 offered[0].length, first_global_sequence,
+                                 refusal);
+        if (status == LXP_OK) {
+            (void)lxp_arena_reset(&process->execution_arena, mark);
+            if (pthread_mutex_unlock(&process->owner.mutex) != 0)
+                return LXP_FATAL_INVARIANT;
+            *consumed_count = 1U;
+            return LXP_OK;
+        }
+    }
+    if (!two_class && status != LXP_OK && prepared_batch == NULL && timestamped &&
         (checked_count == 0U || (checked_count == count && count == 1U)) &&
         activities[0].activity_type != LXP_GOVERNANCE_HANDOVER && lxp_terminal_rejection_applies(status) &&
         terminal_rejection_module_supported(process,

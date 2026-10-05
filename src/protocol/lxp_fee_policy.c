@@ -132,3 +132,89 @@ lxp_result lxp_fee_replay_check(
         return LXP_FATAL_SUPPLY_MISMATCH;
     return LXP_OK;
 }
+
+bool lxp_fee_two_class_active(uint32_t parameter_version)
+{
+    return parameter_version >= (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION;
+}
+
+bool lxp_fee_ordering_refusal(lxp_result refusal)
+{
+    if (refusal == LXP_OK || refusal == LXP_ERR_IDEMPOTENT_REPLAY ||
+        lxp_result_is_fatal(refusal))
+        return false;
+    switch (lxp_result_domain(refusal)) {
+    case LXP_RESULT_DOMAIN_CODEC:
+    case LXP_RESULT_DOMAIN_ENVELOPE:
+    case LXP_RESULT_DOMAIN_AUTHORITY:
+    case LXP_RESULT_DOMAIN_SEQUENCING:
+    case LXP_RESULT_DOMAIN_LEDGER:
+    case LXP_RESULT_DOMAIN_ARITHMETIC:
+    case LXP_RESULT_DOMAIN_METERING:
+    case LXP_RESULT_DOMAIN_MODULE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static lxp_fee_transition fee_transition(uint8_t actor_sequence,
+    uint8_t global_sequence, bool charge_fee, bool module_effects,
+    lxp_fee_receipt_kind receipt, lxp_fee_retry retry)
+{
+    lxp_fee_transition transition;
+    transition.actor_sequence = actor_sequence;
+    transition.global_sequence = global_sequence;
+    transition.charge_fee = charge_fee;
+    transition.module_effects = module_effects;
+    transition.receipt = receipt;
+    transition.retry = retry;
+    return transition;
+}
+
+lxp_result lxp_fee_transition_lookup(uint32_t parameter_version,
+    lxp_fee_stage stage, lxp_result result, lxp_fee_transition *transition)
+{
+    bool two_class = lxp_fee_two_class_active(parameter_version);
+    if (transition == NULL || parameter_version == 0U ||
+        lxp_result_is_fatal(result))
+        return LXP_ERR_NON_CANONICAL;
+    switch (stage) {
+    case LXP_FEE_STAGE_SUBMISSION:
+        if (result == LXP_OK)
+            *transition = fee_transition(0U, 0U, false, false,
+                LXP_FEE_RECEIPT_NONE, LXP_FEE_RETRY_REPLAY);
+        else if (result == LXP_ERR_IDEMPOTENT_REPLAY)
+            *transition = fee_transition(0U, 0U, false, false,
+                LXP_FEE_RECEIPT_NONE, LXP_FEE_RETRY_NONE);
+        else
+            *transition = fee_transition(0U, 0U, false, false,
+                LXP_FEE_RECEIPT_NONE, LXP_FEE_RETRY_RESUBMIT);
+        return LXP_OK;
+    case LXP_FEE_STAGE_ORDERING:
+        if (two_class && result == LXP_ERR_IDEMPOTENT_REPLAY) {
+            *transition = fee_transition(0U, 0U, false, false,
+                LXP_FEE_RECEIPT_QUEUE_DISPOSITION, LXP_FEE_RETRY_NONE);
+            return LXP_OK;
+        }
+        if (!lxp_fee_ordering_refusal(result)) return LXP_ERR_NON_CANONICAL;
+        if (two_class)
+            *transition = fee_transition(0U, 0U, false, false,
+                LXP_FEE_RECEIPT_QUEUE_DISPOSITION, LXP_FEE_RETRY_RESUBMIT);
+        else
+            *transition = fee_transition(0U, 1U, false, false,
+                LXP_FEE_RECEIPT_REFUSAL, LXP_FEE_RETRY_REPLAY);
+        return LXP_OK;
+    case LXP_FEE_STAGE_EXECUTION:
+        if (result == LXP_ERR_IDEMPOTENT_REPLAY) return LXP_ERR_NON_CANONICAL;
+        if (result == LXP_OK)
+            *transition = fee_transition(1U, 1U, true, true,
+                LXP_FEE_RECEIPT_SUCCESS, LXP_FEE_RETRY_REPLAY);
+        else
+            *transition = fee_transition(1U, 1U, true, false,
+                LXP_FEE_RECEIPT_FAILURE, LXP_FEE_RETRY_REPLAY);
+        return LXP_OK;
+    default:
+        return LXP_ERR_NON_CANONICAL;
+    }
+}

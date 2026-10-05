@@ -1296,7 +1296,7 @@ static int test_socket_admission(const signer *registered_key,
                 queued->length == valid_length &&
                 memcmp(queued->bytes, valid, valid_length) == 0 &&
                 memcmp(queued->activity_id, activity_id, 32U) == 0 &&
-                queued->global_sequence == 1U &&
+                queued->admission_order == 1U &&
                 queued->durable_admission;
             if (pthread_mutex_unlock(&fixture.daemon.mutex) != 0)
                 observation_status = 1;

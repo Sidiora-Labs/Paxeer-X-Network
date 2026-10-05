@@ -9,6 +9,27 @@
 
 #include <string.h>
 
+static lxp_result replay_receipt_transition(
+    const lxp_replay_activity_output *output, uint32_t parameter_version,
+    uint64_t global_sequence)
+{
+    lxp_receipt receipt;
+    lxp_fee_transition transition;
+    if (lxp_receipt_decode(output->canonical_receipt.bytes,
+                           output->canonical_receipt.length, false,
+                           &receipt) != LXP_OK ||
+        receipt.parameter_version != parameter_version ||
+        receipt.global_sequence != global_sequence ||
+        receipt.result_code != (lxp_result)output->result_code ||
+        lxp_u128_cmp(receipt.fee_charged, output->fee_charged) != 0)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (lxp_fee_two_class_active(parameter_version) &&
+        lxp_fee_transition_lookup(parameter_version, LXP_FEE_STAGE_EXECUTION,
+                                  receipt.result_code, &transition) != LXP_OK)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    return LXP_OK;
+}
+
 lxp_result lxp_replay_engine_init(
     lxp_replay_engine *engine,
     lxp_replay_parameter_version_fn parameter_version, void *context)
@@ -255,6 +276,9 @@ static lxp_result replay_batch(lxp_replay_engine *engine, bool publication,
         if (status != LXP_OK) return status;
         result->encoded_receipts[i] = result->outputs[i].canonical_receipt;
         status = result->encoded_receipts[i].length != 0U ? LXP_OK : LXP_ERR_NON_CANONICAL;
+        if (status != LXP_OK) return status;
+        status = replay_receipt_transition(&result->outputs[i], parameter_version,
+                                           body->header.first_sequence + i);
         if (status != LXP_OK) return status;
         result->encoded_events[i] = result->outputs[i].canonical_events;
         (void)memcpy(current_root,

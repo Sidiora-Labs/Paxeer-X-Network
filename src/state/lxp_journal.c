@@ -1,5 +1,7 @@
 #include "layerx/lxp_state.h"
 #include "layerx/lxp_ledger.h"
+#include "layerx/lxp_fee.h"
+#include "layerx/lxp_storage.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1104,5 +1106,103 @@ lxp_result lxp_state_store_get(lxp_state_store *store, const uint8_t key[32],
     *found = location != store->count;
     if (*found) *value = store->cells[location].value;
     if (pthread_mutex_unlock(&store->lock) != 0) return LXP_FATAL_INVARIANT;
+    return LXP_OK;
+}
+
+static void disposition_put32(uint8_t *bytes, uint32_t value)
+{
+    bytes[0] = (uint8_t)(value >> 24);
+    bytes[1] = (uint8_t)(value >> 16);
+    bytes[2] = (uint8_t)(value >> 8);
+    bytes[3] = (uint8_t)value;
+}
+
+static void disposition_put64(uint8_t *bytes, uint64_t value)
+{
+    disposition_put32(bytes, (uint32_t)(value >> 32));
+    disposition_put32(bytes + 4, (uint32_t)value);
+}
+
+static uint32_t disposition_get32(const uint8_t *bytes)
+{
+    return ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) |
+           ((uint32_t)bytes[2] << 8) | (uint32_t)bytes[3];
+}
+
+static uint64_t disposition_get64(const uint8_t *bytes)
+{
+    return ((uint64_t)disposition_get32(bytes) << 32) |
+           (uint64_t)disposition_get32(bytes + 4);
+}
+
+static bool disposition_canonical(const lxp_queue_disposition *disposition)
+{
+    return disposition->admission_order != 0U &&
+           disposition->ordering_sequence != 0U &&
+           disposition->parameter_version >=
+               (uint32_t)LXP_FEE_TWO_CLASS_PARAMETER_VERSION &&
+           disposition->result_code != LXP_OK &&
+           !lxp_result_is_fatal(disposition->result_code);
+}
+
+bool lxp_queue_disposition_header(const uint8_t *bytes, size_t length)
+{
+    return bytes != NULL && length >= LXP_QUEUE_DISPOSITION_HEADER_BYTES &&
+           disposition_get32(bytes) == (uint32_t)LXP_QUEUE_DISPOSITION_MAGIC;
+}
+
+lxp_result lxp_queue_disposition_encode(const lxp_queue_disposition *disposition,
+    uint8_t bytes[LXP_QUEUE_DISPOSITION_BYTES])
+{
+    uint8_t *body = bytes + LXP_QUEUE_DISPOSITION_HEADER_BYTES;
+    if (disposition == NULL || bytes == NULL ||
+        !disposition_canonical(disposition))
+        return LXP_ERR_NON_CANONICAL;
+    memset(bytes, 0, LXP_QUEUE_DISPOSITION_BYTES);
+    disposition_put32(body, (uint32_t)disposition->result_code);
+    disposition_put32(body + 4, disposition->parameter_version);
+    disposition_put64(body + 8, disposition->ordering_sequence);
+    memcpy(body + 16, disposition->idempotency_key, 32U);
+    disposition_put32(bytes, (uint32_t)LXP_QUEUE_DISPOSITION_MAGIC);
+    bytes[4] = (uint8_t)(LXP_QUEUE_DISPOSITION_VERSION >> 8);
+    bytes[5] = (uint8_t)LXP_QUEUE_DISPOSITION_VERSION;
+    bytes[6] = (uint8_t)(LXP_QUEUE_DISPOSITION_HEADER_BYTES >> 8);
+    bytes[7] = (uint8_t)LXP_QUEUE_DISPOSITION_HEADER_BYTES;
+    disposition_put64(bytes + 8, disposition->admission_order);
+    disposition_put32(bytes + 16, LXP_QUEUE_DISPOSITION_BODY_BYTES);
+    disposition_put32(bytes + 20,
+        lxp_log_crc32c(body, LXP_QUEUE_DISPOSITION_BODY_BYTES));
+    memcpy(bytes + 24, disposition->activity_id, 32U);
+    disposition_put32(bytes + 56, lxp_log_crc32c(bytes, 56U));
+    return LXP_OK;
+}
+
+lxp_result lxp_queue_disposition_decode(const uint8_t *bytes, size_t length,
+    lxp_queue_disposition *disposition)
+{
+    const uint8_t *body;
+    lxp_queue_disposition decoded;
+    if (bytes == NULL || disposition == NULL ||
+        length != LXP_QUEUE_DISPOSITION_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    body = bytes + LXP_QUEUE_DISPOSITION_HEADER_BYTES;
+    if (!lxp_queue_disposition_header(bytes, length) ||
+        ((uint16_t)bytes[4] << 8 | bytes[5]) != LXP_QUEUE_DISPOSITION_VERSION ||
+        ((uint16_t)bytes[6] << 8 | bytes[7]) != LXP_QUEUE_DISPOSITION_HEADER_BYTES ||
+        disposition_get32(bytes + 16) != LXP_QUEUE_DISPOSITION_BODY_BYTES ||
+        disposition_get32(bytes + 20) !=
+            lxp_log_crc32c(body, LXP_QUEUE_DISPOSITION_BODY_BYTES) ||
+        disposition_get32(bytes + 56) != lxp_log_crc32c(bytes, 56U) ||
+        disposition_get32(bytes + 60) != 0U)
+        return LXP_ERR_LOG_CORRUPT;
+    memset(&decoded, 0, sizeof(decoded));
+    decoded.admission_order = disposition_get64(bytes + 8);
+    memcpy(decoded.activity_id, bytes + 24, 32U);
+    decoded.result_code = (lxp_result)(int32_t)disposition_get32(body);
+    decoded.parameter_version = disposition_get32(body + 4);
+    decoded.ordering_sequence = disposition_get64(body + 8);
+    memcpy(decoded.idempotency_key, body + 16, 32U);
+    if (!disposition_canonical(&decoded)) return LXP_ERR_LOG_CORRUPT;
+    *disposition = decoded;
     return LXP_OK;
 }

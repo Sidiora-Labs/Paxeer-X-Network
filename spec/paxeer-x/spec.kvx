@@ -25710,7 +25710,7 @@ retained_migration_accounting_paths_6_2 = ["src/protocol/lxp_kernel.c"]
 
 [task.1.3]
 title = "Apply one versioned sequence and fee policy to admitted and refused Activities"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "0.5"]
@@ -25742,6 +25742,11 @@ lease_transfer_authority_5_2 = "Owner approved inactive lease reassignment; pres
 fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
 fleet_role = "/root/complete_migration/account_winddown_callers"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-1.3-brief.json"
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/1.3.json"
 
 [task.2.4]
 title = "Maintain finalized-history evidence for authority-verifier qualification"

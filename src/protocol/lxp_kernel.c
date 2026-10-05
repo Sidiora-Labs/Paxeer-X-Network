@@ -7472,22 +7472,16 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
 
 bool lxp_terminal_rejection_applies(lxp_result refusal)
 {
-    if (refusal == LXP_OK || refusal == LXP_ERR_IDEMPOTENT_REPLAY ||
-        lxp_result_is_fatal(refusal))
-        return false;
-    switch (lxp_result_domain(refusal)) {
-    case LXP_RESULT_DOMAIN_CODEC:
-    case LXP_RESULT_DOMAIN_ENVELOPE:
-    case LXP_RESULT_DOMAIN_AUTHORITY:
-    case LXP_RESULT_DOMAIN_SEQUENCING:
-    case LXP_RESULT_DOMAIN_LEDGER:
-    case LXP_RESULT_DOMAIN_ARITHMETIC:
-    case LXP_RESULT_DOMAIN_METERING:
-    case LXP_RESULT_DOMAIN_MODULE:
-        return true;
-    default:
-        return false;
-    }
+    return lxp_fee_ordering_refusal(refusal);
+}
+
+static bool terminal_rejection_versioned(uint32_t parameter_version,
+                                         lxp_result refusal)
+{
+    lxp_fee_transition transition;
+    return lxp_fee_transition_lookup(parameter_version, LXP_FEE_STAGE_ORDERING,
+               refusal, &transition) == LXP_OK &&
+           transition.receipt == LXP_FEE_RECEIPT_REFUSAL;
 }
 
 lxp_result lxp_kernel_terminal_rejection(lxp_kernel *kernel,
@@ -7512,6 +7506,8 @@ lxp_result lxp_kernel_terminal_rejection(lxp_kernel *kernel,
     if (!lxp_terminal_rejection_applies(refusal) ||
         !lxp_protocol_version_supported(activity->protocol_version))
         return LXP_ERR_NON_CANONICAL;
+    if (!terminal_rejection_versioned(execution->parameter_version, refusal))
+        return LXP_ERR_VERSION_UNSUPPORTED;
     if (kernel->publication_poisoned || kernel->journal->open ||
         execution->global_sequence != kernel->state->next_sequence)
         return LXP_FATAL_INVARIANT;
@@ -7629,6 +7625,8 @@ static lxp_result kernel_prepare_terminal_rejection(
         !lxp_terminal_rejection_applies(refusal))
         return LXP_ERR_NON_CANONICAL;
     *batch_out = NULL;
+    if (!terminal_rejection_versioned(execution->parameter_version, refusal))
+        return LXP_ERR_VERSION_UNSUPPORTED;
     runtime = kernel->module_runtime[LXP_MODULE_PROGRAMS];
     if (runtime == NULL) return LXP_ERR_MODULE_DISABLED;
     batch = calloc(1U, sizeof(*batch));
