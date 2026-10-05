@@ -33902,7 +33902,7 @@ qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104
 
 [task.104.13.10]
 title = "Connect live policy approval admission and authentic native presentation facts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "8.1"]
@@ -33921,7 +33921,7 @@ stop_condition = "Stop at original dispatch cap, second failed repair, missing a
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial source remains in_progress."
 source_ownership = "Root serializes shared manifests, lockfiles, Makefile, spec and publication; no deployment."
 source_status = "partial"
-qualification_status = "unrun_partial_source"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 remaining_source = "Native non-Programs capability/session/hold admission and complete real admission corpus; assigned distinct104.13.11."
 
 
@@ -33941,6 +33941,10 @@ fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.1
 fanout_role = "complete_human_facts"
 fanout_scope_delegated = []
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+completion_basis = "implementation closed with task 104.13.26 under owner ruling 2 (native effect v1 only); qualification separately recorded"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.13.26.json"
 
 [task.104.24.4]
 title = "Complete connected MigrationV2 Ethereum and Solana acceptance corpus"
@@ -34272,7 +34276,7 @@ owner_continuation_authority = "Explicit owner approval in current session; exis
 
 [task.104.13.13]
 title = "Complete actual approval budget evidence settlement and durable publication owners"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "8.1"]
@@ -34291,7 +34295,7 @@ stop_condition = "Stop at original cap, unrelated failure, missing genuine autho
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Root owns shared manifests, locks, schema, spec and publication; canonical Human projection files belong to a separate consumer owner."
 source_status = "partial"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 remaining_source = "Legacy native authority adapter, raw budget-proof intake verification, historical ordinary execution proof and complete admission corpus."
 
 
@@ -34318,11 +34322,14 @@ mcp_9_2_lease_authority = "Owner approved inactive lease reassignment; live stat
 fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
 fleet_role = "/root/complete_migration/account_upgrades_producer"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.13-brief.json"
-completion_basis = "partial source published; original acceptance criteria remain required"
+completion_basis = "implementation closed with task 104.13.26 under owner ruling 2 (native effect v1 only); qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.13.13-intake.json"
 fanout_role = "complete_migration/migration_host_mapping"
 fanout_scope_delegated = []
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.13.26.json"
 
 [task.104.24.5]
 title = "Submit authenticated funded asset migrations from the real operator CLI"
