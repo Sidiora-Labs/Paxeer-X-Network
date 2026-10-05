@@ -1,6 +1,7 @@
 //! KMS-backed custody for human and managed-agent signing keys.
 
 mod evm;
+mod gateway;
 mod provider;
 pub use evm::{
     EvmAcknowledgement, EvmAction, EvmExternalSignature, EvmPlanAuthorization, EvmTransaction,
@@ -9,6 +10,7 @@ pub use evm::{
 mod sessions;
 mod signer;
 
+pub use gateway::{GatewayLimits, GatewayPolicy, GatewayTls, LxkpGateway, GATEWAY_FRAME_LIMIT};
 pub use provider::{
     KmsProvider, NativeConsent, ProviderNativeSignRequest, PrincipalKeyBinding, ProviderDeployment, ProviderKeyDescription,
     ProviderKeyReference, ProviderSignRequest, RemoteCustodySigner, RemoteKmsProvider,

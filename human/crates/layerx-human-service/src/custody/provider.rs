@@ -119,6 +119,12 @@ impl ProviderKeyReference {
     }
 }
 
+impl Drop for ProviderKeyReference {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.0);
+    }
+}
+
 impl Debug for ProviderKeyReference {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -327,30 +333,39 @@ impl<'a> ProviderSignRequest<'a> {
     }
 
     fn validate(self) -> Result<ValidatedSignRequest, CustodyError> {
-        let rebound = bind(self.canonical_bytes, self.registry)
-            .map_err(|error| CustodyError::Sign(layerx_crypto::signer::SignError::from(error)))?;
-        if rebound != *self.disclosure {
-            return Err(CustodyError::Sign(
-                layerx_crypto::signer::SignError::DisclosureMismatch("canonical_bytes"),
-            ));
-        }
-        let reencoded = self
-            .disclosure
-            .reencode()
-            .map_err(|error| CustodyError::Sign(layerx_crypto::signer::SignError::from(error)))?;
-        if !layerx_crypto::ct::eq(&reencoded, self.canonical_bytes) {
-            return Err(CustodyError::Sign(
-                layerx_crypto::signer::SignError::DisclosureMismatch("canonical_bytes"),
-            ));
-        }
-        let mut hasher = Sha256::new();
-        hasher.update(SIGNATURE_DOMAIN);
-        hasher.update(self.canonical_bytes);
-        Ok(ValidatedSignRequest {
-            canonical_digest: hasher.finalize().into(),
-            disclosure: encode_disclosure(self.disclosure)?,
-        })
+        validate_disclosed(self.canonical_bytes, self.disclosure, self.registry)
     }
+}
+
+/// Re-binds canonical bytes to their disclosure under `registry` and returns
+/// the signature-preimage digest plus the LXKP disclosure encoding.
+pub(super) fn validate_disclosed(
+    canonical_bytes: &[u8],
+    disclosure: &Disclosure,
+    registry: &ModuleRegistry,
+) -> Result<ValidatedSignRequest, CustodyError> {
+    let rebound = bind(canonical_bytes, registry)
+        .map_err(|error| CustodyError::Sign(layerx_crypto::signer::SignError::from(error)))?;
+    if rebound != *disclosure {
+        return Err(CustodyError::Sign(
+            layerx_crypto::signer::SignError::DisclosureMismatch("canonical_bytes"),
+        ));
+    }
+    let reencoded = disclosure
+        .reencode()
+        .map_err(|error| CustodyError::Sign(layerx_crypto::signer::SignError::from(error)))?;
+    if !layerx_crypto::ct::eq(&reencoded, canonical_bytes) {
+        return Err(CustodyError::Sign(
+            layerx_crypto::signer::SignError::DisclosureMismatch("canonical_bytes"),
+        ));
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(SIGNATURE_DOMAIN);
+    hasher.update(canonical_bytes);
+    Ok(ValidatedSignRequest {
+        canonical_digest: hasher.finalize().into(),
+        disclosure: encode_disclosure(disclosure)?,
+    })
 }
 
 impl Debug for ProviderSignRequest<'_> {
@@ -364,9 +379,9 @@ impl Debug for ProviderSignRequest<'_> {
     }
 }
 
-struct ValidatedSignRequest {
-    canonical_digest: [u8; 32],
-    disclosure: Vec<u8>,
+pub(super) struct ValidatedSignRequest {
+    pub(super) canonical_digest: [u8; 32],
+    pub(super) disclosure: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug)]
