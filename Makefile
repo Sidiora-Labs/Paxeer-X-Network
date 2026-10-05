@@ -3288,7 +3288,11 @@ hpx-public-check:
 	for path in get-hpx.sh hpx paxd genesis.json lib/libwasmvm.x86_64.so lib/libwasmvm.aarch64.so lib/libwasmvm152.x86_64.so lib/libwasmvm152.aarch64.so lib/libwasmvm155.x86_64.so lib/libwasmvm155.aarch64.so config/fullnode/config.toml config/fullnode/app.toml config/validator/config.toml config/validator/app.toml api/peers api/nodes api/myip api/statesync; do \
 		curl -fsSI "$(HPX_ORIGIN)/$$path" >/dev/null; \
 	done; \
-	[ "$$(curl -sS -o /dev/null -w '%{http_code}' "$(HPX_ORIGIN)/")" = 404 ]; \
+	[ "$$(curl -sS -o "$$tmp/landing.html" -w '%{http_code}' "$(HPX_ORIGIN)/")" = 200 ]; \
+	grep -qF '<title>HPX — HyperPax Node Network</title>' "$$tmp/landing.html"; \
+	for path in lib/ config/ releases/ current registry.json; do \
+		[ "$$(curl -sS -o /dev/null -w '%{http_code}' "$(HPX_ORIGIN)/$$path")" = 404 ]; \
+	done; \
 	[ "$$(curl -sS -o /dev/null -w '%{http_code}' "$(HPX_ORIGIN)/not-a-public-artifact")" = 404 ]
 
 monorepo-ci: workspace-ci
