@@ -28,6 +28,7 @@ const ROTATE_IF_CURRENT: Contract = Contract::new(2, 3);
 const DESTROY: Contract = Contract::new(1, 4);
 const SIGN: Contract = Contract::new(1, 5);
 const EXPORT: Contract = Contract::new(5, 14);
+const EXECUTOR_PROBE: Contract = Contract::new(6, 15);
 const STATUS_OK: u8 = 0;
 const STATUS_REFUSED: u8 = 1;
 const STATUS_NOT_FOUND: u8 = 2;
@@ -813,6 +814,40 @@ impl RemoteKmsProvider {
         let request = encode_key_request(contract, &self.provider_reference, binding, reference)?;
         let response = self.call(contract, &request)?;
         decode_description(&response, binding)
+    }
+
+    /// Completes the read-only executor probe under this provider's client
+    /// identity: the provider must admit the restricted executor certificate,
+    /// echo a fresh challenge and answer for `network_id`. No record is read
+    /// for signing, changed or persisted.
+    ///
+    /// # Errors
+    ///
+    /// Returns the typed availability, authentication, timeout or provider
+    /// refusal, and `Integrity` when the answer does not bind the challenge
+    /// and network.
+    pub fn probe_executor(&self, network_id: u32) -> Result<(), KmsError> {
+        if network_id == 0 {
+            return Err(KmsError::InvalidConfiguration);
+        }
+        let mut challenge = [0; 32];
+        getrandom::fill(&mut challenge).map_err(|_| KmsError::Unavailable)?;
+        let mut writer =
+            WireWriter::from_bytes(encode_header(EXECUTOR_PROBE, &self.provider_reference)?);
+        writer.u32(network_id)?;
+        writer.fixed(&challenge)?;
+        let response = self.call(EXECUTOR_PROBE, &writer.finish())?;
+        let mut reader = WireReader::new(&response);
+        let echoed: [u8; 32] = reader
+            .fixed(32)?
+            .try_into()
+            .map_err(|_| KmsError::InvalidResponse)?;
+        let network = reader.u32()?;
+        reader.finish()?;
+        if !layerx_crypto::ct::eq_fixed(&echoed, &challenge) || network != network_id {
+            return Err(KmsError::Integrity);
+        }
+        Ok(())
     }
 }
 

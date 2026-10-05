@@ -27839,7 +27839,7 @@ retained_additional_paths_104_13_36 = ["human/schema/human-api/intent.kvx"]
 
 [task.12.4]
 title = "Report movement readiness only with an authenticated usable executor"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = ["0.2", "24.12", "12.3", "24.2"]
@@ -27863,6 +27863,11 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 retained_contract_paths_104_13_34 = ["human/crates/layerx-human-service/src/custody/provider.rs"]
 lease_transfer_authority_104_13_34 = "Owner approved inactive lease reassignment and distinct Send contract; original unfinished criteria and source checkpoints remain preserved."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/12.4.json"
 
 [task.14.3]
 title = "Offer consent-bound SID sponsorship through the wallet fee selector"

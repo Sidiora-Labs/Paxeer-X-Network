@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::store::Store;
-use crate::wire::{self, Error, Request, Result};
+use crate::wire::{self, Error, Operation, Request, Result};
 use layerx_client::lni::framing::{read_frame, write_frame};
 use rustls::{ServerConnection, StreamOwned};
 use sha2::{Digest, Sha256};
@@ -86,7 +86,13 @@ fn connection(
         .sample(std::time::Duration::from_secs(1))
         .map_err(|_| Error::Unavailable)?
         .unix_seconds();
-    let admission = if !service && !matches!(request.operation, 6 | 8..=10 | 12) {
+    let admission = if request.kind == Operation::ExecutorProbe {
+        if executor {
+            Ok(None)
+        } else {
+            Err(Error::Refused)
+        }
+    } else if !service && !matches!(request.operation, 6 | 8..=10 | 12) {
         Err(Error::Refused)
     } else {
         validate_sign(&request, config, now)

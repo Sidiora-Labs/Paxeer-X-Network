@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::Duration;
 
-use layerx_human_service::custody::RemoteKmsProvider;
+use layerx_human_service::custody::{KmsError, RemoteKmsProvider};
 use layerx_human_service::journeys::{
     ExitWalletOutcome, MovementExecutionIdentity, PaxeerActionOutcome, SettlementConfig,
     WalletCustodyOutcome, WalletCustodyRequest,
@@ -27,6 +29,21 @@ use crate::config::{hex, hex_string, Config, MAX_FRAME};
 use crate::journal::{private_directory, read_private, Journal};
 use crate::Error;
 
+/// The typed result of the movement execution authority readiness probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ExecutorDependency {
+    /// The authority admitted the restricted executor identity and answered
+    /// the probe for this provider and network.
+    Usable,
+    /// No execution authority is configured (evidence-only mode).
+    Unconfigured,
+    /// The authority was absent, refused the identity, or answered for a
+    /// different provider, network or challenge.
+    Failed(KmsError),
+    /// The probe did not complete within the total readiness deadline.
+    DeadlineExceeded,
+}
+
 pub(crate) struct EvidenceService {
     journal: Journal,
     codec: NativeMovementCodec,
@@ -37,6 +54,7 @@ pub(crate) struct EvidenceService {
     custody_profile: Option<[u8; layerx_paxeer_client::NATIVE_CUSTODY_PROFILE_BYTES]>,
     chain_id: u64,
     executor: Option<Arc<RemoteKmsProvider>>,
+    executor_deadline: Duration,
     policy: layerx_paxeer_client::DepositProofConfig,
     settlement: SettlementConfig,
     reminder: u64,
@@ -68,6 +86,7 @@ impl EvidenceService {
             custody_profile: config.custody_profile,
             chain_id: config.proof.paxeer_chain_id,
             executor: config.executor.clone(),
+            executor_deadline: config.listener.deadline,
             policy: config.proof.clone(),
             settlement: SettlementConfig {
                 checkpoint_interval_seconds: config.checkpoint_interval_seconds,
@@ -500,20 +519,63 @@ impl EvidenceService {
         }
     }
 
-    fn readiness_fault(&self) -> Option<&'static str> {
+    fn readiness_fault(&self) -> Option<String> {
         if self.journal.readable().is_err() {
-            return Some("the durable journal cannot be read");
+            return Some("the durable journal cannot be read".to_owned());
         }
         if private_directory(&self.evidence_root).is_err() {
-            return Some("the evidence root is not a protected directory");
+            return Some("the evidence root is not a protected directory".to_owned());
         }
-        if self.executor.is_none() {
-            return Some("no movement execution authority is configured");
+        match self.executor_dependency() {
+            ExecutorDependency::Usable => {}
+            ExecutorDependency::Unconfigured => {
+                return Some("no movement execution authority is configured".to_owned());
+            }
+            ExecutorDependency::Failed(error) => {
+                return Some(format!(
+                    "the movement execution authority failed the executor probe: {error}"
+                ));
+            }
+            ExecutorDependency::DeadlineExceeded => {
+                return Some(
+                    "the movement execution authority did not complete the executor probe within the deadline"
+                        .to_owned(),
+                );
+            }
         }
         if self.agreeing_origins() < self.tracker_config.minimum_endpoint_agreement {
-            return Some("too few paxeer origins answer on the configured chain");
+            return Some("too few paxeer origins answer on the configured chain".to_owned());
         }
         None
+    }
+
+    /// Runs the authenticated, read-only executor probe against the
+    /// configured execution authority and answers within the total readiness
+    /// deadline whatever the transport does. A probe still in flight when the
+    /// deadline passes is abandoned; its answer can no longer grant readiness.
+    fn executor_dependency(&self) -> ExecutorDependency {
+        let Some(executor) = self.executor.clone() else {
+            return ExecutorDependency::Unconfigured;
+        };
+        let network = self.policy.layerx_network_id;
+        let (finished, answer) = mpsc::sync_channel(1);
+        if thread::Builder::new()
+            .name("movement-executor-probe".into())
+            .spawn(move || {
+                let _ = finished.send(executor.probe_executor(network));
+            })
+            .is_err()
+        {
+            return ExecutorDependency::Failed(KmsError::Unavailable);
+        }
+        match answer.recv_timeout(self.executor_deadline) {
+            Ok(Ok(())) => ExecutorDependency::Usable,
+            Ok(Err(error)) => ExecutorDependency::Failed(error),
+            Err(mpsc::RecvTimeoutError::Timeout) => ExecutorDependency::DeadlineExceeded,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                ExecutorDependency::Failed(KmsError::Unavailable)
+            }
+        }
     }
 
     /// Counts configured origins that answer on `chain_id`, stopping as soon as

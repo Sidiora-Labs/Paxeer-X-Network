@@ -242,6 +242,11 @@ impl Store {
                 self.persist()?;
                 return Ok(Vec::new());
             }
+            Operation::ExecutorProbe => {
+                let mut answer = request.challenge.to_vec();
+                answer.extend(self.state.network.to_be_bytes());
+                return Ok(answer);
+            }
             Operation::Create => return self.create(request),
             Operation::Rotate => return Err(Error::Refused),
             Operation::AuthorizeSend => {

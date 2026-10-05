@@ -29,6 +29,10 @@ pub(crate) enum Operation {
     AuthorizeSend,
     AuthorizeRecipient,
     ExportPrimary,
+    /// The read-only movement executor probe: admitted only for the
+    /// restricted executor identity, it echoes the caller's challenge and the
+    /// provider network without touching or persisting any record.
+    ExecutorProbe,
 }
 impl Operation {
     fn from_wire(version: u16, operation: u8) -> Result<Self> {
@@ -45,6 +49,7 @@ impl Operation {
             (3, 11) => Self::AuthorizeSend,
             (4, 13) => Self::AuthorizeRecipient,
             (5, 14) => Self::ExportPrimary,
+            (6, 15) => Self::ExecutorProbe,
             _ => return Err(Error::Refused),
         })
     }
@@ -67,6 +72,7 @@ pub(crate) struct Request<'a> {
     pub reference: &'a [u8],
     pub expected: Option<[u8; 32]>,
     pub digest: [u8; 32],
+    pub challenge: [u8; 32],
     pub canonical: &'a [u8],
     pub evm: &'a [u8],
     pub disclosure: &'a [u8],
@@ -98,11 +104,18 @@ impl<'a> Request<'a> {
             reference: &[],
             expected: None,
             digest: [0; 32],
+            challenge: [0; 32],
             canonical: &[],
             disclosure: &[],
             evm: &[],
         };
-        if kind != Operation::Probe {
+        if kind == Operation::ExecutorProbe {
+            value.network = u32::from_be_bytes(r.fixed()?);
+            value.challenge = r.fixed()?;
+            if value.network == 0 || value.challenge == [0; 32] {
+                return Err(Error::Refused);
+            }
+        } else if kind != Operation::Probe {
             value.binding = r.fixed()?;
             value.network = u32::from_be_bytes(r.fixed()?);
             value.class = r.byte()?;

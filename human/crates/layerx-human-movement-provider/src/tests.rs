@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fs::{self, DirBuilder};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener};
+use std::net::TcpListener;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use layerx_client::lni::transport::{Limits, MutualTlsConfig};
 use layerx_human_service::custody::RemoteKmsProvider;
 use layerx_human_service::journeys::DepositRuntime;
 use layerx_human_service::server::movement_provider::{
@@ -26,10 +25,6 @@ use layerx_paxeer_client::{
     WithdrawalMaterial,
 };
 use layerx_types::intent::EvmAddress;
-use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    RootCertStore,
-};
 use sha2::{Digest, Sha256};
 
 use crate::config::{hex_string, Config, MAX_FRAME};
@@ -37,6 +32,10 @@ use crate::journal::{read_private, Journal};
 use crate::listener::{Listener, ListenerConfig};
 use crate::service::EvidenceService;
 use crate::Error;
+
+#[allow(dead_code)]
+#[path = "../tests/kms/mod.rs"]
+mod kms;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn StdError>>;
 fn checked<T, E: std::fmt::Debug>(value: std::result::Result<T, E>) -> Result<T> {
@@ -968,137 +967,21 @@ impl Drop for Anvil {
     }
 }
 
-fn openssl(root: &Path, arguments: &[&str]) -> Result<()> {
-    let result = Command::new("openssl")
-        .args(arguments)
-        .current_dir(root)
-        .output()?;
-    if !result.status.success() {
-        return Err(format!(
-            "openssl failed: {}",
-            String::from_utf8_lossy(&result.stderr)
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// Builds the same `RemoteKmsProvider` the movement mode builds from its
-/// environment, from freshly minted mutual-TLS material and a real local
-/// endpoint address.
-fn execution_authority(dir: &Directory) -> Result<Arc<RemoteKmsProvider>> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let root = dir.0.join("kms");
-    DirBuilder::new().mode(0o700).create(&root)?;
-    openssl(
-        &root,
-        &[
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-keyout",
-            "ca.key",
-            "-out",
-            "ca.pem",
-            "-days",
-            "1",
-            "-subj",
-            "/CN=movement provider test CA",
-            "-addext",
-            "basicConstraints=critical,CA:TRUE",
-        ],
+/// Starts a real Human KMS process and builds the same `RemoteKmsProvider`
+/// the movement mode builds from its environment, presenting the restricted
+/// executor identity that KMS pins.
+fn execution_authority(dir: &Directory) -> Result<(kms::Kms, Arc<RemoteKmsProvider>)> {
+    let exe = std::env::current_exe()?;
+    let profile = exe
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("the test executable has no profile directory")?;
+    let kms = kms::Kms::start(
+        &dir.0.join("kms"),
+        &kms::beside(&profile.join("layerx-human-movement-provider"))?,
     )?;
-    openssl(
-        &root,
-        &[
-            "req",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-keyout",
-            "client.key",
-            "-out",
-            "client.csr",
-            "-subj",
-            "/CN=movement-provider",
-        ],
-    )?;
-    fs::write(root.join("extensions"), "extendedKeyUsage=clientAuth\n")?;
-    openssl(
-        &root,
-        &[
-            "x509",
-            "-req",
-            "-in",
-            "client.csr",
-            "-CA",
-            "ca.pem",
-            "-CAkey",
-            "ca.key",
-            "-CAcreateserial",
-            "-out",
-            "client.pem",
-            "-days",
-            "1",
-            "-extfile",
-            "extensions",
-        ],
-    )?;
-    openssl(
-        &root,
-        &[
-            "x509",
-            "-in",
-            "client.pem",
-            "-outform",
-            "DER",
-            "-out",
-            "client.der",
-        ],
-    )?;
-    openssl(
-        &root,
-        &[
-            "pkcs8",
-            "-topk8",
-            "-nocrypt",
-            "-in",
-            "client.key",
-            "-outform",
-            "DER",
-            "-out",
-            "client-key.der",
-        ],
-    )?;
-    openssl(
-        &root,
-        &["x509", "-in", "ca.pem", "-outform", "DER", "-out", "ca.der"],
-    )?;
-    let mut roots = RootCertStore::empty();
-    checked(roots.add(CertificateDer::from(fs::read(root.join("ca.der"))?)))?;
-    let certificate = CertificateDer::from(fs::read(root.join("client.der"))?);
-    let key = checked(PrivateKeyDer::try_from(fs::read(
-        root.join("client-key.der"),
-    )?))?;
-    let tls = checked(MutualTlsConfig::new(roots, vec![certificate], key))?;
-    let reserved = TcpListener::bind("127.0.0.1:0")?;
-    let address: SocketAddr = reserved.local_addr()?;
-    drop(reserved);
-    Ok(Arc::new(checked(RemoteKmsProvider::new(
-        "movement-provider-test-kms",
-        address,
-        "localhost",
-        tls,
-        Limits {
-            maximum_frame_bytes: 2_097_152,
-            maximum_connections: 1,
-            maximum_streams: 1,
-            maximum_queued_bytes: 2_097_152,
-            deadline: Duration::from_secs(2),
-        },
-    ))?))
+    let executor = Arc::new(kms.remote("executor", kms::PROVIDER, "localhost", "ca.der")?);
+    Ok((kms, executor))
 }
 
 fn readiness_listener(dir: &Directory) -> ListenerConfig {
@@ -1111,11 +994,9 @@ fn readiness_listener(dir: &Directory) -> ListenerConfig {
 fn readiness_is_ready_while_the_real_paxeer_origin_and_execution_authority_answer() -> Result {
     let dir = Directory::new()?;
     let paxeer = Anvil::launch()?;
-    let config = config_for(
-        &dir,
-        paxeer.endpoint.clone(),
-        Some(execution_authority(&dir)?),
-    )?;
+    let (_kms, executor) = execution_authority(&dir)?;
+    let mut config = config_for(&dir, paxeer.endpoint.clone(), Some(executor))?;
+    config.listener.deadline = Duration::from_secs(5);
     let mut service = EvidenceService::new(&config, Journal::open(&config.state_root, 2)?)?;
     let listener = Listener::bind(readiness_listener(&dir))?;
     let client = client(&config)?;
@@ -1143,11 +1024,9 @@ fn readiness_is_ready_while_the_real_paxeer_origin_and_execution_authority_answe
 fn readiness_stops_being_ready_once_the_paxeer_origin_is_down() -> Result {
     let dir = Directory::new()?;
     let mut paxeer = Anvil::launch()?;
-    let config = config_for(
-        &dir,
-        paxeer.endpoint.clone(),
-        Some(execution_authority(&dir)?),
-    )?;
+    let (_kms, executor) = execution_authority(&dir)?;
+    let mut config = config_for(&dir, paxeer.endpoint.clone(), Some(executor))?;
+    config.listener.deadline = Duration::from_secs(5);
     let mut service = EvidenceService::new(&config, Journal::open(&config.state_root, 2)?)?;
     let listener = Listener::bind(readiness_listener(&dir))?;
     let client = client(&config)?;
