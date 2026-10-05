@@ -288,10 +288,16 @@ service_row() {
 
 # row_ca_dir <service>: prints the directory of the CA that signs the
 # service; status 1 when it is the attestors' gateway CA and
-# LAYERX_ATTESTOR_CA_DIR is unset.
+# LAYERX_ATTESTOR_CA_DIR is unset or holds the internal CA's key: the
+# attestor client shares the components' common name, so one authority for
+# both would turn xweb attestor authority into Human KMS authority.
 row_ca_dir() {
 	if [[ " $attestor_services " == *" $1 "* ]]; then
 		[ -n "${LAYERX_ATTESTOR_CA_DIR:-}" ] || return 1
+		[ "$(realpath -m -- "$LAYERX_ATTESTOR_CA_DIR")" != "$(realpath -m -- "$ca_dir")" ] || return 1
+		[ ! -r "$ca_dir/ca.pem" ] ||
+			[ "$(openssl x509 -in "$LAYERX_ATTESTOR_CA_DIR/ca.pem" -noout -pubkey 2>/dev/null)" != \
+				"$(openssl x509 -in "$ca_dir/ca.pem" -noout -pubkey 2>/dev/null)" ] || return 1
 		printf '%s' "$LAYERX_ATTESTOR_CA_DIR"
 	else
 		printf '%s' "$ca_dir"
@@ -450,12 +456,11 @@ ca_issue() {
 	line="$(service_row "$service")"
 	read -r _ toml group custody cn eku sans <<<"$line"
 	if [[ " $attestor_services " == *" $service "* ]]; then
-		ca_dir="${LAYERX_ATTESTOR_CA_DIR:-}"
-		if [ -z "$ca_dir" ]; then
+		ca_dir="$(row_ca_dir "$service")" || {
 			echo "fail material missing=LAYERX_ATTESTOR_CA_DIR producer=the attestors' gateway CA"
-			echo "ca: $service is issued under the attestors' gateway CA; set LAYERX_ATTESTOR_CA_DIR" >&2
+			echo "ca: $service is issued under the attestors' gateway CA, an authority apart from the internal CA; set LAYERX_ATTESTOR_CA_DIR to it" >&2
 			exit 1
-		fi
+		}
 	fi
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "fail material missing=$ca_dir/ca.pem producer=tools/bringup/ca.sh init"
@@ -1007,8 +1012,8 @@ case "$mode" in
 request-server | sign-server | install-server) tools+=(python3 stat realpath mktemp flock) ;;
 esac
 [ "$mode" != issue-local ] || tools+=(stat realpath mktemp find flock)
-[ "$mode" != issue ] || tools+=(timeout flyctl base64 python3 flock)
-[ "$mode" != inventory ] || tools+=(timeout flyctl python3)
+[ "$mode" != issue ] || tools+=(timeout flyctl base64 python3 flock realpath)
+[ "$mode" != inventory ] || tools+=(timeout flyctl python3 realpath)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "ca: $tool is required" >&2

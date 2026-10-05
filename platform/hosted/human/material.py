@@ -20,6 +20,11 @@ CUSTODY_PRECOMPILE = '0x0000000000000000000000000000000000001013'
 HUMAN_KMS_ENDPOINT = '127.0.0.1:9450'
 HUMAN_KMS_SERVER_NAME = 'layerx-human-kms'
 HUMAN_KMS_PROVIDER = 'layerx-human-kms'
+# The three Human KMS identities as the CA catalog rows of tools/bringup/ca.sh issue them: the
+# server, the components' service client and movement's restricted executor.
+HUMAN_KMS_IDENTITIES = {'human-kms': ('layerx-human-kms', 'TLS Web Server Authentication'),
+                        'human-kms-client': ('layerx-human-components', 'TLS Web Client Authentication'),
+                        'human-kms-executor': ('layerx-human-movement', 'TLS Web Client Authentication')}
 
 
 def write(directory, name, value):
@@ -899,6 +904,51 @@ def main():
         write(root / 'agent-config', 'LAYERX_AGENT_' + key, value)
 
 
+def kms_identities(tls_root, scratch, files):
+    """Each Human KMS certificate is exactly its own CA row: it chains to the one KMS trust root
+    for its purpose, carries its row's common name and single extended key usage, a client no
+    subject names, the server the endpoint and server name movement dials, and the server key
+    is the server certificate's. A wallet, xweb attestor or other client never stands in."""
+    import subprocess
+
+    def openssl(argv, data):
+        result = subprocess.run(['openssl', *argv], input=data, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, timeout=10)
+        return result.returncode, result.stdout
+
+    def pem(der):
+        return b'-----BEGIN CERTIFICATE-----\n' + base64.encodebytes(der) + b'-----END CERTIFICATE-----\n'
+
+    def extension(certificate, name):
+        code, output = openssl(['x509', '-noout', '-ext', name], certificate)
+        return ' '.join(line.strip() for line in output.decode(errors='replace').splitlines()[1:]) if code == 0 else None
+
+    host = HUMAN_KMS_ENDPOINT.rsplit(':', 1)[0]
+    certificates = {'human-kms': files['kms-server.der'], 'human-kms-client': files['kms-client.der'],
+                    'human-kms-executor': files['kms-executor.der']}
+    with tempfile.TemporaryDirectory(prefix='.kms-trust-', dir=scratch) as directory:
+        root = Path(directory) / 'ca.pem'
+        write_bytes(root, pem(files['ca.der']))
+        for role, (common_name, usage) in HUMAN_KMS_IDENTITIES.items():
+            certificate = pem(certificates[role])
+            code, subject = openssl(['x509', '-noout', '-subject', '-nameopt', 'multiline'], certificate)
+            names = [line.split('=', 1)[1].strip() for line in subject.decode(errors='replace').splitlines()
+                     if line.strip().startswith('commonName')]
+            sans = extension(certificate, 'subjectAltName')
+            server = usage == 'TLS Web Server Authentication'
+            verify = ['verify', '-purpose', 'sslserver' if server else 'sslclient', '-CAfile', str(root)]
+            if server:
+                verify += ['-verify_hostname', HUMAN_KMS_SERVER_NAME, '-verify_ip', host]
+            if (code != 0 or names != [common_name] or extension(certificate, 'extendedKeyUsage') != usage
+                    or (server and not {'DNS:' + HUMAN_KMS_SERVER_NAME, 'IP Address:' + host} <= set((sans or '').split(', ')))
+                    or (not server and sans != '') or openssl(verify, certificate)[0] != 0):
+                refuse('KMS identity %s is not its exact CA row under the KMS trust root' % role)
+        certified = openssl(['x509', '-noout', '-pubkey'], pem(files['kms-server.der']))
+        held = openssl(['pkey', '-inform', 'DER', '-pubout'], files['kms-server-key.der'])
+        if certified[0] != 0 or held[0] != 0 or certified[1] != held[1]:
+            refuse('KMS server key is not the server certificate key')
+
+
 def kms_prerequisite(registry_path, tls_root, destination, network, asset, state):
     destination, tls_root, state = Path(destination), Path(tls_root), Path(state)
     protected_file(destination.parent, 0o700)
@@ -930,6 +980,7 @@ def kms_prerequisite(registry_path, tls_root, destination, network, asset, state
         refuse('KMS client and server trust roots differ')
     if files['kms-client.der'] == files['kms-executor.der']:
         refuse('KMS service and restricted executor identities must differ')
+    kms_identities(tls_root, destination.parent, files)
     if destination.exists() or destination.is_symlink():
         protected_file(destination, 0o700)
         verify_material(destination)

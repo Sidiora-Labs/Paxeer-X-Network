@@ -2159,11 +2159,479 @@ print('identity-rotation passed ' + scenario, flush=True)
 '''
 
 
+def movement_kms():
+    """Requirement 202 against the real Human KMS and movement roles: the
+    identities are issued through the CA catalog rows and the signer of
+    tools/bringup/ca.sh, the KMS material is validated and projected by the
+    kernel's identity generation gate and human_kms_prepare, and the KMS and
+    movement run from the prebuilt executables of the movement KMS assembly
+    gate under their kernel uids, mount namespaces and loopback addresses."""
+    import base64
+    import importlib.util
+    import shlex
+    sys.dont_write_bytecode = True
+    os.umask(0o077)
+    specification = importlib.util.spec_from_file_location(
+        'human_movement_kms_assembly', ROOT / 'tools/qualification/paxeer-x/human-movement-kms-assembly.py')
+    assembly = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(assembly)
+    require, refuse, digest = assembly.require, assembly.refuse, assembly.digest
+    shell_function, init_assignment, service_block = assembly.shell_function, assembly.init_assignment, assembly.service_block
+    INIT, CA = assembly.INIT, assembly.CA
+    quote = shlex.quote
+    chain_id = 125
+
+    class MovementKms(assembly.Gate):
+        def kms_prepare(self, state=None, tls=None):
+            """human_kms_prepare of kernel init, behind the kernel identity
+            generation gate it runs first."""
+            script = '\n'.join([
+                'mount --bind %s /usr/local/lib' % quote(str(self.libdir)),
+                self.init_globals(state, tls), 'layerx=' + quote(str(self.layerx)),
+                init_assignment('node_data'), init_assignment('keys'), init_assignment('trust_history_file'),
+                shell_function(INIT, 'identity_generation'), shell_function(INIT, 'human_kms_prepare'),
+                'human_kms_prepare'])
+            return self.run(['unshare', '--mount', '--propagation', 'private', '--', 'bash', '-euo', 'pipefail', '-c', script],
+                            check=False, timeout=60)
+
+        def kernel_genesis(self):
+            """The volume's kernel genesis the identity generation gate binds:
+            the sequencer seed under keys, the genesis metadata, asset id and
+            the authority replica id derived from the sequencer key."""
+            self.layerx = self.mkdir('layerx', 0, 0, 0o700)
+            keys = self.mkdir('keys', 0, 0, 0o700, self.layerx)
+            seed = os.urandom(32).hex()
+            self.material.write_bytes(keys / 'sequencer.key', seed.encode())
+            self.sequencer_seed = bytes.fromhex(seed)
+            der = self.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+                           stdin=bytes.fromhex('302e020100300506032b657004220420') + self.sequencer_seed).stdout
+            require(len(der) == 44, 'sequencer public key derivation')
+            public = der[12:].hex()
+            self.material.write_bytes(self.genesis / 'metadata.lxgb', b'LXGB isolated movement-kms genesis ' + os.urandom(32).hex().encode())
+            self.material.write_bytes(self.genesis / 'replica-id',
+                                      hashlib.sha256(('layerx-authority-replica:' + public).encode()).hexdigest().encode())
+
+        def role_material(self):
+            """$human_state/material as kernel init seals it: the receipt
+            authority replica id, the genesis binding and the role inputs."""
+            material = self.state / 'material'
+            self.material.write_bytes(material / 'receipt-authority-replica-id', (self.genesis / 'replica-id').read_bytes())
+            binding = self.material.genesis_binding(self.genesis)
+            self.material.write_bytes(material / 'genesis-binding', (json.dumps(binding, sort_keys=True) + '\n').encode())
+            self.material.seal_material(material)
+
+        def presented(self, label, source):
+            """A client directory presenting the source's certificate and key
+            while trusting the Human KMS server's CA."""
+            directory = self.issued / label
+            directory.mkdir(mode=0o700)
+            for name in ('cert.pem', 'key.pem', 'cert.der', 'key.der'):
+                shutil.copyfile(self.issued / source / name, directory / name)
+            for name in ('ca.pem', 'ca.der'):
+                shutil.copyfile(self.issued / 'human-kms' / name, directory / name)
+            return label
+
+        def frame(self, version, operation, binding, reference=b'', payload=None, extra=b'', provider=None):
+            provider = provider or self.material.HUMAN_KMS_PROVIDER.encode()
+            out = (b'LXKP' + version.to_bytes(2, 'big') + bytes([operation]) + len(provider).to_bytes(4, 'big') + provider
+                   + binding + self.network.to_bytes(4, 'big') + b'\x01' + len(reference).to_bytes(4, 'big') + reference + extra)
+            if payload is not None:
+                out += len(payload).to_bytes(4, 'big') + payload
+            return out
+
+        def answer(self, frame, identity, version, operation, status=0):
+            response = self.kms_call(frame, identity)
+            require(response is not None and response[:8] == b'LXKP' + version.to_bytes(2, 'big') + bytes([operation, status]),
+                    'KMS operation %d.%d as %s answered %r, not status %d' % (
+                        version, operation, identity, None if response is None else response[:8], status))
+            self.responses.append(response)
+            return response[8:]
+
+        def authorize(self, key, nonce):
+            now = int(time.time())
+            plan = {'plan_id': list(os.urandom(32)), 'action_key': list(key), 'tenant': 'paxeer-x',
+                    'principal': 'movement-kms', 'binding_digest': list(self.sign_binding), 'wallet': list(self.address),
+                    'not_before': now - 300, 'not_after': now + 3600,
+                    'transaction': {'chain_id': chain_id, 'nonce': nonce, 'max_priority_fee_per_gas': 10**9,
+                                    'max_fee_per_gas': 100 * 10**9, 'gas_limit': 21000, 'to': list(b'\x0d' * 20),
+                                    'value': list((nonce + 1).to_bytes(32, 'big')), 'calldata': []}}
+            action = json.loads(self.answer(self.frame(3, 7, self.sign_binding, self.sign_reference, json.dumps(plan).encode()),
+                                            'human-kms-client', 3, 7))
+            require(action['raw_transaction'] == [] and action['transaction_hash'] is None, 'authorization signed by itself')
+            return plan
+
+        def executor_sign(self, key):
+            action = json.loads(self.answer(self.frame(3, 8, self.sign_binding, self.sign_reference, json.dumps(list(key)).encode()),
+                                            'human-kms-executor', 3, 8))
+            raw = bytes(action['raw_transaction'])
+            require(raw[:1] == b'\x02' and bytes(action['transaction_hash']) == bytes.fromhex(
+                self.rpc('web3_sha3', ['0x' + raw.hex()])[2:]), 'executor signature is not a type-2 transaction with its hash')
+            return raw, bytes(action['transaction_hash'])
+
+        def rpc(self, method, params):
+            client = '''import json,sys,urllib.request
+request=urllib.request.Request('http://127.0.0.1:18545',data=json.dumps({'jsonrpc':'2.0','id':1,'method':sys.argv[1],'params':json.loads(sys.argv[2])}).encode(),headers={'content-type':'application/json'})
+print(urllib.request.urlopen(request,timeout=10).read().decode())
+'''
+            reply = json.loads(self.run(self.net('python3', '-c', client, method, json.dumps(params))).stdout)
+            require('error' not in reply, 'chain %s refused: %s' % (method, reply.get('error')))
+            return reply['result']
+
+        def broadcast(self, raw, transaction_hash, nonce):
+            require(self.rpc('eth_sendRawTransaction', ['0x' + raw.hex()]) == '0x' + transaction_hash.hex(),
+                    'the chain derived another hash for the executor-signed transaction')
+            mined = self.rpc('eth_getTransactionByHash', ['0x' + transaction_hash.hex()])
+            require(mined is not None and mined['from'].lower() == '0x' + self.address.hex()
+                    and int(mined['nonce'], 16) == nonce and int(mined['chainId'], 16) == chain_id,
+                    'the chain did not recover the KMS custody wallet as the signer')
+
+        def refused_movement(self, label, directory):
+            """The movement role with a wrong trust relationship either refuses
+            to start or binds and never reports ready."""
+            state = self.mkdir('movement-' + label, 4020, 4020, 0o700)
+            self.mkdir('movement', 4020, 4020, 0o700, state)
+            self.mkdir('evidence', 4020, 4020, 0o700, state)
+            name = 'movement-' + label
+            process = self.start_movement(name, directory, state)
+            deadline = time.monotonic() + 30
+            while not (self.sockets / 'movement.sock').exists():
+                if process.poll() is not None:
+                    require(process.returncode != 0, label + ' movement exited successfully')
+                    self.processes.pop(name)
+                    return
+                require(time.monotonic() < deadline, label + ' movement neither bound nor exited')
+                time.sleep(0.2)
+            for _ in range(8):
+                require(not self.ready(), 'movement reported ready with ' + label)
+                time.sleep(1)
+            self.stop(name)
+
+        def execute(self):
+            self.responses = []
+            self.work = self.mkdir('work', 0, 0, 0o700)
+            self.profile_path = ROOT / 'tests/fixtures/custody/native-credit-receipt/profile'
+            self.profile = self.profile_path.read_bytes()
+            require(len(self.profile) == 223 and self.profile[:5] == b'LXBC3' and int.from_bytes(self.profile[5:13], 'big') == chain_id,
+                    'the protocol-3 custody profile fixture is not a Paxeer custody profile')
+            self.network = int.from_bytes(self.profile[201:205], 'big')
+            self.asset = self.profile[97:129].hex()
+            self.binding = os.urandom(32)
+            self.sign_binding = os.urandom(32)
+            key = self.work / 'checkpoint-authority.pem'
+            self.run(['openssl', 'genpkey', '-algorithm', 'ed25519', '-out', str(key)])
+            self.checkpoint_authority = '0x' + self.run(['openssl', 'pkey', '-in', str(key), '-pubout', '-outform', 'DER']).stdout[-32:].hex()
+            self.registry = self.work / 'module-registry.json'
+            self.registry.write_text(json.dumps({'schema_version': 2, 'assets': [{'asset': self.asset}],
+                                                 'modules': [{'module': 1, 'ordinals': [1, 2]}]}))
+            self.libdir = self.mkdir('lib', 0, 0, 0o755)
+            shutil.copytree(ROOT / 'platform/hosted/human', self.libdir / 'layerx-human')
+            self.kernel_layout()
+            self.kernel_genesis()
+            inventory = {'revision': self.revision, 'unmerged_branches': self.unmerged(), 'before': self.inventory('before-rollout')}
+            self.material.write_bytes(self.evidence / 'inventory.json', json.dumps(inventory, indent=2).encode())
+            self.case('inventory-before-rollout-from-actual-state')
+
+            # ac_1/ac_2: the exact identities through the catalog rows and the CA signer.
+            self.ca_cases()
+            listed = self.run(['bash', str(CA), 'services']).stdout.decode().splitlines()
+            rows = {line.split()[0]: line.split() for line in listed if line.split()}
+            usages = {'serverAuth': 'TLS Web Server Authentication', 'clientAuth': 'TLS Web Client Authentication'}
+            require({service: (rows[service][4], usages[rows[service][5]]) for service in assembly.IDENTITIES}
+                    == self.material.HUMAN_KMS_IDENTITIES, 'the KMS material identities differ from the CA catalog rows')
+            self.case('kms-material-identities-are-the-ca-catalog-rows')
+            attestor_ca = self.authority('attestor-ca')
+            self.issue(attestor_ca, 'human-attestor-client', rows['human-attestor-client'], self.issued / 'xweb-attestor')
+            self.issue(self.ca, 'human-attestor-client', rows['human-attestor-client'], self.issued / 'attestor-under-internal-ca')
+            self.issue(self.ca, 'gateway-client', rows['gateway-client'], self.issued / 'wallet-gateway')
+            self.issue(self.ca, 'agentd-client', rows['agentd-client'], self.issued / 'owner-agent')
+            for label in ('xweb-attestor', 'wallet-gateway', 'owner-agent'):
+                for service in ('human-kms-client', 'human-kms-executor'):
+                    require(not self.usage_matches(self.ca, service, self.issued / label / 'cert.pem'),
+                            '%s was admitted as the %s row' % (label, service))
+            alias = self.work / 'internal-ca-copy'
+            shutil.copytree(self.ca, alias)
+            row_ca = '\n'.join([shell_function(CA, 'row_ca_dir'), 'attestor_services="human-attestor-client"',
+                                'ca_dir=' + quote(str(self.ca)), 'LAYERX_ATTESTOR_CA_DIR="$1" row_ca_dir "$2"'])
+            def row_ca_dir(attestor, service):
+                result = self.run(['bash', '-euo', 'pipefail', '-c', row_ca, 'row-ca', str(attestor), service], check=False)
+                return result.stdout.decode() if result.returncode == 0 else None
+            require(row_ca_dir(attestor_ca, 'human-attestor-client') == str(attestor_ca)
+                    and row_ca_dir(attestor_ca, 'human-kms-client') == str(self.ca),
+                    'the catalog does not sign attestor and Human KMS clients under their own authorities')
+            for same in (self.ca, alias, str(self.ca) + '/.'):
+                require(row_ca_dir(same, 'human-attestor-client') is None,
+                        'the attestors\' gateway CA was admitted as the internal CA at %s' % same)
+            self.case('xweb-attestor-and-wallet-identities-never-kms-authority')
+
+            # ac_2/ac_3: only validated material for the exact roles is admitted.
+            self.material_refusals()
+            scratch = self.mkdir('identity-refusals', 0, 0, 0o700, self.work)
+            refusals = [('xweb-attestor-as-service-client', 'human-kms-client', 'xweb-attestor', ('cert.der',)),
+                        ('wallet-gateway-as-service-client', 'human-kms-client', 'wallet-gateway', ('cert.der',)),
+                        ('owner-agent-as-executor', 'human-kms-executor', 'owner-agent', ('cert.der',)),
+                        ('foreign-ca-executor-leaf', 'human-kms-executor', 'foreign-executor', ('cert.der',)),
+                        ('executor-as-server', 'human-kms', 'human-kms-executor', ('cert.der', 'key.der')),
+                        ('server-without-kms-server-name', 'human-kms', 'nameless-server', ('cert.der', 'key.der')),
+                        ('server-key-not-certified', 'human-kms', 'human-kms-client', ('key.der',))]
+            for label, slot, source, names in refusals:
+                case = self.mkdir(label, 0, 0, 0o700, scratch)
+                tls = case / 'tls'
+                shutil.copytree(self.tls, tls)
+                for name in names:
+                    shutil.copyfile(self.issued / source / name, tls / slot / name)
+                state = self.mkdir('state', 0, 0, 0o700, case)
+                out = self.mkdir('kms-prerequisite', 0, 0, 0o700, case) / 'material'
+                try:
+                    self.material.kms_prerequisite(self.registry, tls, out, self.network, self.asset, state)
+                except (ValueError, OSError):
+                    require(not out.exists() and not any(out.parent.iterdir()), label + ' left material while refusing')
+                else:
+                    refuse(label + ' KMS material was admitted')
+            self.case('kms-material-refuses-wrong-role-wrong-ca-and-wrong-server')
+
+            endpoint = init_assignment('human_kms_listen').split('=', 1)[1]
+            server_name = init_assignment('human_kms_server_name').split('=', 1)[1]
+            provider = init_assignment('human_kms_provider').split('=', 1)[1]
+            require((endpoint, server_name, provider) == (self.material.HUMAN_KMS_ENDPOINT, self.material.HUMAN_KMS_SERVER_NAME,
+                                                          self.material.HUMAN_KMS_PROVIDER)
+                    and self.material.movement_defaults(self.network, chain_id)['KMS_ENDPOINT'] == endpoint
+                    and self.material.movement_defaults(self.network, chain_id)['KMS_SERVER_NAME'] == server_name
+                    and self.material.movement_defaults(self.network, chain_id)['KMS_PROVIDER_REFERENCE'] == provider
+                    and self.material.component_defaults(self.network, chain_id)['KMS_ENDPOINT'] == endpoint,
+                    'kernel KMS listener, movement endpoint, server name and provider differ')
+            kms = service_block('human-kms').group(2)
+            require(kms.split('\n')[0].count('$tls/human-kms') == 7 and '\thuman_kms_prepare - -- env' in kms,
+                    'the KMS does not wait for every identity and its validated preparation')
+            waits = service_block('human-movement').group(2).split('\n')[0]
+            for needed in ('$tls/human-kms/cert.der', '$tls/human-kms-executor/cert.der', '$tls/human-kms-executor/key.der',
+                           '$tls/human-kms-executor/ca.der', '$human_kms_out/kms-seal', '$human_kms_out/registry.json',
+                           '$human_kms_out/kms-executor.der'):
+                require(needed in waits, 'movement does not wait for ' + needed)
+            self.case('kms-and-movement-start-only-after-identities-and-validated-material')
+
+            self.holder = subprocess.Popen(['unshare', '--net', '--', 'sleep', '3600'], stdin=subprocess.DEVNULL)
+            deadline = time.monotonic() + 10
+            while os.readlink('/proc/%d/ns/net' % self.holder.pid) == os.readlink('/proc/self/ns/net'):
+                require(self.holder.poll() is None and time.monotonic() < deadline, 'the private network namespace did not start')
+                time.sleep(0.05)
+            self.run(self.net('ip', 'link', 'set', 'lo', 'up'))
+            self.chain()
+
+            human_out = self.state / 'material/human'
+            human_out.mkdir(mode=0o700, parents=True)
+            config, directory = self.movement_material('assembly', 'human-kms-executor')
+            shutil.copytree(config, human_out / 'movement-config')
+            self.role_material()
+            require(not self.binding_check(self.state), 'movement binding admitted without the KMS material')
+            _, absent = self.movement_material('absent', None)
+            process = self.start_movement('movement-absent', absent, self.state / 'movement')
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                refuse('movement started without its KMS executor material')
+            require(process.returncode != 0 and not (self.sockets / 'movement.sock').exists(),
+                    'movement served without its KMS executor material')
+            self.processes.pop('movement-absent')
+            wrong = self.work / 'wrong-role-tls'
+            shutil.copytree(self.tls, wrong)
+            shutil.copyfile(self.issued / 'wallet-gateway/cert.der', wrong / 'human-kms-client/cert.der')
+            refused = self.kms_prepare(tls=wrong)
+            require(refused.returncode != 0 and not (self.state / 'kms-prerequisite/material').exists()
+                    and not (self.human_material / 'human-kms').exists() and not any((self.state / 'kms').iterdir()),
+                    'kernel KMS preparation admitted a wallet identity as its service client')
+            self.case('kernel-kms-prepare-refuses-unvalidated-material-and-movement-waits')
+
+            prepared = self.kms_prepare()
+            require(prepared.returncode == 0, 'kernel human_kms_prepare failed: ' + prepared.stderr.decode(errors='replace')[-2000:])
+            record = json.loads((self.layerx / 'identity/current.json').read_bytes())
+            require(record['network_id'] == self.network and record['asset_id'] == self.asset, 'identity generation record')
+            kms_out = self.state / 'kms-prerequisite/material'
+            seal = digest(kms_out / 'kms-seal')
+            projected = self.human_material / 'human-kms'
+            info = projected.stat()
+            require((info.st_uid, info.st_gid, info.st_mode & 0o777) == (4026, 4020, 0o500), 'KMS projection directory ownership')
+            for path in projected.iterdir():
+                info = path.stat()
+                require((info.st_uid, info.st_gid, info.st_mode & 0o777) == (0, 4020, 0o440), 'KMS projected file ownership ' + path.name)
+            require(sorted(p.name for p in projected.iterdir()) == sorted(['kms-server.der', 'kms-server-key.der', 'kms-client.der',
+                                                                         'kms-executor.der', 'ca.der', 'kms-seal', 'registry.json'])
+                    and (projected / 'kms-executor.der').read_bytes() == (self.issued / 'human-kms-executor/cert.der').read_bytes()
+                    and (projected / 'kms-client.der').read_bytes() == (self.issued / 'human-kms-client/cert.der').read_bytes()
+                    and (projected / 'kms-server.der').read_bytes() == (self.issued / 'human-kms/cert.der').read_bytes(),
+                    'KMS projection does not pin exactly the issued identities')
+            movement_files = sorted(p.name for p in directory.iterdir())
+            require(movement_files == ['ca.der', 'custody.profile', 'env', 'kms-executor-key.der', 'kms-executor.der'],
+                    'movement projection holds other material: %s' % movement_files)
+            require(self.binding_check(self.state), 'kernel movement binding refused the exact KMS service')
+            for label, path, value in [('server-name', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_KMS_SERVER_NAME', 'wrong-server'),
+                                       ('endpoint', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_KMS_ENDPOINT', '127.0.0.1:9451'),
+                                       ('signer-policy', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_KMS_PROVIDER_REFERENCE', 'foreign-provider'),
+                                       ('trust-root', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_KMS_CA_DER', '/run/human-private/movement/foreign-ca.der')]:
+                target = human_out / 'movement-config' / path
+                original = target.read_bytes()
+                target.write_text(value)
+                require(not self.binding_check(self.state), 'movement binding admitted a wrong KMS ' + label)
+                target.write_bytes(original)
+            self.material.verify_material(self.state / 'material')
+            swapped = self.work / 'swapped-tls'
+            shutil.copytree(self.tls, swapped)
+            shutil.copyfile(self.issued / 'human-kms-client/cert.der', swapped / 'human-kms-executor/cert.der')
+            require(not self.binding_check(self.state, swapped), 'movement binding admitted the service identity as executor')
+            self.case('kernel-kms-material-projection-and-movement-binding')
+
+            movement_state = self.state / 'movement'
+            self.bash('\n'.join([self.init_globals(), shell_function(INIT, 'human_movement_state'), 'human_movement_state']))
+            info = (movement_state / 'movement').stat()
+            require((info.st_uid, info.st_gid, info.st_mode & 0o777) == (4020, 4020, 0o700), 'movement journal root ownership')
+            movement = self.start_movement('movement', directory, movement_state)
+            deadline = time.monotonic() + 30
+            while not (self.sockets / 'movement.sock').exists():
+                require(movement.poll() is None, 'movement exited before binding; log %s' % (self.logs / 'movement.log'))
+                require(time.monotonic() < deadline, 'movement never bound its socket')
+                time.sleep(0.2)
+            require(not self.ready(), 'movement reported ready while its KMS service is absent')
+            self.start_kms()
+            self.case('kernel-kms-entrypoint-runtime-clock-uid-4026-startup')
+            require(self.ready_within(movement, 30), 'movement did not become ready with its authenticated KMS service')
+            self.case('movement-readiness-follows-the-authenticated-kms')
+
+            # ac_2/ac_4: signer policy at the real KMS.
+            created = self.answer(self.frame(1, 1, self.sign_binding), 'human-kms-client', 1, 1)
+            require(len(created) == 101 and created[:4] == b'\x00\x00\x00\x20', 'service key creation answer')
+            self.sign_reference, public = created[4:36], created[36:68]
+            self.address = self.answer(self.frame(3, 6, self.sign_binding, self.sign_reference), 'human-kms-client', 3, 6)
+            require(len(self.address) == 20 and any(self.address), 'custody wallet address')
+            require(self.answer(self.frame(3, 6, self.sign_binding, self.sign_reference), 'human-kms-executor', 3, 6) == self.address,
+                    'the executor sees another custody wallet')
+            first, second, stranger = os.urandom(32), os.urandom(32), os.urandom(32)
+            self.authorize(first, 0)
+            self.authorize(second, 1)
+            self.answer(self.frame(3, 8, self.sign_binding, self.sign_reference, json.dumps(list(stranger)).encode()),
+                        'human-kms-executor', 3, 8, status=2)
+            plan = {'plan_id': list(os.urandom(32)), 'action_key': list(stranger), 'tenant': 'paxeer-x', 'principal': 'movement-kms',
+                    'binding_digest': list(self.sign_binding), 'wallet': list(self.address), 'not_before': int(time.time()) - 300,
+                    'not_after': int(time.time()) + 3600,
+                    'transaction': {'chain_id': chain_id, 'nonce': 2, 'max_priority_fee_per_gas': 10**9, 'max_fee_per_gas': 100 * 10**9,
+                                    'gas_limit': 21000, 'to': list(b'\x0d' * 20), 'value': list((9).to_bytes(32, 'big')), 'calldata': []}}
+            self.answer(self.frame(3, 7, self.sign_binding, self.sign_reference, json.dumps(plan).encode()), 'human-kms-executor', 3, 7, status=1)
+            self.answer(self.frame(1, 1, os.urandom(32)), 'human-kms-executor', 1, 1, status=1)
+            self.answer(self.frame(1, 5, self.sign_binding, self.sign_reference,
+                                   extra=os.urandom(32) + b'\x00\x00\x00\x01\x01\x00\x00\x00\x01\x01'), 'human-kms-executor', 1, 5, status=1)
+            self.answer(self.frame(5, 14, self.sign_binding, self.sign_reference), 'human-kms-executor', 5, 14, status=1)
+            self.answer(self.frame(3, 11, self.sign_binding, self.sign_reference, b'{}'), 'human-kms-executor', 3, 11, status=1)
+            self.answer(self.frame(3, 8, self.sign_binding, self.sign_reference, json.dumps(list(first)).encode(),
+                                   provider=b'foreign-provider'), 'human-kms-executor', 3, 8, status=1)
+            self.case('executor-refused-authorization-service-signing-export-and-foreign-provider')
+            self.rpc('anvil_setBalance', ['0x' + self.address.hex(), hex(10**18)])
+            raw_first, hash_first = self.executor_sign(first)
+            self.broadcast(raw_first, hash_first, 0)
+            self.case('executor-signs-only-service-authorized-actions-recovered-on-chain')
+
+            for label in ('xweb-attestor', 'wallet-gateway', 'owner-agent', 'attestor-under-internal-ca', 'foreign-executor'):
+                presented = self.presented('presented-' + label, label)
+                require(self.kms_call(self.request(0), presented, check=False) is None,
+                        'the KMS admitted the %s identity' % label)
+            self.case('kms-process-refuses-wallet-xweb-owner-and-foreign-ca-clients')
+
+            self.stop('movement')
+            for label, executor, key, value in [('service-identity-executor', 'human-kms-client', None, None),
+                                                ('foreign-ca-executor', 'foreign-executor', None, None),
+                                                ('xweb-attestor-executor', 'xweb-attestor', None, None),
+                                                ('wrong-server-name', 'human-kms-executor', 'KMS_SERVER_NAME', 'wrong-server'),
+                                                ('wrong-signer-policy', 'human-kms-executor', 'KMS_PROVIDER_REFERENCE', 'foreign-provider')]:
+                _, variant = self.movement_material(label, executor)
+                if key is not None:
+                    target = variant / 'env' / ('LAYERX_HUMAN_MOVEMENT_PROVIDER_' + key)
+                    target.chmod(0o640)
+                    target.write_text(value)
+                    target.chmod(0o440)
+                self.refused_movement(label, variant)
+            self.case('movement-refuses-wrong-ca-role-server-name-and-signer-policy')
+            movement = self.start_movement('movement', directory, movement_state)
+            require(self.ready_within(movement, 30), 'movement did not return to ready with its exact identity')
+
+            state_files = sorted(p.name for p in (self.state / 'kms').iterdir())
+            self.stop('kms')
+            require(not self.ready(), 'movement stayed ready after its KMS service stopped')
+            require(movement.poll() is None, 'movement exited instead of reporting unready')
+            self.case('movement-unready-on-kms-loss')
+            prepared = self.kms_prepare()
+            require(prepared.returncode == 0, 'retained KMS material was refused on restart: ' + prepared.stderr.decode(errors='replace')[-2000:])
+            require(digest(kms_out / 'kms-seal') == seal, 'restart replaced the retained KMS seal')
+            self.start_kms()
+            described = self.answer(self.frame(1, 2, self.sign_binding, self.sign_reference), 'human-kms-client', 1, 2)
+            require(described[:68] == created[:68], 'restart did not recover the retained custody key')
+            require(sorted(p.name for p in (self.state / 'kms').iterdir()) == state_files, 'restart generated replacement KMS state')
+            require(self.ready_within(movement, 30), 'movement did not recover readiness after the KMS restart')
+            raw_again, hash_again = self.executor_sign(first)
+            require((raw_again, hash_again) == (raw_first, hash_first), 'restart re-signed an already signed action')
+            raw_second, hash_second = self.executor_sign(second)
+            self.broadcast(raw_second, hash_second, 1)
+            self.answer(self.frame(3, 7, self.sign_binding, self.sign_reference, json.dumps(plan).encode()), 'human-kms-executor', 3, 7, status=1)
+            self.case('restart-resumes-authorized-signing-with-retained-keys-and-readiness')
+
+            orphan = self.mkdir('orphan-state', 0, 4020, 0o750)
+            shutil.copytree(self.state / 'kms', orphan / 'kms', symlinks=True)
+            shutil.copytree(self.state / 'material', orphan / 'material')
+            os.chown(orphan / 'kms', 4026, 4020)
+            refused = self.kms_prepare(orphan)
+            require(refused.returncode != 0 and not (orphan / 'kms-prerequisite/material').exists(),
+                    'retained KMS state without its material was given replacement keys')
+            self.case('retained-kms-state-without-material-refused')
+
+            pin = (movement_state / 'movement/custody-profile.pin').read_bytes()
+            self.stop('movement')
+            movement = self.start_movement('movement', directory, movement_state)
+            require(self.ready_within(movement, 30), 'movement did not recover readiness after its own restart')
+            require((movement_state / 'movement/custody-profile.pin').read_bytes() == pin, 'movement restart changed its retained pin')
+            self.stop('movement')
+            self.case('movement-restart-recovers-retained-state')
+
+            secrets = [(self.issued / name / 'key.der').read_bytes() for name in assembly.IDENTITIES]
+            secrets += [(kms_out / 'kms-seal').read_bytes(), self.sequencer_seed]
+            for path in [self.state / 'kms', self.state / 'kms-prerequisite', projected]:
+                info = path.stat()
+                require(info.st_uid in (0, 4026) and not info.st_mode & 0o007 and not (info.st_gid == 4020 and info.st_mode & 0o010),
+                        'KMS private material is reachable by the movement group at ' + path.name)
+            exposed = b''.join(path.read_bytes() for path in sorted(self.logs.iterdir()) if path.is_file())
+            exposed += b''.join(self.responses) + (self.evidence / 'inventory.json').read_bytes()
+            for secret in secrets:
+                for form in (secret, secret.hex().encode(), base64.b64encode(secret)):
+                    require(form not in exposed, 'private key material appeared in a log or KMS answer')
+            self.case('no-private-key-material-exposed-or-cross-projected')
+            after = self.inventory('after-rollout')
+            self.material.write_bytes(self.evidence / 'inventory-after.json', json.dumps(after, indent=2).encode())
+
+    try:
+        revision, built = assembly.prerequisites()
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+        print('movement-kms refused: ' + str(error), file=sys.stderr, flush=True)
+        return 1
+    gate = MovementKms(revision, built)
+    result = {'task': '24.3', 'revision': revision, 'cases': gate.cases, 'skipped': 0}
+    try:
+        gate.execute()
+        code = 0
+    except (OSError, ValueError, KeyError, RuntimeError, AttributeError, subprocess.SubprocessError) as error:
+        code = 1
+        result['observed'] = str(error)
+        print('movement-kms refused: %s; evidence %s' % (error, gate.evidence), file=sys.stderr, flush=True)
+    finally:
+        gate.close()
+    result.update(tests=len(gate.cases), exit_code=code)
+    gate.material.write_bytes(gate.evidence / 'movement-kms.json', json.dumps(result, indent=2).encode())
+    if code == 0:
+        print('PAXEER_X_GATE tests=%d skipped=0 evidence=%s' % (len(gate.cases), gate.evidence), flush=True)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph', 'identity-rotation'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph', 'identity-rotation', 'movement-kms'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'movement-kms':
+        return movement_kms()
     if arguments.case == 'policy-graph':
         return policy_graph()
     if arguments.case == 'registry-material':

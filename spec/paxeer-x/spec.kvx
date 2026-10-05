@@ -28913,7 +28913,7 @@ fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; d
 
 [task.24.3]
 title = "Run the Human movement signer through the intended KMS and CA identities"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 8
 requires = ["0.2", "24.10", "24.2", "12.3", "12.2", "12.4"]
@@ -28934,6 +28934,11 @@ deployment_profile = "product"
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/24.3.json"
 
 [task.24.5]
 title = "Reconcile persisted Human identity bindings during explicit rotation"
