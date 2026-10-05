@@ -134,16 +134,24 @@ requests.
 The published release ceilings for the representative v1 arithmetic, storage,
 transfer and bounded-control workload set are **12.00x compiled protocol fee**
 and, separately, **12.00x compiled execution time**, each with a **15%
-regression tolerance** (hard gates at 13.80x). These are declared release
-thresholds, not observed results. Protocol fee is the economic comparison an
+regression tolerance** (hard gates at 13.80x). 12x is a release ceiling, not
+an expected price. Protocol fee is the economic comparison an
 agent uses; wall-clock time is an operator performance signal and is never
 presented as protocol price. `make programs-bench` builds the
 real interpreter and its real compiled ABI-v2 equivalents, executes both
 through the production ABI-v2 executor, reports median integer nanoseconds
 and every metered resource and fee class, and refuses the release if either
-aggregate ratio exceeds its gate. Human qualification records observed results
-and the fixed hardware and software conditions; this guide does not invent
-them. The broader cold/warm execution baseline and performance ledger remain
+aggregate ratio exceeds its gate.
+
+Measured at revision `4bfd709a2f330d448a1201b6f642f42d00ed3ff8` with
+`tools/paxeer-x/verify-task.sh 104.33.5`, which runs the `programs-bench`
+interpreter benchmark at 31 samples, the interpreted route cost **1.0034x the
+compiled protocol fee** and took **1.95x the compiled execution time**. The fee
+multiplier is small because memory use of 2 MiB per call dominates the fee, so
+the interpreted route's extra CPU fuel (4x to 8x on these workloads) barely
+moves the price. These observed values are measurements, not a promise: a
+different script, schedule or host can land anywhere up to the 12x ceiling,
+and only the ceiling is gated. The broader cold/warm execution baseline and performance ledger remain
 the qualification-owned task 32.7 component of this aggregate Make entry.
 
 Use interpretation when removing a compiler from an agent's deployment path
