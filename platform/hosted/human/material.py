@@ -1091,6 +1091,8 @@ def publish_registry_material(destination, files, producer=False):
                 if pending.exists(): shutil.rmtree(pending)
         if producer:
             os.chown(destination, 0, 4020); os.chown(generations, 0, 4020)
+        if marker.is_symlink() and os.readlink(marker) == 'generations/' + manifest['generation']:
+            return {'directory': str(selected), 'generation': manifest['generation']}
         temporary = destination / ('.current-' + secrets.token_hex(8))
         os.symlink('generations/' + manifest['generation'], temporary)
         os.replace(temporary, marker); sync_directory(destination)
