@@ -390,6 +390,92 @@ fn real_request_evidence_enforces_principal_concurrency_and_expiry() {
 }
 
 #[test]
+fn real_receipts_expire_funded_and_active_leases_only_at_their_expiry_batch() {
+    let funded = [(
+        LeaseActivity::Fund,
+        LeaseState::Requested,
+        LeaseState::Funded,
+        11,
+    )];
+    let active = [
+        funded[0],
+        (
+            LeaseActivity::Activate,
+            LeaseState::Funded,
+            LeaseState::Active,
+            12,
+        ),
+    ];
+    let mut book = LeaseBook::new();
+    for (index, path) in [(50u8, &funded[..]), (51, &active[..])] {
+        let lease = candidate(index, 12, 10, 20);
+        let id = lease.id();
+        let digest = lease
+            .request_binding_digest()
+            .unwrap_or_else(|error| panic!("digest: {error}"));
+        let (request, evidence) = transition(
+            &lease,
+            LeaseActivity::Request,
+            LeaseState::Requested,
+            LeaseState::Requested,
+            digest,
+            10,
+        );
+        book.insert_requested(lease, request, evidence)
+            .unwrap_or_else(|error| panic!("request: {error}"));
+        for &(activity, from, to, batch) in path {
+            let current = book.get(id).unwrap_or_else(|| panic!("lease")).clone();
+            let (declared, evidence) = transition(&current, activity, from, to, [0; 32], batch);
+            book.transition(id, declared, evidence)
+                .unwrap_or_else(|error| panic!("advance: {error}"));
+        }
+        let current = book.get(id).unwrap_or_else(|| panic!("lease")).clone();
+        let state = current.state();
+        if state == LeaseState::Active {
+            let (snapshot, evidence) = transition(
+                &current,
+                LeaseActivity::Snapshot,
+                LeaseState::Active,
+                LeaseState::Active,
+                [0x5a; 32],
+                13,
+            );
+            assert_eq!(
+                book.transition(id, snapshot, evidence),
+                Err(LeaseRefusal::SnapshotRequired)
+            );
+        }
+        let (early, evidence) = transition(
+            &current,
+            LeaseActivity::Expire,
+            state,
+            LeaseState::Expired,
+            [0; 32],
+            19,
+        );
+        assert_eq!(
+            book.transition(id, early, evidence),
+            Err(LeaseRefusal::NotExpired {
+                expiry: 20,
+                observed: 19
+            })
+        );
+        assert_eq!(book.get(id).map(Lease::state), Some(state));
+        let (expire, evidence) = transition(
+            &current,
+            LeaseActivity::Expire,
+            state,
+            LeaseState::Expired,
+            [0; 32],
+            20,
+        );
+        book.transition(id, expire, evidence)
+            .unwrap_or_else(|error| panic!("expire: {error}"));
+        assert_eq!(book.get(id).map(Lease::state), Some(LeaseState::Expired));
+    }
+}
+
+#[test]
 fn lease_prefix_is_host_accessible_isolated_and_addressable_as_one_unit() {
     let lease = candidate(40, 8, 10, 20);
     let namespace = lease.namespace();
@@ -650,7 +736,7 @@ fn fill_principal_and_refuse_corrupt_state() -> LeaseBook {
     let mut corrupt = requested
         .canonical_state_bytes()
         .unwrap_or_else(|error| panic!("state: {error}"));
-    let usage_offset = b"LayerX/programs/sandbox/lease-state/v1\0".len() + 224 + 16 + 64 + 16;
+    let usage_offset = b"LayerX/programs/sandbox/lease-state/v3\0".len() + 256 + 16 + 64 + 16;
     corrupt[usage_offset + 7] = 1;
     assert_eq!(
         Lease::decode_state(&corrupt),

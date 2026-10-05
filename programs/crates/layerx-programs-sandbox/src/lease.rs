@@ -831,8 +831,22 @@ impl Lease {
         if activity_id == [0; 32]
             || batch_sequence < self.opened_at
             || batch_sequence >= self.expiry
+            || self
+                .history
+                .last()
+                .is_some_and(|prior| batch_sequence < prior.batch_sequence)
         {
             return Err(LeaseRefusal::InvalidSequence);
+        }
+        if self
+            .history
+            .iter()
+            .any(|prior| prior.transition.activity_id == activity_id)
+        {
+            return Err(LeaseRefusal::ReplayedEvidence);
+        }
+        if self.history.len() >= MAX_LEASE_TRANSITIONS {
+            return Err(LeaseRefusal::HistoryOverflow);
         }
         let mut commitment = b"LayerX/programs/sandbox/intrinsic-transition/v1\0".to_vec();
         commitment.extend_from_slice(&self.state_digest()?);
@@ -1509,6 +1523,9 @@ impl Lease {
         if transition.activity == LeaseActivity::Destroy {
             return Err(LeaseRefusal::StorageRequired);
         }
+        if transition.activity == LeaseActivity::Snapshot {
+            return Err(LeaseRefusal::SnapshotRequired);
+        }
         self.apply_transition(transition, evidence)
     }
 
@@ -1927,6 +1944,7 @@ pub enum LeaseRefusal {
     InvalidSnapshotBinding,
     SnapshotBindingOverflow,
     StorageRequired,
+    SnapshotRequired,
     StorageFailure,
     StorageMeterRefusal,
 }
@@ -2256,5 +2274,552 @@ mod tests {
             namespace_bytes: MAX_LEASE_NAMESPACE_BYTES,
         };
         assert_eq!(maximum.validate(), Ok(maximum));
+    }
+
+    const STATES: [LeaseState; 6] = [
+        LeaseState::Requested,
+        LeaseState::Funded,
+        LeaseState::Active,
+        LeaseState::Settling,
+        LeaseState::Expired,
+        LeaseState::Destroyed,
+    ];
+    const ACTIVITIES: [LeaseActivity; 8] = [
+        LeaseActivity::Request,
+        LeaseActivity::Fund,
+        LeaseActivity::Activate,
+        LeaseActivity::BeginSettlement,
+        LeaseActivity::Expire,
+        LeaseActivity::Destroy,
+        LeaseActivity::CloseBoundExceeded,
+        LeaseActivity::Snapshot,
+    ];
+    const RESOURCE_BOUNDS: [(BoundKind, u64); 8] = [
+        (BoundKind::CpuFuel, MAX_LEASE_CPU_FUEL),
+        (BoundKind::MemoryBytes, MAX_LEASE_MEMORY_BYTES),
+        (BoundKind::StorageReadBytes, MAX_LEASE_STORAGE_READ_BYTES),
+        (BoundKind::StorageWriteBytes, MAX_LEASE_STORAGE_WRITE_BYTES),
+        (BoundKind::OutputValues, MAX_LEASE_OUTPUT_VALUES),
+        (BoundKind::OutputBytes, MAX_LEASE_OUTPUT_BYTES),
+        (BoundKind::TableElements, MAX_LEASE_TABLE_ELEMENTS),
+        (BoundKind::NamespaceBytes, MAX_LEASE_NAMESPACE_BYTES),
+    ];
+
+    fn proof(
+        lease: &Lease,
+        activity: LeaseActivity,
+        from: LeaseState,
+        to: LeaseState,
+        batch: u64,
+        tag: u8,
+    ) -> (LeaseTransition, TransitionEvidence) {
+        let observation = match activity {
+            LeaseActivity::Request => lease
+                .request_binding_digest()
+                .unwrap_or_else(|error| panic!("request digest: {error:?}")),
+            LeaseActivity::CloseBoundExceeded | LeaseActivity::Snapshot => [0x5a; 32],
+            _ => [0; 32],
+        };
+        proof_with_observation(lease, activity, from, to, observation, batch, tag)
+    }
+
+    fn proof_with_observation(
+        lease: &Lease,
+        activity: LeaseActivity,
+        from: LeaseState,
+        to: LeaseState,
+        observation: [u8; 32],
+        batch: u64,
+        tag: u8,
+    ) -> (LeaseTransition, TransitionEvidence) {
+        let mut activity_id = [tag; 32];
+        activity_id[0] = 0xa0;
+        let mut receipt_digest = [tag; 32];
+        receipt_digest[0] = 0xb0;
+        let transition = LeaseTransition {
+            lease: lease.id,
+            tenant: lease.tenant,
+            activity,
+            from,
+            to,
+            activity_id,
+            usage_observation_digest: observation,
+        };
+        (
+            transition,
+            TransitionEvidence {
+                activity_id,
+                receipt_digest,
+                batch_sequence: batch,
+                declared_transition: transition,
+                invoking_principal: lease.tenant,
+            },
+        )
+    }
+
+    fn attempt_batch(activity: LeaseActivity) -> u64 {
+        match activity {
+            LeaseActivity::Request => 10,
+            LeaseActivity::Expire | LeaseActivity::Destroy => 20,
+            _ => 16,
+        }
+    }
+
+    fn reached(state: LeaseState) -> Lease {
+        let mut current = lease(60, 7);
+        let path = [
+            (
+                LeaseActivity::Request,
+                LeaseState::Requested,
+                LeaseState::Requested,
+                10,
+            ),
+            (
+                LeaseActivity::Fund,
+                LeaseState::Requested,
+                LeaseState::Funded,
+                11,
+            ),
+            (
+                LeaseActivity::Activate,
+                LeaseState::Funded,
+                LeaseState::Active,
+                12,
+            ),
+            (
+                LeaseActivity::BeginSettlement,
+                LeaseState::Active,
+                LeaseState::Settling,
+                13,
+            ),
+            (
+                LeaseActivity::Expire,
+                LeaseState::Settling,
+                LeaseState::Expired,
+                14,
+            ),
+            (
+                LeaseActivity::Destroy,
+                LeaseState::Expired,
+                LeaseState::Destroyed,
+                15,
+            ),
+        ];
+        for (tag, (activity, from, to, batch)) in (1u8..).zip(path) {
+            if current.state == state {
+                break;
+            }
+            let (transition, evidence) = proof(&current, activity, from, to, batch, tag);
+            current
+                .apply_transition(transition, evidence)
+                .unwrap_or_else(|error| panic!("{activity:?}: {error:?}"));
+        }
+        assert_eq!(current.state(), state);
+        current
+    }
+
+    fn exceeding(bound: BoundKind) -> LeaseUsage {
+        let mut usage = LeaseUsage::default();
+        let slot = match bound {
+            BoundKind::CpuFuel => &mut usage.cpu_fuel,
+            BoundKind::MemoryBytes => &mut usage.memory_bytes,
+            BoundKind::StorageReadBytes => &mut usage.storage_read_bytes,
+            BoundKind::StorageWriteBytes => &mut usage.storage_write_bytes,
+            BoundKind::OutputValues => &mut usage.output_values,
+            BoundKind::OutputBytes => &mut usage.output_bytes,
+            BoundKind::TableElements => &mut usage.table_elements,
+            BoundKind::NamespaceBytes => &mut usage.namespace_bytes,
+            BoundKind::LifetimeBatches | BoundKind::Escrow => return usage,
+        };
+        *slot = 11;
+        usage
+    }
+
+    fn declaring(bound: BoundKind, value: u64) -> LeaseLimits {
+        let mut limits = lease(1, 2).limits();
+        let slot = match bound {
+            BoundKind::CpuFuel => &mut limits.cpu_fuel,
+            BoundKind::MemoryBytes => &mut limits.memory_bytes,
+            BoundKind::StorageReadBytes => &mut limits.storage_read_bytes,
+            BoundKind::StorageWriteBytes => &mut limits.storage_write_bytes,
+            BoundKind::OutputValues => &mut limits.output_values,
+            BoundKind::OutputBytes => &mut limits.output_bytes,
+            BoundKind::TableElements => &mut limits.table_elements,
+            BoundKind::NamespaceBytes => &mut limits.namespace_bytes,
+            BoundKind::LifetimeBatches | BoundKind::Escrow => {
+                panic!("{bound:?} is not a resource ceiling")
+            }
+        };
+        *slot = value;
+        limits
+    }
+
+    #[test]
+    fn transition_path_admits_exactly_the_declared_edges_from_every_reached_state() {
+        for from in STATES {
+            let current = reached(from);
+            for activity in ACTIVITIES {
+                for to in STATES {
+                    let (transition, evidence) =
+                        proof(&current, activity, from, to, attempt_batch(activity), 0x77);
+                    let mut candidate = current.clone();
+                    let result = candidate.apply_transition(transition, evidence);
+                    if declared_edge(activity, from, to) {
+                        let Ok(TransitionOutcome::Advanced(receipt)) = result else {
+                            panic!("{activity:?}: {from:?} -> {to:?} refused: {result:?}");
+                        };
+                        assert_eq!(candidate.state(), to);
+                        assert_eq!(candidate.history().last(), Some(&receipt));
+                        assert_eq!(receipt.receipt_digest, evidence.receipt_digest);
+                        assert_eq!(receipt.batch_sequence, evidence.batch_sequence);
+                    } else {
+                        assert!(result.is_err(), "{activity:?}: {from:?} -> {to:?} admitted");
+                        assert_eq!(candidate, current);
+                    }
+                    for stale_from in STATES {
+                        if stale_from == from || !declared_edge(activity, stale_from, to) {
+                            continue;
+                        }
+                        let (stale, evidence) = proof(
+                            &current,
+                            activity,
+                            stale_from,
+                            to,
+                            attempt_batch(activity),
+                            0x78,
+                        );
+                        let mut candidate = current.clone();
+                        assert_eq!(
+                            candidate.apply_transition(stale, evidence),
+                            Err(LeaseRefusal::StaleState {
+                                expected: from,
+                                declared: stale_from,
+                            })
+                        );
+                        assert_eq!(candidate, current);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn public_transition_refuses_activities_owned_by_their_dedicated_paths() {
+        for from in STATES {
+            let current = reached(from);
+            for (activity, refusal) in [
+                (
+                    LeaseActivity::Request,
+                    LeaseRefusal::IntrinsicActivityRequired,
+                ),
+                (
+                    LeaseActivity::CloseBoundExceeded,
+                    LeaseRefusal::IntrinsicActivityRequired,
+                ),
+                (LeaseActivity::Destroy, LeaseRefusal::StorageRequired),
+                (LeaseActivity::Snapshot, LeaseRefusal::SnapshotRequired),
+            ] {
+                for to in STATES {
+                    let (transition, evidence) =
+                        proof(&current, activity, from, to, attempt_batch(activity), 0x79);
+                    let mut candidate = current.clone();
+                    assert_eq!(candidate.transition(transition, evidence), Err(refusal));
+                    assert_eq!(candidate, current);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn destroyed_lease_cannot_be_revived_by_any_activity_path_or_forged_state() {
+        let destroyed = reached(LeaseState::Destroyed);
+        assert!(destroyed.state().is_terminal());
+        let encoded = destroyed
+            .canonical_state_bytes()
+            .unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(Lease::decode_state(&encoded), Ok(destroyed.clone()));
+        for activity in ACTIVITIES {
+            for to in STATES {
+                let (transition, evidence) = proof(
+                    &destroyed,
+                    activity,
+                    LeaseState::Destroyed,
+                    to,
+                    attempt_batch(activity),
+                    0x7a,
+                );
+                let mut candidate = destroyed.clone();
+                assert!(candidate.apply_transition(transition, evidence).is_err());
+                assert_eq!(candidate, destroyed);
+                let mut forged = destroyed.clone();
+                forged.history.push(LeaseTransitionReceipt {
+                    lease: forged.id,
+                    transition,
+                    receipt_digest: evidence.receipt_digest,
+                    batch_sequence: evidence.batch_sequence,
+                });
+                forged.state = to;
+                assert_eq!(
+                    Lease::decode_state(
+                        &forged
+                            .canonical_state_bytes()
+                            .unwrap_or_else(|error| panic!("forged: {error:?}"))
+                    ),
+                    Err(LeaseRefusal::InvalidStateEncoding),
+                    "{activity:?}: Destroyed -> {to:?}"
+                );
+            }
+        }
+        let mut swept = destroyed.clone();
+        assert_eq!(
+            swept.expire_by_sweep([0x31; 32], [0x32; 32], 30),
+            Err(LeaseRefusal::InvalidTransition)
+        );
+        assert_eq!(
+            swept.destroy_by_sweep(
+                &mut Storage::new(),
+                &mut Meter::new(ResourceBudget::declared(), FeeSchedule::declared()),
+                [0x33; 32],
+                [0x34; 32],
+                30,
+            ),
+            Err(LeaseRefusal::StaleState {
+                expected: LeaseState::Expired,
+                declared: LeaseState::Destroyed,
+            })
+        );
+        for activity in [LeaseActivity::Fund, LeaseActivity::Activate] {
+            assert_eq!(
+                swept.apply_host_activity(activity, [0x35; 32], 16),
+                Err(LeaseRefusal::InvalidTransition)
+            );
+        }
+        assert_eq!(swept, destroyed);
+    }
+
+    #[test]
+    fn exceeding_every_lease_bound_closes_with_its_typed_result_and_never_extends() {
+        let active = reached(LeaseState::Active);
+        let mut cases = RESOURCE_BOUNDS
+            .iter()
+            .map(|&(bound, _)| (bound, exceeding(bound), 0u128, 13u64, 11u128, 10u128))
+            .collect::<Vec<_>>();
+        cases.push((
+            BoundKind::LifetimeBatches,
+            LeaseUsage::default(),
+            0,
+            20,
+            10,
+            10,
+        ));
+        cases.push((BoundKind::Escrow, LeaseUsage::default(), 101, 13, 101, 100));
+        for (bound, usage, escrow, batch, consumed, limit) in cases {
+            let mut lease = active.clone();
+            assert_eq!(
+                lease.record_usage(usage, escrow, batch, None),
+                Err(LeaseRefusal::MissingClosureActivity)
+            );
+            let (wrong, wrong_evidence) = proof(
+                &lease,
+                LeaseActivity::CloseBoundExceeded,
+                LeaseState::Active,
+                LeaseState::Settling,
+                batch,
+                0x45,
+            );
+            assert_eq!(
+                lease.record_usage(usage, escrow, batch, Some(&(wrong, wrong_evidence))),
+                Err(LeaseRefusal::ObservationReceiptMismatch)
+            );
+            assert_eq!(lease, active);
+            let observation = usage_observation_digest(lease.id(), usage, escrow, batch)
+                .unwrap_or_else(|error| panic!("observation: {error:?}"));
+            let (close, evidence) = proof_with_observation(
+                &lease,
+                LeaseActivity::CloseBoundExceeded,
+                LeaseState::Active,
+                LeaseState::Settling,
+                observation,
+                batch,
+                0x44,
+            );
+            let outcome = lease.record_usage(usage, escrow, batch, Some(&(close, evidence)));
+            let Ok(UsageOutcome::ClosedByBound {
+                receipt,
+                bound: kind,
+                consumed: measured,
+                limit: ceiling,
+            }) = outcome
+            else {
+                panic!("{bound:?} did not close: {outcome:?}");
+            };
+            assert_eq!((kind, measured, ceiling), (bound, consumed, limit));
+            assert_eq!(receipt.transition, close);
+            assert_eq!(lease.state(), LeaseState::Settling);
+            assert_eq!((lease.usage(), lease.escrow_consumed()), (usage, escrow));
+            assert_eq!(
+                (lease.expiry(), lease.limits(), lease.escrow_amount()),
+                (active.expiry(), active.limits(), active.escrow_amount())
+            );
+            assert_eq!(
+                lease.record_usage(usage, escrow, batch, None),
+                Err(LeaseRefusal::LeaseNotActive)
+            );
+            assert_eq!(
+                Lease::decode_state(
+                    &lease
+                        .canonical_state_bytes()
+                        .unwrap_or_else(|error| panic!("closed: {error:?}"))
+                ),
+                Ok(lease.clone())
+            );
+        }
+    }
+
+    #[test]
+    fn lease_declarations_are_bounded_in_lifetime_escrow_and_every_resource() {
+        let request = |amount: u128, limits: LeaseLimits, opened: u64, expiry: u64| {
+            Lease::request(
+                LeaseId::new([70; 32]).unwrap_or_else(|error| panic!("lease id: {error:?}")),
+                PrincipalId::new([7; 32]).unwrap_or_else(|error| panic!("tenant: {error:?}")),
+                ProgramId::new([3; 32]).unwrap_or_else(|error| panic!("program: {error:?}")),
+                [4; 32],
+                [5; 32],
+                amount,
+                limits,
+                opened,
+                expiry,
+            )
+        };
+        let limits = lease(1, 2).limits();
+        let longest = 10 + MAX_LEASE_LIFETIME_BATCHES;
+        assert_eq!(
+            request(100, limits, 10, longest).map(|lease| lease.expiry()),
+            Ok(longest)
+        );
+        assert_eq!(
+            request(100, limits, 10, longest + 1).err(),
+            Some(LeaseRefusal::InvalidLifetime {
+                declared: MAX_LEASE_LIFETIME_BATCHES + 1,
+                maximum: MAX_LEASE_LIFETIME_BATCHES,
+            })
+        );
+        assert_eq!(
+            request(100, limits, 10, 10).err(),
+            Some(LeaseRefusal::InvalidLifetime {
+                declared: 0,
+                maximum: MAX_LEASE_LIFETIME_BATCHES,
+            })
+        );
+        assert_eq!(
+            request(100, limits, 10, 9).err(),
+            Some(LeaseRefusal::InvalidExpiry)
+        );
+        assert_eq!(
+            request(MAX_LEASE_ESCROW, limits, 10, 20).map(|lease| lease.escrow_amount()),
+            Ok(MAX_LEASE_ESCROW)
+        );
+        for amount in [0, MAX_LEASE_ESCROW + 1] {
+            assert_eq!(
+                request(amount, limits, 10, 20).err(),
+                Some(LeaseRefusal::InvalidEscrow {
+                    declared: amount,
+                    maximum: MAX_LEASE_ESCROW,
+                })
+            );
+        }
+        for (bound, maximum) in RESOURCE_BOUNDS {
+            assert_eq!(
+                request(100, declaring(bound, maximum), 10, 20).map(|lease| lease.limits()),
+                Ok(declaring(bound, maximum))
+            );
+            assert_eq!(
+                request(100, declaring(bound, maximum + 1), 10, 20).err(),
+                Some(LeaseRefusal::InvalidDeclaredBound {
+                    bound,
+                    declared: maximum + 1,
+                    maximum,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn host_lifecycle_activities_are_one_way_replay_safe_and_decodable() {
+        let mut lease = reached(LeaseState::Requested);
+        let (request, evidence) = proof(
+            &lease,
+            LeaseActivity::Request,
+            LeaseState::Requested,
+            LeaseState::Requested,
+            10,
+            1,
+        );
+        lease
+            .apply_transition(request, evidence)
+            .unwrap_or_else(|error| panic!("request: {error:?}"));
+        let requested = lease.clone();
+        for (activity, activity_id, batch, refusal) in [
+            (
+                LeaseActivity::Activate,
+                [0x61; 32],
+                11,
+                LeaseRefusal::InvalidTransition,
+            ),
+            (
+                LeaseActivity::Fund,
+                [0; 32],
+                11,
+                LeaseRefusal::InvalidSequence,
+            ),
+            (
+                LeaseActivity::Fund,
+                [0x61; 32],
+                20,
+                LeaseRefusal::InvalidSequence,
+            ),
+            (
+                LeaseActivity::Fund,
+                evidence.activity_id,
+                11,
+                LeaseRefusal::ReplayedEvidence,
+            ),
+        ] {
+            assert_eq!(
+                lease.apply_host_activity(activity, activity_id, batch),
+                Err(refusal)
+            );
+            assert_eq!(lease, requested);
+        }
+        lease
+            .apply_host_activity(LeaseActivity::Fund, [0x61; 32], 12)
+            .unwrap_or_else(|error| panic!("fund: {error:?}"));
+        let funded = lease.clone();
+        for (activity_id, batch, refusal) in [
+            ([0x62; 32], 11, LeaseRefusal::InvalidSequence),
+            ([0x61; 32], 13, LeaseRefusal::ReplayedEvidence),
+        ] {
+            assert_eq!(
+                lease.apply_host_activity(LeaseActivity::Activate, activity_id, batch),
+                Err(refusal)
+            );
+            assert_eq!(lease, funded);
+        }
+        lease
+            .apply_host_activity(LeaseActivity::Activate, [0x62; 32], 13)
+            .unwrap_or_else(|error| panic!("activate: {error:?}"));
+        assert_eq!(lease.state(), LeaseState::Active);
+        assert_eq!(
+            lease.apply_host_activity(LeaseActivity::Fund, [0x63; 32], 14),
+            Err(LeaseRefusal::InvalidTransition)
+        );
+        assert_eq!(
+            Lease::decode_state(
+                &lease
+                    .canonical_state_bytes()
+                    .unwrap_or_else(|error| panic!("active: {error:?}"))
+            ),
+            Ok(lease.clone())
+        );
     }
 }
