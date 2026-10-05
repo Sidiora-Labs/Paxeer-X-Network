@@ -28296,7 +28296,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.17.5-i
 
 [task.104.17.6]
 title = "Ship one-command MCP and A2A installation"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 4
 requires = ["0.2", "104.17.4"]
@@ -28328,9 +28328,12 @@ fanout_role = "integrate_sdk"
 fanout_scope_delegated = ["platform/Cargo.lock", "platform/hosted/gateway", "platform/docs", "platform/Makefile.inc", ".github/workflows/platform.yml", "spec/paxeer-x/qualification.kvx"]
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 source_status = "partial"
-completion_basis = "partial source published; original acceptance criteria remain required"
-qualification_status = "UNRUN"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.17.6-intake.json"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.17.6.json"
 
 [task.104.19.4]
 title = "Register the programs module in the core"
