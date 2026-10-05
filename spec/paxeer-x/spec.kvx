@@ -24740,7 +24740,7 @@ conditional_write_scope = "programs/crates/layerx-programs-market/src/lib.rs cha
 
 [task.104.37.2]
 title = "Publish the monorepo-native HPX registry and node distribution"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -24768,6 +24768,11 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["spec/paxeer-x/spec.kvx", "spec/paxeer-x/requirements.md", "spec/paxeer-x/tasks.md", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.37.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.37.2.json"
 
 [task.104.38.1]
 title = "Recover canonical and batch logs before daemon reconciliation"

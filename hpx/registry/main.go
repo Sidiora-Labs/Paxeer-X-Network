@@ -18,6 +18,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,7 +57,7 @@ type config struct {
 
 func loadConfig() config {
 	c := config{
-		Addr:         env("HPX_ADDR", ":8099"),
+		Addr:         env("HPX_ADDR", "127.0.0.1:8099"),
 		ArtifactsDir: env("HPX_ARTIFACTS_DIR", "/srv/hpx/artifacts/current"),
 		DataDir:      env("HPX_DATA_DIR", "/srv/hpx/data"),
 		RegisterTok:  os.Getenv("HPX_REGISTER_TOKEN"),
@@ -206,12 +207,71 @@ func (r *registry) list() []*Node {
 // ---- server ----------------------------------------------------------------
 
 type server struct {
-	cfg config
-	reg *registry
+	cfg     config
+	reg     *registry
+	limiter registrationLimiter
+}
+
+// registrationLimiter admits registerBurst registrations per source address in
+// each registerWindow, matching the Nginx hpx_register zone.
+type registrationLimiter struct {
+	mu      sync.Mutex
+	windows map[string]registrationWindow
+}
+
+type registrationWindow struct {
+	start time.Time
+	count int
+}
+
+const (
+	registerBurst      = 10
+	registerWindow     = time.Minute
+	registerMaxSources = 65536
+)
+
+func (l *registrationLimiter) allow(source string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.windows == nil {
+		l.windows = map[string]registrationWindow{}
+	}
+	if len(l.windows) >= registerMaxSources {
+		for key, window := range l.windows {
+			if now.Sub(window.start) >= registerWindow {
+				delete(l.windows, key)
+			}
+		}
+		if len(l.windows) >= registerMaxSources {
+			return false
+		}
+	}
+	window := l.windows[source]
+	if now.Sub(window.start) >= registerWindow {
+		window = registrationWindow{start: now}
+	}
+	if window.count >= registerBurst {
+		return false
+	}
+	window.count++
+	l.windows[source] = window
+	return true
+}
+
+func loopbackListen(addr string) bool {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func main() {
 	cfg := loadConfig()
+	if !loopbackListen(cfg.Addr) {
+		log.Fatalf("registry: HPX_ADDR %q must be a loopback address and port behind the reverse proxy", cfg.Addr)
+	}
 	reg, err := openRegistry(cfg.DataDir)
 	if err != nil {
 		log.Fatalf("registry: %v", err)
@@ -308,8 +368,12 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.cfg.RegisterTok != "" && r.Header.Get("X-HPX-Token") != s.cfg.RegisterTok {
+	if s.cfg.RegisterTok != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-HPX-Token")), []byte(s.cfg.RegisterTok)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.limiter.allow(clientIP(r), time.Now()) {
+		http.Error(w, "registration rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 	var n Node
@@ -507,20 +571,19 @@ func validPublicIP(raw string) bool {
 		!ip.IsUnspecified() && !ip.IsLinkLocalUnicast()
 }
 
-// clientIP prefers the X-Forwarded-For left-most entry written by the local
-// Nginx boundary, then falls back to the TCP source address.
+// clientIP returns the address observed by the trusted local reverse proxy.
+// Forwarding headers are honoured only on loopback connections, where Nginx
+// or the unified gateway overwrites X-Real-IP with the peer it accepted; any
+// other connection is identified by its own TCP source address.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.Split(xff, ",")[0]); ip != "" {
-			return ip
-		}
-	}
-	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
-		return xr
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if forwarded := strings.TrimSpace(r.Header.Get("X-Real-IP")); forwarded != "" {
+			return forwarded
+		}
 	}
 	return host
 }

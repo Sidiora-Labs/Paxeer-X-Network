@@ -224,8 +224,9 @@ node_id() { "$BIN" tendermint show-node-id --home "$HOME_DIR" 2>/dev/null \
 # ── Download install artifacts ────────────────────────────────────────────────
 download_binary() {
     local arch stage f ld
-    arch=$(arch_suffix)
+    arch=$(arch_suffix) || exit 1
     ld=$(lib_dir)
+    [ -n "$ld" ] && [ -d "$ld" ] || die "native library directory unavailable for $(uname -m)"
     stage=$(mktemp -d)
     trap 'rm -rf "$stage"' EXIT
     info "downloading paxd (${CI_VERSION:-latest})"

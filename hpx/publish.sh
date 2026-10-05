@@ -57,7 +57,7 @@ release_id="${HPX_RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)-${paxd_sha:0:12}}"
 
 mkdir -p "$RELEASES_DIR"
 stage=$(mktemp -d "${RELEASES_DIR}/.stage.XXXXXXXX")
-cleanup() { [ -n "${stage:-}" ] && [ -d "$stage" ] && rm -rf "$stage"; }
+cleanup() { [ -n "${stage:-}" ] && [ -d "$stage" ] && chmod -R u+w "$stage" && rm -rf "$stage"; }
 trap cleanup EXIT
 mkdir -p "$stage/lib" "$stage/config/fullnode" "$stage/config/validator"
 
@@ -125,14 +125,15 @@ say "writing sorted SHA-256 manifest"
 (
   cd "$stage"
   find . -type f ! -name checksums.txt -print0 \
-    | sort -z \
+    | LC_ALL=C sort -z \
     | xargs -0 sha256sum \
     | sed 's#  \./#  #'
 ) > "$stage/checksums.txt"
 
 release_dir="$RELEASES_DIR/$release_id"
 [ ! -e "$release_dir" ] || die "release already exists: $release_dir"
-chmod 0755 "$stage"
+chmod -R a-w "$stage"
+chmod 0555 "$stage"
 mv "$stage" "$release_dir"
 stage=""
 
