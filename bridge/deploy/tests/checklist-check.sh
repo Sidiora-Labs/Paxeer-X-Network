@@ -46,7 +46,7 @@ done
 
 # Nothing an operator happens to have exported may reach the checklist: every
 # endpoint below is the loopback replay server.
-unset "${!PAXEER_BRIDGE_@}"
+unset "${!PAXEER_BRIDGE_@}" BRIDGE_DEPLOY_OVERLAY
 
 WORK=$(mktemp -d)
 SERVER_PID=""
@@ -281,6 +281,19 @@ for variable in PAXEER_BRIDGE_ETHEREUM_RPC_URL PAXEER_BRIDGE_PAXEER_RPC_URL \
         env "${environment[@]}" bash "$CHECKLIST" ethereum
     [ ! -s "$CALLS" ] || fail "the checklist without $variable reached an endpoint"
 done
+
+# --all walks the nine chains in order, each against its own record, and stops
+# at the first chain that fails: the fixtures carry ethereum and solana only, so
+# ethereum passes and base, the second chain, is the one named.
+refuses 'PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR is required with --all' 'the checklist of all chains with no record directory' \
+    env "${EVM_ENVIRONMENT[@]}" bash "$CHECKLIST" --all
+fixture ethereum > /dev/null
+refuses 'base failed; the chains after it were not run' 'the checklist of all chains' \
+    env "${EVM_ENVIRONMENT[@]}" "PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR=$FIXTURES/records" bash "$CHECKLIST" --all
+grep -q 'passes all [0-9]* checks' "$WORK/last.log" && grep -qF 'checklist.sh: base' "$WORK/last.log" || {
+    quote
+    fail "the checklist of all chains did not pass ethereum before reaching base"
+}
 
 # A fully agreeing deployment on each side of the bridge passes.
 fixture ethereum > /dev/null

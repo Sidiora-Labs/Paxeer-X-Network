@@ -90,6 +90,9 @@ UPGRADEABLE_LOADER=BPFLoaderUpgradeab1e11111111111111111111111
 VAULT_AUTHORITY_SEED=vault-authority
 PLATFORM_TOOLS_VERSION=v1.56
 DEFAULT_EXECUTABLE_WAIT_SECONDS=120
+# shellcheck source=overlay.sh
+. "$SCRIPT_DIR/overlay.sh"
+chain=solana
 
 fail() {
     printf 'deploy-solana-program: error: %s\n' "$*" >&2
@@ -121,6 +124,8 @@ done
 chains_root=${PAXEER_BRIDGE_SOLANA_CHAINS_ROOT:-$PROGRAM_DIR/chains}
 config="$chains_root/solana/config.json"
 [ -r "$config" ] || fail "$config is not readable"
+trap 'rm -rf ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
+apply_overlay
 
 refuse() { fail "$config: $*"; }
 
@@ -257,6 +262,12 @@ for index in "${!asset_mints[@]}"; do
             || refuse "assets[$index].asset_id: ${asset_mints[index]} enters the digests as its derived handle $derived, not as $id"
     fi
 done
+sidiora_listed=0
+for mint in "${asset_mints[@]}"; do
+    [ "$mint" != "$SIDIORA_MINT" ] || sidiora_listed=1
+done
+[ "$sidiora_listed" -eq 1 ] \
+    || refuse "assets: Sidiora's pair, the mint $SIDIORA_MINT with the asset id $SIDIORA_ASSET_ID, is not listed; Solana is Sidiora's foreign home"
 [ "${asset_decimals[0]}" -eq "$WRAPPED_SOL_DECIMALS" ] \
     || refuse "assets[0].decimals: wrapped SOL carries $WRAPPED_SOL_DECIMALS decimals, not ${asset_decimals[0]}"
 
@@ -337,7 +348,7 @@ fi
 [ -r "$PROGRAM_DIR/Cargo.toml" ] || fail "$PROGRAM_DIR/Cargo.toml is missing, so there is no program to build"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
 chmod 0700 "$work"
 
 genesis_hash=$("$SOLANA" genesis-hash --url "$rpc") \

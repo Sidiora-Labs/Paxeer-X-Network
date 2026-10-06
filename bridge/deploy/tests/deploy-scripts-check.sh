@@ -78,7 +78,7 @@ done
 
 # Nothing an operator happens to have exported may reach the scripts under check:
 # the missing-variable refusals below are only refusals in a clean environment.
-unset "${!PAXEER_BRIDGE_@}"
+unset "${!PAXEER_BRIDGE_@}" BRIDGE_DEPLOY_OVERLAY
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -260,6 +260,57 @@ for chain in "${EVM_CHAIN_NAMES[@]}"; do
         env "PAXEER_BRIDGE_EVM_CHAINS_ROOT=$root" "${environment[@]}" \
         bash "$DEPLOY_EVM" --preflight "$chain"
 done
+
+# deploy-evm-chain.sh --all: the committed configurations, overlaid by the
+# private deploy overlay, are ready on all eight EVM chains, hyperevm only once
+# the overlay acknowledges its big-block step; a cap for an asset the chain
+# does not list and a chain the bridge does not carry are refused.
+OVERLAY_ENVIRONMENT=("PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR=$WORK/records")
+for chain in "${EVM_CHAIN_NAMES[@]}"; do
+    OVERLAY_ENVIRONMENT+=(
+        "$(variable_of "$EVM_CHAINS/$chain" rpc_url)=$ENDPOINT"
+        "$(variable_of "$EVM_CHAINS/$chain" deploy_key)=0x$(openssl rand -hex 32)"
+    )
+done
+overlay() {
+    local name=$1 edit=${2:-.} path="$WORK/$1.overlay.json"
+    jq -n --arg owner "$OWNER" --arg deployer "$DEPLOYER" --argjson attestors "$ATTESTORS" \
+        --argjson chains "$(printf '%s\n' "${EVM_CHAIN_NAMES[@]}" | jq -R . | jq -s .)" \
+        "{chains: (reduce \$chains[] as \$c ({}; .[\$c] = {owner: \$owner, deployer: \$deployer, attestors: \$attestors}))}
+          | .chains.hyperevm.big_blocks_acknowledged = true
+          | .chains.ethereum.caps = {ETH: {per_tx_cap: \"7\", total_cap: \"70\"}} | $edit" > "$path"
+    printf '%s' "$path"
+}
+attempt env "${OVERLAY_ENVIRONMENT[@]}" "BRIDGE_DEPLOY_OVERLAY=$(overlay full)" \
+    bash "$DEPLOY_EVM" --preflight --all
+if [ "$STATUS" -ne 0 ]; then
+    quote
+    fail "deploy-evm-chain.sh --preflight --all under a full overlay was refused (exit $STATUS)"
+fi
+for chain in "${EVM_CHAIN_NAMES[@]}"; do
+    grep -qF -- "deploy-evm-chain: $chain (chain " "$WORK/last.log" || {
+        quote
+        fail "deploy-evm-chain.sh --all did not report $chain ready"
+    }
+done
+grep -qF -- 'hyperevm: the deploying account is acknowledged as switched to big blocks' "$WORK/last.log" || {
+    quote
+    fail "deploy-evm-chain.sh --all did not report the hyperevm big-block step"
+}
+refuses 'big_blocks.acknowledged' 'an overlay that leaves the hyperevm big-block step unacknowledged' \
+    env "${OVERLAY_ENVIRONMENT[@]}" "BRIDGE_DEPLOY_OVERLAY=$(overlay unacknowledged 'del(.chains.hyperevm.big_blocks_acknowledged)')" \
+    bash "$DEPLOY_EVM" --preflight --all
+refuses 'owner: PLACEHOLDER:owner is a placeholder' 'an overlay that leaves a chain out' \
+    env "${OVERLAY_ENVIRONMENT[@]}" "BRIDGE_DEPLOY_OVERLAY=$(overlay partial 'del(.chains.polygon)')" \
+    bash "$DEPLOY_EVM" --preflight --all
+refuses 'caps.DOGE' 'an overlay capping an asset the chain does not list' \
+    env "${OVERLAY_ENVIRONMENT[@]}" "BRIDGE_DEPLOY_OVERLAY=$(overlay doge '.chains.ethereum.caps.DOGE = {per_tx_cap: "1", total_cap: "1"}')" \
+    bash "$DEPLOY_EVM" --preflight ethereum
+refuses 'chains.fantom' 'an overlay naming a chain the bridge does not carry' \
+    env "${OVERLAY_ENVIRONMENT[@]}" "BRIDGE_DEPLOY_OVERLAY=$(overlay fantom '.chains.fantom = {}')" \
+    bash "$DEPLOY_EVM" --preflight ethereum
+refuses 'PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR is required with --all' 'deploy-evm-chain.sh --all with no record directory' \
+    bash "$DEPLOY_EVM" --preflight --all
 
 # deploy-evm-chain.sh: the environment it names.
 ROOT=$(evm_configuration ethereum-filled ethereum)
@@ -980,6 +1031,7 @@ solana_with 'PAXEER_BRIDGE_SOLANA_EXECUTABLE_WAIT_SECONDS: 2m is not a wait betw
 # and by the vault its first deployment records. The seed the program declared
 # before it settled on its own is the first such seed tried.
 mkdir -p "$WORK/other-seed/bridge/deploy"
+cp "$DEPLOY_DIR/overlay.sh" "$DEPLOY_DIR/overlay.jq" "$WORK/other-seed/bridge/deploy/"
 ln -s "$REPO_ROOT/bridge/solana" "$WORK/other-seed/bridge/solana"
 OTHER_SEED_SCRIPT="$WORK/other-seed/bridge/deploy/deploy-solana-program.sh"
 # shellcheck disable=SC2016 # sed expressions matching the script's literal text
@@ -1019,6 +1071,7 @@ EVM_STATE="$WORK/evm-chain"
 ELSEWHERE="$WORK/elsewhere"
 mkdir -p "$EVM_TREE/bridge/deploy" "$EVM_TREE_ROOT" "$EVM_TOOLS" "$EVM_STATE" "$ELSEWHERE"
 cp "$DEPLOY_EVM" "$EVM_TREE_SCRIPT"
+cp "$DEPLOY_DIR/overlay.sh" "$DEPLOY_DIR/overlay.jq" "$EVM_TREE/bridge/deploy/"
 cp "$REPO_ROOT/bridge/evm/bootstrap-libs.sh" "$EVM_TREE_ROOT/bootstrap-libs.sh"
 for entry in foundry.toml src script; do
     ln -s "$REPO_ROOT/bridge/evm/$entry" "$EVM_TREE_ROOT/$entry"

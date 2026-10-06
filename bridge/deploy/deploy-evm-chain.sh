@@ -5,6 +5,19 @@
 #
 # Usage:
 #   deploy-evm-chain.sh [--preflight] <chain>
+#   deploy-evm-chain.sh [--preflight] --all
+#
+# --all deploys the eight EVM chains in order - ethereum, base, arbitrum,
+# optimism, bnb, polygon, avalanche, hyperevm - stopping at the first that
+# fails, each writing $PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR/<chain>.json.
+#
+# BRIDGE_DEPLOY_OVERLAY names the private deploy overlay that fills in the owner,
+# the deployer, the attestors, the environment variable names and the caps of
+# each chain (bridge/deploy/overlay.jq applies it). On hyperevm the overlay's
+# big_blocks_acknowledged records the step that comes before the deployment:
+# the deploying account is switched to big blocks on Hyperliquid
+# (evmUserModify usingBigBlocks=true), because the vault deployment does not fit
+# in a small block. Without that acknowledgement hyperevm is refused.
 #
 # The chain name is the directory under bridge/evm/chains. --preflight runs
 # every check that needs no endpoint - the configuration, the environment
@@ -43,6 +56,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 EVM_ROOT="$REPO_ROOT/bridge/evm"
 PLACEHOLDER_PREFIX='PLACEHOLDER:'
+# shellcheck source=overlay.sh
+. "$SCRIPT_DIR/overlay.sh"
 ZERO_ADDRESS=0x0000000000000000000000000000000000000000
 
 fail() {
@@ -51,7 +66,7 @@ fail() {
 }
 
 usage() {
-    printf 'usage: deploy-evm-chain.sh [--preflight] <chain>\n' >&2
+    printf 'usage: deploy-evm-chain.sh [--preflight] <chain|--all>\n' >&2
     exit 2
 }
 
@@ -66,12 +81,20 @@ case ${1:-} in
     ;;
 esac
 [ $# -eq 1 ] || usage
+if [ "$1" = --all ]; then
+    preflight=()
+    [ "$preflight_only" -eq 0 ] || preflight=(--preflight)
+    run_all "$SCRIPT_DIR/deploy-evm-chain.sh" "${EVM_CHAINS[@]}" -- "${preflight[@]}"
+    exit 0
+fi
 chain=$1
 [[ $chain =~ ^[a-z][a-z0-9]*$ ]] || fail "$chain is not a chain name"
 
 chains_root=${PAXEER_BRIDGE_EVM_CHAINS_ROOT:-$EVM_ROOT/chains}
 config="$chains_root/$chain/config.json"
 [ -r "$config" ] || fail "$config is not readable; $chain is not a bridge EVM chain"
+trap 'rm -rf ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
+apply_overlay
 
 refuse() { fail "$config: $*"; }
 
@@ -166,7 +189,11 @@ if jq -e 'has("big_blocks")' "$config" > /dev/null; then
     acknowledged=$(jq -r '.big_blocks.acknowledged' "$config")
     requirement=$(jq -r '.big_blocks.requirement' "$config")
     [ "$acknowledged" = true ] || refuse "big_blocks.acknowledged: $requirement"
+    printf 'deploy-evm-chain: %s: the deploying account is acknowledged as switched to big blocks\n' "$chain" >&2
 fi
+
+configured_deployer=$(jq -r '.deployer // empty' "$config")
+[ -z "$configured_deployer" ] || require_address deployer "$configured_deployer"
 
 for variable in "$rpc_variable" "$key_variable" PAXEER_BRIDGE_DEPLOYMENT_RECORD; do
     [ -n "${!variable:-}" ] || fail "$variable is required and is not set"
@@ -193,7 +220,7 @@ deploy_key=${!key_variable}
 export ETH_RPC_URL="$rpc"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
 chmod 0700 "$work"
 
 confirmed_chain_id=$(cast chain-id) || fail "$rpc_variable did not answer eth_chainId"
@@ -246,6 +273,9 @@ block_hex=$(jq -r '[.receipts[] | select(.contractAddress != null) | .blockNumbe
 block=$(cast to-dec "$block_hex") || fail "the broadcast record carries the block $block_hex"
 deployer=$(jq -r '[.transactions[] | .transaction.from] | first // empty' "$run")
 [[ $deployer =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "the broadcast record names no deployer"
+if [ -n "$configured_deployer" ] && [ "$(lower "$deployer")" != "$(lower "$configured_deployer")" ]; then
+    fail "$vault was deployed by $deployer, and the configuration names the deployer $configured_deployer"
+fi
 
 normalise() { sed -e 's/ \[[^]]*\]//g' -e 's/[][]//g' -e 's/, */,/g'; }
 

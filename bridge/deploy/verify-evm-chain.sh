@@ -5,6 +5,11 @@
 #
 # Usage:
 #   verify-evm-chain.sh [--preflight] <chain>
+#   verify-evm-chain.sh [--preflight] --all
+#
+# --all verifies the eight EVM chains in deployment order, each against
+# $PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR/<chain>.json. BRIDGE_DEPLOY_OVERLAY, when
+# set, is applied to each configuration as deploy-evm-chain.sh applies it.
 #
 # --preflight runs every check that needs no explorer - the configuration, the
 # environment variables it names and the deployment record - and stops before
@@ -26,6 +31,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 EVM_ROOT="$REPO_ROOT/bridge/evm"
 PLACEHOLDER_PREFIX='PLACEHOLDER:'
 CONTRACT=src/PaxeerXVault.sol:PaxeerXVault
+# shellcheck source=overlay.sh
+. "$SCRIPT_DIR/overlay.sh"
 
 fail() {
     printf 'verify-evm-chain: error: %s\n' "$*" >&2
@@ -33,7 +40,7 @@ fail() {
 }
 
 usage() {
-    printf 'usage: verify-evm-chain.sh [--preflight] <chain>\n' >&2
+    printf 'usage: verify-evm-chain.sh [--preflight] <chain|--all>\n' >&2
     exit 2
 }
 
@@ -48,12 +55,20 @@ case ${1:-} in
     ;;
 esac
 [ $# -eq 1 ] || usage
+if [ "$1" = --all ]; then
+    preflight=()
+    [ "$preflight_only" -eq 0 ] || preflight=(--preflight)
+    run_all "$SCRIPT_DIR/verify-evm-chain.sh" "${EVM_CHAINS[@]}" -- "${preflight[@]}"
+    exit 0
+fi
 chain=$1
 [[ $chain =~ ^[a-z][a-z0-9]*$ ]] || fail "$chain is not a chain name"
 
 chains_root=${PAXEER_BRIDGE_EVM_CHAINS_ROOT:-$EVM_ROOT/chains}
 config="$chains_root/$chain/config.json"
 [ -r "$config" ] || fail "$config is not readable; $chain is not a bridge EVM chain"
+trap 'rm -rf ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
+apply_overlay
 
 refuse() { fail "$config: $*"; }
 
@@ -120,7 +135,7 @@ fi
 [ -r "$EVM_ROOT/src/PaxeerXVault.sol" ] || fail "$EVM_ROOT/src/PaxeerXVault.sol is missing"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
 chmod 0700 "$work"
 
 # The explorer key reaches forge through ETHERSCAN_API_KEY rather than a command

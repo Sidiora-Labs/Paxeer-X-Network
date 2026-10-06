@@ -955,3 +955,63 @@ func TestSolanaHandleIsTheVectorsDerivation(t *testing.T) {
 		t.Errorf("the vault-authority handle is %s (%v), not the pinned %s", got, err, vectors.VectorVaultHandle.Hex())
 	}
 }
+
+func TestOverlayFillsEveryEVMPlaceholder(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..")
+	overlay := filepath.Join(t.TempDir(), "overlay.json")
+	body := `{"chains":{"hyperevm":{"owner":"0x1111111111111111111111111111111111111111",
+"deployer":"0x2222222222222222222222222222222222222222",
+"attestors":["0x0000000000000000000000000000000000000001","0x0000000000000000000000000000000000000002","0x0000000000000000000000000000000000000003"],
+"threshold":2,"caps":{"HYPE":{"per_tx_cap":"5","total_cap":"10"}},"big_blocks_acknowledged":true}}}`
+	if err := os.WriteFile(overlay, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, err := Path(repoRoot, "hyperevm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.RequireDeployable() == nil {
+		t.Fatal("the committed hyperevm configuration is deployable without the overlay")
+	}
+	t.Setenv(OverlayEnv, overlay)
+	config, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.RequireDeployable(); err != nil {
+		t.Fatalf("the overlaid configuration is refused: %v", err)
+	}
+	if config.Threshold != 2 || config.Assets[0].TotalCap != "10" || config.Deployer == "" {
+		t.Fatalf("the overlay was not applied: %+v", config)
+	}
+	other, err := Path(repoRoot, "ethereum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ethereum, err := Load(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ethereum.RequireDeployable() == nil {
+		t.Fatal("a chain the overlay does not name became deployable")
+	}
+}
+
+func TestOverlayRefusesAnUnknownChainAndAnUnlistedCap(t *testing.T) {
+	dir := t.TempDir()
+	unknown := filepath.Join(dir, "unknown.json")
+	if err := os.WriteFile(unknown, []byte(`{"chains":{"fantom":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadOverlay(unknown); err == nil {
+		t.Fatal("an overlay naming a chain the bridge does not carry was accepted")
+	}
+	overlay := &Overlay{Chains: map[string]ChainOverlay{"ethereum": {Caps: map[string]AssetCap{"DOGE": {PerTxCap: "1", TotalCap: "1"}}}}}
+	if err := overlay.Apply(&ChainConfig{Chain: "ethereum"}); err == nil {
+		t.Fatal("an overlay capping an asset the chain does not list was accepted")
+	}
+}

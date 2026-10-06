@@ -44,6 +44,17 @@ func (c *ChainConfig) Validate() error {
 	if err := c.validateOwner(chain); err != nil {
 		return err
 	}
+	if c.Deployer != "" {
+		var err error
+		if chain.Kind == KindEVM {
+			err = c.validateEVMAddress("deployer", c.Deployer, false)
+		} else {
+			err = c.validateSolanaKey("deployer", c.Deployer)
+		}
+		if err != nil {
+			return err
+		}
+	}
 	if err := c.validateAttestors(); err != nil {
 		return err
 	}
