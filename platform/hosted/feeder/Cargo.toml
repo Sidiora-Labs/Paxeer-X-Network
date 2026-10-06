@@ -1,0 +1,28 @@
+[package]
+name = "layerx-oracle-feeder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "layerx-oracle-feeder"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek.workspace = true
+layerx-client.workspace = true
+layerx-types.workspace = true
+layerx-wire.workspace = true
+rustls-native-certs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+ureq.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+layerx-crypto.workspace = true
+
+[lints]
+workspace = true

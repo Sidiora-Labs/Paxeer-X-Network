@@ -51,7 +51,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const UPSTREAM_BASE = (process.env.BLOCKSCOUT_UPSTREAM_BASE || '').replace(/\/+$/, '');
+const UPSTREAM_BASE = (process.env.BLOCKSCOUT_UPSTREAM_BASE || 'https://api.paxscan.io').replace(/\/+$/, '');
 
 // ── Server-side cache ─────────────────────────────────────────────────────────
 

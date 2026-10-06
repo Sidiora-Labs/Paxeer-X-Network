@@ -1,0 +1,50 @@
+# qualification.kvx - Paxeer X Network mainnet-beta evidence ledger.
+#
+# This file is the single beta ledger. platform/docs/content/beta.md names it,
+# and tools/ci/beta-report.sh reads it and nothing else. It is append-only:
+# records are never edited or removed; a rerun appends a new record.
+#
+# Two record shapes live here.
+#
+# [observation.<task>.<n>]  - an assumption, an unrelated or pre-existing
+#   failure, a cross-task contradiction, a missing external interface, or a
+#   repair that would require weakening a check. Keys, all required:
+#     task       = "109.18"
+#     file       = "<repository path the observation is about>"
+#     symbol     = "<symbol, key or section inside that file>"
+#     observed   = "<what was seen>"
+#     assumption = "<what the work assumes until it is resolved>"
+#     severity   = "blocker" | "suspect" | "assumption" | "note"
+#
+# [gate.<task>.<n>]  - an EXECUTED gate, appended only after the named command
+#   ran against the named revision. Keys, all required:
+#     task        = "109.18"                    task that ran the gate
+#     reqs        = ["109"]                     acceptance criteria it qualifies
+#     revision    = "<40-hex commit>"           commit the command ran against
+#     command     = "<command line as run>"
+#     environment = "<os/arch/toolchain identity>"
+#     started_at  = "2026-10-06T07:00:00Z"      UTC, seconds precision
+#     outcome     = "pass" | "fail" | "blocked"
+#     evidence    = "<private evidence location; never a host address>"
+#     note        = "free text; for blocked, the owner input required"
+#
+# The <task> part of a record name equals its task key. A blocked gate names
+# the missing input and is never recorded as pass. The owner go decision is a
+# gate record with outcome pass whose note begins "owner go decision:".
+# Observations never raise a rung and never change the go/no-go decision.
+
+[observation.109.18.1]
+task = "109.18"
+file = "spec/layerx-beta/qualification.kvx"
+symbol = "ledger"
+observed = "The beta opens as mainnet-beta on Paxeer chain 125 behind https://api-mainnet-beta.paxeer.network. The earlier LayerX beta ledger described a separate test-network profile and was no longer part of the tree; its gate records were bound to revisions and a profile that the mainnet-beta does not run."
+assumption = "This ledger starts empty of gate records. No earlier gate record is carried forward or credited; every surface of the mainnet-beta is raised only by a gate appended here after it runs."
+severity = "note"
+
+[observation.109.18.2]
+task = "109.18"
+file = "scripts/ci/beta-contract-check.sh"
+symbol = "beta_contract tables"
+observed = "scripts/ci/beta-contract-check.sh and scripts/ci/beta-report.sh still check the earlier contract layout (cluster endpoint, network id, beta CA and artifact tables) that the mainnet-beta contract in platform/docs/content/beta.md no longer carries."
+assumption = "Those scripts are outside this task. tools/ci/beta-report.sh is the beta report that reads this ledger; the scripts/ci checks are repointed or retired by the task that owns them, and neither check is weakened here."
+severity = "suspect"

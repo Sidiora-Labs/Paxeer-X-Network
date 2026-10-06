@@ -329,15 +329,34 @@ func (i *InfoAPI) BlobBaseFee(ctx context.Context) (result *hexutil.Big, returnE
 	return nil, &ErrEVMNotSupported{Msg: "blobs not supported on this chain"}
 }
 
-// Syncing implements eth_syncing. It is intentionally registered (not removed): the RPC returns
-// JSON-RPC error -32000 with a clear message instead of -32601 method not found. Ethereum returns
-// false or a sync object; Pax does not expose sync semantics on this API.
+// SyncingResult is the eth_syncing object returned while the node is catching up.
+type SyncingResult struct {
+	StartingBlock hexutil.Uint64 `json:"startingBlock"`
+	CurrentBlock  hexutil.Uint64 `json:"currentBlock"`
+	HighestBlock  hexutil.Uint64 `json:"highestBlock"`
+}
+
+// Syncing implements eth_syncing: false when consensus reports the node caught up, otherwise
+// the sync progress object. startingBlock is the earliest block this node holds.
 func (i *InfoAPI) Syncing(ctx context.Context) (result any, returnErr error) {
 	startTime := time.Now()
 	defer func() {
 		recordMetricsWithError(ctx, "eth_Syncing", i.connectionType, startTime, returnErr, recover())
 	}()
-	return nil, &ErrEVMNotSupported{Msg: "eth_syncing is not supported on Pax EVM RPC"}
+	status, err := i.tmClient.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info := status.SyncInfo
+	if !info.CatchingUp {
+		return false, nil
+	}
+	highest := max(info.MaxPeerBlockHeight, info.LatestBlockHeight)
+	return &SyncingResult{
+		StartingBlock: hexutil.Uint64(max(info.EarliestBlockHeight, 0)),
+		CurrentBlock:  hexutil.Uint64(max(info.LatestBlockHeight, 0)),
+		HighestBlock:  hexutil.Uint64(max(highest, 0)),
+	}, nil
 }
 
 // getHeaderBaseFee returns the base fee per gas for txs in block blockNum (same as eth block header

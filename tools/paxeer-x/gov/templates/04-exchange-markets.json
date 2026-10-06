@@ -1,0 +1,43 @@
+{
+  "@type": "/paxprotocol.paxchain.layerxgov.LayerXProposal",
+  "title": "List the first exchange markets",
+  "description": "List the PAX/SID spot market and the BTC-USD and ETH-USD perpetual markets for placeOrder. Matching, tick, lot and margin ratios live in the LayerX market genesis; the chain listing names the market and its custody margin asset.",
+  "messages": [
+    {
+      "@type": "/paxprotocol.paxchain.layerxexchange.MsgSetMarket",
+      "authority": "@GOV_AUTHORITY@",
+      "market": {
+        "market_id": "@MARKET_PAX_SID@",
+        "margin_asset_id": "@SID_ASSET_ID@",
+        "enabled": true,
+        "native_genesis": null,
+        "capability_batch": "0",
+        "capability_witness": null
+      }
+    },
+    {
+      "@type": "/paxprotocol.paxchain.layerxexchange.MsgSetMarket",
+      "authority": "@GOV_AUTHORITY@",
+      "market": {
+        "market_id": "@MARKET_BTC_USD@",
+        "margin_asset_id": "@PERP_MARGIN_ASSET_ID@",
+        "enabled": true,
+        "native_genesis": null,
+        "capability_batch": "0",
+        "capability_witness": null
+      }
+    },
+    {
+      "@type": "/paxprotocol.paxchain.layerxexchange.MsgSetMarket",
+      "authority": "@GOV_AUTHORITY@",
+      "market": {
+        "market_id": "@MARKET_ETH_USD@",
+        "margin_asset_id": "@PERP_MARGIN_ASSET_ID@",
+        "enabled": true,
+        "native_genesis": null,
+        "capability_batch": "0",
+        "capability_witness": null
+      }
+    }
+  ]
+}
