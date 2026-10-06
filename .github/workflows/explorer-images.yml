@@ -32,11 +32,13 @@ jobs:
             dockerfile: docker/explorer-backend/Dockerfile
             build_args: |
               RELEASE_VERSION=10.2.6
+              BLOCKSCOUT_VERSION=v10.2.6.+commit.${{ github.sha }}
             timeout: 120
           - image: paxeer-x-explorer-frontend
             context: .
             dockerfile: docker/explorer-frontend/Dockerfile
-            build_args: ''
+            build_args: |
+              GIT_COMMIT_SHA=${{ github.sha }}
             timeout: 60
           - image: paxeer-x-explorer-smart-contract-verifier
             context: .
