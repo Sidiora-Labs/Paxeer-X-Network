@@ -1,0 +1,26 @@
+{
+  "name": "@paxeer/legacy-import",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Imports legacy embedded-wallet custody records into the new custody schema through the gateway admin API.",
+  "license": "UNLICENSED",
+  "bin": {
+    "legacy-import": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2"
+  }
+}
