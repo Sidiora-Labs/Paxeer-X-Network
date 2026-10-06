@@ -991,7 +991,7 @@ fn supplied_operator_inventory_matches_registered_bridge_configuration() {
         let hash = base58_fixed::<32>(block["blockhash"].as_str().expect("Solana blockhash")).expect("canonical blockhash");
         let policy = inventory.destinations.iter().find(|policy| policy.chain_id == config.chain_id).expect("Solana policy inventory");
         assert_eq!(hash, hex::fixed::<32>(&policy.observed_block_hash).expect("Solana observation hash"));
-        let (address, _) = config_address(&settings.program_id).expect("production config PDA");
+        let address = config_address(&settings.program_id).expect("production config PDA");
         let account = rpc.get_account_info(&address, settings.commitment).expect("genuine config PDA read").expect("registered config PDA");
         assert_eq!(account.owner, settings.program_id); assert!(!account.executable);
         let current = ConfigRecord::decode(&account.data).expect("canonical registered Solana policy");

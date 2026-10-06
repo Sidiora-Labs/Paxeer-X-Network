@@ -38,6 +38,37 @@ while IFS='=' read -r name token || [ -n "$name" ]; do
 done <"$secrets/rpc-tokens"
 rm -f "$secrets/rpc-tokens"
 
+fail() {
+	echo "bridge-relayer-entrypoint: $*" >&2
+	exit 1
+}
+signer_keys=/etc/layerx/bridge-signer/keys.json
+for name in LAYERX_BRIDGE_ATTESTOR_INDEX LAYERX_BRIDGE_ATTESTOR_SET_SIZE LAYERX_BRIDGE_ATTESTOR_THRESHOLD; do
+	eval "value=\${$name:-}"
+	case "$value" in
+	'' | *[!0-9]* | 0*) fail "$name must be a positive integer, got '$value'" ;;
+	esac
+done
+set_size=$LAYERX_BRIDGE_ATTESTOR_SET_SIZE
+threshold=$LAYERX_BRIDGE_ATTESTOR_THRESHOLD
+index=$LAYERX_BRIDGE_ATTESTOR_INDEX
+[ "$index" -le "$set_size" ] || fail "attestor index $index is outside the set of $set_size"
+[ $((threshold * 2)) -gt "$set_size" ] && [ "$threshold" -le "$set_size" ] ||
+	fail "threshold $threshold of $set_size is not a majority of the set"
+attestor_key=${LAYERX_BRIDGE_ATTESTOR_KEY_FILE:-}
+[ -n "$attestor_key" ] && [ -f "$attestor_key" ] || fail "attestor key file '$attestor_key' is missing"
+[ -f "$signer_keys" ] || fail "signer key manifest $signer_keys is missing"
+jq -e --arg key "$attestor_key" '[.keys[] | select(.handle == "bridge/attestor")] | length == 1 and .[0].key_file == $key' \
+	"$signer_keys" >/dev/null || fail "signer key manifest does not name $attestor_key as the one bridge/attestor key"
+membership=${LAYERX_BRIDGE_APPROVED_MEMBERSHIP:-}
+[ -n "$membership" ] && [ -f "$membership" ] || fail "approved membership '$membership' is missing"
+jq -e --argjson size "$set_size" --argjson threshold "$threshold" \
+	'(.attestors | length == $size and (unique | length) == $size) and .threshold == $threshold' \
+	"$membership" >/dev/null || fail "approved membership is not $threshold of $set_size distinct attestors"
+jq -e --argjson size "$set_size" --argjson threshold "$threshold" \
+	'.attestor_set | (.members | length == $size) and .threshold == $threshold' \
+	"$secrets/relayer.json" >/dev/null || fail "relayer attestor_set is not $threshold of $set_size"
+
 install -d -o 4102 -g 4102 -m 0700 /data/relayer /data/cosign
 transport_pid=
 if [ -n "${LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG+set}" ]; then
