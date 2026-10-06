@@ -3,11 +3,9 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {
-    TransparentUpgradeableProxy,
-    ITransparentUpgradeableProxy
-} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {SidioraNativeERC20} from "../src/SidioraNativeERC20.sol";
 import {IBank, BANK_PRECOMPILE_ADDRESS} from "../src/precompiles/IBank.sol";
@@ -60,11 +58,14 @@ contract SidioraNativeERC20Test is Test {
     bytes32 private constant IMPLEMENTATION_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
     bytes32 private constant ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
     bytes32 private constant BEACON_SLOT = bytes32(uint256(keccak256("eip1967.proxy.beacon")) - 1);
+    bytes32 private constant OWNABLE_SLOT =
+        keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.Ownable")) - 1)) & ~bytes32(uint256(0xff));
+    address private constant SID_OWNER = 0x1255d84066f579E7B7A3df4296e960d59fc05b32;
 
     SidioraNativeERC20 private token;
     SidioraNativeERC20 private implementation;
     SidioraBankFixture private bank;
-    ProxyAdmin private admin;
+    SidioraNativeERC20 private legacy;
     address private alice;
     address private bob;
     string private nativeDenom;
@@ -73,12 +74,12 @@ contract SidioraNativeERC20Test is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         nativeDenom = string.concat("factory/", _moduleAccount(), "/usid");
+        legacy = new SidioraNativeERC20();
         implementation = new SidioraNativeERC20();
-        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(address(implementation), address(this), "");
+        ERC1967Proxy proxy = new ERC1967Proxy(address(legacy), "");
         vm.etch(SIDIORA, address(proxy).code);
         vm.store(SIDIORA, IMPLEMENTATION_SLOT, vm.load(address(proxy), IMPLEMENTATION_SLOT));
-        vm.store(SIDIORA, ADMIN_SLOT, vm.load(address(proxy), ADMIN_SLOT));
-        admin = ProxyAdmin(address(uint160(uint256(vm.load(SIDIORA, ADMIN_SLOT)))));
+        vm.store(SIDIORA, OWNABLE_SLOT, bytes32(uint256(uint160(SID_OWNER))));
         token = SidioraNativeERC20(SIDIORA);
         SidioraBankFixture fixture = new SidioraBankFixture();
         vm.etch(BANK_PRECOMPILE_ADDRESS, address(fixture).code);
@@ -87,9 +88,33 @@ contract SidioraNativeERC20Test is Test {
     }
 
     function _initialize() private {
-        admin.upgradeAndCall(
-            ITransparentUpgradeableProxy(SIDIORA), address(implementation), abi.encodeCall(token.initialize, ())
-        );
+        vm.prank(SID_OWNER);
+        token.upgradeToAndCall(address(implementation), abi.encodeCall(token.initialize, ()));
+    }
+
+    function testOwnerUpgradeSucceeds() public {
+        assertEq(implementation.proxiableUUID(), ERC1967Utils.IMPLEMENTATION_SLOT);
+        assertEq(token.owner(), SID_OWNER);
+        _initialize();
+        assertEq(vm.load(SIDIORA, IMPLEMENTATION_SLOT), bytes32(uint256(uint160(address(implementation)))));
+        assertEq(token.owner(), SID_OWNER);
+        vm.expectCall(BANK_PRECOMPILE_ADDRESS, abi.encodeCall(IBank.balance, (bob, nativeDenom)));
+        assertEq(token.balanceOf(bob), 1_000_000);
+    }
+
+    function testNonOwnerUpgradeReverts() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(SidioraNativeERC20.UnauthorizedUpgrade.selector, alice));
+        token.upgradeToAndCall(address(implementation), abi.encodeCall(token.initialize, ()));
+        assertEq(vm.load(SIDIORA, IMPLEMENTATION_SLOT), bytes32(uint256(uint160(address(legacy)))));
+    }
+
+    function testUpgradeOutsideProxyReverts() public {
+        vm.prank(SID_OWNER);
+        vm.expectRevert(UUPSUpgradeable.UUPSUnauthorizedCallContext.selector);
+        implementation.upgradeToAndCall(address(legacy), "");
+        vm.expectRevert(UUPSUpgradeable.UUPSUnauthorizedCallContext.selector);
+        token.proxiableUUID();
     }
 
     function testMetadataAndDerivedDenom() public {
