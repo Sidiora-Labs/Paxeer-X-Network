@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Paxeer encrypted fleet backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
