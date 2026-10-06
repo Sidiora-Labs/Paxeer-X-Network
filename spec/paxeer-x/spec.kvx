@@ -37765,7 +37765,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.8]
 title = "K1: Kernel genesis with seven modules and env-driven inputs"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
