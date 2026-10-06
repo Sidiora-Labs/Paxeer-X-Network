@@ -38402,3 +38402,363 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 
+
+[req.113]
+title = "Beta upgrade, bring-up and release queue 2026-10-07"
+ac_1 = "paxd v6.11.0 is tagged from one recorded main revision, built reproducibly, published with sha assets and release notes, and applied on every fleet unit at the governed height with usid supply equal to the snapshot sum and the bridge module as the only mint authority."
+ac_2 = "Every beta service of decisions 1 to 22 runs on its ruled host with secrets minted by the repo tooling, is reachable through the unified router, and passes its live check from a clean operator box."
+ac_3 = "No private host fact, secret or key material enters the repository; every deploy value comes from an env or secrets file outside the tree, and every step's evidence is one line of revision, command, exit code and log path."
+ac_4 = "Release certification runs the aggregate suites once on the merged revision and the beta contract is signed off with the ledger filled; honest partials are recorded, never hidden."
+
+[task.113.1]
+title = "T1: repair the five pre-existing chain test failures ahead of the release build"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["113"]
+do_1 = "node: TestOptimisticProcessingTestSuite/TestProcessProposalHandler_NewOptimisticProcessing, TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom (app_feetoken_test.go:154 Int mismatch) and TestInvalidProposalWithExcessiveGasEstimates (TempDir RemoveAll directory not empty) are fixed at their cause; rpc: TestTraceTransaction (empty validator set at height 7) and TestTraceCall (nil interface conversion) likewise."
+do_2 = "No assertion is weakened and no test is skipped; a genuine contradiction between a test and the code is left intact and reported with both sides quoted."
+touches = ["node/", "rpc/"]
+verify_cmd = "go test ./node/ ./rpc/ -count=1"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.2]
+title = "T2: finish the paxeer-xdk crate rename and the registry publish path"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["113"]
+do_1 = "Take fleet/task-109.24 at ed44b5e18 (held off main), run the cargo checks on it, fix whatever the re-keyed layerx-programs dependency still leaves unresolved, and make the python template, generated client and production.py carry the paxeer-xdk name so tests/agent/sdk/python/test_integration.py asserts the real name."
+do_2 = "Then the 109.25 deliverable: .github/workflows/paxeer-xdk-publish.yml publishes npm @sidioralabs/paxeer-xdk, PyPI paxeer-xdk and crates paxeer-xdk, paxeer-xdk-programs-* and paxeer-xdk-cli from a release tag using repo secrets NPM_TOKEN, PYPI_TOKEN, CARGO_REGISTRY_TOKEN; RELEASE.md documents the procedure."
+do_3 = "Then the 109.26 deliverable: platform/cli and programs/sdk reference the new names everywhere a user sees them (help text, abi-manifest.tsv, templates)."
+touches = ["agent/", "platform/", "programs/", "human/Cargo.toml", "human/Cargo.lock", "tests/agent/sdk/python/test_integration.py", ".github/workflows/paxeer-xdk-publish.yml", "RELEASE.md"]
+verify_cmd = "sh -c 'cargo check --manifest-path agent/Cargo.toml -p paxeer-xdk && cargo check --manifest-path platform/Cargo.toml -p paxeer-xdk-cli && cargo check --manifest-path programs/Cargo.toml --workspace && cargo check --manifest-path human/Cargo.toml --workspace && npm --prefix agent/sdk/typescript test'"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.3]
+title = "T3: close the queue 109 observations that are code"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["113"]
+do_1 = "Gateway submit path (platform/hosted/gateway/src/main.rs submit_activity) reports the resolved state from layerx-client resolver and agentd calls resolver::spawn_for_client (109.37 left undone)."
+do_2 = "bridge/deploy/relayer-solana.example.json and tests/operator_config.rs:87 agree on the mints encoding (109.30); the legacy single-app interop/deploy/bridge-relayer/fly.toml is retired in favour of relayer-1..5 and check-live.sh reads those."
+do_3 = "docker/intent-ingester/Dockerfile exists and matches interop/deploy/intent-ingester/fly.toml; the ingester's gateway API-key header is read from the gateway auth code, not assumed (109.21)."
+do_4 = "tools/release/build-paxd.sh stages the libwasmvm shared objects beside paxd in dist/ and SHA256SUMS, and tools/bringup/sync-fleet.sh carries them (109.36); tools/ops/keyring-migrate.sh also checks the xweb attestor sidecars' keyring backend (109.35)."
+do_5 = "The x-websearch /health assertion (tests/binary.rs:429) and the indexer finality_contract env gate are reconciled the way the owner rules; until ruled, both stay as written and the ruling request is repeated in the report."
+touches = ["platform/hosted/gateway/src/main.rs", "agent/crates/layerx-agentd/src/", "bridge/deploy/relayer-solana.example.json", "interop/crates/layerx-bridge-relayer/tests/operator_config.rs", "interop/deploy/bridge-relayer/", "tools/bringup/check-live.sh", "docker/intent-ingester/", "interop/crates/layerx-intent-ingester/src/", "tools/release/build-paxd.sh", "tools/bringup/sync-fleet.sh", "tools/ops/keyring-migrate.sh"]
+verify_cmd = "sh -c 'cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config && cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway submit && tools/bringup/sync-fleet.test.sh'"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.4]
+title = "T4: SID holder snapshot at the announced block, embedded for the release"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["113"]
+do_1 = "Run tools/paxeer-x/sid-snapshot/snapshot.py against the explorer database, the old paxscan copy and the live RPC at the snapshot height the owner announces; every holder reconciles against balanceOf or the run stops."
+do_2 = "Commit the result as node/testdata/sid-holders.json with the snapshot height and the SID proxy totalSupply recorded in the commit message; go test ./node/ -run V611 passes against it."
+touches = ["node/testdata/sid-holders.json"]
+verify_cmd = "sh -c 'tools/paxeer-x/sid-snapshot/test.sh && go test ./node/ -run V611 -count=1'"
+owner_inputs = "snapshot height; explorer and old paxscan DSNs"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.5]
+title = "T5: CI live on lx-runner and the aggregate suite on the merged wave-1 revision"
+status = "pending"
+mode = "QUALIFY"
+wave = 2
+requires = ["113.1", "113.2", "113.3", "113.4"]
+reqs = ["113"]
+do_1 = "Owner enables the workflows and sets CI_LINUX_RUNNER=lx-runner (command block from 109.17); tools/ci/tests/workflow-runner-check.sh passes; the first green run of paxeer-release-check.yml on main is recorded."
+do_2 = "The aggregate gates that queue 109 deferred run once on this revision: go test ./..., cargo test for the platform, interop, agent and human workspaces, FOUNDRY_CONFIG=foundry.paxeer.toml forge test, bridge/deploy/tests/*, tools/bringup/tests/*, pnpm typecheck and tests for the wallet and web apps. Every failure is recorded as one observation line; none is chased inside this task."
+touches = []
+verify_cmd = "tools/ci/tests/workflow-runner-check.sh"
+owner_inputs = "GitHub: workflows enabled, CI_LINUX_RUNNER variable, registry tokens as repo secrets"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.6]
+title = "T6: tag and publish paxd v6.11.0 reproducibly with HPX republish"
+status = "pending"
+mode = "RELEASE"
+wave = 3
+requires = ["113.5"]
+reqs = ["113"]
+do_1 = "Tag paxeer-network/v6.11.0 on the recorded main revision; paxeer-release-publish.yml builds with tools/release/build-paxd.sh on lx-runner, publishes paxd-v6.11.0-linux-amd64, the libwasmvm objects, SHA256SUMS and release notes; tools/release/reproducible-check.sh matches a second build on another box."
+do_2 = "version.json, docs/site/docs/reference and the HPX chain-info document carry v6.11.0 and the asset sha; tools/paxeer-x/release.sh records the release manifest."
+touches = ["version.json", "docs/site/docs/reference/", "platform/hosted/registry/"]
+verify_cmd = "tools/release/reproducible-check.sh v6.11.0"
+executor = "claude"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.7]
+title = "T7: SoftwareUpgrade proposal rendered, dry-run and submitted; fleet staged"
+status = "pending"
+mode = "QUALIFY"
+wave = 4
+requires = ["113.6"]
+reqs = ["113"]
+do_1 = "tools/paxeer-x/gov/render.sh --out DIR --height H --release-url URL --release-sha256 HEX renders the window from templates 01..06 and dry-runs every proposal; the owner submits 01 and votes; the proposal id and height are recorded."
+do_2 = "tools/bringup/upgrade-fleet.sh --stage-only H stages the release asset on all 21 units through sync-fleet.sh (hosts file carries UPGRADE_UNITS and PAXD_RELEASE_URL); every unit reports the staged sha."
+touches = []
+verify_cmd = "tools/paxeer-x/gov/test.sh"
+executor = "codex"
+owner_inputs = "halt height and window; proposal submission and votes from the validator operator keys"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.8]
+title = "T8: halt, swap and resume at the upgrade height; post-upgrade verification"
+status = "pending"
+mode = "QUALIFY"
+wave = 5
+requires = ["113.7"]
+reqs = ["113"]
+do_1 = "tools/bringup/upgrade-fleet.sh --watch-only H carries every unit across the halt: swap, restart, first post-upgrade block on all four validators and fifteen full nodes plus archive and api hosts."
+do_2 = "Verified on chain: eight precompiles live, custody and layerxgov routes answer, bank usid supply equals the sid-holders.json sum, SidioraLegacyMigration height and shortfall slots set, the bridge module is the only usid mint authority, 0x1255... has none."
+touches = []
+verify_cmd = "tools/bringup/check-live.sh rpc-nodes"
+executor = "codex"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.9]
+title = "T9: first governance window: fee token, xweb fee, markets, custody, bridge 04/05, anchor sequencer"
+status = "pending"
+mode = "QUALIFY"
+wave = 6
+requires = ["113.8"]
+reqs = ["113"]
+do_1 = "Templates 02..06 submitted in order with the owner's values: 3.114 SID/PAX with the 7-day rate age and held fees, xweb fee 0.001 USD-equivalent in PAX at the PAX price of the hour, PAX/SID spot plus BTC-USD and ETH-USD perps, custody map PAX and SID, bridge proposals 04/05 with the nine chain configs, sequencer authorization on the anchor."
+do_2 = "After each passes, the on-chain params are read back and compared to the rendered proposal; mismatches stop the window."
+touches = []
+verify_cmd = "tools/paxeer-x/gov/test.sh"
+executor = "codex"
+owner_inputs = "PAX/USD price at proposal time; votes; market and asset ids; custody network id"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.10]
+title = "T10: owner executes the SID UUPS upgrade; migrateLegacy round trip"
+status = "pending"
+mode = "QUALIFY"
+wave = 6
+requires = ["113.8"]
+reqs = ["113"]
+do_1 = "Owner upgrades proxy 0x21f7... to the SidioraNativeERC20 implementation from 109.2 with 0x1255... after the halt height; proxiableUUID and the upgrade event are read back."
+do_2 = "One holder from the snapshot calls migrateLegacy: LegacyMigrated emitted with the minted flag, legacy slot zero, native balance unchanged; a second call reverts."
+touches = []
+verify_cmd = "FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-contract SidioraNativeERC20"
+executor = "owner"
+owner_inputs = "0x1255... signer at the owner's keyboard"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.11]
+title = "T11: kernel genesis with seven modules and the kernel deploy to paxeer-human-service"
+status = "pending"
+mode = "QUALIFY"
+wave = 7
+requires = ["113.8"]
+reqs = ["113"]
+do_1 = "tools/bringup/kernel-genesis.sh keys then render ENV_FILE OUTPUT_DIR produces the LXGB v2 genesis with escrow, budget, stream, service, perps, spot and web; the registry and metadata are checked by tools/bringup/tests/kernel-genesis.test.sh against the rendered output."
+do_2 = "docker/kernel is built by publish-images.yml and deployed to paxeer-human-service with the secrets from mint-secrets.sh; init.sh full profile has LAYERX_KERNEL_AGENTD_RPC_PEER, _DAEMON_SEQUENCES, _PROTOCOL_SEQUENCES, LAYERX_NODE_NETWORK_NAME and the agentd-rpc TLS files; the guarantor bond is posted; paxeer-x-core is retired."
+do_3 = "The oracle feeder runs beside the kernel in the same app with feeder.json (market ids, oracle key, sequence) and the first two oracle payloads land; the xweb relay and the intent ingester start against the kernel and journal their first observations."
+touches = []
+verify_cmd = "tools/bringup/tests/kernel-genesis.test.sh"
+executor = "codex"
+owner_inputs = "Fly token; sequencer, guarantor and oracle keys; LAYERX_KERNEL_* values; feeder.json; ingester market map, signer key and gateway API key"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.12]
+title = "T12: platform apps deployed with minted secrets and the router root serving /rpc"
+status = "pending"
+mode = "QUALIFY"
+wave = 8
+requires = ["113.11"]
+reqs = ["113"]
+do_1 = "ATTESTOR_CERT_DIR and MODULE_REGISTRY_FILE set, tools/bringup/mint-secrets.sh writes one secrets command per app; paxeer-identity, paxeer-registry, paxeer-internal, paxeer-webhooks, paxeer-interop, paxeer-gas-station, paxeer-indexer and the router deploy from their fly.toml with LAYERX_GATEWAY_PAXEER_RPC_URLS on api1 and api12; the indexer runs one machine until pagination is pinned."
+do_2 = "The router answers eth_chainId 125 on /rpc, lx_register and lx_requestFunds credit 10 PAX to a fresh developer, the signup mail leaves through LAYERX_IDENTITY_SMTP_URL."
+touches = []
+verify_cmd = "tools/bringup/check-live.sh hpx"
+executor = "codex"
+owner_inputs = "Fly token; SMTP URL; TRUSTED_PROXY_SECRET; explorer API CA"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.13]
+title = "T13: nine bridge deployments and five relayer apps"
+status = "pending"
+mode = "QUALIFY"
+wave = 8
+requires = ["113.9"]
+reqs = ["113"]
+do_1 = "bridge/deploy/deploy-evm-chain.sh for the eight EVM mainnets and deploy-solana-program.sh with BRIDGE_DEPLOY_OVERLAY carrying the owner multisigs, RPC and explorer keys and funded submitters; verify-evm-chain.sh and checklist.sh pass per chain; HyperEVM big-block acknowledged."
+do_2 = "paxeer-bridge-relayer-1..5 deploy from interop/deploy/bridge-relayer/relayer-N.toml with the attestor keys and membership file; threshold 3 of 5 observed on the first cross-chain message."
+touches = []
+verify_cmd = "sh -c 'bridge/deploy/tests/deploy-scripts-check.sh && bridge/deploy/tests/checklist-check.sh'"
+executor = "codex"
+owner_inputs = "nine deployer keys, nine owner multisigs, RPC and explorer keys, nine funded submitters plus the Solana fee payer, five attestor keys"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.14]
+title = "T14: three edges, cert sync, paxportwallet.com proxy and the paid search front"
+status = "pending"
+mode = "QUALIFY"
+wave = 8
+requires = ["113.12"]
+reqs = ["113"]
+do_1 = "tools/bringup/edge.sh renders the nginx set from the edge manifest on three full-node hosts in different DCs with one DNS-01 wildcard cert, edge-sync.sh keeps cert and sites in step on renewal, three A records on the wildcard; paxportwallet.com proxies to the router /wallet."
+do_2 = "tools/bringup/search-front.sh render pins api15 with api1 as backup and paxeer-search-front deploys; a 402 offer round trip through the router completes against a funded key."
+touches = []
+verify_cmd = "sh -c 'tools/bringup/edge.test.sh && tools/bringup/tests/search-front.test.sh'"
+executor = "codex"
+owner_inputs = "registrar API key for DNS-01; the two edge hosts beside the existing one"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.15]
+title = "T15: wallet gateway, attestors and PWA live; legacy import rehearsal, cutover and retirements"
+status = "pending"
+mode = "QUALIFY"
+wave = 9
+requires = ["113.12"]
+reqs = ["113"]
+do_1 = "human/wallet gateway, the four attestors from human/wallet/deploy and the PWA deploy behind the router /wallet with RP_ID following the browser origin; the embedded-wallet ceremony completes for a fresh account."
+do_2 = "human/wallet/ceremony/legacy-import rehearses against a copy of the legacy database, then runs with --apply against POST /v1/admin/legacy-import for the 149 wallets; each imported wallet signs once; then 147.93..., 217.76... and the vhosts and postgres on the third host are retired in that order after the backup from tools/ops/backup is verified."
+touches = []
+verify_cmd = "pnpm --dir human/wallet/gateway test"
+executor = "codex"
+owner_inputs = "legacy DB credentials; rehearsal window; attestor secrets into Fly; Supabase issuer confirmation"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.16]
+title = "T16: developer surface open: signup, packages, search and xweb round trips"
+status = "pending"
+mode = "QUALIFY"
+wave = 9
+requires = ["113.12", "113.14"]
+reqs = ["113"]
+do_1 = "Open signup through the identity app creates a developer, mails the verification, credits 10 PAX; paxeer-xdk-publish.yml has published npm, PyPI and crates at the release tag and a clean box installs each."
+do_2 = "The 402 search round trip and the K5 xweb round trip (observation submitted by the relay, fee of 0.001 USD-equivalent charged) complete from the published SDK."
+touches = []
+verify_cmd = "tools/bringup/check-live.sh hpx"
+executor = "codex"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.17]
+title = "T17: monitoring and backups on the spare box, validator hardening and keyring migration"
+status = "pending"
+mode = "QUALIFY"
+wave = 9
+requires = ["113.8"]
+reqs = ["113"]
+do_1 = "tools/ops/monitoring/install.sh on the spare box with hosts.env filled from the fleet records; alerts route to the owner's destination; tools/ops/backup timer runs nightly with the age recipient and the restore drill passes once."
+do_2 = "tools/bringup/validator-firewall.sh adopted on both validator hosts after the api1 port ruling; tools/ops/keyring-migrate.sh moves the operator keys to the file backend with the backup verified present."
+touches = []
+verify_cmd = "sh -c 'tools/ops/monitoring/test.sh && tools/ops/backup/test.sh && tools/bringup/tests/validator-firewall.test.sh'"
+executor = "codex"
+owner_inputs = "alert destination; age recipient; keyring passphrase; api1 port ruling"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.113.18]
+title = "T18: release certification on the merged revision and the beta contract sign-off"
+status = "pending"
+mode = "RELEASE"
+wave = 10
+requires = ["113.10", "113.13", "113.15", "113.16", "113.17"]
+reqs = ["113"]
+do_1 = "The aggregate suites run once on the merged revision (the same list as 113.5) plus tools/bringup/check-live.sh for every role, tools/paxeer-x/runtime-inventory.sh and the route catalogue; results fill the beta ledger."
+do_2 = "spec/paxeer-x/beta.md is signed off against the live stack: name Paxeer X Network, chain 125, router URL, v6.11.0, the beta config of decisions 6 and 21 recorded; honest partials listed, none hidden."
+touches = ["spec/paxeer-x/beta.md"]
+verify_cmd = "tools/bringup/check-live.sh hosts"
+executor = "claude"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
