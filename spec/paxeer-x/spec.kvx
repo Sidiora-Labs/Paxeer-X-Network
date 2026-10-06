@@ -37918,7 +37918,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.16]
 title = "P4: Open developer signup with abuse controls and the 10 PAX starter credit"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
