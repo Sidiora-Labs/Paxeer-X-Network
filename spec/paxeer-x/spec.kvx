@@ -38327,7 +38327,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.38]
 title = "G1: Go module path to the Paxeer X Network repository"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["109.1", "109.5", "109.6", "109.29"]
