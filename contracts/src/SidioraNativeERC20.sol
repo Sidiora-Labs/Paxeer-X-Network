@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {BANK_CONTRACT} from "./precompiles/IBank.sol";
 
 /// @dev Proxy state lives only in the ERC-7201 namespace paxeer.storage.SidioraNativeERC20.
@@ -10,10 +11,27 @@ import {BANK_CONTRACT} from "./precompiles/IBank.sol";
 /// including balances and allowances, remain untouched; allowances here start empty.
 /// The upgrade must initialize atomically and confirm this namespace is unused in
 /// the deployed implementation's layout, which is not supplied with this contract.
-contract SidioraNativeERC20 is ERC20 {
+/// The deployed proxy is UUPS over OpenZeppelin v5 upgradeable storage; its owner stays in
+/// the ERC-7201 slot openzeppelin.storage.Ownable and is the only account that can upgrade.
+contract SidioraNativeERC20 is ERC20, UUPSUpgradeable {
     error AlreadyInitialized();
     error NotInitialized();
     error BankTransferFailed();
+    error UnauthorizedUpgrade(address caller);
+    error NothingToMigrate(address holder);
+    error MigrationNotRecorded();
+
+    event LegacyMigrated(address indexed holder, uint256 amount, bool minted);
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.Ownable")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant OWNABLE_STORAGE = 0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300;
+    /// @dev keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC20")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant LEGACY_ERC20_STORAGE = 0x52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00;
+    /// @dev keccak256(abi.encode(uint256(keccak256("paxeer.storage.SidioraLegacyMigration")) - 1)) & ~bytes32(uint256(0xff));
+    /// offset 0 holds the v6.11 migration height, offset 1 the unminted shortfall. Written by the chain only.
+    bytes32 private constant LEGACY_MIGRATION_STORAGE = keccak256(
+        abi.encode(uint256(keccak256("paxeer.storage.SidioraLegacyMigration")) - 1)
+    ) & ~bytes32(uint256(0xff));
 
     struct NativeStorage {
         bool initialized;
@@ -36,6 +54,38 @@ contract SidioraNativeERC20 is ERC20 {
         state.name = "Sidiora";
         state.symbol = "SID";
         state.decimals = 6;
+    }
+
+    function owner() public view returns (address account) {
+        bytes32 slot = OWNABLE_STORAGE;
+        assembly {
+            account := sload(slot)
+        }
+    }
+
+    function _authorizeUpgrade(address) internal view override {
+        if (msg.sender != owner()) revert UnauthorizedUpgrade(msg.sender);
+    }
+
+    /// @notice Clears a legacy ERC-20 balance slot the v6.11 upgrade left behind. usid is minted only by
+    /// chain modules; minted reports whether the holder's bank balance already covers the legacy amount.
+    function migrateLegacy(address holder) external {
+        bytes32 heightSlot = LEGACY_MIGRATION_STORAGE;
+        uint256 height;
+        assembly {
+            height := sload(heightSlot)
+        }
+        if (height == 0) revert MigrationNotRecorded();
+        bytes32 slot = keccak256(abi.encode(holder, LEGACY_ERC20_STORAGE));
+        uint256 amount;
+        assembly {
+            amount := sload(slot)
+        }
+        if (amount == 0) revert NothingToMigrate(holder);
+        assembly {
+            sstore(slot, 0)
+        }
+        emit LegacyMigrated(holder, amount, balanceOf(holder) >= amount);
     }
 
     function denom() public view returns (string memory) {
