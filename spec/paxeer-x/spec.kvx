@@ -37860,7 +37860,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.13]
 title = "P1: Router and kernel deploy configuration"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 1
 requires = []
