@@ -37697,7 +37697,7 @@ do_1 = "Replace the eth_getCode probe for the exchange precompiles 0x1015/0x1016
 do_2 = "Default chain RPC path when only the router root is configured becomes <root>/rpc."
 do_3 = "Unit tests in the same file: mocked eth_call answer marks present, error marks absent, default path appends /rpc exactly once."
 touches = ["platform/hosted/gateway/src/capabilities.rs"]
-verify_cmd = "cargo test -p layerx-gateway capabilities"
+verify_cmd = "cd platform && cargo test -p layerx-platform-gateway --bin layerx-gateway capabilities::tests"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37746,7 +37746,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.7]
 title = "C7: Published chain facts: HPX chain-info, public RPC page, name allowlist"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
