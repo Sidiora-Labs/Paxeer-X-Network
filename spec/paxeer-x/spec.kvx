@@ -37992,7 +37992,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.20]
 title = "H2: Human crates hygiene: client schema test, RP_ID and origins from env"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 1
 requires = []
