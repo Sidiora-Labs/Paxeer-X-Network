@@ -68,6 +68,8 @@ pub struct Config {
     pub paxeer: Option<PaxeerSource>,
     pub pointers: Vec<AssetRow>,
     pub poll: Duration,
+    /// The explorer API base for Paxeer history below the node walk.
+    pub explorer: Option<Endpoint>,
 }
 
 /// The backfill mode's settings: `backfill --cutover-height N
@@ -326,6 +328,16 @@ impl Config {
                 })
             })
             .transpose()?;
+        let explorer = endpoint(
+            "LAYERX_INDEXER_EXPLORER_URL",
+            "LAYERX_INDEXER_EXPLORER_CA_DER",
+        )?;
+        if explorer.is_some() && paxeer.is_none() {
+            return Err(IndexError::Config(
+                "LAYERX_INDEXER_EXPLORER_URL needs LAYERX_INDEXER_EVM_URL for its start block"
+                    .to_owned(),
+            ));
+        }
         if layerx.is_none() && paxeer.is_none() {
             return Err(IndexError::Config(
                 "set LAYERX_INDEXER_RELAY_URL, LAYERX_INDEXER_EVM_URL or both".to_owned(),
@@ -342,6 +354,7 @@ impl Config {
             poll: Duration::from_millis(
                 number(lookup, "LAYERX_INDEXER_POLL_MS", DEFAULT_POLL_MS)?.max(1),
             ),
+            explorer,
         })
     }
 }

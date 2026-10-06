@@ -7,6 +7,7 @@ use layerx_indexer::abi::AbiRegistry;
 use layerx_indexer::api;
 use layerx_indexer::backfill::Backfill;
 use layerx_indexer::config::{BackfillConfig, Config};
+use layerx_indexer::explorer::ExplorerApi;
 use layerx_indexer::follow::StepOutcome;
 use layerx_indexer::layerx::LayerXIngester;
 use layerx_indexer::paxeer::PaxeerIngester;
@@ -23,19 +24,25 @@ where
         let recorded = match &outcome {
             Ok(_) => store.cursor(name).and_then(|cursor| {
                 let position = cursor.map(|cursor| cursor.position);
-                let head = store.source_observation(name)?
-                    .ok_or_else(|| IndexError::Store("source step did not observe a head".to_owned()))?
+                let head = store
+                    .source_observation(name)?
+                    .ok_or_else(|| {
+                        IndexError::Store("source step did not observe a head".to_owned())
+                    })?
                     .source_head;
                 store.record_source_success(name, head, position)
             }),
-            Err(error) => store.record_source_failure(name, match error {
-                IndexError::Source(_) => "source_unavailable",
-                IndexError::Decode(_) => "source_decode_failed",
-                IndexError::Store(_) => "store_unavailable",
-                IndexError::Config(_) => "source_configuration_invalid",
-                IndexError::Integrity(_) => "source_integrity_failed",
-                IndexError::ReorgBeyondFinality { .. } => "reorg_beyond_finality",
-            }),
+            Err(error) => store.record_source_failure(
+                name,
+                match error {
+                    IndexError::Source(_) => "source_unavailable",
+                    IndexError::Decode(_) => "source_decode_failed",
+                    IndexError::Store(_) => "store_unavailable",
+                    IndexError::Config(_) => "source_configuration_invalid",
+                    IndexError::Integrity(_) => "source_integrity_failed",
+                    IndexError::ReorgBeyondFinality { .. } => "reorg_beyond_finality",
+                },
+            ),
         };
         if let Err(error) = recorded {
             eprintln!("layerx-indexer {name} observation not recorded: {error}");
@@ -118,18 +125,29 @@ fn run() -> Result<(), IndexError> {
     };
     let listener = api::bind(config.listen, config.tls)?;
     let stall_after_secs = match std::env::var("LAYERX_INDEXER_STALL_SECS") {
-        Ok(text) => text.parse::<u64>().ok().filter(|seconds| *seconds > 0).ok_or_else(|| {
-            IndexError::Config(format!("LAYERX_INDEXER_STALL_SECS {text} is not a number"))
-        })?,
+        Ok(text) => text
+            .parse::<u64>()
+            .ok()
+            .filter(|seconds| *seconds > 0)
+            .ok_or_else(|| {
+                IndexError::Config(format!("LAYERX_INDEXER_STALL_SECS {text} is not a number"))
+            })?,
         Err(_) => 30,
     };
-    let mut readiness = api::Readiness {
-        sources: Vec::new(),
-        stall_after_secs,
-        started_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs()),
-    };
+    let mut readiness =
+        api::Readiness {
+            sources: Vec::new(),
+            stall_after_secs,
+            started_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_secs()),
+            explorer: config.explorer.clone().zip(config.paxeer.as_ref()).map(
+                |(endpoint, source)| ExplorerApi {
+                    endpoint,
+                    floor: source.start_block,
+                },
+            ),
+        };
     if let Some(source) = config.layerx.clone() {
         let ingester = LayerXIngester::new(source.relay, source.policy, source.start_batch);
         readiness.sources.push("layerx");

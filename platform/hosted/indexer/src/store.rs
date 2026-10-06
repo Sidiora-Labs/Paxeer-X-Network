@@ -90,6 +90,24 @@ CREATE TABLE IF NOT EXISTS events(
 );
 CREATE INDEX IF NOT EXISTS events_account ON events(account, id);
 CREATE INDEX IF NOT EXISTS events_chain_position ON events(chain, height_or_seq);
+CREATE TABLE IF NOT EXISTS explorer_transfers(
+    account TEXT NOT NULL,
+    key INTEGER NOT NULL,
+    height_or_seq INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    counterparty TEXT,
+    asset TEXT NOT NULL,
+    amount TEXT NOT NULL,
+    tx_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    decoded_json TEXT NOT NULL,
+    PRIMARY KEY(account, key)
+);
+CREATE TABLE IF NOT EXISTS explorer_accounts(
+    account TEXT PRIMARY KEY,
+    imported_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS cursors(
     chain TEXT PRIMARY KEY,
     position INTEGER NOT NULL,
@@ -140,6 +158,12 @@ CREATE TABLE IF NOT EXISTS chain_links(
 /// Evidence source of the published local stability level: the configured
 /// reorg depth below the indexed head. It never implies LayerX settlement.
 pub const STABILITY_SOURCE: &str = "local_finality_depth";
+/// Cursors at or above this value continue inside the explorer-imported rows.
+pub const EXPLORER_CURSOR: u64 = 1 << 62;
+/// Explorer row keys are strictly below this value.
+pub const EXPLORER_KEY_LIMIT: u64 = (1 << 62) - 1;
+/// The provenance of explorer-imported rows.
+pub const EXPLORER_SOURCE: &str = "explorer_api";
 /// Settlement level published when no receipt-bound checkpoint or anchor
 /// evidence has been verified for a row.
 pub const SETTLEMENT_UNVERIFIED: &str = "unverified";
@@ -1170,6 +1194,153 @@ impl Store {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self::page(rows, limit))
+    }
+
+    /// Whether the explorer history of `account` has been imported in full.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn explorer_imported(&self, account: &str) -> Result<bool, IndexError> {
+        let connection = self.lock()?;
+        Ok(connection
+            .query_row(
+                "SELECT 1 FROM explorer_accounts WHERE account = ?1",
+                params![account],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Persists the explorer rows of `account` (idempotently) and, when
+    /// `complete`, records that its explorer history is imported in full.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure or an out-of-range key.
+    pub fn import_explorer(
+        &self,
+        account: &str,
+        rows: &[(u64, TransferRow)],
+        complete: bool,
+    ) -> Result<(), IndexError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        for (key, row) in rows {
+            if *key >= EXPLORER_KEY_LIMIT {
+                return Err(IndexError::Store(format!(
+                    "explorer key {key} out of range"
+                )));
+            }
+            transaction.execute(
+                "INSERT OR IGNORE INTO explorer_transfers(account, key, height_or_seq, kind, direction,
+                     counterparty, asset, amount, tx_id, ordinal, decoded_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    account,
+                    signed(*key)?,
+                    signed(row.height_or_seq)?,
+                    row.kind,
+                    row.direction,
+                    row.counterparty,
+                    row.asset,
+                    row.amount,
+                    row.tx_id,
+                    signed(row.ordinal)?,
+                    row.decoded.to_string(),
+                ],
+            )?;
+        }
+        if complete {
+            transaction.execute(
+                "INSERT OR REPLACE INTO explorer_accounts(account, imported_at) VALUES (?1, ?2)",
+                params![account, now()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// One page of `account` history: the indexed rows newest first, then
+    /// the explorer-imported rows below the indexed range, newest first.
+    /// A cursor at or above [`EXPLORER_CURSOR`] continues inside the
+    /// explorer rows.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn merged_history(
+        &self,
+        account: &str,
+        cursor: Option<u64>,
+        limit: usize,
+        kind: Option<&str>,
+    ) -> Result<Page, IndexError> {
+        let (mut items, upper) = match cursor {
+            Some(cursor) if cursor >= EXPLORER_CURSOR => (Vec::new(), cursor - EXPLORER_CURSOR),
+            _ => {
+                let page = self.history(account, cursor, limit, kind)?;
+                if page.next_cursor.is_some() {
+                    return Ok(page);
+                }
+                (page.items, EXPLORER_KEY_LIMIT)
+            }
+        };
+        let wanted = limit.saturating_sub(items.len()).saturating_add(1);
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT key, height_or_seq, kind, direction, account, counterparty, asset, amount,
+                tx_id, ordinal, decoded_json
+             FROM explorer_transfers
+             WHERE account = ?1 AND key < ?2 AND (?3 IS NULL OR kind = ?3)
+             ORDER BY key DESC LIMIT ?4",
+        )?;
+        let explorer = statement
+            .query_map(
+                params![account, signed(upper)?, kind, i64::try_from(wanted).unwrap_or(i64::MAX)],
+                |row| {
+                    let key: i64 = row.get(0)?;
+                    let decoded: String = row.get(10)?;
+                    let id = EXPLORER_CURSOR + u64::try_from(key).unwrap_or_default();
+                    Ok((
+                        key,
+                        json!({
+                            "id": id.to_string(),
+                            "height_or_seq": row.get::<_, i64>(1)?.to_string(),
+                            "chain": crate::paxeer::CHAIN,
+                            "kind": row.get::<_, String>(2)?,
+                            "direction": row.get::<_, String>(3)?,
+                            "account": row.get::<_, String>(4)?,
+                            "counterparty": row.get::<_, Option<String>>(5)?,
+                            "asset": row.get::<_, String>(6)?,
+                            "amount": row.get::<_, String>(7)?,
+                            "tx_id": row.get::<_, String>(8)?,
+                            "ordinal": row.get::<_, i64>(9)?.to_string(),
+                            "final": true,
+                            "final_basis": EXPLORER_SOURCE,
+                            "stability": {
+                                "level": "explorer_recorded",
+                                "source": EXPLORER_SOURCE,
+                                "finalized_boundary": Value::Null,
+                            },
+                            "settlement": {"level": SETTLEMENT_UNVERIFIED, "source": Value::Null, "reason": SETTLEMENT_UNAVAILABLE_REASON},
+                            "decoded": parse_json(&decoded),
+                        }),
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        let room = limit.saturating_sub(items.len());
+        let more = explorer.len() > room;
+        let mut next_cursor = None;
+        if more {
+            next_cursor = Some(match explorer[..room].last() {
+                Some((key, _)) => {
+                    (EXPLORER_CURSOR + u64::try_from(*key).unwrap_or_default()).to_string()
+                }
+                None => (EXPLORER_CURSOR + EXPLORER_KEY_LIMIT).to_string(),
+            });
+        }
+        items.extend(explorer.into_iter().take(room).map(|(_, value)| value));
+        Ok(Page { items, next_cursor })
     }
 
     fn finality(connection: &Connection) -> Result<Vec<(String, Option<i64>)>, IndexError> {

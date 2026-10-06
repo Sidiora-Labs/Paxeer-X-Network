@@ -1,0 +1,49 @@
+{
+  "items": [
+    {
+      "block_number": 5200,
+      "from": {"hash": "0x6666666666666666666666666666666666666666", "is_contract": false},
+      "to": {"hash": "0x9f2a6c0e3b1d4e5f60718293a4b5c6d7e8f90a1b", "is_contract": false},
+      "hash": "0xbb00000000000000000000000000000000000000000000000000000000005200",
+      "position": 0,
+      "result": "success",
+      "status": "ok",
+      "timestamp": "2026-09-30T11:00:00.000000Z",
+      "value": "9"
+    },
+    {
+      "block_number": 1250,
+      "from": {"hash": "0x6666666666666666666666666666666666666666", "is_contract": false},
+      "to": {"hash": "0x9F2A6C0E3B1D4E5F60718293A4B5C6D7E8F90A1B", "is_contract": false},
+      "hash": "0xBB00000000000000000000000000000000000000000000000000000000001250",
+      "position": 3,
+      "result": "success",
+      "status": "ok",
+      "timestamp": "2026-03-01T18:00:00.000000Z",
+      "value": "42000000000000000000"
+    },
+    {
+      "block_number": 1240,
+      "from": {"hash": "0x9f2a6c0e3b1d4e5f60718293a4b5c6d7e8f90a1b", "is_contract": false},
+      "to": {"hash": "0x7777777777777777777777777777777777777777", "is_contract": true},
+      "hash": "0xbb00000000000000000000000000000000000000000000000000000000001240",
+      "position": 1,
+      "result": "Reverted",
+      "status": "error",
+      "timestamp": "2026-03-01T17:00:00.000000Z",
+      "value": "100"
+    },
+    {
+      "block_number": 1230,
+      "from": {"hash": "0x9f2a6c0e3b1d4e5f60718293a4b5c6d7e8f90a1b", "is_contract": false},
+      "to": {"hash": "0x7777777777777777777777777777777777777777", "is_contract": true},
+      "hash": "0xbb00000000000000000000000000000000000000000000000000000000001230",
+      "position": 0,
+      "result": "success",
+      "status": "ok",
+      "timestamp": "2026-03-01T16:00:00.000000Z",
+      "value": "0"
+    }
+  ],
+  "next_page_params": null
+}
