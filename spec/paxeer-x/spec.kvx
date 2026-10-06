@@ -38048,7 +38048,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.23]
 title = "H4: Unified history indexer app"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 2
 requires = ["109.13"]
