@@ -6,7 +6,7 @@ concurrency: { group: mirror-verification-live, cancel-in-progress: false }
 
 jobs:
   mirror-only:
-    runs-on: [self-hosted, layerx-testnet]
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 45
     environment: mirror-testnets
     steps:

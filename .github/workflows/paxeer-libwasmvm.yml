@@ -125,7 +125,7 @@ jobs:
 
   verify-docker-runtime-artifacts:
     name: Verify Docker runtime artifacts (${{ matrix.arch }})
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     strategy:
       fail-fast: false
       matrix:
