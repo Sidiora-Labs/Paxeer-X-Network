@@ -13,7 +13,11 @@ name = "layerx-intent-ingester"
 path = "src/main.rs"
 
 [dependencies]
+ed25519-dalek.workspace = true
+layerx-crypto.workspace = true
 layerx-intents.workspace = true
+layerx-types.workspace = true
+layerx-wire.workspace = true
 serde_json.workspace = true
 
 [lints]
