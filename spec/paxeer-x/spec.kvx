@@ -38384,7 +38384,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.41]
 title = "R3: human reconciliation after wave 1"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 2
 requires = ["109.19", "109.20"]
@@ -38459,8 +38459,9 @@ do_2 = "bridge/deploy/relayer-solana.example.json and tests/operator_config.rs:8
 do_3 = "docker/intent-ingester/Dockerfile exists and matches interop/deploy/intent-ingester/fly.toml; the ingester's gateway API-key header is read from the gateway auth code, not assumed (109.21)."
 do_4 = "tools/release/build-paxd.sh stages the libwasmvm shared objects beside paxd in dist/ and SHA256SUMS, and tools/bringup/sync-fleet.sh carries them (109.36); tools/ops/keyring-migrate.sh also checks the xweb attestor sidecars' keyring backend (109.35)."
 do_5 = "The x-websearch /health assertion (tests/binary.rs:429) and the indexer finality_contract env gate are reconciled the way the owner rules; until ruled, both stay as written and the ruling request is repeated in the report."
-touches = ["platform/hosted/gateway/src/main.rs", "agent/crates/layerx-agentd/src/", "bridge/deploy/relayer-solana.example.json", "interop/crates/layerx-bridge-relayer/tests/operator_config.rs", "interop/deploy/bridge-relayer/", "tools/bringup/check-live.sh", "docker/intent-ingester/", "interop/crates/layerx-intent-ingester/src/", "tools/release/build-paxd.sh", "tools/bringup/sync-fleet.sh", "tools/ops/keyring-migrate.sh"]
-verify_cmd = "sh -c 'cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config && cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway submit && tools/bringup/sync-fleet.test.sh'"
+do_6 = "human: the wallet app resolves @noble/ciphers for the agent SDK xweb-api import (human/apps/wallet package.json and tsconfig paths) and human/wallet/sdk/package.json pins @noble/curves 2.x to match the app; then the layerx-human-service tls tests and the gateway admin legacy-import test from 109.41 run."
+touches = ["platform/hosted/gateway/src/main.rs", "agent/crates/layerx-agentd/src/", "human/apps/wallet/package.json", "human/apps/wallet/tsconfig.json", "human/apps/wallet/pnpm-lock.yaml", "human/wallet/sdk/package.json", "human/wallet/pnpm-lock.yaml", "bridge/deploy/relayer-solana.example.json", "interop/crates/layerx-bridge-relayer/tests/operator_config.rs", "interop/deploy/bridge-relayer/", "tools/bringup/check-live.sh", "docker/intent-ingester/", "interop/crates/layerx-intent-ingester/src/", "tools/release/build-paxd.sh", "tools/bringup/sync-fleet.sh", "tools/ops/keyring-migrate.sh"]
+verify_cmd = "sh -c 'cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config && cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway submit && tools/bringup/sync-fleet.test.sh && pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls && pnpm --dir human/wallet/gateway test'"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
