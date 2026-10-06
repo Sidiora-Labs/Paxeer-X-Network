@@ -89,6 +89,48 @@ pub const RELAY_JOURNAL_FILE: &str = "kernel-relay.json";
 /// The version tag every relay journal carries.
 pub const RELAY_JOURNAL_VERSION: &str = "PAXEERX_KERNEL_RELAY_V1";
 
+/// The longest wait between two tries of one request.
+pub const MAX_RETRY_BACKOFF_MS: u64 = 300_000;
+
+/// The wait before try `attempts + 1` of one request: `base_ms` doubled per
+/// failed try, never more than `max_ms`.
+#[must_use]
+pub fn retry_delay_ms(base_ms: u64, max_ms: u64, attempts: u32) -> u64 {
+    base_ms
+        .saturating_mul(1_u64 << attempts.min(32))
+        .min(max_ms)
+}
+
+/// How far the relay is behind: the journalled requests not yet finished,
+/// how long the oldest of them has waited, how many wait out a retry
+/// backoff and the next event sequence the watcher reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RelayLag {
+    pub pending: usize,
+    pub oldest_pending_ms: u64,
+    pub retrying: usize,
+    pub next_sequence: u64,
+}
+
+impl RelayLag {
+    /// The lag as the readiness answer reports it.
+    #[must_use]
+    pub fn value(&self) -> Value {
+        json!({
+            "pending": self.pending,
+            "oldest_pending_ms": self.oldest_pending_ms,
+            "retrying": self.retrying,
+            "next_sequence": self.next_sequence,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Retry {
+    attempts: u32,
+    next_ms: u64,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KernelError {
     Authorization,
@@ -1548,6 +1590,10 @@ pub struct KernelRelay {
     entries: Vec<RelayEntry>,
     journal: Option<PathBuf>,
     _journal_lock: Option<std::fs::File>,
+    backoff_base_ms: u64,
+    backoff_max_ms: u64,
+    retries: BTreeMap<ProgramKey, Retry>,
+    first_seen: BTreeMap<ProgramKey, u64>,
 }
 
 impl KernelRelay {
@@ -1571,6 +1617,44 @@ impl KernelRelay {
             entries: Vec::new(),
             journal: None,
             _journal_lock: None,
+            backoff_base_ms: 1_000,
+            backoff_max_ms: MAX_RETRY_BACKOFF_MS,
+            retries: BTreeMap::new(),
+            first_seen: BTreeMap::new(),
+        }
+    }
+
+    /// Waits [`retry_delay_ms`] of `base_ms` and `max_ms` before the next
+    /// try of a request whose last try failed.
+    #[must_use]
+    pub fn with_backoff(mut self, base_ms: u64, max_ms: u64) -> Self {
+        self.backoff_base_ms = base_ms.max(1);
+        self.backoff_max_ms = max_ms.max(self.backoff_base_ms);
+        self
+    }
+
+    /// How far the relay is behind at `now_ms`.
+    #[must_use]
+    pub fn lag(&self, now_ms: u64) -> RelayLag {
+        let pending: Vec<ProgramKey> = self
+            .entries
+            .iter()
+            .filter(|entry| !entry.stage.terminal())
+            .map(RelayEntry::key)
+            .collect();
+        RelayLag {
+            pending: pending.len(),
+            oldest_pending_ms: pending
+                .iter()
+                .filter_map(|key| self.first_seen.get(key))
+                .map(|seen| now_ms.saturating_sub(*seen))
+                .max()
+                .unwrap_or(0),
+            retrying: pending
+                .iter()
+                .filter(|key| self.retries.get(key).is_some_and(|retry| retry.next_ms > now_ms))
+                .count(),
+            next_sequence: self.watcher.next_sequence(),
         }
     }
 
@@ -1746,10 +1830,38 @@ impl KernelRelay {
         }
         let mut steps = Vec::new();
         for index in 0..self.entries.len() {
-            if !self.entries[index].stage.terminal() {
-                if let Some(step) = self.advance(index, next, now_ms)? {
-                    steps.push(step);
-                }
+            let key = self.entries[index].key();
+            if self.entries[index].stage.terminal() {
+                self.first_seen.remove(&key);
+                self.retries.remove(&key);
+                continue;
+            }
+            self.first_seen.entry(key).or_insert(now_ms);
+            if self.retries.get(&key).is_some_and(|retry| retry.next_ms > now_ms) {
+                continue;
+            }
+            let step = self.advance(index, next, now_ms)?;
+            let entry = &self.entries[index];
+            let failed = matches!(step, Some(Step::Unknown { .. }))
+                || (entry.stage == Stage::AwaitingQuorum && entry.last_error.is_some());
+            if failed {
+                let attempts = self.retries.get(&key).map_or(0, |retry| retry.attempts);
+                self.retries.insert(key, Retry {
+                    attempts: attempts.saturating_add(1),
+                    next_ms: now_ms.saturating_add(retry_delay_ms(
+                        self.backoff_base_ms,
+                        self.backoff_max_ms,
+                        attempts,
+                    )),
+                });
+            } else {
+                self.retries.remove(&key);
+            }
+            if entry.stage.terminal() {
+                self.first_seen.remove(&key);
+            }
+            if let Some(step) = step {
+                steps.push(step);
             }
         }
         self.store(next)?;
@@ -1807,10 +1919,15 @@ impl KernelRelay {
                 entry.reason = Some("observation_encode".to_owned());
                 return Ok(None);
             };
-            let Ok(signed) = self.submitter.sign(&observation, now_ms) else {
-                return Ok(None);
+            let signed = match self.submitter.sign(&observation, now_ms) {
+                Ok(signed) => signed,
+                Err(error) => {
+                    self.entries[index].last_error = Some(error.to_string());
+                    return Ok(None);
+                }
             };
             let entry = &mut self.entries[index];
+            entry.last_error = None;
             entry.observation = Some(observation);
             entry.signed = Some(signed.clone());
             entry.stage = Stage::Submitting;
@@ -1829,6 +1946,18 @@ impl KernelRelay {
         if now_ms <= signed.not_after {
             let answer = self.submitter.send(&signed.activity);
             return Ok(Some(self.settle(index, self.submitter.outcome(answer, &signed.activity_id), false)));
+        }
+        if expired_unadmitted(&signed, now_ms, self.submitter.consumed(signed.account_sequence)) {
+            let observation = self.entries[index].observation.clone().ok_or(KernelError::Journal)?;
+            if let Ok(fresh) = self.submitter.sign(&observation, now_ms) {
+                let entry = &mut self.entries[index];
+                entry.signed = Some(fresh.clone());
+                entry.stage = Stage::Submitting;
+                self.store(next)?;
+                let answer = self.submitter.send(&fresh.activity);
+                let posted = matches!(&answer, Some(RpcAnswer::Result(_)));
+                return Ok(Some(self.settle(index, self.submitter.outcome(answer, &fresh.activity_id), posted)));
+            }
         }
         Ok(Some(self.settle(index, Outcome::Open, false)))
     }
@@ -1883,6 +2012,14 @@ impl KernelRelay {
     }
 }
 
+/// Whether a sent activity can no longer be admitted and was not: a full
+/// validity window past its expiry and its account sequence still unused,
+/// so signing the observation again at the next sequence never posts it
+/// twice. An unreadable sequence answer keeps the activity as it is.
+fn expired_unadmitted(signed: &Signed, now_ms: u64, consumed: Result<bool, KernelError>) -> bool {
+    now_ms > signed.not_after.saturating_add(ACTIVITY_VALIDITY_MS) && consumed == Ok(false)
+}
+
 fn parse_journal(bytes: &[u8]) -> Option<(u64, Vec<RelayEntry>)> {
     let value: Value = serde_json::from_slice(bytes).ok()?;
     let object = value.as_object()?;
@@ -1907,4 +2044,186 @@ fn parse_journal(bytes: &[u8]) -> Option<(u64, Vec<RelayEntry>)> {
         .all(|(index, entry)| entries[..index].iter().all(|other| other.key() != entry.key()));
     let behind = entries.iter().all(|entry| entry.request.sequence < next);
     (ordered && distinct && behind).then_some((next, entries))
+}
+
+#[cfg(test)]
+mod relay {
+    use super::*;
+
+    type Checked<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+    const NETWORK: u32 = 9;
+    const DID: &str = "did:key:web-attestor-one";
+    const VECTOR: &str = include_str!("../../../../tests/fixtures/web/observation-activity.hex");
+    const CONTENT_DIGEST: &str = "2d823e82313101707a7081be2efb28edce966e3e6d1eaec9f7c1e48088f90781";
+
+    fn request() -> ProgramRequest {
+        ProgramRequest {
+            program_id: std::array::from_fn(|i| 0xa0_u8.wrapping_add(u8::try_from(i).unwrap_or(0))),
+            request_id: 0x0102_0304_0506_0708,
+            kind: 1,
+            payload: b"https://paxeer.app/".to_vec(),
+            sequence: 0,
+        }
+    }
+
+    fn ready(request: &ProgramRequest) -> Checked<Ready> {
+        let response = b"Paxeer X Network".to_vec();
+        let content_digest: [u8; 32] =
+            unhex(CONTENT_DIGEST).ok_or("digest")?.try_into().map_err(|_| "digest")?;
+        let digest = request.attestation(NETWORK, content_digest, &response, 16).digest();
+        let mut keys = (1..=3_u8)
+            .map(|index| {
+                let mut secret = [0_u8; 32];
+                secret[31] = index;
+                SigningKey::from_slice(&secret)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        keys.sort_by_key(signer_address);
+        let mut signatures = Vec::new();
+        let mut signers = Vec::new();
+        for key in &keys {
+            let signature = sign_digest(key, &digest)?;
+            signers.push(recover_signer(&digest, &signature)?);
+            signatures.push(signature);
+        }
+        Ok(Ready {
+            request_id: request.request_id,
+            response,
+            content_digest,
+            full_length: 16,
+            callback_gas: 0,
+            digest,
+            signers,
+            signatures,
+        })
+    }
+
+    fn submitter() -> SubmitterKey {
+        let mut seed = [0_u8; 32];
+        seed[0] = 21;
+        SubmitterKey::from_bytes(&seed)
+    }
+
+    fn scratch(name: &str) -> Checked<PathBuf> {
+        let path = std::env::temp_dir().join(format!("x-websearch-relay-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path)?;
+        Ok(path)
+    }
+
+    #[test]
+    fn relay_activity_matches_the_kernel_web_module_vector() -> Checked {
+        let request = request();
+        let observation = observation_bytes(NETWORK, &request, &ready(&request)?)?;
+        let options = ActivityOptions {
+            network_id: NETWORK,
+            actor_did: DID,
+            account_sequence: 7,
+            fee_limit: 100,
+            not_before: 1_000,
+            not_after: 61_000,
+        };
+        let activity = encode_activity(&observation, &submitter(), &options)?;
+        assert_eq!(hex(&activity), VECTOR.trim());
+        let activity_id = domain_hash(Domain::ActivityId, &activity);
+        let other = encode_activity(&observation, &submitter(), &ActivityOptions { account_sequence: 8, ..options })?;
+        assert_ne!(domain_hash(Domain::ActivityId, &other), activity_id);
+        Ok(())
+    }
+
+    #[test]
+    fn relay_cursor_and_journal_survive_a_restart() -> Checked {
+        let dir = scratch("cursor")?;
+        let mut watcher = KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0)?;
+        watcher.resume_at(42)?;
+        assert_eq!(KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0)?.next_sequence(), 42);
+        std::fs::write(dir.join(CURSOR_FILE), "not a sequence")?;
+        assert!(KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0).is_err());
+
+        let request = ProgramRequest { sequence: 41, ..request() };
+        let observation = observation_bytes(NETWORK, &request, &ready(&request)?)?;
+        let activity = encode_activity(&observation, &submitter(), &ActivityOptions {
+            network_id: NETWORK,
+            actor_did: DID,
+            account_sequence: 7,
+            fee_limit: 100,
+            not_before: 1_000,
+            not_after: 61_000,
+        })?;
+        let entry = RelayEntry {
+            request,
+            topic: REQUEST_TOPIC.to_vec(),
+            stage: Stage::Unknown,
+            observation: Some(observation),
+            attestation: Some(json!({"held": true})),
+            signed: Some(Signed {
+                activity_id: domain_hash(Domain::ActivityId, &activity),
+                activity,
+                account_sequence: 7,
+                not_after: 61_000,
+            }),
+            reason: None,
+            last_error: Some("gateway unavailable".to_owned()),
+            result: None,
+        };
+        let journal = |next: u64| {
+            json!({"version": RELAY_JOURNAL_VERSION, "next_sequence": next, "entries": [entry.value()]})
+                .to_string()
+        };
+        let (next, entries) = parse_journal(journal(42).as_bytes()).ok_or("journal refused")?;
+        assert_eq!((next, entries), (42, vec![entry.clone()]));
+        assert!(parse_journal(journal(41).as_bytes()).is_none());
+        let mut forged = entry.value();
+        forged["activity_id"] = json!(hex0x(&[7; 32]));
+        let forged = json!({"version": RELAY_JOURNAL_VERSION, "next_sequence": 42, "entries": [forged]});
+        assert!(parse_journal(forged.to_string().as_bytes()).is_none());
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn relay_retry_classification_and_backoff() {
+        for transient in [
+            FetchError::Resolve,
+            FetchError::RobotsUnavailable,
+            FetchError::Connect,
+            FetchError::ConnectTimeout,
+            FetchError::Timeout,
+            FetchError::Tls,
+            FetchError::Transport,
+            FetchError::Status(429),
+            FetchError::Status(503),
+        ] {
+            let name = format!("{transient:?}");
+            assert!(retryable(&AttestError::Fetch(transient)), "{name}");
+        }
+        for fixed in [
+            FetchError::InvalidUrl,
+            FetchError::ForbiddenDestination,
+            FetchError::RobotsDisallowed,
+            FetchError::Status(404),
+            FetchError::BodyTooLarge,
+        ] {
+            let name = format!("{fixed:?}");
+            assert!(!retryable(&AttestError::Fetch(fixed)), "{name}");
+        }
+        assert!(retryable(&AttestError::Search));
+        assert!(retryable(&AttestError::Store));
+        assert!(!retryable(&AttestError::UnknownKind(9)));
+        assert!(!retryable(&AttestError::Payload));
+        assert!(!retryable(&AttestError::TooLong));
+
+        assert_eq!(retry_delay_ms(1_000, 300_000, 0), 1_000);
+        assert_eq!(retry_delay_ms(1_000, 300_000, 3), 8_000);
+        assert_eq!(retry_delay_ms(1_000, 300_000, 9), 300_000);
+        assert_eq!(retry_delay_ms(1_000, 300_000, u32::MAX), 300_000);
+
+        let signed = Signed { activity: Vec::new(), activity_id: [0; 32], account_sequence: 7, not_after: 61_000 };
+        let late = 61_000 + ACTIVITY_VALIDITY_MS + 1;
+        assert!(expired_unadmitted(&signed, late, Ok(false)));
+        assert!(!expired_unadmitted(&signed, late, Ok(true)));
+        assert!(!expired_unadmitted(&signed, late, Err(KernelError::Unavailable)));
+        assert!(!expired_unadmitted(&signed, 61_000 + ACTIVITY_VALIDITY_MS, Ok(false)));
+    }
 }

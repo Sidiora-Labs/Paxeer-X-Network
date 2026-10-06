@@ -50,6 +50,7 @@ struct RoleReadiness {
 struct Readiness {
     roles: Mutex<BTreeMap<&'static str, RoleReadiness>>,
     network_id: u32,
+    relay_lag: Mutex<Option<serde_json::Value>>,
 }
 
 impl Readiness {
@@ -115,6 +116,7 @@ impl Readiness {
         Self {
             roles: Mutex::new(roles),
             network_id: config.kernel_network_id,
+            relay_lag: Mutex::new(None),
         }
     }
 
@@ -181,10 +183,11 @@ impl Readiness {
         }
         let ready =
             !roles.is_empty() && roles.iter().all(|row| row.state == DependencyState::Ready);
-        (
-            ready,
-            serde_json::json!({"version":1,"ready":ready,"roles":roles,"checked_at_unix_ms":now,"network_id":self.network_id,"protocol_version":x_websearch::payment::PROTOCOL_VERSION}),
-        )
+        let mut answer = serde_json::json!({"version":1,"ready":ready,"roles":roles,"checked_at_unix_ms":now,"network_id":self.network_id,"protocol_version":x_websearch::payment::PROTOCOL_VERSION});
+        if let Some(lag) = self.relay_lag.lock().ok().and_then(|lag| lag.clone()) {
+            answer["relay_lag"] = lag;
+        }
+        (ready, answer)
     }
 }
 
@@ -621,7 +624,8 @@ fn relay(
         submitter,
         &config.data_dir.join("kernel"),
     )
-    .map_err(|error| format!("kernel journal: {error}"))?;
+    .map_err(|error| format!("kernel journal: {error}"))?
+    .with_backoff(settings.poll_interval_ms, kernel::MAX_RETRY_BACKOFF_MS);
     Ok(Some(RelayLoop {
         relay,
         rpc,
@@ -1155,6 +1159,9 @@ fn start_relay(
                 let started = Instant::now();
                 let usable = relay_round(&mut relay);
                 readiness.update("kernel_relay", "relay_progress", usable);
+                if let Ok(mut lag) = readiness.relay_lag.lock() {
+                    *lag = Some(relay.relay.lag(now_ms()).value());
+                }
                 if stop.wait_timeout(relay.interval.saturating_sub(started.elapsed())) {
                     break;
                 }
