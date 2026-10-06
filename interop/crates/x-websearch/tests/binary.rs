@@ -426,7 +426,7 @@ impl Sidecar {
         let deadline = Instant::now() + WAIT;
         loop {
             if let Ok((200, _, body)) = sidecar.get("/health", "") {
-                assert_eq!(body, br#"{"status":"ok"}"#);
+                assert_eq!(serde_json::from_slice::<Value>(&body)?["status"], "ok");
                 return Ok(sidecar);
             }
             if let Some(status) = sidecar.child.try_wait()? {
