@@ -1612,15 +1612,27 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_internal_router_unreadab
 	"check-live: 3 check(s) failed"
 unset CHECK_LIVE_ROUTER_CONNECT
 
-# The bridge cases read the relayer app's fixture machine: the fixture tree
+# The bridge cases read the five relayer apps' fixture machines: the fixture tree
 # carries two chains and a checklist stand-in that passes a record holding
 # "match" and otherwise fails naming an RPC URL, as the checklist's errors
 # can; copies of sleep named layerx-bridge-relayer and layerx-mirror-signer
-# stand in for the two running processes, and the volume holds the journal.
-bridge="$(fx_app interop/deploy/bridge-relayer/fly.toml)"
+# stand in for the two running processes on each of the five relayer apps,
+# and each relayer's volume holds its own journal.
+bridges=()
 mkdir -p "$fx/interop/deploy/bridge-relayer" "$fx/bridge/deploy" "$fx/bridge/evm/chains/base" "$fx/bridge/solana/chains/solana" \
-	"$work/bridge/records" "$work/bridge/bin" "$work/fly/$bridge/app/data/relayer"
-printf 'app = "%s"\n' "$bridge" >"$fx/interop/deploy/bridge-relayer/fly.toml"
+	"$work/bridge/records" "$work/bridge/bin"
+for n in 1 2 3 4 5; do
+	bridges+=("$(fx_app "interop/deploy/bridge-relayer/relayer-$n.toml")")
+	mkdir -p "$work/fly/${bridges[-1]}/app/data/relayer"
+	printf 'app = "%s"\n' "${bridges[-1]}" >"$fx/interop/deploy/bridge-relayer/relayer-$n.toml"
+done
+bridge="${bridges[0]}"
+bridge_none=()
+bridge_running=()
+for b in "${bridges[@]}"; do
+	bridge_none+=("fail processes app=$b relayer=none signer=none")
+	bridge_running+=("pass processes app=$b relayer=running signer=running")
+done
 cat >"$fx/bridge/deploy/checklist.sh" <<'SH'
 #!/usr/bin/env bash
 set -eu
@@ -1643,9 +1655,9 @@ expect check_live_bridge_records_unset "$work/hosts-good.env" 2 bridge -- \
 PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_nothing_running "$work/hosts-good.env" 1 bridge -- \
 	"pass checklist chain=base exit=0" \
 	"fail checklist chain=solana record=absent" \
-	"fail processes app=$bridge relayer=none signer=none" \
-	"fail bridge-in app=$bridge journal=absent" \
-	"check-live: 3 check(s) failed"
+	"${bridge_none[@]}" \
+	"fail bridge-in relayers=5 journal=absent" \
+	"check-live: 7 check(s) failed"
 
 "$work/bridge/bin/layerx-bridge-relayer" 600 &
 bridge_pids="$!"
@@ -1659,8 +1671,8 @@ printf '%s\n' \
 PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_not_bridged "$work/hosts-good.env" 1 bridge -- \
 	"pass checklist chain=base exit=0" \
 	"fail checklist chain=solana exit=1 checklist: error: solana vault owner read through <url> differs" \
-	"pass processes app=$bridge relayer=running signer=running" \
-	"fail bridge-in app=$bridge journal=present included=none" \
+	"${bridge_running[@]}" \
+	"fail bridge-in relayers=5 journal=present included=none" \
 	"check-live: 2 check(s) failed"
 
 printf '{"chain":"solana","match":true}\n' >"$work/bridge/records/solana.json"
@@ -1669,17 +1681,23 @@ printf '%s\n' \
 	"{\"kind\":\"signed\",\"item\":\"$bridge_item\",\"signature\":\"0x00\"}" \
 	"{\"kind\":\"submitted\",\"item\":\"$bridge_item\",\"submitter\":\"0x00\",\"nonce\":0,\"tx_hash\":\"0x00\",\"raw\":\"0x00\"}" \
 	"{\"kind\":\"completed\",\"item\":\"$bridge_item\",\"completion\":{\"outcome\":\"included\",\"tx_hash\":\"0x00\",\"block_number\":1}}" \
-	>"$work/fly/$bridge/app/data/relayer/journal.jsonl"
+	>"$work/fly/${bridges[2]}/app/data/relayer/journal.jsonl"
 PAXEER_BRIDGE_RECORDS_DIR="$work/bridge/records" CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_bridge_passing "$work/hosts-good.env" 0 bridge -- \
 	"pass checklist chain=base exit=0" \
 	"pass checklist chain=solana exit=0" \
-	"pass processes app=$bridge relayer=running signer=running" \
-	"pass bridge-in app=$bridge item=$bridge_item outcome=included" \
+	"${bridge_running[@]}" \
+	"pass bridge-in app=${bridges[2]} item=$bridge_item outcome=included" \
 	"check-live: all checks passed"
-if [ "$(grep -c "^$bridge [a-z]* ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && grep -qF "$bridge app ssh console sh -c 'journal=/data/relayer/journal.jsonl sh -s'" "$CHECK_LIVE_TEST_CALLS"; then
-	echo "ok   check_live_bridge_reads_the_relayer_machine_journal"
+bridge_calls_ok=1
+for b in "${bridges[@]}"; do
+	if [ "$(grep -c "^$b [a-z]* ssh console " "$CHECK_LIVE_TEST_CALLS")" -ne 1 ] || ! grep -qF "$b app ssh console sh -c 'journal=/data/relayer/journal.jsonl sh -s'" "$CHECK_LIVE_TEST_CALLS"; then
+		bridge_calls_ok=0
+	fi
+done
+if [ "$bridge_calls_ok" -eq 1 ]; then
+	echo "ok   check_live_bridge_reads_every_relayer_machine_journal"
 else
-	echo "FAIL check_live_bridge_reads_the_relayer_machine_journal: want one sh -s call on $bridge naming the volume journal"
+	echo "FAIL check_live_bridge_reads_every_relayer_machine_journal: want one sh -s call on each relayer app naming the volume journal"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi

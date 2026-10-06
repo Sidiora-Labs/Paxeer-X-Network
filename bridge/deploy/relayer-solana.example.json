@@ -118,6 +118,6 @@
       "handle": "EXAMPLE_ONLY/operator-a/solana-fees-ed25519",
       "public_key": "0xd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
     },
-    "release_mints": ["4vJ9JU1bJJE96FWSJKvHsmmFZUGZorZ2Mhd7LKiF3gV"]
+    "release_mints": ["4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"]
   }
 }

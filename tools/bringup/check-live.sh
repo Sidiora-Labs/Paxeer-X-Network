@@ -120,17 +120,19 @@ explorer  reads the deployed explorer at CHECK_LIVE_EXPLORER_ORIGIN, by default
 
 bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chains
           and bridge/solana/chains against PAXEER_BRIDGE_RECORDS_DIR/<chain>.json,
-          then reads a machine of the app of interop/deploy/bridge-relayer/fly.toml
+          then reads a machine of the app of each of
+          interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml
           through flyctl ssh console, one line per check:
   checklist  "pass checklist chain=<chain> exit=0", or "fail checklist
              chain=<chain> record=absent" or "fail checklist chain=<chain>
              exit=<n> <last output line, URLs as <url>>"
-  processes  "pass processes app=<app> relayer=running signer=running" when
-             layerx-bridge-relayer and layerx-mirror-signer both run
+  processes  "pass processes app=<app> relayer=running signer=running", one
+             line per relayer app, when layerx-bridge-relayer and
+             layerx-mirror-signer both run
   bridge-in  "pass bridge-in app=<app> item=in:<chain id>:<tx>:<log>
-             outcome=included" when the journal on the volume records a
-             deposit as observed and as completed by the relayer's own
-             included bridgeIn transaction; "fail bridge-in app=<app>
+             outcome=included" when the journal on the volume of one relayer
+             records a deposit as observed and as completed by that relayer's
+             own included bridgeIn transaction; "fail bridge-in relayers=5
              journal=absent|journal=present included=none" otherwise
           Exits 0 only when every check passes; 2 when
           PAXEER_BRIDGE_RECORDS_DIR is unset. The checklist's own inputs
@@ -2347,15 +2349,16 @@ done'
 # check_bridge: bridge/deploy/checklist.sh exits 0 for every chain under
 # bridge/evm/chains and bridge/solana/chains against the deployment record
 # PAXEER_BRIDGE_RECORDS_DIR/<chain>.json, each run bounded by ten times
-# CHECK_LIVE_TIMEOUT; a machine of the app of
-# interop/deploy/bridge-relayer/fly.toml runs both the relayer and its bridge
-# signer; and the relayer's journal on the volume records one observed deposit
-# completed by its own included bridgeIn transaction. One line per check; a
+# CHECK_LIVE_TIMEOUT; a machine of the app of each of
+# interop/deploy/bridge-relayer/relayer-1.toml through relayer-5.toml runs both
+# the relayer and its bridge signer; and the journal on the volume of one of
+# them records one observed deposit completed by that relayer's own included
+# bridgeIn transaction. One line per check; a
 # failing checklist line carries its last output line with every URL replaced
 # by <url>.
 check_bridge() {
-	local toml=interop/deploy/bridge-relayer/fly.toml journal=/data/relayer/journal.jsonl
-	local app dir chain record out status reply relayer signer item failures=0
+	local journal=/data/relayer/journal.jsonl
+	local n toml app dir chain record out status reply relayer signer item="" item_app="" journals=0 failures=0
 	local -a chains=()
 	if [ -z "${PAXEER_BRIDGE_RECORDS_DIR:-}" ]; then
 		echo "check-live: PAXEER_BRIDGE_RECORDS_DIR is unset" >&2
@@ -2389,30 +2392,41 @@ check_bridge() {
 		fi
 	done
 
-	if ! app="$(fly_app "$toml")"; then
-		echo "fail bridge toml=absent"
-		finish $((failures + 1))
-	fi
-	reply="$(fly_ssh "$app" - "journal=$journal sh -s" <<<"$bridge_machine_script")" || reply=""
-	relayer="$(sed -n 's/^@@relayer //p' <<<"$reply" | head -n 1)"
-	signer="$(sed -n 's/^@@signer //p' <<<"$reply" | head -n 1)"
-	if [ -z "$relayer" ]; then
-		echo "fail processes app=$app machine=unreachable"
-		finish $((failures + 1))
-	elif [ "$relayer" = running ] && [ "$signer" = running ]; then
-		echo "pass processes app=$app relayer=running signer=running"
-	else
-		echo "fail processes app=$app relayer=$relayer signer=${signer:-none}"
-		failures=$((failures + 1))
-	fi
-	item="$(sed -n 's/^@@bridge-in //p' <<<"$reply" | head -n 1)"
+	for n in 1 2 3 4 5; do
+		toml="interop/deploy/bridge-relayer/relayer-$n.toml"
+		if ! app="$(fly_app "$toml")"; then
+			echo "fail bridge toml=absent relayer=$n"
+			failures=$((failures + 1))
+			continue
+		fi
+		reply="$(fly_ssh "$app" - "journal=$journal sh -s" <<<"$bridge_machine_script")" || reply=""
+		relayer="$(sed -n 's/^@@relayer //p' <<<"$reply" | head -n 1)"
+		signer="$(sed -n 's/^@@signer //p' <<<"$reply" | head -n 1)"
+		if [ -z "$relayer" ]; then
+			echo "fail processes app=$app machine=unreachable"
+			failures=$((failures + 1))
+			continue
+		elif [ "$relayer" = running ] && [ "$signer" = running ]; then
+			echo "pass processes app=$app relayer=running signer=running"
+		else
+			echo "fail processes app=$app relayer=$relayer signer=${signer:-none}"
+			failures=$((failures + 1))
+		fi
+		if grep -qx '@@journal present' <<<"$reply"; then
+			journals=$((journals + 1))
+		fi
+		if [ -z "$item" ]; then
+			item="$(sed -n 's/^@@bridge-in //p' <<<"$reply" | head -n 1)"
+			item_app="$app"
+		fi
+	done
 	if [ -n "$item" ]; then
-		echo "pass bridge-in app=$app item=$item outcome=included"
-	elif grep -qx '@@journal present' <<<"$reply"; then
-		echo "fail bridge-in app=$app journal=present included=none"
+		echo "pass bridge-in app=$item_app item=$item outcome=included"
+	elif [ "$journals" -gt 0 ]; then
+		echo "fail bridge-in relayers=5 journal=present included=none"
 		failures=$((failures + 1))
 	else
-		echo "fail bridge-in app=$app journal=absent"
+		echo "fail bridge-in relayers=5 journal=absent"
 		failures=$((failures + 1))
 	fi
 	finish "$failures"
