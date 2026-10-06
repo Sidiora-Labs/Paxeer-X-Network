@@ -38124,7 +38124,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.27]
 title = "D5: Markdown full-system docs generator"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
