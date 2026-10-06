@@ -38180,7 +38180,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.30]
 title = "B2: Five bridge relayer apps"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 2
 requires = ["109.14"]
