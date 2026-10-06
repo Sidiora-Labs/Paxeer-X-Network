@@ -38030,7 +38030,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.22]
 title = "H3: Legacy wallet import tool for the 149 custody records"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["109.14"]
@@ -38392,8 +38392,9 @@ reqs = ["109"]
 do_1 = "human/apps/wallet typecheck is clean: the 12 errors in src/surfaces/WebDataView.tsx, WebDataView.test.tsx and human/wallet/sdk/src/index.ts (ExtendedPoint) are fixed at their cause, no any-casts, no skipped tests."
 do_2 = "human/crates/layerx-human-service test target compiles again: identity_dispatch.rs, store/mod.rs, journeys/wire.rs, store/retention.rs, store/tenancy.rs and tests/wallet_identity_e2e.rs fixed at their cause; then the tls tests from 109.20 run."
 do_3 = "main.rs no longer requires LAYERX_HUMAN_WEB_ORIGIN when production_components::web_identity() has its beta default."
-touches = ["human/apps/wallet/src/surfaces/WebDataView.tsx", "human/apps/wallet/src/surfaces/WebDataView.test.tsx", "human/wallet/sdk/src/index.ts", "human/crates/layerx-human-service/src/", "human/crates/layerx-human-service/tests/", "human/Cargo.lock"]
-verify_cmd = "pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls"
+do_4 = "human/wallet/gateway gains POST /v1/admin/legacy-import (admin token, 409 on a duplicate account) that the legacy-import ceremony tool from 109.22 targets with --apply; a test drives the real route."
+touches = ["human/apps/wallet/src/surfaces/WebDataView.tsx", "human/apps/wallet/src/surfaces/WebDataView.test.tsx", "human/wallet/sdk/src/index.ts", "human/crates/layerx-human-service/src/", "human/crates/layerx-human-service/tests/", "human/Cargo.lock", "human/wallet/gateway/src/", "human/wallet/gateway/migrations/", "human/wallet/gateway/test/"]
+verify_cmd = "pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls && pnpm --dir human/wallet/gateway test"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
