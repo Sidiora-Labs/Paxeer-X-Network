@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Offline check of the Paxeer X Network bridge documentation: every Markdown page
-# under bridge/. Every link must be https://paxeer.app or a path under
+# under bridge/. Every link must be https://paxeer.app, https://paxeer.network,
+# https://docs.paxeer.app or a path under
 # https://github.com/Sidiora-Labs/Paxeer-X-Network; every repository path a page
 # names must exist; no page may carry a date, a hostname, an IP address, a
 # credential, or an agent, model or working-branch name. The operator runbook and
@@ -88,9 +89,9 @@ STALE_SUBMISSION_CLAIMS = [
 ]
 
 ALLOWED_LINK = re.compile(
-    r"^https://(?:paxeer\.app|github\.com/Sidiora-Labs/Paxeer-X-Network)(?:/[^\s]*)?$"
+    r"^https://(?:paxeer\.app|paxeer\.network|docs\.paxeer\.app|github\.com/Sidiora-Labs/Paxeer-X-Network)(?:/[^\s]*)?$"
 )
-ALLOWED_HOSTS = {"paxeer.app"}
+ALLOWED_HOSTS = {"paxeer.app", "paxeer.network", "docs.paxeer.app"}
 
 INLINE_LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
 REFERENCE_LINK = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s|$)", re.M)
@@ -201,7 +202,8 @@ def check_page(page):
         stats["links"] += 1
         if not ALLOWED_LINK.match(target):
             problem(page, line_of(text, offset),
-                    "the link %s is neither https://paxeer.app nor a path under "
+                    "the link %s is none of https://paxeer.app, https://paxeer.network, "
+                    "https://docs.paxeer.app or a path under "
                     "https://github.com/Sidiora-Labs/Paxeer-X-Network" % target)
     for match in PATH_TOKEN.finditer(text):
         stats["paths"] += 1

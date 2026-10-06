@@ -7,6 +7,13 @@
 #
 # Usage:
 #   checklist.sh <chain>
+#   checklist.sh --all
+#
+# --all runs the checklist on all nine chains - the eight EVM chains in
+# deployment order, then solana - each against
+# $PAXEER_BRIDGE_DEPLOYMENT_RECORD_DIR/<chain>.json, and exits 1 naming the
+# first chain that fails. BRIDGE_DEPLOY_OVERLAY, when set, is applied to each
+# configuration as the deploy scripts apply it.
 #
 # The chain name is the directory under bridge/evm/chains or, for solana, under
 # bridge/solana/chains. Inputs, all through environment variables; there is no
@@ -43,6 +50,8 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 PRECOMPILE=0x0000000000000000000000000000000000001016
 PAXEER_RPC_VARIABLE=PAXEER_BRIDGE_PAXEER_RPC_URL
 PLACEHOLDER_PREFIX='PLACEHOLDER:'
+# shellcheck source=overlay.sh
+. "$SCRIPT_DIR/overlay.sh"
 SIDIORA_ASSET_ID=0x21f7b20a555199fa73a238b1a91fd0f549068fee
 UPGRADEABLE_LOADER=BPFLoaderUpgradeab1e11111111111111111111111
 # The account layouts bridge/solana/src/state.rs writes: magic, a big-endian
@@ -60,11 +69,15 @@ fail() {
 }
 
 usage() {
-    printf 'usage: checklist.sh <chain>\n' >&2
+    printf 'usage: checklist.sh <chain|--all>\n' >&2
     exit 2
 }
 
 [ $# -eq 1 ] || usage
+if [ "$1" = --all ]; then
+    run_all "$SCRIPT_DIR/checklist.sh" "${EVM_CHAINS[@]}" solana
+    exit 0
+fi
 case $1 in
 -*) usage ;;
 esac
@@ -91,6 +104,8 @@ else
 fi
 config=$(absolute "$chains_root/$chain/config.json")
 [ -r "$config" ] || fail "$config is not readable; $chain is not a bridge chain"
+trap 'rm -rf ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
+apply_overlay
 jq -e . "$config" > /dev/null 2>&1 || fail "$config is not JSON"
 manifest=$(absolute "${PAXEER_BRIDGE_ATTESTOR_MANIFEST:-$REPO_ROOT/bridge/deploy/attestors.json}")
 [ -r "$manifest" ] || fail "$manifest is not readable"
@@ -162,7 +177,7 @@ record=$(absolute "$PAXEER_BRIDGE_DEPLOYMENT_RECORD")
 jq -e . "$record" > /dev/null 2>&1 || fail "$record is not JSON"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work" ${OVERLAY_ROOT:+"$OVERLAY_ROOT"}' EXIT
 chmod 0700 "$work"
 
 found=$(jq -r '.chain // "nothing"' "$record")

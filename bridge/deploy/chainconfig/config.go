@@ -220,6 +220,7 @@ type ChainConfig struct {
 	Attestors     []string       `json:"attestors"`
 	Threshold     uint32         `json:"threshold"`
 	FinalityDepth uint64         `json:"finality_depth"`
+	Deployer      string         `json:"deployer,omitempty"`
 	BigBlocks     *BigBlocks     `json:"big_blocks,omitempty"`
 	Solana        *SolanaSection `json:"solana,omitempty"`
 	Assets        []Asset        `json:"assets"`
@@ -253,6 +254,15 @@ func Load(path string) (*ChainConfig, error) {
 	}
 	if err := decoder.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%s: the file carries more than one JSON document", path)
+	}
+	if overlayPath := os.Getenv(OverlayEnv); overlayPath != "" {
+		overlay, err := LoadOverlay(overlayPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := overlay.Apply(config); err != nil {
+			return nil, err
+		}
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
