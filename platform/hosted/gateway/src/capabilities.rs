@@ -1,14 +1,18 @@
 //! Which fork surfaces the Paxeer chain answers for.
 //!
 //! The exchange, bridge and launchpad precompiles exist only from the Paxeer X
-//! fork on; before it `eth_getCode` at their addresses answers `0x`. The
-//! gateway probes the three addresses at one node height, keeps the answer
-//! for a short TTL, publishes it as `px_getCapabilities`, and refuses a raw
-//! transaction addressed to a surface whose precompile has no code with the
-//! typed `surface_unavailable` error instead of relaying it.
+//! fork on. A native precompile carries no bytecode, so `eth_getCode` answers
+//! `0x` at its address on either side of the fork; the gateway instead sends
+//! each surface one cheap view from its ABI by `eth_call` at one node height.
+//! An answer that decodes marks the surface live; an empty answer or an
+//! execution error marks it absent. The gateway keeps the probe for a short
+//! TTL, publishes it as `px_getCapabilities`, and refuses a raw transaction
+//! addressed to an absent surface with the typed `surface_unavailable` error
+//! instead of relaying it.
 
 use super::{paxeer, Config};
 use layerx_platform_gateway::evm;
+use layerx_platform_gateway::http::Endpoint;
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -24,6 +28,16 @@ pub(super) const SUBMISSION_METHODS: [&str; 2] =
 const DEFAULT_TTL_SECONDS: u64 = 15;
 const MAX_TTL_SECONDS: u64 = 300;
 const MAX_RAW_TRANSACTION_BYTES: usize = 4 * 1024 * 1024;
+
+/// Chain JSON-RPC path under a router root configured without one.
+const CHAIN_RPC_PATH: &str = "/rpc";
+
+/// `intentNonce(address)` on the exchange precompile, answering `uint64`.
+const SELECTOR_INTENT_NONCE: [u8; 4] = [0x63, 0x4a, 0x23, 0x20];
+/// `isPaused()` on the bridge precompile, answering `bool`.
+const SELECTOR_IS_PAUSED: [u8; 4] = [0xb1, 0x87, 0xbd, 0x26];
+/// `getMarketCount()` on the launchpad precompile, answering `uint256`.
+const SELECTOR_GET_MARKET_COUNT: [u8; 4] = [0xfd, 0x69, 0xf3, 0xc2];
 
 /// One fork surface and the precompile that carries it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +63,28 @@ impl Surface {
             Self::Exchange => evm::EXCHANGE_PRECOMPILE,
             Self::Bridge => evm::BRIDGE_PRECOMPILE,
             Self::Launchpad => evm::LAUNCHPAD_PRECOMPILE,
+        }
+    }
+
+    /// Calldata of the cheap view the probe sends to this surface.
+    fn probe_calldata(self) -> Vec<u8> {
+        match self {
+            Self::Exchange => evm::calldata_address(SELECTOR_INTENT_NONCE, &[0; 20]),
+            Self::Bridge => evm::calldata_empty(SELECTOR_IS_PAUSED),
+            Self::Launchpad => evm::calldata_empty(SELECTOR_GET_MARKET_COUNT),
+        }
+    }
+
+    /// Whether `answer` decodes as this surface's probe view return value.
+    fn decodes(self, answer: &[u8]) -> bool {
+        if answer.len() != 32 {
+            return false;
+        }
+        let answer = evm::Answer::new(answer);
+        match self {
+            Self::Exchange => answer.u64(0).is_ok(),
+            Self::Bridge => answer.bool(0).is_ok(),
+            Self::Launchpad => answer.word(0).is_ok(),
         }
     }
 
@@ -136,18 +172,25 @@ pub(super) fn configured() -> Result<Cache, String> {
     Ok(Cache::new(Duration::from_secs(seconds)))
 }
 
-/// Whether one `eth_getCode` answer carries code: `0x` is absent, any
-/// non-empty byte string is live, anything else is refused.
-pub(super) fn has_code(answer: &Value) -> Result<bool, &'static str> {
-    let text = answer
+/// The chain JSON-RPC endpoint for one configured Paxeer name: a bare router
+/// root answers chain JSON-RPC under `/rpc`, and an explicit path is kept.
+pub(super) fn chain_rpc(mut endpoint: Endpoint) -> Endpoint {
+    if endpoint.base_path.is_empty() {
+        CHAIN_RPC_PATH.clone_into(&mut endpoint.base_path);
+    }
+    endpoint
+}
+
+/// Whether one probe `eth_call` answer shows the surface live: a result that
+/// decodes as the view's return value is live; an execution error, an empty
+/// result or one that does not decode is absent.
+pub(super) fn answers(surface: Surface, answer: &Value) -> bool {
+    answer
         .get("result")
         .and_then(Value::as_str)
-        .ok_or("paxeer_code_refused")?;
-    let digits = text.strip_prefix("0x").ok_or("invalid_paxeer_response")?;
-    if !digits.len().is_multiple_of(2) || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("invalid_paxeer_response");
-    }
-    Ok(!digits.is_empty())
+        .and_then(|text| text.strip_prefix("0x"))
+        .and_then(|digits| super::decode_hex(digits, 32).ok())
+        .is_some_and(|bytes| surface.decodes(&bytes))
 }
 
 fn height(answer: &Value) -> Result<u64, &'static str> {
@@ -160,7 +203,7 @@ fn height(answer: &Value) -> Result<u64, &'static str> {
         .ok_or("invalid_paxeer_response")
 }
 
-/// Reads the node head, then `eth_getCode` for every surface at that head.
+/// Reads the node head, then calls every surface's probe view at that head.
 pub(super) fn probe(
     mut node: impl FnMut(&Value) -> Result<Value, &'static str>,
     probed_at: u64,
@@ -178,10 +221,16 @@ pub(super) fn probe(
         let answer = node(&json!({
             "jsonrpc": "2.0",
             "id": "px-capabilities",
-            "method": "eth_getCode",
-            "params": [evm::address_hex(&surface.address()), tag]
+            "method": "eth_call",
+            "params": [
+                {
+                    "to": evm::address_hex(&surface.address()),
+                    "data": format!("0x{}", super::hex(&surface.probe_calldata()))
+                },
+                tag
+            ]
         }))?;
-        *slot = has_code(&answer)?;
+        *slot = answers(surface, &answer);
     }
     let [exchange, bridge, launchpad] = live;
     Ok(Capabilities {
@@ -214,7 +263,7 @@ pub(super) fn get(config: &Config, id: &Value, params: Option<&Value>) -> Value 
     }
 }
 
-/// The typed refusal for a write to a surface whose precompile has no code.
+/// The typed refusal for a write to a surface whose probe view did not answer.
 pub(super) fn refusal(id: &Value, surface: Surface) -> Value {
     let mut refusal = super::rpc::error(id, SURFACE_UNAVAILABLE, "Surface unavailable");
     refusal["error"]["data"] = json!({
@@ -422,8 +471,13 @@ mod tests {
         }
     }
 
-    /// The recorded Paxeer answers: pre-fork `0x` at every surface address,
-    /// and the post-fork state with the three precompiles carrying code.
+    fn word(value: u64) -> String {
+        format!("0x{value:064x}")
+    }
+
+    /// Paxeer answers to the probe: pre-fork every view answers `0x` (a call
+    /// to an address without a precompile), post-fork each answers its ABI
+    /// return word, and `eth_getCode` stays `0x` either way.
     fn recorded_node(
         forked: bool,
         calls: &Cell<usize>,
@@ -432,13 +486,26 @@ mod tests {
             calls.set(calls.get() + 1);
             let result = match request["method"].as_str() {
                 Some("eth_blockNumber") => json!("0x16c1320"),
-                Some("eth_getCode") => {
+                Some("eth_call") => {
                     assert_eq!(request["params"][1], json!("0x16c1320"));
-                    let address = request["params"][0].as_str().unwrap_or_default();
-                    assert!(Surface::ALL
-                        .iter()
-                        .any(|surface| evm::address_hex(&surface.address()) == address));
-                    json!(if forked { "0x01" } else { "0x" })
+                    let to = request["params"][0]["to"].as_str().unwrap_or_default();
+                    let surface = Surface::ALL
+                        .into_iter()
+                        .find(|surface| evm::address_hex(&surface.address()) == to)
+                        .unwrap_or_else(|| panic!("probe called {to}"));
+                    assert_eq!(
+                        request["params"][0]["data"],
+                        json!(format!("0x{}", crate::hex(&surface.probe_calldata())))
+                    );
+                    if forked {
+                        json!(match surface {
+                            Surface::Exchange => word(7),
+                            Surface::Bridge => word(0),
+                            Surface::Launchpad => word(0),
+                        })
+                    } else {
+                        json!("0x")
+                    }
                 }
                 other => panic!("unexpected probe method {other:?}"),
             };
@@ -447,25 +514,52 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_probe_reads_empty_code_as_absent_and_bytecode_as_live() {
-        assert_eq!(has_code(&json!({"result": "0x"})), Ok(false));
-        assert_eq!(has_code(&json!({"result": "0x01"})), Ok(true));
-        assert_eq!(has_code(&json!({"result": "0x6080604052"})), Ok(true));
-        for invalid in [
-            json!({"result": "0x0"}),
-            json!({"result": "6080"}),
-            json!({"result": "0xzz"}),
-        ] {
-            assert_eq!(
-                has_code(&invalid),
-                Err("invalid_paxeer_response"),
-                "{invalid}"
-            );
-        }
+    fn capabilities_probe_calls_each_surface_view_and_reads_a_decoded_answer_as_live() {
         assert_eq!(
-            has_code(&json!({"error": {"code": -32000, "message": "header not found"}})),
-            Err("paxeer_code_refused")
+            Surface::Exchange.probe_calldata(),
+            [&[0x63, 0x4a, 0x23, 0x20][..], &[0; 32]].concat()
         );
+        assert_eq!(
+            Surface::Bridge.probe_calldata(),
+            vec![0xb1, 0x87, 0xbd, 0x26]
+        );
+        assert_eq!(
+            Surface::Launchpad.probe_calldata(),
+            vec![0xfd, 0x69, 0xf3, 0xc2]
+        );
+
+        for surface in Surface::ALL {
+            assert!(
+                answers(surface, &json!({"result": word(0)})),
+                "{}",
+                surface.name()
+            );
+            assert!(
+                answers(surface, &json!({"result": word(1)})),
+                "{}",
+                surface.name()
+            );
+            for absent in [
+                json!({"error": {"code": -32000, "message": "execution reverted"}}),
+                json!({"error": {"code": -32601, "message": "precompile not active"}}),
+                json!({"result": "0x"}),
+                json!({"result": "0x01"}),
+                json!({"result": format!("{}00", word(1))}),
+                json!({"result": word(1).trim_start_matches("0x")}),
+                json!({"result": "0xzz"}),
+            ] {
+                assert!(!answers(surface, &absent), "{} {absent}", surface.name());
+            }
+        }
+        assert!(!answers(Surface::Bridge, &json!({"result": word(2)})));
+        assert!(!answers(
+            Surface::Exchange,
+            &json!({"result": format!("0x01{}", "00".repeat(31))})
+        ));
+        assert!(answers(
+            Surface::Launchpad,
+            &json!({"result": format!("0x01{}", "00".repeat(31))})
+        ));
 
         let calls = Cell::new(0);
         let before = probe(recorded_node(false, &calls), 1_790_000_000)
@@ -488,7 +582,25 @@ mod tests {
         );
         let after = probe(recorded_node(true, &calls), 1_790_000_015)
             .unwrap_or_else(|code| panic!("{code}"));
+        assert_eq!(calls.get(), 8);
         assert!(Surface::ALL.into_iter().all(|surface| after.live(surface)));
+
+        let mut bridge_refuses = recorded_node(true, &calls);
+        let partial = probe(
+            |request: &Value| {
+                if request["params"][0]["to"] == json!(evm::address_hex(&evm::BRIDGE_PRECOMPILE)) {
+                    return Ok(json!({
+                        "jsonrpc": "2.0",
+                        "id": request["id"],
+                        "error": {"code": -32000, "message": "execution reverted"}
+                    }));
+                }
+                bridge_refuses(request)
+            },
+            1_790_000_030,
+        )
+        .unwrap_or_else(|code| panic!("{code}"));
+        assert!(partial.exchange && !partial.bridge && partial.launchpad);
 
         assert_eq!(
             probe(
@@ -501,6 +613,25 @@ mod tests {
             probe(|_: &Value| Err("paxeer_unreachable"), 0),
             Err("paxeer_unreachable")
         );
+    }
+
+    #[test]
+    fn capabilities_chain_rpc_defaults_a_router_root_to_rpc_exactly_once() {
+        for (configured, path) in [
+            ("https://router.example", "/rpc"),
+            ("https://router.example/", "/rpc"),
+            ("https://router.example/rpc", "/rpc"),
+            ("https://router.example/rpc/", "/rpc"),
+            ("https://router.example:8545/evm", "/evm"),
+        ] {
+            let endpoint = Endpoint::parse(configured).unwrap_or_else(|e| panic!("{e}"));
+            let port = endpoint.port;
+            let once = chain_rpc(endpoint);
+            assert_eq!(once.base_path, path, "{configured}");
+            assert_eq!(once.host, "router.example");
+            assert_eq!(once.port, port);
+            assert_eq!(chain_rpc(once).base_path, path, "{configured} twice");
+        }
     }
 
     #[test]
