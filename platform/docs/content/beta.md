@@ -1,313 +1,140 @@
 <!-- id: beta_contract -->
 <!-- readiness_claim: false -->
 
-# LayerX Network beta contract
+# Paxeer X Network mainnet-beta contract
 
-Private-network only. The beta control, faucet and status surfaces below have
-no public name on Paxeer X Network; the hostnames this contract records are
-the retired values its sources still carry. Public accounts are funded
-through custody credit submitted to the router.
+This is the canonical beta contract of Paxeer X Network. The beta is
+mainnet-beta: it runs on the Paxeer network, chain 125, and every product
+capability is reached through the unified router at
+`https://api-mainnet-beta.paxeer.network`. LayerX is the kernel domain inside
+Paxeer X Network; it is not a separate network and has no separate beta.
 
-This is the canonical LayerX Network beta contract. It is the only statement of the surfaces and journeys the beta supports, the beta endpoints and hostnames, the network id, the wire protocol version, the beta CA, the artifact set, the evidence rung each surface must reach and has reached, the unknown-state behaviour, the external dependencies with their beta counterparts and the beta-versus-production differences. `scripts/ci/beta-contract-check.sh` checks the install docs, the hosted manifests, the release manifest, the release workflow, the hosted status surface and the docs content index against this document, and then runs `scripts/ci/beta-report.sh --check` so the rendered go/no-go report is checked against it too; any disagreement fails the build.
+The contract states the surfaces the beta supports, the rung each must reach,
+the endpoints, the evidence ledger, the accepted beta configuration and the
+differences from production. `tools/ci/beta-report.sh` reads the evidence
+ledger and renders the go/no-go report from its gate records alone.
 
-**This beta is not ready.** The readiness claim below is `false` and stays `false` until every surface has reached its required rung through an executed gate recorded in `spec/layerx-beta/qualification.kvx` and every contradiction listed here has been resolved in its source.
+**This beta is not ready.** The readiness claim below is `false` and stays
+`false` until every surface has reached its required rung through an executed
+gate recorded in `spec/layerx-beta/qualification.kvx` and the owner go
+decision is recorded there.
 
 ## Identity
 
 | Key | Value |
 | --- | --- |
 | id | beta_contract |
+| product | Paxeer X Network |
+| profile | mainnet-beta |
 | readiness_claim | false |
-| readiness_statement | The LayerX Network beta is NOT ready: no gate record exists, every surface is at rung source_present, and the cross-source contradictions listed in this contract are open. |
+| readiness_statement | The Paxeer X Network mainnet-beta is NOT ready: no gate record exists and every surface is at rung source_present. |
+| chain_id | 125 |
+| router_url | https://api-mainnet-beta.paxeer.network |
 | beta_domain | paxeer.network |
+| go_module | github.com/Sidiora-Labs/Paxeer-X-Network |
 | required_rung_functional | runtime_proven |
 | required_rung_hosted | deployment_proven |
 | rung_order | source_present < statically_coherent < built < tested < runtime_proven < deployment_proven < owner_certified |
 | evidence_ledger | spec/layerx-beta/qualification.kvx |
-| contract_check | scripts/ci/beta-contract-check.sh |
-| ledger_check | scripts/ci/beta-ledger-check.sh |
+| report_generator | tools/ci/beta-report.sh |
+| report_status | no-go |
 
-The reached rung of a surface is raised only by a `[gate.*]` record in the evidence ledger. No such record exists at the revision this contract describes, so every reached rung below is `source_present`.
+## Evidence ledger
 
-## Surfaces and journeys
+`spec/layerx-beta/qualification.kvx` is the single beta ledger. It holds two
+append-only record shapes: `[gate.<task>.<n>]`, an executed gate with its
+revision, command, environment, start time, outcome (`pass`, `fail` or
+`blocked`) and evidence location, and `[observation.<task>.<n>]`, an
+assumption, contradiction or external blocker with its severity.
 
-| Surface | Journey | Class | Required rung | Reached rung | Source |
-| --- | --- | --- | --- | --- | --- |
-| native-core | ledger transition, checkpoints, settlement, guarantor bonds | functional | runtime_proven | source_present | src/, include/ |
-| native-daemon | layerxd, layerxctl, layerx-verify, layerx-genesis | functional | runtime_proven | source_present | cmd/ |
-| settlement-contracts | CheckpointRegistry, LayerXCustody, WithdrawalClaims, EmergencyExit, GuarantorBond | functional | runtime_proven | source_present | contracts/ |
-| mirror-ethereum | LayerXMirrorArchive on ethereum-sepolia, base-sepolia and hood-testnet | hosted | deployment_proven | source_present | interop/contracts/ethereum-mirror, interop/deploy/mirror/ethereum-testnets-2026-08-31.json |
-| mirror-solana | layerx-solana-mirror-program on solana-devnet | hosted | deployment_proven | source_present | interop/contracts/solana-mirror, interop/deploy/mirror/solana-devnet-2026-08-31.json |
-| agent-daemon | layerx-agentd admission, signing and receipts | functional | runtime_proven | source_present | agent/crates/layerx-agentd |
-| agent-mcp | MCP tool surface for agents | functional | runtime_proven | source_present | agent/crates/layerx-mcp |
-| sdk-typescript | @sidiora/layerx-sdk | functional | runtime_proven | source_present | agent/sdk/typescript |
-| sdk-python | layerx-sdk on PyPI | functional | runtime_proven | source_present | agent/sdk/python |
-| sdk-rust | layerx-sdk on crates.io | functional | runtime_proven | source_present | agent/crates/layerx-sdk |
-| sdk-go | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go | functional | runtime_proven | source_present | platform/sdk/go |
-| sdk-jvm | com.sidiora.layerx:layerx-sdk | functional | runtime_proven | source_present | platform/sdk/jvm |
-| sdk-swift | LayerXSDK | functional | runtime_proven | source_present | platform/sdk/swift |
-| sdk-dotnet | LayerX.Sdk | functional | runtime_proven | source_present | platform/sdk/dotnet |
-| human-service | custody, intents, approvals, explorer index | functional | runtime_proven | source_present | human/crates/layerx-human-service, human/crates/layerx-intents, human/crates/layerx-explorer-index |
-| human-web | onboarding | functional | runtime_proven | source_present | human/apps/web/e2e/onboarding.spec.ts |
-| human-web | wallet-binding | functional | runtime_proven | source_present | human/apps/web/e2e/custody.spec.ts |
-| human-web | deposit | functional | runtime_proven | source_present | human/apps/web/e2e/custody.spec.ts |
-| human-web | move-money | functional | runtime_proven | source_present | human/apps/web/e2e/move.spec.ts |
-| human-web | create-agent | functional | runtime_proven | source_present | human/apps/web/e2e/agents.spec.ts |
-| human-web | approval-grant | functional | runtime_proven | source_present | human/apps/web/e2e/approvals.spec.ts |
-| human-web | approval-reject | functional | runtime_proven | source_present | human/apps/web/e2e/approvals.spec.ts |
-| human-web | withdrawal-claim | functional | runtime_proven | source_present | human/apps/web/e2e/custody.spec.ts, contracts/WithdrawalClaims.sol |
-| human-web | emergency-exit | functional | runtime_proven | source_present | human/apps/web/e2e/custody.spec.ts, contracts/EmergencyExit.sol |
-| human-web | explorer, activity, settings, support | functional | runtime_proven | source_present | human/apps/web/e2e/explorer.spec.ts, activity.spec.ts, settings.spec.ts, support.spec.ts |
-| platform-cli | layerx CLI: environments, keys, programs, install | functional | runtime_proven | source_present | platform/cli |
-| emulator | local emulator with clock, prefund, fault and snapshot control | functional | runtime_proven | source_present | platform/emulator |
-| hosted-testnet | testnet-control status, parameters, funding and reset | hosted | deployment_proven | source_present | platform/hosted/testnet |
-| hosted-faucet | bearer-authenticated faucet claims with durable quotas | hosted | deployment_proven | source_present | platform/hosted/faucet |
-| hosted-gateway | developer gateway: payments, receipts, typed refusals | hosted | deployment_proven | source_present | platform/hosted/gateway |
-| hosted-registry | hosted program registry | hosted | deployment_proven | source_present | platform/hosted/registry |
-| hosted-webhooks | signed webhook deliveries | hosted | deployment_proven | source_present | platform/hosted/webhooks |
-| hosted-dashboard | developer dashboard API and web | hosted | deployment_proven | source_present | platform/hosted/dashboard |
-| hosted-node | layerxd StatefulSet with bootstrap, supervisor and settlement binding; hosts the core, receipt-authority and agent-boundary containers | hosted | deployment_proven | source_present | platform/hosted/node |
-| hosted-core | core boundary: layerx-pending-core and layerx-pending-core-admin over the node LNI socket | hosted | deployment_proven | source_present | platform/hosted/core |
-| hosted-authority | independent receipt authority replica: layerx-receipt-authority | hosted | deployment_proven | source_present | platform/hosted/authority |
-| hosted-agent-boundary | agent boundary: layerx-agent-boundary LNI submissions for the gateway and the registry | hosted | deployment_proven | source_present | platform/hosted/agent-boundary |
-| hosted-agentd | layerx-agentd Service on the node: the agentd loopback health surface published through a mutually authenticated TLS boundary that answers only for an internal-CA client certificate carrying the agent program bearer | hosted | deployment_proven | source_present | platform/hosted/agentd |
-| hosted-runtime-clock | supervised runtime clock with authenticated local socket capabilities and bounded child-process shutdown | hosted | deployment_proven | source_present | platform/hosted/runtime-clock |
-| hosted-identity | identity service: principals, sessions, introspection and service tokens | hosted | deployment_proven | source_present | platform/hosted/identity |
-| hosted-paxeer | Paxeer chain 125 node with its JSON-RPC boundary, chain initialisation and settlement contract deployment | hosted | deployment_proven | source_present | platform/hosted/paxeer |
-| hosted-human | Human HTTPS API and privileged components; readiness requires the production providers | hosted | deployment_proven | source_present | platform/hosted/human |
-| hosted-internal | layerx-internal aliases, Redis, KMS and event sources for the developer plane | hosted | deployment_proven | source_present | platform/hosted/internal |
-| hosted-indexer | decoded history of both halves of the network: canonical receipts from the LayerX kernel domain and Paxeer blocks, receipts, logs and typed events into one checkpointed store with reorg rollback | hosted | deployment_proven | source_present | platform/hosted/indexer |
-| hosted-interop | interop gateway deployment: the x402, AP2, UCP and Visa TAP boundary in front of the hosted gateway and the receipt authority | hosted | deployment_proven | source_present | platform/hosted/interop |
-| hosted-tests | static topology check: every configured in-cluster URL resolves to an exposed Service port admitted by NetworkPolicy on both ends | hosted | deployment_proven | source_present | platform/hosted/tests |
-| middleware-buyer | @sidiora/layerx-buyer-middleware | functional | runtime_proven | source_present | platform/middleware/buyer |
-| middleware-seller | @sidiora/layerx-seller-middleware | functional | runtime_proven | source_present | platform/middleware/seller |
-| middleware-merchant | @sidiora/layerx-merchant-middleware | functional | runtime_proven | source_present | platform/middleware/merchant |
-| middleware-agent | @sidiora/layerx-agent-middleware | functional | runtime_proven | source_present | platform/middleware/agent |
-| middleware-examples | runnable seller-middleware and Python SDK examples: public RPC sequence read, faucet claim and signed-payment verification against executed or batched commitment | functional | runtime_proven | source_present | platform/middleware/examples |
-| docs-site | documentation site and its executable samples | functional | runtime_proven | source_present | platform/docs |
-| reference-app-buyer-agent | @sidiora/layerx-example-buyer-agent | functional | runtime_proven | source_present | platform/examples/buyer-agent |
-| reference-app-paid-api | @sidiora/layerx-example-paid-api | functional | runtime_proven | source_present | platform/examples/paid-api |
-| reference-app-merchant-shop | @sidiora/layerx-example-merchant-shop | functional | runtime_proven | source_present | platform/examples/merchant-shop |
-| reference-app-marketplace | @sidiora/layerx-example-marketplace | functional | runtime_proven | source_present | platform/examples/marketplace |
-| integration-express | Express framework integration | functional | runtime_proven | source_present | platform/integrations/express |
-| integration-next | Next.js framework integration | functional | runtime_proven | source_present | platform/integrations/next |
-| integration-fastapi | FastAPI framework integration | functional | runtime_proven | source_present | platform/integrations/fastapi |
-| integration-spring | Spring framework integration | functional | runtime_proven | source_present | platform/integrations/spring |
-| integration-ios | iOS application integration | functional | runtime_proven | source_present | platform/integrations/ios |
-| integration-android | Android application integration | functional | runtime_proven | source_present | platform/integrations/android |
-| integration-agents | @sidiora/layerx-agent-integrations package | functional | runtime_proven | source_present | platform/integrations/agents |
-| agent-framework-mcp | MCP server journey | functional | runtime_proven | source_present | platform/integrations/agents/src/mcp.ts |
-| agent-framework-a2a | A2A journey | functional | runtime_proven | source_present | platform/integrations/agents/src/a2a.ts |
-| agent-framework-openai | OpenAI tools journey | functional | runtime_proven | source_present | platform/integrations/agents/src/openai.ts |
-| agent-framework-anthropic | Anthropic tools journey | functional | runtime_proven | source_present | platform/integrations/agents/src/anthropic.ts |
-| agent-framework-langchain | LangChain tools journey | functional | runtime_proven | source_present | platform/integrations/agents/src/langchain.ts |
-| agent-framework-vercel-ai | Vercel AI tools journey | functional | runtime_proven | source_present | platform/integrations/agents/src/vercel-ai.ts |
-| programs-runtime | deploy | functional | runtime_proven | source_present | programs/crates/layerx-programs-runtime |
-| programs-runtime | paid-call | functional | runtime_proven | source_present | programs/crates/layerx-programs-runtime |
-| programs-runtime | restart | functional | runtime_proven | source_present | programs/crates/layerx-programs-runtime |
-| programs-interpreter | program interpreter | functional | runtime_proven | source_present | programs/crates/layerx-programs-interpreter |
-| programs-market | program market | functional | runtime_proven | source_present | programs/crates/layerx-programs-market |
-| programs-protocol-adapter | protocol adapter | functional | runtime_proven | source_present | programs/crates/layerx-programs-protocol-adapter |
-| programs-registry | program registry library | functional | runtime_proven | source_present | programs/crates/layerx-programs-registry |
-| programs-sandbox | program sandbox | functional | runtime_proven | source_present | programs/crates/layerx-programs-sandbox |
-| interop-x402 | x402 payments | functional | runtime_proven | source_present | interop/crates/layerx-x402 |
-| interop-ap2 | AP2 mandates | functional | runtime_proven | source_present | interop/crates/layerx-ap2 |
-| interop-ucp | UCP | functional | runtime_proven | source_present | interop/crates/layerx-ucp |
-| interop-visa-tap | Visa trusted agent protocol | functional | runtime_proven | source_present | interop/crates/layerx-visa-tap |
-| interop-portable | portable verification | functional | runtime_proven | source_present | interop/crates/layerx-portable |
-| interop-migrate | migration | functional | runtime_proven | source_present | interop/crates/layerx-migrate |
-| interop-fiat | fiat | functional | runtime_proven | source_present | interop/crates/layerx-fiat |
-| interop-mirror | mirror archives | functional | runtime_proven | source_present | interop/crates/layerx-mirror |
-| interop-gateway | interop gateway | functional | runtime_proven | source_present | interop/crates/layerx-interop-gateway |
-| interop-service | interop service | functional | runtime_proven | source_present | interop/crates/layerx-interop-service |
-| interop-bridge-relayer | bridge relayer: vault deposits into the Paxeer bridge precompile and bridge-out burns back into the vault, journalled and nullifier-checked | functional | runtime_proven | source_present | interop/crates/layerx-bridge-relayer |
-| interop-mirror-signer | reference remote signer for the mirror publisher: one handle per algorithm and policy domain over a local socket | functional | runtime_proven | source_present | interop/crates/layerx-mirror-signer |
-| interop-gas-station | sponsored submission: governed-rate quoting, policy limits and a journalled relayer | functional | runtime_proven | source_present | interop/crates/layerx-gas-station |
-| interop-x-websearch | web search sidecar: crawl and local index, page fetch with a canonical content digest, paid per request over 402LXP | functional | runtime_proven | source_present | interop/crates/x-websearch |
-| ramps-toolkit | market-maker ramp toolkit | functional | runtime_proven | source_present | platform/ramps/toolkit |
-| reference-ramp | reference ramp service | hosted | deployment_proven | source_present | platform/ramps/deployment.yaml |
-| multichain-paxeer-boundary | Paxeer custody and guaranteed-withdrawal boundary | hosted | deployment_proven | source_present | human/crates/layerx-paxeer-client, go.mod, node/, modules/ |
-| multichain-one-ledger | one ledger across mirrors | functional | runtime_proven | source_present | interop/crates/layerx-mirror |
+- Only a gate record raises a surface. A task status, an observation, a
+  document or a plan never raises a rung.
+- A gate that cannot run because an owner input is missing is recorded
+  `blocked` with the input named; it is never recorded `pass`.
+- The owner go decision is a gate record with outcome `pass` whose note begins
+  `owner go decision:`. Its revision is the release candidate.
+- The decision is `go` only when that record exists and no gate on the same
+  revision failed or was blocked.
+- The ledger is public. Evidence locations name private evidence stores, never
+  host addresses, keys or tokens.
 
-## Beta endpoints and hostnames
+`tools/ci/beta-report.sh --check` validates the ledger shape without CI inputs
+and prints the decision summary; `tools/ci/beta-report.sh` renders the full
+report to stdout.
 
-| Key | Value | Source |
-| --- | --- | --- |
-| testnet_public_url | private network only, no public name | platform/hosted/testnet/deployment.yaml Ingress layerx-testnet-public; .github/workflows/platform.yml LAYERX_TESTNET_URL; platform/hosted/testnet/src/lib.rs; platform/hosted/testnet/status.json; platform/docs/beta-environment.md |
-| gateway_url | https://api-mainnet-beta.paxeer.network | .github/workflows/platform.yml LAYERX_GATEWAY_URL; platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md; platform/examples/*/layerx.example.json |
-| faucet_url | private network only, no public name | .github/workflows/platform.yml LAYERX_FAUCET_URL; platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md |
-| status_url | private network only, no public name | platform/hosted/testnet/src/lib.rs; platform/docs/beta-environment.md |
-| developer_host | dev.paxeer.network | platform/hosted/webhooks/deployment.yaml Ingress layerx-developer and layerx-developer-web |
-| ramp_host | ramp.paxeer.network | platform/ramps/deployment.yaml Ingress |
-| emulator_endpoint | http://127.0.0.1:9402 | platform/docs/content/install.md; platform/docs/content/environments/emulator.md |
-| testnet_core_url | https://layerx-pending-core.layerx-testnet.svc.cluster.local:9443 | platform/hosted/testnet/deployment.yaml LAYERX_TESTNET_CORE_URL; platform/hosted/node/deployment.yaml Service layerx-pending-core |
-| testnet_core_admin_url | https://layerx-pending-core-admin.layerx-testnet.svc.cluster.local:9444 | platform/hosted/testnet/deployment.yaml LAYERX_TESTNET_CORE_ADMIN_URL; platform/hosted/node/deployment.yaml Service layerx-pending-core-admin |
-| testnet_gateway_url | https://layerx-gateway.layerx-testnet.svc.cluster.local:443 | platform/hosted/testnet/deployment.yaml LAYERX_TESTNET_GATEWAY_URL |
-| testnet_paxeer_url | https://paxeer-boundary.layerx-testnet.svc.cluster.local:9443 | platform/hosted/testnet/deployment.yaml LAYERX_TESTNET_PAXEER_URL; platform/hosted/paxeer/deployment.yaml Service paxeer-boundary |
-| gateway_component_url | https://layerx-agent-boundary.layerx-testnet.svc.cluster.local:9443 | platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_COMPONENT_URL; platform/hosted/node/deployment.yaml Service layerx-agent-boundary |
-| gateway_authority_url | https://layerx-receipt-authority.layerx-testnet.svc.cluster.local:9443 | platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_AUTHORITY_URL; platform/hosted/node/deployment.yaml Service layerx-receipt-authority |
-| gateway_identity_url | https://layerx-identity.layerx-testnet.svc.cluster.local:9443 | platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_IDENTITY_URL; platform/hosted/identity/deployment.yaml Service layerx-identity |
-| gateway_program_registry_url | https://layerx-program-registry.layerx-testnet.svc.cluster.local:9420 | platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_PROGRAM_REGISTRY_URL |
-
-## Network id
-
-| Key | Value | Source |
-| --- | --- | --- |
-| network_id | 402 | platform/docs/content/install.md `--network-id 402`; platform/hosted/testnet/src/lib.rs TESTNET_NETWORK_ID; platform/docs/beta-environment.md |
-| gateway_network_id | layerx-testnet | platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_NETWORK_ID |
-
-## Wire protocol version
-
-| Key | Value | Source |
-| --- | --- | --- |
-| wire_protocol_version | 3 | platform/hosted/testnet/deployment.yaml ConfigMap layerx-testnet-release lxp-wire-protocol-version; platform/hosted/gateway/deployment.yaml LAYERX_GATEWAY_LXP_WIRE_VERSION; platform/hosted/webhooks/deployment.yaml LAYERX_WEBHOOKS_LXP_WIRE_VERSION; agent/crates/layerx-wire/src/limits.rs STATE_COMMITMENT_PROTOCOL_VERSION |
-| package_semver | 0.1.0 | platform/hosted/testnet/deployment.yaml ConfigMap layerx-testnet-release package-semver; platform/docs/content/install.md JVM coordinate |
-
-## Beta CA
-
-| Key | Value | Source |
-| --- | --- | --- |
-| internal_ca_secret | layerx-internal-ca | platform/hosted/gateway/deployment.yaml volume trust |
-| testnet_control_tls_secret | layerx-testnet-control-tls | platform/hosted/testnet/deployment.yaml (ca.crt mounted at /run/layerx/tls/ca.crt) |
-| testnet_ingress_tls_secret | layerx-testnet-ingress-tls | platform/hosted/testnet/deployment.yaml Ingress layerx-testnet-public |
-| gateway_ingress_tls_secret | layerx-gateway-ingress-tls | platform/hosted/gateway/deployment.yaml Ingress layerx-gateway |
-| ca_file_env | LAYERX_TEST_CA_FILE | .github/workflows/platform.yml hosted-testnet-journey |
-| ca_ci_secret | LAYERX_SCHEDULED_TESTNET_CA_BASE64 | .github/workflows/platform.yml hosted-testnet-journey |
-| ca_material | owner-supplied under the names above; never in the repository | spec/layerx-beta/spec.kvx decision.beta_infra |
-
-## Artifact set
-
-| Ecosystem | Registry | Surface | Packages | Publication job |
-| --- | --- | --- | --- | --- |
-| crates-io | https://crates.io | sdk-rust | layerx-agent-api, layerx-client, layerx-crypto, layerx-mirror, layerx-programs-runtime, layerx-proof, layerx-sdk, layerx-types, layerx-wire | present |
-| npm | https://registry.npmjs.org | sdk-typescript | @sidiora/layerx-agent-integrations, @sidiora/layerx-agent-middleware, @sidiora/layerx-buyer-middleware, @sidiora/layerx-express, @sidiora/layerx-merchant-middleware, @sidiora/layerx-next, @sidiora/layerx-sdk, @sidiora/layerx-seller-middleware | present |
-| pypi | https://pypi.org | sdk-python | layerx-fastapi, layerx-sdk | present |
-| go-modules | https://proxy.golang.org | sdk-go | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go | present |
-| maven-central | https://repo1.maven.org/maven2 | sdk-jvm | com.sidiora.layerx:layerx-android, com.sidiora.layerx:layerx-sdk, com.sidiora.layerx:layerx-spring-boot-starter | present |
-| swiftpm | https://github.com | sdk-swift | LayerXSDK | present |
-| nuget | https://www.nuget.org | sdk-dotnet | LayerX.Sdk | present |
+## Network and endpoints
 
 | Key | Value |
 | --- | --- |
-| artifact_manifest_path | platform/release/artifact-manifest.json |
-| artifact_manifest_status | not_emitted |
-| artifact_manifest_emitter | layerx-platform-release -- manifest |
-| artifact_manifest_verifier | layerx-platform-release -- verify |
-| artifact_manifest_verification_job | release-verification |
-| artifact_manifest_workflow_artifact | release-artifact-manifest |
-| release_tag_format | sdk-v{version} |
-| source_digest | git-archive-sha256 |
-| report_path | build/qualification/beta-report.md |
-| report_status | no-go |
-| report_generator | scripts/ci/beta-report.sh |
+| chain | Paxeer network, EVM chain id 125 |
+| router | https://api-mainnet-beta.paxeer.network, the canonical entry and discovery surface for every product capability |
+| rpc_records | the existing mainnet-beta RPC records and the chain125 record stay unchanged; product names resolve through the same router catalogue |
+| developer_host | dev.paxeer.network |
+| ramp_host | ramp.paxeer.network |
+| emulator_endpoint | http://127.0.0.1:9402, local only |
+| private_services | identity, policy, KMS, signer shares, event sources, provisioners, CI controllers and state stores stay behind authenticated internal boundaries and are not routed publicly |
+| explorer | the Paxeer explorer fork |
 
-The artifact set of the beta is exactly the content of the artifact manifest at `platform/release/artifact-manifest.json` (schema `layerx/artifact-manifest/1`). The release workflow publishes every ecosystem above through its `publish-<ecosystem>` job only after the release gates pass on the release revision, under the beta pre-release version the tagged revision declares, with an immutable digest, a signature, an SBOM, a provenance attestation and an install check from the registry per artifact, and each publication job retains an artifact record (`artifacts.kvx`) next to the bytes it published. The `release-verification` job then emits the manifest with `layerx-platform-release -- manifest` from the retained publication bundles, listing for every published artifact its name, version, registry, immutable digest (and whether it hashes the built bytes, the bytes the registry serves or the published source archive), signature, SBOM and attestation references, registry location, source revision and rollback identity (the most recent earlier `sdk-v` tag, `null` for the first release); on a tagged release the same job runs `layerx-platform-release -- verify`, which fetches every artifact from its registry, compares its bytes with the manifest digest and halts the release before `release-promotion` naming every failing artifact, and `release-promotion` needs `release-verification` and refuses to promote without the retained manifest. The same verification runs locally against a directory of downloaded artifacts laid out as `<registry>/<artifact file>` with `layerx-platform-release verify --manifest <file> --from <dir>`. The manifest is retained as the workflow artifact `release-artifact-manifest` of every release run and is committed to `platform/release/artifact-manifest.json` with the gate records of the first tagged beta release; `artifact_manifest_status` is `not_emitted` exactly while that file is absent. While the file is absent and this contract states `not_emitted`, the docs may name only package identities declared in `platform/release/registries.kvx` (a Maven install coordinate `group:artifact:version` is compared by its `group:artifact` identity and its version is checked against `package_semver`), and no artifact is part of the beta artifact set; once the file is present, the docs may name only artifacts the manifest lists, an install coordinate that carries a version naming the manifest version; a file absent while this contract does not state `not_emitted` makes every artifact the docs name unlisted. `make platform-release-check` refuses any ecosystem declared without a publication job, any publication job without a declaration, a release workflow without the `release-verification` job or a promotion that does not need it.
+Accounts are funded through custody credit submitted to the router. There is
+no public faucet or control surface on the mainnet-beta.
 
-The go/no-go report is local, ignored build output. Run `make beta-report` to generate it or `make beta-contract-check` to generate and validate it. The report at `report_path` is rendered from the evidence ledger by `report_generator`, which reads gate records alone: `report_status` is its decision line, and the reached rung of every surface above is the rung that report records. `scripts/ci/beta-report.sh --check` fails when this contract and that report disagree, when the report on disk is not the one the ledger renders, or when readiness is claimed with a surface below its required rung.
+## Surfaces
 
-### Install coordinates
+| Surface | Scope | Class | Required rung | Reached rung | Source |
+| --- | --- | --- | --- | --- | --- |
+| native-core | ledger transition, checkpoints, settlement, guarantor bonds | functional | runtime_proven | source_present | src/, include/ |
+| native-daemon | layerxd, layerxctl, layerx-verify, layerx-genesis | functional | runtime_proven | source_present | cmd/ |
+| paxeer-chain | paxd on chain 125 with the LayerX custody, anchor and kernel precompiles | hosted | deployment_proven | source_present | daemon/paxd, node/, modules/, precompiles/ |
+| router | unified router and its route catalogue | hosted | deployment_proven | source_present | platform/hosted/gateway |
+| kernel | LayerX kernel domain behind the router: core, receipt authority and agent boundaries | hosted | deployment_proven | source_present | platform/hosted/node, platform/hosted/core, platform/hosted/authority, platform/hosted/agent-boundary |
+| identity | principals, sessions, introspection and service tokens | hosted | deployment_proven | source_present | platform/hosted/identity |
+| registry | hosted program registry | hosted | deployment_proven | source_present | platform/hosted/registry |
+| webhooks | signed webhook deliveries | hosted | deployment_proven | source_present | platform/hosted/webhooks |
+| dashboard | developer dashboard API and web | hosted | deployment_proven | source_present | platform/hosted/dashboard |
+| indexer | decoded history of the kernel domain and Paxeer blocks | hosted | deployment_proven | source_present | platform/hosted/indexer |
+| human | Human API, custody, intents, approvals and the wallet | hosted | deployment_proven | source_present | human/, platform/hosted/human |
+| interop | x402, AP2, UCP, Visa TAP, bridge relayer, gas station and web search | functional | runtime_proven | source_present | interop/crates |
+| agent | layerx-agentd, MCP surface | functional | runtime_proven | source_present | agent/crates |
+| sdks | TypeScript, Python, Rust, Go, JVM, Swift and .NET SDKs | functional | runtime_proven | source_present | agent/sdk, agent/crates/layerx-sdk, platform/sdk |
+| platform-cli | CLI and local emulator | functional | runtime_proven | source_present | platform/cli, platform/emulator |
+| programs | Programs runtime: deploy, paid call, restart | functional | runtime_proven | source_present | programs/crates |
+| docs-site | documentation site and executable samples | functional | runtime_proven | source_present | platform/docs |
 
-| Language | Coordinate | Ecosystem |
-| --- | --- | --- |
-| TypeScript | @sidiora/layerx-sdk | npm |
-| Python | layerx-sdk | pypi |
-| Go | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go | go-modules |
-| Java and Kotlin | com.sidiora.layerx:layerx-sdk:0.1.0 | maven-central |
-| Swift | LayerXSDK | swiftpm |
-| C# | LayerX.Sdk | nuget |
-| Rust | layerx-sdk | crates-io |
+## Beta configuration
 
-## Documentation journeys
+The following chain configuration is accepted for the mainnet-beta as it runs
+today. It is recorded here as beta configuration, not as a defect, and no
+governance proposal changes it during the beta.
 
-| Page | Surface | Journey |
-| --- | --- | --- |
-| index | docs-site | orientation |
-| install | docs-site | install and environment selection |
-| concepts/money | native-core | money model |
-| concepts/paying | hosted-gateway | paying |
-| concepts/receipts | hosted-gateway | receipts |
-| concepts/agents | agent-daemon | agents |
-| concepts/idempotency | hosted-gateway | idempotency |
-| concepts/enforcement | native-core | enforcement |
-| quickstart/typescript | sdk-typescript | quickstart |
-| quickstart/python | sdk-python | quickstart |
-| quickstart/go | sdk-go | quickstart |
-| quickstart/jvm | sdk-jvm | quickstart |
-| quickstart/swift | sdk-swift | quickstart |
-| quickstart/csharp | sdk-dotnet | quickstart |
-| quickstart/rust | sdk-rust | quickstart |
-| framework/express | integration-express | framework quickstart |
-| framework/next | integration-next | framework quickstart |
-| framework/fastapi | integration-fastapi | framework quickstart |
-| framework/spring | integration-spring | framework quickstart |
-| framework/ios | integration-ios | framework quickstart |
-| framework/android | integration-android | framework quickstart |
-| guide/seller-middleware | middleware-seller | guide |
-| guide/buyer-middleware | middleware-buyer | guide |
-| guide/merchant-middleware | middleware-merchant | guide |
-| guide/agent-middleware | middleware-agent | guide |
-| guide/webhooks | hosted-webhooks | guide |
-| guide/receipts | hosted-gateway | guide |
-| guide/programs | programs-runtime | guide |
-| guide/interop | interop-gateway | guide |
-| guide/reference-applications | reference-app-buyer-agent, reference-app-paid-api, reference-app-merchant-shop, reference-app-marketplace | guide |
-| reference/human-api | human-service | generated reference |
-| reference/agent-api | agent-daemon | generated reference |
-| reference/errors | hosted-gateway | generated reference |
-| reference/enforcement | native-core | generated reference |
-| reference/samples | docs-site | generated reference |
-| environments/beta | hosted-testnet | hosted beta |
-| environments/emulator | emulator | emulator |
+| Key | Accepted beta value |
+| --- | --- |
+| slashing | zero slashing: no validator stake is slashed during the beta |
+| consensus_overrides | the validators run with the `unsafe-*` consensus overrides enabled; they are operator settings, not genesis parameters |
+| validator_layout | four validators on two hosts, two per host; losing one host halts block production, and that halt risk is accepted for the beta |
+| full_nodes | the existing synced full nodes serve RPC; no validator replacement is scheduled during the beta |
 
 ## Unknown-state behaviour
 
-An outcome that is not known is reported as unknown, never as success, at every layer of the beta:
-
-- A submission whose result the client did not observe stays `unknown` (ramp status vocabulary) or `still_checking` (faucet claims) under its idempotency key and is resolved only by looking up the canonical receipt or activity; it is never resubmitted blindly and never translated into a safe outcome.
-- `testnet-control` reports `/readyz` per dependency (identity, faucet, core, core admin, receipt authority, registry, Redis, gateway, Paxeer boundary) and per journey (funding, payment, receipt inspection, Programs), each journey being the conjunction of its declared dependency set; the global state is `ready` only when every dependency is reachable, every journey is ready and the package semantic version and wire protocol version match the pending release, and `/v1/journeys/<journey>` admits a tester only while that journey is ready, naming the failing dependency otherwise. A gateway outage does not imply a core outage and Paxeer degradation is never presented as LayerX finality.
-- A gate that cannot run because an owner input is missing is recorded in the evidence ledger with outcome `blocked` and the input named; it is never recorded as `pass`.
-- A surface without an executed gate remains at rung `source_present`; a task status never raises a surface above `tested`.
-- The readiness claim of this contract stays `false` while any surface is below its required rung or any contradiction listed below is open.
-
-## Architecture summary
-
-The native C17 core (`src/`, `include/`) implements the ledger transition, checkpoints and settlement rules and is operated through the daemons and tools in `cmd/`. Checkpoints are anchored in the Solidity settlement contracts (`contracts/`) and mirrored to Ethereum test networks and Solana devnet by the mirror contracts and the `layerx-mirror` crate (`interop/`). The agent plane (`agent/`) exposes admission, signing and receipts to agents through `layerx-agentd`, the MCP surface and seven SDK ecosystems. The human plane (`human/`) provides the human service, the Paxeer custody client and the web application with its custody, approval, withdrawal-claim and emergency-exit journeys. The developer platform (`platform/`) provides the CLI, the emulator, the hosted testnet, faucet, gateway, program registry, webhooks and dashboard, the four middleware packages, the framework and agent-framework integrations, the documentation site and the four reference applications. The Programs runtime (`programs/`) runs deployed programs behind the hosted registry with deploy, paid-call and restart journeys. Interop (`interop/crates`) covers x402, AP2, UCP, the Visa trusted agent protocol, portable verification, migration and fiat. The ramp toolkit and reference ramp (`platform/ramps`) operate as an independent market maker over ordinary agent accounts, and Paxeer (`node/`, `modules/`, `human/crates/layerx-paxeer-client`) remains the sole custody and guaranteed-withdrawal boundary across every mirror.
-
-Checkpoint identity and freshness are declared once, in `contracts/config/checkpoint-settlement.json` (schema `layerx/checkpoint-settlement/1`): the version 2 `checkpoint-certificate` and `guarantor-attestation` domain tags, the canonical header encoding prefix and length, the finality policy (maximum header-relative attestation delay and certificate threshold) and the named settlement domains (Paxeer chain id, settlement contract and bonded guarantor set). The native core reads it through the generated `lxp_checkpoint_settlement.h`, `layerx-proof` embeds it as `layerx_proof::settlement`, the Foundry registry tests construct `CheckpointRegistry` from it, and the cross-language vectors under `tests/vectors/checkpoint/` are generated from it. The `vectors` domain is the only domain declared today; the beta Paxeer testnet domain is written by `platform/hosted/paxeer/anchor-guarantors.sh` during the beta cluster bring-up: its settlement contract and guarantor bond are both the layerxAnchor precompile `0x0000000000000000000000000000000000001014`, its chain id is the Paxeer EVM chain id, and it carries the anchor genesis minimum bond and maximum attestation delay, which the precompile exposes no view for.
-
-## External dependencies
-
-| Dependency | Production counterpart | Beta counterpart | Owner input names |
-| --- | --- | --- | --- |
-| Ethereum networks for settlement mirrors | Ethereum mainnet and its L2s | ethereum-sepolia (chain 11155111), base-sepolia (chain 84532), hood-testnet (chain 46630) per interop/deploy/mirror/ethereum-testnets-2026-08-31.json | ETHEREUM_RPC_A_TOKEN, ETHEREUM_RPC_B_TOKEN, ETHEREUM_CONFIG_B, MIRROR_LIVE_CONFIG, MIRROR_VERIFY_CONFIG |
-| Solana network for the mirror program | Solana mainnet-beta | solana-devnet per interop/deploy/mirror/solana-devnet-2026-08-31.json | SOLANA_RPC_A_TOKEN, SOLANA_RPC_B_TOKEN, SOLANA_CONFIG_B |
-| Paxeer custody boundary | Paxeer production network | the in-cluster paxd chain 125 node and its JSON-RPC boundary from platform/hosted/paxeer/deployment.yaml, reached through testnet_paxeer_url; platform/hosted/tests/beta-cluster.sh builds paxd from the repository-root Go module (Dockerfile.paxd-node), initialises the chain with the generated deployer address and the layerxcustody (0x…1013) and layerxanchor (0x…1014) module genesis written by platform/hosted/paxeer/custody-genesis.py and anchor-genesis.py, and runs platform/hosted/paxeer/anchor-guarantors.sh to register and activate the node's guarantors through the anchor precompile; no Solidity contract is deployed for custody, checkpoints, bonds or challenges | none; the deployer and controller keys are generated by the bring-up and Paxeer transactions are signed by platform/hosted/paxeer/evm.py (LAYERX_BETA_MIRROR_FOUNDRY_BIN is needed only for the Ethereum mirror archive contract) |
-| Pending-release in-cluster services (core, core-admin, identity, receipt authority, agent boundary) | production deployments of the same services | the same services on the beta cluster from platform/hosted/node/deployment.yaml (layerx-pending-core, layerx-pending-core-admin, layerx-receipt-authority, layerx-agent-boundary) and platform/hosted/identity/deployment.yaml (layerx-identity), addressed by testnet_core_url, testnet_core_admin_url, gateway_identity_url, gateway_authority_url and gateway_component_url; their images are built from the repository by platform/hosted/tests/beta-cluster.sh | LAYERX_BETA_SEQUENCER_KEY_FILE (generated when unset); the node, identity and service tokens are generated by the bring-up |
-| Beta Kubernetes cluster | production cluster | owner-designated beta cluster or a disposable local cluster running the real manifests and images | KUBECONFIG |
-| Ramp provider, compliance and KMS contracts | production layerx-ramp-provider-v1, layerx-ramp-compliance-v1 and KMS signature boundary | provider sandboxes | RAMP_URL, RAMP_OPERATOR_URL, RAMP_CA_PEM_B, RAMP_CUSTOMER_TOKEN, RAMP_OPERATOR_TOKEN, RAMP_ON_QUOTE_ID, RAMP_OFF_QUOTE_ID, RAMP_OFF_GRANT_JSON, RAMP_ON_ACCOUNT_SEQUENCE, RAMP_OFF_RECEIVER_SEQUENCE |
-| Package registries | crates.io, npm, PyPI, Go module proxy, Maven Central, SwiftPM tags, NuGet | the same registries with beta pre-release versions, or owner-designated beta registries | secrets LAYERX_RELEASE_CRATES_IO_TOKEN, LAYERX_RELEASE_NPM_TOKEN (empty selects npm OIDC trusted publishing), LAYERX_RELEASE_GO_TAG_TOKEN, LAYERX_RELEASE_MAVEN_CENTRAL_TOKEN, LAYERX_RELEASE_NUGET_API_KEY, LAYERX_RELEASE_SWIFTPM_REMOTE, LAYERX_RELEASE_GPG_PRIVATE_KEY, LAYERX_RELEASE_GPG_PASSPHRASE; a PyPI trusted publisher for platform.yml; beta registry overrides LAYERX_RELEASE_CRATES_IO_INDEX, LAYERX_RELEASE_NPM_REGISTRY, LAYERX_RELEASE_PYPI_REPOSITORY_URL, LAYERX_RELEASE_PYPI_INDEX_URL, LAYERX_RELEASE_GO_PROXY, LAYERX_RELEASE_MAVEN_UPLOAD_URL, LAYERX_RELEASE_MAVEN_REPOSITORY_URL, LAYERX_RELEASE_SWIFTPM_URL, LAYERX_RELEASE_NUGET_SOURCE |
-| Real agent-framework services | production RPC, budget, signer, receipt and A2A services | scheduled beta services | LAYERX_SCHEDULED_AGENT_RPC_URL, LAYERX_SCHEDULED_BUDGET_SERVICE_URL, LAYERX_SCHEDULED_SIGNER_SERVICE_URL, LAYERX_SCHEDULED_RECEIPT_SERVICE_URL, LAYERX_SCHEDULED_A2A_URL, LAYERX_SCHEDULED_AGENT_TOKEN, LAYERX_SCHEDULED_SPEND_TOOL_INPUT_JSON |
-| Webhook delivery fixture | production webhook service | scheduled beta webhook service | LAYERX_SCHEDULED_WEBHOOK_FIXTURE_URL, LAYERX_SCHEDULED_WEBHOOK_FIXTURE_TOKEN |
-| Hosted testnet CA | production CA | beta CA under the names in the Beta CA table | LAYERX_SCHEDULED_TESTNET_CA_BASE64 |
-| macOS and Android toolchains | release build runners | owner-provided runners for ios-application-artifact and android-application-artifact | runner labels of .github/workflows/platform.yml |
+- An outcome a client did not observe stays unknown under its idempotency key
+  and is resolved only by looking up the canonical receipt; it is never
+  resubmitted blindly and never reported as success.
+- Paxeer degradation is never presented as kernel finality.
+- A surface without an executed gate stays at rung `source_present`.
 
 ## Beta-versus-production differences
 
 | Key | Difference |
 | --- | --- |
-| ui_polish | UI polish is not a beta gate; human-qualify-ui is excluded from the functional bar. |
-| visual_regression | Visual regression baselines (HUMAN_VISUAL_BASELINE_REVIEWED) are not a beta gate. |
-| automated_accessibility | Automated accessibility scans are not a beta gate. |
-| usability_studies | Usability studies (human-qualify-usability) are not a beta gate. |
-| performance_budgets_and_soak | Performance budgets and soak runs (human-qualify-perf) are not a beta gate. |
+| ui_polish | UI polish, visual regression and automated accessibility scans are not beta gates. |
+| usability_and_performance | Usability studies, performance budgets and soak runs are not beta gates. |
 | external_security_audit | No external security audit is required for the beta. |
-| production_infrastructure | The beta runs on beta infrastructure: a beta cluster, test networks, sandboxes, the Paxeer testnet and pre-release registry versions, never production. |
+| consensus | Zero slashing, the unsafe consensus overrides and the two-host validator layout above are beta configuration. |
 | production_certification | The beta requires runtime_proven and deployment_proven rungs, not owner_certified. |
 
 ## Contradictions
 
-| Key | Canonical value | Divergent source | Divergent value | Resolving task |
-| --- | --- | --- | --- | --- |
-| faucet_hostname | private network only, no public name | platform/hosted/testnet/deployment.yaml: Service layerx-faucet-public is a LoadBalancer with no Ingress host | (no ingress host) | 3.7 |
+| Key | Canonical value | Divergent source | Divergent value |
+| --- | --- | --- | --- |
+| go_sdk_module | github.com/Sidiora-Labs/Paxeer-X-Network/platform/sdk/go | platform/sdk/go/go.mod | github.com/Sidiora-Labs/LayerX-Network/platform/sdk/go |
 
-Each row records a value that a source carries today and that disagrees with the canonical value. The contract check recomputes every row from the sources; a row that disappears from the sources must be removed here, a disagreement that is not listed here fails the build, and the readiness claim cannot become `true` while any row remains.
+The readiness claim cannot become `true` while any row remains.
