@@ -21,6 +21,8 @@ kill_timeout = "60s"
   LAYERX_HUMAN_MAX_BODY_BYTES = "1048576"
   LAYERX_HUMAN_MAX_CONNECTIONS = "1024"
   LAYERX_HUMAN_IO_DEADLINE_SECONDS = "15"
+  LAYERX_HUMAN_RP_ID = "paxportwallet.com"
+  LAYERX_KERNEL_PAXEER_RPC_NAMES = "api1.mainnet-beta.paxeer.network api12.mainnet-beta.paxeer.network"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_URL = "https://journeys.process.paxeer-internal.internal:9443"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE = "/run/secrets/events-journey-token"
@@ -36,6 +38,14 @@ kill_timeout = "60s"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE = "/run/secrets/events-webhooks-token"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
+
+# The full kernel profile of docker/kernel/init.sh refuses to start without
+# four more values the repo does not define; each is a deploy input set as a
+# Fly secret of this app (fly secrets set, read as env):
+#   LAYERX_NODE_NETWORK_NAME                     the network name the kernel genesis names, the router's LAYERX_GATEWAY_NETWORK_ID
+#   LAYERX_KERNEL_AGENTD_RPC_PEER                the DNS name of the gateway client certificate agentd admits on 9454
+#   LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES    agentd idempotency retention in daemon sequences, positive integer
+#   LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES  agentd idempotency retention in protocol sequences, at most the daemon value
 
 [[files]]
   guest_path = "/etc/layerx/trust/ca.crt"
@@ -69,7 +79,7 @@ kill_timeout = "60s"
   force_https = true
   auto_stop_machines = false
   auto_start_machines = false
-  min_machines_running = 1
+  min_machines_running = 2
 
   [http_service.concurrency]
     type = "requests"
@@ -84,12 +94,14 @@ kill_timeout = "60s"
     path = "/livez"
     protocol = "http"
 
+# agentd at machine.paxeer.network:9454: the edge passes the name through
+# unchanged to the dedicated IPv4 of this app (fly ips allocate-v4).
 [[services]]
   internal_port = 9454
   protocol = "tcp"
   auto_stop_machines = false
   auto_start_machines = false
-  min_machines_running = 1
+  min_machines_running = 2
 
   [[services.ports]]
     port = 9454

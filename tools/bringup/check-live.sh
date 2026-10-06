@@ -2982,8 +2982,8 @@ print("verdict %d %d" % (failures, waiting))
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 # check_kernel_app: the kernel app of human/wallet/deploy/human.toml runs
-# exactly one machine, started, with its one volume mounted at /data, from one
-# candidate image whose identity every line records; the init of
+# exactly two machines, both started, each with its own volume mounted at
+# /data, from one candidate image whose identity every line records; the init of
 # docker/kernel/init.sh runs as root as the entrypoint; and the roles the init
 # records under /run/layerx/init are exactly the kernel_roster, each with its
 # process and material boundary (kernel_app_verdict). One line per check.
@@ -3014,8 +3014,8 @@ ids = sorted({identity(m) for m in started})
 print(len(ms), len(started), len(data), ids[0] if len(ids) == 1 and " " not in ids[0] else "none")
 ' 2>/dev/null)" || answer=""
 	read -r n_machines n_started n_data candidate <<<"${answer:-none none none none}"
-	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_data" = 1 ] && [ "$candidate" != none ]; then
-		echo "pass machines app=$app machines=1 started=1 volume=/data candidate=$candidate"
+	if [ "$n_machines" = 2 ] && [ "$n_started" = 2 ] && [ "$n_data" = 2 ] && [ "$candidate" != none ]; then
+		echo "pass machines app=$app machines=2 started=2 volume=/data candidate=$candidate"
 	else
 		echo "fail machines app=$app machines=$n_machines started=$n_started volume-at-data=$n_data candidate=$candidate"
 		finish 1

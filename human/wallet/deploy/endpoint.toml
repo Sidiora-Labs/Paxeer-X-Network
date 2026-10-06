@@ -30,6 +30,7 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_PUBLIC_CORE_URL = "https://paxeer-human-service.internal:9443"
   LAYERX_GATEWAY_IDENTITY_URL = "https://paxeer-identity.internal:9443"
   LAYERX_GATEWAY_PROGRAM_REGISTRY_URL = "https://paxeer-registry.internal:9420"
+  LAYERX_GATEWAY_PAXEER_RPC_URLS = '["https://api1.mainnet-beta.paxeer.network","https://api12.mainnet-beta.paxeer.network"]'
   LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12 = "/run/secrets/client.p12"
   LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE = "/run/secrets/client-password"
   LAYERX_GATEWAY_COMPONENT_TOKEN_FILE = "/run/secrets/component-token"
