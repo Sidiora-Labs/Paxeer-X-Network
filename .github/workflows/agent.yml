@@ -20,7 +20,7 @@ env:
 
 jobs:
   build-lint-test:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 30
     steps:
       - name: Check out source
@@ -60,7 +60,7 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.19.0 && cargo deny --manifest-path agent/Cargo.toml check
 
   fuzz-smoke:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 20
     steps:
       - name: Check out source
@@ -75,7 +75,7 @@ jobs:
         run: make agent-fuzz-wire
 
   adversarial:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 120
     env:
       CARGO_PROFILE_DEV_DEBUG: "1"

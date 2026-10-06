@@ -37627,7 +37627,7 @@ ac_2 = "No private host fact, secret or key material enters the repository; depl
 
 [task.109.1]
 title = "C1: v6.11 upgrade handler: SID holder snapshot, usid mint, legacy slot zeroing, mint authority to the bridge module"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37669,7 +37669,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.3]
 title = "C3: Governance window kit: rendered and dry-run validated proposals for the first post-upgrade window"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37688,7 +37688,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.4]
 title = "C4: Gateway EVM capability probe by eth_call and /rpc default"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37697,7 +37697,7 @@ do_1 = "Replace the eth_getCode probe for the exchange precompiles 0x1015/0x1016
 do_2 = "Default chain RPC path when only the router root is configured becomes <root>/rpc."
 do_3 = "Unit tests in the same file: mocked eth_call answer marks present, error marks absent, default path appends /rpc exactly once."
 touches = ["platform/hosted/gateway/src/capabilities.rs"]
-verify_cmd = "cargo test -p layerx-gateway capabilities"
+verify_cmd = "cd platform && cargo test -p layerx-platform-gateway --bin layerx-gateway capabilities::tests"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37707,7 +37707,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.5]
 title = "C5: EVM JSON-RPC eth_syncing"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37726,7 +37726,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.6]
 title = "C6: Reproducible paxd release pipeline and v6.11.0 tag procedure"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37746,7 +37746,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.7]
 title = "C7: Published chain facts: HPX chain-info, public RPC page, name allowlist"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37765,7 +37765,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.8]
 title = "K1: Kernel genesis with seven modules and env-driven inputs"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37803,7 +37803,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.10]
 title = "K3: Oracle feeder for kernel perps (BTC-USD, ETH-USD)"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37841,7 +37841,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.12]
 title = "K5a: Exchange intent ingester core: log tail, decode, cursor, journal"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37880,7 +37880,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.14]
 title = "P2: Secret mint tooling and attestor issuer configuration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37899,7 +37899,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.15]
 title = "P3: Gas station owner-set rate"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37937,7 +37937,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.17]
 title = "P5: CI on the lx-runner large runner"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37955,7 +37955,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.18]
 title = "P6: Beta evidence ledger and the mainnet-beta contract"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37973,7 +37973,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.19]
 title = "H1: Wallet PWA image, env schema, proxy headers, healthcheck"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []

@@ -13,6 +13,15 @@ shutdown() {
 
 trap shutdown TERM INT EXIT
 
+secret="${TRUSTED_PROXY_SECRET:-}"
+case "$secret" in
+  *[!A-Za-z0-9._~+/=-]*)
+    echo "TRUSTED_PROXY_SECRET may only contain A-Z a-z 0-9 . _ ~ + / = -" >&2
+    exit 1
+    ;;
+esac
+printf 'proxy_set_header x-paxport-proxy-secret "%s";\n' "$secret" > /tmp/nginx/proxy-secret.conf
+
 PORT=3000 HOSTNAME=127.0.0.1 node /app/human/apps/wallet/server.js &
 node_pid="$!"
 

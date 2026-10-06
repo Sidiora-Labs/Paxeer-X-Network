@@ -19,7 +19,7 @@ jobs:
   live-source-verification:
     name: Ethereum and Solana live source verification
     environment: migration-testnets
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 30
     steps:
       - name: Check out source
@@ -89,7 +89,7 @@ jobs:
   connected-source-qualification:
     name: Authenticated mapping and funded migration V2
     environment: migration-testnets
-    runs-on: ${{ vars.CI_LINUX_RUNNER }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 30
     env:
       LAYERX_MIGRATION_V2_FIXTURE: ${{ vars.LAYERX_MIGRATION_V2_FIXTURE }}

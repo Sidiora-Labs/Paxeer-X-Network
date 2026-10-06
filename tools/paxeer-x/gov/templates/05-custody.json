@@ -1,0 +1,46 @@
+{
+  "title": "Map PAX and SID into custody and set the deposit root authority",
+  "description": "Map the PAX base coin and the Sidiora usid coin to their LayerX custody assets and set the custody parameters, naming the Ed25519 key that signs deposit root registrations.",
+  "deposit": "@DEPOSIT@",
+  "messages": [
+    {
+      "@type": "/paxprotocol.paxchain.layerxcustody.MsgSetAsset",
+      "authority": "@GOV_AUTHORITY@",
+      "asset": {
+        "asset_id": "@PAX_ASSET_ID@",
+        "denom": "uhpx",
+        "pointer": "",
+        "enabled": true,
+        "paused": false,
+        "minimum_deposit": "@PAX_MINIMUM_DEPOSIT@",
+        "custody_cap": "@PAX_CUSTODY_CAP@"
+      }
+    },
+    {
+      "@type": "/paxprotocol.paxchain.layerxcustody.MsgSetAsset",
+      "authority": "@GOV_AUTHORITY@",
+      "asset": {
+        "asset_id": "@SID_ASSET_ID@",
+        "denom": "usid",
+        "pointer": "@SID_POINTER@",
+        "enabled": true,
+        "paused": false,
+        "minimum_deposit": "@SID_MINIMUM_DEPOSIT@",
+        "custody_cap": "@SID_CUSTODY_CAP@"
+      }
+    },
+    {
+      "@type": "/paxprotocol.paxchain.layerxcustody.MsgUpdateParams",
+      "authority": "@GOV_AUTHORITY@",
+      "params": {
+        "authority": "@GOV_AUTHORITY@",
+        "network_id": "@CUSTODY_NETWORK_ID@",
+        "withdrawal_delay_seconds": "@WITHDRAWAL_DELAY_SECONDS@",
+        "forced_exit_delay_seconds": "@FORCED_EXIT_DELAY_SECONDS@",
+        "liveness_bound_seconds": "@LIVENESS_BOUND_SECONDS@",
+        "sequencer_authorizations": [],
+        "deposit_root_authority": "@DEPOSIT_AUTHORITY@"
+      }
+    }
+  ]
+}

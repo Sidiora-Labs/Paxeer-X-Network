@@ -1,0 +1,27 @@
+{
+  "network_id": 125,
+  "protocol_version": 3,
+  "actor_did": "did:layerx:oracle-feeder",
+  "lni_socket": "/run/layerx/lni.sock",
+  "fee_limit": "1000000",
+  "cadence_ms": 1000,
+  "validity_ms": 60000,
+  "max_quote_age_ms": 10000,
+  "max_divergence_bps": 50,
+  "min_sources": 2,
+  "price_decimals": 8,
+  "source_identifier": 1,
+  "initial_account_sequence": 1,
+  "markets": [
+    {"symbol": "BTC-USD", "market_id": "1111111111111111111111111111111111111111111111111111111111111111"},
+    {"symbol": "ETH-USD", "market_id": "2222222222222222222222222222222222222222222222222222222222222222"}
+  ],
+  "sources": [
+    {"name": "coinbase", "url": "https://api.exchange.coinbase.com/products/{pair}/ticker", "price_pointer": "/price",
+     "pairs": {"BTC-USD": "BTC-USD", "ETH-USD": "ETH-USD"}},
+    {"name": "kraken", "url": "https://api.kraken.com/0/public/Ticker?pair={pair}", "price_pointer": "/result/{pair}/c/0",
+     "pairs": {"BTC-USD": "XXBTZUSD", "ETH-USD": "XETHZUSD"}},
+    {"name": "bitstamp", "url": "https://www.bitstamp.net/api/v2/ticker/{pair}/", "price_pointer": "/last", "time_pointer": "/timestamp", "time_unit": "s",
+     "pairs": {"BTC-USD": "btcusd", "ETH-USD": "ethusd"}}
+  ]
+}

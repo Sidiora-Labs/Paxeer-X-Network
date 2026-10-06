@@ -19,6 +19,7 @@ members = [
     "hosted/webhooks",
     "hosted/dashboard",
     "hosted/testnet",
+    "hosted/feeder",
     "sdk/generators",
     "release",
     "tools/kvx",
