@@ -1582,6 +1582,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-oracle-feeder"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "layerx-client",
+ "layerx-crypto",
+ "layerx-types",
+ "layerx-wire",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq",
+ "zeroize",
+]
+
+[[package]]
 name = "layerx-paxeer-client"
 version = "0.1.0"
 dependencies = [
