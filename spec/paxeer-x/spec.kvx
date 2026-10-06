@@ -37627,7 +37627,7 @@ ac_2 = "No private host fact, secret or key material enters the repository; depl
 
 [task.109.1]
 title = "C1: v6.11 upgrade handler: SID holder snapshot, usid mint, legacy slot zeroing, mint authority to the bridge module"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
