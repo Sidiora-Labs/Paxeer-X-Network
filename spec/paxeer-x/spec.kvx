@@ -37726,7 +37726,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.6]
 title = "C6: Reproducible paxd release pipeline and v6.11.0 tag procedure"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
