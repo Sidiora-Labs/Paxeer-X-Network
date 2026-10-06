@@ -13,6 +13,7 @@ pub mod lni;
 pub mod paxeer_binding;
 pub mod read;
 pub mod receipt;
+pub mod resolver;
 #[cfg(target_os = "linux")]
 pub mod runtime_clock;
 pub mod stream;
