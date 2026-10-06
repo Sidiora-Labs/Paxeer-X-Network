@@ -16,6 +16,7 @@ pub mod backfill;
 pub mod blockscout;
 pub mod codec;
 pub mod config;
+pub mod explorer;
 pub mod follow;
 pub mod layerx;
 pub mod paxeer;

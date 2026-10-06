@@ -1,4 +1,4 @@
-//! The read API: `/healthz`, `/v1/history/{account}`, `/v1/assets` and
+//! The read API: `/healthz`, `/readyz`, `/v1/history/{account}`, `/v1/assets` and
 //! `/v1/assets/{id}`, served over plain HTTP on loopback or over TLS.
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -124,6 +124,8 @@ pub struct Readiness {
     pub stall_after_secs: u64,
     /// Process start (Unix seconds): only observations after it count.
     pub started_at: u64,
+    /// The explorer API that supplies Paxeer history below the node walk.
+    pub explorer: Option<crate::explorer::ExplorerApi>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -163,10 +165,17 @@ fn unix_now() -> u64 {
 ///
 /// # Errors
 /// Returns [`IndexError::Store`] when the database cannot answer.
-pub fn readiness_document(store: &Store, readiness: &Readiness) -> Result<ReadinessDocument, IndexError> {
+pub fn readiness_document(
+    store: &Store,
+    readiness: &Readiness,
+) -> Result<ReadinessDocument, IndexError> {
     store.ping()?;
     let current = unix_now();
-    let mut worst = if readiness.sources.is_empty() { 2_usize } else { 0_usize };
+    let mut worst = if readiness.sources.is_empty() {
+        2_usize
+    } else {
+        0_usize
+    };
     let mut sources = Vec::new();
     for &source in &readiness.sources {
         let observation = store.source_observation(source)?;
@@ -181,8 +190,12 @@ pub fn readiness_document(store: &Store, readiness: &Readiness) -> Result<Readin
             Some(at) if current.saturating_sub(at) > readiness.stall_after_secs => ("stalled", 2),
             Some(_) if failures >= FAILING_AFTER => ("failing", 1),
             Some(_) if failures > 0 => ("retrying", 1),
-            Some(_) if observation.as_ref().and_then(|o| o.source_head)
-                != cursor.as_ref().map(|c| c.position) => ("catching_up", 1),
+            Some(_)
+                if observation.as_ref().and_then(|o| o.source_head)
+                    != cursor.as_ref().map(|c| c.position) =>
+            {
+                ("catching_up", 1)
+            }
             Some(_) => ("ready", 0),
         };
         worst = worst.max(rank);
@@ -270,12 +283,23 @@ pub fn route_with(store: &Store, readiness: &Readiness, method: &str, target: &s
             Ok(query) => query,
             Err(response) => return response,
         };
-        return match (store.history(&account, query.cursor, query.limit, query.kind.as_deref()),
-                      readiness_document(store, readiness)) {
-            (Ok(page), Ok(freshness)) => json(200, &json!({
-                "version": 1, "items": page.items, "next_cursor": page.next_cursor,
-                "freshness": freshness,
-            })),
+        if let Some(explorer) = &readiness.explorer {
+            if let Err(error) = explorer.import(store, &account) {
+                eprintln!("layerx-indexer explorer import failed: {error}");
+                return refusal(503, "explorer_unavailable", Some(1));
+            }
+        }
+        return match (
+            store.merged_history(&account, query.cursor, query.limit, query.kind.as_deref()),
+            readiness_document(store, readiness),
+        ) {
+            (Ok(page), Ok(freshness)) => json(
+                200,
+                &json!({
+                    "version": 1, "items": page.items, "next_cursor": page.next_cursor,
+                    "freshness": freshness,
+                }),
+            ),
             (Err(error), _) | (_, Err(error)) => failure(&error),
         };
     }
