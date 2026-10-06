@@ -325,8 +325,20 @@ impl Drop for Gateway {
 
 /// Points the configuration's kernel relay and EVM endpoint at `gateway`,
 /// so the attesting sidecar dials nothing but the loopback listeners.
-fn relay_settings(config: &mut Value, gateway: &Gateway) {
+/// A gateway authorization file in the scratch directory, in the
+/// `LayerX-Key <id>:lxp_live_<64 hex>` form the sidecar reads, owner-only.
+fn gateway_authorization(scratch: &Scratch) -> TestResult<PathBuf> {
+    let mut secret = [0_u8; 32];
+    File::open("/dev/urandom")?.read_exact(&mut secret)?;
+    let path = std::fs::canonicalize(&scratch.0)?.join("gateway.authorization");
+    std::fs::write(&path, format!("LayerX-Key relay-test:lxp_live_{}\n", hex(&secret)))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    Ok(path)
+}
+
+fn relay_settings(config: &mut Value, gateway: &Gateway, authorization: &Path) {
     config["crawl_interval_seconds"] = json!(86_400);
+    config["gateway"]["authorization_file"] = json!(authorization);
     config["evm"]["endpoint"] = json!(gateway.url());
     config["kernel"] = json!({
         "endpoint": gateway.url(),
@@ -690,7 +702,10 @@ fn the_kernel_relay_starts_and_stops_with_the_binary_under_a_configuration_that_
     let scratch = Scratch::new("relay")?;
     let site = Site::start(&fixtures().join("binary/site"))?;
     let gateway = Gateway::start()?;
-    let config = configure(&scratch, &site, |config| relay_settings(config, &gateway))?;
+    let authorization = gateway_authorization(&scratch)?;
+    let config = configure(&scratch, &site, |config| {
+        relay_settings(config, &gateway, &authorization);
+    })?;
     let (receiver, secret) = receiver_key(&scratch)?;
     let attestor = attestor_key(&scratch)?;
     let mut sidecar = Sidecar::start_with(&scratch, &config, &receiver, Some(&attestor))?;
@@ -776,7 +791,10 @@ fn the_binary_refuses_to_start_naming_the_configuration_field_or_key() -> TestRe
     assert!(std::fs::read_to_string(&log)?.contains(RECEIVER_KEY_FILE));
 
     let gateway = Gateway::start()?;
-    configure(&scratch, &site, |config| relay_settings(config, &gateway))?;
+    let authorization = gateway_authorization(&scratch)?;
+    configure(&scratch, &site, |config| {
+        relay_settings(config, &gateway, &authorization);
+    })?;
     let (mut child, log) = launch(&scratch, Some(&receiver))?;
     assert_eq!(wait_exit(&mut child)?.code(), Some(2));
     let refused = std::fs::read_to_string(&log)?;
