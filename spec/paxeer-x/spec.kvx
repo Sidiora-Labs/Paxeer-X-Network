@@ -38161,7 +38161,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.29]
 title = "B1: Bridge deploy overlay for eight EVM chains and Solana"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
