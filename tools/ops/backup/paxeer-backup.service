@@ -1,0 +1,11 @@
+[Unit]
+Description=Paxeer encrypted fleet backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=BACKUP_ENV=/etc/paxeer/backup.env
+ExecStart=/opt/paxeer/tools/ops/backup/backup.sh
+Nice=10
+IOSchedulingClass=idle
