@@ -4698,3 +4698,43 @@ observed = "migrations/0001_genesis_sections.sql: no source file or make target 
 [gotcha.998]
 title = "readme r9-toplevel"
 observed = "readme verify: IP regex rejects <ipv4> in commands -> write localhost in README commands"
+
+[gotcha.999]
+title = "fleet 109 gates"
+observed = "go, cargo, forge and pnpm are not on PATH in a fresh subagent shell -> heavy.sh exports /usr/local/go/bin, ~/.cargo/bin, ~/.foundry/bin and a pnpm shim; run every gate through it"
+
+[gotcha.1000]
+title = "fleet 109 gates"
+observed = "paxd main package lives at ./daemon/paxd, not ./cmd/paxd -> go build/test targets must name ./daemon/paxd"
+
+[gotcha.1001]
+title = "fleet 109 gates"
+observed = "cargo -p needs the real package names and the workspace root: layerx-platform-gateway (bin layerx-gateway), layerx-platform-identity, layerx-oracle-feeder, layerx-gas-station, layerx-indexer under platform/; x-websearch, layerx-intent-ingester, layerx-bridge-relayer under interop/; layerx-client, paxeer-xdk under agent/; layerx-human-service under human/; cmd/layerxctl has its own Cargo.toml -> pass --manifest-path <workspace>/Cargo.toml"
+
+[gotcha.1002]
+title = "fleet 109 gates"
+observed = "forge reads foundry.toml by default and the contracts live under foundry.paxeer.toml -> prefix forge commands with FOUNDRY_CONFIG=foundry.paxeer.toml"
+
+[gotcha.1003]
+title = "fleet 109 chain"
+observed = "the governance upgrade plan name is v6.11 (modules/layerxcustody/types/governance_activation.go), not v6.11.0 -> proposals and handler registration use v6.11; the release tag is v6.11.0"
+
+[gotcha.1004]
+title = "fleet 109 web"
+observed = "pnpm nested workspaces refuse esbuild postinstall unless pnpm.allowBuilds lists esbuild, and top-level await in a script needs the .mts extension -> set allowBuilds and name scripts .mts"
+
+[gotcha.1005]
+title = "fleet 109 git"
+observed = "the cg check pre-commit hook stalls commits for minutes on this box and git worktree add on the large tree takes several minutes each -> create worktrees in the background and wait on a condition, never sleep in a chained command"
+
+[gotcha.1006]
+title = "fleet 109 shell"
+observed = "an until-loop that polls pgrep -f '<script> <n>' matches its own command line and never exits -> match on a pid file or use pgrep -x"
+
+[gotcha.1007]
+title = "fleet 109 upgrade"
+observed = "the v6.11 handler reads node/testdata/sid-holders.json shaped [{address, balance:\"<string>\"}] and the legacy SID balances sit at keccak(holder, 0x52c63247...ace00) in the OZ v5 ERC-7201 layout -> the holder snapshot must be generated against that slot, not slot 0"
+
+[gotcha.1008]
+title = "fleet 109 platform"
+observed = "the oracle feeder talks to the kernel over the LNI Unix socket -> the feeder must run on the same machine as the kernel (same Fly app) and cannot be a separate app"
