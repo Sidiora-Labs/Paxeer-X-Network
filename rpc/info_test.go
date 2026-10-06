@@ -1,6 +1,8 @@
 package evmrpc_test
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -8,6 +10,7 @@ import (
 
 	"github.com/cosmos/go-bip39"
 	types2 "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
 	"github.com/sidiora-labs/paxeer-network/rpc"
 	"github.com/sidiora-labs/paxeer-network/sdk/client"
 	"github.com/sidiora-labs/paxeer-network/sdk/client/config"
@@ -206,13 +209,35 @@ func TestBlobBaseFee_Direct(t *testing.T) {
 	require.Contains(t, err.Error(), "blobs not supported")
 }
 
-func TestSyncingNotSupported(t *testing.T) {
-	Ctx = Ctx.WithBlockHeight(1)
+func TestSyncingCaughtUp(t *testing.T) {
 	resObj := sendRequestGood(t, "syncing")
-	require.Contains(t, resObj, "error")
-	errObj := resObj["error"].(map[string]interface{})
-	require.Equal(t, float64(evmrpc.ErrCodeEVMNotSupported), errObj["code"])
-	require.Contains(t, errObj["message"].(string), "eth_syncing")
+	require.NotContains(t, resObj, "error")
+	require.Equal(t, false, resObj["result"])
+}
+
+type catchingUpTMClient struct {
+	lowLatestTMClient
+}
+
+func (c *catchingUpTMClient) Status(context.Context) (*coretypes.ResultStatus, error) {
+	return &coretypes.ResultStatus{
+		SyncInfo: coretypes.SyncInfo{
+			EarliestBlockHeight: 5,
+			LatestBlockHeight:   40,
+			MaxPeerBlockHeight:  100,
+			CatchingUp:          true,
+		},
+	}, nil
+}
+
+func TestSyncingCatchingUp(t *testing.T) {
+	api := evmrpc.NewInfoAPI(&catchingUpTMClient{}, EVMKeeper, func(int64) sdk.Context { return Ctx }, nil, "", 1024, evmrpc.ConnectionTypeHTTP, Decoder, nil)
+	res, err := api.Syncing(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, &evmrpc.SyncingResult{StartingBlock: 5, CurrentBlock: 40, HighestBlock: 100}, res)
+	encoded, err := json.Marshal(res)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"startingBlock":"0x5","currentBlock":"0x28","highestBlock":"0x64"}`, string(encoded))
 }
 
 func TestGasPriceLogic(t *testing.T) {
