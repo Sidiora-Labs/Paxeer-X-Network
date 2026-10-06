@@ -1303,11 +1303,11 @@ awk '$1 == "human-kms" {next}
 	$1 == "human-movement" {print $1, $2, "run"}
 	{print $1, $2, "run"}
 	END {print "human-kms-admin 4026 run"}' <<<"$kernel_rows" >"$work/kernel-plan-failing"
-printf '[{"state":"started","image_ref":{"repository":"registry.fly.io/%s","digest":"sha256:%064d"},"config":{"image":"registry.fly.io/%s:deployment-fixture","mounts":[{"volume":"vol_kernel","path":"/data"}]}}]' \
-	"$kernel" 7 "$kernel" >"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
+printf '[{"state":"started","image_ref":{"repository":"registry.fly.io/%s","digest":"sha256:%064d"},"config":{"image":"registry.fly.io/%s:deployment-fixture","mounts":[{"volume":"vol_kernel_a","path":"/data"}]}},{"state":"started","image_ref":{"repository":"registry.fly.io/%s","digest":"sha256:%064d"},"config":{"image":"registry.fly.io/%s:deployment-fixture","mounts":[{"volume":"vol_kernel_b","path":"/data"}]}}]' \
+	"$kernel" 7 "$kernel" "$kernel" 7 "$kernel" >"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
 kernel_fixture "$work/kernel-plan-running"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_passing "$work/hosts-good.env" 0 kernel-app -- \
-	"pass machines app=$kernel machines=1 started=1 volume=/data candidate=$kernel_candidate" \
+	"pass machines app=$kernel machines=2 started=2 volume=/data candidate=$kernel_candidate" \
 	"pass init app=$kernel uid=0 entrypoint=kernel-init" \
 	"pass role human-kms uid=4026 state=running" \
 	"pass role human-owner uid=4021 state=running" \

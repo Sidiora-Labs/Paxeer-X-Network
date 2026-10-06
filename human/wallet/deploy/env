@@ -33,7 +33,7 @@ LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE - path to the identity provision
 LAYERX_GATEWAY_PROGRAM_REGISTRY_URL - program registry base URL, the registry app's .internal name on 9420 in human/wallet/deploy/endpoint.toml; configured_kernel requires it in kernel mode
 LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE - path to the program registry bearer token
 LAYERX_GATEWAY_PUBLIC_CORE_URL - public core read base URL, the kernel app's .internal name on 9443 in human/wallet/deploy/endpoint.toml; px_getNetwork reports kernel.available only when it is set
-LAYERX_GATEWAY_PAXEER_RPC_URLS - JSON array of two to eight chain RPC https urls tried in order for eth_ relay, optional, set as a Fly secret of the endpoint app to two serving RPC names of tools/bringup/search-front.sh names
+LAYERX_GATEWAY_PAXEER_RPC_URLS - JSON array of two to eight chain RPC https urls tried in order for eth_ relay, set in human/wallet/deploy/endpoint.toml to the serving RPC names api1 and api12 of the network domain
 LAYERX_GATEWAY_INDEXER_URL - indexer base URL for unified history, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_URL - faucet service base URL, optional, set as a platform secret
 LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE - path to the faucet service token
@@ -46,6 +46,16 @@ LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE - path to the first batch the sequence
 LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE - path to the last batch the sequencer authorisation covers
 LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE - path to the 64-hex key provisioning key
 LAYERX_GATEWAY_MODULE_REGISTRY_FILE - path to the module registry JSON document
+LAYERX_GATEWAY_UI_BINDINGS_FILE - path to the UI bindings JSON (schema paxeer-x.ui-bindings.v2, wallet_origin, human_web_origin), root-owned mode 0600, from the ENDPOINT_UI_BINDINGS secret
+LAYERX_GATEWAY_WALLET_IDENTITY_URL - wallet identity bridge https URL; the seven LAYERX_GATEWAY_WALLET_ variables are set together as Fly secrets of the endpoint app or not at all
+LAYERX_GATEWAY_WALLET_ISSUER_SOCKET - absolute path of the same-host wallet issuer unix socket
+LAYERX_GATEWAY_WALLET_BINDING_SOCKET - absolute path of the same-host identity binding unix socket
+LAYERX_GATEWAY_WALLET_IDENTITY_UID - uid the binding and issuer sockets must be owned by
+LAYERX_GATEWAY_WALLET_IDENTITY_GID - gid the binding and issuer sockets must be owned by
+LAYERX_GATEWAY_WALLET_TENANT - wallet tenant identifier, at most 255 characters
+LAYERX_GATEWAY_WALLET_CHAIN_ID - EVM chain id of the wallet caps, 125
+ENDPOINT_ROUTE_BINDINGS - platform secret written to the file named by LAYERX_GATEWAY_ROUTE_BINDINGS_FILE: schema, chain_id 125, network_id, wire_version, allowed_origins, services bindings for wallet-gateway (paxeer-wallet-gateway.internal:8080), gas (paxeer-gas-station.internal:8080), human intents (paxeer-human-service.internal:8080), wallet-ui and agentd, and the agentd passthrough to paxeer-human-service.internal:9454 served at machine.paxeer.network:9454
+ENDPOINT_UI_BINDINGS - platform secret written to the file named by LAYERX_GATEWAY_UI_BINDINGS_FILE
 ENDPOINT_OUTBOUND_CA - platform secret written to the file named by LAYERX_GATEWAY_OUTBOUND_CA_DER
 ENDPOINT_CLIENT_CERT - platform secret holding the PEM client certificate of the gateway-client row of tools/bringup/ca.sh, mounted for its expiry check
 ENDPOINT_CLIENT_P12 - platform secret from the gateway-client row of tools/bringup/ca.sh written to the file named by LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12
@@ -325,7 +335,8 @@ LAYERX_HUMAN_EXIT_DELAYED_AFTER_POLLS - observations without progress before an 
 LAYERX_HUMAN_ACTIVITY_FRESHNESS_SECONDS - age after which an activity observation is refreshed
 LAYERX_HUMAN_ACTIVITY_EXPORT_MAXIMUM_BYTES - largest activity export the service produces
 LAYERX_HUMAN_CONTINUATION_UNKNOWN_DEADLINE_SECONDS - non-zero seconds after which an unknown continuation is treated as failed
-LAYERX_HUMAN_RP_ID - passkey relying party identifier
+LAYERX_HUMAN_RP_ID - passkey relying party identifier, paxportwallet.com in human/wallet/deploy/human.toml
+LAYERX_KERNEL_PAXEER_RPC_NAMES - the two serving RPC names the kernel pod boundaries front, space separated, api1 and api12 of the network domain in human/wallet/deploy/human.toml; the app runs two machines and holds a dedicated IPv4 for the 9454 agentd service
 LAYERX_HUMAN_RP_NAME - passkey relying party display name
 LAYERX_HUMAN_ORIGIN - https origin passkey ceremonies are bound to
 LAYERX_HUMAN_CEREMONY_TTL_SECONDS - lifetime of a passkey ceremony in seconds

@@ -21,6 +21,8 @@ kill_timeout = "60s"
   LAYERX_HUMAN_MAX_BODY_BYTES = "1048576"
   LAYERX_HUMAN_MAX_CONNECTIONS = "1024"
   LAYERX_HUMAN_IO_DEADLINE_SECONDS = "15"
+  LAYERX_HUMAN_RP_ID = "paxportwallet.com"
+  LAYERX_KERNEL_PAXEER_RPC_NAMES = "api1.mainnet-beta.paxeer.network api12.mainnet-beta.paxeer.network"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_URL = "https://journeys.process.paxeer-internal.internal:9443"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_CA_DER = "/data/tls/human-event-client/ca.der"
   LAYERX_EVENTS_JOURNEY_UPSTREAM_TOKEN_FILE = "/run/secrets/events-journey-token"
@@ -69,7 +71,7 @@ kill_timeout = "60s"
   force_https = true
   auto_stop_machines = false
   auto_start_machines = false
-  min_machines_running = 1
+  min_machines_running = 2
 
   [http_service.concurrency]
     type = "requests"
@@ -84,12 +86,14 @@ kill_timeout = "60s"
     path = "/livez"
     protocol = "http"
 
+# agentd at machine.paxeer.network:9454: the edge passes the name through
+# unchanged to the dedicated IPv4 of this app (fly ips allocate-v4).
 [[services]]
   internal_port = 9454
   protocol = "tcp"
   auto_stop_machines = false
   auto_start_machines = false
-  min_machines_running = 1
+  min_machines_running = 2
 
   [[services.ports]]
     port = 9454
