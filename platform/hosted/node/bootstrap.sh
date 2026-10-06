@@ -331,7 +331,7 @@ elif [ "${#GENESIS_MODULES[@]}" -eq 0 ]; then
     while IFS= read -r module || [ -n "$module" ]; do
         enable_genesis_module "$module"
     done < "$SCRIPT_DIR/genesis-modules.conf"
-    [ "${#GENESIS_MODULES[@]}" -eq 6 ] || fail "public testnet genesis requires six configured modules"
+    [ "${#GENESIS_MODULES[@]}" -eq 7 ] || fail "public testnet genesis requires seven configured modules"
 fi
 
 [ -n "$GENESIS_METADATA" ] || fail "--genesis-metadata is required: name the LXGB v2 metadata file, or the path where bootstrap writes it"
