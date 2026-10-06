@@ -6,7 +6,7 @@
 
 export const CHAIN_ID = 125 as const;
 export const RPC_URL: string = process.env.NEXT_PUBLIC_PAXEER_RPC_URL ?? "";
-export const EXPLORER_URL = "https://api-mainnet-beta.paxeer.network/explorer" as const;
+export const EXPLORER_URL = "https://paxscan.io" as const;
 
 
 // ─── V3 Core Contracts ────────────────────────────────────────────────────────
