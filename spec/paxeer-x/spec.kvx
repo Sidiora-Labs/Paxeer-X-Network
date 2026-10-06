@@ -37707,7 +37707,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.5]
 title = "C5: EVM JSON-RPC eth_syncing"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
