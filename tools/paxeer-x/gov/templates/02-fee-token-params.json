@@ -1,0 +1,29 @@
+{
+  "title": "Enable Sidiora as a fee token",
+  "description": "Turn on fee-token payment, allow usid at 3.114 SID per PAX (3114000 usid per whole PAX) and bound the rate age to 3400000 blocks.",
+  "is_expedited": false,
+  "changes": [
+    {
+      "subspace": "evm",
+      "key": "KeyFeeTokenEnabled",
+      "value": true
+    },
+    {
+      "subspace": "evm",
+      "key": "KeyAllowedFeeDenoms",
+      "value": [
+        {
+          "denom": "usid",
+          "rate": "@FEE_TOKEN_RATE@",
+          "rate_update_height": "@RATE_UPDATE_HEIGHT@"
+        }
+      ]
+    },
+    {
+      "subspace": "evm",
+      "key": "KeyMaxFeeTokenRateAge",
+      "value": "@MAX_FEE_TOKEN_RATE_AGE@"
+    }
+  ],
+  "deposit": "@DEPOSIT@"
+}
