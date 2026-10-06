@@ -5,6 +5,7 @@ members = [
     "crates/layerx-gas-station",
     "crates/layerx-interop-gateway",
     "crates/layerx-interop-service",
+    "crates/layerx-intent-ingester",
     "crates/layerx-fiat",
     "crates/layerx-migrate",
     "crates/layerx-mirror",
