@@ -38273,7 +38273,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.35]
 title = "O4: Validator host hardening and keyring migration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["109.34"]
