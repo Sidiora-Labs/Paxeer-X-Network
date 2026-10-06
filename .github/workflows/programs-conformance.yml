@@ -58,7 +58,7 @@ jobs:
   acceptance:
     if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Aggregate Programs acceptance gate
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 120
     steps:
       - name: Check out source
@@ -85,7 +85,7 @@ jobs:
   fuzz-smoke:
     if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Bounded committed-corpus fuzz gate
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -100,7 +100,7 @@ jobs:
   differential-replay:
     if: github.event_name != 'workflow_dispatch' || inputs.scope != 'determinism'
     name: Differential and versioned-replay gate
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 15
     steps:
       - name: Check out source
