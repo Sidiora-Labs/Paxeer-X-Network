@@ -1,0 +1,15 @@
+{
+  "@type": "/paxprotocol.paxchain.layerxgov.LayerXProposal",
+  "title": "Set the web-search request fee",
+  "description": "Set the xweb request fee to the PAX amount worth 0.001 USD at the rendered PAX/USD price, keeping the payload cap, callback gas cap and timeout at their rendered values.",
+  "messages": [
+    {
+      "@type": "/paxprotocol.paxchain.xweb.MsgSetParams",
+      "authority": "@GOV_AUTHORITY@",
+      "fee": "@XWEB_FEE@",
+      "max_payload_bytes": "@XWEB_MAX_PAYLOAD_BYTES@",
+      "max_callback_gas": "@XWEB_MAX_CALLBACK_GAS@",
+      "timeout_blocks": "@XWEB_TIMEOUT_BLOCKS@"
+    }
+  ]
+}
