@@ -3681,11 +3681,11 @@ programs-quickstart:
 beta-ledger-check:
 	scripts/ci/beta-ledger-check.sh
 
-beta-contract-check: beta-report
-	scripts/ci/beta-contract-check.sh
+beta-contract-check:
+	tools/ci/beta-report.sh --check
 
 beta-report:
-	scripts/ci/beta-report.sh
+	tools/ci/beta-report.sh
 
 # LayerX beta: qualification runner gate and in-repository driver
 .PHONY: beta-qualify beta-driver-test
