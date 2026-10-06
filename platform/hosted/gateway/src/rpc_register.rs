@@ -1,4 +1,4 @@
-use super::Config;
+use super::{Config, IncomingRequest};
 use crate::rpc::error;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -38,6 +38,56 @@ fn lowercase_hex(value: &str, bytes: usize) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Step {
+    Direct,
+    Signup(String),
+    Verify(String),
+}
+
+fn signup_step(value: &str) -> Option<Step> {
+    if let Some(secret) = value.strip_prefix("vfy_") {
+        return lowercase_hex(secret, 32).then(|| Step::Verify(value.to_owned()));
+    }
+    let (local, domain) = value.split_once('@')?;
+    (!local.is_empty()
+        && domain.contains('.')
+        && value.len() <= 254
+        && value.bytes().all(|byte| byte.is_ascii_graphic()))
+    .then(|| Step::Signup(value.to_owned()))
+}
+
+fn register_step(params: Option<&Value>) -> Result<([u8; 32], [u8; 64], Step), i32> {
+    let Some(Value::Array(args)) = params else {
+        return Err(-32602);
+    };
+    match args.as_slice() {
+        [signer, signature] => register_params(Some(&json!([signer, signature])))
+            .map(|(key, signature)| (key, signature, Step::Direct)),
+        [signer, signature, Value::String(step)] => {
+            let step = signup_step(step).ok_or(-32602)?;
+            register_params(Some(&json!([signer, signature])))
+                .map(|(key, signature)| (key, signature, step))
+        }
+        _ => Err(-32602),
+    }
+}
+
+fn client_ip(request: &IncomingRequest) -> String {
+    request
+        .headers
+        .get("fly-client-ip")
+        .filter(|ip| {
+            !ip.is_empty()
+                && ip.len() <= 64
+                && ip
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() || b".:".contains(&byte))
+        })
+        .cloned()
+        .unwrap_or_else(|| "unattributed".to_owned())
 }
 
 fn register_params(params: Option<&Value>) -> Result<([u8; 32], [u8; 64]), i32> {
@@ -136,8 +186,37 @@ fn principal_request(sub: &str, signer: &str) -> String {
     .to_string()
 }
 
-fn register(config: &Config, id: &Value, params: Option<&Value>) -> Value {
-    let (signer_public_key, signature) = match register_params(params) {
+fn signup_result(id: &Value, status: u16, content_type: &str, body: &[u8], sub: &str) -> Value {
+    if content_type != "application/json" {
+        return error(id, -32603, "Invalid upstream response");
+    }
+    let Ok(document) = serde_json::from_slice::<Value>(body) else {
+        return error(id, -32603, "Invalid upstream response");
+    };
+    if status != 200 {
+        let code = match status {
+            401 | 403 => -32002,
+            429 => -32005,
+            400 | 404 | 409 | 410 => -32602,
+            _ => -32001,
+        };
+        let mut refused = error(id, code, "Registration refused");
+        refused["error"]["data"] = document;
+        return refused;
+    }
+    if document["sub"] != json!(sub) || document["tenant"] != json!(TENANT) {
+        return error(id, -32603, "Registration principal mismatch");
+    }
+    json!({"jsonrpc":"2.0", "id":id, "result":document})
+}
+
+fn register(
+    config: &Config,
+    request: &IncomingRequest,
+    id: &Value,
+    params: Option<&Value>,
+) -> Value {
+    let (signer_public_key, signature, step) = match register_step(params) {
         Ok(parsed) => parsed,
         Err(code) => return error(id, code, "Invalid params"),
     };
@@ -171,23 +250,48 @@ fn register(config: &Config, id: &Value, params: Option<&Value>) -> Value {
     };
     let sub = subject(TENANT, &signer_public_key);
     let signer = super::hex(&signer_public_key);
-    let request = principal_request(&sub, &signer);
-    match super::upstream_json(
+    let (path, body) = match step {
+        Step::Direct => ("/v1/principals", principal_request(&sub, &signer)),
+        Step::Signup(email) => (
+            "/v1/signup",
+            json!({
+                "email": email,
+                "client_ip": client_ip(request),
+                "tenant": TENANT,
+                "sub": sub,
+                "signer_public_key": signer,
+            })
+            .to_string(),
+        ),
+        Step::Verify(token) => (
+            "/v1/signup/verify",
+            json!({"token": token, "sub": sub}).to_string(),
+        ),
+    };
+    let upstream = super::upstream_json(
         config,
         identity,
         token.as_str(),
         "POST",
-        "/v1/principals",
+        path,
         None,
-        request.as_bytes(),
-    ) {
-        Ok(upstream) => principal_result(
+        body.as_bytes(),
+    );
+    match upstream {
+        Ok(upstream) if path == "/v1/principals" => principal_result(
             id,
             &sub,
             &signer,
             upstream.status,
             &upstream.content_type,
             &upstream.body,
+        ),
+        Ok(upstream) => signup_result(
+            id,
+            upstream.status,
+            &upstream.content_type,
+            &upstream.body,
+            &sub,
         ),
         Err(_) => refusal(
             id,
@@ -200,11 +304,12 @@ fn register(config: &Config, id: &Value, params: Option<&Value>) -> Value {
 
 pub(super) fn dispatch(
     config: &Config,
+    request: &IncomingRequest,
     method: &str,
     id: &Value,
     params: Option<&Value>,
 ) -> Option<Value> {
-    (method == "lx_register").then(|| register(config, id, params))
+    (method == "lx_register").then(|| register(config, request, id, params))
 }
 
 pub(super) fn configured_token() -> Result<Option<Zeroizing<String>>, String> {
@@ -390,6 +495,84 @@ mod tests {
                 )["error"]["code"],
                 -32603
             );
+        }
+    }
+
+    #[test]
+    fn signup_steps_ride_on_the_proven_registration() {
+        let key = "ab".repeat(32);
+        let signature = "cd".repeat(64);
+        assert_eq!(
+            register_step(Some(&json!([key, signature]))),
+            Ok(([0xab_u8; 32], [0xcd_u8; 64], Step::Direct))
+        );
+        assert_eq!(
+            register_step(Some(&json!([key, signature, "dev@example.com"]))),
+            Ok((
+                [0xab_u8; 32],
+                [0xcd_u8; 64],
+                Step::Signup("dev@example.com".to_owned())
+            ))
+        );
+        let token = format!("vfy_{}", "ef".repeat(32));
+        assert_eq!(
+            register_step(Some(&json!([key, signature, token]))),
+            Ok(([0xab_u8; 32], [0xcd_u8; 64], Step::Verify(token.clone())))
+        );
+        for args in [
+            json!([key, signature, key]),
+            json!([key, signature, "vfy_zz"]),
+            json!([key, signature, "no-at-sign"]),
+            json!([key, signature, "a b@example.com"]),
+            json!([key, signature, "dev@example.com", token]),
+            json!([key, "CD".repeat(64), "dev@example.com"]),
+        ] {
+            assert_eq!(register_step(Some(&args)), Err(-32602), "{args}");
+        }
+    }
+
+    #[test]
+    fn signup_answers_are_bound_to_the_proven_subject() {
+        let sub = subject(TENANT, &[0xab_u8; 32]);
+        let pending =
+            json!({"pending": true, "tenant": TENANT, "sub": sub.as_str(), "expires_at": 9});
+        let accepted = signup_result(
+            &json!(1),
+            200,
+            "application/json",
+            pending.to_string().as_bytes(),
+            &sub,
+        );
+        assert_eq!(accepted["result"], pending);
+        let other =
+            json!({"pending": true, "tenant": TENANT, "sub": "beta.other", "expires_at": 9});
+        assert_eq!(
+            signup_result(
+                &json!(1),
+                200,
+                "application/json",
+                other.to_string().as_bytes(),
+                &sub
+            )["error"]["code"],
+            -32603
+        );
+        for (status, code) in [
+            (429_u16, -32005_i32),
+            (409, -32602),
+            (410, -32602),
+            (403, -32002),
+            (503, -32001),
+        ] {
+            let upstream = json!({"error": {"code": "signup_ip_rate_limited", "retry": "after"}});
+            let refused = signup_result(
+                &json!(1),
+                status,
+                "application/json",
+                upstream.to_string().as_bytes(),
+                &sub,
+            );
+            assert_eq!(refused["error"]["code"], code, "{status}");
+            assert_eq!(refused["error"]["data"], upstream);
         }
     }
 

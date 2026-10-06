@@ -381,7 +381,9 @@ pub(super) fn dispatch(config: &Config, request: &IncomingRequest, value: &Value
     {
         return value.get("id").map(|_| unavailable.rpc(&id));
     }
-    if let Some(result) = crate::rpc_register::dispatch(config, method, &id, value.get("params")) {
+    if let Some(result) =
+        crate::rpc_register::dispatch(config, request, method, &id, value.get("params"))
+    {
         return value.get("id").map(|_| result);
     }
     if let Some(result) =

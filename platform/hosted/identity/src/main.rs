@@ -1,4 +1,5 @@
 mod seal;
+use layerx_platform_identity::signup::{self, Desk, Limits, SignupRequest};
 use layerx_platform_identity::store;
 
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -30,6 +31,8 @@ const SESSION_ID_BYTES: usize = 16;
 const SESSION_SECRET_BYTES: usize = 32;
 const CSRF_BYTES: usize = 32;
 const MIN_SERVICE_TOKEN_BYTES: usize = 16;
+const SIGNUP_TOKEN_BYTES: usize = 32;
+const GRANT_ID_BYTES: usize = 16;
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,11 +125,40 @@ struct Config {
     store_key: StoreKey,
     service_tokens: Vec<ServiceToken>,
     default_ttl_seconds: u64,
+    signup_limits: Limits,
+    disposable_domains: Vec<String>,
+    outbox_dir: PathBuf,
 }
 
 struct Shared {
     config: Config,
     store: Mutex<Store>,
+    desk: Mutex<Desk>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignupBody {
+    email: String,
+    client_ip: String,
+    tenant: String,
+    sub: String,
+    signer_public_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerifyBody {
+    token: String,
+    sub: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreditBody {
+    sub: String,
+    #[serde(default)]
+    grant_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -409,7 +441,47 @@ fn config() -> Result<Config, String> {
         ));
     }
     let store_secret = read_secret("LAYERX_IDENTITY_STORE_KEY_FILE")?;
+    let defaults = Limits::default();
+    let signup_limits = Limits {
+        per_ip_per_hour: u32::try_from(parse_u64(
+            "LAYERX_IDENTITY_SIGNUP_PER_IP_PER_HOUR",
+            u64::from(defaults.per_ip_per_hour),
+        )?)
+        .map_err(|_| "LAYERX_IDENTITY_SIGNUP_PER_IP_PER_HOUR is out of range")?,
+        per_email_per_hour: u32::try_from(parse_u64(
+            "LAYERX_IDENTITY_SIGNUP_PER_EMAIL_PER_HOUR",
+            u64::from(defaults.per_email_per_hour),
+        )?)
+        .map_err(|_| "LAYERX_IDENTITY_SIGNUP_PER_EMAIL_PER_HOUR is out of range")?,
+        daily_cap: u32::try_from(parse_u64(
+            "LAYERX_IDENTITY_SIGNUP_DAILY_CAP",
+            u64::from(defaults.daily_cap),
+        )?)
+        .map_err(|_| "LAYERX_IDENTITY_SIGNUP_DAILY_CAP is out of range")?,
+        token_ttl_seconds: parse_u64(
+            "LAYERX_IDENTITY_SIGNUP_TOKEN_TTL_SECONDS",
+            defaults.token_ttl_seconds,
+        )?,
+    };
+    if signup_limits.token_ttl_seconds == 0
+        || signup_limits.token_ttl_seconds > MAX_SESSION_TTL_SECONDS
+    {
+        return Err("LAYERX_IDENTITY_SIGNUP_TOKEN_TTL_SECONDS is out of range".to_owned());
+    }
+    let disposable_domains = match env::var("LAYERX_IDENTITY_DISPOSABLE_DOMAINS_FILE") {
+        Ok(path) => fs::read_to_string(&path)
+            .map_err(|error| format!("LAYERX_IDENTITY_DISPOSABLE_DOMAINS_FILE: {error}"))?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    let outbox_dir = env::var("LAYERX_IDENTITY_SIGNUP_OUTBOX_DIR")
+        .map_or_else(|_| state_dir.join("signup-outbox"), PathBuf::from);
     Ok(Config {
+        signup_limits,
+        disposable_domains,
+        outbox_dir,
         listen,
         tls: server_tls_config()?,
         state_dir,
@@ -820,6 +892,10 @@ fn create_session(shared: &Shared, request: &Request) -> Response {
     {
         return refusal(400, "invalid_argument", None);
     }
+    issue_session(shared, &body.sub, body.tenant.as_deref(), ttl)
+}
+
+fn issue_session(shared: &Shared, sub: &str, requested_tenant: Option<&str>, ttl: u64) -> Response {
     let Ok(now) = unix_seconds() else {
         return refusal(503, "clock_unavailable", Some(5));
     };
@@ -836,21 +912,18 @@ fn create_session(shared: &Shared, request: &Request) -> Response {
     let Ok(mut store) = shared.store.lock() else {
         return refusal(503, "store_unavailable", Some(5));
     };
-    let Some(tenant) = store.subject_tenant(&body.sub).map(str::to_owned) else {
+    let Some(tenant) = store.subject_tenant(sub).map(str::to_owned) else {
         return refusal(404, "principal_not_found", None);
     };
-    if body
-        .tenant
-        .as_deref()
-        .is_some_and(|requested| requested != tenant)
-        || store.principal(&tenant, &body.sub).is_none()
+    if requested_tenant.is_some_and(|requested| requested != tenant)
+        || store.principal(&tenant, sub).is_none()
     {
         return refusal(404, "principal_not_found", None);
     }
     let session = StoredSession {
         session_id: session_id.to_string(),
         tenant: tenant.clone(),
-        principal: body.sub.clone(),
+        principal: sub.to_owned(),
         token_digest: sha256_hex(secret.as_bytes()),
         csrf_digest: sha256_hex(csrf_token.as_bytes()),
         csrf_sealed,
@@ -872,7 +945,7 @@ fn create_session(shared: &Shared, request: &Request) -> Response {
     serialize(&SessionResponse {
         session_id: &session_id,
         tenant: &tenant,
-        sub: &body.sub,
+        sub,
         token: &token,
         csrf_token: &csrf_token,
         expires_at,
@@ -897,6 +970,176 @@ fn revoke_session(shared: &Shared, session_id: &str) -> Response {
         }),
         Ok(None) => refusal(404, "session_not_found", None),
         Err(_) => refusal(503, "store_unavailable", Some(5)),
+    }
+}
+
+fn signup_refusal(refused: signup::Refused) -> Response {
+    let (status, code, retry_after) = refused.status();
+    refusal(status, code, retry_after)
+}
+
+fn json_body<T: for<'de> Deserialize<'de>>(request: &Request) -> Result<T, Response> {
+    if request.headers.get("content-type").map(String::as_str) != Some("application/json") {
+        return Err(refusal(400, "content_type_required", None));
+    }
+    serde_json::from_slice(&request.body).map_err(|_| refusal(400, "invalid_argument", None))
+}
+
+fn deliver_verification(
+    outbox: &Path,
+    email: &str,
+    token: &str,
+    expires_at: u64,
+) -> Result<(), String> {
+    fs::create_dir_all(outbox).map_err(|error| error.to_string())?;
+    let name = sha256_hex(token.as_bytes());
+    let temporary = outbox.join(format!("{name}.tmp"));
+    let message = Zeroizing::new(
+        serde_json::json!({"kind":"signup_verification","email":email,"token":token,"expires_at":expires_at})
+            .to_string(),
+    );
+    let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
+    file.write_all(message.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|error| error.to_string())?;
+    fs::rename(&temporary, outbox.join(format!("{name}.json"))).map_err(|error| error.to_string())
+}
+
+fn start_signup(shared: &Shared, request: &Request) -> Response {
+    let body: SignupBody = match json_body(request) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    if !valid_tenant(&body.tenant)
+        || !valid_sub(&body.sub)
+        || !valid_hex(&body.signer_public_key, 32)
+        || !valid_identifier(&body.client_ip, 64)
+    {
+        return refusal(400, "invalid_argument", None);
+    }
+    let Ok(now) = unix_seconds() else {
+        return refusal(503, "clock_unavailable", Some(5));
+    };
+    let Ok(token) = random_hex(SIGNUP_TOKEN_BYTES) else {
+        return refusal(503, "entropy_unavailable", Some(5));
+    };
+    let token = Zeroizing::new(format!("vfy_{}", token.as_str()));
+    let (Ok(mut desk), Ok(mut store)) = (shared.desk.lock(), shared.store.lock()) else {
+        return refusal(503, "store_unavailable", Some(5));
+    };
+    let pending = match desk.start(
+        &mut store,
+        &SignupRequest {
+            email: &body.email,
+            client_ip: &body.client_ip,
+            tenant: &body.tenant,
+            sub: &body.sub,
+            signer_public_key: &body.signer_public_key,
+        },
+        &sha256_hex(token.as_bytes()),
+        now,
+    ) {
+        Ok(pending) => pending,
+        Err(refused) => return signup_refusal(refused),
+    };
+    let email = signup::normalize_email(&body.email)
+        .map(|(email, _)| email)
+        .unwrap_or_default();
+    if deliver_verification(
+        &shared.config.outbox_dir,
+        &email,
+        &token,
+        pending.expires_at,
+    )
+    .is_err()
+    {
+        return refusal(503, "verification_delivery_unavailable", Some(30));
+    }
+    serialize(&serde_json::json!({
+        "pending": true,
+        "tenant": pending.tenant,
+        "sub": pending.sub,
+        "expires_at": pending.expires_at,
+    }))
+}
+
+fn verify_signup(shared: &Shared, request: &Request) -> Response {
+    let body: VerifyBody = match json_body(request) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let token = Zeroizing::new(body.token);
+    if !token
+        .strip_prefix("vfy_")
+        .is_some_and(|secret| valid_hex(secret, SIGNUP_TOKEN_BYTES))
+        || !valid_sub(&body.sub)
+    {
+        return refusal(400, "invalid_argument", None);
+    }
+    let Ok(now) = unix_seconds() else {
+        return refusal(503, "clock_unavailable", Some(5));
+    };
+    let digest = sha256_hex(token.as_bytes());
+    let principal = {
+        let Ok(mut store) = shared.store.lock() else {
+            return refusal(503, "store_unavailable", Some(5));
+        };
+        if store
+            .pending_signup(&digest)
+            .is_some_and(|pending| pending.sub != body.sub)
+        {
+            return refusal(404, "verification_not_found", None);
+        }
+        match signup::verify(&mut store, &digest, now) {
+            Ok(principal) => principal,
+            Err(refused) => return signup_refusal(refused),
+        }
+    };
+    issue_session(
+        shared,
+        &principal.sub,
+        None,
+        shared.config.default_ttl_seconds,
+    )
+}
+
+fn starter_credit(shared: &Shared, request: &Request, settle: bool) -> Response {
+    let body: CreditBody = match json_body(request) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    if !valid_sub(&body.sub)
+        || body
+            .grant_id
+            .as_deref()
+            .is_some_and(|grant| !valid_hex(grant, GRANT_ID_BYTES))
+        || settle != body.grant_id.is_some()
+    {
+        return refusal(400, "invalid_argument", None);
+    }
+    let Ok(now) = unix_seconds() else {
+        return refusal(503, "clock_unavailable", Some(5));
+    };
+    let Ok(candidate) = random_hex(GRANT_ID_BYTES) else {
+        return refusal(503, "entropy_unavailable", Some(5));
+    };
+    let Ok(mut store) = shared.store.lock() else {
+        return refusal(503, "store_unavailable", Some(5));
+    };
+    let outcome = match &body.grant_id {
+        Some(grant) => signup::settle_starter_credit(&mut store, &body.sub, grant, now),
+        None => signup::grant_starter_credit(&mut store, &body.sub, &candidate, now),
+    };
+    match outcome {
+        Ok(credit) => serialize(&serde_json::json!({
+            "sub": credit.sub,
+            "grant_id": credit.grant_id,
+            "asset": signup::STARTER_CREDIT_ASSET,
+            "amount": credit.amount,
+            "granted_at": credit.granted_at,
+            "settled_at": credit.settled_at,
+        })),
+        Err(refused) => signup_refusal(refused),
     }
 }
 
@@ -1002,8 +1245,16 @@ fn route(shared: &Shared, request: &Request) -> Response {
                 | "/v1/principals"
                 | "/v1/sessions"
                 | "/v1/publication-keys"
+                | "/v1/signup"
+                | "/v1/signup/verify"
+                | "/v1/starter-credits"
+                | "/v1/starter-credits/settle"
         )
-    ) || (request.method == "GET" && matches!(request.path.as_str(), "/internal/v1/principal" | "/internal/readyz"))
+    ) || (request.method == "GET"
+        && matches!(
+            request.path.as_str(),
+            "/internal/v1/principal" | "/internal/readyz"
+        ))
         || (request.method == "DELETE" && request.path.starts_with("/v1/sessions/"));
     if !known_route {
         return refusal(404, "not_found", None);
@@ -1034,6 +1285,22 @@ fn route(shared: &Shared, request: &Request) -> Response {
                 return refusal(403, "service_not_permitted", None);
             }
             bind_publication_key(shared, request)
+        }
+        (
+            "POST",
+            "/v1/signup"
+            | "/v1/signup/verify"
+            | "/v1/starter-credits"
+            | "/v1/starter-credits/settle",
+        ) => {
+            if service != Service::Provisioning {
+                return refusal(403, "service_not_permitted", None);
+            }
+            match request.path.as_str() {
+                "/v1/signup" => start_signup(shared, request),
+                "/v1/signup/verify" => verify_signup(shared, request),
+                path => starter_credit(shared, request, path.ends_with("/settle")),
+            }
         }
         ("POST", "/v1/sessions/introspect" | "/v1/introspect") => {
             if !capabilities.introspect {
@@ -1097,6 +1364,7 @@ fn write_response(stream: &mut impl Write, response: &Response) -> Result<(), St
         403 => "Forbidden",
         404 => "Not Found",
         409 => "Conflict",
+        410 => "Gone",
         429 => "Too Many Requests",
         _ => "Service Unavailable",
     };
@@ -1156,9 +1424,11 @@ fn platform_identity(config: Config) -> Result<(), String> {
     store.probe_writable()?;
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     let bound = listener.local_addr().map_err(|error| error.to_string())?;
+    let desk = Desk::new(config.signup_limits, config.disposable_domains.clone());
     let shared = Arc::new(Shared {
         config,
         store: Mutex::new(store),
+        desk: Mutex::new(desk),
     });
     eprintln!("layerx-identity listening on {bound} with TLS");
     for connection in listener.incoming() {
@@ -1503,8 +1773,12 @@ mod resolver_tests {
                     },
                 ],
                 default_ttl_seconds: 60,
+                signup_limits: Limits::default(),
+                disposable_domains: Vec::new(),
+                outbox_dir: directory.join("signup-outbox"),
             },
             store: Mutex::new(Store::open(&directory).unwrap_or_else(|error| panic!("{error}"))),
+            desk: Mutex::new(Desk::new(Limits::default(), Vec::new())),
         };
         let mut request = Request {
             method: "GET".to_owned(),

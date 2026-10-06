@@ -10,6 +10,7 @@ const TOKEN_VARIABLE: &str = "LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE";
 const CLAIM_PATH: &str = "/v1/faucet/service-claims";
 const IDEMPOTENCY_DOMAIN: &[u8] = b"layerx-faucet-claim-v1";
 const CLAIMS_PER_MINUTE: u32 = 30;
+const STARTER_IDEMPOTENCY_SCOPE: &str = "starter-credit";
 
 static FAUCET_WINDOW: Mutex<(u64, u32)> = Mutex::new((0, 0));
 
@@ -153,6 +154,76 @@ fn claim_result(id: &Value, status: u16, content_type: &str, body: &[u8]) -> Val
     json!({"jsonrpc":"2.0", "id":id, "result":document})
 }
 
+struct Grant {
+    grant_id: String,
+    amount: String,
+    document: Value,
+}
+
+fn grant_result(
+    id: &Value,
+    sub: &str,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> Result<Grant, Value> {
+    if content_type != "application/json" {
+        return Err(error(id, -32603, "Invalid upstream response"));
+    }
+    let Ok(document) = serde_json::from_slice::<Value>(body) else {
+        return Err(error(id, -32603, "Invalid upstream response"));
+    };
+    if status != 200 {
+        let code = match status {
+            403 | 409 => -32002,
+            429 => -32005,
+            400 | 404 => -32602,
+            _ => -32001,
+        };
+        let mut refused = error(id, code, "Starter credit refused");
+        refused["error"]["data"] = document;
+        return Err(refused);
+    }
+    let grant_id = document["grant_id"]
+        .as_str()
+        .filter(|grant| lowercase_hex32(&format!("{grant}{grant}")))
+        .map(str::to_owned);
+    let amount = document["amount"]
+        .as_str()
+        .filter(|amount| {
+            !amount.is_empty()
+                && amount.len() <= 39
+                && amount.bytes().all(|b| b.is_ascii_digit())
+                && *amount != "0"
+        })
+        .map(str::to_owned);
+    match (grant_id, amount) {
+        (Some(grant_id), Some(amount)) if document["sub"] == json!(sub) => Ok(Grant {
+            grant_id,
+            amount,
+            document,
+        }),
+        _ => Err(error(id, -32603, "Starter credit evidence incomplete")),
+    }
+}
+
+fn identity_call(config: &Config, path: &str, body: &Value) -> Result<super::UpstreamResponse, ()> {
+    let token = config.registration_token.as_ref().ok_or(())?;
+    let (identity, _) = config
+        .backend(super::KernelBackend::Identity)
+        .map_err(|_| ())?;
+    super::upstream_json(
+        config,
+        identity,
+        token.as_str(),
+        "POST",
+        path,
+        None,
+        body.to_string().as_bytes(),
+    )
+    .map_err(|_| ())
+}
+
 fn bound_signer(allowed: &[String], public_key: &str) -> bool {
     allowed
         .iter()
@@ -194,12 +265,41 @@ fn request_funds(
     if !bound_signer(&session.allowed_signer_public_keys, &public_key) {
         return refusal(id, -32002, "Faucet claim refused", "signer_not_bound");
     }
+    if config.registration_token.is_none() {
+        return refusal(
+            id,
+            -32001,
+            "Faucet claim unavailable",
+            "registration_not_configured",
+        );
+    }
     if !consume_claim() {
         return refusal(id, -32005, "Faucet claim unavailable", "faucet_rate_limit");
     }
-    let key = idempotency(principal.as_str(), &did, &public_key);
-    let body = claim_request(principal.as_str(), &did, &public_key);
-    match super::upstream_json(
+    let sub = principal.as_str();
+    let grant = match identity_call(config, "/v1/starter-credits", &json!({ "sub": sub })) {
+        Ok(upstream) => match grant_result(
+            id,
+            sub,
+            upstream.status,
+            &upstream.content_type,
+            &upstream.body,
+        ) {
+            Ok(grant) => grant,
+            Err(refused) => return refused,
+        },
+        Err(()) => {
+            return refusal(
+                id,
+                -32001,
+                "Faucet claim unavailable",
+                "identity_unavailable",
+            )
+        }
+    };
+    let key = idempotency(sub, &grant.grant_id, STARTER_IDEMPOTENCY_SCOPE);
+    let body = claim_request(sub, &did, &public_key);
+    let mut funded = match super::upstream_json(
         config,
         &faucet.endpoint,
         faucet.token.as_str(),
@@ -209,8 +309,43 @@ fn request_funds(
         body.as_bytes(),
     ) {
         Ok(upstream) => claim_result(id, upstream.status, &upstream.content_type, &upstream.body),
-        Err(_) => refusal(id, -32001, "Faucet claim unavailable", "faucet_unavailable"),
+        Err(_) => return refusal(id, -32001, "Faucet claim unavailable", "faucet_unavailable"),
+    };
+    if funded.get("result").is_none() {
+        return funded;
     }
+    if funded["result"]["amount"] != json!(grant.amount) {
+        return refusal(
+            id,
+            -32603,
+            "Starter credit amount mismatch",
+            "starter_credit_amount_mismatch",
+        );
+    }
+    let settle = json!({ "sub": sub, "grant_id": grant.grant_id });
+    match identity_call(config, "/v1/starter-credits/settle", &settle) {
+        Ok(upstream) => {
+            if let Err(refused) = grant_result(
+                id,
+                sub,
+                upstream.status,
+                &upstream.content_type,
+                &upstream.body,
+            ) {
+                return refused;
+            }
+        }
+        Err(()) => {
+            return refusal(
+                id,
+                -32001,
+                "Faucet claim unavailable",
+                "identity_unavailable",
+            )
+        }
+    }
+    funded["result"]["starter_credit"] = grant.document;
+    funded
 }
 
 pub(super) fn dispatch(
@@ -427,6 +562,59 @@ mod tests {
         assert!(!path_safe("", 512));
         assert!(!path_safe(&"a".repeat(513), 512));
         assert!(lowercase_hex32(&key));
+    }
+
+    #[test]
+    fn the_starter_credit_grant_is_only_accepted_for_the_session_subject() {
+        let sub = "beta.7399f031b011aa1198718d62c3f79984";
+        let grant = json!({"sub": sub, "grant_id": "ab".repeat(16), "asset": "PAX", "amount": "10000000000000000000", "granted_at": 1, "settled_at": null});
+        let accepted = grant_result(
+            &json!(1),
+            sub,
+            200,
+            "application/json",
+            grant.to_string().as_bytes(),
+        )
+        .unwrap_or_else(|refused| panic!("{refused}"));
+        assert_eq!(accepted.grant_id, "ab".repeat(16));
+        assert_eq!(accepted.amount, "10000000000000000000");
+        for divergent in [
+            json!({"sub": "beta.other", "grant_id": "ab".repeat(16), "amount": "10000000000000000000"}),
+            json!({"sub": sub, "grant_id": "zz".repeat(16), "amount": "10000000000000000000"}),
+            json!({"sub": sub, "grant_id": "ab".repeat(16), "amount": "0"}),
+            json!({"sub": sub, "amount": "10000000000000000000"}),
+        ] {
+            let refused = grant_result(
+                &json!(1),
+                sub,
+                200,
+                "application/json",
+                divergent.to_string().as_bytes(),
+            )
+            .err()
+            .unwrap_or_else(|| panic!("{divergent}"));
+            assert_eq!(refused["error"]["code"], -32603, "{divergent}");
+        }
+        for (status, code) in [
+            (403_u16, -32002_i32),
+            (409, -32002),
+            (429, -32005),
+            (503, -32001),
+        ] {
+            let upstream =
+                json!({"error": {"code": "starter_credit_already_claimed", "retry": "never"}});
+            let refused = grant_result(
+                &json!(1),
+                sub,
+                status,
+                "application/json",
+                upstream.to_string().as_bytes(),
+            )
+            .err()
+            .unwrap_or_else(|| panic!("{status}"));
+            assert_eq!(refused["error"]["code"], code, "{status}");
+            assert_eq!(refused["error"]["data"], upstream);
+        }
     }
 
     #[test]
