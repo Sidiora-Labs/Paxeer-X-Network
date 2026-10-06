@@ -230,4 +230,28 @@ mod tests {
         ));
         Ok(())
     }
+
+    #[test]
+    fn quote_refused_when_paymaster_rate_is_older_than_max_rate_age(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let config = config::tests::config();
+        let max_rate_age = config.max_rate_age;
+        let mut station = Station::new(config, signer::tests::signer()?)?;
+        let request = QuoteRequest {
+            account: [0x11; 20],
+            max_token_amount: 2_400_000,
+            gas_cost: 750_000_000_000_000_000,
+            deadline: 1019,
+            quote_nonce: word(8),
+        };
+        let mut rate = price::tests::RATE;
+        rate.updated_at = 1000 - max_rate_age - 1;
+        assert!(matches!(
+            station.quote(&request, &rate, u128::MAX, 1000),
+            Err(QuoteError::Price(PriceError::StaleRate))
+        ));
+        rate.updated_at = 1000 - max_rate_age;
+        assert!(station.quote(&request, &rate, u128::MAX, 1000).is_ok());
+        Ok(())
+    }
 }
