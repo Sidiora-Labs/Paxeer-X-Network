@@ -10,14 +10,14 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func GetQueryCmd() *cobra.Command {

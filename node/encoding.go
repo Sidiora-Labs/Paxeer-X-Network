@@ -1,8 +1,8 @@
 package app
 
 import (
-	"github.com/sidiora-labs/paxeer-network/node/params"
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 )
 
 // MakeEncodingConfig creates an EncodingConfig for testing.

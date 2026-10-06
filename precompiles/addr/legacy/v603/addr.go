@@ -12,21 +12,21 @@ import (
 
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/helpers"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/utils"
-	"github.com/sidiora-labs/paxeer-network/utils/helpers"
 
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/utils/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 const (

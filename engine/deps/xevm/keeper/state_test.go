@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/types"
 	"github.com/ethereum/go-ethereum/common"
-	testkeeper "github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/types"
 	"github.com/stretchr/testify/require"
 )
 

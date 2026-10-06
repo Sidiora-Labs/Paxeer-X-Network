@@ -5,7 +5,7 @@ package tendermint.types;
 import "gogoproto/gogo.proto";
 import "tendermint/crypto/keys.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types";
 
 message ValidatorSet {
   repeated Validator validators = 1;

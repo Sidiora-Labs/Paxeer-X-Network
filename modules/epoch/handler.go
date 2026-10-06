@@ -3,10 +3,10 @@ package epoch
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 func NewHandler(_ keeper.Keeper) sdk.Handler {

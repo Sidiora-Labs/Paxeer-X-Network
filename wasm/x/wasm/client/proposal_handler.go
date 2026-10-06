@@ -1,10 +1,10 @@
 package client
 
 import (
-	govclient "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client"
+	govclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/client/cli"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/client/rest"
 )
 
 // ProposalHandlers define the wasm cli proposal types and rest handler.

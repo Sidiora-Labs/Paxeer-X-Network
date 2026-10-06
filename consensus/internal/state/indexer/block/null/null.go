@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var _ indexer.BlockIndexer = (*BlockerIndexer)(nil)

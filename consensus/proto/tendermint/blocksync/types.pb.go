@@ -5,8 +5,8 @@ package blocksync
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

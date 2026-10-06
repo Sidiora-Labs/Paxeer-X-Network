@@ -3,8 +3,8 @@ package sr25519
 import (
 	"bytes"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 const PubKeyName = "tendermint/PubKeySr25519"

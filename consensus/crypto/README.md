@@ -5,10 +5,10 @@ crypto is the cryptographic package adapted for Tendermint's uses. In this tree 
 ## Importing it
 
 To get the interfaces,
-`import "github.com/sidiora-labs/paxeer-network/consensus/crypto"`
+`import "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"`
 
 For any specific algorithm, use its specific module e.g.
-`import "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"`
+`import "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"`
 
 ## Binary encoding
 

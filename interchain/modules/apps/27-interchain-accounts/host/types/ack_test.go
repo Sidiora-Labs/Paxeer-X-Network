@@ -3,14 +3,14 @@ package types_test
 import (
 	"testing"
 
-	abcitypes "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmprotostate "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/state"
-	tmstate "github.com/sidiora-labs/paxeer-network/consensus/state"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	abcitypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmprotostate "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/state"
+	tmstate "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/state"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 const (

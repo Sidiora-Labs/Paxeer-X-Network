@@ -4,7 +4,7 @@ package paxprotocol.paxchain.oracle;
 import "gogoproto/gogo.proto";
 import "oracle/oracle.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/oracle/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types";
 
 message GenesisState {
   Params params = 1 [(gogoproto.nullable) = false];

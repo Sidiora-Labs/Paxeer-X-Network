@@ -4,10 +4,10 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

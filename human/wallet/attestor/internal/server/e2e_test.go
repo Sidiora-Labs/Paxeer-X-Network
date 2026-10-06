@@ -36,16 +36,16 @@ import (
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/config"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/evm"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/audit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/lxwire"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/evm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/lx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/transport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 const (

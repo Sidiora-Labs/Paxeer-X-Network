@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"github.com/sidiora-labs/paxeer-network/admin"
-	gigaconfig "github.com/sidiora-labs/paxeer-network/engine/executor/config"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/blocktest"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/querier"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/replay"
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
-	srvconfig "github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/admin"
+	gigaconfig "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/blocktest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/querier"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/replay"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
+	srvconfig "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 )
 
 // WASMConfig defines configuration for the wasm module.

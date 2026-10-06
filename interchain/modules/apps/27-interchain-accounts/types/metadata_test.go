@@ -1,8 +1,8 @@
 package types_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 // use TestVersion as metadata being compared against

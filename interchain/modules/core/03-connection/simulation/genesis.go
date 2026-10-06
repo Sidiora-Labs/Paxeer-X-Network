@@ -3,9 +3,9 @@ package simulation
 import (
 	"math/rand"
 
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
 )
 
 // GenConnectionGenesis returns the default connection genesis state.

@@ -3,14 +3,14 @@ package types_test
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/tmhash"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	ibctestingmock "github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/tmhash"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	ibctestingmock "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
 )
 
 func (suite *TendermintTestSuite) TestMisbehaviour() {

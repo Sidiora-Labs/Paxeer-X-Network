@@ -3,10 +3,10 @@ package wrappers
 import (
 	"sync/atomic"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/metrics"
-	dbTypes "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	scTypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
+	dbTypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	scTypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 var _ DBWrapper = (*combinedWrapper)(nil)

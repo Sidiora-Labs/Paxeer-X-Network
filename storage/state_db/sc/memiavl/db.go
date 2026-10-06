@@ -17,10 +17,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	errorutils "github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/wal"
+	errorutils "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/wal"
 )
 
 const LockFileName = "LOCK"

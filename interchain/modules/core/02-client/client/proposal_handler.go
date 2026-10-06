@@ -3,12 +3,12 @@ package client
 import (
 	"net/http"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	govclient "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client"
-	govrest "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	govclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client"
+	govrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/rest"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/client/cli"
 )
 
 var (

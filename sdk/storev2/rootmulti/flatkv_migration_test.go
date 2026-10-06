@@ -17,12 +17,12 @@ import (
 	"context"
 	"testing"
 
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/migration"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/migration"
 	"github.com/stretchr/testify/require"
 )
 

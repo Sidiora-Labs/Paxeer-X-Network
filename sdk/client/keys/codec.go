@@ -1,8 +1,8 @@
 package keys
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
 )
 
 // TODO: remove this file https://github.com/cosmos/cosmos-sdk/issues/8047

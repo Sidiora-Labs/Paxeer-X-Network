@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/agent"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
 )
 
 func openStore(t *testing.T, dir string) *store.Store {

@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/chainconfig"
-	"github.com/sidiora-labs/paxeer-network/bridge/vectors"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/chainconfig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/vectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 const (

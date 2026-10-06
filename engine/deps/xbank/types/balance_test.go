@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	bank "github.com/sidiora-labs/paxeer-network/engine/deps/xbank/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	bank "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xbank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func TestBalanceValidate(t *testing.T) {

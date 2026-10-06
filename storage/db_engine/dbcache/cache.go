@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/threading"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/threading"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 // Reader reads a single key from the backing store.

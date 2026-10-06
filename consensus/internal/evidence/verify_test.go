@@ -10,16 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/evidence"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/evidence/mocks"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	smmocks "github.com/sidiora-labs/paxeer-network/consensus/internal/state/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/evidence"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/evidence/mocks"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	smmocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

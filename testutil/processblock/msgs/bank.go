@@ -1,8 +1,8 @@
 package msgs
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 func Send(from sdk.AccAddress, to sdk.AccAddress, amount int64) *banktypes.MsgSend {

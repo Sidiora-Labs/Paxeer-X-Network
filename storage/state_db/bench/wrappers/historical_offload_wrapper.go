@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/metrics"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	scTypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/ss/offload"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	scTypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/ss/offload"
 )
 
 var _ DBWrapper = (*historicalOffloadWrapper)(nil)

@@ -9,18 +9,18 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz/client/cli"
-	authztestutil "github.com/sidiora-labs/paxeer-network/sdk/x/authz/client/testutil"
-	banktestutil "github.com/sidiora-labs/paxeer-network/sdk/x/bank/client/testutil"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz/client/cli"
+	authztestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz/client/testutil"
+	banktestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/client/testutil"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 type IntegrationTestSuite struct {

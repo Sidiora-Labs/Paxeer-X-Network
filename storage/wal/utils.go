@@ -12,7 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/wal"
 
-	paxdbproto "github.com/sidiora-labs/paxeer-network/storage/proto"
+	paxdbproto "github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 func LogPath(dir string) string {

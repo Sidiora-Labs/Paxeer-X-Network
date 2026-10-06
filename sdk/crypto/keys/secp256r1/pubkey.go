@@ -1,11 +1,11 @@
 package secp256r1
 
 import (
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	"github.com/gogo/protobuf/proto"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
 
-	ecdsa "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/internal/ecdsa"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	ecdsa "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/internal/ecdsa"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // String implements proto.Message interface.

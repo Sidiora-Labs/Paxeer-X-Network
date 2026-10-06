@@ -7,7 +7,7 @@ import "cosmos/distribution/v1beta1/distribution.proto";
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types";
 
 // Query defines the gRPC querier service for distribution module.
 service Query {
@@ -148,7 +148,7 @@ message QueryDelegationRewardsResponse {
   // rewards defines the rewards accrued by a delegation.
   repeated cosmos.base.v1beta1.DecCoin rewards = 1 [
     (gogoproto.nullable) = false,
-    (gogoproto.castrepeated) = "github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins"
+    (gogoproto.castrepeated) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins"
   ];
 }
 
@@ -169,7 +169,7 @@ message QueryDelegationTotalRewardsResponse {
   // total defines the sum of all the rewards.
   repeated cosmos.base.v1beta1.DecCoin total = 2 [
     (gogoproto.nullable) = false,
-    (gogoproto.castrepeated) = "github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins"
+    (gogoproto.castrepeated) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins"
   ];
 }
 
@@ -222,7 +222,7 @@ message QueryCommunityPoolRequest {}
 message QueryCommunityPoolResponse {
   // pool defines community pool's coins.
   repeated cosmos.base.v1beta1.DecCoin pool = 1 [
-    (gogoproto.castrepeated) = "github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins",
+    (gogoproto.castrepeated) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins",
     (gogoproto.nullable) = false
   ];
 }

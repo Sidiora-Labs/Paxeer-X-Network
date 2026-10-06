@@ -3,7 +3,7 @@ package mux
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 type streamID uint64

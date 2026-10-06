@@ -1,9 +1,9 @@
 package evmrpc
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc/ethbloom"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/rpc/ethbloom"
 )
 
 // BloomIndexes is re-exported for backward compatibility.

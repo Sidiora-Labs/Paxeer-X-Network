@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	ibckeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 func (suite *KeeperTestSuite) TestMigrate2to3() {

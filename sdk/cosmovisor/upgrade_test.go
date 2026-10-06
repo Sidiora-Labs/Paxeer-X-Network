@@ -15,7 +15,7 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/cosmovisor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/cosmovisor"
 )
 
 type upgradeTestSuite struct {

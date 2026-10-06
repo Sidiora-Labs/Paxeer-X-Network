@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 func Start(ctx context.Context, testnet *e2e.Testnet) error {

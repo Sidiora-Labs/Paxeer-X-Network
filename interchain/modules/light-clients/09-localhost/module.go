@@ -1,7 +1,7 @@
 package localhost
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/09-localhost/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/09-localhost/types"
 )
 
 // Name returns the IBC client name

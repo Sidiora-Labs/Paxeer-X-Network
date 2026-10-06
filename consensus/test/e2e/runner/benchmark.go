@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/paxeer-network/paxlog"
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "test", "e2e", "runner")

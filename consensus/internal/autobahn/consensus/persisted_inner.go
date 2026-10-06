@@ -3,10 +3,10 @@ package consensus
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // persistedInner holds the persistable consensus state.

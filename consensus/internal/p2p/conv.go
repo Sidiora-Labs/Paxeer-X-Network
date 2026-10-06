@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/conn"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/conn"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type NodeSecretKey ed25519.SecretKey

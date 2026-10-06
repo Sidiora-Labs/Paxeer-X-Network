@@ -1,13 +1,13 @@
 package codec
 
 import (
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/multisig"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256r1"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/sr25519"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/multisig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256r1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/sr25519"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // RegisterInterfaces registers the sdk.Tx interface.

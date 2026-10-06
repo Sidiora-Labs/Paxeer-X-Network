@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 )
 
 // Client and Server should work over tcp or unix sockets

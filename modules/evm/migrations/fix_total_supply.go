@@ -1,11 +1,11 @@
 package migrations
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
 )
 
 var logger = paxlog.NewLogger("x", "evm", "migrations")

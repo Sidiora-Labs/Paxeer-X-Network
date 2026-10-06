@@ -34,9 +34,9 @@ import (
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
 	_ "github.com/lib/pq"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/dealer"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/attestor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/envelope"
 )
 
 const EnvDatabaseURL = "CEREMONY_DATABASE_URL"

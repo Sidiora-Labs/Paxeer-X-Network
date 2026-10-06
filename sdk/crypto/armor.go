@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	"github.com/tendermint/crypto/bcrypt"
 	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/openpgp/armor" //nolint:staticcheck // SA1019: not worth fixing
 
-	cosmoscrypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	cosmoscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 const (

@@ -4,17 +4,17 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
 	"github.com/stretchr/testify/suite"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	ibchost "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	ibckeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	upgradekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	ibchost "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 )
 
 type KeeperTestSuite struct {

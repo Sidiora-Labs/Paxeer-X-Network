@@ -3,9 +3,9 @@ package proxy
 import (
 	"context"
 
-	lrpc "github.com/sidiora-labs/paxeer-network/consensus/light/rpc"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	lrpc "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/rpc"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // proxyService wraps a light RPC client to export the RPC service interfaces.

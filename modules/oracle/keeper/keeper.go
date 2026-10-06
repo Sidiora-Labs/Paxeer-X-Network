@@ -9,16 +9,16 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
-	"github.com/sidiora-labs/paxeer-network/utils/datastructures"
-	"github.com/sidiora-labs/paxeer-network/utils/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/datastructures"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	paramstypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	paramstypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 )
 
 // Keeper of the oracle store

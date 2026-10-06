@@ -3,7 +3,7 @@ package paxprotocol.paxchain.evm;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/evm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types";
 
 // Params defines the parameters for the module
 message Params {
@@ -15,26 +15,26 @@ message Params {
   // ];
   string priority_normalizer = 2 [
     (gogoproto.moretags) = "yaml:\"priority_normalizer\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "priority_normalizer"
   ];
   string base_fee_per_gas = 3 [
     (gogoproto.moretags) = "yaml:\"base_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "base_fee_per_gas"
   ];
   string minimum_fee_per_gas = 4 [
     (gogoproto.moretags) = "yaml:\"minimum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "minimum_fee_per_gas"
   ];
   // ChainConfig chain_config = 5 [(gogoproto.moretags) = "yaml:\"chain_config\"", (gogoproto.nullable) = false];
   //   string chain_id = 6 [
   //   (gogoproto.moretags)   = "yaml:\"chain_id\"",
-  //   (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+  //   (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
   //   (gogoproto.nullable)   = false,
   //   (gogoproto.jsontag) = "chain_id"
   // ];
@@ -51,20 +51,20 @@ message Params {
 
   string max_dynamic_base_fee_upward_adjustment = 10 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_upward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_upward_adjustment"
   ];
   string max_dynamic_base_fee_downward_adjustment = 11 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_downward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_downward_adjustment"
   ];
   uint64 target_gas_used_per_block = 12;
   string maximum_fee_per_gas = 13 [
     (gogoproto.moretags) = "yaml:\"maximum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "maximum_fee_per_gas"
   ];
@@ -80,7 +80,7 @@ message Params {
   ];
   string max_fee_token_spread = 17 [
     (gogoproto.moretags) = "yaml:\"max_fee_token_spread\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_fee_token_spread"
   ];
@@ -107,26 +107,26 @@ message ParamsPreV580 {
   // ];
   string priority_normalizer = 2 [
     (gogoproto.moretags) = "yaml:\"priority_normalizer\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "priority_normalizer"
   ];
   string base_fee_per_gas = 3 [
     (gogoproto.moretags) = "yaml:\"base_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "base_fee_per_gas"
   ];
   string minimum_fee_per_gas = 4 [
     (gogoproto.moretags) = "yaml:\"minimum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "minimum_fee_per_gas"
   ];
   // ChainConfig chain_config = 5 [(gogoproto.moretags) = "yaml:\"chain_config\"", (gogoproto.nullable) = false];
   //   string chain_id = 6 [
   //   (gogoproto.moretags)   = "yaml:\"chain_id\"",
-  //   (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+  //   (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
   //   (gogoproto.nullable)   = false,
   //   (gogoproto.jsontag) = "chain_id"
   // ];
@@ -149,19 +149,19 @@ message ParamsPreV600 {
   // ];
   string priority_normalizer = 2 [
     (gogoproto.moretags) = "yaml:\"priority_normalizer\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "priority_normalizer"
   ];
   string base_fee_per_gas = 3 [
     (gogoproto.moretags) = "yaml:\"base_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "base_fee_per_gas"
   ];
   string minimum_fee_per_gas = 4 [
     (gogoproto.moretags) = "yaml:\"minimum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "minimum_fee_per_gas"
   ];
@@ -169,7 +169,7 @@ message ParamsPreV600 {
   // ChainConfig chain_config = 5 [(gogoproto.moretags) = "yaml:\"chain_config\"", (gogoproto.nullable) = false];
   //   string chain_id = 6 [
   //   (gogoproto.moretags)   = "yaml:\"chain_id\"",
-  //   (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+  //   (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
   //   (gogoproto.nullable)   = false,
   //   (gogoproto.jsontag) = "chain_id"
   // ];
@@ -192,26 +192,26 @@ message ParamsPreV601 {
   // ];
   string priority_normalizer = 2 [
     (gogoproto.moretags) = "yaml:\"priority_normalizer\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "priority_normalizer"
   ];
   string base_fee_per_gas = 3 [
     (gogoproto.moretags) = "yaml:\"base_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "base_fee_per_gas"
   ];
   string minimum_fee_per_gas = 4 [
     (gogoproto.moretags) = "yaml:\"minimum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "minimum_fee_per_gas"
   ];
   // ChainConfig chain_config = 5 [(gogoproto.moretags) = "yaml:\"chain_config\"", (gogoproto.nullable) = false];
   //   string chain_id = 6 [
   //   (gogoproto.moretags)   = "yaml:\"chain_id\"",
-  //   (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+  //   (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
   //   (gogoproto.nullable)   = false,
   //   (gogoproto.jsontag) = "chain_id"
   // ];
@@ -228,13 +228,13 @@ message ParamsPreV601 {
 
   string max_dynamic_base_fee_upward_adjustment = 10 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_upward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_upward_adjustment"
   ];
   string max_dynamic_base_fee_downward_adjustment = 11 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_downward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_downward_adjustment"
   ];
@@ -250,26 +250,26 @@ message ParamsPreV606 {
   // ];
   string priority_normalizer = 2 [
     (gogoproto.moretags) = "yaml:\"priority_normalizer\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "priority_normalizer"
   ];
   string base_fee_per_gas = 3 [
     (gogoproto.moretags) = "yaml:\"base_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "base_fee_per_gas"
   ];
   string minimum_fee_per_gas = 4 [
     (gogoproto.moretags) = "yaml:\"minimum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "minimum_fee_per_gas"
   ];
   // ChainConfig chain_config = 5 [(gogoproto.moretags) = "yaml:\"chain_config\"", (gogoproto.nullable) = false];
   //   string chain_id = 6 [
   //   (gogoproto.moretags)   = "yaml:\"chain_id\"",
-  //   (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+  //   (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
   //   (gogoproto.nullable)   = false,
   //   (gogoproto.jsontag) = "chain_id"
   // ];
@@ -286,20 +286,20 @@ message ParamsPreV606 {
 
   string max_dynamic_base_fee_upward_adjustment = 10 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_upward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_upward_adjustment"
   ];
   string max_dynamic_base_fee_downward_adjustment = 11 [
     (gogoproto.moretags) = "yaml:\"max_dynamic_base_fee_downward_adjustment\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "max_dynamic_base_fee_downward_adjustment"
   ];
   uint64 target_gas_used_per_block = 12;
   string maximum_fee_per_gas = 13 [
     (gogoproto.moretags) = "yaml:\"maximum_fee_per_gas\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "maximum_fee_per_gas"
   ];
@@ -312,7 +312,7 @@ message AllowedFeeDenom {
   // Fee-token base units per whole Paxeer coin; Sidiora uses six decimals.
   string rate = 3 [
     (gogoproto.moretags) = "yaml:\"rate\"",
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Dec",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec",
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "rate"
   ];

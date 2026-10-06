@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/benchmark/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/benchmark/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // metrics is a struct that holds various performance metrics for the benchmark. If configured, periodically

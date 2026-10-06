@@ -3,12 +3,12 @@ package mem_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/mem"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/mem"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 func TestStore(t *testing.T) {

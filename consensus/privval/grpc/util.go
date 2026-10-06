@@ -18,8 +18,8 @@ import (
 
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	tmnet "github.com/sidiora-labs/paxeer-network/consensus/libs/net"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	tmnet "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/net"
 )
 
 var logger = paxlog.NewLogger("tendermint", "privval", "grpc")

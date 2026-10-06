@@ -3,11 +3,11 @@ package keeper_test
 import (
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 const (

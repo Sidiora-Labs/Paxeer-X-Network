@@ -1,7 +1,7 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // TokensToConsensusPower - convert input tokens to potential consensus-engine power

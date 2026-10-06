@@ -3,14 +3,14 @@
 package launchpadtest
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
-	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

@@ -5,7 +5,7 @@ import "cosmos/params/v1beta1/params.proto";
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/x/params/types/proposal";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal";
 
 // Query defines the gRPC querier service.
 service Query {

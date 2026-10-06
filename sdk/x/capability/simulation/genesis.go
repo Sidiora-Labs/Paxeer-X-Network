@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 )
 
 // Simulation parameter constants

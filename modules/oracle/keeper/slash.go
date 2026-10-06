@@ -6,10 +6,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	cosmostelemetry "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	cosmostelemetry "github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 var logger = paxlog.NewLogger("x", "oracle", "keeper")

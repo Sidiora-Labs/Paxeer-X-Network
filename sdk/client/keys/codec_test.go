@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/keys"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
 )
 
 type testCases struct {

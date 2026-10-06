@@ -5,19 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 	"github.com/stretchr/testify/assert"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/testslashing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/teststaking"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/testslashing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/teststaking"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func TestUnJailNotBonded(t *testing.T) {

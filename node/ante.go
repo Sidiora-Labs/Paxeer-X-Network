@@ -1,22 +1,22 @@
 package app
 
 import (
-	ibcante "github.com/sidiora-labs/paxeer-network/interchain/modules/core/ante"
-	ibckeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	evmante "github.com/sidiora-labs/paxeer-network/modules/evm/ante"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle"
-	oraclekeeper "github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/utils/tracing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
-	upgradekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
-	wasm "github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	ibcante "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/ante"
+	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	evmante "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
+	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils/tracing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
+	wasm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the IBC

@@ -6,11 +6,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/precompiles/bank"
-	"github.com/sidiora-labs/paxeer-network/precompiles/gov"
-	"github.com/sidiora-labs/paxeer-network/precompiles/staking"
-	"github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 )
 
 func toAddr(addr string) *common.Address {

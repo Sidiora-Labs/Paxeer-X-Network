@@ -3,13 +3,13 @@ package rest
 import (
 	"net/http"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	govrest "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/rest"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	paramscutils "github.com/sidiora-labs/paxeer-network/sdk/x/params/client/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/types/proposal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	govrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/rest"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	paramscutils "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 )
 
 // ProposalRESTHandler returns a ProposalRESTHandler that exposes the param

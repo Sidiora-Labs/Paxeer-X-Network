@@ -3,8 +3,8 @@ package antedecorators
 import (
 	"math"
 
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 const (

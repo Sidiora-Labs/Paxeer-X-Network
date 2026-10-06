@@ -4,7 +4,7 @@ import (
 	"math"
 	"math/big"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 var Big0 = big.NewInt(0)

@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	evmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/benchmark"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	evmcfg "github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/node/benchmark"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // InitBenchmark initializes the benchmark system with the configured scenarios.

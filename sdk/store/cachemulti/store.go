@@ -8,11 +8,11 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	gigacachekv "github.com/sidiora-labs/paxeer-network/engine/deps/store"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/tracekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	gigacachekv "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/tracekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 var (

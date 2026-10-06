@@ -1,7 +1,7 @@
 package address
 
 import (
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // MaxAddrLen is the maximum allowed length (in bytes) for an address.

@@ -10,8 +10,8 @@ import (
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // MaxCommitSignatures mirrors the (wireguard.max_count) annotation on

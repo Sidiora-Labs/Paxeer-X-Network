@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
 
 	"github.com/fortytw2/leaktest"
 	"github.com/stretchr/testify/assert"
@@ -16,19 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/consensus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	sf "github.com/sidiora-labs/paxeer-network/consensus/internal/state/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/store"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/blocksync"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	sf "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/blocksync"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type reactorTestSuite struct {

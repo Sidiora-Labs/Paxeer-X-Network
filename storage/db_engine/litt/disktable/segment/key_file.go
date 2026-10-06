@@ -9,8 +9,8 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // KeyFileExtension is the file extension for the keys file. This file contains the keys for the data segment,

@@ -12,11 +12,11 @@ import (
 
 	"github.com/cosmos/go-bip39"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	csecp256k1 "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	cosmoscrypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	csecp256k1 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	cosmoscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // If ledger support (build tag) has been enabled, which implies a CGO dependency,

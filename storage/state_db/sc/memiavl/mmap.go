@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
 	"github.com/ledgerwatch/erigon-lib/mmap"
-	"github.com/sidiora-labs/paxeer-network/storage/common/errors"
 )
 
 // MmapFile manage the resources of a mmap-ed file

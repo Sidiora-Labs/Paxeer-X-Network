@@ -28,10 +28,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
-	"github.com/sidiora-labs/paxeer-network/rpc"
 	"github.com/stretchr/testify/assert"
 )
 

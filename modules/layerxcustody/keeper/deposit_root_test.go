@@ -7,15 +7,15 @@ import (
 	"encoding/hex"
 	"testing"
 
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
+	anchorkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/keeper"
+	anchortypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/testvectors"
-	anchorkeeper "github.com/sidiora-labs/paxeer-network/modules/layerxanchor/keeper"
-	anchortypes "github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

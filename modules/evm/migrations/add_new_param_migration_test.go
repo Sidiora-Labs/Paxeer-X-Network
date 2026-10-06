@@ -3,9 +3,9 @@ package migrations_test
 import (
 	"testing"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/migrations"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/migrations"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

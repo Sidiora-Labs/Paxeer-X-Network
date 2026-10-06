@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/local"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/paxeer-network/paxlog"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client/local"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 

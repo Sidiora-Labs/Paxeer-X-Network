@@ -1,14 +1,14 @@
 package client_test
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	distributiontypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	distributiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 
-	client "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *ClientTestSuite) TestNewClientUpdateProposalHandler() {

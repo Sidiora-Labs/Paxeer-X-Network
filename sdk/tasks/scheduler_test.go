@@ -11,18 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachemulti"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/occ"
-	"github.com/sidiora-labs/paxeer-network/sdk/utils/tracing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachemulti"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/occ"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils/tracing"
 )
 
 type mockDeliverTxFunc func(ctx sdk.Context, req types.RequestDeliverTxV2, tx sdk.Tx, checksum [32]byte) (res types.ResponseDeliverTx)

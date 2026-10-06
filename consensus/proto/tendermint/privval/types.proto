@@ -6,7 +6,7 @@ import "gogoproto/gogo.proto";
 import "tendermint/crypto/keys.proto";
 import "tendermint/types/types.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval";
 
 enum Errors {
   ERRORS_UNKNOWN = 0;

@@ -3,12 +3,12 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 
-	ibcclient "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	connection "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection"
-	channel "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	ibcclient "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	connection "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection"
+	channel "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // GetTxCmd returns the transaction commands for this module

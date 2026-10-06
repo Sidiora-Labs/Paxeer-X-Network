@@ -3,12 +3,12 @@
 package solo
 
 import (
+	solov614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/solo/legacy/v614"
+	solov620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/solo/legacy/v620"
+	solov630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/solo/legacy/v630"
+	solov640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/solo/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	solov614 "github.com/sidiora-labs/paxeer-network/precompiles/solo/legacy/v614"
-	solov620 "github.com/sidiora-labs/paxeer-network/precompiles/solo/legacy/v620"
-	solov630 "github.com/sidiora-labs/paxeer-network/precompiles/solo/legacy/v630"
-	solov640 "github.com/sidiora-labs/paxeer-network/precompiles/solo/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

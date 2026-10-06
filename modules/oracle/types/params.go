@@ -6,10 +6,10 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/utils"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paramstypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramstypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // Parameter keys

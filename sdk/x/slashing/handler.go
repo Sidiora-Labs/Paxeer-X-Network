@@ -1,10 +1,10 @@
 package slashing
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 )
 
 // NewHandler creates an sdk.Handler for all the slashing type messages

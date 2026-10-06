@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/crypto/scrypt"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
 )
 
 const (

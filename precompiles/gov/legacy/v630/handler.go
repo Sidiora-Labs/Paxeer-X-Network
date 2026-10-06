@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	distrtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	paramstypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/common"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	distrtypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	paramstypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types/proposal"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 )
 
 // EVMKeeper defines the interface for EVM keeper operations

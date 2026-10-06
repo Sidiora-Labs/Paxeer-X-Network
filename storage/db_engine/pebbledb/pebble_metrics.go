@@ -11,7 +11,7 @@ import (
 
 	"github.com/cockroachdb/pebble/v2"
 
-	smetrics "github.com/sidiora-labs/paxeer-network/storage/common/metrics"
+	smetrics "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
 )
 
 const pebbleMeterName = "paxdb_pebble"

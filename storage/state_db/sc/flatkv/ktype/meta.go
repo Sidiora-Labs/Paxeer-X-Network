@@ -3,7 +3,7 @@ package ktype
 import (
 	"bytes"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/lthash"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/lthash"
 )
 
 const metaKeyPrefix = "_meta/"

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"text/template"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
 	"github.com/spf13/viper"
 )
 

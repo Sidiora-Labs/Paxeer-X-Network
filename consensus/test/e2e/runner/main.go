@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 const randomSeed = 2308084734268

@@ -11,19 +11,19 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/client/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 )
 
 var (

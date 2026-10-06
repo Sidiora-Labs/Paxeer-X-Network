@@ -3,7 +3,7 @@ package wal
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 // ChangelogWAL is a type alias for a WAL specialized for ChangelogEntry.

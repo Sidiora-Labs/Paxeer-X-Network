@@ -3,15 +3,15 @@ package keeper
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 var _ types.QueryServer = AccountKeeper{}

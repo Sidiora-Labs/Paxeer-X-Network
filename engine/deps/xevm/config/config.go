@@ -3,9 +3,9 @@ package config
 import (
 	"math/big"
 
-	canonical "github.com/sidiora-labs/paxeer-network/modules/evm/config"
+	canonical "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 const DefaultChainID = canonical.DefaultChainID

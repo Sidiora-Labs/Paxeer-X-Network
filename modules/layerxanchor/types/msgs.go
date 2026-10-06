@@ -1,6 +1,6 @@
 package types
 
-import sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+import sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
 const TypeMsgUpdateParams = "update_params"
 

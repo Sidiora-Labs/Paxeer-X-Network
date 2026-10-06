@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable"
 	"github.com/urfave/cli/v2"
 )
 

@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	errorutils "github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	errorutils "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 func TestSnapshotEncodingRoundTrip(t *testing.T) {

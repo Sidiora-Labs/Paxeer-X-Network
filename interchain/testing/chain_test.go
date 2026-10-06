@@ -3,11 +3,11 @@ package ibctesting_test
 import (
 	"testing"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/stretchr/testify/require"
 
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
 )
 
 func TestCreateSortedSignerArray(t *testing.T) {

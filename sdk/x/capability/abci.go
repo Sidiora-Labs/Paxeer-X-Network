@@ -3,10 +3,10 @@ package capability
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 )
 
 // BeginBlocker will call InitMemStore to initialize the memory stores in the case

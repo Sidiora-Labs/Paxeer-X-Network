@@ -4,8 +4,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
 )
 
 type IStoreTracer interface {

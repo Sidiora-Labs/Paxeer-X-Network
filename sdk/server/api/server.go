@@ -9,21 +9,21 @@ import (
 	"sync"
 	"time"
 
+	tmrpcserver "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 	"github.com/gogo/gateway"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/paxeer-network/paxlog"
-	tmrpcserver "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	grpctypes "github.com/sidiora-labs/paxeer-network/sdk/types/grpc"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	grpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/grpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
 
 	// unnamed import of statik for swagger UI support
-	_ "github.com/sidiora-labs/paxeer-network/sdk/client/docs/statik"
+	_ "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/docs/statik"
 )
 
 var logger = paxlog.NewLogger("tendermint", "server", "api")

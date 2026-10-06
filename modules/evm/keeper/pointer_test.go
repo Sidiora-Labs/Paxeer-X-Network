@@ -4,16 +4,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw721"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 )
 
 // allows us to permutate different pointer combinations

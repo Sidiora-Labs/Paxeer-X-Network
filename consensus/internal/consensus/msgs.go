@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	cstypes "github.com/sidiora-labs/paxeer-network/consensus/internal/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmcons "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/consensus"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	cstypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmcons "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/consensus"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // Message defines an interface that the consensus domain types implement. When

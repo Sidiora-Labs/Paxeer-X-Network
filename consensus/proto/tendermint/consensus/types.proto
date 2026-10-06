@@ -6,7 +6,7 @@ import "gogoproto/gogo.proto";
 import "tendermint/libs/bits/types.proto";
 import "tendermint/types/types.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/consensus";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/consensus";
 
 // NewRoundStep is sent for every step taken in the ConsensusState.
 // For every height/round/step transition

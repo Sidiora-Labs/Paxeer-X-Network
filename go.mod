@@ -1,4 +1,4 @@
-module github.com/sidiora-labs/paxeer-network
+module github.com/Sidiora-Labs/Paxeer-X-Network
 
 go 1.25.6
 

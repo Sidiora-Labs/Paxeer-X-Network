@@ -6,8 +6,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/conn"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/conn"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type ChannelID = conn.ChannelID

@@ -30,13 +30,13 @@ go run github.com/bufbuild/buf/cmd/buf@v1.58.0 generate --template consensus/int
 # We can't manipulate the outputs enough to eliminate the extra move-abouts.
 # So we just copy the files we want to the right places manually.
 # The repo restructure should help this in the future.
-cp -rf ./build/proto/gocosmos/github.com/sidiora-labs/paxeer-network/* ./
-cp -rf ./build/proto/gocosmos/github.com/sidiora-labs/paxeer-network/sdk/* ./sdk
-cp -rf ./build/proto/gocosmos/github.com/sidiora-labs/paxeer-network/wasm/* ./wasm
+cp -rf ./build/proto/gocosmos/github.com/Sidiora-Labs/Paxeer-X-Network/* ./
+cp -rf ./build/proto/gocosmos/github.com/Sidiora-Labs/Paxeer-X-Network/sdk/* ./sdk
+cp -rf ./build/proto/gocosmos/github.com/Sidiora-Labs/Paxeer-X-Network/wasm/* ./wasm
 
 # Use gogofaster for Tendermint and IAVL because that is their established generator.
 # See ./consensus/internal/buf.gen.yaml.
-cp -rf ./build/proto/gogofaster/github.com/sidiora-labs/paxeer-network/consensus/* ./consensus
+cp -rf ./build/proto/gogofaster/github.com/Sidiora-Labs/Paxeer-X-Network/consensus/* ./consensus
 
 rm -rf ./build/proto
 

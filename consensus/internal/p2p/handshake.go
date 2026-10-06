@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/conn"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 	gogoproto "github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/conn"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
 
-	gogopb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	gogopb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type handshakedConn struct {

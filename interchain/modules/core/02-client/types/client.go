@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	proto "github.com/gogo/protobuf/proto"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var (

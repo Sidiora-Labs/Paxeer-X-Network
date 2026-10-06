@@ -1,8 +1,8 @@
 package version
 
 import (
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmversion "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/version"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmversion "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/version"
 )
 
 const (

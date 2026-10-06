@@ -3,7 +3,7 @@ package keeper
 import (
 	"sync"
 
-	sctypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	sctypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 // TraceSnapshotStore holds bounded in-memory SC snapshots keyed by block height.

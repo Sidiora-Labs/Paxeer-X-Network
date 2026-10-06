@@ -8,7 +8,7 @@ import sys
 import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-MODULE = "github.com/sidiora-labs/paxeer-network"
+MODULE = "github.com/Sidiora-Labs/Paxeer-X-Network"
 
 TARGETS = [
     ("launchpad-keeper.test", "modules/launchpad/keeper", [

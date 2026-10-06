@@ -8,14 +8,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/clist"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/paxeer-network/paxlog"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/clist"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "mempool")

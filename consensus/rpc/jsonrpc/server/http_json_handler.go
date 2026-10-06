@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 // HTTP + JSON handler

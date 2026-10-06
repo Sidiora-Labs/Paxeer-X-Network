@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )

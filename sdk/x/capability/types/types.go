@@ -6,7 +6,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // NewCapability returns a reference to a new Capability to be used as an

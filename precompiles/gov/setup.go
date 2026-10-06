@@ -3,19 +3,19 @@
 package gov
 
 import (
+	govv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v552"
+	govv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v555"
+	govv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v562"
+	govv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v580"
+	govv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v605"
+	govv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v606"
+	govv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v610"
+	govv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v614"
+	govv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v620"
+	govv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v630"
+	govv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	govv552 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v552"
-	govv555 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v555"
-	govv562 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v562"
-	govv580 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v580"
-	govv605 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v605"
-	govv606 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v606"
-	govv610 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v610"
-	govv614 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v614"
-	govv620 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v620"
-	govv630 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v630"
-	govv640 "github.com/sidiora-labs/paxeer-network/precompiles/gov/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

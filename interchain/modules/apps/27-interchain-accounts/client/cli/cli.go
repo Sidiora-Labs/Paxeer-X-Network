@@ -3,8 +3,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	controllercli "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/client/cli"
-	hostcli "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/client/cli"
+	controllercli "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/client/cli"
+	hostcli "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/client/cli"
 )
 
 // GetQueryCmd returns the query commands for the interchain-accounts submodule

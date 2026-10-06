@@ -5,8 +5,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 )

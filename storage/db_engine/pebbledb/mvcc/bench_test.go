@@ -1,11 +1,11 @@
 package mvcc
 
 import (
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/test"
 )
 
 func BenchmarkDBBackend(b *testing.B) {

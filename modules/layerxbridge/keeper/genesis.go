@@ -1,8 +1,8 @@
 package keeper
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // InitGenesis loads a validated genesis. Bridged denoms are tokenfactory

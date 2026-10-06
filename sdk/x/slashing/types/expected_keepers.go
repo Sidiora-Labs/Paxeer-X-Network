@@ -3,10 +3,10 @@
 package types
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	auth "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	auth "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // AccountKeeper expected account keeper

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	xwebtypes "github.com/sidiora-labs/paxeer-network/modules/xweb/types"
+	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 )
 
 // XWebThreshold is the number of distinct attestor signatures a web-search

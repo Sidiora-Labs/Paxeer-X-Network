@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 // Perturbs a running testnet.

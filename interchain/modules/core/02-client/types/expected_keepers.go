@@ -3,9 +3,9 @@ package types
 import (
 	"time"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 )
 
 // StakingKeeper expected staking keeper

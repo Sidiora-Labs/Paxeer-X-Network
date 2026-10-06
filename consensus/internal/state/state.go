@@ -10,12 +10,12 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
 
-	tmstate "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/state"
-	tmversion "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/version"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	tmstate "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/state"
+	tmversion "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 //-----------------------------------------------------------------------------

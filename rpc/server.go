@@ -7,16 +7,16 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 
-	tmutils "github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	evmCfg "github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
-	"github.com/sidiora-labs/paxeer-network/rpc/stats"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	tmutils "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	evmCfg "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc/stats"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 type ConnectionType string

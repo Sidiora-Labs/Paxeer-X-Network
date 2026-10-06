@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
 )
 
 // TableNameRegex is a regular expression that matches valid table names.

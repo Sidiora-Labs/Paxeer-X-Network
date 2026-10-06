@@ -32,7 +32,7 @@ export LC_ALL=C TZ=UTC
 rm -rf -- "$out"
 mkdir -p "$out"
 
-version_pkg=github.com/sidiora-labs/paxeer-network/sdk/version
+version_pkg=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version
 ldflags="-buildid= -checklinkname=0 \
 -X $version_pkg.Name=paxeer \
 -X $version_pkg.AppName=paxd \

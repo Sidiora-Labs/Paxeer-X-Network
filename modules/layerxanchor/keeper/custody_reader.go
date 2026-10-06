@@ -1,10 +1,10 @@
 package keeper
 
 import (
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
-	custodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
+	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // SequencerAuthorizationForBatch resolves the authorization covering

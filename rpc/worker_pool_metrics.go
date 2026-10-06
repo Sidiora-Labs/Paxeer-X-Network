@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )

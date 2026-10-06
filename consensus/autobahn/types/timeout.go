@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // TimeoutVote .

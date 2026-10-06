@@ -1,7 +1,7 @@
 package keeper
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
 )
 
 var _ types.QueryServer = Keeper{}

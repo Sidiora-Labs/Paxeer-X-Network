@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
 )
 
 const (

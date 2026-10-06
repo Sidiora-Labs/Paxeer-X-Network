@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // CohortFileExtension is the file extension used for cohort files.

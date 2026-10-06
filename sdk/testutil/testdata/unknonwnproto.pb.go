@@ -10,10 +10,10 @@ import (
 	math "math"
 	math_bits "math/bits"
 
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	tx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	tx "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.

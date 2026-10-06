@@ -5,15 +5,15 @@ package types
 
 import (
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	types3 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	types2 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
 	_go "github.com/confio/ics23/go"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/types"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	types3 "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	types1 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	types2 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -104,7 +104,7 @@ type ConsensusState struct {
 	Timestamp time.Time `protobuf:"bytes,1,opt,name=timestamp,proto3,stdtime" json:"timestamp"`
 	// commitment root (i.e app hash)
 	Root               types2.MerkleRoot                                                    `protobuf:"bytes,2,opt,name=root,proto3" json:"root"`
-	NextValidatorsHash github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,3,opt,name=next_validators_hash,json=nextValidatorsHash,proto3,casttype=github.com/sidiora-labs/paxeer-network/consensus/libs/bytes.HexBytes" json:"next_validators_hash,omitempty" yaml:"next_validators_hash"`
+	NextValidatorsHash github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,3,opt,name=next_validators_hash,json=nextValidatorsHash,proto3,casttype=github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes.HexBytes" json:"next_validators_hash,omitempty" yaml:"next_validators_hash"`
 }
 
 func (m *ConsensusState) Reset()         { *m = ConsensusState{} }

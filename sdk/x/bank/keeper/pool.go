@@ -3,7 +3,7 @@ package keeper
 import (
 	"sync"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // SdkIntPool is a pool of *sdk.Int for reuse across balance reads from storage.

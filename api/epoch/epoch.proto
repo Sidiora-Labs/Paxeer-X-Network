@@ -5,7 +5,7 @@ import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/epoch/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types";
 
 message Epoch {
   google.protobuf.Timestamp genesis_time = 1 [

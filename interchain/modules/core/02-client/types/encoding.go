@@ -3,9 +3,9 @@ package types
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // MustUnmarshalClientState attempts to decode and return an ClientState object from

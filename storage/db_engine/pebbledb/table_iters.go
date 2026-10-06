@@ -3,8 +3,8 @@ package pebbledb
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/dbcache"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/dbcache"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 // TableIters returns the number of open SSTable iterators for db.

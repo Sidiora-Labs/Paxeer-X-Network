@@ -3,8 +3,8 @@ package flatkv
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/config"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/ktype"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/ktype"
 	"github.com/stretchr/testify/require"
 )
 

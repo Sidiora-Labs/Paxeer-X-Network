@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 
 	"github.com/stretchr/testify/require"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	keep "github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	keep "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 func TestQueryAccount(t *testing.T) {

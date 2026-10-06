@@ -5,9 +5,9 @@ package types
 
 import (
 	fmt "fmt"
+	crypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	crypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
 	io "io"
 	math "math"
 	math_bits "math/bits"

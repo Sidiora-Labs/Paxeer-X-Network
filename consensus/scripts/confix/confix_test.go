@@ -8,7 +8,7 @@ import (
 	"github.com/creachadair/tomledit"
 	"github.com/google/go-cmp/cmp"
 
-	confix "github.com/sidiora-labs/paxeer-network/consensus/scripts/confix"
+	confix "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/scripts/confix"
 )
 
 func mustParseConfig(t *testing.T, path string) *tomledit.Document {

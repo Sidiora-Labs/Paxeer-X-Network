@@ -3,7 +3,7 @@
 package mocks
 
 import (
-	types "github.com/sidiora-labs/paxeer-network/consensus/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	mock "github.com/stretchr/testify/mock"
 )
 

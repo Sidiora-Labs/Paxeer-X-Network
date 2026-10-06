@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/testvectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
 )
 
 const (

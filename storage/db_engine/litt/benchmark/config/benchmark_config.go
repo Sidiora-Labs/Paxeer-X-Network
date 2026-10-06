@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // BenchmarkConfig is a struct that holds the configuration for the benchmark.

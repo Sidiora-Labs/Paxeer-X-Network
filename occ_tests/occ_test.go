@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/occ_tests/messages"
-	"github.com/sidiora-labs/paxeer-network/occ_tests/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/messages"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

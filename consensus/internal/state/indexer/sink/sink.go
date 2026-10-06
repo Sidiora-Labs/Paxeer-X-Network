@@ -4,11 +4,11 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/sink/kv"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/sink/null"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/sink/psql"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/sink/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/sink/null"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/sink/psql"
 )
 
 // EventSinksFromConfig constructs a slice of indexer.EventSink using the provided

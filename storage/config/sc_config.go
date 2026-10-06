@@ -3,8 +3,8 @@ package config
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/config"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/memiavl"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/memiavl"
 )
 
 const (

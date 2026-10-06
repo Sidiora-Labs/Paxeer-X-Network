@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/daemon/paxd/cmd"
-	"github.com/sidiora-labs/paxeer-network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/daemon/paxd/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
-	svrcmd "github.com/sidiora-labs/paxeer-network/sdk/server/cmd"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	svrcmd "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/cmd"
 )
 
 func main() {

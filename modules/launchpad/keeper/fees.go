@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 func (k *Keeper) requireFeeRightsHolder(ctx sdk.Context, caller sdk.AccAddress, denom string) (types.Market, error) {

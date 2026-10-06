@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"strings"
 
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/gogo/protobuf/proto"
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/client/cli"
 )
 
 type IntegrationTestSuite struct {

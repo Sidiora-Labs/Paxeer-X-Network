@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/grpc/tmservice"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/grpc/tmservice"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"

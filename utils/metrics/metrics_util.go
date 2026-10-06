@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
 	metrics "github.com/armon/go-metrics"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	sdk "go.opentelemetry.io/otel/sdk/metric"

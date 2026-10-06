@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/attestor"
 )
 
 var goldenDir = filepath.Join("..", "..", "..", "schema", "attestor-api", "golden")

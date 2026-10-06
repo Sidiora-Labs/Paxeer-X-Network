@@ -3,9 +3,9 @@ package types_test
 import (
 	"testing"
 
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	storev2rootmulti "github.com/sidiora-labs/paxeer-network/sdk/storev2/rootmulti"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	storev2rootmulti "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/storev2/rootmulti"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/stretchr/testify/suite"
 )
 

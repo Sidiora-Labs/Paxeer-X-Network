@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // NOTE: we don't need to implement proto interface on this file

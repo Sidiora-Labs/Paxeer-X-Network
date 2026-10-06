@@ -3,10 +3,10 @@ package keeper
 import (
 	"encoding/binary"
 
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // authorityAnchor implements types.AnchorReader from custody's own

@@ -3,12 +3,12 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func TestSlashAndResetMissCounters(t *testing.T) {

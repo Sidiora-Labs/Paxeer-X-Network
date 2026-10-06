@@ -8,7 +8,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 )
 
 const numCacheChunks = 3 // current (write+read), previous (read), oldest (prune)

@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"testing"
 
-	ctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	ctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/rpc"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/legacy"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/legacy"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
 )
 
 type IntegrationTestSuite struct {

@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cast"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 // GetPruningOptionsFromFlags parses command flags and returns the correct

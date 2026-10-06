@@ -1,10 +1,10 @@
 package connection
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/keeper"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
 )
 
 // InitGenesis initializes the ibc connection submodule's state from a provided genesis

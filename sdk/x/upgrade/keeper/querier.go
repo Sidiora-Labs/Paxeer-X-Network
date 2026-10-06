@@ -4,14 +4,14 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // NewQuerier creates a querier for upgrade cli and REST endpoints

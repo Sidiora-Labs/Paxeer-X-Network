@@ -1,9 +1,9 @@
 package types
 
 import (
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/ethereum/go-ethereum/common"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 )
 
 // GenesisState is the whole bridge state. The default registers nothing,

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // BroadcastEvidence broadcasts evidence of the misbehavior.

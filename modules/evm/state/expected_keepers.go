@@ -3,11 +3,11 @@ package state
 import (
 	"math/big"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/ethereum/go-ethereum/common"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	upgradekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
 )
 
 type EVMKeeper interface {

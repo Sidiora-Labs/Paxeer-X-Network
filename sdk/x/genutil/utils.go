@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"time"
 
+	cfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	tmed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/cosmos/go-bip39"
-	cfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	tmed25519 "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // ExportGenesisFile creates and writes the genesis configuration to disk. An

@@ -5,14 +5,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/testslashing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/testslashing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 )
 
 func TestNewQuerier(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/sidiora-labs/paxeer-network/human/wallet/attestor
+module github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor
 
 go 1.25.6
 
@@ -10,7 +10,7 @@ require (
 	github.com/lestrrat-go/jwx/v2 v2.1.7
 	github.com/pkg/sftp v1.13.11
 	github.com/prometheus/client_golang v1.24.1
-	github.com/sidiora-labs/paxeer-network v0.0.0
+	github.com/Sidiora-Labs/Paxeer-X-Network v0.0.0
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/crypto v0.54.0
 	google.golang.org/protobuf v1.36.11
@@ -53,4 +53,4 @@ require (
 	gonum.org/v1/gonum v0.7.0 // indirect
 )
 
-replace github.com/sidiora-labs/paxeer-network => ../../..
+replace github.com/Sidiora-Labs/Paxeer-X-Network => ../../..

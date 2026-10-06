@@ -5,12 +5,12 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/feetoken"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/precompiles"
-	"github.com/sidiora-labs/paxeer-network/precompiles/feetoken"
-	"github.com/sidiora-labs/paxeer-network/precompiles/xweb"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

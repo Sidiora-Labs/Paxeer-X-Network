@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	oraclekeeper "github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	oracletestutils "github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	oracletestutils "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
 	"github.com/stretchr/testify/require"
 )
 

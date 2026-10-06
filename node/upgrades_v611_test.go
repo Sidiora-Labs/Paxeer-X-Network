@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	layerxcustodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"github.com/ethereum/go-ethereum/common"
-	layerxbridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	layerxcustodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
 	"github.com/stretchr/testify/require"
 )
 

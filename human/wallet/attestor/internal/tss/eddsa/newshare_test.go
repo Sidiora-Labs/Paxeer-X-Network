@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 func TestNewKeyShareFromDealerBundle(t *testing.T) {

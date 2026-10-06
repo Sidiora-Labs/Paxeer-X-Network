@@ -3,11 +3,11 @@ package types_test
 import (
 	"fmt"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	crypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	crypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
 )
 
 func (suite *MerkleTestSuite) TestConvertProofs() {

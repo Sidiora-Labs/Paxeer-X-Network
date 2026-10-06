@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/tmhash"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/store"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	rpctest "github.com/sidiora-labs/paxeer-network/consensus/rpc/test"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/tmhash"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	rpctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 func TestRollback(t *testing.T) {

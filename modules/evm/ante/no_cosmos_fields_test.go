@@ -5,11 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/ante"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	signing "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	signing "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 )
 
 func TestEVMNoCosmosFieldsDecorator(t *testing.T) {

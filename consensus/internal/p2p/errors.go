@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // ErrFilterTimeout indicates that a filter operation timed out.

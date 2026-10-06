@@ -3,17 +3,17 @@ package wasm
 import (
 	"math"
 
-	ibcexported "github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	ibcexported "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	porttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	porttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 
-	types "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 var _ porttypes.IBCModule = IBCHandler{}

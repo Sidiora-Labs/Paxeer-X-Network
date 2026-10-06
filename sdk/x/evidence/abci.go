@@ -3,12 +3,12 @@ package evidence
 import (
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 	"github.com/paxeer-network/paxlog"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
 )
 
 var logger = paxlog.NewLogger("cosmos", "x", "evidence")

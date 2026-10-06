@@ -8,7 +8,7 @@ import (
 
 	"github.com/coinbase/rosetta-sdk-go/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/errors"
 )
 
 // ConstructionCombine Combine creates a network-specific transaction from an unsigned transaction

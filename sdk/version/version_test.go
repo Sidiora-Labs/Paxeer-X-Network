@@ -6,12 +6,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 )
 
 func TestNewInfo(t *testing.T) {

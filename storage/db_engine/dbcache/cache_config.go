@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
 )
 
 // CacheConfig defines configuration for a sharded LRU read-through cache.

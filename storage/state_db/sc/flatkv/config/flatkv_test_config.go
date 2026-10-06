@@ -4,9 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/dbcache"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/pebbledb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/dbcache"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/pebbledb"
 )
 
 func smallTestPebbleConfig() pebbledb.PebbleDBConfig {

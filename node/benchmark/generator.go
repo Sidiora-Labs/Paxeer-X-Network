@@ -8,15 +8,15 @@ import (
 	"strconv"
 	"sync"
 
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/paxeer-network/pax-load/config"
 	"github.com/paxeer-network/pax-load/generator"
 	"github.com/paxeer-network/pax-load/generator/scenarios"
 	loadtypes "github.com/paxeer-network/pax-load/types"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
 )
 
 // Phase represents the current phase of the benchmark generator.

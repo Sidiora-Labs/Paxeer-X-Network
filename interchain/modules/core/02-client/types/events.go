@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // IBC client events

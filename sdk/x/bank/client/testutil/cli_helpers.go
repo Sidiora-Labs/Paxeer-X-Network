@@ -3,12 +3,12 @@ package testutil
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	bankcli "github.com/sidiora-labs/paxeer-network/sdk/x/bank/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	bankcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/client/cli"
 )
 
 func MsgSendExec(clientCtx client.Context, from, to, amount fmt.Stringer, extraArgs ...string) (testutil.BufferWriter, error) {

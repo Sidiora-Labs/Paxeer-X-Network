@@ -22,8 +22,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/health"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
 )
 
 const (

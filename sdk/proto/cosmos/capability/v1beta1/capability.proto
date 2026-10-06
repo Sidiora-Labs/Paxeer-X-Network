@@ -3,7 +3,7 @@ package cosmos.capability.v1beta1;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types";
 
 // Capability defines an implementation of an object capability. The index
 // provided to a Capability must be globally unique.

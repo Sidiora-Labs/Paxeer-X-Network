@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/wrappers"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/wrappers"
 )
 
 func TestValidateHistoricalOffloadRequiresConfigForHistoricalOffloadBackend(t *testing.T) {

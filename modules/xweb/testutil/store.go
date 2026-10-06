@@ -5,12 +5,12 @@
 package testutil
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

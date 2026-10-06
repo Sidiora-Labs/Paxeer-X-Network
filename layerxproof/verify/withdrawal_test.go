@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 )
 
 func TestWithdrawalOutcomeMatchesRustVerifier(t *testing.T) {

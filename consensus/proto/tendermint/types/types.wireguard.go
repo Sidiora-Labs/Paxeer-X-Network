@@ -2,8 +2,8 @@
 package types
 
 import (
-	wireguard "github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	utils "github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	wireguard "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	utils "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // SchemaForCommit is the wireguard.Schema generated for tendermint.types.Commit.

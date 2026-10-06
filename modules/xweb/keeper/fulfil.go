@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	bridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	bridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // verifySignatures returns the attestors that signed digest. As on the

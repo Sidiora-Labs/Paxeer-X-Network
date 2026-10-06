@@ -41,7 +41,7 @@ import (
 	"github.com/gogo/protobuf/test"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/protoio"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/protoio"
 )
 
 func iotest(t *testing.T, writer protoio.WriteCloser, reader protoio.ReadCloser) error {

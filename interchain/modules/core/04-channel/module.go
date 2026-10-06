@@ -4,8 +4,8 @@ import (
 	"github.com/gogo/protobuf/grpc"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/client/cli"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 )
 
 // Name returns the IBC channel ICS name.

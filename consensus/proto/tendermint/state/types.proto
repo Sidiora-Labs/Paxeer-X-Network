@@ -10,7 +10,7 @@ import "tendermint/types/types.proto";
 import "tendermint/types/validator.proto";
 import "tendermint/version/types.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/state";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/state";
 
 message ABCIResponses {
   repeated tendermint.abci.ResponseDeliverTx deliver_txs = 1;

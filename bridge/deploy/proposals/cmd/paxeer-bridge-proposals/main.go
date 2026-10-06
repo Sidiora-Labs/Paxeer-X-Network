@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/proposals"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
 )
 
 func main() {

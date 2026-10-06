@@ -1,9 +1,9 @@
 package client
 
 import (
-	govclient "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/client/rest"
+	govclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/client/rest"
 )
 
 var ProposalHandler = govclient.NewProposalHandler(cli.NewCmdSubmitUpgradeProposal, rest.ProposalRESTHandler)

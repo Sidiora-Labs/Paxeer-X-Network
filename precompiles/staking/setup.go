@@ -3,19 +3,19 @@
 package staking
 
 import (
+	stakingv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v552"
+	stakingv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v555"
+	stakingv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v562"
+	stakingv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v580"
+	stakingv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v605"
+	stakingv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v606"
+	stakingv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v610"
+	stakingv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v614"
+	stakingv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v620"
+	stakingv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v630"
+	stakingv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	stakingv552 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v552"
-	stakingv555 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v555"
-	stakingv562 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v562"
-	stakingv580 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v580"
-	stakingv605 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v605"
-	stakingv606 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v606"
-	stakingv610 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v610"
-	stakingv614 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v614"
-	stakingv620 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v620"
-	stakingv630 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v630"
-	stakingv640 "github.com/sidiora-labs/paxeer-network/precompiles/staking/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

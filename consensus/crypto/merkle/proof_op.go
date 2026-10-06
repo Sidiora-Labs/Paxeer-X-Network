@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 )
 
 //----------------------------------------

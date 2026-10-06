@@ -3,11 +3,11 @@ package artifacts
 import (
 	"fmt"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw721"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
 )
 
 func GetParsedABI(typ string) *abi.ABI {

@@ -5,8 +5,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 var logger = paxlog.NewLogger("utils")

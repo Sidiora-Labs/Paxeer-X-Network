@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 )
 
 func TestCapabilityKey(t *testing.T) {

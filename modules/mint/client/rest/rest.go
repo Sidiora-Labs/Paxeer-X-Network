@@ -3,16 +3,16 @@ package rest
 import (
 	"net/http"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/rest"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/gorilla/mux"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govrest "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/rest"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	clientrest "github.com/sidiora-labs/paxeer-network/sdk/client/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	typesrest "github.com/sidiora-labs/paxeer-network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	clientrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	typesrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
 )
 
 // RegisterRoutes registers minting module REST handlers on the provided router.

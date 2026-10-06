@@ -1,6 +1,6 @@
 package baseapp
 
-import storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+import storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 
 // storeByNameLookup is implemented by CommitMultiStore backends (rootmulti, storev2).
 type storeByNameLookup interface {

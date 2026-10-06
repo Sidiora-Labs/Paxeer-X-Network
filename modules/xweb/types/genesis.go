@@ -1,8 +1,8 @@
 package types
 
 import (
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 // GenesisState is the whole xweb state. The default carries the documented

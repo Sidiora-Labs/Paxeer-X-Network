@@ -3,7 +3,7 @@ package cosmwasm
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/stretchr/testify/require"
 )
 

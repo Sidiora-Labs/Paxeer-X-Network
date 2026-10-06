@@ -1,7 +1,7 @@
 package types
 
 import (
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 )
 
 // Querier defines a function type that a module querier must implement to handle

@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/staticarchive"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/staticarchive"
 )
 
 func TestStaticArchiveChecksums(t *testing.T) {

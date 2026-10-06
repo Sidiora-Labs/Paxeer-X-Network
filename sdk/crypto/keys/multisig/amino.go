@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"math"
 
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // tmMultisig implements a K of N threshold multisig. It is used for

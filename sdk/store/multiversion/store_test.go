@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/multiversion"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/occ"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/multiversion"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/occ"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 )

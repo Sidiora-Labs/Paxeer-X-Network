@@ -1,6 +1,6 @@
 package bindings
 
-import "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 
 type PaxOracleQuery struct {
 	// queries the oracle exchange rates

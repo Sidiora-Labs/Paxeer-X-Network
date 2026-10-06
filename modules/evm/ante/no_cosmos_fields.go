@@ -1,10 +1,10 @@
 package ante
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	signing "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	signing "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 )
 
 // EVMNoCosmosFieldsDecorator ensures all Cosmos tx fields are empty for EVM txs.

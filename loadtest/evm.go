@@ -11,16 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
 
-	"github.com/sidiora-labs/paxeer-network/loadtest/contracts/evm/bindings/erc20"
-	"github.com/sidiora-labs/paxeer-network/loadtest/contracts/evm/bindings/erc721"
-	"github.com/sidiora-labs/paxeer-network/loadtest/contracts/evm/bindings/univ2_swapper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/loadtest/contracts/evm/bindings/erc20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/loadtest/contracts/evm/bindings/erc721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/loadtest/contracts/evm/bindings/univ2_swapper"
 )
 
 var (

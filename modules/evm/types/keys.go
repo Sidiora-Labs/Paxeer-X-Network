@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 const (

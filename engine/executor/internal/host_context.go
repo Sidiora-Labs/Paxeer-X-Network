@@ -6,6 +6,7 @@ import (
 	"math"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/precompiles"
 	"github.com/ethereum/evmc/v12/bindings/go/evmc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -13,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/sidiora-labs/paxeer-network/engine/executor/precompiles"
 )
 
 var _ evmc.HostContext = (*HostContext)(nil)

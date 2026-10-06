@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/protoio"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	privvalproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/protoio"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	privvalproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
 )
 
 const (

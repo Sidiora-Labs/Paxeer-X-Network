@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // NewGenesisState creates a new GenesisState object

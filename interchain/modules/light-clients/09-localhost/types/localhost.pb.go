@@ -5,9 +5,9 @@ package types
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

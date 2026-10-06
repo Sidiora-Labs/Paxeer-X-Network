@@ -3,7 +3,7 @@ package types_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
 	"github.com/stretchr/testify/require"
 )
 

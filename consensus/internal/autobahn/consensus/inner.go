@@ -80,10 +80,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "autobahn", "consensus")

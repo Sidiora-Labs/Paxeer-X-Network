@@ -3,7 +3,7 @@ package paxprotocol.paxchain.epoch;
 
 // this line is used by starport scaffolding # proto/tx/import
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/epoch/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types";
 
 // Msg defines the Msg service.
 service Msg {

@@ -6,8 +6,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/unknownproto"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/unknownproto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
 )
 
 var n1BBlob []byte

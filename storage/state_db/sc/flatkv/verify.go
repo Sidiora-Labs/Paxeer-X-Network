@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	paxdbtypes "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/ktype"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/lthash"
+	paxdbtypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/ktype"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/lthash"
 )
 
 // VerifyLtHash full-scans all four data DBs and checks the recomputed LtHash

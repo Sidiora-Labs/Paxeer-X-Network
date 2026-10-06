@@ -9,12 +9,12 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	evmrpc "github.com/sidiora-labs/paxeer-network/rpc"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 type RpcResponse struct {

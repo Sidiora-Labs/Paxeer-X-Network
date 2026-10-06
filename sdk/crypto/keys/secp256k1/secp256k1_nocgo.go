@@ -4,9 +4,9 @@
 package secp256k1
 
 import (
+	cosmoscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
 	secp256k1 "github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
-	cosmoscrypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
 )
 
 // Sign creates an ECDSA signature on curve Secp256k1, using SHA256 on the msg.

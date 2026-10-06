@@ -1,4 +1,4 @@
-module github.com/sidiora-labs/paxeer-network/human/wallet/ceremony
+module github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony
 
 go 1.25.6
 
@@ -8,7 +8,7 @@ require (
 	github.com/getamis/alice v1.0.9-0.20260916062408-d8fd6861d3b2
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/lib/pq v1.10.9
-	github.com/sidiora-labs/paxeer-network/human/wallet/attestor v0.0.0
+	github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor v0.0.0
 	golang.org/x/crypto v0.54.0
 )
 
@@ -47,6 +47,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/sidiora-labs/paxeer-network => ../../..
+replace github.com/Sidiora-Labs/Paxeer-X-Network => ../../..
 
-replace github.com/sidiora-labs/paxeer-network/human/wallet/attestor => ../attestor
+replace github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor => ../attestor

@@ -12,14 +12,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetrics "go.opentelemetry.io/otel/metric"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	"github.com/sidiora-labs/paxeer-network/sdk/tasks"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/legacytm"
-	utilmetrics "github.com/sidiora-labs/paxeer-network/utils/metrics"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/tasks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/legacytm"
+	utilmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 func (app *App) BeginBlock(

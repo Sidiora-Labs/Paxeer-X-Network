@@ -3,11 +3,11 @@ package keeper
 import (
 	"errors"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
 )
 
 func (k Keeper) EnsureSidioraDenom(ctx sdk.Context, chainID uint64) (string, error) {

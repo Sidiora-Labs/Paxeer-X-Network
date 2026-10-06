@@ -3,10 +3,10 @@ package crypto
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 )
 
 func init() {

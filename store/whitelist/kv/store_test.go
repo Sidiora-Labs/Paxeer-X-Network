@@ -3,8 +3,8 @@ package kv_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/store"
-	"github.com/sidiora-labs/paxeer-network/store/whitelist/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store/whitelist/kv"
 	"github.com/stretchr/testify/require"
 )
 

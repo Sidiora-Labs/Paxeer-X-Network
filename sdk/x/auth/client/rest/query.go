@@ -8,14 +8,14 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	clientrest "github.com/sidiora-labs/paxeer-network/sdk/client/rest"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	authtx "github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	genutilrest "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	clientrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/rest"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	genutilrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/rest"
 )
 
 // QueryAccountRequestHandlerFn is the query accountREST Handler.

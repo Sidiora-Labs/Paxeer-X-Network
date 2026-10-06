@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"pgregory.net/rapid"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/clist"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/clist"
 )
 
 func TestCListProperties(t *testing.T) {

@@ -6,10 +6,10 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -328,7 +328,7 @@ var xxx_messageInfo_MsgSetThresholdResponse proto.InternalMessageInfo
 // authority itself is unchanged. Authority only.
 type MsgSetParams struct {
 	Authority       string                                               `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
-	Fee             github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,2,opt,name=fee,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Int" json:"fee"`
+	Fee             github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,2,opt,name=fee,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int" json:"fee"`
 	MaxPayloadBytes uint32                                               `protobuf:"varint,3,opt,name=max_payload_bytes,json=maxPayloadBytes,proto3" json:"max_payload_bytes,omitempty"`
 	MaxCallbackGas  uint64                                               `protobuf:"varint,4,opt,name=max_callback_gas,json=maxCallbackGas,proto3" json:"max_callback_gas,omitempty"`
 	TimeoutBlocks   uint64                                               `protobuf:"varint,5,opt,name=timeout_blocks,json=timeoutBlocks,proto3" json:"timeout_blocks,omitempty"`

@@ -1,9 +1,9 @@
 package wasm
 
 import (
-	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type TokenFactoryWasmQueryHandler struct {

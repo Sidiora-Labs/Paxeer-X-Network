@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/rehearsal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/rehearsal"
 )
 
 const walletsTable = "wallets"

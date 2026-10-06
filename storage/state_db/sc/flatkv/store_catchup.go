@@ -3,7 +3,7 @@ package flatkv
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 // walOffsetForVersion returns the WAL offset whose entry has the given version.

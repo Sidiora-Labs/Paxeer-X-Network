@@ -1,12 +1,12 @@
 package teststaking
 
 import (
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // GetTmConsPubKey gets the validator's public key as a tmcrypto.PubKey.

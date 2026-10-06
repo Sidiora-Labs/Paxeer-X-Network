@@ -1,11 +1,11 @@
 package std
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 )
 
 // RegisterLegacyAminoCodec registers types with the Amino codec.

@@ -1,8 +1,8 @@
 package keyring
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // Language is a language to create the BIP 39 mnemonic in.

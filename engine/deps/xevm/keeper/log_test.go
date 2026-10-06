@@ -8,9 +8,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 
-	testkeeper "github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/keeper"
-	evmtypes "github.com/sidiora-labs/paxeer-network/engine/deps/xevm/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/keeper"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/types"
 )
 
 func TestConvertEthLog(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/sidiora-labs/paxeer-network/sdk/cosmovisor
+module github.com/Sidiora-Labs/Paxeer-X-Network/sdk/cosmovisor
 
 go 1.14
 

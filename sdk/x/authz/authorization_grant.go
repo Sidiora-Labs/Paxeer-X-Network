@@ -5,8 +5,8 @@ import (
 
 	proto "github.com/gogo/protobuf/proto"
 
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // NewGrant returns new Grant

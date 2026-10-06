@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/storage/tools/cmd/paxdb/benchmark"
-	"github.com/sidiora-labs/paxeer-network/storage/tools/cmd/paxdb/operations"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/tools/cmd/paxdb/benchmark"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/tools/cmd/paxdb/operations"
 	"github.com/spf13/cobra"
 )
 

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/move"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/rehearsal"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/move"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/rehearsal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/testsupport"
 )
 
 const sourceLedger = "005_agent_actions.sql"

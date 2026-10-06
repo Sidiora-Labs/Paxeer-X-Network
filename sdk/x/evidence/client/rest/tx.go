@@ -1,7 +1,7 @@
 package rest
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 
 	"github.com/gorilla/mux"
 )

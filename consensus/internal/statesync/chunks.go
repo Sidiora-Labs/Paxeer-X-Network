@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // errDone is returned by chunkQueue.Next() when all chunks have been returned.

@@ -1,7 +1,7 @@
 package evm
 
 import (
-	commonevm "github.com/sidiora-labs/paxeer-network/storage/common/keys"
+	commonevm "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
 )
 
 // EVMStoreKey is the cosmos store key for EVM module.

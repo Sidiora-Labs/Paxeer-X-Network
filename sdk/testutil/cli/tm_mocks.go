@@ -3,14 +3,14 @@ package cli
 import (
 	"context"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	rpcclientmock "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/mock"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	rpcclientmock "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 )
 
 var _ client.TendermintRPC = (*MockTendermintRPC)(nil)

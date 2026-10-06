@@ -1,9 +1,9 @@
 package keeper
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 const EpochKey = "epoch"

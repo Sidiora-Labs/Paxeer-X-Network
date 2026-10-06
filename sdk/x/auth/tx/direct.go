@@ -3,11 +3,11 @@ package tx
 import (
 	"fmt"
 
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 // signModeDirectHandler defines the SIGN_MODE_DIRECT SignModeHandler

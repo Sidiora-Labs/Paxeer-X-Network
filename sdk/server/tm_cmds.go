@@ -6,15 +6,15 @@ import (
 	"context"
 	"fmt"
 
-	pvm "github.com/sidiora-labs/paxeer-network/consensus/privval"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/types"
-	tversion "github.com/sidiora-labs/paxeer-network/consensus/version"
+	pvm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	tversion "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // ShowNodeIDCmd - ported from Tendermint, dump node ID to stdout

@@ -3,8 +3,8 @@ package keeper_test
 import (
 	"testing"
 
-	testkeeper "github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/keeper"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/keeper"
 	"github.com/stretchr/testify/require"
 )
 

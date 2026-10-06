@@ -13,12 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	provider_mocks "github.com/sidiora-labs/paxeer-network/consensus/light/provider/mocks"
-	dbs "github.com/sidiora-labs/paxeer-network/consensus/light/store/db"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	provider_mocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/mocks"
+	dbs "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store/db"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

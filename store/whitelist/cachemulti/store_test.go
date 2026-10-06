@@ -3,10 +3,10 @@ package cachemulti_test
 import (
 	"testing"
 
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/store"
-	"github.com/sidiora-labs/paxeer-network/store/whitelist/cachemulti"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store/whitelist/cachemulti"
 	"github.com/stretchr/testify/require"
 )
 

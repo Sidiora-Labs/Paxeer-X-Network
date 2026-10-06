@@ -4,7 +4,7 @@ package tendermint.crypto;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto";
 
 // PublicKey defines the keys available for use with Tendermint Validators
 message PublicKey {

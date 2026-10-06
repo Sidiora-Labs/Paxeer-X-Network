@@ -7,8 +7,8 @@ import (
 	"github.com/paxeer-network/paxlog"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/inspect"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/inspect"
 )
 
 var logger = paxlog.NewLogger("tendermint", "cmd", "tendermint", "commands")

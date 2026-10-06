@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	"github.com/sidiora-labs/paxeer-network/node/upgrades"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/upgrades"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/suite"
 )
 

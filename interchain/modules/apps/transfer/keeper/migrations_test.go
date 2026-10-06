@@ -3,8 +3,8 @@ package keeper_test
 import (
 	"fmt"
 
-	transferkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/keeper"
-	transfertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+	transferkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/keeper"
+	transfertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 )
 
 func (suite *KeeperTestSuite) TestMigratorMigrateTraces() {

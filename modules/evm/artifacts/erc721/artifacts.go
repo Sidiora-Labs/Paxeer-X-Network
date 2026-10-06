@@ -4,7 +4,7 @@ import (
 	"embed"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 )
 
 const CurrentVersion uint16 = 6

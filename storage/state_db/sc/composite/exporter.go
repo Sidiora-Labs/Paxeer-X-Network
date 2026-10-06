@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	errorutils "github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	errorutils "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 var _ types.Exporter = (*SnapshotExporter)(nil)

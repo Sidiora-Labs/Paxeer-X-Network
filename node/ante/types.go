@@ -1,8 +1,8 @@
 package ante
 
 import (
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 )
 
 type TxBody interface {

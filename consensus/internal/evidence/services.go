@@ -1,7 +1,7 @@
 package evidence
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 //go:generate ../../scripts/mockery_generate.sh BlockStore

@@ -1,9 +1,9 @@
 package migrations
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 func MigrateCastAddressBalances(ctx sdk.Context, k *keeper.Keeper) (rerr error) {

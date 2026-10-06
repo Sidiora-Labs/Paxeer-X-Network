@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
 	"github.com/spf13/cast"
 )
 

@@ -3,9 +3,9 @@ package keeper_test
 import (
 	"testing"
 
-	bridgetestutil "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/testutil"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	bridgetestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

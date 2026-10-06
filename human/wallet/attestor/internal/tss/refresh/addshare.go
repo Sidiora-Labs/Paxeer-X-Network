@@ -11,7 +11,7 @@ import (
 	"github.com/getamis/alice/crypto/tss/ecdsa/addshare/newpeer"
 	"github.com/getamis/alice/crypto/tss/ecdsa/addshare/oldpeer"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 var (

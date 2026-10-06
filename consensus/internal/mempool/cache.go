@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/patrickmn/go-cache"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 // DuplicateTxCache implements TxCacheWithTTL using go-cache

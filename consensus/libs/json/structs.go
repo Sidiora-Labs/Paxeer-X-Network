@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	tmsync "github.com/sidiora-labs/paxeer-network/consensus/libs/sync"
+	tmsync "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/sync"
 )
 
 var (

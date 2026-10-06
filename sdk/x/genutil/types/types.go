@@ -3,8 +3,8 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // DONTCOVER

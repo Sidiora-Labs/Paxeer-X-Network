@@ -6,11 +6,11 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	types "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"

@@ -35,7 +35,7 @@ The Cosmos-style chain identifier used by node distribution is `hyperpax_125-1` 
 | `hpx/` | Native `paxd` distribution and peer registry tooling |
 | `docs/` | Subtree documentation (OpenAPI/Swagger, RPC notes) |
 
-Go module: `github.com/sidiora-labs/paxeer-network`.
+Go module: `github.com/Sidiora-Labs/Paxeer-X-Network`.
 
 ## Build and test
 

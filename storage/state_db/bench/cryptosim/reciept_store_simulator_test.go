@@ -3,8 +3,8 @@ package cryptosim
 import (
 	"testing"
 
+	crand "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/rand"
 	"github.com/ethereum/go-ethereum/common"
-	crand "github.com/sidiora-labs/paxeer-network/storage/common/rand"
 )
 
 func TestRandomEntryInBlockRange(t *testing.T) {

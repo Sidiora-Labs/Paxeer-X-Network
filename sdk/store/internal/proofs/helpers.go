@@ -3,11 +3,11 @@ package proofs
 import (
 	"sort"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 
-	sdkmaps "github.com/sidiora-labs/paxeer-network/sdk/store/internal/maps"
-	"github.com/sidiora-labs/paxeer-network/sdk/utils"
+	sdkmaps "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/internal/maps"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils"
 )
 
 // SimpleResult contains a merkle.SimpleProof along with all data needed to build the confio/proof

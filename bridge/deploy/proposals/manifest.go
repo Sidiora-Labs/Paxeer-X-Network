@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 )
 
 // AttestorManifest is the single committed record of the bridge's attestor

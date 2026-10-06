@@ -5,9 +5,9 @@ import (
 	"crypto/ecdsa"
 	"sort"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // Attestor is a secp256k1 key, the EVM address it signs as and the bank

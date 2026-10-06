@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"math/big"
 
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	"github.com/sidiora-labs/paxeer-network/occ_tests/utils"
-	"github.com/sidiora-labs/paxeer-network/precompiles"
-	"github.com/sidiora-labs/paxeer-network/precompiles/pointer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer"
 )
 
 const instantiateMsg = `{"whitelist": ["pax1h9yjz89tl0dl6zu65dpxcqnxfhq60wxxknccgp"],

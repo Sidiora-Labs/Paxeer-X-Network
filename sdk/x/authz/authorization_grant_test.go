@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	// banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	// banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
 

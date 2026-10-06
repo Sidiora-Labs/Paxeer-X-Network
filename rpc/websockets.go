@@ -3,7 +3,7 @@ package evmrpc
 import (
 	"net/http"
 
-	utilmetrics "github.com/sidiora-labs/paxeer-network/utils/metrics"
+	utilmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 type wsConnectionHandler struct {

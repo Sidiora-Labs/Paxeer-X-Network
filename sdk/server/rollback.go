@@ -3,10 +3,10 @@ package server
 import (
 	"fmt"
 
-	tmcmd "github.com/sidiora-labs/paxeer-network/consensus/cmd/tendermint/commands"
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/types"
+	tmcmd "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/cmd/tendermint/commands"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
 	"github.com/spf13/cobra"
 )
 

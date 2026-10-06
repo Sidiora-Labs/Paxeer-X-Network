@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/internal/conv"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/internal/conv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // Len is the length of base addresses

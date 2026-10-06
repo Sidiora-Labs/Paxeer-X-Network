@@ -5,7 +5,7 @@ package tendermint.types;
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types";
 option (gogoproto.equal_all) = true;
 
 // ConsensusParams contains consensus critical parameters that determine the

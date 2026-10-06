@@ -1,8 +1,8 @@
 package types
 
 import (
-	custodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 func DefaultGenesis() *GenesisState {

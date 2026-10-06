@@ -3,16 +3,16 @@ package types_test
 import (
 	"time"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	client "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
-	localhosttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/09-localhost/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	ibctestingmock "github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
+	localhosttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/09-localhost/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	ibctestingmock "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
 )
 
 const (

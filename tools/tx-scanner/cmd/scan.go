@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/tools/tx-scanner/client"
-	"github.com/sidiora-labs/paxeer-network/tools/tx-scanner/query"
-	"github.com/sidiora-labs/paxeer-network/tools/tx-scanner/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/state"
 	"github.com/spf13/cobra"
 	"golang.org/x/time/rate"
 )

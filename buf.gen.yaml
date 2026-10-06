@@ -14,7 +14,7 @@ plugins:
       - Mgoogle/protobuf/struct.proto=github.com/gogo/protobuf/types
       - Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types
       - Mgoogle/protobuf/wrappers.proto=github.com/gogo/protobuf/types
-      - Mgoogle/protobuf/any.proto=github.com/sidiora-labs/paxeer-network/sdk/codec/types
+      - Mgoogle/protobuf/any.proto=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types
     out: ./build/proto/gocosmos
   - local:
       # The version used is consistent with the grp-gateway version in go.mod.

@@ -1,8 +1,8 @@
 package tests
 
 import (
-	app "github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func mockUpgrade(version string, height int64) func(ctx sdk.Context, a *app.App) {

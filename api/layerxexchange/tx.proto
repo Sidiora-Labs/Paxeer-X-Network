@@ -4,7 +4,7 @@ package paxprotocol.paxchain.layerxexchange;
 import "gogoproto/gogo.proto";
 import "layerxexchange/params.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types";
 
 // Msg defines the layerxexchange module's gRPC message service. Intents are
 // deliberately absent: they enter only through the precompile so that every

@@ -3,7 +3,7 @@
 package v155
 
 import (
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/artifacts/v155/api"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/artifacts/v155/api"
 )
 
 func libwasmvmVersionImpl() (string, error) {

@@ -3,7 +3,7 @@ package processblock
 import (
 	"time"
 
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 )
 
 func (a *App) NewMinter(amount uint64) {

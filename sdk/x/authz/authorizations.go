@@ -3,7 +3,7 @@ package authz
 import (
 	"github.com/gogo/protobuf/proto"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // Authorization represents the interface of various Authorization types implemented

@@ -6,15 +6,15 @@ import (
 	"log"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	slashingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	slashingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // ExportAppStateAndValidators exports the state of the application for a genesis

@@ -1,11 +1,11 @@
 package keeper
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/wasmd"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/precompiles/bank"
-	"github.com/sidiora-labs/paxeer-network/precompiles/gov"
-	"github.com/sidiora-labs/paxeer-network/precompiles/staking"
-	"github.com/sidiora-labs/paxeer-network/precompiles/wasmd"
 )
 
 // add any payable precompiles here

@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
 	"gopkg.in/yaml.v2"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 var (

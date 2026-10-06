@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 func unmarshalResponseBytes(responseBytes []byte, expectedID string, result interface{}) error {

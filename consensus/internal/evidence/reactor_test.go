@@ -14,14 +14,14 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/evidence"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/evidence/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/evidence"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/evidence/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var (

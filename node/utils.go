@@ -3,7 +3,7 @@ package app
 import (
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 )
 
 type OptimisticProcessingInfo struct {

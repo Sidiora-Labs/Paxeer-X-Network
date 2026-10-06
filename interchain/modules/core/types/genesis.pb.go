@@ -5,11 +5,11 @@ package types
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	types2 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	types1 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	types2 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

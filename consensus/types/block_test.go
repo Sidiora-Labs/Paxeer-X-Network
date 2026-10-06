@@ -17,17 +17,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmversion "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/version"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmversion "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 func TestMain(m *testing.M) {

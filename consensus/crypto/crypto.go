@@ -3,8 +3,8 @@ package crypto
 import (
 	"crypto/sha256"
 
-	ed25519 "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
+	ed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 )
 
 const (

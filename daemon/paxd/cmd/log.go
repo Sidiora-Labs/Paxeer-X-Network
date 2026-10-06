@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/admin"
-	"github.com/sidiora-labs/paxeer-network/admin/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/admin"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/admin/types"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

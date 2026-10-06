@@ -20,7 +20,7 @@ package runner_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/integration_test/runner"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/integration_test/runner"
 )
 
 func TestStartup(t *testing.T) {

@@ -3,21 +3,21 @@
 package oracle
 
 import (
+	oraclev552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v552"
+	oraclev555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v555"
+	oraclev562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v562"
+	oraclev600 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v600"
+	oraclev601 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v601"
+	oraclev603 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v603"
+	oraclev605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v605"
+	oraclev606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v606"
+	oraclev610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v610"
+	oraclev614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v614"
+	oraclev620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v620"
+	oraclev630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v630"
+	oraclev640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/oracle/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	oraclev552 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v552"
-	oraclev555 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v555"
-	oraclev562 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v562"
-	oraclev600 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v600"
-	oraclev601 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v601"
-	oraclev603 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v603"
-	oraclev605 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v605"
-	oraclev606 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v606"
-	oraclev610 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v610"
-	oraclev614 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v614"
-	oraclev620 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v620"
-	oraclev630 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v630"
-	oraclev640 "github.com/sidiora-labs/paxeer-network/precompiles/oracle/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

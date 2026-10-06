@@ -4,7 +4,7 @@ package tendermint.blocksync;
 
 import "tendermint/types/block.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/blocksync";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/blocksync";
 
 // BlockRequest requests a block for a specific height
 message BlockRequest {

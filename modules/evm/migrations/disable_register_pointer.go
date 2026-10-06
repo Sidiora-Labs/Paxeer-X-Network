@@ -1,8 +1,8 @@
 package migrations
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func MigrateDisableRegisterPointer(ctx sdk.Context, k *keeper.Keeper) error {

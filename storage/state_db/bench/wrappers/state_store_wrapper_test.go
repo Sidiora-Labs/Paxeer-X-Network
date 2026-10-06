@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	commonevm "github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	commonevm "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 	"github.com/stretchr/testify/require"
 )
 

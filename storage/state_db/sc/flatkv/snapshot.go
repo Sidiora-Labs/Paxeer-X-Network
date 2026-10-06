@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/pebbledb"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/ktype"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/pebbledb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/ktype"
 	"go.opentelemetry.io/otel/metric"
 )
 

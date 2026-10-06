@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store"
 	"github.com/paxeer-network/paxlog"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/store"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "light")

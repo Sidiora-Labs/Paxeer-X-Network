@@ -3,7 +3,7 @@ package paxprotocol.paxchain.oracle;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/oracle/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types";
 
 // Msg defines the oracle Msg service.
 service Msg {

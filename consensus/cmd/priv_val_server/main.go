@@ -20,10 +20,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	tmnet "github.com/sidiora-labs/paxeer-network/consensus/libs/net"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	grpcprivval "github.com/sidiora-labs/paxeer-network/consensus/privval/grpc"
-	privvalproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
+	tmnet "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/net"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	grpcprivval "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval/grpc"
+	privvalproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
 )
 
 var (

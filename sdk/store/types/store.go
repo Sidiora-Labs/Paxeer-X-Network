@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	dbm "github.com/tendermint/tm-db"
 
-	snapshottypes "github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	"github.com/sidiora-labs/paxeer-network/sdk/utils"
+	snapshottypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils"
 )
 
 type Store interface {

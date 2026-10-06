@@ -1,8 +1,8 @@
 package feegrant
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	auth "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	auth "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 // AccountKeeper defines the expected auth Account Keeper (noalias)

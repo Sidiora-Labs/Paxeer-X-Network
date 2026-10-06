@@ -1,6 +1,6 @@
 package bindings
 
-import "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 
 type PaxTokenFactoryQuery struct {
 	// queries the tokenfactory authority metadata

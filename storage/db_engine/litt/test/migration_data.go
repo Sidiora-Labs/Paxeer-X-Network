@@ -1,6 +1,6 @@
 package test
 
-import "github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
 
 // migrationPuts is the canonical input written to the migration-test fixture. It mirrors what real
 // callers do: a sequence of Puts, some of which include secondary keys. Three primaries near the

@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // The code in this file is adapted from agl/ed25519.

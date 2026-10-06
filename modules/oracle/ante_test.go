@@ -3,15 +3,15 @@ package oracle_test
 import (
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/utils"
-	"github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
 

@@ -9,15 +9,15 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common/legacy/v555"
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common/legacy/v555"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 const (

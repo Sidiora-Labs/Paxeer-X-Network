@@ -3,15 +3,15 @@ package app_test
 import (
 	"testing"
 
-	cosmostypes "github.com/sidiora-labs/paxeer-network/sdk/types"
-	xparamtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	cosmostypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	xparamtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
 )
 
 type PrioritizerTestSuite struct {

@@ -1,6 +1,6 @@
 package bindings
 
-import "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
 
 type PaxEpochQuery struct {
 	// queries the current Epoch

@@ -8,7 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 	"golang.org/x/sys/unix"
 	"io"
 	"math/big"
@@ -23,13 +23,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/custodyproof"
-	lxverify "github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	custodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/custodyproof"
+	lxverify "github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 )
 
 const (

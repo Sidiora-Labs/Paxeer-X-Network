@@ -2,8 +2,8 @@ package keeper
 
 import (
 	"context"
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type msgServer struct{ keeper *Keeper }

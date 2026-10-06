@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"runtime"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
 )
 
 const SecretKeyName = "tendermint/PrivKeyEd25519" //nolint:gosec

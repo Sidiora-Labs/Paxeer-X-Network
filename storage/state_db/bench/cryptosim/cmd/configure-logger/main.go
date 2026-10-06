@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/cryptosim"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/cryptosim"
 )
 
 /*

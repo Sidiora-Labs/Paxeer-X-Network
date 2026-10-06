@@ -3,7 +3,7 @@ package scope
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // GlobalHandle is a handle to a task spawned via SpawnGlobal.

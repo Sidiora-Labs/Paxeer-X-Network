@@ -3,8 +3,8 @@ package rootmulti
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/stretchr/testify/require"
 )
 

@@ -5,9 +5,9 @@ package sr25519
 
 import (
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_crypto_keys_sr25519_internal "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/sr25519/internal"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_crypto_keys_sr25519_internal "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/sr25519/internal"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -26,7 +26,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // PubKey defines a secp256r1 ECDSA public key.
 type PubKey struct {
-	Key github_com_sidiora_labs_paxeer_network_sdk_crypto_keys_sr25519_internal.PubKey `protobuf:"bytes,1,opt,name=key,proto3,casttype=github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/sr25519/internal.PubKey" json:"key,omitempty"`
+	Key github_com_sidiora_labs_paxeer_network_sdk_crypto_keys_sr25519_internal.PubKey `protobuf:"bytes,1,opt,name=key,proto3,casttype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/sr25519/internal.PubKey" json:"key,omitempty"`
 }
 
 func (m *PubKey) Reset()      { *m = PubKey{} }

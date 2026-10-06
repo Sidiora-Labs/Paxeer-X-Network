@@ -12,23 +12,23 @@ import (
 	"os"
 	"strings"
 
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/export"
-	evmrpc "github.com/sidiora-labs/paxeer-network/rpc"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw721"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
 )
 
 const TrueStr = "true"

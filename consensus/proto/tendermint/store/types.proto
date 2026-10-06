@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package tendermint.store;
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/store";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/store";
 
 message BlockStoreState {
   int64 base = 1;

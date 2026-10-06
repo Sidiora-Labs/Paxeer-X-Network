@@ -5,7 +5,7 @@ package autobahn;
 import "hashable/hashable.proto";
 import "wireguard/wireguard.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb";
 
 // Timestamp represented as seconds + nanoseconds since UNIX epoch.
 // Equivalent of `google.protobuf.Timestamp` but supports canonical encoding.

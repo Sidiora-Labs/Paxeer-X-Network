@@ -3,7 +3,7 @@ package disktable
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable/segment"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable/segment"
 )
 
 // FlushLoopMessage is an interface for messages sent to the flush loop via flushLoop.enqueue.

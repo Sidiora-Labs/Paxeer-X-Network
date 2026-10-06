@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 
-	clientsims "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/simulation"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectionsims "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/simulation"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	channelsims "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/simulation"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	clientsims "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/simulation"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectionsims "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/simulation"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	channelsims "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/simulation"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 // Simulation parameter constants

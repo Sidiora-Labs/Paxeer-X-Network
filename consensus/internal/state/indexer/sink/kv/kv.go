@@ -5,12 +5,12 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	kvb "github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/block/kv"
-	kvt "github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/tx/kv"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	kvb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/block/kv"
+	kvt "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/tx/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var _ indexer.EventSink = (*EventSink)(nil)

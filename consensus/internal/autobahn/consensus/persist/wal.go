@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	dbwal "github.com/sidiora-labs/paxeer-network/storage/wal"
+	dbwal "github.com/Sidiora-Labs/Paxeer-X-Network/storage/wal"
 )
 
 // codec is the marshal/unmarshal pair needed to store T in a WAL.

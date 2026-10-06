@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
 )
 
 func TestCopyFile(t *testing.T) {

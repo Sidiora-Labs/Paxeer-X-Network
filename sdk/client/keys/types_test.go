@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/keys"
 )
 
 func TestConstructors(t *testing.T) {

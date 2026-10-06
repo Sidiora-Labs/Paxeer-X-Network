@@ -3,7 +3,7 @@ package cosmos.slashing.v1beta1;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types";
 option (gogoproto.equal_all) = true;
 
 // Msg defines the slashing Msg service.

@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	rpctest "github.com/sidiora-labs/paxeer-network/consensus/rpc/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	rpctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/test"
 )
 
 func NodeSuite(ctx context.Context, t *testing.T) (service.Service, *config.Config) {

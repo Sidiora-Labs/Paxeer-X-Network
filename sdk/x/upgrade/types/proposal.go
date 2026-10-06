@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	gov "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	gov "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 const (

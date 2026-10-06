@@ -1,13 +1,13 @@
 package simapp
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
 
-	ibcante "github.com/sidiora-labs/paxeer-network/interchain/modules/core/ante"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
+	ibcante "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/ante"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the IBC keeper.

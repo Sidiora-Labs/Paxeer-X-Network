@@ -11,12 +11,12 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	abcitypes "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	indexermocks "github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abcitypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	indexermocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
 	_ "github.com/lib/pq" // for the psql sink
 )

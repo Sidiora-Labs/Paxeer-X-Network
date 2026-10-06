@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	typestx "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
+	typestx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 )
 
 func SendTx(

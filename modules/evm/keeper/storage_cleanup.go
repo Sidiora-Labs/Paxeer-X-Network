@@ -3,9 +3,9 @@ package keeper
 import (
 	"bytes"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paxmetrics "github.com/sidiora-labs/paxeer-network/utils/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paxmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 const ZeroStorageCleanupBatchSize = 100

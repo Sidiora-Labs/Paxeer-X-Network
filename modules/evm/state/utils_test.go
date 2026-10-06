@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/stretchr/testify/require"
 )
 

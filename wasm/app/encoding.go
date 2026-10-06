@@ -1,9 +1,9 @@
 package app
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/app/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/app/params"
 )
 
 // MakeEncodingConfig creates a new EncodingConfig with all modules registered

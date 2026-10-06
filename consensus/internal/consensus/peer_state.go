@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	cstypes "github.com/sidiora-labs/paxeer-network/consensus/internal/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	cstypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var (

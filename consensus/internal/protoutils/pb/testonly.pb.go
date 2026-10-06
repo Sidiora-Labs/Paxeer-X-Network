@@ -160,7 +160,7 @@ const file_protoutils_testonly_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12/\n" +
 	"\x05value\x18\x02 \x01(\v2\x19.protoutils.TestonlyChildR\x05value:\x028\x01\"%\n" +
 	"\rTestonlyChild\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05valueBIZGgithub.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/pbb\x06proto3"
+	"\x05value\x18\x01 \x01(\tR\x05valueBIZGgithub.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/pbb\x06proto3"
 
 var (
 	file_protoutils_testonly_proto_rawDescOnce sync.Once

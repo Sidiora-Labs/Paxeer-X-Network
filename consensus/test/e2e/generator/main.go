@@ -12,7 +12,7 @@ import (
 	"github.com/paxeer-network/paxlog"
 	"github.com/spf13/cobra"
 
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 var logger = paxlog.NewLogger("tendermint", "test", "e2e", "generator")

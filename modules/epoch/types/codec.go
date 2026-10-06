@@ -1,11 +1,11 @@
 package types
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 
 	// this line is used by starport scaffolding # 1
-	"github.com/sidiora-labs/paxeer-network/sdk/types/msgservice"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/msgservice"
 )
 
 func RegisterCodec(_ *codec.LegacyAmino) {}

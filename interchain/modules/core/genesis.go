@@ -1,13 +1,13 @@
 package ibc
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	client "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	connection "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection"
-	channel "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	connection "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection"
+	channel "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 // InitGenesis initializes the ibc state from a provided genesis

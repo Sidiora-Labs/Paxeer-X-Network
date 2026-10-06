@@ -1,8 +1,8 @@
 package types
 
 import (
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
 )
 
 // ABCIResults wraps the deliver tx results to return a proof.

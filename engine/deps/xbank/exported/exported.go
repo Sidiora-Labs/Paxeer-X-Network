@@ -1,7 +1,7 @@
 package exported
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // GenesisBalance defines a genesis balance interface that allows for account

@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // LagStatus returns Tendermint lag status, if lag is over a certain threshold

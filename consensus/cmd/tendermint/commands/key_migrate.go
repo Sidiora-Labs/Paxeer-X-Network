@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/scripts/keymigrate"
-	"github.com/sidiora-labs/paxeer-network/consensus/scripts/scmigrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/scripts/keymigrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/scripts/scmigrate"
 )
 
 func MakeKeyMigrateCommand(conf *config.Config) *cobra.Command {

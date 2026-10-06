@@ -7,22 +7,22 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	"github.com/sidiora-labs/paxeer-network/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common/legacy/v552"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common/legacy/v552"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 const (

@@ -13,9 +13,9 @@ import (
 	"github.com/fortytw2/leaktest"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // fakeTime is a fake clock to use to control cursor assignment.

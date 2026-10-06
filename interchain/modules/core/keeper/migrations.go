@@ -1,10 +1,10 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	clientkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/keeper"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	clientkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 // Migrator is a struct for handling in-place store migrations.

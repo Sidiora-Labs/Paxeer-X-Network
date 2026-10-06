@@ -5,13 +5,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/stretchr/testify/require"
 
-	wasmibctesting "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/ibctesting"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	wasmibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/ibctesting"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 )
 
 func TestIBCReflectContract(t *testing.T) {

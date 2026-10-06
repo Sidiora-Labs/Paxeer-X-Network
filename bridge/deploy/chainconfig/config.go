@@ -32,7 +32,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/vectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/vectors"
 )
 
 // Kind is the kind of chain a configuration describes. The kind decides which

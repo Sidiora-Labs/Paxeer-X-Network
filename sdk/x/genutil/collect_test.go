@@ -8,15 +8,15 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
-	bankexported "github.com/sidiora-labs/paxeer-network/sdk/x/bank/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil"
-	gtypes "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	bankexported "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil"
+	gtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
 )
 
 type doNothingUnmarshalJSON struct {

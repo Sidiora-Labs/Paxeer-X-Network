@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	"github.com/hdevalence/ed25519consensus"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	cosmoscrypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	cosmoscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 //-------------------------------------

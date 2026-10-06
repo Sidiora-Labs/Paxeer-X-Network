@@ -3,8 +3,8 @@ package commitment
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/memiavl"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/memiavl"
 	"github.com/stretchr/testify/require"
 )
 

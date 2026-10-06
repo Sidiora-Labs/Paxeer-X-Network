@@ -3,21 +3,21 @@
 package ibc
 
 import (
+	ibcv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v552"
+	ibcv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v555"
+	ibcv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v562"
+	ibcv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v580"
+	ibcv601 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v601"
+	ibcv603 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v603"
+	ibcv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v605"
+	ibcv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v606"
+	ibcv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v610"
+	ibcv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v614"
+	ibcv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v620"
+	ibcv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v630"
+	ibcv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/ibc/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	ibcv552 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v552"
-	ibcv555 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v555"
-	ibcv562 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v562"
-	ibcv580 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v580"
-	ibcv601 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v601"
-	ibcv603 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v603"
-	ibcv605 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v605"
-	ibcv606 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v606"
-	ibcv610 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v610"
-	ibcv614 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v614"
-	ibcv620 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v620"
-	ibcv630 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v630"
-	ibcv640 "github.com/sidiora-labs/paxeer-network/precompiles/ibc/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

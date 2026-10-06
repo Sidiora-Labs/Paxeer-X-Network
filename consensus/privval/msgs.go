@@ -5,7 +5,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	privvalproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
+	privvalproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
 )
 
 // TODO: Add ChainIDRequest

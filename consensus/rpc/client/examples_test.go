@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	rpctest "github.com/sidiora-labs/paxeer-network/consensus/rpc/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	rpctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/test"
 )
 
 func TestHTTPSimple(t *testing.T) {

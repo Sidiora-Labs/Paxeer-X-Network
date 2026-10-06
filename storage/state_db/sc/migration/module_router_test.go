@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 	ics23 "github.com/confio/ics23/go"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
 	"github.com/stretchr/testify/require"
 )
 

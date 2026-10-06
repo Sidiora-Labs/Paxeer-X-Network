@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv"
-	"github.com/sidiora-labs/paxeer-network/storage/tools/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/tools/utils"
 	"github.com/spf13/cobra"
 )
 

@@ -1,9 +1,9 @@
 package simulation
 
 import (
-	paxappparams "github.com/sidiora-labs/paxeer-network/node/params"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/simulation"
+	paxappparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
 )
 
 // OpWeightSubmitParamChangeProposal app params key for param change proposal

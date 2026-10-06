@@ -3,9 +3,9 @@ package giga
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/consensus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/rpc"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/consensus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 type Service struct {

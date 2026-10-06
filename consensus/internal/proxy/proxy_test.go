@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

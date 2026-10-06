@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/testvectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/testvectors"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

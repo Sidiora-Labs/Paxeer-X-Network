@@ -1,6 +1,6 @@
 package keeper_test
 
-import "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 
 func (suite *KeeperTestSuite) TestParams() {
 	expParams := types.DefaultParams()

@@ -5,7 +5,7 @@ import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types";
 
 // BridgeProposal is the governance proposal content of the layerxbridge
 // module. It carries the module's governance messages from tx.proto -

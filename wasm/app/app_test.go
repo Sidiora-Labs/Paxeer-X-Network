@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	db "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 )
 
 var emptyWasmOpts []wasm.Option = nil

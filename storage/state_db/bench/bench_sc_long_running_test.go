@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/wrappers"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/wrappers"
 )
 
 func BenchmarkMemIAVLLongRunningWrite(b *testing.B) {

@@ -1,15 +1,15 @@
 package app
 
 import (
-	ibcante "github.com/sidiora-labs/paxeer-network/interchain/modules/core/ante"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
+	ibcante "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/ante"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
 
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmTypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmTypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the IBC

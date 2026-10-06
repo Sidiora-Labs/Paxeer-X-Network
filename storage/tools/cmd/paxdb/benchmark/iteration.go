@@ -3,9 +3,9 @@ package benchmark
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/ss"
-	"github.com/sidiora-labs/paxeer-network/storage/tools/bench"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/ss"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/tools/bench"
 	"github.com/spf13/cobra"
 )
 

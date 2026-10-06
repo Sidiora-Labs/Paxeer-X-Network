@@ -3,13 +3,13 @@ package keeper
 import (
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 var logger = paxlog.NewLogger("ibc-go", "modules", "core", "05-port", "keeper")

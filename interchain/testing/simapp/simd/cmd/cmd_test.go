@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	svrcmd "github.com/sidiora-labs/paxeer-network/sdk/server/cmd"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/cli"
+	svrcmd "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/cli"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp/simd/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp/simd/cmd"
 )
 
 func TestInitCmd(t *testing.T) {

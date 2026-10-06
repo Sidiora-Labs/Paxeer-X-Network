@@ -12,15 +12,15 @@ import (
 	"sort"
 	"strings"
 
-	cfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	cfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	bankexported "github.com/sidiora-labs/paxeer-network/sdk/x/bank/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	bankexported "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // GenAppStateFromConfig gets the genesis app state from the config

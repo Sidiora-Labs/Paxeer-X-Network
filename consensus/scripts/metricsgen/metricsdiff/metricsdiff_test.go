@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	metricsdiff "github.com/sidiora-labs/paxeer-network/consensus/scripts/metricsgen/metricsdiff"
+	metricsdiff "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/scripts/metricsgen/metricsdiff"
 	"github.com/stretchr/testify/require"
 )
 

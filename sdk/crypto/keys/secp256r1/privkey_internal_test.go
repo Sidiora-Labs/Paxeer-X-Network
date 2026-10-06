@@ -3,13 +3,13 @@ package secp256r1
 import (
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 var _ cryptotypes.PrivKey = &PrivKey{}

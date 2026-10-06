@@ -4,7 +4,7 @@ package cosmos.crypto.multisig;
 import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/multisig";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/multisig";
 
 // LegacyAminoPubKey specifies a public key type
 // which nests multiple public keys and a threshold,

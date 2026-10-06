@@ -6,15 +6,15 @@ import (
 	"slices"
 	"time"
 
+	cstypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus/types"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/gogo/protobuf/proto"
-	cstypes "github.com/sidiora-labs/paxeer-network/consensus/internal/consensus/types"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/wal"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmcons "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/consensus"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/wal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmcons "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/consensus"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 const (

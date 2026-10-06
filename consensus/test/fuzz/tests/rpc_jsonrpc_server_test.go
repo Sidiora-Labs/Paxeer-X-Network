@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	rpcserver "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	rpcserver "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 func FuzzRPCJSONRPCServer(f *testing.F) {

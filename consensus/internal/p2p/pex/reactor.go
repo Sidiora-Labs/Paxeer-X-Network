@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 	"golang.org/x/time/rate"
 )
 

@@ -6,12 +6,12 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -35,7 +35,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 // QueryEvidenceRequest is the request type for the Query/Evidence RPC method.
 type QueryEvidenceRequest struct {
 	// evidence_hash defines the hash of the requested evidence.
-	EvidenceHash github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,1,opt,name=evidence_hash,json=evidenceHash,proto3,casttype=github.com/sidiora-labs/paxeer-network/consensus/libs/bytes.HexBytes" json:"evidence_hash,omitempty"`
+	EvidenceHash github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,1,opt,name=evidence_hash,json=evidenceHash,proto3,casttype=github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes.HexBytes" json:"evidence_hash,omitempty"`
 }
 
 func (m *QueryEvidenceRequest) Reset()         { *m = QueryEvidenceRequest{} }

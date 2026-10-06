@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 )
 
 func TestNewPendingTransactionFilterNotSupported(t *testing.T) {

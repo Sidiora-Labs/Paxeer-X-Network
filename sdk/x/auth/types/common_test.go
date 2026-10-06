@@ -1,7 +1,7 @@
 package types_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 var (

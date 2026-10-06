@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
 	"google.golang.org/protobuf/proto"
 )
 

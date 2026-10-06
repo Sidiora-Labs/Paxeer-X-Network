@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"math/big"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 )
 
 const (

@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	ctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	ctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // QueryTxsByEvents performs a search for transactions for a given set of events

@@ -1,6 +1,6 @@
 package metrics
 
-import "github.com/sidiora-labs/paxeer-network/storage/common/unit"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
 
 // Shared histogram bucket boundaries for use across the codebase.
 // The OTel defaults are too coarse for meaningful percentile queries in Grafana.

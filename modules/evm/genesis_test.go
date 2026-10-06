@@ -3,11 +3,11 @@ package evm_test
 import (
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

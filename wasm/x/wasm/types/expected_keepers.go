@@ -3,15 +3,15 @@ package types
 import (
 	"context"
 
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	ibcexported "github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	paramstypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	ibcexported "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	paramstypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // BankViewKeeper defines a subset of methods implemented by the cosmos-sdk bank keeper

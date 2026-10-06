@@ -30,10 +30,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/archive"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/attestor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/envelope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
 )
 
 const (

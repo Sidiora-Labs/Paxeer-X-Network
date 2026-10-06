@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 )
 
 func TestRecordRPCMetricsNoPanic(t *testing.T) {

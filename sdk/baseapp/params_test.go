@@ -3,10 +3,10 @@ package baseapp_test
 import (
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 )
 
 func TestValidateBlockParams(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 
 	ics23 "github.com/confio/ics23/go"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	snapshottypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	protoio "github.com/gogo/protobuf/io"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	snapshottypes "github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 	"github.com/stretchr/testify/require"
 	db "github.com/tendermint/tm-db"
 )

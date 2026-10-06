@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 // Cleanup removes the Docker Compose containers and testnet directory.

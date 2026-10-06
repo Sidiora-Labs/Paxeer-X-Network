@@ -165,7 +165,7 @@ env:
   GO_TEST_TIMEOUT: 30m
   # state_db tests run in their own workflow (db-tests.yml); exclude
   # that subtree everywhere in this workflow to avoid double-running them.
-  STATE_DB_PKG_PREFIX: github.com/sidiora-labs/paxeer-network/storage/state_db
+  STATE_DB_PKG_PREFIX: github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db
 
 jobs:
   test:

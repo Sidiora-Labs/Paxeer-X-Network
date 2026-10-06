@@ -3,10 +3,10 @@ package keeper
 import (
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
 )
 
 var logger = paxlog.NewLogger("cosmos", "x", "distribution", "keeper")

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/admin/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/admin/types"
 	"google.golang.org/grpc"
 )
 

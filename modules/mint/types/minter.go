@@ -8,9 +8,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
-	epochTypes "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils/metrics"
+	epochTypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 // NewMinter returns a new Minter object with the given inflation and annual

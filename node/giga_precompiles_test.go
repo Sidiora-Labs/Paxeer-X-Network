@@ -3,9 +3,9 @@ package app
 import (
 	"testing"
 
+	gigaprecompiles "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/precompiles"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
 	"github.com/ethereum/go-ethereum/common"
-	gigaprecompiles "github.com/sidiora-labs/paxeer-network/engine/executor/precompiles"
-	"github.com/sidiora-labs/paxeer-network/precompiles/xweb"
 	"github.com/stretchr/testify/require"
 )
 

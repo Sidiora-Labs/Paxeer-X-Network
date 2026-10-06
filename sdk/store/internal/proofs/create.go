@@ -7,7 +7,7 @@ import (
 
 	ics23 "github.com/confio/ics23/go"
 
-	sdkmaps "github.com/sidiora-labs/paxeer-network/sdk/store/internal/maps"
+	sdkmaps "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/internal/maps"
 )
 
 var (

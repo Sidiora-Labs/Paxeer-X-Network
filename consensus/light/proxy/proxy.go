@@ -6,13 +6,13 @@ import (
 	"net"
 	"net/http"
 
+	tmpubsub "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	rpccore "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/rpc/core"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	lrpc "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/rpc"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	rpcserver "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 	"github.com/paxeer-network/paxlog"
-	tmpubsub "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	rpccore "github.com/sidiora-labs/paxeer-network/consensus/internal/rpc/core"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	lrpc "github.com/sidiora-labs/paxeer-network/consensus/light/rpc"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	rpcserver "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
 )
 
 var logger = paxlog.NewLogger("tendermint", "light", "proxy")

@@ -3,19 +3,19 @@
 package json
 
 import (
+	jsonv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v552"
+	jsonv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v555"
+	jsonv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v562"
+	jsonv603 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v603"
+	jsonv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v605"
+	jsonv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v606"
+	jsonv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v610"
+	jsonv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v614"
+	jsonv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v620"
+	jsonv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v630"
+	jsonv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/json/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	jsonv552 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v552"
-	jsonv555 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v555"
-	jsonv562 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v562"
-	jsonv603 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v603"
-	jsonv605 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v605"
-	jsonv606 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v606"
-	jsonv610 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v610"
-	jsonv614 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v614"
-	jsonv620 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v620"
-	jsonv630 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v630"
-	jsonv640 "github.com/sidiora-labs/paxeer-network/precompiles/json/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

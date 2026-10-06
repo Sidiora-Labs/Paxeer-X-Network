@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	"github.com/stretchr/testify/require"
 )
 

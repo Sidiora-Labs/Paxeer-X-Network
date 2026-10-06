@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	apb "github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/giga/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/rpc"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	apb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/giga/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 // Sends a consensus message to the peer whenever atomic watch is updated.

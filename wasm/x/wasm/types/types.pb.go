@@ -6,10 +6,10 @@ package types
 import (
 	bytes "bytes"
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/regen-network/cosmos-proto"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

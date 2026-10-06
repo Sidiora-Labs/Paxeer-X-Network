@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	cfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	cfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func Test_ResetAll(t *testing.T) {

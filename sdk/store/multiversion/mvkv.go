@@ -7,8 +7,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	scheduler "github.com/sidiora-labs/paxeer-network/sdk/types/occ"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	scheduler "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/occ"
 	dbm "github.com/tendermint/tm-db"
 )
 

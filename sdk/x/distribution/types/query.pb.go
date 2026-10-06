@@ -6,12 +6,12 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -454,7 +454,7 @@ var xxx_messageInfo_QueryDelegationRewardsRequest proto.InternalMessageInfo
 // Query/DelegationRewards RPC method.
 type QueryDelegationRewardsResponse struct {
 	// rewards defines the rewards accrued by a delegation.
-	Rewards github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=rewards,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins" json:"rewards"`
+	Rewards github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=rewards,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins" json:"rewards"`
 }
 
 func (m *QueryDelegationRewardsResponse) Reset()         { *m = QueryDelegationRewardsResponse{} }
@@ -543,7 +543,7 @@ type QueryDelegationTotalRewardsResponse struct {
 	// rewards defines all the rewards accrued by a delegator.
 	Rewards []DelegationDelegatorReward `protobuf:"bytes,1,rep,name=rewards,proto3" json:"rewards"`
 	// total defines the sum of all the rewards.
-	Total github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,2,rep,name=total,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins" json:"total"`
+	Total github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,2,rep,name=total,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins" json:"total"`
 }
 
 func (m *QueryDelegationTotalRewardsResponse) Reset()         { *m = QueryDelegationTotalRewardsResponse{} }
@@ -795,7 +795,7 @@ var xxx_messageInfo_QueryCommunityPoolRequest proto.InternalMessageInfo
 // RPC method.
 type QueryCommunityPoolResponse struct {
 	// pool defines community pool's coins.
-	Pool github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=pool,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins" json:"pool"`
+	Pool github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=pool,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins" json:"pool"`
 }
 
 func (m *QueryCommunityPoolResponse) Reset()         { *m = QueryCommunityPoolResponse{} }

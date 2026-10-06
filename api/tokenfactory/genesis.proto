@@ -5,7 +5,7 @@ import "gogoproto/gogo.proto";
 import "tokenfactory/authority_metadata.proto";
 import "tokenfactory/params.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types";
 
 // GenesisState defines the tokenfactory module's genesis state.
 message GenesisState {

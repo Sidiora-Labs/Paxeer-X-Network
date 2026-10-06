@@ -1,9 +1,9 @@
 package receipt
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	types2 "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	types2 "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
 )
 
 // RecoverReceiptStore exposes recoverReceiptStore for testing.

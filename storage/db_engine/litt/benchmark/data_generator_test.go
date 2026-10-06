@@ -3,7 +3,7 @@ package benchmark
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 	"github.com/stretchr/testify/require"
 )
 

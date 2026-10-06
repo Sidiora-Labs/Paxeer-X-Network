@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/stretchr/testify/require"
 )
 

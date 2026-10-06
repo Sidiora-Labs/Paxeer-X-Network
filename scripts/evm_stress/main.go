@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	paxbech32 "github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
+	paxbech32 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 )
 
 const (

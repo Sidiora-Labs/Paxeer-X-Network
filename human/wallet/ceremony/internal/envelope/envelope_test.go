@@ -12,8 +12,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/envelope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/testsupport"
 )
 
 type tamperVectors struct {

@@ -1,7 +1,7 @@
 package config_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/rpc/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
 	"github.com/spf13/viper"
 	"testing"
 )

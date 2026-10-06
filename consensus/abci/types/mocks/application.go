@@ -9,7 +9,7 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 
-	types "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
 	uint256 "github.com/holiman/uint256"
 )

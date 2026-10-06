@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
 )
 
 func TestWriteFileAtomic(t *testing.T) {

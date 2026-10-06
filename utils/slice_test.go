@@ -3,7 +3,7 @@ package utils_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/stretchr/testify/require"
 )
 

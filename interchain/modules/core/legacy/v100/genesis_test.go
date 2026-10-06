@@ -3,21 +3,21 @@ package v100_test
 import (
 	"testing"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	genutiltypes "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	genutiltypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
 	"github.com/stretchr/testify/suite"
 
-	ibcclient "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	clientv100 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/legacy/v100"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/legacy/v100"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
+	ibcclient "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	clientv100 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/legacy/v100"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/legacy/v100"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
 )
 
 type LegacyTestSuite struct {

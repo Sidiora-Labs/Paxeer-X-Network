@@ -22,11 +22,11 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/box"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/async"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/protoio"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	tmprivval "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/async"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/protoio"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	tmprivval "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
 )
 
 // This code has been duplicated from p2p/conn prior to the P2P refactor.

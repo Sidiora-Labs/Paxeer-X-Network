@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/pkg/errors"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // ClientContextKey defines the context key used to retrieve a client.Context from

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	mempoolcfg "github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	mempoolcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

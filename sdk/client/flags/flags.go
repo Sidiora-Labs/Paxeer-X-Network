@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
 )
 
 const (

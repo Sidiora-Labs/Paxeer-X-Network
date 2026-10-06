@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	provider_mocks "github.com/sidiora-labs/paxeer-network/consensus/light/provider/mocks"
+	provider_mocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/mocks"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -13,10 +13,10 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	dbs "github.com/sidiora-labs/paxeer-network/consensus/light/store/db"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	dbs "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store/db"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestLightClientAttackEvidence_Lunatic(t *testing.T) {

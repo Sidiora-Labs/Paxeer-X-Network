@@ -3,7 +3,7 @@ package types
 import (
 	yaml "gopkg.in/yaml.v2"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // ValidatorGovInfo used for tallying

@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/rehearsal"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/archive"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/envelope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/rehearsal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/testsupport"
 )
 
 const (
