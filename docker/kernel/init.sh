@@ -75,6 +75,65 @@ export LAYERX_NODE_ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 
 log() { printf 'kernel-init: %s\n' "$*" >&2; }
 
+# Required app env, checked before any service starts.
+#   LAYERX_KERNEL_PAXEER_RPC_NAMES  two different serving Paxeer RPC names,
+#       space separated, first one first; start_paxeer fronts each with a
+#       paxeer boundary and relays the first to layerxd on
+#       $LAYERX_NODE_PAXEER_RPC_URL, the only chain URL layerxd accepts.
+# Full profile only, for layerx-agentd in the human-owner service (the app's
+# 9454 passthrough), its server identity being tools/bringup/ca.sh issue
+# agentd-rpc under $tls/agentd-rpc (cert.pem, key.pem, ca.pem; the CA also
+# verifies the gateway's client certificate):
+#   LAYERX_NODE_NETWORK_NAME                    the network name agentd answers for
+#   LAYERX_KERNEL_AGENTD_RPC_PEER               the one DNS name of the gateway
+#                                               client certificate agentd accepts
+#   LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES   idempotency retention in daemon
+#                                               sequences
+#   LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES idempotency retention in protocol
+#                                               sequences, at most the daemon one
+#   LAYERX_KERNEL_AGENTD_RPC_LISTEN             optional, default [::]:9454
+require_env() {
+	local variable
+	for variable in "$@"; do
+		[ -n "${!variable:-}" ] || {
+			log "$variable is required in the app env"
+			exit 1
+		}
+	done
+}
+
+require_env LAYERX_KERNEL_PAXEER_RPC_NAMES
+read -r -a paxeer_rpc_names <<<"$LAYERX_KERNEL_PAXEER_RPC_NAMES"
+if [ "${#paxeer_rpc_names[@]}" -ne 2 ] || [ "${paxeer_rpc_names[0]}" = "${paxeer_rpc_names[1]}" ]; then
+	log "LAYERX_KERNEL_PAXEER_RPC_NAMES must hold two different serving RPC names"
+	exit 1
+fi
+for k in 0 1; do
+	case "${paxeer_rpc_names[$k]}" in
+	api[1-9].mainnet-beta.paxeer.network | api1[0-6].mainnet-beta.paxeer.network) ;;
+	*)
+		log "LAYERX_KERNEL_PAXEER_RPC_NAMES entry $((k + 1)) is not a public RPC name"
+		exit 1
+		;;
+	esac
+done
+
+if [ "$kernel_profile" = full ]; then
+	require_env LAYERX_NODE_NETWORK_NAME LAYERX_KERNEL_AGENTD_RPC_PEER \
+		LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES
+	for variable in LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES; do
+		[[ "${!variable}" =~ ^[1-9][0-9]{0,18}$ ]] || {
+			log "$variable must be a positive integer"
+			exit 1
+		}
+	done
+	[ "$LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES" -le "$LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES" ] || {
+		log "LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES must not exceed LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES"
+		exit 1
+	}
+	agentd_rpc_listen=${LAYERX_KERNEL_AGENTD_RPC_LISTEN:-[::]:9454}
+fi
+
 # identity_generation <mode> [arguments...]: the identity generation of the
 # volume's persisted bindings. The generation is the kernel registry
 # generation of the genesis (network, sequencer key, replica id, asset id,
@@ -1124,22 +1183,9 @@ paxeer_boundary_public_prepare() {
 }
 
 start_paxeer() {
-	local -a names
 	local k name boundary
-	read -r -a names <<<"${LAYERX_KERNEL_PAXEER_RPC_NAMES:-}"
-	if [ "${#names[@]}" -ne 2 ] || [ "${names[0]}" = "${names[1]}" ]; then
-		log "LAYERX_KERNEL_PAXEER_RPC_NAMES must hold two different serving RPC names"
-		exit 1
-	fi
 	for k in 0 1; do
-		name="${names[$k]}"
-		case "$name" in
-		api[1-9].mainnet-beta.paxeer.network | api1[0-6].mainnet-beta.paxeer.network) ;;
-		*)
-			log "LAYERX_KERNEL_PAXEER_RPC_NAMES entry $((k + 1)) is not a public RPC name"
-			exit 1
-			;;
-		esac
+		name="${paxeer_rpc_names[$k]}"
 		boundary="${paxeer_boundaries[$k]}"
 		service "paxeer-hop-$((k + 1))" 4020 "" - - -- \
 			socat -T 120 "TCP4-LISTEN:${paxeer_hop_ports[$k]},bind=127.0.0.1,reuseaddr,fork" \
@@ -1874,6 +1920,8 @@ if [ "$kernel_profile" = full ]; then
 fi
 
 human_owner_prepare() {
+	tls_for agentd-rpc 4021 || return 1
+	install -d -o 4021 -g 4020 -m 0700 "$human_state/agent/rpc-idempotency" || return 1
 	human_project human-owner 4021 "$human_out/agent-config:env" "$tls/receipt-authority/ca.der:ca.der" \
 		"$keys/human-authority/session-operator:session-operator" "$keys/human-authority/authority-token:authority-token" \
 		"$keys/tokens/program-token:program-token" "$human_state/trust-history:trust-history" "$human_out/journal:journal"
@@ -1959,11 +2007,20 @@ human_root=$human_state/movement service human-movement 4020 \
 	/usr/local/bin/human-entrypoint movement
 
 human_root=$human_state/agent service human-owner 4021 \
-	"$genesis_files $human_policy $tls/receipt-authority/ca.der $keys/human-authority/authority-token $human_state/trust-history" \
+	"$genesis_files $human_policy $tls/receipt-authority/ca.der $keys/human-authority/authority-token $human_state/trust-history $tls/agentd-rpc/cert.pem $tls/agentd-rpc/key.pem $tls/agentd-rpc/ca.pem" \
 	human_owner_prepare - -- \
 	/bin/sh -ec "$human_env" sh env \
 	LAYERX_AGENT_HUMAN_AUTHORITY_ENDPOINT=https://localhost:9445 \
 	LAYERX_AGENT_AUTHORITY_ENDPOINT=https://localhost:9445 \
+	LAYERX_NODE_NETWORK_NAME="$LAYERX_NODE_NETWORK_NAME" \
+	LAYERX_AGENTD_RPC_LISTEN="$agentd_rpc_listen" \
+	LAYERX_AGENTD_RPC_TLS_CERT="$tls/agentd-rpc/cert.pem" \
+	LAYERX_AGENTD_RPC_TLS_KEY="$tls/agentd-rpc/key.pem" \
+	LAYERX_AGENTD_RPC_TLS_CLIENT_CA="$tls/agentd-rpc/ca.pem" \
+	LAYERX_AGENTD_RPC_PEER="$LAYERX_KERNEL_AGENTD_RPC_PEER" \
+	LAYERX_AGENTD_RPC_IDEMPOTENCY_ROOT=/var/lib/layerx/human/rpc-idempotency \
+	LAYERX_AGENTD_RPC_IDEMPOTENCY_DAEMON_SEQUENCES="$LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES" \
+	LAYERX_AGENTD_RPC_IDEMPOTENCY_PROTOCOL_SEQUENCES="$LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES" \
 	/usr/local/bin/human-entrypoint agent
 
 # The two human service processes on the one components socket: the plain

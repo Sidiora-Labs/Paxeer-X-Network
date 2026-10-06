@@ -15,7 +15,8 @@ ARG LXP_REVISION=unknown
 RUN rustup show active-toolchain \
     && make LXP_REVISION="$LXP_REVISION" layerxd layerx-genesis-build layerx-handover layerxctl layerx-guarantor layerx-module-registry \
     && test -x build/bin/layerx-guarantor && test -x build/bin/layerxd && test -x build/bin/layerx-genesis-build \
-    && test -x build/bin/layerx-handover && test -x build/bin/layerxctl && test -x build/bin/layerx-module-registry
+    && test -x build/bin/layerx-handover && test -x build/bin/layerxctl && test -x build/bin/layerx-module-registry \
+    && test -f programs/target/release/liblayerx_programs_sandbox.a
 RUN cargo build --locked --release --manifest-path platform/Cargo.toml \
         -p layerx-platform-core -p layerx-platform-authority -p layerx-runtime-clock -p layerx-platform-agent-boundary \
         -p layerx-platform-paxeer-boundary
