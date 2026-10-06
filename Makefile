@@ -1407,10 +1407,10 @@ LAYERXD_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/obj/%.o,cmd/layerxd/main.c $(LAYER
 -include $(LAYERXD_OBJECTS:.o=.d)
 
 $(BUILD_DIR)/bin/layerxd: $(LAYERXD_OBJECTS) $(LIBRARY) \
-		$(PROGRAMS_RUNTIME_LIB) | programs-build
+		$(PROGRAMS_RELEASE_RUNTIME_LIB) | programs-release-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LAYERXD_OBJECTS) \
-		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
+		$(LIBRARY) $(PROGRAMS_RELEASE_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 layerxd: $(BUILD_DIR)/bin/layerxd
@@ -1428,6 +1428,11 @@ $(BUILD_DIR)/bin/layerx-genesis-build: \
 		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 layerx-genesis-build: $(BUILD_DIR)/bin/layerx-genesis-build
+build: layerxd layerx-genesis-build
+
+.PHONY: paxd-release
+paxd-release:
+	tools/release/build-paxd.sh
 
 HANDOVER_OBJECTS = $(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS))
 
@@ -3382,6 +3387,7 @@ PROGRAMS_CARGO ?= cargo
 PROGRAMS_TARGET_DIR := $(CURDIR)/programs/target
 PROGRAMS_WORKSPACE_CARGO = env CARGO_TARGET_DIR='$(PROGRAMS_TARGET_DIR)' $(PROGRAMS_CARGO)
 PROGRAMS_RUNTIME_LIB := programs/target/debug/liblayerx_programs_sandbox.a
+PROGRAMS_RELEASE_RUNTIME_LIB := programs/target/release/liblayerx_programs_sandbox.a
 PROGRAMS_NATIVE_LDLIBS := -lssl
 
 .PHONY: programs-build programs-lint programs-test programs-core-test programs-protocol-regression programs-adversarial programs-conservation programs-qualify programs-module-boundaries programs-abi-drift programs-porting-v2-references \
@@ -3397,6 +3403,10 @@ $(PROGRAMS_RUNTIME_LIB):
 
 programs-build:
 	cd programs && $(PROGRAMS_WORKSPACE_CARGO) build --locked --workspace --features layerx-programs-sandbox/host-ffi
+
+.PHONY: programs-release-build
+$(PROGRAMS_RELEASE_RUNTIME_LIB) programs-release-build:
+	cd programs && $(PROGRAMS_WORKSPACE_CARGO) build --locked --release -p layerx-programs-sandbox --features layerx-programs-sandbox/host-ffi
 
 programs-lint: programs-module-boundaries
 	cd programs && $(PROGRAMS_CARGO) clippy --locked --workspace --all-targets --features layerx-programs-sandbox/host-ffi -- -D warnings
