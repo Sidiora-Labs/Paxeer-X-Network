@@ -6,6 +6,8 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 preset="$root/frontend/configs/envs/paxeer-x.env"
 footer="$root/frontend/configs/paxeer-x/footer.json"
 backend="$root/deploy/env/backend.example.env"
+repo="$(cd "$root/.." && pwd)"
+workflow="$repo/.github/workflows/explorer-images.yml"
 fail=0
 
 value() { grep -E "^$2=" "$1" | tail -n1 | cut -d= -f2-; }
@@ -45,6 +47,18 @@ esac
 
 for f in "$preset" "$footer"; do
   absent "$f" 'REPLACE_|chainflowtrading|dev-paxeer|hyperpaxeer|//(www\.)?paxeer\.app|Argus|DEFI_DROPDOWN|GAS_REFUEL'
+done
+
+for pair in explorer-backend:BLOCKSCOUT_VERSION explorer-frontend:GIT_COMMIT_SHA; do
+  image="${pair%%:*}" arg="${pair#*:}"
+  if ! grep -qE "^ARG $arg\$" "$repo/docker/$image/Dockerfile"; then
+    echo "FAIL docker/$image/Dockerfile does not declare ARG $arg"
+    fail=1
+  fi
+  if ! grep -A4 "dockerfile: docker/$image/Dockerfile" "$workflow" | grep -qE "^ +$arg=.*\{\{ github\.sha \}\}"; then
+    echo "FAIL explorer-images.yml does not pass $arg with the commit sha to $image"
+    fail=1
+  fi
 done
 
 if ! python3 - "$footer" <<'PY'
