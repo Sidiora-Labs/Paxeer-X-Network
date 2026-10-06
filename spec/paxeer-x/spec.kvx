@@ -38011,7 +38011,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.21]
 title = "K5b: Intent ingester kernel submission and Fly app"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["109.12"]
