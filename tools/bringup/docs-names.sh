@@ -47,6 +47,21 @@ while IFS=: read -r file name; do
 	fi
 done < <(sort -u <<<"$hits")
 
+rpc_page=docs/readme/PUBLIC-RPC.md
+if [[ ! -f $rpc_page ]]; then
+	echo "docs-names: $rpc_page is missing"
+	status=1
+else
+	grep -qF "https://$router/rpc" "$rpc_page" || { echo "docs-names: $rpc_page: no https://$router/rpc"; status=1; }
+	if grep -qE "https?://${router//./\\.}([^/a-z0-9.-]|/?\`|/?\$)" "$rpc_page"; then
+		echo "docs-names: $rpc_page: router root given as an RPC endpoint"
+		status=1
+	fi
+	for ((i = 1; i <= 16; i++)); do
+		grep -qF "https://api$i.mainnet-beta.paxeer.network" "$rpc_page" || { echo "docs-names: $rpc_page: api$i missing"; status=1; }
+	done
+fi
+
 faucet=$(git grep -lw FAUCET_URL -- "${docs[@]}") || [[ $? -eq 1 ]]
 while read -r file; do
 	[[ -n $file ]] || continue
