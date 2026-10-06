@@ -1,4 +1,5 @@
 mod seal;
+use layerx_platform_identity::mailer::Smtp;
 use layerx_platform_identity::signup::{self, Desk, Limits, SignupRequest};
 use layerx_platform_identity::store;
 
@@ -24,6 +25,7 @@ use zeroize::{Zeroize, Zeroizing};
 const MAX_REQUEST_BYTES: usize = 16 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_CONNECTIONS: usize = 128;
+const MAILER_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SIGNER_KEYS: usize = 128;
 const MAX_AUDIENCES: usize = 32;
 const MAX_SESSION_TTL_SECONDS: u64 = 30 * 86_400;
@@ -128,6 +130,7 @@ struct Config {
     signup_limits: Limits,
     disposable_domains: Vec<String>,
     outbox_dir: PathBuf,
+    smtp: Option<Smtp>,
 }
 
 struct Shared {
@@ -478,10 +481,20 @@ fn config() -> Result<Config, String> {
     };
     let outbox_dir = env::var("LAYERX_IDENTITY_SIGNUP_OUTBOX_DIR")
         .map_or_else(|_| state_dir.join("signup-outbox"), PathBuf::from);
+    let smtp = match env::var("LAYERX_IDENTITY_SMTP_URL") {
+        Ok(url) => Some(Smtp::parse(
+            &url,
+            &env::var("LAYERX_IDENTITY_SMTP_FROM").map_err(|_| {
+                "LAYERX_IDENTITY_SMTP_FROM is required with LAYERX_IDENTITY_SMTP_URL"
+            })?,
+        )?),
+        Err(_) => None,
+    };
     Ok(Config {
         signup_limits,
         disposable_domains,
         outbox_dir,
+        smtp,
         listen,
         tls: server_tls_config()?,
         state_dir,
@@ -1425,6 +1438,16 @@ fn platform_identity(config: Config) -> Result<(), String> {
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     let bound = listener.local_addr().map_err(|error| error.to_string())?;
     let desk = Desk::new(config.signup_limits, config.disposable_domains.clone());
+    let mut config = config;
+    if let Some(smtp) = config.smtp.take() {
+        let outbox = config.outbox_dir.clone();
+        thread::spawn(move || loop {
+            if let Err(error) = smtp.drain(&outbox) {
+                eprintln!("layerx-identity mailer failed: {error}");
+            }
+            thread::sleep(MAILER_INTERVAL);
+        });
+    }
     let shared = Arc::new(Shared {
         config,
         store: Mutex::new(store),
@@ -1776,6 +1799,7 @@ mod resolver_tests {
                 signup_limits: Limits::default(),
                 disposable_domains: Vec::new(),
                 outbox_dir: directory.join("signup-outbox"),
+                smtp: None,
             },
             store: Mutex::new(Store::open(&directory).unwrap_or_else(|error| panic!("{error}"))),
             desk: Mutex::new(Desk::new(Limits::default(), Vec::new())),

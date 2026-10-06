@@ -1131,7 +1131,8 @@ fn config(event_producer: bool) -> Result<Config, String> {
         client,
         client_identity,
         kernel,
-        paxeer: paxeer::configured_endpoint()?,
+        paxeer: paxeer::configured_endpoint()?
+            .map(|endpoints| endpoints.into_iter().map(capabilities::chain_rpc).collect()),
         capabilities: capabilities::configured()?,
         indexer: history::configured_endpoint()?,
         registration_token: rpc_register::configured_token()?,

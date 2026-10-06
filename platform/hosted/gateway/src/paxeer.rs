@@ -51,6 +51,16 @@ fn parse_endpoints(value: &str) -> Result<Vec<super::Endpoint>, String> {
     Ok(endpoints)
 }
 
+/// The request path appended to an endpoint's base path: a configured base
+/// path such as `/rpc` is posted to exactly, a bare root is posted to `/`.
+fn rpc_path(endpoint: &super::Endpoint) -> &'static str {
+    if endpoint.base_path.is_empty() {
+        "/"
+    } else {
+        ""
+    }
+}
+
 pub(super) fn unconfigured(id: &Value) -> Value {
     let mut refusal = super::rpc::error(id, -32001, "Paxeer endpoint not configured");
     refusal["error"]["data"] = json!({"code": "paxeer_rpc_not_configured"});
@@ -83,7 +93,7 @@ pub(super) fn node(config: &Config, request: &Value) -> Result<Value, &'static s
             endpoint,
             &OutboundRequest {
                 method: "POST",
-                path: "/",
+                path: rpc_path(endpoint),
                 idempotency: None,
                 content_type: "application/json",
                 body: identity_body,
@@ -111,7 +121,7 @@ pub(super) fn node(config: &Config, request: &Value) -> Result<Value, &'static s
             endpoint,
             &OutboundRequest {
                 method: "POST",
-                path: "/",
+                path: rpc_path(endpoint),
                 idempotency: None,
                 content_type: "application/json",
                 body: &body,

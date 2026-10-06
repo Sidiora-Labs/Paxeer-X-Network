@@ -335,7 +335,7 @@ for node in range(1,6):
                 module_args += ['--enable-module', module]
         registry = json.loads(self.execute(module_args))
         require(registry.get('schema_version') == 2 and registry.get('assets') == [{'asset': asset, 'symbol': 'PAX', 'currency': 'PAX', 'decimals': 6}], 'canonical registry asset identity mismatch')
-        require(len(registry.get('modules', [])) == 6, 'canonical registry must contain all six genesis modules')
+        require(len(registry.get('modules', [])) == 7, 'canonical registry must contain all seven genesis modules')
         write(self.output / 'genesis' / 'module-registry.json', registry)
         self.execute(['python3', '/source/platform/hosted/tests/publication-policy.py', 'treasury', '/fixture/genesis/binding-policy.json', str(NETWORK_ID), asset, address.removeprefix('0x')])
         self.execute(['python3', '/source/platform/hosted/tests/publication-policy.py', 'authorization', '/fixture/genesis/publication-authorization.json',
