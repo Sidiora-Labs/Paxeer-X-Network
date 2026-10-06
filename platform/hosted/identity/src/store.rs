@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 const SNAPSHOT_FILE: &str = "snapshot.json";
 const JOURNAL_FILE: &str = "journal.log";
 const READY_MARKER_FILE: &str = "ready.marker";
+const AUDIT_FILE: &str = "audit.log";
 const MAX_RECORD_BYTES: usize = 64 * 1024;
 pub const MAX_SESSIONS_PER_PRINCIPAL: usize = 4096;
 pub const MAX_RETAINED_SESSIONS_PER_PRINCIPAL: usize = 16_384;
@@ -39,9 +40,41 @@ pub struct StoredSession {
     pub revoked_at: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingSignup {
+    pub token_digest: String,
+    pub email_digest: String,
+    pub tenant: String,
+    pub sub: String,
+    pub signer_public_key: String,
+    pub created_at: u64,
+    pub expires_at: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StarterCredit {
+    pub sub: String,
+    pub grant_id: String,
+    pub amount: String,
+    pub granted_at: u64,
+    pub settled_at: Option<u64>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum Record {
+    Signup(PendingSignup),
+    Verify {
+        token_digest: String,
+        verified_at: u64,
+    },
+    Credit(StarterCredit),
+    Settle {
+        sub: String,
+        settled_at: u64,
+    },
     Principal(Principal),
     Session(StoredSession),
     PublicationKey {
@@ -62,6 +95,14 @@ struct Snapshot {
     publication_keys: BTreeMap<String, (String, bool)>,
     principals: BTreeMap<String, BTreeMap<String, Principal>>,
     sessions: BTreeMap<String, StoredSession>,
+    #[serde(default)]
+    signups: BTreeMap<String, PendingSignup>,
+    #[serde(default)]
+    verified: BTreeMap<String, String>,
+    #[serde(default)]
+    credits: BTreeMap<String, StarterCredit>,
+    #[serde(default)]
+    signup_days: BTreeMap<u64, u32>,
 }
 
 #[derive(Serialize)]
@@ -69,6 +110,10 @@ struct SnapshotView<'a> {
     publication_keys: &'a BTreeMap<String, (String, bool)>,
     principals: &'a BTreeMap<String, BTreeMap<String, Principal>>,
     sessions: &'a BTreeMap<String, StoredSession>,
+    signups: &'a BTreeMap<String, PendingSignup>,
+    verified: &'a BTreeMap<String, String>,
+    credits: &'a BTreeMap<String, StarterCredit>,
+    signup_days: &'a BTreeMap<u64, u32>,
 }
 
 #[derive(Default)]
@@ -77,6 +122,10 @@ struct State {
     principals: BTreeMap<String, BTreeMap<String, Principal>>,
     sessions: BTreeMap<String, StoredSession>,
     subject_tenants: BTreeMap<String, String>,
+    signups: BTreeMap<String, PendingSignup>,
+    verified: BTreeMap<String, String>,
+    credits: BTreeMap<String, StarterCredit>,
+    signup_days: BTreeMap<u64, u32>,
 }
 
 impl State {
@@ -101,6 +150,25 @@ impl State {
         for (digest, (sub, revoked)) in snapshot.publication_keys {
             state.bind_publication_key(digest, sub, revoked)?;
         }
+        for (sub, email_digest) in &snapshot.verified {
+            if !state.subject_tenants.contains_key(sub) {
+                return Err("snapshot verification references no principal".to_owned());
+            }
+            state.verified.insert(sub.clone(), email_digest.clone());
+        }
+        for (sub, credit) in snapshot.credits {
+            if credit.sub != sub || !state.verified.contains_key(&sub) {
+                return Err("snapshot starter credit is not keyed by a verified subject".to_owned());
+            }
+            state.credits.insert(sub, credit);
+        }
+        for (token_digest, signup) in snapshot.signups {
+            if signup.token_digest != token_digest {
+                return Err("snapshot signup is not keyed by its token digest".to_owned());
+            }
+            state.signups.insert(token_digest, signup);
+        }
+        state.signup_days = snapshot.signup_days;
         Ok(state)
     }
 
@@ -109,7 +177,56 @@ impl State {
             publication_keys: &self.publication_keys,
             principals: &self.principals,
             sessions: &self.sessions,
+            signups: &self.signups,
+            verified: &self.verified,
+            credits: &self.credits,
+            signup_days: &self.signup_days,
         }
+    }
+
+    fn insert_signup(&mut self, signup: PendingSignup) {
+        *self
+            .signup_days
+            .entry(signup.created_at / 86_400)
+            .or_default() += 1;
+        self.signups.insert(signup.token_digest.clone(), signup);
+    }
+
+    fn verify_signup(&mut self, token_digest: &str) -> Result<Principal, String> {
+        let signup = self
+            .signups
+            .get(token_digest)
+            .ok_or_else(|| "verification references no pending signup".to_owned())?
+            .clone();
+        let principal = Principal {
+            tenant: signup.tenant,
+            sub: signup.sub,
+            allowed_signer_public_keys: vec![signup.signer_public_key],
+            account: None,
+            audiences: Vec::new(),
+        };
+        self.insert_principal(principal.clone())?;
+        self.signups.remove(token_digest);
+        self.verified
+            .insert(principal.sub.clone(), signup.email_digest);
+        Ok(principal)
+    }
+
+    fn insert_credit(&mut self, credit: StarterCredit) -> Result<(), String> {
+        if !self.verified.contains_key(&credit.sub) {
+            return Err("starter credit references an unverified subject".to_owned());
+        }
+        self.credits.insert(credit.sub.clone(), credit);
+        Ok(())
+    }
+
+    fn settle_credit(&mut self, sub: &str, settled_at: u64) -> Result<(), String> {
+        let credit = self
+            .credits
+            .get_mut(sub)
+            .ok_or_else(|| "settlement references no starter credit".to_owned())?;
+        credit.settled_at = Some(settled_at);
+        Ok(())
     }
 
     fn principal(&self, tenant: &str, sub: &str) -> Option<&Principal> {
@@ -348,6 +465,112 @@ impl Store {
         Ok(Some(revoked_at))
     }
 
+    #[must_use]
+    pub fn pending_signup(&self, token_digest: &str) -> Option<&PendingSignup> {
+        self.state.signups.get(token_digest)
+    }
+
+    #[must_use]
+    pub fn email_in_use(&self, email_digest: &str) -> bool {
+        self.state
+            .verified
+            .values()
+            .any(|bound| bound == email_digest)
+    }
+
+    #[must_use]
+    pub fn verified_email(&self, sub: &str) -> Option<&str> {
+        self.state.verified.get(sub).map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn signups_on_day(&self, day: u64) -> u32 {
+        self.state.signup_days.get(&day).copied().unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn starter_credit(&self, sub: &str) -> Option<&StarterCredit> {
+        self.state.credits.get(sub)
+    }
+
+    /// # Errors
+    /// Refuses a duplicate token digest or durable write failure.
+    pub fn put_signup(&mut self, signup: PendingSignup) -> Result<(), String> {
+        if self.state.signups.contains_key(&signup.token_digest) {
+            return Err("signup token digest already exists".to_owned());
+        }
+        self.append(&Record::Signup(signup.clone()))?;
+        self.state.insert_signup(signup);
+        Ok(())
+    }
+
+    /// # Errors
+    /// Refuses an unknown pending signup, a subject bound to another tenant, or durable write failure.
+    pub fn verify_signup(
+        &mut self,
+        token_digest: &str,
+        verified_at: u64,
+    ) -> Result<Principal, String> {
+        let Some(signup) = self.state.signups.get(token_digest) else {
+            return Err("verification references no pending signup".to_owned());
+        };
+        if self
+            .state
+            .subject_tenants
+            .get(&signup.sub)
+            .is_some_and(|bound| bound != &signup.tenant)
+        {
+            return Err(SUBJECT_TENANT_CONFLICT.to_owned());
+        }
+        self.append(&Record::Verify {
+            token_digest: token_digest.to_owned(),
+            verified_at,
+        })?;
+        self.state.verify_signup(token_digest)
+    }
+
+    /// # Errors
+    /// Refuses an unverified subject, a second credit, or durable write failure.
+    pub fn put_starter_credit(&mut self, credit: StarterCredit) -> Result<(), String> {
+        if self.state.credits.contains_key(&credit.sub) {
+            return Err("starter credit already recorded".to_owned());
+        }
+        if !self.state.verified.contains_key(&credit.sub) {
+            return Err("starter credit references an unverified subject".to_owned());
+        }
+        self.append(&Record::Credit(credit.clone()))?;
+        self.state.insert_credit(credit)
+    }
+
+    /// # Errors
+    /// Refuses an unknown credit or durable write failure.
+    pub fn settle_starter_credit(&mut self, sub: &str, settled_at: u64) -> Result<(), String> {
+        if !self.state.credits.contains_key(sub) {
+            return Err("settlement references no starter credit".to_owned());
+        }
+        self.append(&Record::Settle {
+            sub: sub.to_owned(),
+            settled_at,
+        })?;
+        self.state.settle_credit(sub, settled_at)
+    }
+
+    /// # Errors
+    /// Refuses unavailable storage or a failed durable audit append.
+    pub fn audit(&self, event: &serde_json::Value) -> Result<(), String> {
+        self.check_available()?;
+        let mut line = serde_json::to_vec(event).map_err(|error| error.to_string())?;
+        line.push(b'\n');
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.directory.join(AUDIT_FILE))
+            .map_err(|error| format!("audit log: {error}"))?;
+        file.write_all(&line)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| format!("audit append: {error}"))
+    }
+
     /// # Errors
     /// Refuses missing or replaced durable storage and a prior failed write.
     pub fn check_available(&self) -> Result<(), String> {
@@ -406,6 +629,13 @@ impl Store {
 
 fn apply(state: &mut State, record: Record) -> Result<(), String> {
     match record {
+        Record::Signup(signup) => {
+            state.insert_signup(signup);
+            Ok(())
+        }
+        Record::Verify { token_digest, .. } => state.verify_signup(&token_digest).map(|_| ()),
+        Record::Credit(credit) => state.insert_credit(credit),
+        Record::Settle { sub, settled_at } => state.settle_credit(&sub, settled_at),
         Record::PublicationKey {
             digest,
             sub,
