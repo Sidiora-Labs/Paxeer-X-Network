@@ -11,7 +11,7 @@ EVM RPCs prefixed by `eth_` and `debug_` on Pax generally follows [Ethereum's sp
 - **Explicitly unsupported RPCs (same `-32000` pattern)** — Methods are registered so clients get a clear error instead of `-32601` method not found:
   - `debug_getRawBlock`, `debug_getRawHeader`, `debug_getRawReceipts`, `debug_getRawTransaction`
   - `eth_newPendingTransactionFilter`
-  - `eth_syncing`
+- **Syncing** - `eth_syncing` returns `false` once consensus reports the node caught up; while it is catching up it returns `startingBlock` (earliest block this node holds), `currentBlock` and `highestBlock` (the higher of the best peer height and the local height).
 
 ## `pax_` and `pax2_` prefixed endpoints
 Several `eth_` prefixed endpoints have a `pax_` prefixed counterpart. `eth_` endpoints only have visibility into EVM transactions, whereas `pax_` endpoints have visibility into EVM transactions plus Cosmos transactions that have synthetic EVM receipts.
