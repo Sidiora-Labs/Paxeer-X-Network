@@ -37973,7 +37973,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.19]
 title = "H1: Wallet PWA image, env schema, proxy headers, healthcheck"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
