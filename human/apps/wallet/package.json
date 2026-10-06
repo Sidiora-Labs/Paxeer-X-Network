@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:wallet-app": "playwright test --config=playwright.wallet-app.config.ts",
     "test:watch": "vitest",
