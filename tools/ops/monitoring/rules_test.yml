@@ -1,0 +1,58 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'cometbft_consensus_height{job="cometbft",host="v1"}'
+        values: '100 101 102 103 103 103 103 103 103'
+      - series: 'cometbft_p2p_peers{job="cometbft",host="v1"}'
+        values: '3x12'
+      - series: 'cometbft_consensus_validator_missed_blocks{job="cometbft",host="v1",validator_address="AA"}'
+        values: '0 0 0 2 2 2 2 2 2'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: ChainHeightStalled
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ChainHeightStalled
+        exp_alerts:
+          - exp_labels: {severity: critical, job: cometbft, host: v1}
+            exp_annotations:
+              summary: "v1 block height has not advanced for 60 s"
+      - eval_time: 1m
+        alertname: ValidatorMissedBlocks
+        exp_alerts:
+          - exp_labels: {severity: warning, job: cometbft, host: v1, validator_address: AA}
+            exp_annotations:
+              summary: "validator AA missed blocks in the last 5 m (seen by v1)"
+      - eval_time: 3m
+        alertname: LowPeerCount
+        exp_alerts:
+          - exp_labels: {severity: warning, job: cometbft, host: v1}
+            exp_annotations:
+              summary: "v1 has 3 peers (below 5)"
+
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",host="f1",mountpoint="/",fstype="ext4"}'
+        values: '10x10'
+      - series: 'node_filesystem_size_bytes{job="node",host="f1",mountpoint="/",fstype="ext4"}'
+        values: '100x10'
+      - series: 'probe_success{job="kernel-readyz",instance="https://k/readyz"}'
+        values: '0x5'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: DiskAbove85Percent
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, host: f1, mountpoint: /, fstype: ext4}
+            exp_annotations:
+              summary: "f1 / is 90 percent full"
+      - eval_time: 2m
+        alertname: KernelReadyzDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: kernel-readyz, instance: "https://k/readyz"}
+            exp_annotations:
+              summary: "kernel readiness https://k/readyz is failing"

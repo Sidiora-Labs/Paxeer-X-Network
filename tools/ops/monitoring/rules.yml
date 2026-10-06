@@ -1,0 +1,77 @@
+groups:
+  - name: paxeer-chain
+    rules:
+      - alert: ChainHeightStalled
+        expr: changes({__name__=~"(cometbft|tendermint)_consensus_height", job="cometbft"}[60s]) == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }} block height has not advanced for 60 s"
+
+      - alert: ValidatorMissedBlocks
+        expr: increase({__name__=~"(cometbft|tendermint)_consensus_validator_missed_blocks", job="cometbft"}[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "validator {{ $labels.validator_address }} missed blocks in the last 5 m (seen by {{ $labels.host }})"
+
+      - alert: LowPeerCount
+        expr: '{__name__=~"(cometbft|tendermint)_p2p_peers", job="cometbft"} < 5'
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }} has {{ $value }} peers (below 5)"
+
+      - alert: CometMetricsDown
+        expr: up{job="cometbft"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }} CometBFT metrics endpoint is unreachable"
+
+  - name: paxeer-hosts
+    rules:
+      - alert: DiskAbove85Percent
+        expr: >
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.mountpoint }} is {{ $value | humanize }} percent full"
+
+      - alert: NodeExporterDown
+        expr: up{job=~"node|monitor-node"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }} node_exporter is unreachable"
+
+  - name: paxeer-services
+    rules:
+      - alert: KernelReadyzDown
+        expr: probe_success{job="kernel-readyz"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "kernel readiness {{ $labels.instance }} is failing"
+
+      - alert: EdgeCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="edge-cert"} - time()) / 86400 < 14
+        labels:
+          severity: warning
+        annotations:
+          summary: "edge certificate on {{ $labels.instance }} expires in {{ $value | humanize }} days"
+
+      - alert: EdgeCertProbeFailing
+        expr: probe_success{job="edge-cert"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TLS probe to {{ $labels.instance }} is failing"
