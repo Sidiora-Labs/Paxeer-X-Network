@@ -37784,7 +37784,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.9]
 title = "K2: Kernel image entrypoint, agentd listener env, release programs lib, make targets"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
