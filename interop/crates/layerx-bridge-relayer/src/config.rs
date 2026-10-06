@@ -30,6 +30,11 @@ use crate::solana::{base58_fixed, SOLANA_CHAIN_ID};
 
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
+/// The approved attestor set every relayer instance runs against.
+pub const ATTESTOR_SET_SIZE: usize = 5;
+/// Distinct attestor signatures a release needs from that set.
+pub const ATTESTOR_THRESHOLD: u8 = 3;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "transport", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SignerTransportConfig {
@@ -220,6 +225,65 @@ impl SolanaConfig {
     }
 }
 
+/// The approved attestor membership: five distinct addresses and the
+/// three-of-five threshold. This instance's attestor must be a member.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AttestorSetConfig {
+    /// `0x`-prefixed 20-byte attestor addresses.
+    pub members: Vec<String>,
+    pub threshold: u8,
+}
+
+impl AttestorSetConfig {
+    /// The member addresses.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a member that is not a 20-byte hex address.
+    pub fn addresses(&self) -> Result<Vec<[u8; 20]>, RelayerError> {
+        self.members
+            .iter()
+            .map(|member| {
+                hex::fixed::<20>(member).map_err(|_| {
+                    invalid(format!("attestor member {member} is not a 20-byte address"))
+                })
+            })
+            .collect()
+    }
+
+    fn validate(
+        &self,
+        attestor: &KeyHandleConfig,
+        cosign_directory: Option<&PathBuf>,
+    ) -> Result<(), RelayerError> {
+        let addresses = self.addresses()?;
+        let distinct: std::collections::BTreeSet<[u8; 20]> = addresses.iter().copied().collect();
+        if addresses.len() != ATTESTOR_SET_SIZE
+            || distinct.len() != ATTESTOR_SET_SIZE
+            || distinct.contains(&[0; 20])
+        {
+            return Err(invalid(format!(
+                "the attestor set needs exactly {ATTESTOR_SET_SIZE} distinct non-zero members"
+            )));
+        }
+        if self.threshold != ATTESTOR_THRESHOLD {
+            return Err(invalid(format!(
+                "the attestor threshold must be {ATTESTOR_THRESHOLD} of {ATTESTOR_SET_SIZE}"
+            )));
+        }
+        if cosign_directory.is_none() {
+            return Err(invalid("a threshold above one needs a cosign directory"));
+        }
+        let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&attestor.public_key)
+            .map_err(|_| invalid("the attestor public key is not a secp256k1 key"))?;
+        if !distinct.contains(&crate::attestation::ethereum_address(&key)) {
+            return Err(invalid("this attestor is not a member of the attestor set"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RelayerConfig {
@@ -238,6 +302,9 @@ pub struct RelayerConfig {
     /// chains only.
     #[serde(default)]
     pub solana: Option<SolanaConfig>,
+    /// The approved attestor set; absent, the relayer runs a single attestor.
+    #[serde(default)]
+    pub attestor_set: Option<AttestorSetConfig>,
 }
 
 fn invalid(detail: impl Into<String>) -> RelayerError {
@@ -310,6 +377,9 @@ impl RelayerConfig {
         }
         if let Some(solana) = &self.solana {
             solana.validate(&self.attestor, &self.chains)?;
+        }
+        if let Some(set) = &self.attestor_set {
+            set.validate(&self.attestor, self.cosign_directory.as_ref())?;
         }
         Ok(())
     }
@@ -614,5 +684,95 @@ mod tests {
         assert!(config.validate().is_err());
         config.paxeer.endpoints[0].trust_anchor_der = Some(PathBuf::from("/etc/anchor.der"));
         assert_eq!(config.validate(), Ok(()));
+    }
+
+    const GENERATOR_KEY: &str =
+        "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    const GENERATOR_ADDRESS: &str = "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf";
+
+    fn with_set() -> RelayerConfig {
+        let mut config = example();
+        config.attestor.public_key =
+            hex::decode(GENERATOR_KEY).unwrap_or_else(|error| panic!("key: {error:?}"));
+        config.attestor_set = Some(AttestorSetConfig {
+            members: vec![
+                GENERATOR_ADDRESS.to_owned(),
+                "0x2222222222222222222222222222222222222222".to_owned(),
+                "0x3333333333333333333333333333333333333333".to_owned(),
+                "0x4444444444444444444444444444444444444444".to_owned(),
+                "0x5555555555555555555555555555555555555555".to_owned(),
+            ],
+            threshold: ATTESTOR_THRESHOLD,
+        });
+        config
+    }
+
+    fn set(config: &mut RelayerConfig) -> &mut AttestorSetConfig {
+        config
+            .attestor_set
+            .as_mut()
+            .unwrap_or_else(|| panic!("attestor set"))
+    }
+
+    #[test]
+    fn a_five_member_three_of_five_set_validates() {
+        assert_eq!(example().attestor_set, None);
+        assert_eq!(with_set().validate(), Ok(()));
+        let parsed: RelayerConfig = serde_json::from_str(&EXAMPLE.replacen(
+            r#""chains": ["#,
+            r#""attestor_set": {"members": ["0x01"], "threshold": 3}, "chains": ["#,
+            1,
+        ))
+        .unwrap_or_else(|error| panic!("set: {error}"));
+        assert!(parsed.validate().is_err());
+    }
+
+    #[test]
+    fn an_attestor_set_of_the_wrong_size_or_with_repeats_is_refused() {
+        let mut short = with_set();
+        set(&mut short).members.pop();
+        assert!(short.validate().is_err());
+
+        let mut long = with_set();
+        set(&mut long)
+            .members
+            .push("0x6666666666666666666666666666666666666666".to_owned());
+        assert!(long.validate().is_err());
+
+        let mut repeated = with_set();
+        set(&mut repeated).members[4] = "0x2222222222222222222222222222222222222222".to_owned();
+        assert!(repeated.validate().is_err());
+
+        let mut zero = with_set();
+        set(&mut zero).members[4] = "0x0000000000000000000000000000000000000000".to_owned();
+        assert!(zero.validate().is_err());
+
+        let mut malformed = with_set();
+        set(&mut malformed).members[4] = "0x5555".to_owned();
+        assert!(malformed.validate().is_err());
+    }
+
+    #[test]
+    fn a_threshold_other_than_three_is_refused() {
+        for threshold in [0, 1, 2, 4, 5, 6] {
+            let mut config = with_set();
+            set(&mut config).threshold = threshold;
+            assert!(config.validate().is_err(), "threshold {threshold}");
+        }
+    }
+
+    #[test]
+    fn the_attestor_must_be_a_member_and_needs_a_cosign_directory() {
+        let mut outsider = with_set();
+        set(&mut outsider).members[0] = "0x1111111111111111111111111111111111111111".to_owned();
+        assert!(outsider.validate().is_err());
+
+        let mut invalid_key = with_set();
+        invalid_key.attestor.public_key = vec![0x02, 0xaa];
+        assert!(invalid_key.validate().is_err());
+
+        let mut alone = with_set();
+        alone.cosign_directory = None;
+        assert!(alone.validate().is_err());
     }
 }

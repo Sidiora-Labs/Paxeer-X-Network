@@ -12,7 +12,7 @@ RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package 
 
 FROM debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates libssl3 \
+    && apt-get install --yes --no-install-recommends ca-certificates jq libssl3 \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -m 0755 /usr/share/layerx/roots \
     && for pem in /usr/share/ca-certificates/mozilla/*.crt; do \
