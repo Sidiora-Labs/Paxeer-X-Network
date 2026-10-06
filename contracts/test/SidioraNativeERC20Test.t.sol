@@ -53,6 +53,12 @@ contract SidioraBankFixture {
 contract SidioraNativeERC20Test is Test {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+    event LegacyMigrated(address indexed holder, uint256 amount, bool minted);
+
+    bytes32 private constant LEGACY_ERC20 = 0x52c63247e1f47db19d5ce0460030c497f067ca4cebf71ba98eeadabe20bace00;
+    bytes32 private constant MIGRATION_HEIGHT = keccak256(
+        abi.encode(uint256(keccak256("paxeer.storage.SidioraLegacyMigration")) - 1)
+    ) & ~bytes32(uint256(0xff));
 
     address private constant SIDIORA = address(bytes20(hex"21f7b20a555199fa73a238b1a91fd0f549068fee"));
     bytes32 private constant IMPLEMENTATION_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
@@ -100,6 +106,57 @@ contract SidioraNativeERC20Test is Test {
         assertEq(token.owner(), SID_OWNER);
         vm.expectCall(BANK_PRECOMPILE_ADDRESS, abi.encodeCall(IBank.balance, (bob, nativeDenom)));
         assertEq(token.balanceOf(bob), 1_000_000);
+    }
+
+    function testNoMintEntryPoint() public {
+        _initialize();
+        bytes[3] memory calls = [
+            abi.encodeWithSignature("mint(address,uint256)", alice, 1),
+            abi.encodeWithSignature("mint(uint256)", 1),
+            abi.encodeWithSignature("mint(address,string,uint256)", alice, nativeDenom, 1)
+        ];
+        for (uint256 i; i < calls.length; ++i) {
+            vm.prank(SID_OWNER);
+            (bool ok,) = SIDIORA.call(calls[i]);
+            assertFalse(ok);
+        }
+        assertEq(token.totalSupply(), 3_000_000);
+        assertEq(token.balanceOf(alice), 2_000_000);
+    }
+
+    function testMigrateLegacyZeroesAndEmits() public {
+        _initialize();
+        address carol = makeAddr("carol");
+        bytes32 aliceSlot = keccak256(abi.encode(alice, LEGACY_ERC20));
+        bytes32 carolSlot = keccak256(abi.encode(carol, LEGACY_ERC20));
+        vm.store(SIDIORA, aliceSlot, bytes32(uint256(2_000_000)));
+        vm.store(SIDIORA, carolSlot, bytes32(uint256(5)));
+        vm.store(SIDIORA, MIGRATION_HEIGHT, bytes32(uint256(30_400_000)));
+
+        vm.expectEmit(true, false, false, true, SIDIORA);
+        emit LegacyMigrated(alice, 2_000_000, true);
+        vm.prank(bob);
+        token.migrateLegacy(alice);
+        assertEq(vm.load(SIDIORA, aliceSlot), bytes32(0));
+        assertEq(token.balanceOf(alice), 2_000_000);
+
+        vm.expectEmit(true, false, false, true, SIDIORA);
+        emit LegacyMigrated(carol, 5, false);
+        token.migrateLegacy(carol);
+        assertEq(vm.load(SIDIORA, carolSlot), bytes32(0));
+        assertEq(token.totalSupply(), 3_000_000);
+
+        vm.expectRevert(abi.encodeWithSelector(SidioraNativeERC20.NothingToMigrate.selector, alice));
+        token.migrateLegacy(alice);
+    }
+
+    function testMigrateLegacyBeforeUpgradeHandlerReverts() public {
+        _initialize();
+        bytes32 aliceSlot = keccak256(abi.encode(alice, LEGACY_ERC20));
+        vm.store(SIDIORA, aliceSlot, bytes32(uint256(2_000_000)));
+        vm.expectRevert(SidioraNativeERC20.MigrationNotRecorded.selector);
+        token.migrateLegacy(alice);
+        assertEq(vm.load(SIDIORA, aliceSlot), bytes32(uint256(2_000_000)));
     }
 
     function testNonOwnerUpgradeReverts() public {
