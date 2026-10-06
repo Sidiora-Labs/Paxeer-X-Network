@@ -38345,7 +38345,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.39]
 title = "R1: chain reconciliation after wave 1"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 2
 requires = ["109.1", "109.5", "109.9"]
