@@ -38199,7 +38199,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.31]
 title = "E1: Explorer configuration hygiene"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
