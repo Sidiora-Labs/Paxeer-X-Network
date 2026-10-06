@@ -1,9 +1,9 @@
 package types
 
 import (
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // DefaultMaxQueryStackSize maximum size of the stack of contract instances doing queries

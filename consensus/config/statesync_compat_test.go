@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/cmd/tendermint/commands"
-	tmconfig "github.com/sidiora-labs/paxeer-network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/cmd/tendermint/commands"
+	tmconfig "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 )
 
 // This test (and TestFreshStateSyncConfigValidatesWithoutHiddenKnobs) mutate the

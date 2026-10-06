@@ -3,9 +3,9 @@ package types
 import (
 	"time"
 
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 type (

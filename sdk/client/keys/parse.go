@@ -7,12 +7,12 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v2"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 )
 
 func bech32Prefixes(config *sdk.Config) []string {

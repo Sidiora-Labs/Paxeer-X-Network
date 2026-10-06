@@ -3,10 +3,10 @@ package keeper
 import (
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	gogotypes "github.com/gogo/protobuf/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 )
 
 // Migrator is a struct for handling in-place store migrations.

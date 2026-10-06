@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 	"golang.org/x/sys/unix"
 )
 

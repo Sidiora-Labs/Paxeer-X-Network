@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
 
 	"github.com/gorilla/mux"
 )

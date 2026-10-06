@@ -15,7 +15,7 @@ import (
 	"github.com/gogo/protobuf/protoc-gen-gogo/descriptor"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 const bit11NonCritical = 1 << 10

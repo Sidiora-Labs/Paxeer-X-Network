@@ -8,10 +8,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/tcp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/tcp"
 
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
 )
 
 // defaultDirPerm is the default permissions used when creating directories.

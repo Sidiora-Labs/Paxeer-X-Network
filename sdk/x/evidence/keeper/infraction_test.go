@@ -3,12 +3,12 @@ package keeper_test
 import (
 	"time"
 
-	abcitypes "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/teststaking"
+	abcitypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/teststaking"
 )
 
 func (suite *KeeperTestSuite) TestHandleDoubleSign() {

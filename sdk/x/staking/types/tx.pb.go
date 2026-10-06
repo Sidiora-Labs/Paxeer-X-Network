@@ -6,15 +6,15 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/types"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
 	_ "github.com/regen-network/cosmos-proto"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types1 "github.com/sidiora-labs/paxeer-network/sdk/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -40,7 +40,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type MsgCreateValidator struct {
 	Description       Description                                          `protobuf:"bytes,1,opt,name=description,proto3" json:"description"`
 	Commission        CommissionRates                                      `protobuf:"bytes,2,opt,name=commission,proto3" json:"commission"`
-	MinSelfDelegation github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,3,opt,name=min_self_delegation,json=minSelfDelegation,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Int" json:"min_self_delegation" yaml:"min_self_delegation"`
+	MinSelfDelegation github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,3,opt,name=min_self_delegation,json=minSelfDelegation,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int" json:"min_self_delegation" yaml:"min_self_delegation"`
 	DelegatorAddress  string                                               `protobuf:"bytes,4,opt,name=delegator_address,json=delegatorAddress,proto3" json:"delegator_address,omitempty" yaml:"delegator_address"`
 	ValidatorAddress  string                                               `protobuf:"bytes,5,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty" yaml:"validator_address"`
 	Pubkey            *types.Any                                           `protobuf:"bytes,6,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
@@ -125,8 +125,8 @@ type MsgEditValidator struct {
 	// it's not mandatory to update. If not updated, the deserialized rate will be
 	// zero with no way to distinguish if an update was intended.
 	// REF: #2373
-	CommissionRate    *github_com_sidiora_labs_paxeer_network_sdk_types.Dec `protobuf:"bytes,3,opt,name=commission_rate,json=commissionRate,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Dec" json:"commission_rate,omitempty" yaml:"commission_rate"`
-	MinSelfDelegation *github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,4,opt,name=min_self_delegation,json=minSelfDelegation,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Int" json:"min_self_delegation,omitempty" yaml:"min_self_delegation"`
+	CommissionRate    *github_com_sidiora_labs_paxeer_network_sdk_types.Dec `protobuf:"bytes,3,opt,name=commission_rate,json=commissionRate,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Dec" json:"commission_rate,omitempty" yaml:"commission_rate"`
+	MinSelfDelegation *github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,4,opt,name=min_self_delegation,json=minSelfDelegation,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int" json:"min_self_delegation,omitempty" yaml:"min_self_delegation"`
 }
 
 func (m *MsgEditValidator) Reset()         { *m = MsgEditValidator{} }

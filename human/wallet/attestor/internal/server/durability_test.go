@@ -20,12 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	gethcrypto "github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/audit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/lxwire"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/lx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 func importEd25519(t *testing.T, c *testCluster, keyID, label string) (ed25519.PublicKey, string) {

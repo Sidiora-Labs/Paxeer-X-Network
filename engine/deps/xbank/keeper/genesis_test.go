@@ -1,8 +1,8 @@
 package keeper_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xbank/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xbank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func (suite *IntegrationTestSuite) getTestBalancesAndSupply() ([]types.Balance, sdk.Coins) {

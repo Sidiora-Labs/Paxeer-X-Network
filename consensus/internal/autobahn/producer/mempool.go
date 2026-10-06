@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/ethereum/go-ethereum/common"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var errTooLarge = errors.New("transaction too large")

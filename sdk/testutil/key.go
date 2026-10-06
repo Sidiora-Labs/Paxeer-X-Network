@@ -3,8 +3,8 @@ package testutil
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // GenerateCoinKey generates a new key mnemonic along with its addrress.

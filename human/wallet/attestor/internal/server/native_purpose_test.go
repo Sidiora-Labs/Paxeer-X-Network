@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
-	nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/agent"
+	nativepolicy "github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/native"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 func nativeText(out *bytes.Buffer, value string, width int) {

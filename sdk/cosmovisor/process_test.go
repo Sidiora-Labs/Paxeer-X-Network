@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/cosmovisor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/cosmovisor"
 )
 
 type processTestSuite struct {

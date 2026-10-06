@@ -8,12 +8,12 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	cryptoproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	privproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	cryptoproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	privproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var stamp = time.Date(2019, 10, 13, 16, 14, 44, 0, time.UTC)

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
 )
 
 const PathPublicWallet = "/v1/keys/public-wallet"

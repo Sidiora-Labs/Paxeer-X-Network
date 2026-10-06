@@ -3,7 +3,7 @@ package jsontypes_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
 )
 
 type testPtrType struct {

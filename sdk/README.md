@@ -2,7 +2,7 @@
 
 `sdk/` is the Cosmos SDK fork that the Paxeer X chain node, `paxd`, is built on. Paxeer X Network is one network with two execution domains: the Paxeer X chain (`paxd`, Go, EVM chain ID 125) and the LayerX kernel (`layerxd`, C17). This directory belongs to the chain side. The [root README](../README.md) describes the whole network.
 
-The code here is part of the root Go module, `github.com/sidiora-labs/paxeer-network` (see [`go.mod`](../go.mod)). Other packages import it as `github.com/sidiora-labs/paxeer-network/sdk/...`. Only [`cosmovisor/`](cosmovisor/README.md) and `ics23/` have their own `go.mod`.
+The code here is part of the root Go module, `github.com/Sidiora-Labs/Paxeer-X-Network` (see [`go.mod`](../go.mod)). Other packages import it as `github.com/Sidiora-Labs/Paxeer-X-Network/sdk/...`. Only [`cosmovisor/`](cosmovisor/README.md) and `ics23/` have their own `go.mod`.
 
 ## Layout
 

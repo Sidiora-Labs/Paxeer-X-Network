@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/health"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/audit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/health"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/replica"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
 )
 
 const (

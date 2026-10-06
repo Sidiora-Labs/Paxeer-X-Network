@@ -14,16 +14,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/proposals"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtx "github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
-	govcli "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
+	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 var proposalTestdata = filepath.Join("..", "..", "..", "..", "bridge", "deploy", "proposals", "testdata")

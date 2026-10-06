@@ -47,7 +47,7 @@ import (
 	"runtime/debug"
 	"unsafe"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // Note: we have to include all exports in the same file (at least since they both import bindings.h),

@@ -5,12 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/legacy/legacytx"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/legacy/legacytx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 func MakeTestHandlerMap() signing.SignModeHandler {

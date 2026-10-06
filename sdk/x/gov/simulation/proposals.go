@@ -3,11 +3,11 @@ package simulation
 import (
 	"math/rand"
 
-	paxappparams "github.com/sidiora-labs/paxeer-network/node/params"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/simulation"
+	paxappparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
 )
 
 // OpWeightSubmitTextProposal app params key for text proposal

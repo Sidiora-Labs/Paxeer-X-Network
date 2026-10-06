@@ -3,11 +3,11 @@ package types_test
 import (
 	"time"
 
-	tmprotocrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	tmprotocrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
 )
 
 func (suite *TendermintTestSuite) TestGetHeight() {

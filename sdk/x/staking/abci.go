@@ -3,11 +3,11 @@ package staking
 import (
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // BeginBlocker will persist the current header and validator set as a historical entry

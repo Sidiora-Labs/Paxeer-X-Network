@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type Keeper struct {

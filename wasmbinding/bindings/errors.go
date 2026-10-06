@@ -1,7 +1,7 @@
 package bindings
 
 import (
-	sdkErrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkErrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // Codes for wasm contract errors

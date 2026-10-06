@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	"github.com/sidiora-labs/paxeer-network/testutil/processblock"
-	"github.com/sidiora-labs/paxeer-network/testutil/processblock/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock/verify"
 )
 
 func TestMint(t *testing.T) {

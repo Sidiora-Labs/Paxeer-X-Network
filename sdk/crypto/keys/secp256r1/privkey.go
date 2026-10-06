@@ -1,8 +1,8 @@
 package secp256r1
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/internal/ecdsa"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/internal/ecdsa"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // GenPrivKey generates a new secp256r1 private key. It uses operating system randomness.

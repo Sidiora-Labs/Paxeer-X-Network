@@ -1,12 +1,12 @@
 package types_test
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func TestParamsEqual(t *testing.T) {

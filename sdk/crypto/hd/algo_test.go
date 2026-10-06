@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
 )
 
 func TestDefaults(t *testing.T) {

@@ -1,11 +1,11 @@
 package testutil
 
 import (
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // DefaultContext creates a sdk.Context with a fresh MemDB that can be used in tests.

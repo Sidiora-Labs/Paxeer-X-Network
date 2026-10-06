@@ -3,14 +3,14 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 const (

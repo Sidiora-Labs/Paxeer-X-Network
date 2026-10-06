@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/client/utils"
 )
 
 func TestParseProposal(t *testing.T) {

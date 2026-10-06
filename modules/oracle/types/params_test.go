@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func TestParamsValid(t *testing.T) {

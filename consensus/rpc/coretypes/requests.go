@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type RequestSubscribe struct {

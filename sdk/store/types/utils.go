@@ -3,7 +3,7 @@ package types
 import (
 	"bytes"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 )
 
 // Iterator over all the keys with a certain prefix in ascending order

@@ -12,16 +12,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/modules/layerxgov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	typesrest "github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	govclient "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client"
-	govcli "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	govrest "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/rest"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxgov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	typesrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	govclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client"
+	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	govrest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/rest"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 const (

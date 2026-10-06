@@ -12,17 +12,17 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkErrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkErrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper/wasmtesting"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper/wasmtesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func TestQueryAllContractState(t *testing.T) {

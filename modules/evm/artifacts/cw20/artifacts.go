@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	"github.com/sidiora-labs/paxeer-network/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 )
 
 const currentVersion uint16 = 2

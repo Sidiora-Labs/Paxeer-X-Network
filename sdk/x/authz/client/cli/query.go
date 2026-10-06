@@ -6,12 +6,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
-	bank "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
+	bank "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // GetQueryCmd returns the cli query commands for this module

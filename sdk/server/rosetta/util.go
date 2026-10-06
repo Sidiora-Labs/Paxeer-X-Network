@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	crgerrs "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/errors"
+	crgerrs "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/errors"
 )
 
 // timeToMilliseconds converts time to milliseconds timestamp

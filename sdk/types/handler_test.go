@@ -6,8 +6,8 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/tests/mocks"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/tests/mocks"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type handlerTestSuite struct {

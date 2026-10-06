@@ -6,19 +6,19 @@ import (
 	"os"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/gogo/protobuf/grpc"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/spf13/cobra"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/api"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/api"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
 )
 
 // ServerStartTime defines the time duration that the server need to stay running after startup

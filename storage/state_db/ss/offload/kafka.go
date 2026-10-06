@@ -13,7 +13,7 @@ import (
 	"github.com/segmentio/kafka-go/compress"
 	"github.com/segmentio/kafka-go/sasl"
 
-	dbproto "github.com/sidiora-labs/paxeer-network/storage/proto"
+	dbproto "github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 const kafkaOptionNone = "none"

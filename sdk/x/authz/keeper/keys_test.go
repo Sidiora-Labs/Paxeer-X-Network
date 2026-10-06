@@ -6,10 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	bank "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	bank "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 var granter = sdk.AccAddress(ed25519.GenPrivKey().PubKey().Address())

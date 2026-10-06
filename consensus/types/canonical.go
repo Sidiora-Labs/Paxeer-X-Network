@@ -3,8 +3,8 @@ package types
 import (
 	"time"
 
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 // Canonical* wraps the structs in types for amino encoding them for use in SignBytes / the Signable interface.

@@ -3,14 +3,14 @@ package types
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // VerifyUpgradeAndUpdateState checks if the upgraded client has been committed by the current client

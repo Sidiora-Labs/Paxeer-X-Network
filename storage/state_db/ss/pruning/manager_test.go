@@ -8,8 +8,8 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 	"github.com/stretchr/testify/require"
 )
 

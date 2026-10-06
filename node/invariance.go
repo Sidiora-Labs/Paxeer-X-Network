@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/storev2/commitment"
 	armonmetrics "github.com/armon/go-metrics"
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/storev2/commitment"
 	"github.com/spf13/cast"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetrics "go.opentelemetry.io/otel/metric"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 
-	paxmetrics "github.com/sidiora-labs/paxeer-network/utils/metrics"
+	paxmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 type LightInvarianceConfig struct {

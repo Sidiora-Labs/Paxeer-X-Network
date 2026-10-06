@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"strings"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	authtx "github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 const (

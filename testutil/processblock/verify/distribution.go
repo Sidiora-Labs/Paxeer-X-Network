@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	"github.com/sidiora-labs/paxeer-network/testutil/processblock"
-	"github.com/sidiora-labs/paxeer-network/utils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,16 +7,16 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common/legacy/v620"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common/legacy/v620"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
 )
 
 const (

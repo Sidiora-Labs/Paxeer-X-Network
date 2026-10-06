@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	xwebtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	xwebtestutil "github.com/sidiora-labs/paxeer-network/modules/xweb/testutil"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

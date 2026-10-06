@@ -3,13 +3,13 @@ package app
 import (
 	"encoding/json"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	genesistypes "github.com/sidiora-labs/paxeer-network/sdk/types/genesis"
-	distrtypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	genesistypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/genesis"
+	distrtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
 	"github.com/spf13/cast"
 )
 

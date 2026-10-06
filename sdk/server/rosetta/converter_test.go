@@ -5,23 +5,23 @@ import (
 	"encoding/json"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	authsigning "github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	authsigning "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 
 	rosettatypes "github.com/coinbase/rosetta-sdk-go/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server/rosetta"
-	crgerrs "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta"
+	crgerrs "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/errors"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtx "github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
-	bank "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
+	bank "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 type ConverterTestSuite struct {

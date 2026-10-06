@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	crand "github.com/sidiora-labs/paxeer-network/storage/common/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	crand "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/rand"
 )
 
 const (

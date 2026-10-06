@@ -3,22 +3,22 @@
 package addr
 
 import (
+	addrv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v552"
+	addrv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v555"
+	addrv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v562"
+	addrv575 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v575"
+	addrv600 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v600"
+	addrv601 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v601"
+	addrv603 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v603"
+	addrv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v605"
+	addrv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v606"
+	addrv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v610"
+	addrv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v614"
+	addrv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v620"
+	addrv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v630"
+	addrv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	addrv552 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v552"
-	addrv555 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v555"
-	addrv562 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v562"
-	addrv575 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v575"
-	addrv600 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v600"
-	addrv601 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v601"
-	addrv603 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v603"
-	addrv605 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v605"
-	addrv606 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v606"
-	addrv610 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v610"
-	addrv614 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v614"
-	addrv620 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v620"
-	addrv630 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v630"
-	addrv640 "github.com/sidiora-labs/paxeer-network/precompiles/addr/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

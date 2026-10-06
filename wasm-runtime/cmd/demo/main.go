@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
 )
 
 const (

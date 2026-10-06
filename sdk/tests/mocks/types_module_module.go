@@ -8,16 +8,16 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	codec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	types0 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	module "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	gomock "github.com/golang/mock/gomock"
 	mux "github.com/gorilla/mux"
 	runtime "github.com/grpc-ecosystem/grpc-gateway/runtime"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	types1 "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	client "github.com/sidiora-labs/paxeer-network/sdk/client"
-	codec "github.com/sidiora-labs/paxeer-network/sdk/codec"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	types0 "github.com/sidiora-labs/paxeer-network/sdk/types"
-	module "github.com/sidiora-labs/paxeer-network/sdk/types/module"
 	cobra "github.com/spf13/cobra"
 )
 

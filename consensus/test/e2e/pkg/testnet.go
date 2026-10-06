@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

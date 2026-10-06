@@ -1,10 +1,10 @@
 package types
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // ExportMetadata exports all the consensus metadata in the client store so they can be included in clients genesis

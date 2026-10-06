@@ -3,12 +3,12 @@ package legacytx
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/types/multisig"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types/multisig"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 // stdTxSignModeHandler is a SignModeHandler that handles SIGN_MODE_LEGACY_AMINO_JSON

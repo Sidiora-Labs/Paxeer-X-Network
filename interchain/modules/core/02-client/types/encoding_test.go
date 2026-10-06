@@ -1,8 +1,8 @@
 package types_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
 )
 
 func (suite *TypesTestSuite) TestMarshalHeader() {

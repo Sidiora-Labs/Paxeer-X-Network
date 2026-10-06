@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/storage/ledger_db/block"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/block"
 )
 
 // Shared backing store, keyed by path in test builders to simulate restarts.

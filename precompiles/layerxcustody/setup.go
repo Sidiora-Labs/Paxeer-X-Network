@@ -3,8 +3,8 @@
 package layerxcustody
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

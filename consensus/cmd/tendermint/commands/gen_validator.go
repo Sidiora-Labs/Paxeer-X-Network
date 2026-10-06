@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // GenValidatorCmd allows the generation of a keypair for a

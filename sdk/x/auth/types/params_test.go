@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 func TestParamsEqual(t *testing.T) {

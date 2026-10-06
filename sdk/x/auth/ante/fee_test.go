@@ -3,13 +3,13 @@ package ante_test
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	paramstypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	paramstypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 type BadAnteDecoratorOne struct{}

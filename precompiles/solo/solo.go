@@ -9,19 +9,19 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	authante "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	authsigning "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	authante "github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	authsigning "github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 const (

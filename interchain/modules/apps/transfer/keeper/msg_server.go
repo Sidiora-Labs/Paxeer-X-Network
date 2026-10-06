@@ -3,10 +3,10 @@ package keeper
 import (
 	"context"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 )
 
 var logger = paxlog.NewLogger("ibc-go", "modules", "apps", "transfer", "keeper")

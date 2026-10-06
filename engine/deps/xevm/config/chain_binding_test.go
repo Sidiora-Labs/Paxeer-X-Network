@@ -3,8 +3,8 @@ package config_test
 import (
 	"testing"
 
-	engine "github.com/sidiora-labs/paxeer-network/engine/deps/xevm/config"
-	canonical "github.com/sidiora-labs/paxeer-network/modules/evm/config"
+	engine "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/config"
+	canonical "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 )
 
 func TestExecutionAndRPCChainBindingsAgree(t *testing.T) {

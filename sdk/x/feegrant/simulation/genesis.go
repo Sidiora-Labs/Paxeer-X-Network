@@ -4,10 +4,10 @@ import (
 	"math/rand"
 	"time"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/feegrant"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant"
 )
 
 // genFeeGrants returns a slice of randomly generated allowances.

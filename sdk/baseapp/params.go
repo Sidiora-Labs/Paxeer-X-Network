@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // Paramspace defines the parameter subspace to be used for the paramstore.

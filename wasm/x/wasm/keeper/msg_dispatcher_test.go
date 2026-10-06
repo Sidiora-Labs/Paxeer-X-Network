@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper/wasmtesting"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper/wasmtesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func TestDispatchSubmessages(t *testing.T) {

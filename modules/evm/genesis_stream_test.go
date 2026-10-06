@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 )
 

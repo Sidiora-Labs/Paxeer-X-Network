@@ -1,16 +1,16 @@
 package keeper_test
 
 import (
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
 )
 
 type KeeperTestSuite struct {

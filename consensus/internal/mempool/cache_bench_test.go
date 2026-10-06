@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func BenchmarkCacheInsertTime(b *testing.B) {

@@ -1,16 +1,16 @@
 package keeper
 
 import (
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // Keeper defines the IBC fungible transfer keeper

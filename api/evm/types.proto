@@ -3,7 +3,7 @@ package paxprotocol.paxchain.evm;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/evm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types";
 
 message Whitelist {
   repeated string hashes = 1 [(gogoproto.moretags) = "yaml:\"hashes\""];
@@ -14,7 +14,7 @@ message DeferredInfo {
   bytes tx_hash = 2;
   bytes tx_bloom = 3;
   string surplus = 4 [
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
     (gogoproto.nullable) = false
   ];
   string error = 5;

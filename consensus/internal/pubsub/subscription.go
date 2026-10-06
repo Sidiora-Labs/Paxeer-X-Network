@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/queue"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/queue"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var (

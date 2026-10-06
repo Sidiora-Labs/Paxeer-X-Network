@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 )
 
 // ParseConfig retrieves the default environment configuration,

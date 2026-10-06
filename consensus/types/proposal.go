@@ -6,11 +6,11 @@ import (
 	"math/bits"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/protoio"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/protoio"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 var (

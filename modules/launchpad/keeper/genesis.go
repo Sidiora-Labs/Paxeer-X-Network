@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {

@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func cachingStateFetcher(store Store) func() (State, error) {

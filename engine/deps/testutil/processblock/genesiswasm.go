@@ -4,9 +4,9 @@ import (
 	"os"
 	"path/filepath"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func (a *App) NewContract(admin sdk.AccAddress, source string) sdk.AccAddress {

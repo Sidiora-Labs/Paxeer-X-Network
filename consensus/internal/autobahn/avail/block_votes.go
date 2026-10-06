@@ -1,7 +1,7 @@
 package avail
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
 )
 
 type blockVotes struct {

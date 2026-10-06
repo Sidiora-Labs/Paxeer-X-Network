@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestTxFilter(t *testing.T) {

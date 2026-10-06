@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/armon/go-metrics"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	coretypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	coretypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 // SendTransfer handles transfer sending logic. There are 2 possible cases:

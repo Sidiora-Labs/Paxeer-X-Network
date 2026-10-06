@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/stretchr/testify/suite"
 )
 

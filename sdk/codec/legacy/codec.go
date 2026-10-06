@@ -1,9 +1,9 @@
 package legacy
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // Cdc defines a global generic sealed Amino codec to be used throughout sdk. It

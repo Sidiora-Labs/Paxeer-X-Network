@@ -7,11 +7,11 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/conn"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	gogoproto "github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/conn"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 const queueBufferDefault = 1024

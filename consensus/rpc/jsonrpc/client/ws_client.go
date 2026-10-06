@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/paxeer-network/paxlog"
 
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "rpc", "jsonrpc", "client")

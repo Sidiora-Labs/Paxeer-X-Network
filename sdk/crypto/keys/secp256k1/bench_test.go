@@ -4,8 +4,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/internal/benchmarking"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/internal/benchmarking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 func BenchmarkKeyGeneration(b *testing.B) {

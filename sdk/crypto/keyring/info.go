@@ -3,12 +3,12 @@ package keyring
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/legacy"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/multisig"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/legacy"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/multisig"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // Info is the publicly exposed information about a keypair

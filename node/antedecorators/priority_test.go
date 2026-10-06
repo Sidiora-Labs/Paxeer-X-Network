@@ -6,17 +6,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle"
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authante "github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authante "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 )
 
 func TestPriorityAnteDecorator(t *testing.T) {

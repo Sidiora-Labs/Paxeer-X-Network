@@ -5,21 +5,21 @@ import (
 	"fmt"
 	"time"
 
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/suite"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
 )
 
 var (

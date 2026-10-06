@@ -1,15 +1,15 @@
 package capability_test
 
 import (
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	dbm "github.com/tendermint/tm-db"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func (suite *CapabilityTestSuite) TestGenesis() {

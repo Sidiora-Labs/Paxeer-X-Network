@@ -16,7 +16,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // Scanner is implemented by proto types whose generated *.wireguard.go adds a

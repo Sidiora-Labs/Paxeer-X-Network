@@ -3,10 +3,10 @@ package keeper
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 )
 
 func (k Keeper) AfterValidatorBonded(ctx sdk.Context, address sdk.ConsAddress, _ sdk.ValAddress) {

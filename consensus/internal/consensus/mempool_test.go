@@ -13,16 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/code"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	tmpubsub "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/store"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/code"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	tmpubsub "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func ensureNewBlockHeightEventually(t *testing.T, newBlockCh <-chan tmpubsub.Message, expectedHeight int64) {

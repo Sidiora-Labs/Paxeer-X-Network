@@ -16,20 +16,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/cmd/tendermint/commands"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/cmd/tendermint/commands/debug"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/cmd/tendermint/commands"
-	"github.com/sidiora-labs/paxeer-network/consensus/cmd/tendermint/commands/debug"
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 )
 
 // DONTCOVER

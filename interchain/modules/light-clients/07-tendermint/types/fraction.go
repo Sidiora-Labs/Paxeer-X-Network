@@ -1,8 +1,8 @@
 package types
 
 import (
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
 )
 
 // DefaultTrustLevel is the tendermint light client default trust level

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // DefaultMaxCharacterLength defines the default maximum character length used

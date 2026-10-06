@@ -6,7 +6,7 @@ import (
 	ics23 "github.com/confio/ics23/go"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 // Committer is the unified write-side interface for the state-commitment

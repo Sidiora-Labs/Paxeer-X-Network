@@ -7,17 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	clientutils "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/client/utils"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	ibcclient "github.com/sidiora-labs/paxeer-network/interchain/modules/core/client"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clientutils "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/client/utils"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	ibcclient "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // QueryConnection returns a connection end.

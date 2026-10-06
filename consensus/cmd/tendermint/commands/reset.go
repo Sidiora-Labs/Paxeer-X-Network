@@ -4,11 +4,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/spf13/cobra"
 )
 

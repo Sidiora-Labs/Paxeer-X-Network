@@ -5,16 +5,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	ctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	ctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 )
 
 // ValidatorInfo is info about the node's validator, same as Tendermint,

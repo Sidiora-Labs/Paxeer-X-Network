@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp/helpers"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp/helpers"
 )
 
 // SetupSimulation creates the config, db (levelDB), temporary directory and logger for

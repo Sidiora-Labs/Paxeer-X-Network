@@ -5,9 +5,9 @@ package signing
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	types1 "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 const CurrentVersion uint16 = 2

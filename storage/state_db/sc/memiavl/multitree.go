@@ -15,11 +15,11 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	commonevm "github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	"github.com/sidiora-labs/paxeer-network/storage/common/utils"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/wal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	commonevm "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/wal"
 )
 
 const (

@@ -11,20 +11,20 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	eviclient "github.com/sidiora-labs/paxeer-network/sdk/x/evidence/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/client/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	eviclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 )
 
 var (

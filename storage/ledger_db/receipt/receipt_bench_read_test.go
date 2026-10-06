@@ -7,13 +7,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc/ethbloom"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	dbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/rpc/ethbloom"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	dbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
 )
 
 const (

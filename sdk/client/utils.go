@@ -1,12 +1,12 @@
 package client
 
 import (
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
 	"github.com/spf13/pflag"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 )
 
 // Paginate returns the correct starting and ending index for a paginated query,

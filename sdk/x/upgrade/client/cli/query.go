@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 )
 
 // GetQueryCmd returns the parent command for all x/upgrade CLi query commands.

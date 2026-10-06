@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/bitutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,8 +7,8 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // Parameter store keys

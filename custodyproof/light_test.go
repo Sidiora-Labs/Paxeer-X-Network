@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	lxverify "github.com/sidiora-labs/paxeer-network/layerxproof/verify"
+	lxverify "github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmed25519 "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const lightVectors = "../tests/fixtures/custody/paxeer-light-v1"

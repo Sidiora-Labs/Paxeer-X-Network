@@ -3,9 +3,9 @@ package factory
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 const (

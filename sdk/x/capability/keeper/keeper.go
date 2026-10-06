@@ -5,12 +5,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
 )
 
 var logger = paxlog.NewLogger("cosmos", "x", "capability", "keeper")

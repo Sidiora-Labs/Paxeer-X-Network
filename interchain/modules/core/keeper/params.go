@@ -1,10 +1,10 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 // GetParams returns the total set of ibc core module parameters.

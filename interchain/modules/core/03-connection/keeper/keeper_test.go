@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 type KeeperTestSuite struct {

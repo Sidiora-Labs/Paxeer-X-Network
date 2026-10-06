@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func TestSignWithPath(t *testing.T) {

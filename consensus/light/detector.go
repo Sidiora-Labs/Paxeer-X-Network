@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // The detector component of the light client detects and handles attacks on the light client.

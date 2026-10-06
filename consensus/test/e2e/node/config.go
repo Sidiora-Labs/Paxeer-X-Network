@@ -7,7 +7,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/test/e2e/app"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/app"
 )
 
 // Config is the application configuration.

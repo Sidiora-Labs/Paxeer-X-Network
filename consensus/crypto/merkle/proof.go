@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 )
 
 const (

@@ -9,23 +9,23 @@ import (
 	"testing"
 	"time"
 
-	distributiontypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
+	distributiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
 
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper/wasmtesting"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper/wasmtesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 // When migrated to go 1.16, embed package should be used instead.

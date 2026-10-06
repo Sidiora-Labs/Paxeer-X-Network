@@ -10,6 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	receiptstore "github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -19,14 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/export"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/golang-lru/v2/expirable"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	receiptstore "github.com/sidiora-labs/paxeer-network/storage/ledger_db/receipt"
 )
 
 const (

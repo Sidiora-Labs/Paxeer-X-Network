@@ -6,10 +6,10 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -308,8 +308,8 @@ type MsgSetCap struct {
 	Authority   string                                               `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
 	ChainID     uint64                                               `protobuf:"varint,2,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	Asset       Address20                                            `protobuf:"bytes,3,opt,name=asset,proto3,customtype=Address20" json:"asset"`
-	MaxInFlight github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,4,opt,name=max_in_flight,json=maxInFlight,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Int" json:"max_in_flight"`
-	MaxPerTx    github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,5,opt,name=max_per_tx,json=maxPerTx,proto3,customtype=github.com/sidiora-labs/paxeer-network/sdk/types.Int" json:"max_per_tx"`
+	MaxInFlight github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,4,opt,name=max_in_flight,json=maxInFlight,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int" json:"max_in_flight"`
+	MaxPerTx    github_com_sidiora_labs_paxeer_network_sdk_types.Int `protobuf:"bytes,5,opt,name=max_per_tx,json=maxPerTx,proto3,customtype=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int" json:"max_per_tx"`
 }
 
 func (m *MsgSetCap) Reset()      { *m = MsgSetCap{} }

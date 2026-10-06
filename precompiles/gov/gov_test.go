@@ -6,21 +6,21 @@ import (
 	"math/big"
 	"testing"
 
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/ante"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common"
-	"github.com/sidiora-labs/paxeer-network/precompiles/gov"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/gov"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 )
 
 //go:embed abi.json

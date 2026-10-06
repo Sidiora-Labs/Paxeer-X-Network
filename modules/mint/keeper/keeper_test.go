@@ -4,15 +4,15 @@ import (
 	"testing"
 	"time"
 
-	epochTypes "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/keeper"
-	mintKeeper "github.com/sidiora-labs/paxeer-network/modules/mint/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	mintTypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	epochTypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/keeper"
+	mintKeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	mintTypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
 	"github.com/stretchr/testify/require"
 )
 

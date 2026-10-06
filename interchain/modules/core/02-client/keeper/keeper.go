@@ -6,19 +6,19 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
 )
 
 // KeyInboundEnabled is the param key for inbound enabled

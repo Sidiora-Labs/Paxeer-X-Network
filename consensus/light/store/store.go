@@ -1,6 +1,6 @@
 package store
 
-import "github.com/sidiora-labs/paxeer-network/consensus/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
 // Store is anything that can persistently store headers.
 type Store interface {

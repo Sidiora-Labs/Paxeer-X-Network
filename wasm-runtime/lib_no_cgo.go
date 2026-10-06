@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // Checksum represents a hash of the Wasm bytecode that serves as an ID. Must be generated from this library.

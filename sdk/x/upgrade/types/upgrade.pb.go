@@ -5,11 +5,11 @@ package types
 
 import (
 	fmt "fmt"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/types"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	types1 "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

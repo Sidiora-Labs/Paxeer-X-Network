@@ -12,7 +12,7 @@ When it sees that line, `cosmovisor` stops the current binary, switches to the b
 
 ## Installation
 
-`cosmovisor` is its own Go module (`github.com/sidiora-labs/paxeer-network/sdk/cosmovisor`, see [`go.mod`](go.mod)). Build it from the repository root:
+`cosmovisor` is its own Go module (`github.com/Sidiora-Labs/Paxeer-X-Network/sdk/cosmovisor`, see [`go.mod`](go.mod)). Build it from the repository root:
 
 ```
 make -C sdk cosmovisor

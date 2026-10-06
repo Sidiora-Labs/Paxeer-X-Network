@@ -1,20 +1,20 @@
 package wasmbinding
 
 import (
-	epochwasm "github.com/sidiora-labs/paxeer-network/modules/epoch/client/wasm"
-	epochkeeper "github.com/sidiora-labs/paxeer-network/modules/epoch/keeper"
-	evmwasm "github.com/sidiora-labs/paxeer-network/modules/evm/client/wasm"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	oraclewasm "github.com/sidiora-labs/paxeer-network/modules/oracle/client/wasm"
-	oraclekeeper "github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	tokenfactorywasm "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/client/wasm"
-	tokenfactorykeeper "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/keeper"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	authkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	epochwasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/client/wasm"
+	epochkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
+	evmwasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/client/wasm"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	oraclewasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/client/wasm"
+	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	tokenfactorywasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/client/wasm"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func RegisterCustomPlugins(

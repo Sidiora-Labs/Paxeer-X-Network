@@ -10,15 +10,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	atypes "github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/tcp"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	atypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/tcp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func makeTestNodeKey(seed []byte) types.NodeKey {

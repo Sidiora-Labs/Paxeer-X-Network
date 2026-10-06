@@ -1,8 +1,8 @@
 package disktable
 
 import (
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable/segment"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable/segment"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
 )
 
 // This file contains various messages that can be sent to the disk table's control loop.

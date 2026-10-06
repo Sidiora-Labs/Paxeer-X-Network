@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 func TestGetPruningOptionsFromFlags(t *testing.T) {

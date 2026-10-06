@@ -1,9 +1,9 @@
 package processblock
 
 import (
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
 )
 
 func (a *App) FundAccount(acc sdk.AccAddress, amount int64) {

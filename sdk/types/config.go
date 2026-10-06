@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 )
 
 // DefaultKeyringServiceName defines a default service name for the keyring.

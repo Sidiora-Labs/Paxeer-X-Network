@@ -3,7 +3,7 @@ package factory
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestMakeHeader(t *testing.T) {

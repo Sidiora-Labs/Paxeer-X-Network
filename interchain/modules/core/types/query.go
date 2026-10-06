@@ -3,12 +3,12 @@ package types
 import (
 	"github.com/gogo/protobuf/grpc"
 
-	client "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connection "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	channel "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connection "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	channel "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 )
 
 // QueryServer defines the IBC interfaces that the gRPC query server must implement

@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	clist "github.com/sidiora-labs/paxeer-network/consensus/internal/libs/clist"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	clist "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/clist"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var _ service.Service = (*Reactor)(nil)

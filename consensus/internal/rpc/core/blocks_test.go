@@ -9,10 +9,10 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 func TestBlockchainInfo(t *testing.T) {

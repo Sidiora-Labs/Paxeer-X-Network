@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	statefactory "github.com/sidiora-labs/paxeer-network/consensus/internal/state/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	statefactory "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // setupTestCase does setup common to all test cases.

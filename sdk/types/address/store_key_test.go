@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
 )
 
 func TestStoreKeySuite(t *testing.T) {

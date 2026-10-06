@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
 )
 
 var logger = paxlog.NewLogger("tendermint", "cmd", "tendermint", "commands", "debug")

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 )
 
 var logger = paxlog.NewLogger("cosmos", "snapshots")

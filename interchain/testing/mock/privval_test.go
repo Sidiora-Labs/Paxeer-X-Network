@@ -3,13 +3,13 @@ package mock_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
 )
 
 const chainID = "testChain"

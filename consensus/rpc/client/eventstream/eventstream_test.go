@@ -10,13 +10,13 @@ import (
 	"github.com/fortytw2/leaktest"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
-	rpccore "github.com/sidiora-labs/paxeer-network/consensus/internal/rpc/core"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client/eventstream"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
+	rpccore "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/rpc/core"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/eventstream"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestStream_filterOrder(t *testing.T) {

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sort"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
 
 	gogotypes "github.com/gogo/protobuf/types"
 )

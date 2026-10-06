@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 func (k *Keeper) VerifyBalance(ctx sdk.Context, addr common.Address) {

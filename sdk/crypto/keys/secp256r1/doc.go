@@ -6,8 +6,8 @@ import (
 	"crypto/elliptic"
 	"fmt"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 const (

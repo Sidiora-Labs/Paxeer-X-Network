@@ -4,20 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
 	"github.com/spf13/cobra"
 
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	porttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	porttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 const (

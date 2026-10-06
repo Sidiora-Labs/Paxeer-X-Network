@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/transient"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/transient"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 var k, v = []byte("hello"), []byte("world")

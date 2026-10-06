@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/kit/metrics"
 	"github.com/holiman/uint256"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 )
 
 // Proxy wraps an ABCI application and records ABCI method timings.

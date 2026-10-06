@@ -5,24 +5,24 @@ import (
 	"testing"
 	"time"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/protobuf/proto"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/teststaking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/teststaking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func bootstrapHandlerGenesisTest(t *testing.T, power int64, numAddrs int, accAmount sdk.Int) (*paxapp.App, sdk.Context, []sdk.AccAddress, []sdk.ValAddress) {

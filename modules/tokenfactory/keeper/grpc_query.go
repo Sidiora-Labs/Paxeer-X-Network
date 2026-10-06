@@ -3,11 +3,11 @@ package keeper
 import (
 	"context"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 )
 
 var _ types.QueryServer = Keeper{}

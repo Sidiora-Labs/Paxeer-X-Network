@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/spf13/pflag"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/client/cli"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func Test_splitAndCall_NoMessages(t *testing.T) {

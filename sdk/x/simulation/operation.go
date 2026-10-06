@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
 )
 
 // entry kinds for use within OperationEntry

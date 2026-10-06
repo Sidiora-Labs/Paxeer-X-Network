@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math/bits"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 	ics23 "github.com/confio/ics23/go"
-	"github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
 )
 
 // ConvertExistenceProof will convert the given proof into a valid

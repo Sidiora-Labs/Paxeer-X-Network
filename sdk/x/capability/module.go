@@ -9,17 +9,17 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 )
 
 var (

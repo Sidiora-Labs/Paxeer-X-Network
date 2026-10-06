@@ -1,9 +1,9 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
 )
 
 // IsControllerEnabled retrieves the controller enabled boolean from the paramstore.

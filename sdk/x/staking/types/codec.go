@@ -1,12 +1,12 @@
 package types
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/msgservice"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/msgservice"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
 )
 
 // RegisterLegacyAminoCodec registers the necessary x/staking interfaces and concrete types

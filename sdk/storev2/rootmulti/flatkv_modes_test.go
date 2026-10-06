@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	storerootmulti "github.com/sidiora-labs/paxeer-network/sdk/store/rootmulti"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	storerootmulti "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/rootmulti"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/stretchr/testify/require"
 )
 

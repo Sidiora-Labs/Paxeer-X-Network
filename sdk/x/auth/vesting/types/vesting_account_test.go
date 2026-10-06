@@ -4,14 +4,14 @@ import (
 	"testing"
 	"time"
 
-	tmtime "github.com/sidiora-labs/paxeer-network/sdk/std"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/vesting/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/vesting/types"
 )
 
 var (

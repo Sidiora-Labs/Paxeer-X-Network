@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // RetrySignerClient wraps SignerClient adding retry for each operation (except

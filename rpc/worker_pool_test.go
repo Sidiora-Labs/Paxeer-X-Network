@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
 	"github.com/stretchr/testify/require"
 )
 

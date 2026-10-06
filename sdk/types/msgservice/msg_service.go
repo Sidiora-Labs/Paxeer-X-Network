@@ -6,8 +6,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // RegisterMsgServiceDesc registers all type_urls from Msg services described

@@ -3,12 +3,12 @@ package testutil
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govcli "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
 )
 
 var commonArgs = []string{

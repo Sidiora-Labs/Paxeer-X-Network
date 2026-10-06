@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 func TestDefaultTxDecoderError(t *testing.T) {

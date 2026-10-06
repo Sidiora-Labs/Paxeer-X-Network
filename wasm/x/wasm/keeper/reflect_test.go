@@ -8,18 +8,18 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	authkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 // ReflectInitMsg is {}

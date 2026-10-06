@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard/wgtest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard/wgtest"
 )
 
 // TestWiring_EvidenceChannel asserts that the evidence type implements

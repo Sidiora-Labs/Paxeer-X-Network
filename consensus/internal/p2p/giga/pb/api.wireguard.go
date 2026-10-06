@@ -2,9 +2,9 @@
 package pb
 
 import (
-	pb "github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	wireguard "github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	utils "github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	wireguard "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	utils "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // SchemaForLaneReq is the wireguard.Schema generated for p2p.giga.LaneReq.

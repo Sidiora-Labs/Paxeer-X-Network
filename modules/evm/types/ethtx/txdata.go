@@ -3,10 +3,10 @@ package ethtx
 import (
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 var (

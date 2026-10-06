@@ -1,13 +1,13 @@
 package params
 
 import (
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
-	srvconfig "github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
+	srvconfig "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 const (

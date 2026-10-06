@@ -4,16 +4,16 @@ import (
 	gocontext "context"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/mint/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/keeper"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types" // TODO: Replace this with pax-chain. Leaving it for now otherwise tests fail
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types" // TODO: Replace this with pax-chain. Leaving it for now otherwise tests fail
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type MintTestSuite struct {

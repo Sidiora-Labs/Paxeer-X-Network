@@ -8,21 +8,21 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil"
-	genutilcli "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/cli"
-	genutiltest "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil"
+	genutilcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/cli"
+	genutiltest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/testutil"
 )
 
 var testMbm = module.NewBasicManager(genutil.AppModuleBasic{})

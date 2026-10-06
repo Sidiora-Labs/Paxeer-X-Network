@@ -5,15 +5,15 @@ import (
 	"errors"
 	fmt "fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/msgservice"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/msgservice"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 )
 
 var (

@@ -7,9 +7,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func inPoolAll(types.NodeID) bool { return true }

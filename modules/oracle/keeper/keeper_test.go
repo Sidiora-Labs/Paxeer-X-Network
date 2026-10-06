@@ -7,14 +7,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/utils"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func TestExchangeRate(t *testing.T) {

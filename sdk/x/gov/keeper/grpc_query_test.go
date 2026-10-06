@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 func (suite *KeeperTestSuite) TestGRPCQueryProposal() {

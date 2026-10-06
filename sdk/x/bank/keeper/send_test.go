@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"testing"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 	"github.com/stretchr/testify/require"
 )
 

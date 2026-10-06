@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // Client is the subset of the RPC client interface consumed by Stream.

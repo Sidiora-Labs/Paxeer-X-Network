@@ -1,9 +1,9 @@
 package signing
 
 import (
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 )
 
 // SigVerifiableTx defines a transaction interface for all signature verification

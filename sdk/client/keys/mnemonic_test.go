@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
 )
 
 func Test_RunMnemonicCmdNormal(t *testing.T) {

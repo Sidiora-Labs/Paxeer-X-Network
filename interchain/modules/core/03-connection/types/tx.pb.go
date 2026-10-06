@@ -6,11 +6,11 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	types1 "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"

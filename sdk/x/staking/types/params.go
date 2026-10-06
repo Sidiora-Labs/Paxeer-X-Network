@@ -8,9 +8,9 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // Staking params default values

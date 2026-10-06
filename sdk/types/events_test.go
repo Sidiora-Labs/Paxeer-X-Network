@@ -5,12 +5,12 @@ import (
 	"reflect"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	"github.com/stretchr/testify/suite"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	testdata "github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	testdata "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type eventsTestSuite struct {

@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func TestBakeableTracerName(t *testing.T) {

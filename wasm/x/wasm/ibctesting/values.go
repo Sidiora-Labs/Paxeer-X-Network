@@ -7,12 +7,12 @@ package ibctesting
 import (
 	"time"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	ibctransfertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
+	ibctransfertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
 )
 
 const (

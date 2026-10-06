@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	jsonrpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	jsonrpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 /*

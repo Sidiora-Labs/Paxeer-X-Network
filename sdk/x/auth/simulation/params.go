@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"math/rand"
 
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/simulation"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
 )
 
 const (

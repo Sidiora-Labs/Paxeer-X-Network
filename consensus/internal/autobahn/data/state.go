@@ -9,10 +9,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/consensus/persist"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/consensus/persist"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 const blocksCacheSize = 4000

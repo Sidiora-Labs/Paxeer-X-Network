@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package mux;
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/mux/pb";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/mux/pb";
 
 message StreamKindConfig {
   uint64 kind = 1;

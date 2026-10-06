@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type RoundVoteSet struct {

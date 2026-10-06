@@ -3,7 +3,7 @@ package cli_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/client/cli"
 	"github.com/stretchr/testify/require"
 )
 

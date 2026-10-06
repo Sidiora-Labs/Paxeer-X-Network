@@ -4,8 +4,8 @@ import (
 	"github.com/gogo/protobuf/grpc"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/client/cli"
 )
 
 // Name returns the IBC port ICS name.

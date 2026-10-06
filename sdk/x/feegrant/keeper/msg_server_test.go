@@ -1,9 +1,9 @@
 package keeper_test
 
 import (
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/feegrant"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant"
 )
 
 func (suite *KeeperTestSuite) TestGrantAllowance() {

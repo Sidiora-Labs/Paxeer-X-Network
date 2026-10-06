@@ -3,7 +3,7 @@ package testutil
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
 	"github.com/stretchr/testify/suite"
 )
 

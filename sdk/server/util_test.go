@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
 )
 
 var errCancelledInPreRun = errors.New("cancelled in prerun")

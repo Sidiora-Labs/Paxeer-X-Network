@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 const (

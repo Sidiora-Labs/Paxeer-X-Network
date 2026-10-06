@@ -4,10 +4,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	banktypes "github.com/sidiora-labs/paxeer-network/engine/deps/xbank/types"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xbank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func (suite *IntegrationTestSuite) TestViewKeeperStoreTrace() {

@@ -1,7 +1,7 @@
 package types
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // BankKeeper defines the expected interface contract the vesting module requires

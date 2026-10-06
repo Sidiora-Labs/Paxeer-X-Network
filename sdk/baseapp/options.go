@@ -6,10 +6,10 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // File for storing in-package BaseApp optional functions,

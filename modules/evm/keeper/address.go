@@ -1,10 +1,10 @@
 package keeper
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 func (k *Keeper) SetAddressMapping(ctx sdk.Context, paxAddress sdk.AccAddress, evmAddress common.Address) {

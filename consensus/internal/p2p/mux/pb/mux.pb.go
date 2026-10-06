@@ -254,7 +254,7 @@ const file_p2p_mux_mux_proto_rawDesc = "" +
 	"\r_payload_sizeB\n" +
 	"\n" +
 	"\b_msg_endB\b\n" +
-	"\x06_closeBFZDgithub.com/sidiora-labs/paxeer-network/consensus/internal/p2p/mux/pbb\x06proto3"
+	"\x06_closeBFZDgithub.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/mux/pbb\x06proto3"
 
 var (
 	file_p2p_mux_mux_proto_rawDescOnce sync.Once

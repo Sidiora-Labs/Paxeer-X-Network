@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 )
 
 // the purpose of this test is primarily to ensure that the randomness

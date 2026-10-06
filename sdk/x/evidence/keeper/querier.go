@@ -1,14 +1,14 @@
 package keeper
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 )
 
 func NewQuerier(k Keeper, legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // DefaultTimePerBlock is the default value for maximum expected time per block (in nanoseconds).

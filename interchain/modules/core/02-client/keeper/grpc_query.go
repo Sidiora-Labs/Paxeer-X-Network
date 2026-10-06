@@ -7,16 +7,16 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var _ types.QueryServer = Keeper{}

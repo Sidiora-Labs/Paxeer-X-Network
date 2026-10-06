@@ -5,19 +5,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authclient "github.com/sidiora-labs/paxeer-network/sdk/x/auth/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/legacy/legacytx"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/legacy/legacytx"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 var (

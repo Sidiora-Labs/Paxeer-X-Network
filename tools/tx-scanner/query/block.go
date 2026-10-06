@@ -3,8 +3,8 @@ package query
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/grpc/tmservice"
-	"github.com/sidiora-labs/paxeer-network/tools/tx-scanner/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/grpc/tmservice"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/client"
 )
 
 // GetLatestBlock query the latest block data

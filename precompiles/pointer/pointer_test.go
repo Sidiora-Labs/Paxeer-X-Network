@@ -4,16 +4,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/precompiles/pointer"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

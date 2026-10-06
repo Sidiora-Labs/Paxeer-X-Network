@@ -3,7 +3,7 @@ package merkle
 import (
 	"hash"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 )
 
 // TODO: make these have a large predefined capacity

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // waitForHeight waits for the network to reach a certain height (or above),

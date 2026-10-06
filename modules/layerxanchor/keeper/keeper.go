@@ -8,10 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type Keeper struct {

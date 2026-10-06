@@ -7,22 +7,22 @@ import (
 	"testing"
 	"time"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/tests/mocks"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/genesis"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/tests/mocks"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/genesis"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 )
 
 var errFoo = errors.New("dummy")

@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
 )
 
 const cacheMeterName = "paxdb_pebblecache"

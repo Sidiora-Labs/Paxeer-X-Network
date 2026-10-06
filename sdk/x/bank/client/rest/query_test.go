@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 type IntegrationTestSuite struct {

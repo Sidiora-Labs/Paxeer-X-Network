@@ -1,12 +1,12 @@
 package types
 
 import (
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // message types for the IBC client

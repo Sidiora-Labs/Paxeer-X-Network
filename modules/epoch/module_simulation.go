@@ -3,15 +3,15 @@ package epoch
 import (
 	"math/rand"
 
-	epochsimulation "github.com/sidiora-labs/paxeer-network/modules/epoch/simulation"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	paxappparams "github.com/sidiora-labs/paxeer-network/node/params"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/simulation"
-	"github.com/sidiora-labs/paxeer-network/testutil/sample"
+	epochsimulation "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	paxappparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/sample"
 )
 
 // avoid unused import issue

@@ -1,8 +1,8 @@
 package types
 
 import (
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // AnchorReader is everything custody trusts about LayerX. A withdrawal or a

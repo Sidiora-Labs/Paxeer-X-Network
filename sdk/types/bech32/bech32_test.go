@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 )
 
 func TestEncodeAndDecode(t *testing.T) {

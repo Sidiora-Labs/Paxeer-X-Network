@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/simulation"
 
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
 )
 
 const (

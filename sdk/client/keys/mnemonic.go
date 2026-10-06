@@ -8,7 +8,7 @@ import (
 	bip39 "github.com/cosmos/go-bip39"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/input"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/input"
 )
 
 const (

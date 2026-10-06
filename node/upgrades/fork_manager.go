@@ -3,9 +3,9 @@ package upgrades
 import (
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	goutils "github.com/paxeer-network/pax-utils"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 var logger = paxlog.NewLogger("app", "upgrades")

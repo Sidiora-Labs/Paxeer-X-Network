@@ -7,11 +7,11 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	vestexported "github.com/sidiora-labs/paxeer-network/sdk/x/auth/vesting/exported"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	vestexported "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/vesting/exported"
 )
 
 // Compile-time type assertions

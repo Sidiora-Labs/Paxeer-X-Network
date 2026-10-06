@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/spf13/viper"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	genutilcli "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	genutilcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/cli"
 )
 
 func ExecInitCmd(testMbm module.BasicManager, home string, cdc codec.Codec) error {

@@ -1,7 +1,7 @@
 package keeper_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 func (suite *KeeperTestSuite) TestCoreParams_GetSet() {

@@ -7,7 +7,7 @@ import "evm/receipt.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/evm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types";
 
 service Msg {
   rpc EVMTransaction(MsgEVMTransaction) returns (MsgEVMTransactionResponse);
@@ -20,7 +20,7 @@ service Msg {
 
 message MsgEVMTransaction {
   google.protobuf.Any data = 1;
-  bytes derived = 2 [(gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/modules/evm/derived.Derived"];
+  bytes derived = 2 [(gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/derived.Derived"];
 }
 
 message MsgEVMTransactionResponse {
@@ -33,7 +33,7 @@ message MsgEVMTransactionResponse {
 
 message MsgInternalEVMCall {
   string sender = 1;
-  string value = 2 [(gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int"];
+  string value = 2 [(gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int"];
   string to = 3;
   bytes data = 4;
 }
@@ -57,7 +57,7 @@ message MsgSend {
   string to_address = 2;
   repeated cosmos.base.v1beta1.Coin amount = 3 [
     (gogoproto.nullable) = false,
-    (gogoproto.castrepeated) = "github.com/sidiora-labs/paxeer-network/sdk/types.Coins"
+    (gogoproto.castrepeated) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Coins"
   ];
 }
 

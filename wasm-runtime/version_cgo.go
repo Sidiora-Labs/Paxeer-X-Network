@@ -3,7 +3,7 @@
 package cosmwasm
 
 import (
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/internal/api"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/internal/api"
 )
 
 func libwasmvmVersionImpl() (string, error) {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
 )
 
 func TestValidateParams(t *testing.T) {

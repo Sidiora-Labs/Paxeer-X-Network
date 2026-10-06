@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 func TestAppQC(keys []types.SecretKey, proposal *types.AppProposal) *types.AppQC {

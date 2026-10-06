@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
 )
 
 // MigrateGenesis accepts exported v1.0.0 IBC client genesis file and migrates it to:

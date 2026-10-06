@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/client/utils"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // GetCmdQueryConnections defines the command to query all the connection ends

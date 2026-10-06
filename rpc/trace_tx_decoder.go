@@ -1,10 +1,10 @@
 package evmrpc
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtx "github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtx "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
 )
 
 type traceTxConfig struct {

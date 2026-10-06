@@ -15,15 +15,15 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	abcitypes "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/inspect"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	indexermocks "github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer/mocks"
-	statemocks "github.com/sidiora-labs/paxeer-network/consensus/internal/state/mocks"
-	httpclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abcitypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/inspect"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	indexermocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer/mocks"
+	statemocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/mocks"
+	httpclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestInspectConstructor(t *testing.T) {
@@ -255,7 +255,7 @@ func TestBlockResults(t *testing.T) {
 	testHeight := int64(1)
 	testGasUsed := int64(100)
 	stateStoreMock := &statemocks.Store{}
-	//	tmstate "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/state"
+	//	tmstate "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/state"
 	stateStoreMock.On("LoadFinalizeBlockResponses", testHeight).Return(&abcitypes.ResponseFinalizeBlock{
 		TxResults: []*abcitypes.ExecTxResult{
 			{

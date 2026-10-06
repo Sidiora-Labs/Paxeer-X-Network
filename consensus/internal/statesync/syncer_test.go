@@ -11,15 +11,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/statesync/mocks"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	ssproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/statesync"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/statesync/mocks"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	ssproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/statesync"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 func TestSyncer_SyncAny(t *testing.T) {

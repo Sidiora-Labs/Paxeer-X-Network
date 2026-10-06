@@ -3,9 +3,9 @@ package migrations_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/migrations"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/migrations"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 )
 

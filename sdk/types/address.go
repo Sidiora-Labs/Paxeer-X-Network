@@ -12,11 +12,11 @@ import (
 	simplelru "github.com/hashicorp/golang-lru/v2/simplelru"
 	yaml "gopkg.in/yaml.v2"
 
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/internal/conv"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/internal/conv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 const (

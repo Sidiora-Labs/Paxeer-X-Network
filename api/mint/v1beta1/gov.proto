@@ -4,7 +4,7 @@ package paxprotocol.paxchain.mint;
 import "gogoproto/gogo.proto";
 import "mint/v1beta1/mint.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/mint/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types";
 
 message UpdateMinterProposal {
   option (gogoproto.equal) = false;

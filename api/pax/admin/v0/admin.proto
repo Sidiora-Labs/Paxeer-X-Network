@@ -3,7 +3,7 @@ package paxprotocol.paxchain.admin.v0;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/admin/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/admin/types";
 
 // AdminService provides runtime administration endpoints.
 service AdminService {

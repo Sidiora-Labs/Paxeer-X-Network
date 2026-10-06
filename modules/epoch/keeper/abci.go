@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils/metrics"
 )
 
 var logger = paxlog.NewLogger("x", "epoch", "keeper")

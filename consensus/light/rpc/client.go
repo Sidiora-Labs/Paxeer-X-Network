@@ -10,15 +10,15 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	service "github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	service "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // KeyPathFunc builds a merkle path out of the given path and key.

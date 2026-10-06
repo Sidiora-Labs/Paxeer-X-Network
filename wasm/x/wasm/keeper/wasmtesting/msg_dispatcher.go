@@ -1,9 +1,9 @@
 package wasmtesting
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 type MockMsgDispatcher struct {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/admin"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/admin"
 	"github.com/stretchr/testify/require"
 )
 

@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"strconv"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
-	icatypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
+	icatypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // GetCmdParams returns the command handler for the host submodule parameter querying.

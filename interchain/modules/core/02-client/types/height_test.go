@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
 )
 
 func TestZeroHeight(t *testing.T) {

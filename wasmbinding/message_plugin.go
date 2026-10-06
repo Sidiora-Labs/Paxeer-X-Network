@@ -1,13 +1,13 @@
 package wasmbinding
 
 import (
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 type CustomRouter struct {

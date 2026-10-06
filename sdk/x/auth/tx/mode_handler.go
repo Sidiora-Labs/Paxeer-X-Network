@@ -3,8 +3,8 @@ package tx
 import (
 	"fmt"
 
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 // DefaultSignModes are the default sign modes enabled for protobuf transactions.

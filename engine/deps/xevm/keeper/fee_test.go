@@ -3,10 +3,10 @@ package keeper_test
 import (
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

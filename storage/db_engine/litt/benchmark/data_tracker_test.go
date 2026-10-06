@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	config2 "github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/benchmark/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	config2 "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/benchmark/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 	"github.com/stretchr/testify/require"
 )
 

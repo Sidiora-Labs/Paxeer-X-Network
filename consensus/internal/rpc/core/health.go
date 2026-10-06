@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // Health gets node health. Returns empty result (200 OK) on success, no

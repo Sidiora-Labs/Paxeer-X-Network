@@ -11,11 +11,11 @@ import (
 	"github.com/fortytw2/leaktest"
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/tcp"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/tcp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func makeInfo(key NodeSecretKey) types.NodeInfo {

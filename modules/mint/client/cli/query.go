@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
 )
 
 // GetQueryCmd returns the cli query commands for the minting module.

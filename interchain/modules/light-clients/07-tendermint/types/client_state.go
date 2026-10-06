@@ -4,19 +4,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	ics23 "github.com/confio/ics23/go"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var _ exported.ClientState = (*ClientState)(nil)

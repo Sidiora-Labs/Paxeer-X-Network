@@ -3,7 +3,7 @@ package paxprotocol.paxchain.layerxexchange;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types";
 
 // Market is one LayerX perps market Paxeer accepts order intents for.
 // Identifiers are 64 lowercase hex characters.

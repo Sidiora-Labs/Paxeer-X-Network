@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	tmprotobits "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/libs/bits"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	tmprotobits "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/libs/bits"
 )
 
 func randBitArray(bits int) *BitArray {

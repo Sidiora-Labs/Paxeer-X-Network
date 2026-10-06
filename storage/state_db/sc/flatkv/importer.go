@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	paxdbtypes "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/lthash"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	paxdbtypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/lthash"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 	"go.opentelemetry.io/otel/metric"
 )
 

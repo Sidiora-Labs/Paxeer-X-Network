@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 
 	"github.com/stretchr/testify/assert"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/app"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/app"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 )
 
 func TestSnapshotter(t *testing.T) {

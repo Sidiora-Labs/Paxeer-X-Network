@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"math/big"
 
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // signatureFromBytes function roughly copied from secp256k1_nocgo.go

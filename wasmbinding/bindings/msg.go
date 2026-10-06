@@ -1,8 +1,8 @@
 package bindings
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // / CreateDenom creates a new factory denom, of denomination:

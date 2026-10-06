@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"path/filepath"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	bam "github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	bam "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // NewApp creates a simple mock kvstore app for testing. It should work

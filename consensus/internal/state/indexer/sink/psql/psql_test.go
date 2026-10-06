@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 
 	// Register the Postgres database driver.
 	_ "github.com/lib/pq"

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 func TestAtomicSend(t *testing.T) {

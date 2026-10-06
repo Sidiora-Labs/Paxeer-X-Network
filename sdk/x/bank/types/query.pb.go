@@ -6,12 +6,12 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -164,7 +164,7 @@ var xxx_messageInfo_QueryAllBalancesRequest proto.InternalMessageInfo
 // method.
 type QueryAllBalancesResponse struct {
 	// balances is the balances of all the coins.
-	Balances github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=balances,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.Coins" json:"balances"`
+	Balances github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=balances,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Coins" json:"balances"`
 	// pagination defines the pagination in the response.
 	Pagination *query.PageResponse `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
 }
@@ -262,7 +262,7 @@ var xxx_messageInfo_QuerySpendableBalancesRequest proto.InternalMessageInfo
 // an account's spendable balances.
 type QuerySpendableBalancesResponse struct {
 	// balances is the spendable balances of all the coins.
-	Balances github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=balances,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.Coins" json:"balances"`
+	Balances github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=balances,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Coins" json:"balances"`
 	// pagination defines the pagination in the response.
 	Pagination *query.PageResponse `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
 }
@@ -360,7 +360,7 @@ var xxx_messageInfo_QueryTotalSupplyRequest proto.InternalMessageInfo
 // method
 type QueryTotalSupplyResponse struct {
 	// supply is the supply of the coins
-	Supply github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=supply,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.Coins" json:"supply"`
+	Supply github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=supply,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Coins" json:"supply"`
 	// pagination defines the pagination in the response.
 	//
 	// Since: cosmos-sdk 0.43

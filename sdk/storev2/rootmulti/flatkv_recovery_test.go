@@ -5,7 +5,7 @@ package rootmulti
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
 	"github.com/stretchr/testify/require"
 )
 

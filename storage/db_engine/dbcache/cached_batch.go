@@ -3,7 +3,7 @@ package dbcache
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 // cachedBatch wraps a types.Batch and applies pending mutations to the cache

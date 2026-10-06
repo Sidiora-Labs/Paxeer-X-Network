@@ -3,8 +3,8 @@ package query
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

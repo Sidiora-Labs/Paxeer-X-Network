@@ -7,13 +7,13 @@ import (
 	"sort"
 	"strings"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // ParseDenomTrace parses a string with the ibc prefix (denom trace) and the base denomination

@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
-	"github.com/sidiora-labs/paxeer-network/wasmbinding/bindings"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasmbinding/bindings"
 )
 
 func EncodeCallEVM(rawMsg json.RawMessage, sender sdk.AccAddress, info wasmvmtypes.MessageInfo) ([]sdk.Msg, error) {

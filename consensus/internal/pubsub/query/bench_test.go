@@ -3,8 +3,8 @@ package query_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
 )
 
 const testQuery = `tm.events.type='NewBlock' AND abci.account.name='Igor'`

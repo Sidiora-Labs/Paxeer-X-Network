@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 	"github.com/fortytw2/leaktest"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
 )
 
 const maxPingPongPacketSize = 1024 // bytes

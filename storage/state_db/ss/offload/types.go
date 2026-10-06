@@ -3,7 +3,7 @@ package offload
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 // Ack is the generic acknowledgement returned by a history offload transport.

@@ -3,9 +3,9 @@ package p2p
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/conn"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/conn"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
 )
 
 func TestHandshakeMsgConv(t *testing.T) {

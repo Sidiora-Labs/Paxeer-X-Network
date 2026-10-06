@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	icatypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	icatypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *KeeperTestSuite) TestRegisterInterchainAccount() {

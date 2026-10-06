@@ -3,7 +3,7 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 )
 
 // NewGenesisState creates a new GenesisState object

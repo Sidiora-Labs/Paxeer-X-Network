@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc20"
 	"github.com/stretchr/testify/require"
 )
 

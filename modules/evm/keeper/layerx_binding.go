@@ -6,11 +6,11 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // GetLayerXDid returns the Ed25519 public key of the did:layerx identity bound

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	cryptoproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	privvalproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	cryptoproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	privvalproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func DefaultValidationRequestHandler(

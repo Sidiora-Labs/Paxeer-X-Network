@@ -1,10 +1,10 @@
 package oracle
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 )
 
 // Tally calculates the median and returns it. Sets the set of voters to be rewarded, i.e. voted within

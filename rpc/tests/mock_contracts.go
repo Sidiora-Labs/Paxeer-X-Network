@@ -7,19 +7,19 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/derived"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/derived"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 func cw20Initializer(mnemonic string, pointer bool) func(ctx sdk.Context, a *app.App) {

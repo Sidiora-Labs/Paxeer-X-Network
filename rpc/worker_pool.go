@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
 )
 
 // WorkerPool manages a pool of goroutines for concurrent task execution

@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	provider_mocks "github.com/sidiora-labs/paxeer-network/consensus/light/provider/mocks"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	provider_mocks "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/mocks"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 // privKeys is a helper type for testing.

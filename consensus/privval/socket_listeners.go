@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
 )
 
 const (

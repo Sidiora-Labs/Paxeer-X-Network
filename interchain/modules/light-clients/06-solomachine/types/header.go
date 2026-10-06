@@ -3,11 +3,11 @@ package types
 import (
 	"strings"
 
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var _ exported.Header = &Header{}

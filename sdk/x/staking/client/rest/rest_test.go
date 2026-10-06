@@ -6,8 +6,8 @@ package rest_test
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func (s *IntegrationTestSuite) TestLegacyGetValidators() {

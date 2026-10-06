@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/rpc"
 	"github.com/stretchr/testify/require"
 )
 

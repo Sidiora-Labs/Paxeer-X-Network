@@ -5,17 +5,17 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmed25519 "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 func TestSignAndValidateEd25519(t *testing.T) {

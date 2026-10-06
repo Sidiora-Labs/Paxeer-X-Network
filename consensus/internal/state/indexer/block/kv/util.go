@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/orderedcode"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query/syntax"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query/syntax"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func intInSlice(a int, list []int) bool {

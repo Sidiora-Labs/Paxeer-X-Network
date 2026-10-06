@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 )
 
 func (suite *KeeperTestSuite) TestGenesis() {

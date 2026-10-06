@@ -7,12 +7,12 @@ import (
 	"github.com/paxeer-network/paxlog"
 	"github.com/rs/cors"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/rpc/core"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/rpc/core"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "inspect", "rpc")

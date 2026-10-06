@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	metricsgen "github.com/sidiora-labs/paxeer-network/consensus/scripts/metricsgen"
+	metricsgen "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/scripts/metricsgen"
 	"github.com/stretchr/testify/require"
 )
 

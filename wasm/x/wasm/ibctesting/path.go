@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // Path contains two endpoints representing two chains connected over IBC

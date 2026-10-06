@@ -9,8 +9,8 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
 )
 
 // dumpStatus gets node status state dump from the Tendermint RPC and writes it

@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 )
 

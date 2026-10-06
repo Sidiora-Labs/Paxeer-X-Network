@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/url"
 
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	ics23 "github.com/confio/ics23/go"
 	"github.com/gogo/protobuf/proto"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 // var representing the proofspecs for a SDK chain

@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/client/cli"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/client/cli"
 )
 
 type IntegrationTestSuite struct {

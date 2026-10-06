@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
 	"github.com/spf13/cast"
 )
 

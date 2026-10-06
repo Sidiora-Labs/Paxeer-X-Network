@@ -11,14 +11,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 type TlaBalance struct {

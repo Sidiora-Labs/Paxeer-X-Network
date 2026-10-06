@@ -1,8 +1,8 @@
 package protoutils
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 	"google.golang.org/protobuf/proto"
 )
 

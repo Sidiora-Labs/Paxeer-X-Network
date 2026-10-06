@@ -1,11 +1,11 @@
 package rosetta
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptocodec "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
-	authcodec "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	bankcodec "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptocodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
+	authcodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	bankcodec "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // MakeCodec generates the codec required to interact

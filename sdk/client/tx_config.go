@@ -1,9 +1,9 @@
 package client
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	signingtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	signingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 type (

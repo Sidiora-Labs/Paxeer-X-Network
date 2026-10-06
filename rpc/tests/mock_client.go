@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	paxutils "github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client/mock"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	evmrpc "github.com/sidiora-labs/paxeer-network/rpc"
-	paxutils "github.com/sidiora-labs/paxeer-network/utils"
 )
 
 type MockClient struct {

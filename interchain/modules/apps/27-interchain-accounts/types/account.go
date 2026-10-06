@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"strings"
 
-	crypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkaddress "github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	crypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkaddress "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	yaml "gopkg.in/yaml.v2"
 )
 

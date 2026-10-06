@@ -1,7 +1,7 @@
 syntax = "proto3";
 package paxprotocol.paxchain.evm;
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/evm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types";
 
 enum PointerType {
   ERC20 = 0;

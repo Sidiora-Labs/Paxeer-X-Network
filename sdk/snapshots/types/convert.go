@@ -1,10 +1,10 @@
 package types
 
 import (
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	proto "github.com/gogo/protobuf/proto"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
 
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // Converts an ABCI snapshot to a snapshot. Mainly to decode the SDK metadata.

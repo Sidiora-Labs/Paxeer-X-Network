@@ -5,10 +5,10 @@ package types
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	types "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	types1 "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"

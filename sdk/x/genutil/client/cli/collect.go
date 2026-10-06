@@ -4,15 +4,15 @@ import (
 	"encoding/json"
 	"path/filepath"
 
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/pkg/errors"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
 )
 
 const flagGenTxDir = "gentx-dir"

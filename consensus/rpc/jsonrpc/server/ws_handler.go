@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 // WebSocket handler

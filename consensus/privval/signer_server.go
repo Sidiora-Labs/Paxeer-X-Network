@@ -5,9 +5,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	privvalproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	privvalproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // ValidationRequestHandlerFunc handles different remoteSigner requests

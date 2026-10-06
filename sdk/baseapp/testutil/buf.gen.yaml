@@ -2,4 +2,4 @@ version: v1
 plugins:
   - name: gocosmos
     out: ../..
-    opt: plugins=grpc,Mgoogle/protobuf/any.proto=github.com/sidiora-labs/paxeer-network/sdk/codec/types
+    opt: plugins=grpc,Mgoogle/protobuf/any.proto=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types

@@ -8,13 +8,13 @@ import (
 	"slices"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/clist"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/reservoir"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/clist"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/reservoir"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var errDuplicateTx = errors.New("duplicate tx")

@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 	db "github.com/tendermint/tm-db"
 )
 

@@ -8,9 +8,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	commonmetrics "github.com/sidiora-labs/paxeer-network/storage/common/metrics"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	commonmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // Metrics to possibly add in the future:

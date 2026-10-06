@@ -24,14 +24,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/chainconfig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/vectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/cosmos/btcutil/base58"
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/chainconfig"
-	"github.com/sidiora-labs/paxeer-network/bridge/vectors"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 )
 
 const (

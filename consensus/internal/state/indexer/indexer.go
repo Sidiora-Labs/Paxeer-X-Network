@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // TxIndexer interface defines methods to index and search transactions.

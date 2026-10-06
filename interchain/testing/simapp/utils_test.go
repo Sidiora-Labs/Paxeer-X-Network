@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/stretchr/testify/require"
 )
 

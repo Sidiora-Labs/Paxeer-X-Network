@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 func anteHandler(capKey sdk.StoreKey, storeKey []byte) sdk.AnteHandler {

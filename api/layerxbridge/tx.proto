@@ -3,7 +3,7 @@ package paxprotocol.paxchain.layerxbridge;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types";
 
 // Msg defines the layerxbridge module's gRPC message service. Every message
 // is executed only for the module's governance authority; bridgeIn and
@@ -41,7 +41,7 @@ message Attestor {
 
   bytes signer = 1 [(gogoproto.customtype) = "Address20", (gogoproto.nullable) = false];
   string bond = 2 [
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
     (gogoproto.nullable) = false
   ];
 }
@@ -87,11 +87,11 @@ message MsgSetCap {
   uint64 chain_id = 2 [(gogoproto.customname) = "ChainID"];
   bytes asset = 3 [(gogoproto.customtype) = "Address20", (gogoproto.nullable) = false];
   string max_in_flight = 4 [
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
     (gogoproto.nullable) = false
   ];
   string max_per_tx = 5 [
-    (gogoproto.customtype) = "github.com/sidiora-labs/paxeer-network/sdk/types.Int",
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
     (gogoproto.nullable) = false
   ];
 }

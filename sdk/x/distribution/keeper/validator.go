@@ -3,10 +3,10 @@ package keeper
 import (
 	"fmt"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // initialize rewards for a new validator

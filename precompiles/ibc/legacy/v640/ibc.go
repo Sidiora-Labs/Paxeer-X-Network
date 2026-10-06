@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 )
 
 const (

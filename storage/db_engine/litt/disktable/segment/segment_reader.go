@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
 )
 
 // valueReaderBufferSize is the size of the buffer used for sequential value-file reads.

@@ -4,7 +4,7 @@ package wireguard;
 
 import "google/protobuf/descriptor.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/wireguard";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/wireguard";
 
 // Pax custom proto extensions use field numbers reserved in
 // [414126200, 414126299]. Pick the next unused number in that range when

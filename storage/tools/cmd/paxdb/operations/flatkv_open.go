@@ -12,10 +12,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/config"
-	"github.com/sidiora-labs/paxeer-network/storage/wal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/wal"
 )
 
 const (

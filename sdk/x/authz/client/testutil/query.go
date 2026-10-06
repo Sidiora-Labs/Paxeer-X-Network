@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz/client/cli"
 )
 
 func (s *IntegrationTestSuite) TestQueryAuthorizations() {

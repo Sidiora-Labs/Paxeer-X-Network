@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // snapshotKey is a snapshot key used for lookups.

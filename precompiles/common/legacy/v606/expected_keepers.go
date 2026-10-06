@@ -4,21 +4,21 @@ import (
 	"context"
 	"math/big"
 
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 
+	ibctypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	distrtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	ibctypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	distrtypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 type BankKeeper interface {

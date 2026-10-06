@@ -1,7 +1,7 @@
 package legacytx
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 )
 
 func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {

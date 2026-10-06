@@ -1,9 +1,9 @@
 package types
 
 import (
+	crypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	ics23 "github.com/confio/ics23/go"
-	crypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 )
 
 // ConvertProofs converts crypto.ProofOps into MerkleProof

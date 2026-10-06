@@ -7,8 +7,8 @@ package mocks
 import (
 	reflect "reflect"
 
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	gomock "github.com/golang/mock/gomock"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // MockInvariantRegistry is a mock of InvariantRegistry interface.

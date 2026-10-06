@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	time "github.com/sidiora-labs/paxeer-network/sdk/std"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	time "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 	"github.com/stretchr/testify/suite"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 )
 
 type GenesisTestSuite struct {

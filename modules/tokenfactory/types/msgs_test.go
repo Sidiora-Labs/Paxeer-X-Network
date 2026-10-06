@@ -2,15 +2,15 @@ package types_test
 
 import (
 	"fmt"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"testing"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
 )
 
 // TestMsgCreateDenom tests if valid/invalid create denom messages are properly validated/invalidated

@@ -3,7 +3,7 @@ package cosmos.crypto.secp256k1;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1";
 
 // PubKey defines a secp256k1 public key
 // Key is the compressed form of the pubkey. The first byte depends is a 0x02 byte

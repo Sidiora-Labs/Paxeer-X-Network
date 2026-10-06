@@ -4,18 +4,18 @@ import (
 	"testing"
 	"time"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/suite"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	ibctestingmock "github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	ibctestingmock "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
 )
 
 const (

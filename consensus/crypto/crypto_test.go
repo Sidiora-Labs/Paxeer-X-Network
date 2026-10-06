@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
 )
 
 var privKey = ed25519.TestSecretKey([]byte("tm-test-key-json-seed"))

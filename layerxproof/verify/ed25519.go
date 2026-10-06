@@ -9,7 +9,7 @@ import (
 	"errors"
 
 	"filippo.io/edwards25519"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 )
 
 // ErrBadSignature covers a non-canonical, weak, non-reduced or mathematically

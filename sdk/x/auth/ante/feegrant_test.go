@@ -5,23 +5,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	authsign "github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/tx"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/feegrant"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	authsign "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/tx"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant"
 )
 
 func (suite *AnteTestSuite) TestDeductFeesNoDelegation() {

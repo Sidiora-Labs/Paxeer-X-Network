@@ -5,17 +5,17 @@ import (
 	//nolint:gosec
 	_ "net/http/pprof"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 //nolint:gosec

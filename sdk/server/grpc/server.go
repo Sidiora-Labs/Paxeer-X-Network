@@ -7,11 +7,11 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/grpc/gogoreflection"
-	reflection "github.com/sidiora-labs/paxeer-network/sdk/server/grpc/reflection/v2alpha1"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/grpc/gogoreflection"
+	reflection "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/grpc/reflection/v2alpha1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // StartGRPCServer starts a gRPC server on the given address.

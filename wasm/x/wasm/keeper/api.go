@@ -1,9 +1,9 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 const (

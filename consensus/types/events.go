@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	tmquery "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	tmquery "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 // Reserved event types (alphabetically sorted).

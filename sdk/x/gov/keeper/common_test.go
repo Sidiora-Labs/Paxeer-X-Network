@@ -5,12 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 var (

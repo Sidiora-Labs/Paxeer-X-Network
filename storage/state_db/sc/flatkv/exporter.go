@@ -6,9 +6,9 @@ import (
 
 	dbm "github.com/tendermint/tm-db"
 
-	errorutils "github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	errorutils "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 var _ types.Exporter = (*KVExporter)(nil)

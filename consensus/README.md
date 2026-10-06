@@ -2,7 +2,7 @@
 
 This directory is the Byzantine Fault Tolerant consensus engine of the Paxeer X chain, the Go execution domain of Paxeer X Network that `paxd` runs (EVM chain ID 125). It is a fork of Tendermint Core: [`version/version.go`](version/version.go) still reports Tendermint `0.35.0-unreleased` and ABCI `0.17.0`.
 
-The engine is not a separate Go module. Its packages are imported as `github.com/sidiora-labs/paxeer-network/consensus/...` from the repository's root [`go.mod`](../go.mod), and it is embedded in `paxd` rather than shipped as its own binary.
+The engine is not a separate Go module. Its packages are imported as `github.com/Sidiora-Labs/Paxeer-X-Network/consensus/...` from the repository's root [`go.mod`](../go.mod), and it is embedded in `paxd` rather than shipped as its own binary.
 
 For protocol details, refer to the [specification](./spec/README.md). For detailed analysis of the consensus protocol, including safety and liveness proofs, read the paper "[The latest gossip on BFT consensus](https://arxiv.org/abs/1807.04938)".
 

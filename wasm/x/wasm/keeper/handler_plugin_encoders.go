@@ -4,19 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 
-	ibctransfertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
-	ibcclienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	distributiontypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	ibctransfertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
+	ibcclienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	distributiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 type (

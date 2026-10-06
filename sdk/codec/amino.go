@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	amino "github.com/tendermint/go-amino"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 // LegacyAmino defines a wrapper for an Amino codec that properly

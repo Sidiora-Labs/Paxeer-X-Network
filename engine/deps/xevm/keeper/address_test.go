@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/engine/deps/xevm/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

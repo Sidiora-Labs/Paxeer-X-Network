@@ -1,9 +1,9 @@
 package simapp
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
 
-	simappparams "github.com/sidiora-labs/paxeer-network/interchain/testing/simapp/params"
+	simappparams "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp/params"
 )
 
 // MakeTestEncodingConfig creates an EncodingConfig for testing. This function

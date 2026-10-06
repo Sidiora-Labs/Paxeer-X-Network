@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
 )
 
 //------------------------------------------------------------------------------

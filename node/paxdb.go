@@ -5,12 +5,12 @@ import (
 
 	"github.com/spf13/cast"
 
-	gigaconfig "github.com/sidiora-labs/paxeer-network/engine/executor/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/storev2/rootmulti"
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	paxdb "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	gigaconfig "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/storev2/rootmulti"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	paxdb "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 const (

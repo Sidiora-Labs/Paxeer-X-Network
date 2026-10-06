@@ -3,7 +3,7 @@ package cosmos.base.store.v1beta1;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/store/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types";
 
 // CommitInfo defines commit information used by the multi-store when committing
 // a version/height.

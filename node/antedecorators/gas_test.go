@@ -3,13 +3,13 @@ package antedecorators_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 	"github.com/stretchr/testify/require"
 )
 

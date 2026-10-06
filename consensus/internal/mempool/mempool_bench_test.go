@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
 )
 
 func BenchmarkTxMempool_CheckTx(b *testing.B) {

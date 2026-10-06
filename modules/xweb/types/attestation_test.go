@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	bridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	bridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 	"github.com/stretchr/testify/require"
 )
 

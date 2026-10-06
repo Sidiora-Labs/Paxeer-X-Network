@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/archive"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/testsupport"
 )
 
 const passphrase = "correct horse battery staple ceremony"

@@ -3,7 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 )
 
 // GetQueryCmd returns the query commands for IBC connections

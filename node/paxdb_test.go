@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

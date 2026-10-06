@@ -2,15 +2,15 @@ package main
 
 import (
 	"fmt"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	upgradekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
-	upgradetypes "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
+	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 	"sort"
 	"strings"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

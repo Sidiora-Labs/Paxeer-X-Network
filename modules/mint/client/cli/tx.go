@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"os"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govcli "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/spf13/cobra"
 
-	mintrest "github.com/sidiora-labs/paxeer-network/modules/mint/client/rest"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	govclient "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client"
+	mintrest "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/client/rest"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	govclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client"
 )
 
 var UpdateMinterHandler = govclient.NewProposalHandler(MsgUpdateMinterProposalCmd, mintrest.UpdateResourceDependencyProposalRESTHandler)

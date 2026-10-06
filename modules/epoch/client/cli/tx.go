@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 )
 
 //nolint:unused

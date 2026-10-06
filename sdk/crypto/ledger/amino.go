@@ -1,8 +1,8 @@
 package ledger
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptoAmino "github.com/sidiora-labs/paxeer-network/sdk/crypto/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptoAmino "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/codec"
 )
 
 var cdc = codec.NewLegacyAmino()

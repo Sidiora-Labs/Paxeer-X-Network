@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store"
 )
 
 // NewHTTPClient initiates an instance of a light client using HTTP addresses

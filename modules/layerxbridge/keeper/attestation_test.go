@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
 	"github.com/stretchr/testify/require"
 )
 

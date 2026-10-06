@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 func TestParseIdentifier(t *testing.T) {

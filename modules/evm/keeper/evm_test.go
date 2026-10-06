@@ -4,16 +4,16 @@ import (
 	"math/big"
 	"testing"
 
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 )
 
 func TestInternalCallCreateContract(t *testing.T) {

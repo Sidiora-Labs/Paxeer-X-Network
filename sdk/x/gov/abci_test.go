@@ -5,17 +5,17 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/golang/protobuf/proto"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
 )
 
 func TestTickExpiredDepositPeriod(t *testing.T) {

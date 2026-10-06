@@ -17,10 +17,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/audit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/lxwire"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
 )
 
 const (

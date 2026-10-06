@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	svrcmd "github.com/sidiora-labs/paxeer-network/sdk/server/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	svrcmd "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/cmd"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp/simd/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp/simd/cmd"
 )
 
 func main() {

@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/mock"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/mock"
 )
 
 func TestCreateCapabilityName(t *testing.T) {

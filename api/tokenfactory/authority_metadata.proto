@@ -3,7 +3,7 @@ package paxprotocol.paxchain.tokenfactory;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types";
 
 // DenomAuthorityMetadata specifies metadata for addresses that have specific
 // capabilities over a token factory denom. Right now there is only one Admin

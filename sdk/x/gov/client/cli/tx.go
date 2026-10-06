@@ -7,13 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	govutils "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	govutils "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 // Proposal flags

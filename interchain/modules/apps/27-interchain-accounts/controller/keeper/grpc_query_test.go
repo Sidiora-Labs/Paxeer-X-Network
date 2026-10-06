@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *KeeperTestSuite) TestQueryInterchainAccount() {

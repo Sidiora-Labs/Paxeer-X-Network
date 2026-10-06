@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 func TestCanonicalizeBlockID(t *testing.T) {

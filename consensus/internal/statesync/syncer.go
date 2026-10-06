@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/statesync"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/statesync"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 const (

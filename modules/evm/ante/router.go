@@ -3,8 +3,8 @@ package ante
 import (
 	"errors"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type EVMRouterDecorator struct {

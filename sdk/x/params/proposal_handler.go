@@ -1,12 +1,12 @@
 package params
 
 import (
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/types/proposal"
 )
 
 var logger = paxlog.NewLogger("cosmos", "x", "params")

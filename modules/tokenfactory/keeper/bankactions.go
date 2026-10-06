@@ -1,9 +1,9 @@
 package keeper
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 var logger = paxlog.NewLogger("x", "tokenfactory", "keeper")

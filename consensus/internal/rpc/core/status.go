@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // Status returns Tendermint status including node info, pubkey, latest block

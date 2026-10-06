@@ -8,12 +8,12 @@ import (
 	"io"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
 )
 
 var (

@@ -3,18 +3,18 @@
 package pointerview
 
 import (
+	pointerviewv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v552"
+	pointerviewv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v555"
+	pointerviewv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v562"
+	pointerviewv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v605"
+	pointerviewv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v606"
+	pointerviewv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v610"
+	pointerviewv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v614"
+	pointerviewv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v620"
+	pointerviewv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v630"
+	pointerviewv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointerview/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	pointerviewv552 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v552"
-	pointerviewv555 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v555"
-	pointerviewv562 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v562"
-	pointerviewv605 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v605"
-	pointerviewv606 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v606"
-	pointerviewv610 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v610"
-	pointerviewv614 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v614"
-	pointerviewv620 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v620"
-	pointerviewv630 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v630"
-	pointerviewv640 "github.com/sidiora-labs/paxeer-network/precompiles/pointerview/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

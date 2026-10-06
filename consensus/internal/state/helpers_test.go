@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	sf "github.com/sidiora-labs/paxeer-network/consensus/internal/state/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	sf "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type paramsChangeTestCase struct {

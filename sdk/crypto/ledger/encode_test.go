@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 func checkAminoJSON(t *testing.T, src interface{}, dst interface{}, isNil bool) {

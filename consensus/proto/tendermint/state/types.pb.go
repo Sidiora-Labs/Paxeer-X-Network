@@ -5,13 +5,13 @@ package state
 
 import (
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	types1 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	version "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/version"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/types"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	types "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	types1 "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	version "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/version"
 	io "io"
 	math "math"
 	math_bits "math/bits"

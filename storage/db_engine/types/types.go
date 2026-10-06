@@ -3,7 +3,7 @@ package types
 import (
 	"io"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 	dbm "github.com/tendermint/tm-db"
 )
 

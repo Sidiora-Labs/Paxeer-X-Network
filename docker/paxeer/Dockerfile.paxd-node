@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -eu; \
     BUILD_TAGS="netgo ledger"; \
-    VERSION_PKG="github.com/sidiora-labs/paxeer-network/sdk/version"; \
+    VERSION_PKG="github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"; \
     PAX_CHAIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' version.json); \
     test -n "${PAX_CHAIN_VERSION}"; \
     go build -tags "${BUILD_TAGS}" -ldflags "-checklinkname=0 -X ${VERSION_PKG}.Name=paxeer -X ${VERSION_PKG}.AppName=paxd -X ${VERSION_PKG}.Version=${PAX_CHAIN_VERSION} -X ${VERSION_PKG}.Commit=${PAX_CHAIN_REF:-unknown} -X ${VERSION_PKG}.BuildTags=netgo,ledger" \

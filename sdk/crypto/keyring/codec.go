@@ -1,9 +1,9 @@
 package keyring
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/legacy"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/legacy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
 )
 
 func init() {

@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"testing"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	icatypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	icatypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 var (

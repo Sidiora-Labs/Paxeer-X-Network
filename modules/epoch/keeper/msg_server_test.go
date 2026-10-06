@@ -3,8 +3,8 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/keeper"
-	keepertest "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
+	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

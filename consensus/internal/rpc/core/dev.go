@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 // UnsafeFlushMempool removes all transactions from the mempool.

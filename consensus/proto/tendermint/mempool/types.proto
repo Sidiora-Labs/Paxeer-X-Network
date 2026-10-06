@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package tendermint.mempool;
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/mempool";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/mempool";
 
 message Txs {
   repeated bytes txs = 1;

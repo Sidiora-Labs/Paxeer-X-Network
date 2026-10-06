@@ -5,8 +5,8 @@ import (
 	"math/big"
 	"testing"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 	"github.com/stretchr/testify/require"
 )
 

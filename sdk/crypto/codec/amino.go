@@ -1,12 +1,12 @@
 package codec
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	kmultisig "github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/multisig"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/sr25519"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	kmultisig "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/multisig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/sr25519"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 )
 
 // RegisterCrypto registers all crypto dependency types with the provided Amino

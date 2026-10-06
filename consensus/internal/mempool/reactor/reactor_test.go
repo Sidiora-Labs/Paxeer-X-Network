@@ -12,17 +12,17 @@ import (
 
 	"github.com/fortytw2/leaktest"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/proxy"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/mempool"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/proxy"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 type testTx struct {

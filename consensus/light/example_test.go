@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	httpp "github.com/sidiora-labs/paxeer-network/consensus/light/provider/http"
-	dbs "github.com/sidiora-labs/paxeer-network/consensus/light/store/db"
-	rpctest "github.com/sidiora-labs/paxeer-network/consensus/rpc/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	httpp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/http"
+	dbs "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store/db"
+	rpctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/test"
 	dbm "github.com/tendermint/tm-db"
 )
 

@@ -1,10 +1,10 @@
 package testutil
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz/client/cli"
 )
 
 func ExecGrant(val *network.Validator, args []string) (testutil.BufferWriter, error) {

@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/suite"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/node/apptesting"
-	paxappparams "github.com/sidiora-labs/paxeer-network/node/params"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	paxappparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 var (

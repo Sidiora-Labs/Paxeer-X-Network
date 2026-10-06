@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"testing"
 
-	tmcfg "github.com/sidiora-labs/paxeer-network/consensus/config"
+	tmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	paxdbconfig "github.com/sidiora-labs/paxeer-network/storage/config"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paxdbconfig "github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 )
 
 func TestDefaultConfig(t *testing.T) {

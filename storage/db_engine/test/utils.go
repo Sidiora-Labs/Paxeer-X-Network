@@ -3,8 +3,8 @@ package sstest
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
 )
 
 // Fills the db with multiple keys each with different versions

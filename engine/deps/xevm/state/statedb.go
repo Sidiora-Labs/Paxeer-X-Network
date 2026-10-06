@@ -3,6 +3,8 @@ package state
 import (
 	"errors"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/stateless"
@@ -11,8 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	ethutils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 var logger = paxlog.NewLogger("giga", "deps", "xevm", "state")

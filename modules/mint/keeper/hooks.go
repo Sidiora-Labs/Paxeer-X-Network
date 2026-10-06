@@ -1,8 +1,8 @@
 package keeper
 
 import (
-	epochTypes "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	epochTypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func (k Keeper) BeforeEpochStart(_ sdk.Context, _ epochTypes.Epoch) {}

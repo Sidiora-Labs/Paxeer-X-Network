@@ -1,8 +1,8 @@
 package keeper
 
 import (
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 	"github.com/prometheus/client_golang/prometheus"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
 )
 
 const (

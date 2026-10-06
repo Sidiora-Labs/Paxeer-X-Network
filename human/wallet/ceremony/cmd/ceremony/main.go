@@ -10,12 +10,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/archive"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/envelope"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/migrate"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/move"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/rehearsal"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/archive"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/attestor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/envelope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/migrate"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/move"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/rehearsal"
 )
 
 const (

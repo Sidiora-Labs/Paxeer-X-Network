@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/avail"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/consensus"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/avail"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/consensus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 func TestAvailClientServer(t *testing.T) {

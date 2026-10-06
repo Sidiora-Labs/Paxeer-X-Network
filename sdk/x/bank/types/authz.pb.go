@@ -5,11 +5,11 @@ package types
 
 import (
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/regen-network/cosmos-proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -31,7 +31,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 //
 // Since: cosmos-sdk 0.43
 type SendAuthorization struct {
-	SpendLimit github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=spend_limit,json=spendLimit,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.Coins" json:"spend_limit"`
+	SpendLimit github_com_sidiora_labs_paxeer_network_sdk_types.Coins `protobuf:"bytes,1,rep,name=spend_limit,json=spendLimit,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Coins" json:"spend_limit"`
 }
 
 func (m *SendAuthorization) Reset()         { *m = SendAuthorization{} }

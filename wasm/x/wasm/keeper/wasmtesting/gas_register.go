@@ -1,8 +1,8 @@
 package wasmtesting
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // MockGasRegister mock that implements keeper.GasRegister

@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xbank/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xbank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 )
 
 func TestMetadataValidate(t *testing.T) {

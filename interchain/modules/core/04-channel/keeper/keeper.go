@@ -4,20 +4,20 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 	db "github.com/tendermint/tm-db"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	porttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	porttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var _ porttypes.ICS4Wrapper = Keeper{}

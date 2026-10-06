@@ -1,8 +1,8 @@
 package backend
 
 import (
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 // OpenFunc creates a StateStore from a data directory and config.

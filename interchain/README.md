@@ -1,6 +1,6 @@
 # interchain (ibc-go)
 
-This directory is the vendored copy of [ibc-go](https://github.com/cosmos/ibc-go), the Golang implementation of the Inter-Blockchain Communication protocol (IBC), as used by the Paxeer X chain (`paxd`). Packages are imported as `github.com/sidiora-labs/paxeer-network/interchain/...`.
+This directory is the vendored copy of [ibc-go](https://github.com/cosmos/ibc-go), the Golang implementation of the Inter-Blockchain Communication protocol (IBC), as used by the Paxeer X chain (`paxd`). Packages are imported as `github.com/Sidiora-Labs/Paxeer-X-Network/interchain/...`.
 
 IBC allows blockchains to talk to each other. It handles transport across different sovereign blockchains: an end-to-end, connection-oriented, stateful protocol that provides reliable, ordered, and authenticated communication between heterogeneous blockchains. This implementation is built as a Cosmos SDK module.
 

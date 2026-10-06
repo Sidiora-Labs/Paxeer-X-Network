@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "state", "indexer")

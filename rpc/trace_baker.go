@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/paxeer-network/paxlog"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 )
 
 var bakerLogger = paxlog.NewLogger("evmrpc", "trace-baker")

@@ -1,11 +1,11 @@
 package types
 
 import (
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	tmmerkle "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 	ics23 "github.com/confio/ics23/go"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	tmmerkle "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
 
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 const (

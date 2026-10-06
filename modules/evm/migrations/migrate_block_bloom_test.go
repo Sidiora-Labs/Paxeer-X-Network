@@ -3,10 +3,10 @@ package migrations_test
 import (
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/migrations"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/migrations"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

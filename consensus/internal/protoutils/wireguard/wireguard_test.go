@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 // appendBytesField is shorthand for encoding `field N: BytesType payload`.

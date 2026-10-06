@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 	db "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
 )
 
 func setupStore(t *testing.T) *snapshots.Store {

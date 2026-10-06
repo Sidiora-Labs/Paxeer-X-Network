@@ -7,8 +7,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // NetInfo returns network info.

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/rpc"
-	"github.com/sidiora-labs/paxeer-network/rpc/rpcutils"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc/rpcutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

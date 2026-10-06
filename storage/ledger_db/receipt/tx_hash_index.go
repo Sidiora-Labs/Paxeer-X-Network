@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"sync"
 
+	errorutils "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/pebbledb"
+	dbtypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 	"github.com/ethereum/go-ethereum/common"
-	errorutils "github.com/sidiora-labs/paxeer-network/storage/common/errors"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/pebbledb"
-	dbtypes "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
 )
 
 // TxHashIndex maps transaction hashes to the block number that contains them.

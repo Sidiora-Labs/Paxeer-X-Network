@@ -3,8 +3,8 @@ package keeper
 import (
 	"math/big"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func (k *Keeper) GetBalance(ctx sdk.Context, addr sdk.AccAddress) *big.Int {

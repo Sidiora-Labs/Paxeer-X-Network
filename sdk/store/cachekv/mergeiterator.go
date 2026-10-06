@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdktypes "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // cacheMergeIterator merges a parent Iterator and a cache Iterator.

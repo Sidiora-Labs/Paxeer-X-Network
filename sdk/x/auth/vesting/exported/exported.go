@@ -3,9 +3,9 @@ package exported
 import (
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // VestingAccount defines an account type that vests coins via a vesting schedule.

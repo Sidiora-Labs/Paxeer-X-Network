@@ -19,10 +19,10 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/box"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
 )
 
 var errAEAD = errors.New("decoding failed")

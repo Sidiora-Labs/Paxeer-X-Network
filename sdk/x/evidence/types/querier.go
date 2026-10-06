@@ -1,9 +1,9 @@
 package types
 
 import (
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 )
 
 // Querier routes for the evidence module

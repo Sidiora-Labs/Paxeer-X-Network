@@ -5,8 +5,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmnet "github.com/sidiora-labs/paxeer-network/consensus/libs/net"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmnet "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/net"
 )
 
 // Socket errors.

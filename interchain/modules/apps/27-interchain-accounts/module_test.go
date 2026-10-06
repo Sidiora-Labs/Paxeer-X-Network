@@ -3,16 +3,16 @@ package ica_test
 import (
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/suite"
 	dbm "github.com/tendermint/tm-db"
 
-	ica "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts"
-	controllertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	hosttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
+	ica "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts"
+	controllertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	hosttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
 )
 
 type InterchainAccountsTestSuite struct {

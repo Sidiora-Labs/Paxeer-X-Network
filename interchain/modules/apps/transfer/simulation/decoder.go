@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 )
 
 // TransferUnmarshaler defines the expected encoding store functions.

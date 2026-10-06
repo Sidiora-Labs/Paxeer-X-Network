@@ -1,10 +1,10 @@
 package slashing
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // InitGenesis initialize default parameters

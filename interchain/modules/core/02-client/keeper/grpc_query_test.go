@@ -3,16 +3,16 @@ package keeper_test
 import (
 	"fmt"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	grpctypes "github.com/sidiora-labs/paxeer-network/sdk/types/grpc"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	grpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/grpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	ibctmtypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/07-tendermint/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	ibctmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/07-tendermint/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *KeeperTestSuite) TestQueryClientState() {

@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client/mock"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/mock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 func TestWaitForHeight(t *testing.T) {

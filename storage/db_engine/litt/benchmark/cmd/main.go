@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/benchmark"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/benchmark"
 )
 
 func main() {

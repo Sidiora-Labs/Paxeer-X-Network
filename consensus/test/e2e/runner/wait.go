@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
 )
 
 // Wait waits for a number of blocks to be produced, and for all nodes to catch

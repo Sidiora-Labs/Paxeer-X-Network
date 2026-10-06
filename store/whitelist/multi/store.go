@@ -1,9 +1,9 @@
 package multi
 
 import (
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/store/whitelist/cachemulti"
-	"github.com/sidiora-labs/paxeer-network/store/whitelist/kv"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store/whitelist/cachemulti"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store/whitelist/kv"
 )
 
 type Store struct {

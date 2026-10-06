@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
 )
 
 var (

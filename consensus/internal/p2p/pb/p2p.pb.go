@@ -455,7 +455,7 @@ const file_p2p_p2p_proto_rawDesc = "" +
 	"\tpex_addrs\x18\x05 \x03(\tR\bpexAddrs\x12.\n" +
 	"\x13pax_giga_connection\x18\x03 \x01(\bR\x11paxGigaConnectionB\f\n" +
 	"\n" +
-	"_self_addrBBZ@github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/pbb\x06proto3"
+	"_self_addrBBZ@github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/pbb\x06proto3"
 
 var (
 	file_p2p_p2p_proto_rawDescOnce sync.Once

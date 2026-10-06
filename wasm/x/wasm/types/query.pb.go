@@ -7,11 +7,11 @@ import (
 	bytes "bytes"
 	context "context"
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	query "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 	_ "github.com/gogo/protobuf/gogoproto"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_consensus_libs_bytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	query "github.com/sidiora-labs/paxeer-network/sdk/types/query"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -567,7 +567,7 @@ var xxx_messageInfo_QueryCodeRequest proto.InternalMessageInfo
 type CodeInfoResponse struct {
 	CodeID                uint64                                                               `protobuf:"varint,1,opt,name=code_id,json=codeId,proto3" json:"id"`
 	Creator               string                                                               `protobuf:"bytes,2,opt,name=creator,proto3" json:"creator,omitempty"`
-	DataHash              github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,3,opt,name=data_hash,json=dataHash,proto3,casttype=github.com/sidiora-labs/paxeer-network/consensus/libs/bytes.HexBytes" json:"data_hash,omitempty"`
+	DataHash              github_com_sidiora_labs_paxeer_network_consensus_libs_bytes.HexBytes `protobuf:"bytes,3,opt,name=data_hash,json=dataHash,proto3,casttype=github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes.HexBytes" json:"data_hash,omitempty"`
 	InstantiatePermission AccessConfig                                                         `protobuf:"bytes,6,opt,name=instantiate_permission,json=instantiatePermission,proto3" json:"instantiate_permission"`
 }
 

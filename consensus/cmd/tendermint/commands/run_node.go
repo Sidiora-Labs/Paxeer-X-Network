@@ -3,7 +3,7 @@ package commands
 import (
 	"github.com/spf13/cobra"
 
-	cfg "github.com/sidiora-labs/paxeer-network/consensus/config"
+	cfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 )
 
 var (

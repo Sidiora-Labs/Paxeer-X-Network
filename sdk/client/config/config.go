@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 )
 
 // Default constants

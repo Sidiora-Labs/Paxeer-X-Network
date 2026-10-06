@@ -1,15 +1,15 @@
 package ibctesting
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 )
 
 type TestingApp interface {

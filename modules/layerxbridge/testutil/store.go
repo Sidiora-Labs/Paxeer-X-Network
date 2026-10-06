@@ -5,12 +5,12 @@
 package testutil
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/dbadapter"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	dbm "github.com/tendermint/tm-db"
 )
 

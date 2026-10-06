@@ -12,7 +12,7 @@ import (
 
 	"github.com/tidwall/wal"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/threading"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/threading"
 )
 
 // The size of internal channel buffers if the provided buffer size is less than 1.

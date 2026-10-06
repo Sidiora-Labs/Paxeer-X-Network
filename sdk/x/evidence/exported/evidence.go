@@ -1,10 +1,10 @@
 package exported
 
 import (
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 	"github.com/gogo/protobuf/proto"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // Evidence defines the contract which concrete evidence types of misbehavior

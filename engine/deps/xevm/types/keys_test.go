@@ -4,8 +4,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"

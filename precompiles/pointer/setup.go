@@ -3,21 +3,21 @@
 package pointer
 
 import (
+	pointerv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v552"
+	pointerv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v555"
+	pointerv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v562"
+	pointerv575 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v575"
+	pointerv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v580"
+	pointerv600 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v600"
+	pointerv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v605"
+	pointerv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v606"
+	pointerv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v610"
+	pointerv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v614"
+	pointerv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v620"
+	pointerv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v630"
+	pointerv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pointer/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	pointerv552 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v552"
-	pointerv555 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v555"
-	pointerv562 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v562"
-	pointerv575 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v575"
-	pointerv580 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v580"
-	pointerv600 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v600"
-	pointerv605 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v605"
-	pointerv606 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v606"
-	pointerv610 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v610"
-	pointerv614 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v614"
-	pointerv620 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v620"
-	pointerv630 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v630"
-	pointerv640 "github.com/sidiora-labs/paxeer-network/precompiles/pointer/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

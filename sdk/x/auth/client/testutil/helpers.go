@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/client/cli"
 )
 
 func TxSignExec(clientCtx client.Context, from fmt.Stringer, filename string, extraArgs ...string) (testutil.BufferWriter, error) {

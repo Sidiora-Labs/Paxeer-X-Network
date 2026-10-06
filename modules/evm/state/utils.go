@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"math/big"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // UhpxToSweiMultiplier Fields that were denominated in uhpx will be converted to swei (1uhpx = 10^12swei)

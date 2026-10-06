@@ -3,12 +3,12 @@ package testutil
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	stakingcli "github.com/sidiora-labs/paxeer-network/sdk/x/staking/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	stakingcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/client/cli"
 )
 
 var commonArgs = []string{

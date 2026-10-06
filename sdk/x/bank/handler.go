@@ -1,10 +1,10 @@
 package bank
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // NewHandler returns a handler for "bank" type messages.

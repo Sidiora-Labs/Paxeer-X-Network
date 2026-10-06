@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	consensuscrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	consensuscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 )
 
 func realRequest(t *testing.T) *Request {

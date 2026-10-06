@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package protoutils;
 
-option go_package = "github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/pb";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/pb";
 
 message TestonlyMsg {
   string string_value = 1;

@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/utils"
-	bankexported "github.com/sidiora-labs/paxeer-network/sdk/x/bank/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils"
+	bankexported "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // SetGenTxsInAppGenesisState - sets the genesis transactions in the app genesis state

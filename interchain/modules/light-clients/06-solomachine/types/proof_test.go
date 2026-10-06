@@ -1,11 +1,11 @@
 package types_test
 
 import (
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 
-	solomachinetypes "github.com/sidiora-labs/paxeer-network/interchain/modules/light-clients/06-solomachine/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	solomachinetypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/light-clients/06-solomachine/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *SoloMachineTestSuite) TestVerifySignature() {

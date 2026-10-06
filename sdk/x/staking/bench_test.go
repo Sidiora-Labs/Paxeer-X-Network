@@ -3,11 +3,11 @@ package staking_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/teststaking"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/teststaking"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 func BenchmarkValidateGenesis10Validators(b *testing.B) {

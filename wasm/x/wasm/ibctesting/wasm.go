@@ -10,15 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	wasmd "github.com/sidiora-labs/paxeer-network/wasm/app"
+	wasmd "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/app"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/golang/protobuf/proto" //nolint
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 var wasmIdent = []byte("\x00\x61\x73\x6D")

@@ -1,6 +1,6 @@
 package types
 
-import codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+import codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 
 func (m *QueryAccountResponse) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	var account AccountI

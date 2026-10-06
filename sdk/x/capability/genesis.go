@@ -1,9 +1,9 @@
 package capability
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 )
 
 // InitGenesis initializes the capability module's state from a provided genesis

@@ -1,17 +1,17 @@
 package app
 
 import (
-	launchpadkeeper "github.com/sidiora-labs/paxeer-network/modules/launchpad/keeper"
-	layerxbridgekeeper "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/keeper"
-	layerxcustodykeeper "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/keeper"
-	layerxexchangekeeper "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/keeper"
-	xwebkeeper "github.com/sidiora-labs/paxeer-network/modules/xweb/keeper"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	govkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/gov/keeper"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	layerxbridgekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
+	layerxcustodykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
+	layerxexchangekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/keeper"
+	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	govkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/keeper"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 )
 
 type PrecompileKeepers struct {

@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/suite"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	store "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	store "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 )
 
 type KeeperTestSuite struct {

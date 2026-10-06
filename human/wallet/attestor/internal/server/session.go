@@ -14,9 +14,9 @@ import (
 
 	"github.com/getamis/alice/types"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
-	tssecdsa "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/ecdsa"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/refresh"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/transport"
+	tssecdsa "github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/ecdsa"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/refresh"
 )
 
 const (

@@ -1,7 +1,7 @@
 package types_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
 )
 
 func (suite *TypesTestSuite) TestKeyActiveChannel() {

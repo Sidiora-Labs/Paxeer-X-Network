@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"testing"
 
-	ctest "github.com/sidiora-labs/paxeer-network/consensus/internal/libs/test"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/require"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	ctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/test"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/require"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 func makeTxs(cnt, size int) Txs {

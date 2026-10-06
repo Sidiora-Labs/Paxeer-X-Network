@@ -3,9 +3,9 @@ package antedecorators
 import (
 	"errors"
 
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
 )
 
 // maxNestedMsgs defines a cap for the number of nested messages on a MsgExec message

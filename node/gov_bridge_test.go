@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/proposals"
-	layerxbridgecli "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/client/cli"
-	layerxbridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
+	layerxbridgecli "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/client/cli"
+	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/stretchr/testify/require"
 )
 

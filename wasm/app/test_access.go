@@ -3,19 +3,19 @@ package app
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/app/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/app/params"
 
-	ibctransferkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/keeper"
-	ibckeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
+	ibctransferkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/keeper"
+	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 )
 
 type TestSupport struct {

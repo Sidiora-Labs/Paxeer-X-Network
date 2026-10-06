@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 )
 
 // NodeIDByteLength is the length of a crypto.Address. Currently only 20.

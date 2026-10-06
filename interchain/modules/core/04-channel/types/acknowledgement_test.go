@@ -1,6 +1,6 @@
 package types_test
 
-import "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
+import "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 
 // tests acknowledgement.ValidateBasic and acknowledgement.GetBytes
 func (suite *TypesTestSuite) TestAcknowledgement() {

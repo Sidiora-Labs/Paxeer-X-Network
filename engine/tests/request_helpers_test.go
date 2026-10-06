@@ -3,8 +3,8 @@ package giga_test
 import (
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/node"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 func finalizeBlockToBlockProcessRequest(req *abci.RequestFinalizeBlock) *app.BlockProcessRequest {

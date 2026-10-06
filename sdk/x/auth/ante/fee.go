@@ -3,10 +3,10 @@ package ante
 import (
 	"fmt"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
 )
 
 // TxFeeChecker check if the provided fee is enough and returns the effective fee and tx priority,

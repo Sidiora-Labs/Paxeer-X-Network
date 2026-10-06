@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/engine/deps/xevm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/xevm/types"
 	"github.com/stretchr/testify/require"
 )
 

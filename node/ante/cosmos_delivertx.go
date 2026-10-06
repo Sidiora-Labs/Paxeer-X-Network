@@ -1,16 +1,16 @@
 package ante
 
 import (
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	oraclekeeper "github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	"github.com/sidiora-labs/paxeer-network/node/antedecorators"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	bankkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	feegrantkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/feegrant/keeper"
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	feegrantkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant/keeper"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
 )
 
 func CosmosDeliverTxAnte(

@@ -5,9 +5,9 @@ package tests
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/mempool"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/mempool"
 )
 
 func FuzzMempool(f *testing.F) {

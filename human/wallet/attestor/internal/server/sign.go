@@ -15,15 +15,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/evm"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
-	tssecdsa "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/ecdsa"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/eddsa"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/agent"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/lxwire"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/evm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/lx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
+	tssecdsa "github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/ecdsa"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/eddsa"
 )
 
 const (

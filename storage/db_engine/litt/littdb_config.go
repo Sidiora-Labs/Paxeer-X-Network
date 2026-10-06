@@ -5,9 +5,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/unit"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable/keymap"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/unit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable/keymap"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // MaxShardingFactor is the largest legal value for TableConfig.ShardingFactor. Both the shard ID (in the on-disk

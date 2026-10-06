@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	rpccore "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/rpc/core"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	rpccore "github.com/sidiora-labs/paxeer-network/consensus/internal/rpc/core"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "rpc", "client", "local")

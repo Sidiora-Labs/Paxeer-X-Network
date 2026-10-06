@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 const (

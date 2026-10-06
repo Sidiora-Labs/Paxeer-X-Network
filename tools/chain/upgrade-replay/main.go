@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 func main() {

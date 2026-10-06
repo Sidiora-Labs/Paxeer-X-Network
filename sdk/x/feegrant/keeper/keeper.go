@@ -1,11 +1,11 @@
 package keeper
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/ante"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/feegrant"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant"
 )
 
 // Keeper manages state of all fee grants, as well as calculating approval.

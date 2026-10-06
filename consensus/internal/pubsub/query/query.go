@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query/syntax"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query/syntax"
 )
 
 // All is a query that matches all events.

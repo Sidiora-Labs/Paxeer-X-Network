@@ -6,11 +6,11 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/rest"
-	gcutils "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/rest"
+	gcutils "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 func registerTxHandlers(clientCtx client.Context, r *mux.Router, phs []ProposalRESTHandler) {

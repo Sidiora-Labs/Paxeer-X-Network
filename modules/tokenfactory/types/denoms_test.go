@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	appparams "github.com/sidiora-labs/paxeer-network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
 )
 
 func TestDecomposeDenoms(t *testing.T) {

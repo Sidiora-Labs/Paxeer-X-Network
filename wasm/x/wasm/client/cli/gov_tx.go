@@ -5,16 +5,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	"github.com/pkg/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func ProposalStoreCodeCmd() *cobra.Command {

@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/modules/epoch"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	keepertest "github.com/sidiora-labs/paxeer-network/testutil/keeper"
-	"github.com/sidiora-labs/paxeer-network/testutil/nullify"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/nullify"
 	"github.com/stretchr/testify/require"
 )
 

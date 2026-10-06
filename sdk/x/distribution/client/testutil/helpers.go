@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	distrcli "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	distrcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/client/cli"
 )
 
 func MsgWithdrawDelegatorRewardExec(clientCtx client.Context, valAddr fmt.Stringer, extraArgs ...string) ([]byte, error) {

@@ -3,7 +3,7 @@ package cryptosim
 import (
 	"iter"
 
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 )
 
 // A simulated block of transactions.

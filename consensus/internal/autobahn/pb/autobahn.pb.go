@@ -7,8 +7,8 @@
 package pb
 
 import (
-	_ "github.com/sidiora-labs/paxeer-network/consensus/internal/hashable/pb"
-	_ "github.com/sidiora-labs/paxeer-network/consensus/proto/wireguard"
+	_ "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/hashable/pb"
+	_ "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/wireguard"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -2079,7 +2079,7 @@ const file_autobahn_autobahn_proto_rawDesc = "" +
 	"\ftimeout_vote\x18\x04 \x01(\v2\x19.autobahn.FullTimeoutVoteH\x00R\vtimeoutVote\x124\n" +
 	"\n" +
 	"timeout_qc\x18\x05 \x01(\v2\x13.autobahn.TimeoutQCH\x00R\ttimeoutQcB\x03\n" +
-	"\x01tBGZEgithub.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pbb\x06proto3"
+	"\x01tBGZEgithub.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pbb\x06proto3"
 
 var (
 	file_autobahn_autobahn_proto_rawDescOnce sync.Once

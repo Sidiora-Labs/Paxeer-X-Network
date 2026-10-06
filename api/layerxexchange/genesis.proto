@@ -5,7 +5,7 @@ import "gogoproto/gogo.proto";
 import "layerxexchange/params.proto";
 import "layerxexchange/state.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types";
 
 // GenesisState defines the layerxexchange module's genesis state.
 message GenesisState {

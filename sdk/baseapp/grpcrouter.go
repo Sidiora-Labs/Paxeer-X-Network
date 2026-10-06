@@ -3,16 +3,16 @@ package baseapp
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/grpc/reflection"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/grpc/reflection"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	gogogrpc "github.com/gogo/protobuf/grpc"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 var protoCodec = encoding.GetCodec(proto.Name)

@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

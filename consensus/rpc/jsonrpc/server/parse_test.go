@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 )
 
 func TestParseJSONMap(t *testing.T) {

@@ -14,9 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/dealer"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/attestor"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/ceremony/internal/testsupport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/attestor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/ceremony/internal/testsupport"
 )
 
 const (

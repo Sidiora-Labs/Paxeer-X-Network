@@ -3,7 +3,7 @@ package paxprotocol.paxchain.evm;
 
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/evm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types";
 
 message Log {
   string address = 1;

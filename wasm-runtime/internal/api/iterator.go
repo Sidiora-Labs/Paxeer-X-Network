@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // frame stores all Iterators for one contract call

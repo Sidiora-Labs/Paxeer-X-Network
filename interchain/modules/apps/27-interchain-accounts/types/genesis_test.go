@@ -1,10 +1,10 @@
 package types_test
 
 import (
-	controllertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	hosttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/types"
-	ibctesting "github.com/sidiora-labs/paxeer-network/interchain/testing"
+	controllertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	hosttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/types"
+	ibctesting "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing"
 )
 
 func (suite *TypesTestSuite) TestValidateGenesisState() {

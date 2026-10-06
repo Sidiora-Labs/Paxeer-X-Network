@@ -10,8 +10,8 @@ import (
 	"github.com/coinbase/rosetta-sdk-go/server"
 	"github.com/coinbase/rosetta-sdk-go/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/internal/service"
-	crgtypes "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/internal/service"
+	crgtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/types"
 )
 
 const DefaultRetries = 5

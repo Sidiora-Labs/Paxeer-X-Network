@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

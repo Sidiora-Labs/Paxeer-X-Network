@@ -3,7 +3,7 @@ package multiversion_test
 import (
 	"testing"
 
-	mv "github.com/sidiora-labs/paxeer-network/sdk/store/multiversion"
+	mv "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/multiversion"
 	"github.com/stretchr/testify/require"
 )
 

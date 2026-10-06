@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/rpc"
-	evmrpcconfig "github.com/sidiora-labs/paxeer-network/rpc/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )

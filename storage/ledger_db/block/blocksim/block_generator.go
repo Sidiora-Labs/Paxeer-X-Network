@@ -3,8 +3,8 @@ package blocksim
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/rand"
-	"github.com/sidiora-labs/paxeer-network/storage/ledger_db/block"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/block"
 )
 
 const (

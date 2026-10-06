@@ -1,7 +1,7 @@
 package authz
 
 import (
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 // NewGenesisState creates new GenesisState object

@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"github.com/getamis/alice/types"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
 )
 
 type memRouter struct {

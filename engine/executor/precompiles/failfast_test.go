@@ -3,10 +3,10 @@ package precompiles_test
 import (
 	"testing"
 
+	gigaprecompiles "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/precompiles"
+	gigautils "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	gigaprecompiles "github.com/sidiora-labs/paxeer-network/engine/executor/precompiles"
-	gigautils "github.com/sidiora-labs/paxeer-network/engine/executor/utils"
 	"github.com/stretchr/testify/require"
 )
 

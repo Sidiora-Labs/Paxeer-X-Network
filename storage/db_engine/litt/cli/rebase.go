@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable/keymap"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/disktable/segment"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable/keymap"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/disktable/segment"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 	"github.com/urfave/cli/v2"
 )
 

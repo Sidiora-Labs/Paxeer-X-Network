@@ -4,12 +4,12 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	authsign "github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	authsign "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
 )
 
 // SimAppChainID hardcoded chainID for simulation

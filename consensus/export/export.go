@@ -1,9 +1,9 @@
 package export
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/store"
 )
 
 type Query = query.Query

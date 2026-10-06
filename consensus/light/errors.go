@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // ErrOldHeaderExpired means the old (trusted) header has expired according to

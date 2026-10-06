@@ -3,8 +3,8 @@ package commands
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
 )
 
 // LoadTendermintState loads the tendermint state from the database.

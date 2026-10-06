@@ -1,9 +1,9 @@
 package ss
 
 import (
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/ss/composite"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/ss/composite"
 )
 
 // NewStateStore creates a CompositeStateStore which handles both Cosmos and EVM data.

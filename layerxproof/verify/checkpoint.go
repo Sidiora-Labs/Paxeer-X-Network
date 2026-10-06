@@ -4,8 +4,8 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
 )
 
 var (

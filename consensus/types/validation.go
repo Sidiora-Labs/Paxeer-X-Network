@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 const batchVerifyThreshold = 2

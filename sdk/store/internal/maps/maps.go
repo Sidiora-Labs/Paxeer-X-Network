@@ -4,10 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 )
 
 // merkleMap defines a merkle-ized tree from a map. Leave values are treated as

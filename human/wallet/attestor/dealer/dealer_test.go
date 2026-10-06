@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/getamis/alice/crypto/birkhoffinterpolation"
 
-	tss "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
+	tss "github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/tss/dealer"
 )
 
 const (

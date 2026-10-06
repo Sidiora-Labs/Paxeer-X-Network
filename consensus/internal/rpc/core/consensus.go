@@ -5,9 +5,9 @@ import (
 	"maps"
 	"slices"
 
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // Validators gets the validator set at the given block height.

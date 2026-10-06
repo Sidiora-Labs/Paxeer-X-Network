@@ -8,14 +8,14 @@ import (
 	"math"
 	"math/big"
 
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
-	pcommon "github.com/sidiora-labs/paxeer-network/precompiles/common"
-	putils "github.com/sidiora-labs/paxeer-network/precompiles/utils"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 const (

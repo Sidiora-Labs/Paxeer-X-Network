@@ -6,10 +6,10 @@ package feegrant
 import (
 	context "context"
 	fmt "fmt"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	grpc1 "github.com/gogo/protobuf/grpc"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/regen-network/cosmos-proto"
-	types "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"

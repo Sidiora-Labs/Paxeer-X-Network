@@ -1,6 +1,6 @@
 package ethtx
 
-import sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+import sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
 func (tx *BlobTx) SetTo(v string) {
 	tx.To = v

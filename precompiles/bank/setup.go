@@ -3,22 +3,22 @@
 package bank
 
 import (
+	bankv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v552"
+	bankv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v555"
+	bankv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v562"
+	bankv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v580"
+	bankv600 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v600"
+	bankv601 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v601"
+	bankv603 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v603"
+	bankv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v605"
+	bankv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v606"
+	bankv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v610"
+	bankv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v614"
+	bankv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v620"
+	bankv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v630"
+	bankv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/bank/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	bankv552 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v552"
-	bankv555 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v555"
-	bankv562 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v562"
-	bankv580 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v580"
-	bankv600 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v600"
-	bankv601 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v601"
-	bankv603 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v603"
-	bankv605 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v605"
-	bankv606 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v606"
-	bankv610 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v610"
-	bankv614 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v614"
-	bankv620 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v620"
-	bankv630 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v630"
-	bankv640 "github.com/sidiora-labs/paxeer-network/precompiles/bank/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

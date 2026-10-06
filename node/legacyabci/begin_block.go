@@ -3,29 +3,29 @@ package legacyabci
 import (
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/capability"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/distribution"
-	distrkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution"
+	distrkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/keeper"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence"
-	evidencekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/evidence/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/slashing"
-	slashingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/slashing/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence"
+	evidencekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing"
+	slashingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/slashing/keeper"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/upgrade"
-	upgradekeeper "github.com/sidiora-labs/paxeer-network/sdk/x/upgrade/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 
-	ibcclient "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client"
-	ibckeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
-	epochmodulekeeper "github.com/sidiora-labs/paxeer-network/modules/epoch/keeper"
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
+	ibcclient "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client"
+	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
+	epochmodulekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 )
 
 type BeginBlockKeepers struct {

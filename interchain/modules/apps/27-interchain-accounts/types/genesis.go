@@ -1,9 +1,9 @@
 package types
 
 import (
-	controllertypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/controller/types"
-	hosttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/apps/27-interchain-accounts/host/types"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
+	controllertypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/controller/types"
+	hosttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/27-interchain-accounts/host/types"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
 )
 
 // DefaultGenesis creates and returns the interchain accounts GenesisState

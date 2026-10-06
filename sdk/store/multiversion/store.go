@@ -5,8 +5,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/occ"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/occ"
 	db "github.com/tendermint/tm-db"
 )
 

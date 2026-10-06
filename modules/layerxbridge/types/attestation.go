@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"math/big"
 
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
 )
 
 // The attestation layouts are fixed by the Ethereum PaxeerXVault

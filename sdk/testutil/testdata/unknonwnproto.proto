@@ -5,7 +5,7 @@ import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 import "cosmos/tx/v1beta1/tx.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata";
 
 message Customer1 {
   int32  id               = 1;

@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	rpcserver "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 	"github.com/paxeer-network/paxlog"
-	rpcserver "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
 )
 
 var logger = paxlog.NewLogger("tendermint", "rpc", "jsonrpc", "test")

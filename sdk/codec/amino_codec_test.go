@@ -5,14 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/legacy/legacytx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/legacy/legacytx"
 )
 
 func createTestCodec() *codec.LegacyAmino {

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // verify verifies the evidence fully by checking:

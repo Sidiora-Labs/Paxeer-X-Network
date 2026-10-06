@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/transport"
 )
 
 const (

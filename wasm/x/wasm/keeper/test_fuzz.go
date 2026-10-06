@@ -3,10 +3,10 @@ package keeper
 import (
 	"encoding/json"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	fuzz "github.com/google/gofuzz"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 var ModelFuzzers = []interface{}{FuzzAddr, FuzzAddrString, FuzzAbsoluteTxPosition, FuzzContractInfo, FuzzStateModel, FuzzAccessType, FuzzAccessConfig, FuzzContractCodeHistory}

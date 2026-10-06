@@ -8,12 +8,12 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	cosmoscryptoutils "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	secp256k1 "github.com/btcsuite/btcd/btcec/v2"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	cosmoscryptoutils "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 	"golang.org/x/crypto/ripemd160" //nolint:gosec,staticcheck // necessary for Bitcoin/Cosmos address derivation standard
 )
 

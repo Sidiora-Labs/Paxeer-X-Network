@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // KeymapTypeFileName is the name of the file that contains the keymap type.

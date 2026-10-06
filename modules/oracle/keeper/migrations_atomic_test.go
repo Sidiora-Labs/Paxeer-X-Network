@@ -4,10 +4,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper/testutils"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

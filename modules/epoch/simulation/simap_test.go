@@ -3,9 +3,9 @@ package simulation_test
 import (
 	"testing"
 
-	epochsimulation "github.com/sidiora-labs/paxeer-network/modules/epoch/simulation"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	simtypes "github.com/sidiora-labs/paxeer-network/sdk/types/simulation"
+	epochsimulation "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/simulation"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	simtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/simulation"
 
 	"github.com/stretchr/testify/require"
 )

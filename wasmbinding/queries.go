@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"math"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	epochwasm "github.com/sidiora-labs/paxeer-network/modules/epoch/client/wasm"
-	epochbindings "github.com/sidiora-labs/paxeer-network/modules/epoch/client/wasm/bindings"
-	epochtypes "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	evmwasm "github.com/sidiora-labs/paxeer-network/modules/evm/client/wasm"
-	evmbindings "github.com/sidiora-labs/paxeer-network/modules/evm/client/wasm/bindings"
-	oraclewasm "github.com/sidiora-labs/paxeer-network/modules/oracle/client/wasm"
-	oraclebindings "github.com/sidiora-labs/paxeer-network/modules/oracle/client/wasm/bindings"
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	tokenfactorywasm "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/client/wasm"
-	tokenfactorybindings "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/client/wasm/bindings"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	stakingkeeper "github.com/sidiora-labs/paxeer-network/sdk/x/staking/keeper"
+	epochwasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/client/wasm"
+	epochbindings "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/client/wasm/bindings"
+	epochtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	evmwasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/client/wasm"
+	evmbindings "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/client/wasm/bindings"
+	oraclewasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/client/wasm"
+	oraclebindings "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/client/wasm/bindings"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	tokenfactorywasm "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/client/wasm"
+	tokenfactorybindings "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/client/wasm/bindings"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	stakingkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/keeper"
 )
 
 type QueryPlugin struct {

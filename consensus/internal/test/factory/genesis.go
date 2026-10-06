@@ -3,8 +3,8 @@ package factory
 import (
 	"time"
 
-	cfg "github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	cfg "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func GenesisDoc(

@@ -3,17 +3,17 @@ package ante
 import (
 	"math/big"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/paxeer-network/paxlog"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
-	evmkeeper "github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	utilmetrics "github.com/sidiora-labs/paxeer-network/utils/metrics"
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	utilmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
 var logger = paxlog.NewLogger("x", "evm", "ante")

@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"time"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	commitmenttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/23-commitment/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	commitmenttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/23-commitment/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
 )
 
 var _ exported.Header = &Header{}

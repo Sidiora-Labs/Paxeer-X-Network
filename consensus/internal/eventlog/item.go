@@ -3,9 +3,9 @@ package eventlog
 import (
 	"strings"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // Cached constants for the pieces of reserved event names.

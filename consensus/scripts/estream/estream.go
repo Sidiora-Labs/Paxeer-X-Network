@@ -12,9 +12,9 @@ import (
 	"os/signal"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/client/eventstream"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/eventstream"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 var (

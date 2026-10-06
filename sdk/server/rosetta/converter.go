@@ -6,30 +6,30 @@ import (
 	"fmt"
 	"reflect"
 
-	cosmoscrypto "github.com/sidiora-labs/paxeer-network/sdk/crypto/utils"
-	auth "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	cosmoscrypto "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/utils"
+	auth "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 
+	tmcoretypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/btcsuite/btcd/btcec/v2"
-	tmcoretypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 
-	crgtypes "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/types"
+	crgtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	rosettatypes "github.com/coinbase/rosetta-sdk-go/types"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
 
-	crgerrs "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/errors"
+	crgerrs "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/errors"
 
-	sdkclient "github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authsigning "github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdkclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authsigning "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // Converter is a utility that can be used to convert

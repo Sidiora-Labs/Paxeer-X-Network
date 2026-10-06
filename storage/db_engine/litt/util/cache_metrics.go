@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	commonmetrics "github.com/sidiora-labs/paxeer-network/storage/common/metrics"
+	commonmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
 )
 
 const cacheMeterName = "litt"

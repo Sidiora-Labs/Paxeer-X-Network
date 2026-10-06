@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 )
 
 type EvidenceUnmarshaler interface {

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/data"
-	apb "github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/giga/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/data"
+	apb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/giga/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/rpc"
 )
 
 func (x *Service) serverStreamLaneProposals(ctx context.Context, server rpc.Server[API]) error {

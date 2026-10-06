@@ -2,9 +2,9 @@
 package privval
 
 import (
-	wireguard "github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	utils "github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	types "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	wireguard "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	utils "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 // SchemaForSignProposalRequest is the wireguard.Schema generated for tendermint.privval.SignProposalRequest.

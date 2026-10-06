@@ -6,10 +6,10 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/im"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/im"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "p2p")

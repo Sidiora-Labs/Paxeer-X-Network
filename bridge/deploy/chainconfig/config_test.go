@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/bridge/vectors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/vectors"
 )
 
 // repositoryRoot is where the nine committed configurations live, relative to

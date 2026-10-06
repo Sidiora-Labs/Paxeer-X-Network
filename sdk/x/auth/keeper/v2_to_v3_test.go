@@ -1,8 +1,8 @@
 package keeper_test
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/stretchr/testify/require"
 	"testing"
 )

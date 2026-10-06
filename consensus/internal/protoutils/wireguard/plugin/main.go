@@ -49,8 +49,8 @@ func main() {
 }
 
 const (
-	wireguardRuntime = "github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard"
-	utilsPkg         = "github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
+	wireguardRuntime = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard"
+	utilsPkg         = "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
 )
 
 func findMaxCountExt(files *protoregistry.Files) (protoreflect.ExtensionType, error) {

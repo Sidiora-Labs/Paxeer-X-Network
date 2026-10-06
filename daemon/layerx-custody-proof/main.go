@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/custodyproof"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/custodyproof"
 )
 
 func run(output io.Writer) error {

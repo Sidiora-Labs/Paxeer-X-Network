@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
 )
 
 func TestSplitVersions(t *testing.T) {

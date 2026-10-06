@@ -3,13 +3,13 @@ package simulation
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 
-	clientsim "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/simulation"
-	connectionsim "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/simulation"
-	channelsim "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/simulation"
-	host "github.com/sidiora-labs/paxeer-network/interchain/modules/core/24-host"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/keeper"
+	clientsim "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/simulation"
+	connectionsim "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/simulation"
+	channelsim "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/simulation"
+	host "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/24-host"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
 )
 
 // NewDecodeStore returns a decoder function closure that unmarshals the KVPair's

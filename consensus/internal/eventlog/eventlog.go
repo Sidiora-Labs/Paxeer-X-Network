@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // A Log is a reverse time-ordered log of events in a sliding window of time

@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -22,19 +22,19 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/spf13/cobra"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/wpax"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/legacy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/wpax"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	"github.com/sidiora-labs/paxeer-network/precompiles"
-	evmrpc "github.com/sidiora-labs/paxeer-network/rpc"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/legacy"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 const (

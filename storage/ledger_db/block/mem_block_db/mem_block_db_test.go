@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/storage/ledger_db/block"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/block"
 )
 
 func makeBlock(height uint64, numTxs int) *block.BinaryBlock {

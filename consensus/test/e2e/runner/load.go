@@ -7,10 +7,10 @@ import (
 	"math/rand"
 	"time"
 
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // Load generates transactions against the network until the given context is

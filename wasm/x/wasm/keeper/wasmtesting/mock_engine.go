@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 var _ types.WasmerEngine = &MockWasmer{}

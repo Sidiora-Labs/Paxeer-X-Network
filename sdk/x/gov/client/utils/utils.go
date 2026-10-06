@@ -3,7 +3,7 @@ package utils
 import (
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 // NormalizeVoteOption - normalize user specified vote option

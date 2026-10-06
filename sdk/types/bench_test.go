@@ -3,7 +3,7 @@ package types_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 var coinStrs = []string{

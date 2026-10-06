@@ -1,7 +1,7 @@
 package feegrant
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // FeeAllowance implementations are tied to a given fee delegator and delegatee,

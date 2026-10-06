@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 // Import cosmos-sdk/types/store.go for convenience.

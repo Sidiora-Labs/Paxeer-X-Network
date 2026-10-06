@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func TestCountTxDecorator(t *testing.T) {

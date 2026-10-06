@@ -1,9 +1,9 @@
 package types
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
-	wasmvmtypes "github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
+	wasmvmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 // ViewKeeper provides read only operations

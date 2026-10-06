@@ -8,15 +8,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/tx"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
-	authclient "github.com/sidiora-labs/paxeer-network/sdk/x/auth/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/authz"
-	bank "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	staking "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
+	authclient "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
+	bank "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	staking "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
 )
 
 // Flag names and values

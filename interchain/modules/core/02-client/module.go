@@ -4,8 +4,8 @@ import (
 	"github.com/gogo/protobuf/grpc"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/client/cli"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
 )
 
 // Name returns the IBC client name

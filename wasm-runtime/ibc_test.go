@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/internal/api"
-	"github.com/sidiora-labs/paxeer-network/wasm-runtime/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/internal/api"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types"
 )
 
 const IBC_TEST_CONTRACT = "./testdata/ibc_reflect.wasm"

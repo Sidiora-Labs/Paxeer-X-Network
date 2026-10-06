@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
 )
 
 func TestCopy(t *testing.T) {

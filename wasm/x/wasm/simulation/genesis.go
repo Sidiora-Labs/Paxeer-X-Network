@@ -1,9 +1,9 @@
 package simulation
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 // RandomizeGenState generates a random GenesisState for wasm

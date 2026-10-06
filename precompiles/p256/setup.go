@@ -3,13 +3,13 @@
 package p256
 
 import (
+	p256v606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/p256/legacy/v606"
+	p256v614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/p256/legacy/v614"
+	p256v620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/p256/legacy/v620"
+	p256v630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/p256/legacy/v630"
+	p256v640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/p256/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	p256v606 "github.com/sidiora-labs/paxeer-network/precompiles/p256/legacy/v606"
-	p256v614 "github.com/sidiora-labs/paxeer-network/precompiles/p256/legacy/v614"
-	p256v620 "github.com/sidiora-labs/paxeer-network/precompiles/p256/legacy/v620"
-	p256v630 "github.com/sidiora-labs/paxeer-network/precompiles/p256/legacy/v630"
-	p256v640 "github.com/sidiora-labs/paxeer-network/precompiles/p256/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

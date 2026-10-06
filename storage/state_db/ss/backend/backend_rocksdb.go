@@ -5,9 +5,9 @@ package backend
 import (
 	"os"
 
-	"github.com/sidiora-labs/paxeer-network/storage/config"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/rocksdb/mvcc"
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/rocksdb/mvcc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 func openRocksDB(dbHome string, cfg config.StateStoreConfig) (types.StateStore, error) {

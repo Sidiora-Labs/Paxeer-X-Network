@@ -1,8 +1,8 @@
 package cachemulti
 
 import (
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/store/whitelist/kv"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/store/whitelist/kv"
 )
 
 // Since `CacheMultiStore` has a method with the same name, we have to

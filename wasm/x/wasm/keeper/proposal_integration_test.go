@@ -8,19 +8,19 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/client/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/client/utils"
 
-	wasmvm "github.com/sidiora-labs/paxeer-network/wasm-runtime"
+	wasmvm "github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper/wasmtesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper/wasmtesting"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/types/proposal"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 func TestStoreCodeProposal(t *testing.T) {

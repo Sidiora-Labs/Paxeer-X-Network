@@ -3,19 +3,19 @@
 package distribution
 
 import (
+	distributionv552 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v552"
+	distributionv555 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v555"
+	distributionv562 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v562"
+	distributionv580 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v580"
+	distributionv605 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v605"
+	distributionv606 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v606"
+	distributionv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v610"
+	distributionv614 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v614"
+	distributionv620 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v620"
+	distributionv630 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v630"
+	distributionv640 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/distribution/legacy/v640"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
-	distributionv552 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v552"
-	distributionv555 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v555"
-	distributionv562 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v562"
-	distributionv580 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v580"
-	distributionv605 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v605"
-	distributionv606 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v606"
-	distributionv610 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v610"
-	distributionv614 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v614"
-	distributionv620 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v620"
-	distributionv630 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v630"
-	distributionv640 "github.com/sidiora-labs/paxeer-network/precompiles/distribution/legacy/v640"
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

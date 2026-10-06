@@ -6,7 +6,7 @@ allows you to compile, initialize and execute CosmWasm smart contracts from Go
 applications, in particular from [`wasm/x/wasm`](../wasm/x/wasm).
 
 This directory is the Paxeer X Network copy of wasmvm. It is part of the root Go
-module, so its import path is `github.com/sidiora-labs/paxeer-network/wasm-runtime`.
+module, so its import path is `github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime`.
 The Rust library (`libwasmvm`, crate version 1.5.4) builds against `cosmwasm-vm` from
 [Paxeer-Network/pax-cosmwasm](https://github.com/Paxeer-Network/pax-cosmwasm)
 (`libwasmvm/Cargo.toml`). Unless noted otherwise, the commands below run from
@@ -45,10 +45,10 @@ make release-build-windows
 
 The Go code consists of three packages:
 
-1. The types (the `github.com/sidiora-labs/paxeer-network/wasm-runtime/types` import), using
+1. The types (the `github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types` import), using
    `package types`
 2. The internal package `internal/api`, using `package api`
-3. This directory (the `github.com/sidiora-labs/paxeer-network/wasm-runtime` import), using `package cosmwasm`
+3. This directory (the `github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime` import), using `package cosmwasm`
 
 The dependencies between them are as follows:
 
@@ -66,7 +66,7 @@ make build-go
 make test
 ```
 
-#### Package github.com/sidiora-labs/paxeer-network/wasm-runtime/types
+#### Package github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime/types
 
 This packages contains types used by the two other packages. It can be compiled
 without cgo.
@@ -84,7 +84,7 @@ This package contains the code binding the libwasmvm build to the Go code. All
 low level FFI handling code belongs there. This package can only be built using
 cgo. Using the `internal/` convention makes this package fully private.
 
-#### Package github.com/sidiora-labs/paxeer-network/wasm-runtime
+#### Package github.com/Sidiora-Labs/Paxeer-X-Network/wasm-runtime
 
 This is the package users import. It can be compiled without cgo, but when you
 do so, a lot of functionality is removed.

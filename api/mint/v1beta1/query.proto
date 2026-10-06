@@ -5,7 +5,7 @@ import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "mint/v1beta1/mint.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/mint/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types";
 
 // Query provides defines the gRPC querier service.
 service Query {

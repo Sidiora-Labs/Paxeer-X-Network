@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/util"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/util"
 )
 
 // ValuesFileExtension is the file extension for the values file. This file contains the values for the data

@@ -10,18 +10,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 )
 
 var (

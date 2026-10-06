@@ -8,13 +8,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/rpc"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	qtypes "github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	"github.com/sidiora-labs/paxeer-network/sdk/version"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/rpc"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	qtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version"
 )
 
 func GetProtoBlock(ctx context.Context, node client.Client, height *int64) (tmproto.BlockID, *tmproto.Block, error) {

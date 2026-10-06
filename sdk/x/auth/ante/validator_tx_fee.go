@@ -3,9 +3,9 @@ package ante
 import (
 	"math"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	paramskeeper "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
 )
 
 var BaseDenomGasPriceAmplfier = sdk.NewInt(1_000_000_000_000)

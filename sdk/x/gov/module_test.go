@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	abcitypes "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	abcitypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 
-	paxapp "github.com/sidiora-labs/paxeer-network/node"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	paxapp "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 func TestItCreatesModuleAccountOnInitBlock(t *testing.T) {

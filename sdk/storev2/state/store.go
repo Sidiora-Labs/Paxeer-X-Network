@@ -7,13 +7,13 @@ import (
 
 	"cosmossdk.io/errors"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/tracekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	paxdbtypes "github.com/sidiora-labs/paxeer-network/storage/db_engine/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/tracekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	paxdbtypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/types"
 )
 
 const StoreTypeSSStore = 100

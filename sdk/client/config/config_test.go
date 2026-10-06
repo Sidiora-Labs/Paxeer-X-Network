@@ -9,11 +9,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/staking/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/client/cli"
 )
 
 const (

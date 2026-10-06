@@ -3,12 +3,12 @@ package multisig
 import (
 	fmt "fmt"
 
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	multisigtypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types/multisig"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	multisigtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types/multisig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 )
 
 var _ multisigtypes.PubKey = &LegacyAminoPubKey{}

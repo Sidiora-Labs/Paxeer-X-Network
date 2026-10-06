@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 type Store struct {

@@ -17,11 +17,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	e2e "github.com/sidiora-labs/paxeer-network/consensus/test/e2e/pkg"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	e2e "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/test/e2e/pkg"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 const (

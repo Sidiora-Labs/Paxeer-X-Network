@@ -62,11 +62,11 @@ build_tags_comma_sep := $(subst $(whitespace),$(comma),$(build_tags))
 
 # process linker flags
 
-ldflags = -X github.com/sidiora-labs/paxeer-network/sdk/version.Name=paxeer \
-			-X github.com/sidiora-labs/paxeer-network/sdk/version.AppName=paxd \
-			-X github.com/sidiora-labs/paxeer-network/sdk/version.Version=$(VERSION) \
-			-X github.com/sidiora-labs/paxeer-network/sdk/version.Commit=$(COMMIT) \
-			-X "github.com/sidiora-labs/paxeer-network/sdk/version.BuildTags=$(build_tags_comma_sep)"
+ldflags = -X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.Name=paxeer \
+			-X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.AppName=paxd \
+			-X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.Version=$(VERSION) \
+			-X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.Commit=$(COMMIT) \
+			-X "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.BuildTags=$(build_tags_comma_sep)"
 
 # go 1.23+ needs a workaround to link memsize (see https://github.com/fjl/memsize).
 # NOTE: this is a terribly ugly and unstable way of comparing version numbers,
@@ -544,7 +544,7 @@ $(BUILDDIR):
 $(BUILDDIR)/packages.txt:$(GO_TEST_FILES) $(BUILDDIR)
 	go list -f "{{ if (or .TestGoFiles .XTestGoFiles) }}{{ .ImportPath }}{{ end }}" ./... | sort > $@
 
-TARGET_PACKAGE := github.com/sidiora-labs/paxeer-network/occ_tests
+TARGET_PACKAGE := github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests
 
 split-test-packages:$(BUILDDIR)/packages.txt
 	split -d -n l/$(NUM_SPLIT) $< $<.

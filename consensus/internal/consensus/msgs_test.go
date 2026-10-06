@@ -7,22 +7,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	cstypes "github.com/sidiora-labs/paxeer-network/consensus/internal/consensus/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/test/factory"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bits"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	tmcons "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/consensus"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	cstypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/test/factory"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bits"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	tmcons "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/consensus"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 func TestMsgToProto(t *testing.T) {

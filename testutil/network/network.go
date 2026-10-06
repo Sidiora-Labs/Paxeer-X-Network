@@ -5,19 +5,19 @@ import (
 	"testing"
 	"time"
 
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/hd"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	servertypes "github.com/sidiora-labs/paxeer-network/sdk/server/types"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/hd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	servertypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 	tmdb "github.com/tendermint/tm-db"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 type (

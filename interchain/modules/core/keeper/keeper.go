@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitykeeper "github.com/sidiora-labs/paxeer-network/sdk/x/capability/keeper"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/keeper"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 
-	clientkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/keeper"
-	clienttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/02-client/types"
-	connectionkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/keeper"
-	connectiontypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/03-connection/types"
-	channelkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/keeper"
-	portkeeper "github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/keeper"
-	porttypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/05-port/types"
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/core/types"
+	clientkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/keeper"
+	clienttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/02-client/types"
+	connectionkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/keeper"
+	connectiontypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/03-connection/types"
+	channelkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/keeper"
+	portkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/keeper"
+	porttypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/05-port/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/types"
 )
 
 var _ types.QueryServer = (*Keeper)(nil)

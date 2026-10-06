@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/privval"
-	"github.com/sidiora-labs/paxeer-network/consensus/version"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/version"
 )
 
 func resetPrivValidatorConfig(privValidatorConfig config.PrivValidatorConfig) error {

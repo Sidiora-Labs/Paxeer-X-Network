@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 type traceExecutionPhaseDurations struct {

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/wrappers"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/wrappers"
 )
 
 // Encapsulates the database for the cryptosim benchmark.

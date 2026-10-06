@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
 )
 
 func mustParse(t *testing.T, s string) cursor.Cursor {

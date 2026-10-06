@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	commonmetrics "github.com/sidiora-labs/paxeer-network/storage/common/metrics"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/wrappers"
-	scTypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	commonmetrics "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/wrappers"
+	scTypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 type readTrackingWrapper struct {

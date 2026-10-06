@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/exported"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/exported"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 )
 
 func TestDefaultGenesisState(t *testing.T) {

@@ -1,9 +1,9 @@
 package types
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	store "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	store "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // UpgradeStoreLoader is used to prepare baseapp with a fixed StoreLoader

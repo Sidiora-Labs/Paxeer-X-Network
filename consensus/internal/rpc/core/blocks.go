@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"sort"
 
-	atypes "github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	tmquery "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/state/indexer"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	atypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	tmquery "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state/indexer"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // BlockchainInfo gets block headers for minHeight <= height <= maxHeight.

@@ -8,8 +8,8 @@ import (
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"google.golang.org/grpc"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/server/config"
-	"github.com/sidiora-labs/paxeer-network/sdk/server/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/types"
 )
 
 // StartGRPCWeb starts a gRPC-Web server on the given address.

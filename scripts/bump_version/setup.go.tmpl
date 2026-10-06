@@ -5,9 +5,9 @@ package {{.PackageName}}
 import (
 	"github.com/ethereum/go-ethereum/core/vm"
 {{- range .LegacyVersions}}
-	{{$.PackageName}}{{.Folder}} "github.com/sidiora-labs/paxeer-network/precompiles/{{$.PackageName}}/legacy/{{.Folder}}"
+	{{$.PackageName}}{{.Folder}} "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/{{$.PackageName}}/legacy/{{.Folder}}"
 {{- end}}
-	"github.com/sidiora-labs/paxeer-network/precompiles/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {

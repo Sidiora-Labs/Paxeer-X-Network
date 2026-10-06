@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/modules/apps/transfer/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/apps/transfer/types"
 )
 
 func (suite *KeeperTestSuite) TestMsgTransfer() {

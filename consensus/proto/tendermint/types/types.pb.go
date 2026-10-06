@@ -5,13 +5,13 @@ package types
 
 import (
 	fmt "fmt"
+	crypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	version "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/version"
+	_ "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/wireguard"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/types"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	crypto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	version "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/version"
-	_ "github.com/sidiora-labs/paxeer-network/consensus/proto/wireguard"
 	io "io"
 	math "math"
 	math_bits "math/bits"

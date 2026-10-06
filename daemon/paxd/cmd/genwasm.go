@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/spf13/cobra"
 
-	wasmcli "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/client/cli"
+	wasmcli "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/client/cli"
 )
 
 func AddGenesisWasmMsgCmd(defaultNodeHome string) *cobra.Command {

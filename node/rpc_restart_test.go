@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/ethereum/go-ethereum/rpc"
-	evmrpc "github.com/sidiora-labs/paxeer-network/rpc"
 	"github.com/stretchr/testify/require"
 )
 

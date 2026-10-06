@@ -6,7 +6,7 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	cryptokeyring "github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
+	cryptokeyring "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
 )
 
 // available output formats.

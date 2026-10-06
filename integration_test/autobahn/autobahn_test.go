@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 )
 
 const (

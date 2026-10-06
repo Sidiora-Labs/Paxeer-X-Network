@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/wasmd"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	wasmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/state"
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/precompiles/wasmd"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
-	wasmkeeper "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
 	"github.com/stretchr/testify/require"
 )
 

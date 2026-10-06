@@ -27,14 +27,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/audit"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/audit"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/lxwire"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/policy/lx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/transport"
 )
 
 const (

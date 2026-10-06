@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 // NewGenesisState creates a new genesis state for the governance module

@@ -1,9 +1,9 @@
 package auth
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 // InitGenesis - Init store state from genesis data

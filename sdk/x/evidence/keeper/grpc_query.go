@@ -6,14 +6,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
 
 	proto "github.com/gogo/protobuf/proto"
 
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/evidence/types"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/evidence/types"
 )
 
 var _ types.QueryServer = Keeper{}

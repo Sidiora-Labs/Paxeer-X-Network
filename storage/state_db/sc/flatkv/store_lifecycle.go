@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/ktype"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/ktype"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 // isClosed reports whether the store's DB handles have been released.

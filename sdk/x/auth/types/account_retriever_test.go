@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 )
 
 func TestAccountRetriever(t *testing.T) {

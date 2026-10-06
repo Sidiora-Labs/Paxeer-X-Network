@@ -15,13 +15,13 @@ import (
 	"github.com/spf13/cobra"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	lproxy "github.com/sidiora-labs/paxeer-network/consensus/light/proxy"
-	lrpc "github.com/sidiora-labs/paxeer-network/consensus/light/rpc"
-	dbs "github.com/sidiora-labs/paxeer-network/consensus/light/store/db"
-	rpcserver "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	lproxy "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/proxy"
+	lrpc "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/rpc"
+	dbs "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store/db"
+	rpcserver "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 )
 
 // LightCmd constructs the base command called when invoked without any subcommands.

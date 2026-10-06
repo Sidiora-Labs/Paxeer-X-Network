@@ -8,9 +8,9 @@ body:
   - type: checkboxes
     attributes:
       label: Search before asking
-      description: Please search [issues](https://github.com/sidiora-labs/paxeer-network/issues) to check if your issue has already been reported.
+      description: Please search [issues](https://github.com/Sidiora-Labs/Paxeer-X-Network/issues) to check if your issue has already been reported.
       options:
-        - label: I searched in the [issues](https://github.com/sidiora-labs/paxeer-network/issues) and found nothing similar.
+        - label: I searched in the [issues](https://github.com/Sidiora-Labs/Paxeer-X-Network/issues) and found nothing similar.
           required: true
   - type: textarea
     attributes:

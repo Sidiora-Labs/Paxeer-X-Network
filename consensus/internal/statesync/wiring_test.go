@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/protoutils/wireguard/wgtest"
-	ssproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/statesync"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/protoutils/wireguard/wgtest"
+	ssproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/statesync"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 // TestWiring_LightBlockChannel asserts that the statesync message type

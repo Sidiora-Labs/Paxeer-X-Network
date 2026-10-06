@@ -1,9 +1,9 @@
 package ante
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 )
 
 // AccountKeeper defines the contract needed for AccountKeeper related APIs.

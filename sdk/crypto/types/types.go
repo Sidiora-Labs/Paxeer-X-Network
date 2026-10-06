@@ -1,8 +1,8 @@
 package types
 
 import (
+	tmcrypto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	proto "github.com/gogo/protobuf/proto"
-	tmcrypto "github.com/sidiora-labs/paxeer-network/consensus/crypto"
 )
 
 // PubKey defines a public key and extends proto.Message.

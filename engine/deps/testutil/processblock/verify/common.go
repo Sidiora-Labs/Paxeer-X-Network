@@ -3,8 +3,8 @@ package verify
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	"github.com/sidiora-labs/paxeer-network/testutil/processblock"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/testutil/processblock"
 )
 
 type BlockRunnable func() (resultCodes []uint32)

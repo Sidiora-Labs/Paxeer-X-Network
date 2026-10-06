@@ -7,8 +7,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/tracekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/tracekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 var ErrIteratorUnsupported = errors.New("unexpected iterator call on cachekv store")

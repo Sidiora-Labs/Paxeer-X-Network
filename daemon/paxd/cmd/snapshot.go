@@ -5,18 +5,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/baseapp"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	dbm "github.com/tendermint/tm-db"
 
-	app "github.com/sidiora-labs/paxeer-network/node"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 )
 
 // SnapshotCmd creates a new command to trigger snapshot creation

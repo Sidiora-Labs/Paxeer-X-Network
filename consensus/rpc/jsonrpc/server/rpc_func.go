@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 // DefaultRPCTimeout is the default context timeout for calls to any RPC method

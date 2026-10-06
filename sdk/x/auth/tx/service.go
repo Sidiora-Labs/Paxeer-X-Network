@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/grpc/tmservice"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/grpc/tmservice"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
 	gogogrpc "github.com/gogo/protobuf/grpc"
 	"github.com/golang/protobuf/proto" // nolint: staticcheck
@@ -14,11 +14,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	pagination "github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	pagination "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
 )
 
 // baseAppSimulateFn is the signature of the Baseapp#Simulate function.

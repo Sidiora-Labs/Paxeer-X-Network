@@ -33,7 +33,7 @@ import (
 	pt "github.com/getamis/alice/crypto/ecpointgrouplaw"
 	"github.com/getamis/alice/crypto/elliptic"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/dealer"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/dealer"
 )
 
 const (

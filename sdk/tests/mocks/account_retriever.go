@@ -7,10 +7,10 @@ package mocks
 import (
 	reflect "reflect"
 
+	client "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	types0 "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	gomock "github.com/golang/mock/gomock"
-	client "github.com/sidiora-labs/paxeer-network/sdk/client"
-	types "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	types0 "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // MockAccount is a mock of Account interface.

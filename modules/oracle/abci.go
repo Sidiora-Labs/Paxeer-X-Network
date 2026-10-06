@@ -7,13 +7,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/utils"
-	"github.com/sidiora-labs/paxeer-network/utils/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func MidBlocker(ctx sdk.Context, k keeper.Keeper) {

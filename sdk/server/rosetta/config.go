@@ -8,10 +8,10 @@ import (
 	"github.com/coinbase/rosetta-sdk-go/types"
 	"github.com/spf13/pflag"
 
-	crg "github.com/sidiora-labs/paxeer-network/sdk/server/rosetta/lib/server"
+	crg "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server/rosetta/lib/server"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 // configuration defaults constants

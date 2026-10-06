@@ -1,6 +1,6 @@
 package keeper_test
 
-import sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+import sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
 var (
 	// The default power validators are initialized to have within tests

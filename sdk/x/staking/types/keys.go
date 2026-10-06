@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/address"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 )
 
 const (

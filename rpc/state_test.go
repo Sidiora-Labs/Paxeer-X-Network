@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/rpc"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 )
 

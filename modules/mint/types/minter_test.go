@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 
-	epochTypes "github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	epochTypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

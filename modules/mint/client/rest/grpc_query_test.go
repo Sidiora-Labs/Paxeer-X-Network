@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	grpctypes "github.com/sidiora-labs/paxeer-network/sdk/types/grpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	grpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/grpc"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/suite"
 
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
 )
 
 type IntegrationTestSuite struct {

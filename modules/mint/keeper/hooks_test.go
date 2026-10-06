@@ -4,14 +4,14 @@ import (
 	"testing"
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	"github.com/sidiora-labs/paxeer-network/node/legacyabci"
-	keepertest "github.com/sidiora-labs/paxeer-network/testutil/keeper"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/legacyabci"
+	keepertest "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/stretchr/testify/require"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 func getGenesisTime() time.Time {

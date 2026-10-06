@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // GenNodeKeyCmd allows the generation of a node key. It prints JSON-encoded

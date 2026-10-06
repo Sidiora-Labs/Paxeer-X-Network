@@ -1,11 +1,11 @@
 package keeper_test
 
 import (
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/query"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 func (suite *IntegrationTestSuite) TestExportGenesis() {

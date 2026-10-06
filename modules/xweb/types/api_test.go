@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/modules/xweb/types"
 	"github.com/stretchr/testify/require"
 )
 

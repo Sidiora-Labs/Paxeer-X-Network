@@ -6,12 +6,12 @@ import (
 	"math"
 	"strings"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	ctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 	"github.com/gogo/protobuf/proto"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	ctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 )
 
 var cdc = codec.NewLegacyAmino()

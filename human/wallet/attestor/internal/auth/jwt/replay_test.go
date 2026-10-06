@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/jwt"
-	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/auth/jwt"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/human/wallet/attestor/internal/store"
 )
 
 type provider struct {

@@ -5,17 +5,17 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/node"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	testkeeper "github.com/sidiora-labs/paxeer-network/testutil/keeper"
-	wasmtypes "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/derived"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/derived"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
 	"github.com/stretchr/testify/require"
 )
 

@@ -5,10 +5,10 @@ package types
 
 import (
 	fmt "fmt"
+	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	types "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	github_com_sidiora_labs_paxeer_network_sdk_types "github.com/sidiora-labs/paxeer-network/sdk/types"
-	types "github.com/sidiora-labs/paxeer-network/sdk/types"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -27,7 +27,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // Defines fee params that are controlled through governance
 type FeesParams struct {
-	GlobalMinimumGasPrices github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=global_minimum_gas_prices,json=globalMinimumGasPrices,proto3,castrepeated=github.com/sidiora-labs/paxeer-network/sdk/types.DecCoins" json:"global_minimum_gas_prices"`
+	GlobalMinimumGasPrices github_com_sidiora_labs_paxeer_network_sdk_types.DecCoins `protobuf:"bytes,1,rep,name=global_minimum_gas_prices,json=globalMinimumGasPrices,proto3,castrepeated=github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.DecCoins" json:"global_minimum_gas_prices"`
 	AllowedFeeDenoms       []string                                                  `protobuf:"bytes,2,rep,name=allowed_fee_denoms,json=allowedFeeDenoms,proto3" json:"allowed_fee_denoms,omitempty"`
 }
 

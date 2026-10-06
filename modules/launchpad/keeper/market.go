@@ -5,13 +5,13 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
+	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sidiora-labs/paxeer-network/modules/launchpad/types"
-	tokenfactorytypes "github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
-	"github.com/sidiora-labs/paxeer-network/utils"
 )
 
 // Subdenom is the tokenfactory subdenom of the index-th market.

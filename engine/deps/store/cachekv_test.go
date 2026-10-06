@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	gigastore "github.com/sidiora-labs/paxeer-network/engine/deps/store"
+	gigastore "github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/store"
 	"github.com/stretchr/testify/require"
 )
 

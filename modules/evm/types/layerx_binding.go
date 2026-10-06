@@ -7,9 +7,9 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/codec"
-	"github.com/sidiora-labs/paxeer-network/layerxproof/verify"
 )
 
 const (

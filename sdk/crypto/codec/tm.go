@@ -1,13 +1,13 @@
 package codec
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/ed25519"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 // FromTmProtoPublicKey converts a TM's pb.PublicKey into our own PubKey.

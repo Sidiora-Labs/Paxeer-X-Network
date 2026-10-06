@@ -17,12 +17,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/snapshots"
-	snapshottypes "github.com/sidiora-labs/paxeer-network/sdk/snapshots/types"
-	commonevm "github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	"github.com/sidiora-labs/paxeer-network/storage/proto"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/bench/wrappers"
-	sctypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots"
+	snapshottypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/snapshots/types"
+	commonevm "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/bench/wrappers"
+	sctypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 const (

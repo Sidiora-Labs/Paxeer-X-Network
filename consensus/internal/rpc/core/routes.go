@@ -3,8 +3,8 @@ package core
 import (
 	"context"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	rpc "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	rpc "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/server"
 )
 
 // TODO: better system than "unsafe" prefix

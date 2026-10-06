@@ -3,8 +3,8 @@ package multiversion
 import (
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	occtypes "github.com/sidiora-labs/paxeer-network/sdk/types/occ"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	occtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/occ"
 )
 
 // Iterates over iterKVCache items.

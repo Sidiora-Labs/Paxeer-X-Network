@@ -1,9 +1,9 @@
 package rootmulti
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
 
-	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 // RequireProof returns whether proof is required for the subpath.

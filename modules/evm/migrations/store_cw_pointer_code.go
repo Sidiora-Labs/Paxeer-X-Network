@@ -1,14 +1,14 @@
 package migrations
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc721"
-	artifactsutils "github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/utils"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc721"
+	artifactsutils "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func StoreCWPointerCode(ctx sdk.Context, k *keeper.Keeper, store20 bool, store721 bool, store1155 bool) error {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/p2p"
 )
 
 func TestValueToMetricsLabel(t *testing.T) {

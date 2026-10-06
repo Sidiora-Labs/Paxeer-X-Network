@@ -3,7 +3,7 @@ package tools
 import (
 	"github.com/spf13/cobra"
 
-	scanner "github.com/sidiora-labs/paxeer-network/tools/tx-scanner/cmd"
+	scanner "github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/cmd"
 )
 
 func ToolCmd() *cobra.Command {

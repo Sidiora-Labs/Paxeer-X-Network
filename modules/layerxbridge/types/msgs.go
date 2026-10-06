@@ -1,7 +1,7 @@
 package types
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // The governance messages are generated from api/layerxbridge/tx.proto. Each

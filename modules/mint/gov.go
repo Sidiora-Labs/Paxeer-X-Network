@@ -1,9 +1,9 @@
 package mint
 
 import (
-	"github.com/sidiora-labs/paxeer-network/modules/mint/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 func HandleUpdateMinterProposal(ctx sdk.Context, k *keeper.Keeper, p *types.UpdateMinterProposal) error {

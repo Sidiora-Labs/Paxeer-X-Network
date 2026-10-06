@@ -3,10 +3,10 @@
 package legacybech32
 
 import (
-	"github.com/sidiora-labs/paxeer-network/sdk/codec/legacy"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/bech32"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/legacy"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/bech32"
 )
 
 // TODO: when removing this package remove:

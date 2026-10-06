@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmpubsub "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	tmquery "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmpubsub "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	tmquery "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var DefaultBufferCapacity = 10000

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/utils/datastructures"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/datastructures"
 	"github.com/stretchr/testify/require"
 )
 

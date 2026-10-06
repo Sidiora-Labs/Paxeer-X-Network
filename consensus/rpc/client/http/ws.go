@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	jsonrpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/client"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	jsonrpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/client"
 )
 
 var logger = paxlog.NewLogger("tendermint", "rpc", "client", "http")

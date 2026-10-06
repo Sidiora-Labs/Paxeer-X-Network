@@ -6,10 +6,10 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/internal/conv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/tracekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/internal/conv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/tracekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 	dbm "github.com/tendermint/tm-db"
 )
 

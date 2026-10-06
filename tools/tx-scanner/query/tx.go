@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	"github.com/sidiora-labs/paxeer-network/tools/tx-scanner/client"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/tools/tx-scanner/client"
 )
 
 // GetTxsEvent query the detailed transaction data, same as `paxd q txs --events`

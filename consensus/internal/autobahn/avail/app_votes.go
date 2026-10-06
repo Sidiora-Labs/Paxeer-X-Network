@@ -3,8 +3,8 @@ package avail
 import (
 	"log/slog"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
 	"github.com/paxeer-network/paxlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
 )
 
 var logger = paxlog.NewLogger("tendermint", "internal", "autobahn", "avail")

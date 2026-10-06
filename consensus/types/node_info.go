@@ -7,9 +7,9 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmstrings "github.com/sidiora-labs/paxeer-network/consensus/libs/strings"
-	tmp2p "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmstrings "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/strings"
+	tmp2p "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/p2p"
 )
 
 const (

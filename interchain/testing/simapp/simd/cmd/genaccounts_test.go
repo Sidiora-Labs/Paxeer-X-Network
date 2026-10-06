@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/genutil"
-	genutiltest "github.com/sidiora-labs/paxeer-network/sdk/x/genutil/client/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil"
+	genutiltest "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/genutil/client/testutil"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/interchain/testing/simapp"
-	simcmd "github.com/sidiora-labs/paxeer-network/interchain/testing/simapp/simd/cmd"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp"
+	simcmd "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/testing/simapp/simd/cmd"
 )
 
 var testMbm = module.NewBasicManager(genutil.AppModuleBasic{})

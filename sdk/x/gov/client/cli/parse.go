@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/pflag"
 
-	govutils "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/utils"
+	govutils "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/utils"
 )
 
 func parseSubmitProposalFlags(fs *pflag.FlagSet) (*proposal, error) {

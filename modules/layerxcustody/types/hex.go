@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"strings"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 )
 
 // Hash32 renders a 32-byte identifier as 64 lowercase hex characters, the

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	tbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	tbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 // LightClientInfo describes the status of the light client.

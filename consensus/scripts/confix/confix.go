@@ -18,7 +18,7 @@ import (
 	"github.com/creachadair/tomledit/transform"
 	"github.com/spf13/viper"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 )
 
 func init() {

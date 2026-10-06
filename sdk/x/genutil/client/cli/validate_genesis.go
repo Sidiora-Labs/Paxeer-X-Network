@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
-	genesistypes "github.com/sidiora-labs/paxeer-network/sdk/types/genesis"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
+	genesistypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/genesis"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/server"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/server"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 )
 
 const (

@@ -24,11 +24,11 @@ import (
 	"context"
 	"os"
 
+	evmcfg "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/paxeer-network/paxlog"
-	evmcfg "github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
 )
 
 var logger = paxlog.NewLogger("app", "benchmark")

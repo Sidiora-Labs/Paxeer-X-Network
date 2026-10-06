@@ -6,8 +6,8 @@
 package wasm
 
 import (
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/keeper"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 const (

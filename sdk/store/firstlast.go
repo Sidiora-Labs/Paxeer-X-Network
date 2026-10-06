@@ -3,8 +3,8 @@ package store
 import (
 	"bytes"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkkv "github.com/sidiora-labs/paxeer-network/sdk/types/kv"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkkv "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
 )
 
 // Gets the first item.

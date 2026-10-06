@@ -1,6 +1,6 @@
 package wasmtesting
 
-import sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+import sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
 type MockCoinTransferrer struct {
 	TransferCoinsFn func(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error

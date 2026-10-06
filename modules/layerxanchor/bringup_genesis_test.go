@@ -10,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
 )
 
 // The bring-up writes the anchor section with platform/hosted/paxeer/anchor-genesis.py and paxd

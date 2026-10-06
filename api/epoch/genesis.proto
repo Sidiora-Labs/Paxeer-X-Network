@@ -6,7 +6,7 @@ import "epoch/params.proto";
 import "gogoproto/gogo.proto";
 // this line is used by starport scaffolding # genesis/proto/import
 
-option go_package = "github.com/sidiora-labs/paxeer-network/modules/epoch/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types";
 
 // GenesisState defines the epoch module's genesis state.
 message GenesisState {

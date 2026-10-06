@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/pkg/errors"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	paramtypes "github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
 	"gopkg.in/yaml.v2"
 )
 

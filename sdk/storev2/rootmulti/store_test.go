@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/mem"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/storev2/state"
-	"github.com/sidiora-labs/paxeer-network/storage/config"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/mem"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/storev2/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 )

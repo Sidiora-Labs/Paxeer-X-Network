@@ -3,7 +3,7 @@ package keymap
 import (
 	"log/slog"
 
-	"github.com/sidiora-labs/paxeer-network/storage/db_engine/litt/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/db_engine/litt/types"
 )
 
 // KeymapDirectoryName is the name of the directory where the keymap stores its files. One keymap directory is

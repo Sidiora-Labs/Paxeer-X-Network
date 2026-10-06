@@ -12,17 +12,17 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/protoio"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/libs/tempfile"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmjson "github.com/sidiora-labs/paxeer-network/consensus/libs/json"
-	tmos "github.com/sidiora-labs/paxeer-network/consensus/libs/os"
-	tmtime "github.com/sidiora-labs/paxeer-network/consensus/libs/time"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/protoio"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/tempfile"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmjson "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/json"
+	tmos "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/os"
+	tmtime "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/time"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // TODO: type ?

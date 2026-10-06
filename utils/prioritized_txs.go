@@ -1,9 +1,9 @@
 package utils
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	oracletypes "github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 )
 
 func IsTxPrioritized(tx sdk.Tx) bool {

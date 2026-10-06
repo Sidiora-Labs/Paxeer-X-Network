@@ -13,15 +13,15 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/gogo/protobuf/proto"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	tmtypes "github.com/sidiora-labs/paxeer-network/consensus/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	codectypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 type Client = rpcclient.Client

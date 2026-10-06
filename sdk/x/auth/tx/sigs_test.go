@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/testdata"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/testdata"
 )
 
 func TestDecodeMultisignatures(t *testing.T) {

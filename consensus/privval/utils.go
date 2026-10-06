@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"
-	tmnet "github.com/sidiora-labs/paxeer-network/consensus/libs/net"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	tmnet "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/net"
 )
 
 // IsConnTimeout returns a boolean indicating whether the error is known to

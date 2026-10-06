@@ -4,16 +4,16 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 	"github.com/spf13/cobra"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keyring"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/multisig"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/ledger"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerr "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keyring"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/multisig"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/ledger"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerr "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 )
 
 const (

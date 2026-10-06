@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/suite"
 
-	tmcli "github.com/sidiora-labs/paxeer-network/consensus/libs/cli"
+	tmcli "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/cli"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/client/flags"
-	clitestutil "github.com/sidiora-labs/paxeer-network/sdk/testutil/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/testutil/network"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/flags"
+	clitestutil "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil/network"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 type IntegrationTestSuite struct {

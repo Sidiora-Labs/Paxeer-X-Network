@@ -8,17 +8,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/config"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/consensus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventbus"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p"
-	sm "github.com/sidiora-labs/paxeer-network/consensus/internal/state"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/store"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/service"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils/scope"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/blocksync"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/consensus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventbus"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p"
+	sm "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/state"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/store"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/service"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils/scope"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/blocksync"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var _ service.Service = (*Reactor)(nil)

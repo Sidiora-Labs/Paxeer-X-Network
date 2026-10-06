@@ -6,8 +6,8 @@ import (
 	"math"
 	"sync"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
 	"github.com/armon/go-metrics"
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 )

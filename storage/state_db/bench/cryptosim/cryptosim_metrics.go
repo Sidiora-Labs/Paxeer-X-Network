@@ -13,8 +13,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sys/unix"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
 	"github.com/shirou/gopsutil/v3/process"
-	"github.com/sidiora-labs/paxeer-network/storage/common/metrics"
 )
 
 const cryptosimMeterName = "cryptosim"

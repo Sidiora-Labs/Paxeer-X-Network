@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/tmhash"
-	ctest "github.com/sidiora-labs/paxeer-network/consensus/internal/libs/test"
-	tmrand "github.com/sidiora-labs/paxeer-network/consensus/libs/rand"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/tmhash"
+	ctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/test"
+	tmrand "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/rand"
 )
 
 type testItem []byte

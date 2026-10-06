@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tmsync "github.com/sidiora-labs/paxeer-network/consensus/internal/libs/sync"
+	tmsync "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/libs/sync"
 )
 
 func TestWaker(t *testing.T) {

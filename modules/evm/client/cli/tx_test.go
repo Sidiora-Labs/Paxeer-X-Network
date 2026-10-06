@@ -16,14 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	layerxbridgetypes "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	cdctypes "github.com/sidiora-labs/paxeer-network/sdk/codec/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/std"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	govcli "github.com/sidiora-labs/paxeer-network/sdk/x/gov/client/cli"
-	govtypes "github.com/sidiora-labs/paxeer-network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/std"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	govcli "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/client/cli"
+	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 )
 
 func TestGetChainId(t *testing.T) {

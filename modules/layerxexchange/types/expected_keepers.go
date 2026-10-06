@@ -3,9 +3,9 @@ package types
 import (
 	"math/big"
 
+	custodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
-	custodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 )
 
 // CustodyKeeper is the only path margin moves through: a margin deposit is a

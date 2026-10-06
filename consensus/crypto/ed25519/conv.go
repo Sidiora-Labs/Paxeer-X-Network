@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 )
 
 // Bytes converts the public key or signature to bytes.

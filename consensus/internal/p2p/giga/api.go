@@ -1,10 +1,10 @@
 package giga
 
 import (
-	"github.com/sidiora-labs/paxeer-network/consensus/autobahn/types"
-	apb "github.com/sidiora-labs/paxeer-network/consensus/internal/autobahn/pb"
-	pb "github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/giga/pb"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/p2p/rpc"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
+	apb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/autobahn/pb"
+	pb "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/giga/pb"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/p2p/rpc"
 )
 
 const kB rpc.InBytes = 1024

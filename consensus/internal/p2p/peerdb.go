@@ -11,9 +11,9 @@ import (
 	"github.com/google/orderedcode"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	p2pproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/p2p"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	p2pproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/p2p"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // peerInfoFromProto converts a Protobuf PeerInfo message to a peerInfo,

@@ -1,8 +1,8 @@
 package legacytm
 
 import (
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 func ABCIToLegacyConsensusParams(params *tmproto.ConsensusParams) *abci.ConsensusParams {

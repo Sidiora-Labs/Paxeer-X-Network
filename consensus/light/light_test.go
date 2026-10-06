@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/abci/example/kvstore"
-	"github.com/sidiora-labs/paxeer-network/consensus/libs/utils"
-	"github.com/sidiora-labs/paxeer-network/consensus/light"
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	httpp "github.com/sidiora-labs/paxeer-network/consensus/light/provider/http"
-	dbs "github.com/sidiora-labs/paxeer-network/consensus/light/store/db"
-	rpctest "github.com/sidiora-labs/paxeer-network/consensus/rpc/test"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/example/kvstore"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	httpp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider/http"
+	dbs "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/store/db"
+	rpctest "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/test"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 // NOTE: these are ports of the tests from example_test.go but

@@ -4,10 +4,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
 
 // OrganizeBallotByDenom collects all oracle votes for the period, categorized by the votes' denom parameter

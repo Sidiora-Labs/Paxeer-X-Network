@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/eventlog/cursor"
-	"github.com/sidiora-labs/paxeer-network/consensus/internal/jsontypes"
-	tmpubsub "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub"
-	tmquery "github.com/sidiora-labs/paxeer-network/consensus/internal/pubsub/query"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/eventlog/cursor"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/jsontypes"
+	tmpubsub "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub"
+	tmquery "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/internal/pubsub/query"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
 )
 
 const (

@@ -1,6 +1,6 @@
 package types
 
-import sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
+import sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 
 var (
 	ErrUnauthorized     = sdkerrors.Register(ModuleName, 2, "unauthorized")

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/light/provider"
-	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
-	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
-	"github.com/sidiora-labs/paxeer-network/consensus/rpc/coretypes"
-	rpctypes "github.com/sidiora-labs/paxeer-network/consensus/rpc/jsonrpc/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/light/provider"
+	rpcclient "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client"
+	rpchttp "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/client/http"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	rpctypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/jsonrpc/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 )
 
 var defaultOptions = Options{

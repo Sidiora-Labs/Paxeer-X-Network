@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/migration"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/migration"
 	"github.com/spf13/cobra"
 )
 

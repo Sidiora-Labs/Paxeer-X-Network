@@ -3,8 +3,8 @@ package keeper_test
 import (
 	"testing"
 
-	pk "github.com/sidiora-labs/paxeer-network/sdk/x/params/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/params/types"
+	pk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
 
 	"github.com/stretchr/testify/require"
 )

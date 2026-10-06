@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/metrics"
-	"github.com/sidiora-labs/paxeer-network/storage/ledger_db/block"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/metrics"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/block"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )

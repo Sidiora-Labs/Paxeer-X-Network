@@ -577,12 +577,12 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/bridge/deploy/proposals"
-	bridgetestutil "github.com/sidiora-labs/paxeer-network/modules/layerxbridge/testutil"
-	"github.com/sidiora-labs/paxeer-network/modules/layerxbridge/types"
-	app "github.com/sidiora-labs/paxeer-network/node"
-	"github.com/sidiora-labs/paxeer-network/precompiles/layerxbridge"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/bridge/deploy/proposals"
+	bridgetestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
+	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxbridge"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // decode reads one generated body through the generator's own decoder, which

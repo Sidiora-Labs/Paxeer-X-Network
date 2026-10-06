@@ -3,13 +3,13 @@ package processblock
 import (
 	"fmt"
 
-	minttypes "github.com/sidiora-labs/paxeer-network/modules/mint/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/signing"
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
-	distrtypes "github.com/sidiora-labs/paxeer-network/sdk/x/distribution/types"
-	stakingtypes "github.com/sidiora-labs/paxeer-network/sdk/x/staking/types"
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
+	minttypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/mint/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	distrtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/distribution/types"
+	stakingtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm"
 )
 
 type Preset struct {

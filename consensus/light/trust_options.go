@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 )
 
 // TrustOptions are the trust parameters needed when a new light client

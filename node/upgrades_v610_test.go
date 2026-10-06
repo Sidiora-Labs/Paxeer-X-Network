@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	evmconfig "github.com/sidiora-labs/paxeer-network/modules/evm/config"
-	layerxcustodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
-	xwebtypes "github.com/sidiora-labs/paxeer-network/modules/xweb/types"
-	appparams "github.com/sidiora-labs/paxeer-network/node/params"
-	"github.com/sidiora-labs/paxeer-network/sdk/crypto/keys/secp256k1"
+	evmconfig "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
+	layerxcustodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
+	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/mod/semver"
 )

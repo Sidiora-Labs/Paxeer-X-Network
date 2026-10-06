@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/codec"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/feegrant"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/feegrant"
 )
 
 // NewDecodeStore returns a decoder function closure that unmarshals the KVPair's

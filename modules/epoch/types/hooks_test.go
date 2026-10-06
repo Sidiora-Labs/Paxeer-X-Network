@@ -3,11 +3,11 @@ package types_test
 import (
 	"testing"
 
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/keeper"
-	"github.com/sidiora-labs/paxeer-network/modules/epoch/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/epoch/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/stretchr/testify/require"
 	tmdb "github.com/tendermint/tm-db"
 )

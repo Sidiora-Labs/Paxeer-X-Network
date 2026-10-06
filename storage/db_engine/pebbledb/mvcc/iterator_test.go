@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidiora-labs/paxeer-network/storage/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/config"
 )
 
 func TestIteratorDescendingIncludesPrefixExtendedKeys(t *testing.T) {

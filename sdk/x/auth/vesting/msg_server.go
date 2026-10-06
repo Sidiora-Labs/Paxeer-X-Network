@@ -3,15 +3,15 @@ package vesting
 import (
 	"context"
 
-	authtypes "github.com/sidiora-labs/paxeer-network/sdk/x/auth/types"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 
 	"github.com/armon/go-metrics"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/telemetry"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/keeper"
-	"github.com/sidiora-labs/paxeer-network/sdk/x/auth/vesting/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/vesting/types"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 )

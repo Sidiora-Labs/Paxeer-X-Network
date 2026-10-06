@@ -1,9 +1,9 @@
 package keeper
 
 import (
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
-	"github.com/sidiora-labs/paxeer-network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 )
 
 // InitGenesis initializes the tokenfactory module's state from a provided genesis

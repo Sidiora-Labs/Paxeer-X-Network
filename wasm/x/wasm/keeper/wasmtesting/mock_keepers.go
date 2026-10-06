@@ -1,12 +1,12 @@
 package wasmtesting
 
 import (
-	channeltypes "github.com/sidiora-labs/paxeer-network/interchain/modules/core/04-channel/types"
-	ibcexported "github.com/sidiora-labs/paxeer-network/interchain/modules/core/exported"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	capabilitytypes "github.com/sidiora-labs/paxeer-network/sdk/x/capability/types"
+	channeltypes "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/04-channel/types"
+	ibcexported "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/exported"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	capabilitytypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/capability/types"
 
-	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
 )
 
 type MockChannelKeeper struct {

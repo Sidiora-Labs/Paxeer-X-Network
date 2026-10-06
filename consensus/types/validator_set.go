@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/merkle"
-	"github.com/sidiora-labs/paxeer-network/consensus/crypto/tmhash"
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/tmhash"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 )
 
 const (

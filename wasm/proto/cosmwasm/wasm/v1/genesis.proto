@@ -5,7 +5,7 @@ import "cosmwasm/wasm/v1/tx.proto";
 import "cosmwasm/wasm/v1/types.proto";
 import "gogoproto/gogo.proto";
 
-option go_package = "github.com/sidiora-labs/paxeer-network/wasm/x/wasm/types";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types";
 
 // GenesisState - genesis state of x/wasm
 message GenesisState {

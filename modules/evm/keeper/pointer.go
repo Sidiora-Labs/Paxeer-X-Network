@@ -3,21 +3,21 @@ package keeper
 import (
 	"encoding/binary"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/prefix"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
 	"golang.org/x/mod/semver"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/cw721"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc1155"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc20"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/erc721"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/native"
-	artifactsutils "github.com/sidiora-labs/paxeer-network/modules/evm/artifacts/utils"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/cw721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc1155"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc20"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/erc721"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/native"
+	artifactsutils "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/artifacts/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 )
 
 type PointerGetter func(sdk.Context, string) (common.Address, uint16, bool)

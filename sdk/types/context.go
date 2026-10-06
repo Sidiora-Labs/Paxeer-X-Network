@@ -6,14 +6,14 @@ import (
 	"math/big"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmbytes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gogo/protobuf/proto"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	tmbytes "github.com/sidiora-labs/paxeer-network/consensus/libs/bytes"
-	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
 
-	"github.com/sidiora-labs/paxeer-network/sdk/store/gaskv"
-	stypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/gaskv"
+	stypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 )
 
 /*

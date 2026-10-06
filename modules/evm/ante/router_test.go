@@ -3,14 +3,14 @@ package ante_test
 import (
 	"testing"
 
-	"github.com/sidiora-labs/paxeer-network/modules/evm/ante"
-	evmtypes "github.com/sidiora-labs/paxeer-network/modules/evm/types"
-	"github.com/sidiora-labs/paxeer-network/modules/evm/types/ethtx"
-	cryptotypes "github.com/sidiora-labs/paxeer-network/sdk/crypto/types"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
-	txtypes "github.com/sidiora-labs/paxeer-network/sdk/types/tx"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/tx/signing"
-	banktypes "github.com/sidiora-labs/paxeer-network/sdk/x/bank/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
+	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	txtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
 

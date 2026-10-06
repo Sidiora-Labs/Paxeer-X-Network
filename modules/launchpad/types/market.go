@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
 // FeeStrategy is the fee-rights holder's choice of what accumulated buy fees

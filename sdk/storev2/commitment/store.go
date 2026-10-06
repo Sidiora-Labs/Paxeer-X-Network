@@ -8,15 +8,15 @@ import (
 	"io"
 
 	"cosmossdk.io/errors"
-	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
-	"github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/crypto"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/tracekv"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/types"
-	sdkerrors "github.com/sidiora-labs/paxeer-network/sdk/types/errors"
-	"github.com/sidiora-labs/paxeer-network/sdk/types/kv"
-	paxdbproto "github.com/sidiora-labs/paxeer-network/storage/proto"
-	sctypes "github.com/sidiora-labs/paxeer-network/storage/state_db/sc/types"
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/crypto"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/tracekv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/kv"
+	paxdbproto "github.com/Sidiora-Labs/Paxeer-X-Network/storage/proto"
+	sctypes "github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/types"
 )
 
 var ErrWorkingHashUnavailable = stderrors.New("working hash is only available from the root multi-store")

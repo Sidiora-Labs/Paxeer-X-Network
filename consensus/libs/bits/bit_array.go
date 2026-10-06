@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	tmmath "github.com/sidiora-labs/paxeer-network/consensus/libs/math"
-	tmprotobits "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/libs/bits"
+	tmmath "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/math"
+	tmprotobits "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/libs/bits"
 )
 
 // BitArray is a thread-safe implementation of a bit array.

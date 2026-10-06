@@ -3,11 +3,11 @@ package keeper_test
 import (
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/engine/deps/testutil/keeper"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/sidiora-labs/paxeer-network/engine/deps/testutil/keeper"
-	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
 	"github.com/stretchr/testify/require"
 )
 

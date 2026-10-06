@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sidiora-labs/paxeer-network/storage/common/keys"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv"
-	"github.com/sidiora-labs/paxeer-network/storage/state_db/sc/flatkv/ktype"
-	"github.com/sidiora-labs/paxeer-network/storage/tools/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/state_db/sc/flatkv/ktype"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/tools/utils"
 )
 
 // flatkvAnalysisModuleName is the logical module name used for the FlatKV
