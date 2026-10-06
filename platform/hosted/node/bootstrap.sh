@@ -70,9 +70,12 @@
 #   --replica-id HEX64      Receipt-authority replica id. Default: derived from
 #                           the sequencer public key.
 #   --genesis-timestamp-ms T  Genesis timestamp in milliseconds. Default: now.
-#   --enable-module NAME    Enable escrow, budget, stream, service, perps or spot in
-#                           the signed genesis parameters. All six are enabled
-#                           by default; explicit names select the enabled rows.
+#   --enable-module NAME    Enable escrow, budget, stream, service, perps, spot or
+#                           web in the signed genesis parameters. Explicit names
+#                           select the enabled rows; without them the modules of
+#                           genesis-modules.conf are enabled.
+#   --module-profile beta   Enable the seven beta modules: escrow, budget, stream,
+#                           service, perps, spot and web. Excludes --enable-module.
 #   --migrations FILE       History migration SQL. Default: repository
 #                           migrations/0007_history_index.sql or
 #                           /opt/layerx/migrations/0007_history_index.sql.
@@ -117,7 +120,7 @@
 set -euo pipefail
 
 usage() {
-    sed -n '2,89p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,92p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
 }
 
@@ -229,6 +232,8 @@ GENESIS_METADATA=""
 WITHDRAWAL_FEE=""
 MODULE_FEES=""
 GENESIS_MODULES=()
+BETA_GENESIS_MODULES=(escrow budget stream service perps spot web)
+MODULE_PROFILE=""
 HANDOVER_AUTHORITY=""
 HANDOVER_PARAMETER_COUNT=0
 ORACLE_TRANSPORT_PARAMETER_COUNT=0
@@ -240,8 +245,8 @@ FORCE=0
 enable_genesis_module() {
     local module
     case "$1" in
-        escrow|budget|stream|service|perps|spot) ;;
-        *) fail "--enable-module requires escrow, budget, stream, service, perps or spot" ;;
+        escrow|budget|stream|service|perps|spot|web) ;;
+        *) fail "--enable-module requires escrow, budget, stream, service, perps, spot or web" ;;
     esac
     for module in "${GENESIS_MODULES[@]}"; do
         [ "$module" != "$1" ] || fail "--enable-module repeats $1"
@@ -292,6 +297,9 @@ while [ $# -gt 0 ]; do
         --enable-module)
             enable_genesis_module "${2:-}"
             shift 2 ;;
+        --module-profile)
+            [ -z "$MODULE_PROFILE" ] && [ "${2:-}" = beta ] || fail "--module-profile requires one value of beta"
+            MODULE_PROFILE=$2; shift 2 ;;
         --migrations) MIGRATIONS=$2; shift 2 ;;
         --layerxd) LAYERXD=$2; shift 2 ;;
         --genesis-build) GENESIS_BUILD=$2; shift 2 ;;
@@ -312,7 +320,12 @@ elif [ -n "$GENERATION_AUTHORIZATION_DIR" ]; then
     fail "generation authorization directory requires the admitted transport profile"
 fi
 
-if [ "${#GENESIS_MODULES[@]}" -eq 0 ]; then
+if [ -n "$MODULE_PROFILE" ]; then
+    [ "${#GENESIS_MODULES[@]}" -eq 0 ] || fail "--module-profile excludes --enable-module"
+    for module in "${BETA_GENESIS_MODULES[@]}"; do
+        enable_genesis_module "$module"
+    done
+elif [ "${#GENESIS_MODULES[@]}" -eq 0 ]; then
     [ -f "$SCRIPT_DIR/genesis-modules.conf" ] && [ -r "$SCRIPT_DIR/genesis-modules.conf" ] \
         || fail "public testnet genesis module configuration is unavailable"
     while IFS= read -r module || [ -n "$module" ]; do

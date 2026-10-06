@@ -9,7 +9,6 @@ Some Ethereum JSON-RPC methods are **registered** on Pax’s EVM endpoint but re
 | Method | Typical `error.message` |
 | -------- | ------------------------- |
 | `eth_blobBaseFee` | `blobs not supported on this chain` |
-| `eth_syncing` | `eth_syncing is not supported on Pax EVM RPC` |
 | `eth_newPendingTransactionFilter` | `eth_newPendingTransactionFilter is not supported on Pax EVM RPC` |
 | `debug_getRawBlock` | `debug_getRawBlock is not supported on Pax EVM RPC` |
 | `debug_getRawHeader` | `debug_getRawHeader is not supported on Pax EVM RPC` |
@@ -18,7 +17,6 @@ Some Ethereum JSON-RPC methods are **registered** on Pax’s EVM endpoint but re
 
 ## Behavior notes
 
-- **`eth_syncing`** — Pax’s consensus model differs from Ethereum’s sync semantics; callers should not rely on this method.
 - **`eth_newPendingTransactionFilter`** — Pax has instant finality and does not expose Ethereum-style pending tx filters on this RPC.
 - **`debug_getRaw*`** — Raw RLP block/header/receipt/tx payloads are not served on this surface.
 

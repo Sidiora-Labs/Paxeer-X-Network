@@ -1137,6 +1137,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-intent-ingester"
+version = "0.1.0"
+dependencies = [
+ "layerx-intents",
+ "serde_json",
+]
+
+[[package]]
 name = "layerx-intents"
 version = "0.1.0"
 dependencies = [
@@ -1260,6 +1268,7 @@ dependencies = [
  "layerx-crypto",
  "layerx-identity-binding",
  "layerx-platform-internal",
+ "layerx-programs-registry",
  "layerx-programs-runtime",
  "layerx-proof",
  "layerx-types",
@@ -1308,6 +1317,17 @@ name = "layerx-program-sdk"
 version = "0.1.0"
 dependencies = [
  "sha2",
+]
+
+[[package]]
+name = "layerx-programs-registry"
+version = "0.1.0"
+dependencies = [
+ "layerx-program-sdk",
+ "layerx-programs-runtime",
+ "layerx-proof",
+ "layerx-types",
+ "layerx-wire",
 ]
 
 [[package]]

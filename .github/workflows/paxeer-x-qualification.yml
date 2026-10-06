@@ -22,7 +22,7 @@ env:
 jobs:
   manifest:
     environment: paxeer-x-qualification
-    runs-on: fly-linux
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'lx-runner' }}
     timeout-minutes: 10
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}

@@ -5,7 +5,7 @@
         "dockerfilePath": "docker/wallet-pwa/Dockerfile"
     },
     "deploy": {
-        "healthcheckPath": "/",
+        "healthcheckPath": "/wallet/api/health?mode=liveness",
         "restartPolicyType": "ON_FAILURE",
         "restartPolicyMaxRetries": 3
     }

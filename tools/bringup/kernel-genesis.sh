@@ -40,6 +40,21 @@
 #       Precondition: every registered asset id is the derivation
 #       sha256("layerx-asset:125:<SYMBOL>"); the step B proposer chooses the id
 #       and this step refuses a registered id that differs from it.
+#   kernel-genesis.sh render ENV_FILE OUTPUT_DIR
+#       renders the beta kernel genesis from the deploy inputs of ENV_FILE and
+#       runs layerx-genesis-build on it into OUTPUT_DIR/genesis; runs anywhere,
+#       not only inside the kernel machine. ENV_FILE holds KEY=VALUE lines:
+#         LAYERX_GENESIS_NETWORK_ID           decimal kernel network id
+#         LAYERX_GENESIS_SEQUENCER_PUBLIC_KEY 64 hex, the ed25519 sequencer key
+#         LAYERX_GENESIS_SEQUENCER_KEY_FILE   its seed (64 hex or 32 bytes), signs the genesis
+#         LAYERX_GENESIS_TREASURY_PUBLIC_KEY  64 hex, the issuer of the Asset records
+#         LAYERX_GENESIS_GUARANTORS           ID:PUBLIC ..., ID = sha256("layerx-beta-guarantor:<PUBLIC>")
+#         LAYERX_GENESIS_ASSETS               SYMBOL:ID:DECIMALS ..., PAX first (the kernel asset),
+#                                             ID = sha256("layerx-asset:125:<SYMBOL>")
+#         LAYERX_GENESIS_MODULES              escrow budget stream service perps spot web, or a subset
+#         LAYERX_GENESIS_TIMESTAMP_MS         optional, default now
+#       The binary is LAYERX_GENESIS_BUILD, else build/bin/layerx-genesis-build
+#       of this repository, else /usr/local/bin/layerx-genesis-build.
 #
 # Nothing secret is printed. rotate retires the kernel keys, the genesis
 # outputs and the node data; nothing is deleted.
@@ -50,7 +65,7 @@ layerx=/data/layerx
 node_data=$layerx/node
 keys=$layerx/keys
 genesis=$layerx/genesis
-network_id=${LAYERX_NODE_NETWORK_ID:?the kernel network id comes from the app env}
+[ "${1:-}" = render ] || network_id=${LAYERX_NODE_NETWORK_ID:?the kernel network id comes from the app env}
 rpc=http://127.0.0.1:${LAYERX_NODE_PAXEER_RELAY_PORT:-18545}
 custody=0x0000000000000000000000000000000000001013
 deposit_key=$keys/checkpoint-submitter/deposit-authority.pem
@@ -67,8 +82,10 @@ fail() {
 	exit 1
 }
 
-[ "$(id -u)" = 0 ] || fail "run as root inside the kernel machine"
-[ -s "$keys/treasury.key" ] || fail "the init has not made $keys/treasury.key yet"
+if [ "${1:-}" != render ]; then
+	[ "$(id -u)" = 0 ] || fail "run as root inside the kernel machine"
+	[ -s "$keys/treasury.key" ] || fail "the init has not made $keys/treasury.key yet"
+fi
 
 hex_public() {
 	python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex("302e020100300506032b657004220420" + sys.argv[1]))' "$1" |
@@ -82,7 +99,7 @@ rotation_pending() {
 	[ ! -e "$rotation" ] || fail "an identity rotation is pending at $rotation; run kernel-genesis.sh keys rotate to resume it"
 }
 
-treasury_public=$(hex_public "$(tr -d ' \r\n' <"$keys/treasury.key")")
+[ "${1:-}" = render ] || treasury_public=$(hex_public "$(tr -d ' \r\n' <"$keys/treasury.key")")
 
 # public_values: the step A outputs, read back from the key files.
 public_values() {
@@ -175,11 +192,12 @@ asset_id() {
 	printf 'layerx-asset:125:%s' "$1" | sha256sum | cut -d' ' -f1
 }
 
-# The LXGB v2 metadata: the record layout bootstrap.sh writes for one asset,
-# one record per mapped asset, issued by the treasury identity, then the zero
-# fee schedule that bootstrap's --withdrawal-fee and --module-fees complete.
+# genesis_metadata <output> <issuer-public> <asset:symbol:decimals>...: the LXGB
+# v2 metadata, the record layout bootstrap.sh writes for one asset, one record
+# per mapped asset, issued by the treasury identity, then the zero fee schedule
+# that bootstrap's --withdrawal-fee and --module-fees complete.
 genesis_metadata() {
-	python3 - "$genesis/metadata.lxgb" "$treasury_public" "$@" <<'PY'
+	python3 - "$@" <<'PY'
 import hashlib
 import os
 import sys
@@ -205,7 +223,6 @@ with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOL
     handle.flush()
     os.fsync(handle.fileno())
 PY
-	chown 4020:4020 "$genesis/metadata.lxgb"
 }
 
 # genesis_ids <asset-id> <replica-id>: the ids the init hands layerxd; written
@@ -341,7 +358,8 @@ with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOL
     handle.write('\n')
 PY
 
-	genesis_metadata "${records[@]}"
+	genesis_metadata "$genesis/metadata.lxgb" "$treasury_public" "${records[@]}"
+	chown 4020:4020 "$genesis/metadata.lxgb"
 	genesis_ids "$pax" "$replica_id"
 
 	manifest=$node_data/genesis/genesis.manifest
@@ -366,7 +384,171 @@ PY
 	echo "custody node=$node_data keys=$keys genesis=$genesis/metadata.lxgb digests=genesis_sha256,metadata_sha256"
 }
 
+render_step() {
+	[ "$#" = 2 ] || fail "usage: kernel-genesis.sh render ENV_FILE OUTPUT_DIR"
+	local env_file=$1 output=$2 line key value module entry id public symbol decimals seed build rc
+	local network sequencer_public treasury timestamp manifest
+	local -A input=() seen=()
+	local -a modules=() guarantors=() records=()
+	[ -f "$env_file" ] && [ ! -L "$env_file" ] && [ -r "$env_file" ] || fail "the genesis env file must be a readable regular file: $env_file"
+	while IFS= read -r line || [ -n "$line" ]; do
+		[[ -z $line || $line = '#'* ]] && continue
+		[[ $line =~ ^(LAYERX_GENESIS_[A-Z_]+)=(.*)$ ]] || fail "genesis env line is not KEY=VALUE: ${line%%=*}"
+		key=${BASH_REMATCH[1]} value=${BASH_REMATCH[2]}
+		case "$key" in
+		LAYERX_GENESIS_NETWORK_ID | LAYERX_GENESIS_SEQUENCER_PUBLIC_KEY | LAYERX_GENESIS_SEQUENCER_KEY_FILE | \
+			LAYERX_GENESIS_TREASURY_PUBLIC_KEY | LAYERX_GENESIS_GUARANTORS | LAYERX_GENESIS_ASSETS | \
+			LAYERX_GENESIS_MODULES | LAYERX_GENESIS_TIMESTAMP_MS) ;;
+		*) fail "the genesis env file carries an unexpected key $key" ;;
+		esac
+		[ -z "${input[$key]+set}" ] || fail "$key repeated"
+		value=${value#\"} value=${value%\"}
+		input[$key]=$value
+	done <"$env_file"
+	for key in NETWORK_ID SEQUENCER_PUBLIC_KEY SEQUENCER_KEY_FILE TREASURY_PUBLIC_KEY GUARANTORS ASSETS MODULES; do
+		[ -n "${input[LAYERX_GENESIS_$key]:-}" ] || fail "LAYERX_GENESIS_$key is required"
+	done
+
+	network=${input[LAYERX_GENESIS_NETWORK_ID]}
+	[[ $network =~ ^[1-9][0-9]{0,9}$ ]] && [ "$network" -le 4294967295 ] || fail "LAYERX_GENESIS_NETWORK_ID must be decimal 1..4294967295"
+	timestamp=${input[LAYERX_GENESIS_TIMESTAMP_MS]:-$(date +%s%3N)}
+	[[ $timestamp =~ ^[1-9][0-9]{0,17}$ ]] || fail "LAYERX_GENESIS_TIMESTAMP_MS must be decimal milliseconds"
+
+	sequencer_public=${input[LAYERX_GENESIS_SEQUENCER_PUBLIC_KEY],,}
+	[[ $sequencer_public =~ ^[0-9a-f]{64}$ ]] || fail "LAYERX_GENESIS_SEQUENCER_PUBLIC_KEY must be 64 hex characters"
+	key=${input[LAYERX_GENESIS_SEQUENCER_KEY_FILE]}
+	[ -f "$key" ] && [ -r "$key" ] || fail "LAYERX_GENESIS_SEQUENCER_KEY_FILE must name a readable regular file"
+	if [ "$(stat -c %s "$key")" = 32 ]; then
+		seed=$(od -An -v -tx1 "$key" | tr -d ' \n')
+	else
+		seed=$(tr -d ' \r\n' <"$key")
+		seed=${seed,,}
+	fi
+	[[ $seed =~ ^[0-9a-f]{64}$ ]] || fail "the sequencer key file is neither 32 raw bytes nor 64 hex characters"
+	[ "$(hex_public "$seed")" = "$sequencer_public" ] ||
+		fail "LAYERX_GENESIS_SEQUENCER_KEY_FILE does not hold the key of LAYERX_GENESIS_SEQUENCER_PUBLIC_KEY"
+
+	treasury=${input[LAYERX_GENESIS_TREASURY_PUBLIC_KEY],,}
+	[[ $treasury =~ ^[0-9a-f]{64}$ ]] || fail "LAYERX_GENESIS_TREASURY_PUBLIC_KEY must be 64 hex characters"
+	[ "$treasury" != "$sequencer_public" ] || fail "the sequencer and treasury keys must differ"
+
+	for entry in ${input[LAYERX_GENESIS_GUARANTORS],,}; do
+		[[ $entry =~ ^([0-9a-f]{64}):(0[23][0-9a-f]{64})$ ]] || fail "not a guarantor ID:PUBLIC: $entry"
+		id=${BASH_REMATCH[1]} public=${BASH_REMATCH[2]}
+		[ "$id" = "$(printf 'layerx-beta-guarantor:%s' "$public" | sha256sum | cut -d' ' -f1)" ] ||
+			fail "guarantor id $id is not sha256(\"layerx-beta-guarantor:$public\")"
+		[ -z "${seen[$id]:-}" ] || fail "guarantor $id repeated"
+		seen[$id]=1
+		guarantors+=("$id:$public")
+	done
+	[ "${#guarantors[@]}" -ge 1 ] && [ "${#guarantors[@]}" -le 32 ] || fail "LAYERX_GENESIS_GUARANTORS must name 1 to 32 guarantors"
+	mapfile -t guarantors < <(printf '%s\n' "${guarantors[@]}" | LC_ALL=C sort)
+
+	seen=()
+	for entry in ${input[LAYERX_GENESIS_ASSETS]}; do
+		[[ $entry =~ ^([A-Z0-9]{1,16}):([0-9a-fA-F]{64}):([0-9]{1,2})$ ]] || fail "not an asset SYMBOL:ID:DECIMALS: $entry"
+		symbol=${BASH_REMATCH[1]} id=${BASH_REMATCH[2],,} decimals=${BASH_REMATCH[3]}
+		[ -z "${seen[$symbol]:-}" ] || fail "asset $symbol repeated"
+		seen[$symbol]=1
+		[ "$id" = "$(asset_id "$symbol")" ] ||
+			fail "the $symbol asset id $id is not sha256(\"layerx-asset:125:$symbol\") $(asset_id "$symbol")"
+		[ "${#records[@]}" -gt 0 ] || [ "$symbol" = PAX ] || fail "LAYERX_GENESIS_ASSETS must list PAX first, the kernel asset"
+		records+=("$id:$symbol:$decimals")
+	done
+	[ "${#records[@]}" -gt 0 ] || fail "LAYERX_GENESIS_ASSETS names no asset"
+
+	seen=()
+	for module in ${input[LAYERX_GENESIS_MODULES]}; do
+		case "$module" in
+		escrow | budget | stream | service | perps | spot | web) ;;
+		*) fail "LAYERX_GENESIS_MODULES admits escrow, budget, stream, service, perps, spot and web, not $module" ;;
+		esac
+		[ -z "${seen[$module]:-}" ] || fail "module $module repeated"
+		seen[$module]=1
+		modules+=("$module")
+	done
+	[ "${#modules[@]}" -gt 0 ] || fail "LAYERX_GENESIS_MODULES names no module"
+	mapfile -t modules < <(printf '%s\n' "${modules[@]}" | LC_ALL=C sort)
+
+	build=${LAYERX_GENESIS_BUILD:-}
+	if [ -z "$build" ]; then
+		for build in "$(cd "$(dirname "$0")/../.." && pwd)/build/bin/layerx-genesis-build" /usr/local/bin/layerx-genesis-build; do
+			[ ! -x "$build" ] || break
+		done
+	fi
+	[ -x "$build" ] || fail "layerx-genesis-build not found; build it with make layerx-genesis-build or set LAYERX_GENESIS_BUILD"
+
+	[ ! -e "$output" ] || fail "$output exists; the genesis is rendered into a new directory"
+	mkdir -m 0700 "$output"
+	genesis_metadata "$output/metadata.lxgb" "$treasury" "${records[@]}"
+	python3 - "$output/genesis-request.lxgb" "$network" "$timestamp" "${records[0]%%:*}" "$output/metadata.lxgb" \
+		"${#modules[@]}" "${modules[@]}" "${guarantors[@]}" <<'PY'
+import os
+import sys
+
+output, network, timestamp, asset, metadata_path, count = sys.argv[1:7]
+modules = sys.argv[7:7 + int(count)]
+guarantors = sys.argv[7 + int(count):]
+with open(metadata_path, 'rb') as handle:
+    metadata = handle.read()
+
+
+def u(value, size):
+    return int(value).to_bytes(size, 'big')
+
+
+def parameter(key, value):
+    return u(7, 2) + key.encode().ljust(32, b'\0') + u(value, 32)
+
+
+# The request layout platform/hosted/node/bootstrap.sh writes: the module
+# enable rows, the fee authority and parameter version rows, the guarantors,
+# the kernel asset and the beta fee and demand constants, then the metadata.
+request = b'LXGB' + b'\x02' + u(3, 2) + u(network, 4) + u(timestamp, 8) + u(2 + len(modules), 2)
+request += b''.join(parameter('module-enable:' + module, 1) for module in modules)
+request += parameter('native-fee-authority-version', 2) + parameter('parameter-version', 1)
+request += u(len(guarantors), 2)
+for entry in guarantors:
+    identifier, public = entry.split(':')
+    request += bytes.fromhex(identifier) + bytes.fromhex(public) + bytes(16)
+request += bytes.fromhex(asset) + u(1, 4)
+request += b''.join(u(value, 8) for value in (1, 1, 1, 1, 1, 8, 8, 64, 8)) + u(1, 8) + b'\x01' + u(1, 4)
+request += b''.join(u(value, 8) for value in (1, 1, 2, 4, 1, 1, 100))
+request += b''.join(u(value, 8) for value in (100, 1, 1, 10, 1, 1000))
+request += metadata
+if len(request) != 380 + 81 * len(guarantors) + 66 * len(modules) + len(metadata):
+    raise SystemExit('genesis request has an unexpected length')
+with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as handle:
+    handle.write(request)
+PY
+	install -m 0600 /dev/null "$output/signer.key"
+	python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex(sys.stdin.read()))' <<<"$seed" >"$output/signer.key"
+	unset seed
+	rc=0
+	"$build" "$output/genesis-request.lxgb" "$output/signer.key" "$output/genesis" || rc=$?
+	rm -f "$output/signer.key"
+	[ "$rc" = 0 ] || fail "layerx-genesis-build refused the rendered genesis ($rc)"
+	manifest=$output/genesis/genesis.manifest
+	for entry in "$manifest" "$output/genesis/00000000000000000000.lxs" "$output/genesis/paxeer-registration-request.lxrr" \
+		"$output/genesis/paxeer-deployment-descriptor.lxgd"; do
+		[ -s "$entry" ] || fail "genesis artifact missing: $entry"
+	done
+
+	echo "network_id=$network"
+	echo "genesis_sha256=$(sha256sum "$manifest" | cut -d' ' -f1)"
+	echo "request_sha256=$(sha256sum "$output/genesis-request.lxgb" | cut -d' ' -f1)"
+	echo "sequencer_public_key=$sequencer_public"
+	echo "modules=${modules[*]}"
+	for entry in "${guarantors[@]}"; do echo "guarantor ${entry%%:*}"; done
+	for entry in "${records[@]}"; do
+		IFS=: read -r id symbol decimals <<<"$entry"
+		echo "asset $symbol id=$id decimals=$decimals"
+	done
+	echo "genesis dir=$output/genesis"
+}
+
 case "${1:-}" in
+render) render_step "${@:2}" ;;
 keys) keys_step "${@:2}" ;;
 genesis) genesis_step "${@:2}" ;;
 plan)
@@ -377,5 +559,5 @@ migrate)
 	[ "$#" = 2 ] && [[ $2 =~ ^[0-9a-f]{64}$ ]] || fail "usage: kernel-genesis.sh migrate PLAN_SHA256"
 	identity migrate "$2" "${retire_files[@]}" || fail "identity migration refused"
 	;;
-*) fail "usage: kernel-genesis.sh keys [rotate] | genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...] | plan | migrate PLAN_SHA256" ;;
+*) fail "usage: kernel-genesis.sh keys [rotate] | render ENV_FILE OUTPUT_DIR | genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...] | plan | migrate PLAN_SHA256" ;;
 esac

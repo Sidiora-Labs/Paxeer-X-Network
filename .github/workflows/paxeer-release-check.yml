@@ -4,6 +4,16 @@ on:
   pull_request:
     paths:
       - 'version.json'
+      - 'go.mod'
+      - 'go.sum'
+      - 'chain.mk'
+      - 'daemon/**'
+      - 'modules/**'
+      - 'precompiles/**'
+      - 'node/**'
+      - 'sdk/**'
+      - 'wasm-runtime/**'
+      - 'tools/release/**'
       - '.github/workflows/paxeer-release-check.yml'
   workflow_dispatch:
 
@@ -16,7 +26,7 @@ concurrency:
 
 jobs:
   release-check:
-    name: Validate Paxeer release identity
+    name: Validate Paxeer release identity and reproducibility
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout code and tags
@@ -24,14 +34,17 @@ jobs:
         with:
           fetch-depth: 0
       - name: Validate version and namespaced tag
-        env:
-          VERSION_FILE: version.json
         run: |
           set -euo pipefail
-          version=$(jq -er '.version' "$VERSION_FILE")
-          semver_re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          version=$(jq -er '.version' version.json)
+          semver_re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
           if [[ ! "$version" =~ $semver_re ]]; then
             echo "Invalid Paxeer semantic version: $version"
+            exit 1
+          fi
+          upgrade=$(jq -er '.upgrade' version.json)
+          if ! grep -rqF "= \"$upgrade\"" node modules; then
+            echo "Upgrade name $upgrade is not declared under node/ or modules/"
             exit 1
           fi
 
@@ -51,4 +64,16 @@ jobs:
             fi
           fi
 
-          echo "Paxeer release identity is $tag"
+          echo "Paxeer release identity is $tag (upgrade $upgrade)"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libssl-dev libsqlite3-dev
+      - name: Check reproducible release build
+        env:
+          PAXD_RELEASE_LAYERXD: '1'
+        run: tools/release/reproducible-check.sh

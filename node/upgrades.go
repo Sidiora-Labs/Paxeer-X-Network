@@ -100,8 +100,10 @@ const V610Upgrade = "v6.10"
 // module's governance proposal, CustodyProposal, through the proposal handler
 // on the governance router, so a passed proposal can set the custody asset map
 // and parameters, the deposit root authority among them. It runs the module
-// migrations only, adds, deletes and renames no store and carries no entry in
-// the embedded tag list.
+// migrations, moves the usid mint authority to the bridge module account and
+// migrates the legacy SID ERC-20 balances of the embedded holder snapshot into
+// usid. It adds, deletes and renames no store and carries no entry in the
+// embedded tag list.
 const V611Upgrade = layerxcustodytypes.GovernanceActivationUpgrade
 
 // The governance voting periods the v6.10 plan writes. Every other governance
@@ -186,10 +188,9 @@ func (app *App) RegisterUpgradeHandlers() {
 	// The v6.10 plan is registered the same way, beside the activation plan and
 	// the handlers the tag list registers.
 	app.UpgradeKeeper.SetUpgradeHandler(V610Upgrade, app.runV610Upgrade)
-	// The v6.11 plan gates the custody proposal content and its messages.
-	app.UpgradeKeeper.SetUpgradeHandler(V611Upgrade, func(ctx sdk.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-		return app.mm.RunMigrations(ctx, app.configurator, fromVM)
-	})
+	// The v6.11 plan gates the custody proposal content and its messages and
+	// migrates the legacy SID ERC-20 balances into usid.
+	app.UpgradeKeeper.SetUpgradeHandler(V611Upgrade, app.runV611Upgrade)
 }
 
 // runXWebUpgrade runs the module migrations with xweb taken as present, so the
@@ -413,7 +414,7 @@ func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
 // knownUpgradePlans names, in the order they apply, the plans the application
 // applies from the upgrade info file an operator leaves on disk.
 func knownUpgradePlans() []string {
-	return []string{ActivationUpgrade, V610Upgrade}
+	return []string{ActivationUpgrade, V610Upgrade, V611Upgrade}
 }
 
 // upgradePlanPending reports whether the named plan is one of those the

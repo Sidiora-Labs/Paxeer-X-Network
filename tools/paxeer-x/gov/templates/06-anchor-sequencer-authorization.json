@@ -1,0 +1,12 @@
+{
+  "to": "0x0000000000000000000000000000000000001014",
+  "function": "setSequencerAuthorization(bytes32,bytes32,uint64,uint64)",
+  "selector": "0xc2661383",
+  "args": {
+    "sequencerId": "@SEQUENCER_ID@",
+    "publicKey": "@SEQUENCER_PUBKEY@",
+    "firstBatchNumber": "@FIRST_BATCH@",
+    "lastBatchNumber": "@LAST_BATCH@"
+  },
+  "data": "@ANCHOR_CALLDATA@"
+}

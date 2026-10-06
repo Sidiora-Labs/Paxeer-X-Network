@@ -35,6 +35,16 @@ struct Chain {
 }
 struct ChainExchange(Rc<RefCell<Chain>>);
 impl Exchange for ChainExchange {
+    fn request_until(
+        &self,
+        endpoint: &str,
+        method: &str,
+        params: &Value,
+        _: std::time::Instant,
+    ) -> Result<Value, RpcFault> {
+        self.request(endpoint, method, params)
+    }
+
     fn request(&self, _: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
         let mut chain = self.0.borrow_mut();
         let quantity = |v: u128| Value::String(format!("{v:#x}"));
@@ -176,7 +186,8 @@ fn config_json() -> Value {
         "balance_floor":100,"relayer_key_env":"GAS_STATION_RELAYER_KEY",
         "max_priority_fee_per_gas":1_000_000_000,"rate_owner_key_env":"GAS_STATION_RATE_OWNER_KEY",
         "rate_cadence_seconds":120,"rate_gas_budget_per_day":1_000_000,
-        "rate_balance_floor":10_u64.pow(15),"rate_max_fee_per_gas":5_000_000_000_u64})
+        "rate_balance_floor":10_u64.pow(15),"rate_max_fee_per_gas":5_000_000_000_u64,
+        "rate_confirmation_retry_seconds":60})
 }
 
 /// The paymaster, the rate and the recovered signer of a type-2 setRate
