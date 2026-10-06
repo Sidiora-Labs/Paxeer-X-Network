@@ -39,6 +39,14 @@ kill_timeout = "60s"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12 = "/data/tls/human-event-client/identity.p12"
   LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE = "/data/tls/human-event-client/password"
 
+# The full kernel profile of docker/kernel/init.sh refuses to start without
+# four more values the repo does not define; each is a deploy input set as a
+# Fly secret of this app (fly secrets set, read as env):
+#   LAYERX_NODE_NETWORK_NAME                     the network name the kernel genesis names, the router's LAYERX_GATEWAY_NETWORK_ID
+#   LAYERX_KERNEL_AGENTD_RPC_PEER                the DNS name of the gateway client certificate agentd admits on 9454
+#   LAYERX_KERNEL_AGENTD_RPC_DAEMON_SEQUENCES    agentd idempotency retention in daemon sequences, positive integer
+#   LAYERX_KERNEL_AGENTD_RPC_PROTOCOL_SEQUENCES  agentd idempotency retention in protocol sequences, at most the daemon value
+
 [[files]]
   guest_path = "/etc/layerx/trust/ca.crt"
   secret_name = "LAYERX_INTERNAL_CA_ROOT"
