@@ -5700,7 +5700,7 @@ reference_namespace = "feature.103"
 reqs = ["1060.7", "1052.4"]
 touches = ["platform/hosted/paxeer", "platform/Cargo.toml", "platform/Cargo.lock", "human/crates/layerx-paxeer-client", "contracts/config/checkpoint-settlement.json", "tests/vectors/checkpoint", "contracts/governance", "contracts/deployment/PaxeerBetaDeploymentValidator.sol", "scripts/PaxeerBetaDeploy.s.sol", "tests/solidity/LayerXTimelock.t.sol", "tests/solidity/PaxeerBetaDeploymentValidator.t.sol", "tests/solidity/ContractIntegration.t.sol", "platform/hosted/tests/beta-cluster.sh"]
 tests = []
-verification_contract = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary && cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary --all-targets -- -D warnings && bash -n platform/hosted/paxeer/init-chain.sh platform/hosted/paxeer/deploy-contracts.sh && python3 platform/hosted/paxeer/tests/deployment_profile.py && forge test --match-path 'tests/solidity/{LayerXTimelock,PaxeerBetaDeploymentValidator,ContractIntegration,ContractManager}.t.sol'"
+verification_contract = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary && cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary --all-targets -- -D warnings && bash -n platform/hosted/paxeer/init-chain.sh platform/hosted/paxeer/deploy-contracts.sh && python3 platform/hosted/paxeer/tests/deployment_profile.py && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-path 'tests/solidity/{LayerXTimelock,PaxeerBetaDeploymentValidator,ContractIntegration,ContractManager}.t.sol'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add the crate platform/hosted/paxeer (package layerx-platform-paxeer-boundary, binary layerx-paxeer-boundary) in the hosted house style listening on LAYERX_PAXEER_BOUNDARY_LISTEN (default 0.0.0.0:9443) with rustls server TLS, relaying POST / Ethereum JSON-RPC bodies up to 2 MiB to the single node at LAYERX_PAXEER_NODE_URL (loopback http) with the id preserved and a 200 for RPC-level errors, serving GET /readyz with 200 only when eth_chainId against the node equals LAYERX_PAXEER_CHAIN_ID, GET /livez, and refusing any other method or path."
 do_2 = "Write platform/hosted/paxeer/deployment.yaml: a paxeer StatefulSet in layerx-testnet with pod label layerx-plane: trusted-boundary running the paxd image built from Dockerfile as a single-validator chain initialised by platform/hosted/paxeer/init-chain.sh (genesis with the beta EVM chain id 125, a funded deployer account, EVM JSON-RPC on 127.0.0.1:8545 only) beside the boundary container, a data PersistentVolumeClaim, the Service paxeer-boundary 9443 -> 9443, ingress from testnet-control and the human plane, egress DNS only."
@@ -5766,7 +5766,7 @@ reference_namespace = "feature.103"
 reqs = ["1060.1", "1060.2", "1060.3", "1060.4"]
 touches = ["include/layerx", "src/protocol", "src/modules", "src/state", "src/replica", "src/codec", "src/ledger", "contracts", "scripts", "cmd/layerxd", "cmd/layerx-genesis", "agent/crates", "interop/crates", "human/crates/layerx-intents", "platform/hosted", "tests", "Makefile"]
 tests = []
-verification_contract = "make layerx-genesis-build test-state-commitment-transition test-genesis && make -s check && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-wire && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test verify && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof && cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test compile --test differential && forge test --match-path 'tests/solidity/{CheckpointRegistry,PaxeerBetaDeploymentValidator,ContractManager}.t.sol'"
+verification_contract = "make layerx-genesis-build test-state-commitment-transition test-genesis && make -s check && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-wire && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test verify && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof && cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test compile --test differential && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-path 'tests/solidity/{CheckpointRegistry,PaxeerBetaDeploymentValidator,ContractManager}.t.sol'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add explicit protocol version 3 for the composite-state commitment transition. Preserve protocol versions 1 and 2 and their recorded receipt-root algorithms. Version 3 resulting_state_root is the exact post-commit composite state root calculated using the real prepared module context and journal preview; verify it against committed state before publication. Preserve receipt signatures, inclusion checks, owner authorization, fee checks, replay determinism and all existing account-proof equalities. Never substitute the receipt transition hash for the composite root or add an unsigned trust bridge. A protocol-3 SEND refusal binds attempted operation, asset and participants from the strictly decoded signed activity and actual account balances without claiming successful effects; undecodable SEND payloads are rejected before durable admission and never receive invented metadata."
 do_2 = "Make fresh version-3 genesis select the exact Programs V4 plus Asset V1 module table and make the daemon pin activity and LNI protocol version to its signed genesis. Preserve legacy genesis reconstruction with the original Programs-only table. Extend real client/wire receipt decoding to explicit version 3 using existing occupancy field layouts and preserve legacy encodings. Use version 3 explicitly in new beta artifacts and real-node qualification fixtures. Version-3 Rust account derivation, intent compilation and disclosure verification must match native canonical account names and IDs byte-for-byte while preserving legacy vectors."
@@ -5908,7 +5908,7 @@ ac_4 = "THE v6.6 upgrade SHALL add the layerxexchange, layerxbridge and launchpa
 ac_5 = "THE LayerX perps kernel module SHALL make matched fills the only source of positions: execute_order_place SHALL open, increase or reduce the taker's and makers' positions at the fill price, POSITION_OPEN SHALL no longer accept a caller-supplied entry_notional, and every fill price SHALL be within the market's oracle deviation limit of the latest committed oracle observation or the order SHALL be refused with a typed result; existing receipts and event codes 0x0601 to 0x060b SHALL keep their encoding."
 ac_6 = "THE LayerX kernel SHALL gain a spot module (module id 7, LXP_MODULE_SPOT) reusing the perps price-time book for two-asset limit and market orders with immediate settlement of both legs through the asset module, ordinals 0x00070001 to 0x00070005 (MARKET_CREATE, ORDER_PLACE, ORDER_CANCEL, MARKET_HALT, MARKET_RESUME), a receipt transfer set per fill, and a conservation test; capacity limits SHALL be compile-time constants."
 ac_7 = "THE intent router in layerx-intents SHALL map the layerxexchange, layerxbridge and launchpad precompile events to signed LayerX activities and back, and the TypeScript and Python agent SDKs SHALL ship typed helpers for every write in ac_1 to ac_3 and for perps and spot activities, so that a human through the EVM ABI and an agent through the SDK reach the same state transition."
-ac_8 = "THE interop workspace SHALL ship a layerx-bridge-relayer service that watches a registered external chain through the layerx-migrate RPC quorum verifiers, signs attestations through layerx-mirror-signer so chain keys never enter the relayer, submits them to the 0x1016 precompile, and executes BridgeOut releases against the Ethereum vault; and interop/contracts/ethereum-bridge SHALL hold a PaxeerXVault contract with deposit, release under threshold attestor signatures, per-asset caps, pause and a nullifier set, with forge tests."
+ac_8 = "THE interop workspace SHALL ship a layerx-bridge-relayer service that watches a registered external chain through the layerx-migrate RPC quorum verifiers, signs attestations through layerx-mirror-signer so chain keys never enter the relayer, submits them to the 0x1016 precompile, and executes BridgeOut releases against the Ethereum vault; and interop/contracts/ethereum-bridge SHALL hold a PaxeerXVault contract with deposit, release under threshold attestor signatures, per-asset caps, pause and a nullifier set, with FOUNDRY_CONFIG=foundry.paxeer.toml forge tests."
 ac_9 = "THE platform SHALL ship a layerx-indexer service that ingests LayerX through the relay_archive sync protocol and Paxeer through EVM blocks, logs and CometBFT tx_search, decodes every LayerX receipt field set and every precompile and typed module event into a durable SQLite store of per-account, per-asset rows (height or sequence, counterparty, asset, amount, kind, decoded payload), and the gateway SHALL expose lx_getHistory, px_getHistory and px_getUnifiedHistory with cursors and asset metadata, with typed SDK bindings, as the single wallet data source."
 ac_10 = "THE fork SHALL be rehearsed before it is run: a script SHALL export mainnet state from a synced full node, start a disposable single-validator chain from it on the current binary, schedule the v6.6 upgrade at a height, swap to the v6.6 binary at the halt and prove the chain resumes with the three new stores and every precompile answering; the runbook SHALL name the halt height, the UTC time, the binary sha256 and the per-validator steps."
 ac_11 = "THE indexer SHALL backfill Paxeer history before the fork from the paxscan Blockscout Postgres (blocks, transactions, logs, token_transfers, internal_transactions, tokens) read-only through a connection URL from the environment, normalize every row into the same per-account, per-asset history rows the live EVM ingester writes, fill every height missing from paxscan from a node's EVM JSON-RPC, verify each backfilled block's hash against the node, stop at a fixed finalized cutover height and hand the live ingester a cursor at that height so no row is duplicated or skipped; the ingester SHALL treat a node whose CometBFT tx index is off as EVM-only without failing."
@@ -5971,9 +5971,9 @@ reference_namespace = "feature.103"
 reqs = ["1063.8"]
 touches = ["interop/contracts/ethereum-bridge"]
 tests = []
-verification_contract = "cd interop/contracts/ethereum-bridge && forge test"
+verification_contract = "cd interop/contracts/ethereum-bridge && FOUNDRY_CONFIG=foundry.paxeer.toml forge test"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Create interop/contracts/ethereum-bridge with PaxeerXVault.sol (deposit(asset, amount, paxeerRecipient) emitting BridgeDeposit, release(asset, amount, recipient, paxeerTxHash, signatures[]) under an attestor set with threshold, per-asset caps, pause, a nullifier set, and owner-only attestor and cap setters), a foundry.toml, and forge tests covering deposit, release under threshold, refusal below threshold, over cap, paused and replayed nullifier; the attestor signature domain SHALL match the layerxbridge module's attestation digest byte for byte and be documented in interop/contracts/ethereum-bridge/ATTESTATION.md."
+do_1 = "Create interop/contracts/ethereum-bridge with PaxeerXVault.sol (deposit(asset, amount, paxeerRecipient) emitting BridgeDeposit, release(asset, amount, recipient, paxeerTxHash, signatures[]) under an attestor set with threshold, per-asset caps, pause, a nullifier set, and owner-only attestor and cap setters), a foundry.toml, and FOUNDRY_CONFIG=foundry.paxeer.toml forge tests covering deposit, release under threshold, refusal below threshold, over cap, paused and replayed nullifier; the attestor signature domain SHALL match the layerxbridge module's attestation digest byte for byte and be documented in interop/contracts/ethereum-bridge/ATTESTATION.md."
 symbols = ["PaxeerXVault", "release", "BridgeDeposit"]
 
 [capability.103.9.6]
@@ -13266,7 +13266,7 @@ fail_closed = "Owner and attestor addresses in a committed configuration are pla
 evm_vault = "PaxeerXVault stays non-upgradeable with no proxy surface, and its wire format does not move: the BridgeDeposit and BridgeRelease events, the deposit, depositNative and release signatures, and the two digest views keep the exact bytes the relayer's abi.rs constants declare, asserted in the vault's own tests. The hardening is internal: OpenZeppelin v5.3.0 SafeERC20, ReentrancyGuard and Ownable2Step so ownership moves in two steps; no permit path; the received amount measured as a balance delta so a fee-on-transfer token cannot desync custody from the amount the Paxeer side mints; explicit NATIVE_ASSET handling; a rescue path that moves only a token that was never registered for bridging; and no EIP-165 surface. forge-std v1.9.6 and openzeppelin-contracts v5.3.0 are cloned into bridge/evm/lib by a bootstrap script and by the CI job, exactly as .github/workflows/paxeer-forge-test.yml clones them, and are never committed."
 solana_program = "bridge/solana is a raw solana-program crate in the shape of interop/contracts/solana-mirror: no Anchor, no borsh, hand-rolled fixed-width big-endian account and instruction layouts with explicit magic and version bytes, spl-token moved by CPI, unsafe code denied, its own workspace and a committed Cargo.lock, and program tests driven by solana-program-test. Custody is held by a vault-authority PDA; the asset registry, the deposit receipts and the release nullifiers are PDAs whose existence is the record. SPL mints only: native SOL bridges as the wrapped SOL mint, so one code path serves every asset."
 relayer_scope = "The relayer gains a Solana observer and a Solana submitter beside the EVM ones and changes no existing loop, no existing fixture and no existing journal key. The configuration gains one solana entry with the same shape as a chains[] entry plus the program id, the commitment and the slot finality depth. Its RPC seam speaks getSlot, getSignaturesForAddress, getTransaction, getAccountInfo, getLatestBlockhash, sendTransaction and getSignatureStatuses. Attestations are signed with the existing secp256k1 attestor key; the Solana transaction is signed under the policy domain LayerX/bridge/solana-tx/v1 by an ed25519 fee-payer key held by the remote signer, which never appears in a configuration file. Tests are recorded fixtures in the format interop/crates/layerx-bridge-relayer/tests/fixtures already uses."
-ci = "One workflow, .github/workflows/bridge-test.yml, with path filters bridge/**, interop/crates/layerx-bridge-relayer/** and the workflow file itself, and job names that say what they run: forge test for bridge/evm, cargo test plus cargo build-sbf for bridge/solana, cargo test for the relayer crate, and the bridge/deploy tooling leg that runs the Go packages and the offline check scripts the 1:1 test ratio requires. No job name, path filter or step description claims anything the step does not do, and no continue-on-error is added."
+ci = "One workflow, .github/workflows/bridge-test.yml, with path filters bridge/**, interop/crates/layerx-bridge-relayer/** and the workflow file itself, and job names that say what they run: FOUNDRY_CONFIG=foundry.paxeer.toml forge test for bridge/evm, cargo test plus cargo build-sbf for bridge/solana, cargo test for the relayer crate, and the bridge/deploy tooling leg that runs the Go packages and the offline check scripts the 1:1 test ratio requires. No job name, path filter or step description claims anything the step does not do, and no continue-on-error is added."
 test_ratio = "One to one. Every task's touches list names its test files explicitly, and every production file a task changes is accompanied by a test file that changes or is added in the same task and that exercises it: a Solidity *.t.sol under bridge/evm/test, a Rust #[cfg(test)] module or a file under the crate's tests/, a Go *_test.go in the same package, or a *-check.sh under bridge/deploy/tests for a shell script. Markdown, JSON configuration, recorded fixtures and workflow YAML are not production files for the ratio; the behaviour they carry is tested through the code and the check scripts that read them."
 testing_allowance = "Testing time is bounded on purpose. Every task's verify_cmd is one command wrapped in `timeout 20m`, run from the repository root. A task gets one build of its declared targets and one verify_cmd run, then at most two task-scoped repair cycles, each followed by exactly one rerun. The whole workflow command set runs once, in the wave 3 gate task, never per task and never per rebase. A task whose verify_cmd exceeds its timeout stops at thirty minutes and reports implemented-not-qualified with the exact command, exit code and log path; that is an acceptable outcome and is never dressed up as a pass."
 naming = "The product is Paxeer X Network. LayerX names the kernel domain only and stays on the kernel entities that already carry it, including the layerxBridge precompile, the layerxbridge module and the layerx-bridge-relayer crate; no new user-facing name this feature introduces reads LayerX. The Paxeer coin is PAX. No file content, comment, log line or documentation introduced by this feature carries a date, a hostname, an IP address, a port of an internal host, an internal URL, a credential, or the name of an agent, a model or a working branch. The only documentation links are https://paxeer.app and paths under github.com/Sidiora-Labs/Paxeer-X-Network; the pinned library clone URLs the bootstrap script and the CI job use are the two upstream repositories .github/workflows/paxeer-forge-test.yml already clones."
@@ -13479,7 +13479,7 @@ reference_namespace = "feature.107"
 title = "One Workflow That Says What It Runs"
 story = "As a reviewer, I want one workflow whose job names and path filters are true, so that a green check means the bridge was tested and not that a filter skipped it."
 ac_1 = "ONE workflow .github/workflows/bridge-test.yml SHALL run on pull requests and pushes touching bridge/**, interop/crates/layerx-bridge-relayer/** or .github/workflows/bridge-test.yml itself, and SHALL carry exactly those three path filters and no other."
-ac_2 = "ITS jobs SHALL be forge test for bridge/evm after cloning the two pinned libraries, cargo test plus cargo build-sbf for bridge/solana, cargo test for the layerx-bridge-relayer crate, and the bridge/deploy tooling leg running that directory's Go packages and offline check scripts; every job name SHALL name what that job runs."
+ac_2 = "ITS jobs SHALL be FOUNDRY_CONFIG=foundry.paxeer.toml forge test for bridge/evm after cloning the two pinned libraries, cargo test plus cargo build-sbf for bridge/solana, cargo test for the layerx-bridge-relayer crate, and the bridge/deploy tooling leg running that directory's Go packages and offline check scripts; every job name SHALL name what that job runs."
 ac_3 = "NO job SHALL carry continue-on-error, no step SHALL claim a check it does not perform, and every action SHALL be pinned the way the repository's existing workflows pin theirs."
 ac_4 = "A CHECK script SHALL parse the workflow, assert the path filters are exactly bridge/**, interop/crates/layerx-bridge-relayer/** and the workflow file itself and that each names a directory or file that exists, assert every job's command is one the repository can run from its root, and assert no continue-on-error is present."
 contract_profile = "retained-with-explicit-resolutions"
@@ -13505,7 +13505,7 @@ reference_namespace = "feature.107"
 reqs = ["1142.1", "1142.2", "1142.3", "1142.4", "1142.5", "1143.1", "1143.2", "1143.3", "1143.4", "1143.5", "1143.6", "1143.7"]
 touches = ["bridge/evm/foundry.toml", "bridge/evm/bootstrap-libs.sh", "bridge/evm/src/PaxeerXVault.sol", "bridge/evm/src/BridgeAttestation.sol", "bridge/evm/ATTESTATION.md", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/evm/test/RelayerAbiParity.t.sol", "bridge/evm/test/TestToken.sol", "bridge/evm/test/Vm.sol", ".gitignore", "Makefile", "interop/crates/layerx-bridge-relayer/src/abi.rs", "interop/crates/layerx-bridge-relayer/src/attestation.rs", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'bash bridge/evm/bootstrap-libs.sh && forge test --root bridge/evm -vvv'"
+verification_contract = "timeout 20m sh -c 'bash bridge/evm/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --root bridge/evm -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Move the project with git mv so its history follows: interop/contracts/ethereum-bridge/src/PaxeerXVault.sol, src/BridgeAttestation.sol, test/PaxeerXVault.t.sol, test/TestToken.sol, test/Vm.sol, ATTESTATION.md and foundry.toml become bridge/evm/..., and nothing is left at the old path."
 do_2 = "Rewrite bridge/evm/foundry.toml for its new root: src, test and script under bridge/evm, libs lib, solc 0.8.30, optimizer on at 100000 runs, via_ir, no bytecode hash, no cbor metadata, offline, artifacts and cache under build, and a remapping for the OpenZeppelin contracts directory."
@@ -13588,7 +13588,7 @@ tests = []
 verification_contract = "timeout 20m sh -c 'bash bridge/deploy/tests/workflow-check.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Write .github/workflows/bridge-test.yml running on pull requests, the merge group and pushes to main and release branches, filtered to bridge/**, interop/crates/layerx-bridge-relayer/** and the workflow file itself and to nothing else."
-do_2 = "Give it four jobs whose names say what they run: forge test for bridge/evm after cloning forge-std v1.9.6 and openzeppelin-contracts v5.3.0 the way paxeer-forge-test.yml clones them; cargo test and cargo build-sbf for bridge/solana; cargo test for the layerx-bridge-relayer crate; and the bridge/deploy tooling leg running that directory's Go packages, bridge/vectors and the offline check scripts."
+do_2 = "Give it four jobs whose names say what they run: FOUNDRY_CONFIG=foundry.paxeer.toml forge test for bridge/evm after cloning forge-std v1.9.6 and openzeppelin-contracts v5.3.0 the way paxeer-forge-test.yml clones them; cargo test and cargo build-sbf for bridge/solana; cargo test for the layerx-bridge-relayer crate; and the bridge/deploy tooling leg running that directory's Go packages, bridge/vectors and the offline check scripts."
 do_3 = "Pin every action by commit the way the repository's existing workflows pin theirs, add no continue-on-error, and let no step description claim a check it does not perform."
 do_4 = "Write bridge/deploy/tests/workflow-check.sh parsing the workflow, asserting the path filters are exactly bridge/**, interop/crates/layerx-bridge-relayer/** and the workflow file itself and that each names a directory or file that exists, asserting every job's command is one the repository can run from its root, asserting the four job names match the four legs, and asserting no continue-on-error is present."
 symbols = ["bridge-test"]
@@ -13877,7 +13877,7 @@ reference_namespace = "feature.107"
 reqs = ["1156.1", "1156.2", "1156.3", "1156.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'bash bridge/evm/bootstrap-libs.sh && forge test --root bridge/evm && cargo test --locked --manifest-path bridge/solana/Cargo.toml && cargo build-sbf --tools-version v1.56 --manifest-path bridge/solana/Cargo.toml && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer && go test -count=1 ./bridge/vectors/... ./bridge/deploy/... && for s in bridge/deploy/tests/*-check.sh; do bash $s || exit 1; done'"
+verification_contract = "timeout 20m sh -c 'bash bridge/evm/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --root bridge/evm && cargo test --locked --manifest-path bridge/solana/Cargo.toml && cargo build-sbf --tools-version v1.56 --manifest-path bridge/solana/Cargo.toml && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer && go test -count=1 ./bridge/vectors/... ./bridge/deploy/... && for s in bridge/deploy/tests/*-check.sh; do bash $s || exit 1; done'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "On the revision that merges waves 1 and 2, run the workflow's four legs once, in order - the bridge/evm Foundry suite after bootstrapping the pinned libraries, the bridge/solana crate with its release tests and cargo build-sbf, the layerx-bridge-relayer crate, and the bridge/deploy and bridge/vectors Go packages with the offline check scripts - writing each leg's output to its own log under build/bridge-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-bridge/qualification.kvx carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code, the log path, the outcome and the evidence, written only from a command that actually ran."
@@ -13896,7 +13896,7 @@ reference_policy = "Unqualified original requirement/task numbers in retained pr
 completion_task = "80.8"
 
 [contract_context.108.decision]
-retired = "Off every task list, code kept for private networks: testnet control and the faucet (platform/hosted/testnet, platform/hosted/faucet), the Solidity settlement path (platform/hosted/paxeer/init-chain.sh, deploy-contracts.sh, the anvil-based forge tests and the contracts/ deployment scripts), the old human web application (human/apps/web) and the explorer-index crate (human/crates/layerx-explorer-index). Nothing else is turned off; an incomplete system is completed."
+retired = "Off every task list, code kept for private networks: testnet control and the faucet (platform/hosted/testnet, platform/hosted/faucet), the Solidity settlement path (platform/hosted/paxeer/init-chain.sh, deploy-contracts.sh, the anvil-based FOUNDRY_CONFIG=foundry.paxeer.toml forge tests and the contracts/ deployment scripts), the old human web application (human/apps/web) and the explorer-index crate (human/crates/layerx-explorer-index). Nothing else is turned off; an incomplete system is completed."
 router_url = "The unified LayerX plus Paxeer interface, the hosted gateway of platform/hosted/gateway run by the existing Fly endpoint app of human/wallet/deploy/endpoint.toml, is served only at https://api-mainnet-beta.paxeer.network. Every document, example, manifest and config that says api.paxeer.network is rewritten to that URL. The sixteen public RPC names api1 to api16.mainnet-beta.paxeer.network stay exactly as docs/site/docs/reference/public-rpc.md lists them. The endpoint app's fly.dev name exists only as the edge's upstream for the router name and is never published, documented or configured as an endpoint."
 placement = "Whatever can run on Fly runs on Fly, in the organisation of the wallet fleet, and a service that gains from several machines runs on several. Stateless services run on at least two machines in two regions: the router, the wallet gateway, the search front, the dashboard web and API, both process groups of webhooks, the interop gateway and the relay archive, whose machines each keep their own volume and sync from the origin. A service with a single writer runs on one machine with a volume, because parallel machines would race its journal, its nonce or its state directory: the identity service, the internal kms and each event source, the internal Redis, the router's Redis, the program registry, the indexer, the reference ramp, the gas station, the bridge relayer, the hpx registry, whose node directory has one writer, and each x-websearch attestor, whose attestor key signs as one registered signer. The router's Redis stays one machine in the router's primary region because Redis has one writer and the gateway keeps its idempotency and session keys in it; the router's machines in the second region cross regions for those keys, and the router probe reports that round trip from each region. The kernel pod runs as one app with exactly one machine and one volume, because its sequencer, replica, boundaries, human graph, agentd and MCP talk over unix sockets under peer-uid checks that cannot cross machines; the human graph therefore cannot be split from it, and the existing human service app becomes the kernel app. Our servers keep only what holds or fronts chain data."
 host_roles = "edge host: the operator host; it holds the internal CA key and the Fly and Railway operator logins, is the landing point of the *.paxeer.network wildcard, so every public name without an explicit record reaches it, and its nginx with certbot serves each Fly-served name of [contract_context.108.decision.public_names] by proxying to the app's fly.dev name through the sites tools/bringup/edge.sh renders (task 0.9), the hpx registry at node.hyperpaxeer.com until task 4.21 fills the Fly app and that name proxied to the app after it, the hpx host role naming the same host until then. explorer proxy host: unverified, owner unknown: an nginx whose host ownership is not established answers paxscan.io and forwards to a Railway service; which Railway project serves it is unverified; no task of this feature changes it. old wallet host: the legacy wallet host named by the OLD_WALLET_HOST role of the host map, whose legacy wallet state lives at the backend origin the deploy side's discovery packet names; the host runs the database container paxeer-wallet-db and the Caddy container paxeer-wallet-caddy (Compose unverified), and the frontend-to-backend mapping of the legacy wallet is unverified; the role stays until task 4.1 retires the container. archive host: the full node with min-retain-blocks 0 behind one of the sixteen public RPC names and the explorer's primary upstream. validator hosts: the private validators only; no public name, certificate SAN, Fly upstream, boundary hop, RPC setting or public-facing command names them, and the only access is private ssh from the operator host in tasks 0.6, 4.22 and 4.23; task 4.23 moves the four x-websearch attestor sidecars they still run to Fly one slot at a time, their attestor ports open meanwhile only to loopback and to the other validator host. RPC hosts: the sixteen public RPC nodes with nginx and certbot. The serving RPC names are the apiN names of the RPC_HOSTS destinations that are not VALIDATOR_HOSTS, each destination mapped to its apiN name through its nginx site as rpc_unit of tools/bringup/check-live.sh reads it, all sixteen once task 4.22 is done; each serving node also serves paid search from a loopback x-websearch sidecar, and every RPC setting of this feature names a serving RPC name. No host of ours runs the kernel, the platform services, the search front or the explorer; the explorer proxy host only forwards paxscan.io."
@@ -14477,7 +14477,7 @@ reference_namespace = "feature.108"
 reqs = ["1166.2"]
 touches = ["human/crates/layerx-human-service/src", "human/crates/layerx-human-service/tests/bearer_admission.rs"]
 tests = ["human/crates/layerx-human-service/tests/bearer_admission.rs"]
-verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test bearer_admission'"
+verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service --test bearer_admission'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In layerx-human-service, admit an Authorization bearer on intent plan, intent submit, journey get and the account reads from an origin in the listed set by calling operation 4 through the identity socket, resolving the principal and did, and keeping the passkey cookie path exactly as it is."
 do_2 = "Carry the admitted assertion on the request context so components pass it to AttestorKms::admit_assertion at signing; add tests/bearer_admission.rs proving admission, refusal of a foreign origin and refusal of an expired assertion."
@@ -14489,7 +14489,7 @@ reference_namespace = "feature.108"
 reqs = ["1166.3"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 tests = ["human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
-verification_contract = "timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_identity_e2e'"
+verification_contract = "timeout 30m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service --test wallet_identity_e2e'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In production_components.rs require the LAYERX_HUMAN_KMS_* group only when LAYERX_HUMAN_ATTESTOR_NODES is unset; under attestor custody use the Fly wallet attestors (count unresolved) with LAYERX_HUMAN_ATTESTOR_SIGNERS of at least three, protocol 3, the human-service client leaf chained to the attestor CA, and wire admit_assertion into the sign path."
 do_2 = "Extend tests/wallet_identity_e2e.rs so it runs with no KMS variables set and proves the attestor-only path end to end."
@@ -14501,7 +14501,7 @@ reference_namespace = "feature.108"
 reqs = ["1166.5"]
 touches = ["human/crates/layerx-human-service/src", "human/crates/layerx-human-service/tests/wallet_routes.rs", "human/schema"]
 tests = ["human/crates/layerx-human-service/tests/wallet_routes.rs"]
-verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test wallet_routes'"
+verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service --test wallet_routes'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "List every path and method human/wallet/sdk calls on the human API (human.ts and its siblings), compare with the routes layerx-human-service serves and the human-api schema, and implement each missing route on the real component paths with the schema the SDK expects."
 do_2 = "Add tests/wallet_routes.rs that parses the SDK's route list from the source tree and asserts each route answers something other than 404 on the service."
@@ -15804,7 +15804,7 @@ reference_namespace = "feature.110"
 reqs = ["1191.1", "1191.2", "1191.3", "1191.4"]
 touches = ["contracts/src/WPAX.sol", "contracts/test/WPAXTest.t.sol", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'test -d contracts/lib/forge-std || git clone --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std contracts/lib/forge-std; FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/WPAXTest.t.sol'"
+verification_contract = "timeout 20m sh -c 'test -d contracts/lib/forge-std || git clone --depth 1 --branch v1.9.6 https://github.com/foundry-rs/forge-std contracts/lib/forge-std; FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/WPAXTest.t.sol'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In contracts/src/WPAX.sol change the public name to the wrapped Paxeer display name, leaving the symbol, the decimals, every storage slot, every function and every event exactly as they are."
 do_2 = "Add contracts/test/WPAXTest.t.sol asserting the display name, the symbol and the decimals, a deposit crediting the sender's balance and emitting its event, a withdrawal debiting the sender and paying out, a transfer between accounts and an approved transfer, so the rename is proven to have moved nothing else."
@@ -16757,7 +16757,7 @@ reference_namespace = "feature.111"
 reqs = ["1211.3"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/journeys/intent_submit.rs", "human/crates/layerx-human-service/src/journeys/mod.rs", "human/crates/layerx-human-service/tests/intent_submit.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service intent_submit'"
+verification_contract = "timeout 20m sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service intent_submit'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In human/crates/layerx-human-service change the intent submit handler to verify the signed digest and every leg binding against the re-planned plan (action key, actor, authority, account sequence, validity window, fee limit), refuse typed on any mismatch, create a journey, and drive its legs through the existing movement journeys."
 do_2 = "Return the intent submission shape the contract in human/schema/human-api/intent.kvx declares (journey id, plan digest, state, state copy key), and add the journey state transitions the plan-driven path needs to the existing journey machinery without changing any existing journey's behaviour."
@@ -16770,7 +16770,7 @@ reference_namespace = "feature.111"
 reqs = ["1215.1", "1210.5"]
 touches = ["platform/hosted/gateway/src/rpc.rs", "platform/hosted/gateway/src/paxeer.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/openrpc.json", "platform/hosted/gateway/tests/degraded.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+verification_contract = "timeout 20m sh -c 'cd platform && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway degraded'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In platform/hosted/gateway make start-up succeed when the kernel backends are unconfigured or unreachable: eth_ relay and the px_ joins that depend on chain state alone keep serving, kernel-dependent lx_ and px_ methods answer a typed unavailable error naming the backend, and readiness reports each backend separately."
 do_2 = "Add a px_getNetwork field carrying kernel availability and the reason, keep every existing response shape otherwise unchanged, and keep openrpc.json in step."
@@ -17018,7 +17018,7 @@ reference_namespace = "feature.111"
 reqs = ["1215.2"]
 touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/tests/degraded.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+verification_contract = "timeout 20m sh -c 'cd platform && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway degraded'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In platform/hosted/gateway/src/main.rs make config treat the client identity and its password, the four sequencer trust inputs, the key provisioning key and the module registry as kernel-side inputs: required exactly as today when LAYERX_GATEWAY_COMPONENT_URL is set, skipped when it is unset, mirroring configured_kernel, and refuse start-up with a named error when any of them is set without the component URL."
 do_2 = "Carry the absence through every consumer so kernel-dependent methods keep answering the typed unavailable error and chain-only readiness reports the kernel side as unconfigured; keep every response shape and openrpc.json unchanged."
@@ -17043,7 +17043,7 @@ reference_namespace = "feature.111"
 reqs = ["1215.2"]
 touches = ["platform/hosted/internal/src/producer.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/tests/degraded.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+verification_contract = "timeout 20m sh -c 'cd platform && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway degraded'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Make the shared endpoint construct its payment and webhook event producer only when the producer's upstream URL is configured: when it is absent the endpoint starts without a producer, readiness reports the producer as unconfigured, and any path that would emit an event on the kernel side is already unavailable; when the upstream URL is set, the producer's credentials stay required exactly as today and a half-set producer is refused with a named error."
 do_2 = "Add a degraded test that starts the endpoint through its real start-up configuration with the chain-only inputs and no producer variables, asserts it serves eth_chainId and px_getNetwork and reports the producer unconfigured, and asserts the named refusal for a half-set producer."
@@ -17055,7 +17055,7 @@ reference_namespace = "feature.111"
 reqs = ["1215.2"]
 touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/tests/degraded.rs", "human/wallet/deploy/endpoint.toml", "human/wallet/deploy/env"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd platform && cargo test -p layerx-platform-gateway degraded'"
+verification_contract = "timeout 20m sh -c 'cd platform && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway degraded'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Let the shared endpoint serve plain HTTP on its listener when LAYERX_GATEWAY_LISTENER is set to plain: the platform proxy terminates public TLS and forwards plain HTTP to the machine, so in that mode the endpoint refuses startup if LAYERX_GATEWAY_TLS_CERT_DER or LAYERX_GATEWAY_TLS_KEY_DER is set, naming the variable; when LAYERX_GATEWAY_LISTENER is unset or tls the listener terminates TLS exactly as today with the certificate and key required; any other value is refused by name; every route, the websocket upgrade, the request and connection limits and the timeouts behave identically in both modes."
 do_2 = "Switch human/wallet/deploy/endpoint.toml to the plain listener behind the platform's http_service: set LAYERX_GATEWAY_LISTENER to plain in its environment, drop the listener certificate and key paths and their two secret file mappings, keep the outbound CA and every other mapping, and make the readiness check speak http; document LAYERX_GATEWAY_LISTENER in human/wallet/deploy/env."
@@ -17168,7 +17168,7 @@ reference_namespace = "feature.111"
 reqs = ["1211.4", "1211.1", "1211.2"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service wallet_identity_e2e'"
+verification_contract = "timeout 20m sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service wallet_identity_e2e'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add a human service integration test that spawns the real attestor daemon, signs in with a wallet assertion minted from an in-test JWKS, opens the account, plans a kernel send, submits it with the attestor-backed signer, and observes the journey reach a receipt-verified state against the crate's in-process kernel test support."
 do_2 = "Wire the attestor-backed signer and the assertion principal into the service's production component construction behind configuration, refusing to start when configured but unreachable."
@@ -17180,7 +17180,7 @@ reference_namespace = "feature.111"
 reqs = ["1211.4"]
 touches = ["human/crates/layerx-human-service/src/server/production_components.rs"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd human && cargo test -p layerx-human-service attestor_custody_protocol'"
+verification_contract = "timeout 20m sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service attestor_custody_protocol'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "When attestor custody is configured and LAYERX_HUMAN_PROTOCOL_VERSION is unset, selected_protocol is 3; when it is set to any value other than 3 under attestor custody, production component construction refuses to start with an error naming the variable and the required value; without attestor custody the existing behaviour stays."
 do_2 = "Add tests for the three cases against the real construction path."
@@ -17512,7 +17512,7 @@ reference_namespace = "feature.111"
 reqs = ["1215.2"]
 touches = ["human/crates/layerx-human-service/src/main.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/http.rs", "human/crates/layerx-human-service/tests/server_browser_boundary.rs"]
 tests = []
-verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test -p layerx-human-service --test server_browser_boundary'"
+verification_contract = "timeout 20m tools/runtime/run-with-clock.sh sh -c 'cd human && cargo test --manifest-path human/Cargo.toml -p layerx-human-service --test server_browser_boundary'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Let layerx-human-service serve plain HTTP when LAYERX_HUMAN_LISTENER is plain: the platform proxy terminates public TLS and forwards plain HTTP/1.1 to the machine, so in that mode startup refuses LAYERX_HUMAN_TLS_CERT_DER or LAYERX_HUMAN_TLS_KEY_DER by name; unset or tls keeps today's TLS listener with the certificate and key required; any other value is refused by name; routing, limits and deadlines are identical in both modes."
 do_2 = "Let LAYERX_HUMAN_WEB_ORIGIN carry a comma-separated list of https origins; answer an OPTIONS preflight whose Origin is listed with Access-Control-Allow-Origin echoing that origin, Allow-Methods, Allow-Headers for authorization, content-type, idempotency-key, x-layerx-trace and x-layerx-csrf, Expose-Headers for the trace, Max-Age and Vary: Origin, never Allow-Credentials; add Allow-Origin and Vary: Origin to every response whose Origin is listed; a preflight from any other origin is refused with the structured forbidden failure; the same-origin check on mutating operations accepts any listed origin."
@@ -17629,7 +17629,7 @@ api_calls = "Contracts reach the world beyond the network through the same preco
 programs = "Kernel programs read web data through a new host import web_read(i32,i32,i32,i32)->i32 appended to the ABI as a new layerx_v4 group, beside oracle_read in programs/crates/layerx-programs-runtime/src/host/ with its call bridge in src/modules/programs/call.c. It is fed by a web observation activity that attestor sidecars post through the sequencer on the same shape as the oracle adapter path - include/layerx/lx_web.h beside lx_oracle.h, src/network/lx_web_adapter.c beside lx_oracle_adapter.c, src/sequencer/lx_web_root.c beside lx_oracle_root.c - carrying the origin-2 preimage fields and the attestor signatures, verified in the kernel with lxp_secp256k1_recover_address against the kernel web attestor set. A program requests a fetch by emitting a web request record through event_emit and paying the web fee account with the existing transfer_402 host import in the same call. Execution never dials out: web_read reads only committed observations, and a request with no committed observation reads as absent. The frozen v1 to v3 manifests and programs/abi-frozen.sha256 do not change."
 agents = "agent/sdk/typescript and agent/sdk/python gain clients that perform the full 402LXP exchange against any node sidecar for search, fetch and content by digest, verify the PAYMENT-RESPONSE settlement before returning content, and recompute the content digest of a fetch locally. agent/crates/layerx-mcp gains a web tool with search, fetch and content operations that goes through the same exchange and the MCP crate's existing approval boundary for any spend."
 sidecar_runtime = "The sidecar is the Rust crate interop/crates/x-websearch with the binary x-websearch, a member of the interop workspace under its lints. Its HTTP server is std-library only like its siblings: no axum, no tokio, no hyper. Outbound HTTP uses std::net::TcpStream with native-tls exactly as interop/crates/layerx-gas-station/src/rpc.rs does. The index is tantivy. A JSON configuration file names everything that is not a secret; secrets arrive only through the environment variables X_WEBSEARCH_ATTESTOR_KEY_FILE, X_WEBSEARCH_SUBMITTER_KEY_FILE and X_WEBSEARCH_RECEIVER_KEY_FILE, each naming a key file. It ships as a Dockerfile under interop/deploy/x-websearch, a systemd unit, an entry in docker/docker-compose.yml, and the node image built by the root Dockerfile gains the binary."
-ci = "One workflow, .github/workflows/xweb-test.yml, with a concurrency group per ref and cancel-in-progress, path filters on the trees this feature touches and nothing else, and legs whose names say what they run: cargo test for the x-websearch crate, go test for modules/xweb and precompiles/xweb, forge test for the IXWeb consumer tests, the kernel make targets for the web activity and web_read, and the SDK and MCP tests. No continue-on-error. A wave 3 task runs the legs once on the merged revision."
+ci = "One workflow, .github/workflows/xweb-test.yml, with a concurrency group per ref and cancel-in-progress, path filters on the trees this feature touches and nothing else, and legs whose names say what they run: cargo test for the x-websearch crate, go test for modules/xweb and precompiles/xweb, FOUNDRY_CONFIG=foundry.paxeer.toml forge test for the IXWeb consumer tests, the kernel make targets for the web activity and web_read, and the SDK and MCP tests. No continue-on-error. A wave 3 task runs the legs once on the merged revision."
 test_ratio = "One to one. Every task's touches list names its test files explicitly and every production file a task changes is paired with a test file that changes or is added in the same task and exercises it: a Rust file under the crate's tests/ or a #[cfg(test)] module, a Go *_test.go in the same package, a Foundry *.t.sol under contracts/test, a C test under tests/ with its make target, a TypeScript test under agent/sdk/typescript/test, a Python test under tests/agent/sdk/python, or a *-check.sh for a shell script, Dockerfile or unit. Markdown, JSON configuration, recorded fixtures and workflow YAML are not production files for the ratio."
 testing_allowance = "Testing time is bounded on purpose. Every task's verify_cmd is one command wrapped in timeout 20m, run from the repository root. A task gets one build of its declared targets and one verify_cmd run, then at most two task-scoped repair cycles, each followed by exactly one rerun. The whole workflow command set runs once, in the wave 3 gate task, never per task and never per rebase. A task whose verify_cmd exceeds its timeout stops at thirty minutes and reports implemented-not-qualified with the exact command, exit code and log path; that is an acceptable outcome and is never dressed up as a pass."
 naming = "The product is Paxeer X Network. LayerX names the kernel domain only and stays on the kernel entities and crates that already carry it; the new user-facing names are x-websearch, xweb and web_read. The Paxeer coin is PAX and Sidiora is SID. No file, comment, commit message or log line introduced by this feature carries a date, a hostname, an IP address other than the loopback address a local test binds, a port of an internal host, an internal URL, a credential, a node count, or the name of an agent, a model or a working branch. The only documentation links are https://paxeer.app and paths under github.com/Sidiora-Labs/Paxeer-X-Network."
@@ -17927,7 +17927,7 @@ reference_namespace = "feature.112"
 reqs = ["1222.1", "1222.2", "1222.3", "1222.4", "1222.5"]
 touches = ["precompiles/xweb/XWeb.sol", "precompiles/xweb/abi.json", "precompiles/xweb/xweb.go", "precompiles/xweb/setup.go", "precompiles/xweb/versions", "precompiles/xweb/xweb_test.go", "precompiles/utils/expected_keepers.go", "precompiles/setup.go", "precompiles/setup_test.go", "contracts/src/precompiles/IXWeb.sol", "contracts/src/xweb/XWebConsumer.sol", "contracts/test/XWebConsumer.t.sol", "scripts/ci/xweb-forge-libs.sh"]
 tests = ["precompiles/xweb/xweb_test.go", "precompiles/setup_test.go", "contracts/test/XWebConsumer.t.sol"]
-verification_contract = "timeout 20m sh -c 'go test -count=1 ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'go test -count=1 ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Write precompiles/xweb/XWeb.sol and abi.json with request, fulfil, refund and the views, xweb.go at 0x0000000000000000000000000000000000001019 calling the modules/xweb keeper for each method, refusing a wrong fee and a state change in a read-only call, and after a fulfilment calling onXWebResponse(uint64,bytes32,uint32,bytes) on the requester with gas bounded by the request's callback gas and the module maximum, recording a revert or out-of-gas without undoing the fulfilment."
 do_2 = "Add the versions file naming v6.8 and setup.go in the generated shape scripts/bump_version produces, add the XWebK accessor to precompiles/utils/expected_keepers.go and its EmptyKeepers, and register the precompile in precompiles/setup.go beside feetoken."
@@ -17999,7 +17999,7 @@ tests = ["scripts/ci/xweb-workflow-check.sh"]
 verification_contract = "timeout 20m sh -c 'bash scripts/ci/xweb-workflow-check.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Write .github/workflows/xweb-test.yml running on pull requests and pushes to main, with a concurrency group per ref and cancel-in-progress, filtered to interop/crates/x-websearch/**, interop/deploy/x-websearch/**, modules/xweb/**, precompiles/xweb/**, contracts/src/precompiles/IXWeb.sol, contracts/src/xweb/**, contracts/test/XWebConsumer.t.sol, include/layerx/lx_web.h, src/modules/web/**, src/network/lx_web_adapter.c, src/sequencer/lx_web_root.c, programs/crates/layerx-programs-runtime/**, agent/sdk/typescript/src/web-search.ts, agent/sdk/python/layerx_sdk/web_search.py, agent/crates/layerx-mcp/**, scripts/ci/xweb-forge-libs.sh and the workflow file itself."
-do_2 = "Give it legs named for what they run: cargo test for x-websearch; go test for modules/xweb and precompiles/xweb; forge test for XWebConsumer.t.sol after running scripts/ci/xweb-forge-libs.sh; the kernel make targets for the web activity and web_read with the runtime web_read test; and the TypeScript, Python and MCP tests. Pin every action by commit as the existing workflows do and add no continue-on-error."
+do_2 = "Give it legs named for what they run: cargo test for x-websearch; go test for modules/xweb and precompiles/xweb; FOUNDRY_CONFIG=foundry.paxeer.toml forge test for XWebConsumer.t.sol after running scripts/ci/xweb-forge-libs.sh; the kernel make targets for the web activity and web_read with the runtime web_read test; and the TypeScript, Python and MCP tests. Pin every action by commit as the existing workflows do and add no continue-on-error."
 do_3 = "Write scripts/ci/xweb-workflow-check.sh parsing the workflow and asserting the concurrency group and cancel-in-progress, that every path filter names a path that exists or a path a task of this feature adds, that every leg's command runs from the repository root, and that no continue-on-error is present."
 symbols = ["xweb-test"]
 
@@ -18013,7 +18013,7 @@ reference_namespace = "feature.112"
 reqs = ["1222.5"]
 touches = ["contracts/test/CW1155ERC1155PointerTest.t.sol", "contracts/test/CW721ERC721PointerTest.t.sol"]
 tests = ["contracts/test/CW1155ERC1155PointerTest.t.sol", "contracts/test/CW721ERC721PointerTest.t.sol", "contracts/test/XWebConsumer.t.sol"]
-verification_contract = "timeout 20m sh -c 'go test -count=1 ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'go test -count=1 ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In contracts/test/CW1155ERC1155PointerTest.t.sol and contracts/test/CW721ERC721PointerTest.t.sol bring MockAddr up to the whole IAddr interface - bindLayerX, unbindLayerX, getLayerXDid, getEvmAddrByLayerX, layerXBindNonce, getUnifiedAccount and every other declared function - with behaviour consistent with the existing getPaxAddr and getEvmAddr doubles, so the contracts tree compiles under forge again; change nothing else in those tests."
 do_2 = "Run task 1.6's verify_cmd unchanged on the resulting revision, record it as task 1.6's evidence, set task 1.6 to done and close observation 1.6.1."
@@ -18270,7 +18270,7 @@ reference_namespace = "feature.112"
 reqs = ["1233.1", "1233.2", "1233.4", "1233.5", "1233.6"]
 touches = ["modules/xweb/types", "modules/xweb/keeper", "precompiles/xweb/xweb.go", "precompiles/xweb/xweb_test.go", "precompiles/xweb/abi.json", "precompiles/xweb/XWeb.sol", "contracts/src/xweb", "contracts/test"]
 tests = []
-verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/xweb/... ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/xweb/... ./precompiles/xweb/... ./precompiles/ && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In modules/xweb/types add KindApi with a payload codec and validation for the method, the https URL, the public headers, the body, the JSON pointers, the attestation level and the credential envelopes, bounding each part, refusing an attestor outside the registered set and more envelopes than attestors, and raise DefaultMaxPayloadBytes to 8192 so a payload with envelopes for a majority-sized set fits; keep the 188-byte origin-1 preimage and every existing vector exactly as they are - the level is bound through the payload hash - and append api vectors to types/testdata/preimage-vectors.json."
 do_2 = "In modules/xweb/keeper make fulfil accept, under the single level, one signature from the request's named attestor and require the threshold otherwise, and store the level in the result; in precompiles/xweb/xweb.go and abi.json validate the api kind at request and expose the level in getResult and XWebFulfilled, touching nothing scripts/bump_version generates."
@@ -18735,7 +18735,7 @@ reference_namespace = "feature.112"
 reqs = ["1232.3", "1232.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = ["interop/crates/x-websearch/tests", "modules/xweb", "precompiles/xweb/xweb_test.go", "contracts/test/XWebConsumer.t.sol", "tests/modules/test_web_intake.c", "tests/sequencer/test_web_root.c", "tests/network/test_web_adapter.c", "tests/test_programs_web_read.c", "tests/test_web_program_path.c", "programs/crates/layerx-programs-runtime/tests/web_read.rs", "agent/crates/layerx-mcp/tests/web.rs", "agent/sdk/typescript/test/web-search.test.ts", "tests/agent/sdk/python/test_web_search.py"]
-verification_contract = "timeout 20m sh -c 'cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch && go test -count=1 ./modules/xweb/... ./precompiles/xweb/... && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol && make test-web-intake test-web-root test-web-adapter test-programs-web-read test-web-program-path && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test web_read && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test web && (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js) && (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)'"
+verification_contract = "timeout 20m sh -c 'cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch && go test -count=1 ./modules/xweb/... ./precompiles/xweb/... && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol && make test-web-intake test-web-root test-web-adapter test-programs-web-read test-web-program-path && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test web_read && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test web && (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js) && (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "On the revision that merges waves 1 and 2, run the workflow's legs once, in order - the x-websearch crate, modules/xweb with precompiles/xweb, the Foundry consumer tests, the kernel web make targets with the runtime web_read test, and the SDK and MCP tests - writing each leg's output to its own log under build/xweb-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-web/qualification.kvx carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
@@ -18952,7 +18952,7 @@ reference_namespace = "feature.113"
 reqs = ["1234.1", "1234.2", "1234.3", "1234.4", "1234.5", "1234.6", "1234.7"]
 touches = ["contracts/src/BatchCallAndSponsor.sol", "contracts/src/precompiles/IOracle.sol", "contracts/test/BatchCallAndSponsorTest.t.sol"]
 tests = []
-verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In contracts/src/BatchCallAndSponsor.sol add a Quote struct carrying the sponsor address, the token address, the maximum token amount, the quoted token amount, the deadline and the quote nonce, and add an executeSponsored entry point taking the calls, the account's signature over the batch digest and the relayer's signature over the quote digest; keep execute and the existing signature-carrying path working exactly as they do, keep the nonce, the CallExecuted and BatchExecuted events and the payable fallback and receive."
 do_2 = "Bind the two digests so neither half replays alone: the account digest SHALL cover the batch nonce, the calls and the quote digest, and the quote digest SHALL cover the chain id, this contract's address, the sponsor, the token, the maximum, the quoted amount, the deadline and the quote nonce; recover both with the ECDSA library already imported, require the recovered account to equal address(this) and the recovered relayer to equal the quote's sponsor, and revert with a named error otherwise."
@@ -19045,7 +19045,7 @@ reference_namespace = "feature.113"
 reqs = ["1234.1", "1234.2", "1234.3", "1234.4", "1234.5", "1234.6", "1234.7"]
 touches = ["contracts/src/BatchCallAndSponsor.sol", "contracts/test/BatchCallAndSponsorTest.t.sol", "contracts/src/precompiles/IOracle.sol"]
 tests = []
-verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In contracts/src/BatchCallAndSponsor.sol replace the oracle import, address, denoms and parsing helpers with a constructor taking the owner, initial SID base units per whole PAX and maximum rate age, rejecting zero configuration and recording the initial update time."
 do_2 = "Add owner-only setRate updating the stored rate and timestamp and emitting RateUpdated, rejecting an unauthorized caller with UnauthorizedOwner and a delegated write with InvalidRateContext."
@@ -19080,7 +19080,7 @@ reference_namespace = "feature.113"
 reqs = ["1239.1", "1239.2", "1239.3", "1239.4", "1239.5"]
 touches = ["contracts/src/SidioraNativeERC20.sol", "contracts/test/SidioraNativeERC20Test.t.sol", "contracts/test/sidiora_pointer_proposal.json"]
 tests = []
-verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/SidioraNativeERC20Test.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/SidioraNativeERC20Test.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add contracts/src/SidioraNativeERC20.sol, an ERC20 whose balanceOf, totalSupply and transfers read and move the Sidiora denom through the bank precompile at 0x0000000000000000000000000000000000001001 in the shape contracts/src/NativePaxTokensERC20.sol uses, reporting the name Sidiora, the symbol SID and six decimals."
 do_2 = "Write it for a proxy rather than a constructor: hold the denom and the metadata in storage set by an initialiser that reverts on a second call, occupy storage slots that do not move, reorder or reuse the slots the existing implementation behind 0x21f7b20a555199fa73A238B1a91FD0f549068fEe occupies, and document the layout the proxy requires in the contract itself."
@@ -19314,7 +19314,7 @@ reference_namespace = "feature.113"
 reqs = ["1248.1", "1248.2", "1248.3", "1248.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/evm/... ./modules/layerxbridge/... ./precompiles/ ./precompiles/feetoken/... ./node/antedecorators/... && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague'"
+verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/evm/... ./modules/layerxbridge/... ./precompiles/ ./precompiles/feetoken/... ./node/antedecorators/... && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "On the revision that merges waves 1 and 2, run the three legs of the gate once, in order - the Go packages under modules/evm, modules/layerxbridge, precompiles and node/antedecorators, then the gas-station crate, then the Paxeer Foundry project - writing each leg's output to its own log under build/sidiora-gates/."
 do_2 = "Append one gate record per leg to spec/sidiora-fee-token/qualification.kvx carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
@@ -19378,7 +19378,7 @@ reference_namespace = "feature.113"
 reqs = ["1234.7", "1239.5"]
 touches = ["contracts/bootstrap-libs.sh", "foundry.paxeer.toml"]
 tests = []
-verification_contract = "timeout 20m sh -c 'bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge build --evm-version=prague'"
+verification_contract = "timeout 20m sh -c 'bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge build --evm-version=prague'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add contracts/bootstrap-libs.sh in the shape of bridge/evm/bootstrap-libs.sh, cloning forge-std v1.9.6 and openzeppelin-contracts v5.3.0, the tags .github/workflows/paxeer-forge-test.yml clones, into contracts/lib, doing nothing when both are already at their pinned tag and unmodified and replacing a checkout that is at another tag or was edited."
 do_2 = "Add to foundry.paxeer.toml the remappings forge-std/=contracts/lib/forge-std/src/ and @openzeppelin/contracts/=contracts/lib/openzeppelin-contracts/contracts/, leaving every other key exactly as it is, so the standalone build resolves Test.sol, Vm.sol and the OpenZeppelin imports with no environment override."
@@ -19436,7 +19436,7 @@ reference_namespace = "feature.113"
 reqs = ["1234.1", "1234.5", "1234.7"]
 touches = ["contracts/test/BatchCallAndSponsorTest.t.sol"]
 tests = []
-verification_contract = "timeout 20m sh -c 'bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
+verification_contract = "timeout 20m sh -c 'bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/BatchCallAndSponsorTest.t.sol -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "In contracts/test/BatchCallAndSponsorTest.t.sol extend testDigestsBindEveryQuoteFieldAndChain, or add a case beside it, signing a sponsored batch at one chain id, switching the chain id with vm.chainId, and asserting executeSponsored reverts with the account-signature error as well as the quote-signature error, leaving every existing assertion as written."
 do_2 = "Change no production contract; this is a test-only task and the test ratio is satisfied by the test file alone."
@@ -19517,7 +19517,7 @@ reference_namespace = "feature.113"
 reqs = ["1248.1", "1248.2", "1248.3", "1248.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/evm/... ./modules/layerxbridge/... ./precompiles/ ./precompiles/feetoken/... ./node/antedecorators/... && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station && bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague'"
+verification_contract = "timeout 20m sh -c 'go test -count=1 ./modules/evm/... ./modules/layerxbridge/... ./precompiles/ ./precompiles/feetoken/... ./node/antedecorators/... && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station && bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "On the revision that merges every wave 4 task, run the three legs of task 3.1 once, in order - the Go packages under modules/evm, modules/layerxbridge, precompiles and node/antedecorators, then the gas-station crate, then the Paxeer Foundry project after contracts/bootstrap-libs.sh - writing each leg's output to its own log under build/sidiora-gates/."
 do_2 = "Append one gate record per leg that ran to spec/sidiora-fee-token/qualification.kvx under gate.4.13, carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
@@ -19534,7 +19534,7 @@ reference_namespace = "feature.113"
 reqs = ["1240.3", "1240.5"]
 touches = [".github/workflows/ci.yml", ".github/workflows/paxeer-forge-test.yml", "contracts/bootstrap-libs.sh"]
 tests = []
-verification_contract = "timeout 25m sh -c 'forge fmt --check && scripts/ci/solidity-state-surface.sh && bash contracts/bootstrap-libs.sh && forge build --sizes && forge test -vvv'"
+verification_contract = "timeout 25m sh -c 'forge fmt --check && scripts/ci/solidity-state-surface.sh && bash contracts/bootstrap-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge build --sizes && FOUNDRY_CONFIG=foundry.paxeer.toml forge test -vvv'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "The solidity job of .github/workflows/ci.yml builds the kernel Foundry project, whose test directory now carries tests/solidity/SidioraProxyGovernance.t.sol, and that test resolves ERC1967Proxy, ERC1967Utils, UUPSUpgradeable, Initializable and Ownable through contracts/lib/openzeppelin-contracts, which no step of that job populates; add one step running bash contracts/bootstrap-libs.sh immediately before the build step, so the job resolves them from the same pinned checkout the Paxeer project uses while the formatting and state-surface steps keep running against the tracked tree alone."
 do_2 = "Keep contracts/bootstrap-libs.sh the one place the two library tags are written: replace the two literal git clone lines in the Run Forge build step of .github/workflows/paxeer-forge-test.yml with a call to that script, and correct the script's header comment so it states it is the only source of the pins."
@@ -22766,7 +22766,7 @@ do_2 = "Extend the real Foundry vault tests with test_DepositCanonicalRecipient 
 do_3 = "Keep the relayer and keeper refusals and immutable attestation encoding; document the affected-deposit handling boundary in the existing bridge runbook."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
 touches = ["bridge/evm/src/PaxeerXVault.sol", "bridge/evm/test/PaxeerXVault.t.sol", "bridge/README.md", "tools/paxeer-x/gates/21.1.sh"]
-verify_cmd = "timeout 10m forge test --root bridge/evm --match-test test_DepositCanonicalRecipient"
+verify_cmd = "timeout 10m FOUNDRY_CONFIG=foundry.paxeer.toml forge test --root bridge/evm --match-test test_DepositCanonicalRecipient"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -23476,7 +23476,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "103.6.6"
-reference_verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary && cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary --all-targets -- -D warnings && bash -n platform/hosted/paxeer/init-chain.sh platform/hosted/paxeer/deploy-contracts.sh && python3 platform/hosted/paxeer/tests/deployment_profile.py && forge test --match-path 'tests/solidity/{LayerXTimelock,PaxeerBetaDeploymentValidator,ContractIntegration,ContractManager}.t.sol'"
+reference_verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary && cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-paxeer-boundary --all-targets -- -D warnings && bash -n platform/hosted/paxeer/init-chain.sh platform/hosted/paxeer/deploy-contracts.sh && python3 platform/hosted/paxeer/tests/deployment_profile.py && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-path 'tests/solidity/{LayerXTimelock,PaxeerBetaDeploymentValidator,ContractIntegration,ContractManager}.t.sol'"
 reference_tests = []
 deployment_profile = "private-network"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -23505,7 +23505,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "103.6.11"
-reference_verify_cmd = "make layerx-genesis-build test-state-commitment-transition test-genesis && make -s check && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-wire && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test verify && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof && cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test compile --test differential && forge test --match-path 'tests/solidity/{CheckpointRegistry,PaxeerBetaDeploymentValidator,ContractManager}.t.sol'"
+reference_verify_cmd = "make layerx-genesis-build test-state-commitment-transition test-genesis && make -s check && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-wire && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test verify && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof && cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test compile --test differential && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-path 'tests/solidity/{CheckpointRegistry,PaxeerBetaDeploymentValidator,ContractManager}.t.sol'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25680,7 +25680,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "112.3.1"
-reference_verify_cmd = "timeout 20m sh -c 'cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch && go test -count=1 ./modules/xweb/... ./precompiles/xweb/... && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol && make test-web-intake test-web-root test-web-adapter test-programs-web-read test-web-program-path && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test web_read && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test web && (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js) && (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)'"
+reference_verify_cmd = "timeout 20m sh -c 'cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch && go test -count=1 ./modules/xweb/... ./precompiles/xweb/... && bash scripts/ci/xweb-forge-libs.sh && FOUNDRY_CONFIG=foundry.paxeer.toml FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol && make test-web-intake test-web-root test-web-adapter test-programs-web-read test-web-program-path && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test web_read && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test web && (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js) && (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)'"
 reference_tests = ["interop/crates/x-websearch/tests", "modules/xweb", "precompiles/xweb/xweb_test.go", "contracts/test/XWebConsumer.t.sol", "tests/modules/test_web_intake.c", "tests/sequencer/test_web_root.c", "tests/network/test_web_adapter.c", "tests/test_programs_web_read.c", "tests/test_web_program_path.c", "programs/crates/layerx-programs-runtime/tests/web_read.rs", "agent/crates/layerx-mcp/tests/web.rs", "agent/sdk/typescript/test/web-search.test.ts", "tests/agent/sdk/python/test_web_search.py"]
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -36131,8 +36131,8 @@ requires = ["0.2"]
 reqs = ["2001"]
 touches = ["test/CheckpointChallengeManager.t.sol", "test/CheckpointRegistry.t.sol", "test/ContractDeployment.t.sol", "test/ContractExecutionSafety.t.sol", "test/ContractIntegration.t.sol", "test/ContractInvariants.t.sol", "test/ContractManager.t.sol", "test/ContractPrimitives.t.sol", "test/DepositAuthorityTimelock.t.sol", "test/Ed25519.t.sol", "test/Ed25519Signer.sol", "test/GuarantorBond.t.sol", "test/LayerXTimelock.t.sol", "test/MerkleDomainVector.t.sol", "test/NativeStateProof.t.sol", "test/PaxeerBetaDeploy.t.sol", "test/PaxeerBetaDeploymentValidator.t.sol", "test/SidioraProxyGovernance.t.sol", "tests/solidity/CheckpointChallengeManager.t.sol", "tests/solidity/CheckpointRegistry.t.sol", "tests/solidity/ContractDeployment.t.sol", "tests/solidity/ContractExecutionSafety.t.sol", "tests/solidity/ContractIntegration.t.sol", "tests/solidity/ContractInvariants.t.sol", "tests/solidity/ContractManager.t.sol", "tests/solidity/ContractPrimitives.t.sol", "tests/solidity/DepositAuthorityTimelock.t.sol", "tests/solidity/Ed25519.t.sol", "tests/solidity/Ed25519Signer.sol", "tests/solidity/GuarantorBond.t.sol", "tests/solidity/LayerXTimelock.t.sol", "tests/solidity/MerkleDomainVector.t.sol", "tests/solidity/NativeStateProof.t.sol", "tests/solidity/PaxeerBetaDeploy.t.sol", "tests/solidity/PaxeerBetaDeploymentValidator.t.sol", "tests/solidity/SidioraProxyGovernance.t.sol", "foundry.toml", "docs/site/docs/concepts/paxeer-boundary.md", "docs/wiki/PaxeerBoundary.md"]
 do_1 = "Finish the eighteen owner-approved moves; correct only relative import prefixes, Foundry test root and exact navigation references. Preserve every test body and assertion."
-build_cmd = "timeout 15m forge build --root . --offline"
-verify_cmd = "timeout 10m forge test --root . --offline --list --json --match-path 'tests/solidity/*.t.sol'"
+build_cmd = "timeout 15m FOUNDRY_CONFIG=foundry.paxeer.toml forge build --root . --offline"
+verify_cmd = "timeout 10m FOUNDRY_CONFIG=foundry.paxeer.toml forge test --root . --offline --list --json --match-path 'tests/solidity/*.t.sol'"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -37648,7 +37648,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.2]
 title = "C2: SidioraNativeERC20 upgrade safety and holder snapshot tool"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -37697,7 +37697,7 @@ do_1 = "Replace the eth_getCode probe for the exchange precompiles 0x1015/0x1016
 do_2 = "Default chain RPC path when only the router root is configured becomes <root>/rpc."
 do_3 = "Unit tests in the same file: mocked eth_call answer marks present, error marks absent, default path appends /rpc exactly once."
 touches = ["platform/hosted/gateway/src/capabilities.rs"]
-verify_cmd = "cd platform && cargo test -p layerx-platform-gateway --bin layerx-gateway capabilities::tests"
+verify_cmd = "cd platform && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway capabilities::tests"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37812,7 +37812,7 @@ do_1 = "New crate layerx-oracle-feeder under platform/hosted/feeder (workspace m
 do_2 = "fly.toml for app paxeer-oracle-feeder with one volume; no secrets in the file."
 do_3 = "Tests: median and staleness logic, observation encoding against a kernel vector, journal round trip; network sources mocked with recorded JSON."
 touches = ["platform/hosted/feeder/", "Cargo.toml"]
-verify_cmd = "cargo test -p layerx-oracle-feeder"
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-oracle-feeder"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37831,7 +37831,7 @@ do_1 = "Complete the relay mode of the x-websearch sidecar: for each settled sea
 do_2 = "Config keys documented in the crate README section; nothing hard-coded."
 do_3 = "Tests under the relay module: encoding against the kernel web module vector, cursor persistence, retry classification."
 touches = ["interop/crates/x-websearch/src/"]
-verify_cmd = "cargo test -p x-websearch relay"
+verify_cmd = "cargo test --manifest-path interop/Cargo.toml -p x-websearch relay"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37850,7 +37850,7 @@ do_1 = "New crate layerx-intent-ingester (workspace member): tails eth_getLogs o
 do_2 = "Library API: Ingester::poll() returning new intents; binary main loops with configurable interval and exposes /readyz with cursor height and lag."
 do_3 = "Tests: replay over the layerx-intents vectors, cursor persistence across restart, window alert, duplicate suppression."
 touches = ["interop/crates/layerx-intent-ingester/", "Cargo.toml"]
-verify_cmd = "cargo test -p layerx-intent-ingester"
+verify_cmd = "cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37908,7 +37908,7 @@ do_1 = "Rate source becomes the owner-set configuration value (usid per PAX, def
 do_2 = "Sponsor key read from env file path; allowed browser origins list from config; fly.toml has the app, one machine, no secrets."
 do_3 = "Tests: quote uses the configured rate, stale rate refuses, origin check."
 touches = ["interop/crates/layerx-gas-station/src/rate.rs", "interop/crates/layerx-gas-station/src/price.rs", "interop/crates/layerx-gas-station/src/config.rs", "interop/deploy/gas-station/fly.toml"]
-verify_cmd = "cargo test -p layerx-gas-station"
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-gas-station"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -37927,7 +37927,7 @@ do_1 = "identity: public POST /v1/signup (email + password or magic link through
 do_2 = "gateway: lx_register and lx_requestFunds backed by the identity service; the first lx_requestFunds per verified principal credits 10 PAX through the existing custody credit path and records it so a second call is refused; excludes lane C4's file capabilities.rs."
 do_3 = "Tests: signup happy path, rate limit, verification required, credit once."
 touches = ["platform/hosted/identity/src/", "platform/hosted/gateway/src/"]
-verify_cmd = "cargo test -p layerx-identity signup"
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity signup"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38001,7 +38001,7 @@ do_1 = "layerx-client tests assert schema V1_9 (the version the code builds)."
 do_2 = "human service: LAYERX_HUMAN_RP_ID and the web origin list come from env (default paxportwallet.com and https://paxportwallet.com, https://api-mainnet-beta.paxeer.network); the hard-coded value in event_producer_tls.rs is removed."
 do_3 = "Tests for both."
 touches = ["human/crates/layerx-client/tests/", "platform/hosted/human/src/event_producer_tls.rs", "platform/hosted/human/src/config.rs"]
-verify_cmd = "cargo test -p layerx-client && cargo test -p layerx-human-service tls"
+verify_cmd = "cargo test --manifest-path agent/Cargo.toml -p layerx-client && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38020,7 +38020,7 @@ do_1 = "submit.rs: turns each decoded intent into the matching kernel spot/perps
 do_2 = "main.rs wires poll -> submit with backpressure; fly.toml for app paxeer-intent-ingester with one volume for the cursor and journal."
 do_3 = "Tests: submission encoding against a kernel vector, idempotence, refusal recording."
 touches = ["interop/crates/layerx-intent-ingester/src/submit.rs", "interop/crates/layerx-intent-ingester/src/main.rs", "interop/deploy/intent-ingester/fly.toml"]
-verify_cmd = "cargo test -p layerx-intent-ingester submit"
+verify_cmd = "cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38057,7 +38057,7 @@ do_1 = "Complete the indexer so the router history route is backed by it: EVM tr
 do_2 = "fly.toml: app paxeer-indexer, two machines, volume."
 do_3 = "Tests with recorded explorer JSON and a kernel history fixture."
 touches = ["platform/hosted/indexer/src/", "platform/hosted/indexer/fly.toml"]
-verify_cmd = "cargo test -p layerx-indexer"
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38076,7 +38076,7 @@ do_1 = "npm package name @sidioralabs/paxeer-xdk; PyPI project paxeer-xdk; crate
 do_2 = "TS SDK: the gas-station URL comes from client config with the router default, not a hard-coded host."
 do_3 = "Tests pass for the TS SDK; cargo check for the renamed crates."
 touches = ["agent/sdk/typescript/", "agent/sdk/python/", "agent/crates/layerx-sdk/Cargo.toml", "programs/crates/layerx-programs-runtime/Cargo.toml", "programs/crates/layerx-programs-market/Cargo.toml", "programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-registry/Cargo.toml", "platform/cli/Cargo.toml"]
-verify_cmd = "pnpm --dir agent/sdk/typescript test && cargo check -p paxeer-xdk -p paxeer-xdk-cli"
+verify_cmd = "pnpm --dir agent/sdk/typescript test && cargo check --manifest-path agent/Cargo.toml -p paxeer-xdk -p paxeer-xdk-cli"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38114,7 +38114,7 @@ do_2 = "`layerx new` scaffolds a versioned dependency on the published SDK crate
 do_3 = "`environment use beta` fetches the sequencer trust anchor and network id from the router network route; faucet command hidden in the beta profile with a message pointing at the signup credit."
 do_4 = "Tests for each."
 touches = ["platform/cli/src/", "programs/sdk/abi-manifest.tsv", "programs/sdk/"]
-verify_cmd = "cargo test -p paxeer-xdk-cli"
+verify_cmd = "cargo test --manifest-path agent/Cargo.toml -p paxeer-xdk-cli"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38189,7 +38189,7 @@ do_1 = "relayer-1..5.toml (one Fly app each, paxeer-bridge-relayer-N) with disti
 do_2 = "config.rs validates the five-member set and threshold at startup."
 do_3 = "Tests for config validation."
 touches = ["interop/deploy/bridge-relayer/", "interop/crates/layerx-bridge-relayer/src/config.rs"]
-verify_cmd = "cargo test -p layerx-bridge-relayer config"
+verify_cmd = "cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38317,7 +38317,7 @@ reqs = ["109"]
 do_1 = "A background resolve loop in the client daemon path that retries resolve_unknown for every submit left in Unknown until it converges or expires, with backoff and a bounded set; the gateway submit path reports the resolved state."
 do_2 = "Tests: Unknown converges to Settled and to Refused, expiry."
 touches = ["agent/crates/layerx-client/src/", "platform/hosted/gateway/src/submit.rs"]
-verify_cmd = "cargo test -p layerx-client resolve"
+verify_cmd = "cargo test --manifest-path agent/Cargo.toml -p layerx-client resolve"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -38336,6 +38336,64 @@ do_1 = "Rename the module to github.com/Sidiora-Labs/Paxeer-X-Network in go.mod 
 do_2 = "Build and vet clean."
 touches = ["go.mod", "**/*.go", "docker/", "docs/"]
 verify_cmd = "go build ./... && go vet ./node/ ./rpc/"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.109.39]
+title = "R1: chain reconciliation after wave 1"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["109.1", "109.5", "109.9"]
+reqs = ["109"]
+do_1 = "node/upgrades_v610_test.go: knownUpgradePlans expectation includes v6.11 after 109.1 registered it."
+do_2 = "integration_test/evm_module/rpc_io_test/testdata/eth_syncing/not-supported.iox and rpc/AGENTS.md follow the eth_syncing implementation from 109.5 (fixture renamed and rewritten for the supported shape)."
+do_3 = "cmd/layerxctl/Cargo.lock refreshed so the kernel image build (docker/kernel/Dockerfile, Makefile layerxctl target under --locked) no longer stops."
+touches = ["node/upgrades_v610_test.go", "integration_test/evm_module/rpc_io_test/testdata/eth_syncing/", "rpc/AGENTS.md", "cmd/layerxctl/Cargo.lock"]
+verify_cmd = "go test ./node/ ./rpc/ -count=1 && cargo check --locked --manifest-path cmd/layerxctl/Cargo.toml"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.109.40]
+title = "R2: platform reconciliation after wave 1"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["109.4", "109.8", "109.16", "109.18"]
+reqs = ["109"]
+do_1 = "platform/hosted/gateway/src/main.rs calls capabilities::chain_rpc() so the router root serves /rpc by default (109.4 left it unwired); paxeer::node posts to /rpc not /rpc/."
+do_2 = "platform/hosted/node/genesis-modules.conf lists the beta seven modules by default."
+do_3 = "scripts/ci/beta-report.sh and scripts/ci/beta-contract-check.sh are retired in favour of tools/ci/beta-report.sh; Makefile and workflow references repointed."
+do_4 = "A mailer consumes LAYERX_IDENTITY_SIGNUP_OUTBOX_DIR: platform/hosted/identity ships a small SMTP sender (lettre or the existing mail path if one exists) driven by LAYERX_IDENTITY_SMTP_URL, with a test that a queued verification lands in a fake SMTP listener; the gateway rpc_register and rpc_faucet tests run in the gate."
+touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/paxeer.rs", "platform/hosted/node/genesis-modules.conf", "scripts/ci/beta-report.sh", "scripts/ci/beta-contract-check.sh", "Makefile", ".github/workflows/", "platform/hosted/identity/", "platform/Cargo.lock"]
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway capabilities::tests rpc_register rpc_faucet && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity mailer && tools/bringup/tests/kernel-genesis.test.sh"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.109.41]
+title = "R3: human reconciliation after wave 1"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["109.19", "109.20"]
+reqs = ["109"]
+do_1 = "human/apps/wallet typecheck is clean: the 12 errors in src/surfaces/WebDataView.tsx, WebDataView.test.tsx and human/wallet/sdk/src/index.ts (ExtendedPoint) are fixed at their cause, no any-casts, no skipped tests."
+do_2 = "human/crates/layerx-human-service test target compiles again: identity_dispatch.rs, store/mod.rs, journeys/wire.rs, store/retention.rs, store/tenancy.rs and tests/wallet_identity_e2e.rs fixed at their cause; then the tls tests from 109.20 run."
+do_3 = "main.rs no longer requires LAYERX_HUMAN_WEB_ORIGIN when production_components::web_identity() has its beta default."
+touches = ["human/apps/wallet/src/surfaces/WebDataView.tsx", "human/apps/wallet/src/surfaces/WebDataView.test.tsx", "human/wallet/sdk/src/index.ts", "human/crates/layerx-human-service/src/", "human/crates/layerx-human-service/tests/", "human/Cargo.lock"]
+verify_cmd = "pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
