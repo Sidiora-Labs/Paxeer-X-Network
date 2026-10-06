@@ -28,8 +28,6 @@ use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 
-const RP_ID: &str = "paxportwallet.com";
-const ORIGIN: &str = "https://paxportwallet.com";
 const ACCOUNT_ID: &str = "act_00112233445566778899aabbccddeeff";
 const EMAIL: &str = "mara@example.com";
 const PUBLIC_TRACE: &str = "trc_00112233445566778899aabbccddeeff";
@@ -37,15 +35,65 @@ const FLAG_UP: u8 = 1 << 0;
 const FLAG_UV: u8 = 1 << 2;
 const FLAG_AT: u8 = 1 << 6;
 
+fn identity() -> (String, String) {
+    crate::server::production_components::web_identity(|name| std::env::var(name).ok())
+}
+
+fn rp_id() -> String {
+    identity().0
+}
+
+fn origin() -> String {
+    identity()
+        .1
+        .split(',')
+        .next()
+        .unwrap_or_else(|| panic!("web origin"))
+        .to_owned()
+}
+
+#[test]
+fn tls_web_identity_reads_env_with_beta_defaults() {
+    use crate::server::production_components::{web_identity, DEFAULT_RP_ID, DEFAULT_WEB_ORIGINS};
+    assert_eq!(
+        web_identity(|_| None),
+        (DEFAULT_RP_ID.to_owned(), DEFAULT_WEB_ORIGINS.to_owned())
+    );
+    assert_eq!(DEFAULT_RP_ID, "paxportwallet.com");
+    assert_eq!(
+        DEFAULT_WEB_ORIGINS.split(',').collect::<Vec<_>>(),
+        [
+            "https://paxportwallet.com",
+            "https://api-mainnet-beta.paxeer.network"
+        ]
+    );
+    assert_eq!(
+        web_identity(|_| Some("  ".to_owned())),
+        (DEFAULT_RP_ID.to_owned(), DEFAULT_WEB_ORIGINS.to_owned())
+    );
+    let env = |name: &str| match name {
+        "LAYERX_HUMAN_RP_ID" => Some("wallet.example".to_owned()),
+        "LAYERX_HUMAN_WEB_ORIGIN" => Some("https://wallet.example,https://api.example".to_owned()),
+        _ => None,
+    };
+    assert_eq!(
+        web_identity(env),
+        (
+            "wallet.example".to_owned(),
+            "https://wallet.example,https://api.example".to_owned()
+        )
+    );
+}
+
 fn required<T, E: Debug>(result: Result<T, E>, label: &str) -> T {
     result.unwrap_or_else(|error| panic!("{label}: {error:?}"))
 }
 
 fn auth_config() -> AuthConfig {
     AuthConfig {
-        rp_id: RP_ID.to_owned(),
+        rp_id: rp_id(),
         rp_name: "LayerX".to_owned(),
-        origin: ORIGIN.to_owned(),
+        origin: origin(),
         ceremony_ttl_secs: 300,
         assertion_ttl_secs: 60,
         session_ttl_secs: 300,
@@ -140,7 +188,7 @@ impl SoftwareAuthenticator {
 
     fn authenticator_data(&self, counter: u32, attested: bool) -> Vec<u8> {
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&Sha256::digest(RP_ID.as_bytes()));
+        bytes.extend_from_slice(&Sha256::digest(rp_id().as_bytes()));
         bytes.push(FLAG_UP | FLAG_UV | if attested { FLAG_AT } else { 0 });
         bytes.extend_from_slice(&counter.to_be_bytes());
         if attested {
@@ -200,7 +248,7 @@ fn client_data(kind: &str, challenge: &str) -> Vec<u8> {
         serde_json::to_vec(&json!({
             "type": kind,
             "challenge": challenge,
-            "origin": ORIGIN,
+            "origin": origin(),
             "crossOrigin": false,
         })),
         "encode client data",
@@ -610,31 +658,56 @@ fn human_source(
 ) -> transport::Listener {
     let enrollment_root = root.join(format!("{}-credentials", kind.singular()));
     required(fs::create_dir_all(&enrollment_root), "enrollment directory");
-    required(fs::set_permissions(&enrollment_root, fs::Permissions::from_mode(0o700)), "enrollment directory permissions");
+    required(
+        fs::set_permissions(&enrollment_root, fs::Permissions::from_mode(0o700)),
+        "enrollment directory permissions",
+    );
     let credential_path = enrollment_root.join("principal.credential");
     let snapshot_path = enrollment_root.join("snapshot.json");
     let key_path = enrollment_root.join("enrollment.key");
     let write_protected = |path: &std::path::Path, bytes: &[u8]| {
         use std::io::Write as _;
         use std::os::unix::fs::OpenOptionsExt as _;
-        let mut file = required(fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path), "protected enrollment file");
+        let mut file = required(
+            fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path),
+            "protected enrollment file",
+        );
         required(file.write_all(bytes), "write protected enrollment file");
         required(file.sync_all(), "sync protected enrollment file");
     };
     if !key_path.exists() {
-        let key = required(layerx_platform_internal::secret::random_hex(32), "enrollment key");
+        let key = required(
+            layerx_platform_internal::secret::random_hex(32),
+            "enrollment key",
+        );
         write_protected(&key_path, key.as_bytes());
     }
-    let key = required(layerx_platform_internal::events::enrollment_key(&key_path), "protected enrollment key");
+    let key = required(
+        layerx_platform_internal::events::enrollment_key(&key_path),
+        "protected enrollment key",
+    );
     write_protected(&credential_path, access_token.as_bytes());
-    let mac = layerx_platform_internal::events::enrollment_snapshot_mac(kind, 1, &[(ACCOUNT_ID, access_token)], &key);
+    let mac = layerx_platform_internal::events::enrollment_snapshot_mac(
+        kind,
+        1,
+        &[(ACCOUNT_ID, access_token)],
+        &key,
+    );
     let snapshot = json!({
         "version": 1,
         "generation": 1,
         "principals": [{"principal": ACCOUNT_ID, "credential_file": credential_path}],
         "mac": mac,
     });
-    write_protected(&snapshot_path, &required(serde_json::to_vec(&snapshot), "signed enrollment snapshot"));
+    write_protected(
+        &snapshot_path,
+        &required(serde_json::to_vec(&snapshot), "signed enrollment snapshot"),
+    );
     let service = required(
         Service::open(
             kind,
@@ -769,7 +842,7 @@ fn human_listener(tls: &transport::Tls, socket: &std::path::Path) -> transport::
             HttpConfig {
                 maximum_header_bytes: 32768,
                 maximum_body_bytes: 1_048_576,
-                allowed_origin: ORIGIN.to_owned(),
+                allowed_origin: identity().1,
                 service_version: "integration".to_owned(),
             },
             required::<Arc<layerx_client::runtime_clock::RuntimeClock>, _>(

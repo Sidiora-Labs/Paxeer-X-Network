@@ -8153,9 +8153,28 @@ impl ProductionComponents {
     }
 }
 
+pub(crate) const DEFAULT_RP_ID: &str = "paxportwallet.com";
+pub(crate) const DEFAULT_WEB_ORIGINS: &str =
+    "https://paxportwallet.com,https://api-mainnet-beta.paxeer.network";
+
+/// Passkey relying party identifier and comma-separated web origin list, read
+/// from `LAYERX_HUMAN_RP_ID` and `LAYERX_HUMAN_WEB_ORIGIN` with beta defaults.
+pub(crate) fn web_identity(lookup: impl Fn(&str) -> Option<String>) -> (String, String) {
+    let value = |name: &str, default: &str| {
+        lookup(name)
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| default.to_owned())
+    };
+    (
+        value("LAYERX_HUMAN_RP_ID", DEFAULT_RP_ID),
+        value("LAYERX_HUMAN_WEB_ORIGIN", DEFAULT_WEB_ORIGINS),
+    )
+}
+
 fn production_passkey_config() -> Result<AuthConfig, String> {
     Ok(AuthConfig {
-        rp_id: required("LAYERX_HUMAN_RP_ID")?,
+        rp_id: web_identity(|name| env::var(name).ok()).0,
         rp_name: required("LAYERX_HUMAN_RP_NAME")?,
         origin: required("LAYERX_HUMAN_ORIGIN")?,
         ceremony_ttl_secs: number("LAYERX_HUMAN_CEREMONY_TTL_SECONDS")?,
