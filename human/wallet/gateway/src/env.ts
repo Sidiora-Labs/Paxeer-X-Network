@@ -158,6 +158,10 @@ const Env = z.object({
   // runs when LAYER_X_DB_URI is set.
   LAYERX_SYNC_INTERVAL_MS: z.coerce.number().int().positive().default(120_000),
 
+  // Bearer token for the operator-only admin routes (legacy wallet import).
+  // When unset the admin routes are not mounted.
+  GATEWAY_ADMIN_TOKEN: z.string().min(32, 'GATEWAY_ADMIN_TOKEN must be >=32 chars').optional(),
+
   WALLET_CUSTODY_INVENTORY_FILE: z.string().min(1).optional(),
   WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE: z.string().min(1).optional(),
   ATTESTOR_ENDPOINTS: z

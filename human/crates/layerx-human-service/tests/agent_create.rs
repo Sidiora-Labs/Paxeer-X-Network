@@ -411,6 +411,8 @@ impl AgentCreationContract for InProcessAgentLayer {
             assets: request.assets,
             amount_ceiling: request.amount_ceiling,
             expires_at_sequence: request.expiry_sequence,
+            not_before_ms: 0,
+            not_after_ms: u64::MAX,
             enforceable_dimensions: [
                 Dimension::ActivityType,
                 Dimension::Counterparty,
