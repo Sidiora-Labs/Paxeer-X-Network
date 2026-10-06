@@ -9,7 +9,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/sync-fleet.sh [--dry-run] config|restart|resync <paxd>|rollout <paxd> <sha256>
+usage: tools/bringup/sync-fleet.sh [--dry-run] config|restart|resync <paxd>|rollout <paxd> <sha256>|release <version>
 
 Brings the public RPC fleet back onto the head of the chain. Every
 subcommand reads the operator's private host map from the file named by
@@ -87,6 +87,13 @@ rollout <paxd> <sha256>
   "fail rollout <label> <apiN> <step> ..." at the failure. It never installs the release pinned for resync unless that
   is the binary it was given.
 
+release <version>
+          fetches paxd-<version>-linux-amd64 and SHA256SUMS of the tagged
+          release from PAXD_RELEASE_URL, checks the asset against its
+          SHA256SUMS line, prints "verified <asset> sha256=<sha256>" and runs
+          rollout with that asset and sha256. tools/bringup/upgrade-fleet.sh
+          fetches and verifies through the same path.
+
 Environment:
   BRINGUP_HOSTS_FILE  the private host map, required; its optional
                       BRINGUP_NEVER_PLACE and RETAINED_ON_VALIDATOR lists
@@ -98,10 +105,14 @@ Environment:
   PAXD                the node binary on every host, default /usr/local/bin/paxd
   SYNC_FLEET_REPORT   the rollout report file on this box, default
                       $HOME/sync-fleet-rollout-<utc stamp>.txt
+  PAXD_RELEASE_URL    the base URL of the tagged release assets, required by
+                      release; <url>/SHA256SUMS and <url>/<asset> are fetched
+  PAXD_RELEASE_DIR    where the fetched assets are kept, default
+                      $HOME/paxd-release-<version>
 
 Exits 0 when every line passed, 1 when any failed, 2 on a usage error, a
-resync binary that is not the release or a rollout binary that does not hash
-to the given sha256.
+resync binary that is not the release, a rollout binary that does not hash
+to the given sha256 or a release asset that does not match its SHA256SUMS.
 EOF
 }
 
@@ -541,6 +552,54 @@ cmd_rollout() {
 	rollout_record
 }
 
+# asset_sha <sums file> <asset name>: the sha256 the SHA256SUMS file lists
+# for the asset; status 1 when it lists none or several.
+asset_sha() {
+	local want
+	want="$(awk -v name="$2" '$2 == name || $2 == "*" name { print $1 }' "$1")"
+	[[ "$want" =~ ^[0-9a-f]{64}$ ]] || return 1
+	printf '%s' "$want"
+}
+
+# verify_asset <dir> <asset name>: checks <dir>/<asset> against its line in
+# <dir>/SHA256SUMS and prints its sha256; status 1 with the reason on stderr
+# otherwise.
+verify_asset() {
+	local want have
+	if ! want="$(asset_sha "$1/SHA256SUMS" "$2")"; then
+		echo "sync-fleet: SHA256SUMS lists no sha256 for $2" >&2
+		return 1
+	fi
+	have="$(sha256sum "$1/$2" | cut -d' ' -f1)"
+	if [ "$have" != "$want" ]; then
+		echo "sync-fleet: $2 has sha256 $have, SHA256SUMS lists $want" >&2
+		return 1
+	fi
+	printf '%s' "$have"
+}
+
+# release_asset <version>: fetches paxd-<version>-linux-amd64 and SHA256SUMS
+# from PAXD_RELEASE_URL into PAXD_RELEASE_DIR, verifies the asset and sets
+# bin and want_sha; status 1 with the reason on stderr otherwise.
+release_asset() {
+	local asset="paxd-$1-linux-amd64" dir="${PAXD_RELEASE_DIR:-$HOME/paxd-release-$1}" f
+	if [ -z "${PAXD_RELEASE_URL:-}" ]; then
+		echo "sync-fleet: PAXD_RELEASE_URL is unset" >&2
+		return 1
+	fi
+	mkdir -p "$dir"
+	for f in SHA256SUMS "$asset"; do
+		if ! curl -fsSL --retry 3 -o "$dir/$f.part" -- "${PAXD_RELEASE_URL%/}/$f"; then
+			echo "sync-fleet: could not fetch $f of $1" >&2
+			return 1
+		fi
+		mv -f "$dir/$f.part" "$dir/$f"
+	done
+	want_sha="$(verify_asset "$dir" "$asset")" || return 1
+	chmod 0755 "$dir/$asset"
+	bin="$dir/$asset"
+}
+
 # The dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
@@ -575,6 +634,15 @@ resync)
 		echo "sync-fleet: $bin has sha256 $sha, not the release $release_sha256" >&2
 		exit 2
 	fi
+	;;
+release)
+	[ "$#" -eq 2 ] || {
+		usage >&2
+		exit 2
+	}
+	release_asset "$2" || exit 2
+	echo "verified ${bin##*/} sha256=$want_sha"
+	mode=rollout
 	;;
 rollout)
 	[ "$#" -eq 3 ] || {

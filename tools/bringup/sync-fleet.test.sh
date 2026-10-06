@@ -634,6 +634,122 @@ expect sync_fleet_rollout_stops_on_an_unreachable_host "$work/hosts-bad.env" 1 r
 	"fail rollout RPC_HOSTS[2] none survey ssh=255"
 check sync_fleet_rollout_unreachable_host_stages_nothing bash -c "! grep -q '^local scp' '$SYNC_FLEET_TEST_CALLS'"
 
+# The tagged release: a fixture asset and its SHA256SUMS served from a file
+# URL through the real curl, and a SHA256SUMS that lists another sha256.
+up_version=v6.11.0
+up_asset="paxd-$up_version-linux-amd64"
+mkdir -p "$work/dl" "$work/dl-bad"
+printf 'upgrade binary' >"$work/dl/$up_asset"
+cp "$work/dl/$up_asset" "$work/dl-bad/$up_asset"
+up_sha="$("$SYNC_FLEET_TEST_REAL_SHA256SUM" "$work/dl/$up_asset" | cut -d' ' -f1)"
+printf '%s  %s\n' "$up_sha" "$up_asset" >"$work/dl/SHA256SUMS"
+printf '%s  %s\n' "$release_sha256" "$up_asset" >"$work/dl-bad/SHA256SUMS"
+export PAXD_RELEASE_URL="file://$work/dl" PAXD_RELEASE_DIR="$work/fetched" PAXD_VERSION="$up_version" UPGRADE_NAME=v6.11
+
+expect sync_fleet_release_verifies_and_rolls "$work/hosts-rollout.env" 0 --dry-run release "$up_version" -- \
+	"verified $up_asset sha256=$up_sha" \
+	"scp -q -- $work/fetched/$up_asset RPC_HOSTS[0]:$PAXD.new-" \
+	"sync-fleet: all hosts passed"
+check sync_fleet_release_keeps_the_verified_asset [ "$(cat "$work/fetched/$up_asset")" = "upgrade binary" ]
+
+PAXD_RELEASE_URL="file://$work/dl-bad" expect sync_fleet_release_refuses_an_asset_off_its_sums "$work/hosts-rollout.env" 2 release "$up_version" -- \
+	"sync-fleet: $up_asset has sha256 $up_sha, SHA256SUMS lists $release_sha256"
+check sync_fleet_release_refusal_asks_no_host [ ! -s "$SYNC_FLEET_TEST_CALLS" ]
+
+PAXD_RELEASE_URL="file://$work/absent" expect sync_fleet_release_unfetchable "$work/hosts-rollout.env" 2 release "$up_version" -- \
+	"sync-fleet: could not fetch SHA256SUMS of $up_version"
+
+# The upgrade halt line: the plan's name at exactly the plan height.
+up_height=26500000
+cat >"$work/halt.log" <<LOG
+9:59AM INF committed state height=26499999 module=state
+9:59AM ERR UPGRADE "v6.11" NEEDED at height: $up_height: {"binaries":{}}
+9:59AM ERR CONSENSUS FAILURE!!! err="UPGRADE \"v6.11\" NEEDED at height: $up_height: "
+LOG
+upgrader="$root/tools/bringup/upgrade-fleet.sh"
+halt() {
+	bash -c '. "$1"; halt_logged "$2" "$3" <"$4"' _ "$upgrader" "$@"
+}
+check upgrade_fleet_halt_line_at_the_height halt v6.11 "$up_height" "$work/halt.log"
+no_halt() {
+	! halt "$@"
+}
+check upgrade_fleet_halt_line_shorter_height no_halt v6.11 2650000 "$work/halt.log"
+check upgrade_fleet_halt_line_longer_height no_halt v6.11 265000001 "$work/halt.log"
+check upgrade_fleet_halt_line_other_plan no_halt v6.1 "$up_height" "$work/halt.log"
+check upgrade_fleet_halt_line_absent no_halt v6.11 "$up_height" /dev/null
+
+# journalctl stand-in: prints the destination's fixture journal of the unit.
+cat >"$work/bin/journalctl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+unit=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	-u)
+		unit="$2"
+		shift 2
+		;;
+	*) shift ;;
+	esac
+done
+cat "$SYNC_FLEET_TEST_ROOT/$SYNC_FLEET_TEST_DEST/journal/$unit" 2>/dev/null || true
+SH
+chmod +x "$work/bin/journalctl"
+
+# One full node unit and two validator units sharing one binary on one host.
+cat >"$work/hosts-upgrade.env" <<ENV
+EDGE_HOST=up-edge
+ARCHIVE_HOST=up-rpc-2
+VALIDATOR_HOSTS="up-validator-a up-validator-b"
+RPC_HOSTS="up-rpc-1 up-rpc-2"
+OLD_WALLET_HOST=up-old-wallet
+UPGRADE_UNITS="up-rpc-1,paxd.service up-validator-a,paxd-a1,$hosts/paxd up-validator-a,paxd-a2,$PAXD"
+ENV
+for h in up-rpc-1 up-validator-a; do
+	rm -f "${hosts:?}/$h/paxd".*
+	mkdir -p "$hosts/$h/journal"
+	printf 'release binary' >"$hosts/$h/paxd"
+done
+cp "$work/halt.log" "$hosts/up-rpc-1/journal/paxd.service"
+printf 'ERR UPGRADE "v6.11" NEEDED at height: %s1: \n' "$up_height" >"$hosts/up-validator-a/journal/paxd-a1"
+printf 'ERR UPGRADE "v6.10" NEEDED at height: %s: \n' "$up_height" >"$hosts/up-validator-a/journal/paxd-a2"
+u="$SYNC_FLEET_TEST_CALLS"
+
+syncer="$upgrader" expect upgrade_fleet_usage "$work/hosts-upgrade.env" 2 --stage-only -- \
+	"usage: tools/bringup/upgrade-fleet.sh"
+
+PAXD_RELEASE_URL="file://$work/dl-bad" syncer="$upgrader" expect upgrade_fleet_refuses_an_asset_off_its_sums "$work/hosts-upgrade.env" 2 --stage-only "$up_height" -- \
+	"SHA256SUMS lists $release_sha256"
+check upgrade_fleet_refusal_stages_nothing bash -c "! grep -q '^local scp' '$u' && [ -z \"\$(ls '$hosts'/up-rpc-1/paxd.new-* '$hosts'/up-validator-a/paxd.new-* 2>/dev/null)\" ]"
+
+syncer="$upgrader" expect upgrade_fleet_stage_only "$work/hosts-upgrade.env" 0 --stage-only "$up_height" -- \
+	"verified $up_asset sha256=$up_sha upgrade=v6.11 height=$up_height" \
+	"staged UPGRADE_UNITS[0] paxd.service sha256=$up_sha" \
+	"staged UPGRADE_UNITS[1] paxd-a1 sha256=$up_sha" \
+	"upgrade-fleet: all units passed"
+check upgrade_fleet_stages_beside_the_running_binary bash -c "for h in up-rpc-1 up-validator-a; do [ \"\$(cat '$hosts'/\$h/paxd.new-$up_version)\" = 'upgrade binary' ] && [ \"\$(cat '$hosts'/\$h/paxd)\" = 'release binary' ] || exit 1; done"
+check upgrade_fleet_stages_once_per_binary [ "$(grep -c '^local scp' "$u")" -eq 2 ]
+check upgrade_fleet_stage_only_restarts_nothing bash -c "! grep -q ' unit restart ' '$u'"
+
+UPGRADE_WATCH_TIMEOUT=0 syncer="$upgrader" expect upgrade_fleet_swaps_only_the_halted_unit "$work/hosts-upgrade.env" 1 --watch-only "$up_height" -- \
+	"swapped UPGRADE_UNITS[0] paxd.service unit=active" \
+	"UPGRADE_UNITS[1]   paxd-a1              waiting" \
+	"UPGRADE_UNITS[2]   paxd-a2              waiting" \
+	"upgrade-fleet: 2 unit(s) not upgraded"
+check upgrade_fleet_watch_only_copies_nothing bash -c "! grep -q '^local scp' '$u'"
+check upgrade_fleet_swap_keeps_the_previous_binary bash -c "[ \"\$(cat '$hosts/up-rpc-1/paxd')\" = 'upgrade binary' ] && [ \"\$(cat '$hosts/up-rpc-1/paxd.pre-$up_version')\" = 'release binary' ] && [ ! -e '$hosts/up-rpc-1/paxd.new-$up_version' ]"
+check upgrade_fleet_restarts_the_halted_unit_once bash -c "[ \"\$(grep -c ' unit restart ' '$u')\" -eq 1 ] && grep -q '^up-rpc-1 unit restart paxd.service\$' '$u' && [ \"\$(cat '$hosts/up-validator-a/paxd')\" = 'release binary' ]"
+
+cat "$work/halt.log" >>"$hosts/up-validator-a/journal/paxd-a1"
+cat "$work/halt.log" >>"$hosts/up-validator-a/journal/paxd-a2"
+UPGRADE_WATCH_TIMEOUT=0 syncer="$upgrader" expect upgrade_fleet_swaps_the_rest_once "$work/hosts-upgrade.env" 0 --watch-only "$up_height" -- \
+	"UPGRADE_UNITS[0]   paxd.service         current" \
+	"swapped UPGRADE_UNITS[1] paxd-a1 unit=active" \
+	"swapped UPGRADE_UNITS[2] paxd-a2 unit=active" \
+	"upgrade-fleet: all units passed"
+check upgrade_fleet_restarts_each_unit_once bash -c "[ \"\$(grep ' unit restart ' '$u' | tr '\n' ' ')\" = 'up-validator-a unit restart paxd-a1 up-validator-a unit restart paxd-a2 ' ] && [ \"\$(cat '$hosts/up-validator-a/paxd')\" = 'upgrade binary' ] && [ \"\$(cat '$hosts/up-validator-a/paxd.pre-$up_version')\" = 'release binary' ]"
+
 if [ "$failures" -ne 0 ]; then
 	echo "sync-fleet.test: $failures case(s) failed"
 	exit 1
