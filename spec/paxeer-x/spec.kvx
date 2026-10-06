@@ -38142,7 +38142,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.28]
 title = "D6: Paid search front repin and config"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["109.11"]
