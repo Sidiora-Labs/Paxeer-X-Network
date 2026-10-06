@@ -16,6 +16,7 @@ import { agentsRoutes } from './routes/agents.js';
 import { agentActionRoutes } from './routes/agentActions.js';
 import { agentPrecompileRoutes } from './routes/agentPrecompiles.js';
 import { ownerRoutes } from './routes/owner.js';
+import { adminRoutes } from './routes/admin.js';
 import { agentLaneEnabled } from './auth/agentToken.js';
 import { installRawBodyParser } from './agent/verify.js';
 import { startActionWorker, type WorkerHandle } from './agent/actions/worker.js';
@@ -102,6 +103,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(agentPrecompileRoutes);
   await app.register(ownerRoutes);
   await app.register(agentsRoutes);
+  if (env.GATEWAY_ADMIN_TOKEN) await app.register(adminRoutes);
   if (agentLaneEnabled()) {
     app.log.info('[agent] agent-native lane enabled');
   } else {

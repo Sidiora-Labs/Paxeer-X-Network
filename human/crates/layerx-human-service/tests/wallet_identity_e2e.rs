@@ -1008,7 +1008,7 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
         KeyId::new("human-primary").unwrap_or_else(|error| panic!("primary key: {error}"));
     assert!(
         signer
-            .public_wallet_identity(resolved.principal(), &primary_key)
+            .public_wallet_identity(&principal_id, &primary_key)
             .is_err(),
         "native-only attestor fixture has no approved secp256k1 wallet identity"
     );

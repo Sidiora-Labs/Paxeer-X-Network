@@ -757,8 +757,8 @@ function decodeLxActivity(activity: unknown, kind: LxActivityReview['kind']): Lx
 
 function requireLxPoint(hex: string): void {
   try {
-    const point = ed25519.ExtendedPoint.fromHex(lxBytes(hex));
-    if (point.isSmallOrder() || lxToHex(point.toRawBytes()) !== hex) throw new Error('noncanonical point');
+    const point = ed25519.Point.fromBytes(lxBytes(hex));
+    if (point.isSmallOrder() || lxToHex(point.toBytes()) !== hex) throw new Error('noncanonical point');
   } catch {
     throw lxError('LX_PUBLIC_KEY_INVALID', 'Expected a canonical non-small-order Ed25519 public key');
   }

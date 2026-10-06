@@ -8159,7 +8159,7 @@ pub(crate) const DEFAULT_WEB_ORIGINS: &str =
 
 /// Passkey relying party identifier and comma-separated web origin list, read
 /// from `LAYERX_HUMAN_RP_ID` and `LAYERX_HUMAN_WEB_ORIGIN` with beta defaults.
-pub(crate) fn web_identity(lookup: impl Fn(&str) -> Option<String>) -> (String, String) {
+pub fn web_identity(lookup: impl Fn(&str) -> Option<String>) -> (String, String) {
     let value = |name: &str, default: &str| {
         lookup(name)
             .map(|value| value.trim().to_owned())

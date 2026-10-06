@@ -492,11 +492,54 @@ impl std::error::Error for IdentityDispatchError {
 #[cfg(test)]
 mod profile_tests {
     use super::{profile, profile_json, update_profile, IdentityDispatchError, StoredProfile};
-    use crate::store::PrincipalStore;
-    use layerx_human_test_support::{
-        directory, install_and_open, principal, retention_uniform, tenancy,
+    use crate::store::{
+        AgentTenantId, PrincipalId, PrincipalStore, RetentionPeriod, RetentionPolicy,
+        TenancyDigest, TenancyMap,
     };
     use serde_json::json;
+    use std::path::{Path, PathBuf};
+
+    fn directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "layerx-human-identity-{label}-{}",
+            std::process::id()
+        ))
+    }
+
+    fn principal(name: &str) -> PrincipalId {
+        PrincipalId::new(name).expect("principal")
+    }
+
+    fn tenancy(pairs: &[(&str, &str)]) -> TenancyMap {
+        TenancyMap::new(pairs.iter().map(|(name, tenant)| {
+            (
+                principal(name),
+                AgentTenantId::new(*tenant).expect("tenant"),
+            )
+        }))
+        .expect("tenancy map")
+    }
+
+    fn retention_uniform(units: u64) -> RetentionPolicy {
+        let period = RetentionPeriod::new(units);
+        RetentionPolicy {
+            journeys: period,
+            notifications: period,
+            audit: period,
+            telemetry: period,
+            cache: period,
+        }
+    }
+
+    fn install_and_open(
+        root: &Path,
+        map: &TenancyMap,
+        retention: RetentionPolicy,
+    ) -> (PrincipalStore, TenancyDigest) {
+        let digest = map.install(root).expect("install tenancy");
+        let store = PrincipalStore::open(root, retention, digest).expect("open store");
+        (store, digest)
+    }
 
     #[test]
     fn settings_profile_avatar_clear_persists_without_cross_principal_changes() {

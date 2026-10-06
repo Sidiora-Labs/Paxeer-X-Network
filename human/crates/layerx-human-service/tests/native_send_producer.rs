@@ -376,7 +376,7 @@ fn prepare(
     let coordinates =
         checked(agent.native_send_owner_context(&context.session, number(fixture, "request_id")));
     PrepareRequest {
-        protocol_activity_type: compiled.activity_type().as_u32(),
+        protocol_activity_type: compiled.activity_type().value(),
         actor: checked(AgentDid::new(context.session.owner.clone())),
         authority: checked(AuthorityRef::new(
             context

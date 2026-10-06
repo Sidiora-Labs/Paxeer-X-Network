@@ -37,7 +37,7 @@ export function DrawCaps({ caps }: Pick<WebDataViewProps, 'caps'>) {
         <section aria-label="402 draws" data-caps-state={caps.state} className="space-y-2 rounded-2xl bg-[var(--color-surface-raised)] p-4 text-xs">
             <h2 className="text-sm font-semibold text-pax-light">402 draws</h2>
             {caps.state === 'loading' ? <p role="status">Reading verified account caps</p>
-                : caps.state === 'unavailable' || caps.state === 'refused' ? <p role="status">{caps.reason}</p>
+                : 'reason' in caps ? <p role="status">{caps.reason}</p>
                 : <>
                     <p data-role="caps-observation">{caps.observation.verification} · sequence {caps.observation.sequence} · batch {caps.observation.batch}</p>
                     <p data-role="caps-account" className="break-all">Account {caps.account_id}</p>

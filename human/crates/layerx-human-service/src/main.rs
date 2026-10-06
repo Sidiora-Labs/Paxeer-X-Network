@@ -43,7 +43,11 @@ fn run() -> Result<(), String> {
         Listener::Plain => None,
     };
     let component_endpoint = PathBuf::from(required("LAYERX_HUMAN_COMPONENT_SOCKET")?);
-    let allowed_origin = required("LAYERX_HUMAN_WEB_ORIGIN")?;
+    let allowed_origin =
+        layerx_human_service::server::production_components::web_identity(|name| {
+            env::var(name).ok()
+        })
+        .1;
     let component_limits = default_component_limits();
     let backend = Arc::new(
         UnixComponents::new(&component_endpoint, component_limits)
