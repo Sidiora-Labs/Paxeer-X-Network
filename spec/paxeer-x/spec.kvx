@@ -37899,7 +37899,7 @@ stop_condition = "Stop on the bounded gate result or time limit; record exact re
 
 [task.109.15]
 title = "P3: Gas station owner-set rate"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 1
 requires = []
