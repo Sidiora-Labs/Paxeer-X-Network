@@ -1,0 +1,51 @@
+{
+  "note": "The serving sidecar behind the apiN nginx that search.paxeer.network pins. tools/bringup/search-front.sh config renders this file: it replaces every \"${NAME}\" string with the value of the environment variable NAME, refuses an unset or empty one, and drops this note. X_WEBSEARCH_SEED_URL is the crawl seed URL. X_WEBSEARCH_<SID|PAX|USDC|USDL>_ASSET_ID is the asset's 32-byte id in hex and X_WEBSEARCH_<SID|PAX|USDC|USDL>_PRICE its price in that asset's base units for one request at 0.001 USD (tools/bringup/xweb-config.sh prices prints both). X_WEBSEARCH_GATEWAY_ENDPOINT is the gateway's /rpc URL, X_WEBSEARCH_SEQUENCER_ID and X_WEBSEARCH_SEQUENCER_PUBLIC_KEY the kernel sequencer's id and Ed25519 public key in hex. X_WEBSEARCH_EVM_ENDPOINT is the node's JSON-RPC URL on chain 125. Keys never go in this file; they are read from the files X_WEBSEARCH_ATTESTOR_KEY_FILE, X_WEBSEARCH_SUBMITTER_KEY_FILE and X_WEBSEARCH_RECEIVER_KEY_FILE name.",
+  "listen": "127.0.0.1:8482",
+  "data_dir": "/var/lib/x-websearch",
+  "seeds": [
+    "${X_WEBSEARCH_SEED_URL}"
+  ],
+  "crawl": {
+    "pages_per_cycle": 1000,
+    "pages_per_host": 100,
+    "max_depth": 3,
+    "politeness_delay_ms": 1000
+  },
+  "fetch": {
+    "connect_timeout_ms": 3000,
+    "total_timeout_ms": 10000,
+    "max_body_bytes": 2097152,
+    "max_redirects": 3,
+    "allow_loopback": false
+  },
+  "assets": {
+    "SID": {
+      "asset_id": "${X_WEBSEARCH_SID_ASSET_ID}",
+      "price": "${X_WEBSEARCH_SID_PRICE}"
+    },
+    "PAX": {
+      "asset_id": "${X_WEBSEARCH_PAX_ASSET_ID}",
+      "price": "${X_WEBSEARCH_PAX_PRICE}"
+    },
+    "USDC": {
+      "asset_id": "${X_WEBSEARCH_USDC_ASSET_ID}",
+      "price": "${X_WEBSEARCH_USDC_PRICE}"
+    },
+    "USDL": {
+      "asset_id": "${X_WEBSEARCH_USDL_ASSET_ID}",
+      "price": "${X_WEBSEARCH_USDL_PRICE}"
+    }
+  },
+  "gateway": {
+    "endpoint": "${X_WEBSEARCH_GATEWAY_ENDPOINT}",
+    "sequencer_id": "${X_WEBSEARCH_SEQUENCER_ID}",
+    "sequencer_public_key": "${X_WEBSEARCH_SEQUENCER_PUBLIC_KEY}"
+  },
+  "evm": {
+    "endpoint": "${X_WEBSEARCH_EVM_ENDPOINT}",
+    "chain_id": 125,
+    "confirmations": 12
+  },
+  "kernel_network_id": 125,
+  "peers": []
+}

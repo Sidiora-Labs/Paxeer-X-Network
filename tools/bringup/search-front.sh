@@ -14,12 +14,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/search-front.sh names | render | deploy
+usage: tools/bringup/search-front.sh names | render | config | deploy
 
 The search front of search.paxeer.network: the nginx Fly app of
 interop/deploy/search-front/fly.toml that keeps each client address on one
 serving RPC name. Runs on the edge host, the operator host that holds the Fly
-login, and reads the host map from BRINGUP_HOSTS_FILE without printing it.
+login; names reads the host map from BRINGUP_HOSTS_FILE without printing it.
 
 names     asks every RPC_HOSTS destination over ssh which apiN site its nginx
           serves (rpc_unit of tools/bringup/check-live.sh) and prints one line
@@ -29,15 +29,21 @@ names     asks every RPC_HOSTS destination over ssh which apiN site its nginx
           destination does not answer or serves no apiN site.
 
 render    prints the upstream list that nginx includes at http level: a
-          comment line and the split_clients block on $xweb_client (the edge's
-          X-Real-IP, else Fly-Client-IP) that sets $xweb_node, one "<percent>% <name>;" line per serving RPC name with
-          "*" on the last, every name an equal share. All configured serving
-          names remain assigned even when readiness fails, preserving the
-          receiver between a payment challenge and retry. A separate map
-          admits only names whose bounded typed /readyz contract is valid,
-          including starting or unavailable roles; nginx checks current
-          readiness on the same backend before every paid request. With no
-          serving name, readiness and search paths answer 503.
+          comment line, the split_clients block on $xweb_client (the edge's
+          X-Real-IP, else Fly-Client-IP) that pins $xweb_node to one serving
+          name for every client, and the map that admits it. The pin is
+          SEARCH_FRONT_PRIMARY when its bounded typed /readyz contract is
+          valid, else SEARCH_FRONT_BACKUP when its contract is valid, else
+          SEARCH_FRONT_PRIMARY unadmitted, so readiness and search paths
+          answer 503. One pinned name keeps the receiver between a payment
+          challenge and its retry; nginx checks current readiness on that
+          backend before every paid request.
+
+config    prints the serving sidecar configuration of
+          interop/crates/x-websearch/config.example.json with every "${NAME}"
+          string replaced by the environment variable NAME and the note
+          dropped. Exits 1 naming every unset or empty variable, never a
+          value.
 
 deploy    creates the app in FLY_ORG when it does not exist, imports the
           rendered list base64-encoded as the [[files]] secret
@@ -55,6 +61,9 @@ Environment:
   CHECK_LIVE_TIMEOUT   seconds per ssh call, default 30
   FLY_ORG              the Fly organisation, default paxlabs-inc
   SEARCH_FRONT_REGIONS comma-separated regions, default ams,fra
+  SEARCH_FRONT_PRIMARY the pinned serving name, default api15.paxeer.network
+  SEARCH_FRONT_BACKUP  the serving name pinned while the primary is not
+                       ready, default api1.paxeer.network
   SEARCH_FRONT_READINESS_TIMEOUT seconds per HTTPS readiness probe, default 5
 
 Exits 1 when a destination, a docker or a flyctl step fails; 2 on a usage
@@ -66,6 +75,9 @@ search_front_toml="interop/deploy/search-front/fly.toml"
 search_front_host="search.paxeer.network"
 search_front_secret="SEARCH_FRONT_UPSTREAMS"
 search_front_regions="${SEARCH_FRONT_REGIONS:-ams,fra}"
+search_front_primary="${SEARCH_FRONT_PRIMARY:-api15.paxeer.network}"
+search_front_backup="${SEARCH_FRONT_BACKUP:-api1.paxeer.network}"
+search_front_config_template="interop/crates/x-websearch/config.example.json"
 
 search_front_names() {
 	local -a dests validators lines=()
@@ -197,42 +209,71 @@ PY
 }
 
 search_front_render() {
-	local listing share i
-	local -a names
-	listing="$(search_front_names)" || return 1
-	mapfile -t names < <(sed -n 's/^serve //p' <<<"$listing")
-	echo "# The serving RPC names of $search_front_host, rendered by tools/bringup/search-front.sh."
-	if [ "${#names[@]}" -eq 0 ]; then
-		# shellcheck disable=SC2016
-		echo 'map $xweb_client $xweb_node { default ""; }'
-		# shellcheck disable=SC2016
-		echo 'map $xweb_node $xweb_eligible { default 0; }'
-		return 0
+	local name pinned admitted=0
+	for name in "$search_front_primary" "$search_front_backup"; do
+		if [[ ! "$name" =~ ^api([1-9]|1[0-6])\.([a-z0-9-]+\.)?paxeer\.network$ ]]; then
+			echo "search-front: $name is not a serving apiN name" >&2
+			return 1
+		fi
+	done
+	if [ "$search_front_primary" = "$search_front_backup" ]; then
+		echo "search-front: the backup repeats the primary" >&2
+		return 1
 	fi
+	pinned="$search_front_primary"
+	if search_front_candidate "$search_front_primary"; then
+		admitted=1
+	elif search_front_candidate "$search_front_backup"; then
+		pinned="$search_front_backup"
+		admitted=1
+		echo "search-front: $search_front_primary has no valid readiness contract, $pinned is pinned" >&2
+	else
+		echo "search-front: neither $search_front_primary nor $search_front_backup has a valid readiness contract" >&2
+	fi
+	echo "# The serving name of $search_front_host, rendered by tools/bringup/search-front.sh."
 	# shellcheck disable=SC2016
 	echo 'split_clients "${xweb_client}" $xweb_node {'
-	if [ "${#names[@]}" -gt 0 ]; then
-		share=$((10000 / ${#names[@]}))
-		for i in "${!names[@]}"; do
-			if [ "$i" -eq $((${#names[@]} - 1)) ]; then
-				echo "    * ${names[$i]};"
-			else
-				printf '    %d.%02d%% %s;\n' $((share / 100)) $((share % 100)) "${names[$i]}"
-			fi
-		done
-	fi
+	echo "    * $pinned;"
 	echo '}'
 	# shellcheck disable=SC2016
 	echo 'map $xweb_node $xweb_eligible {'
 	echo '    default 0;'
-	for i in "${!names[@]}"; do
-		if search_front_candidate "${names[$i]}"; then
-			printf '    %s 1;\n' "${names[$i]}"
-		else
-			echo "search-front: serving slot $i has no valid readiness contract" >&2
-		fi
-	done
+	echo "    $pinned $admitted;"
 	echo '}'
+}
+
+search_front_config() {
+	python3 -I - "$repo_root/$search_front_config_template" <<'PY'
+import json
+import os
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    template = json.load(handle)
+template.pop("note")
+missing = []
+
+def fill(value):
+    if isinstance(value, dict):
+        return {key: fill(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [fill(item) for item in value]
+    if isinstance(value, str) and "${" in value:
+        match = re.fullmatch(r"\$\{([A-Z][A-Z0-9_]*)\}", value)
+        if not match:
+            sys.exit("search-front: malformed reference in " + sys.argv[1])
+        item = os.environ.get(match[1], "")
+        if not item and match[1] not in missing:
+            missing.append(match[1])
+        return item
+    return value
+
+config = fill(template)
+if missing:
+    sys.exit("search-front: unset " + " ".join(missing))
+print(json.dumps(config, indent=2))
+PY
 }
 
 search_front() {
@@ -265,7 +306,7 @@ case "$mode" in
 	usage
 	exit 0
 	;;
-names | render | deploy) ;;
+names | render | config | deploy) ;;
 *)
 	usage >&2
 	exit 2
@@ -276,7 +317,8 @@ if [ "$#" -ne 1 ]; then
 	exit 2
 fi
 
-tools=(ssh timeout sort)
+tools=(timeout)
+[ "$mode" != names ] || tools+=(ssh sort)
 [ "$mode" = names ] || tools+=(python3)
 [ "$mode" != deploy ] || tools+=(flyctl docker git base64)
 for tool in "${tools[@]}"; do
@@ -286,9 +328,12 @@ for tool in "${tools[@]}"; do
 	fi
 done
 
-load_hosts
 case "$mode" in
-names) search_front_names ;;
+names)
+	load_hosts
+	search_front_names
+	;;
 render) search_front_render ;;
+config) search_front_config ;;
 deploy) search_front ;;
 esac
