@@ -220,3 +220,22 @@ symbol = "on.push"
 observed = "Every repository workflow, publish-images included, is in state disabled_manually on GitHub; no push-triggered run has started since 2026-10-04 and the last publish-images runs on 2026-09-10 failed in the publish job, so GHCR holds no image for any revision."
 assumption = "The owner disabled the workflows deliberately; re-enabling them is an owner action, so box builds stay the image source for the kernel and registry and Railway builds its own images from the repo."
 severity = "major"
+
+[gate.3.1.4]
+task = "3.1"
+reqs = ["3.1"]
+revision = "3d88322f0"
+command = "bash tools/railway/tests/env-files.test.sh && docker build -f docker/relay-archive/Dockerfile --target railway -t relay-archive:check ."
+environment = "lane rw-22 worktree, local docker"
+started_at = "2026-10-07T12:40:00Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-22-verify-1.log"
+note = "relay-archive image ported: VOLUME removed, railway last stage through the env-files shim, --railway-start and the fd12::/16 private-network flag, fly.toml renamed railway.env.example; merged as 4525fe24e and the push started both relay-archive deployments."
+
+[observation.3.1.4]
+task = "3.1"
+file = "tools/qualification/paxeer-x/interop-archive-contract.py"
+symbol = "RelayFlyContract"
+observed = "Still reads platform/relay_archive/fly.toml and expects the fly stage and the Fly flag after rw-22 renamed them; tools/bringup/check-live.sh and docs/wiki/RelayArchive.md still mention Fly; a build of docker/relay-archive/Dockerfile without --target now yields the railway stage, so platform/hosted/tests/beta-images.sh and tools/containers/check.sh get it instead of the box stage."
+assumption = "The contract script belongs to the consistency sweep of task 2.1 and the wiki to task 5.1; the box stage must be selected with --target box by whichever caller wants it."
+severity = "major"
