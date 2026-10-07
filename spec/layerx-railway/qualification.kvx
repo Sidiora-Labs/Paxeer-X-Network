@@ -277,3 +277,14 @@ symbol = "platform/ramps/fly.toml"
 observed = "Lines 766 and 2211 still read platform/ramps/fly.toml, renamed by rw-23 to railway.env.example, so the ramp cases of that test fail; the rw-23 verify_cmd wrapped the docker build in '|| echo', which hid a real build failure as exit 0 in its first cycle."
 assumption = "The test reference belongs to the consistency sweep of task 2.1; verify commands must not wrap a gate in a fallback echo."
 severity = "minor"
+
+[gate.3.1.7]
+task = "3.1"
+reqs = ["3.1"]
+revision = "4525fe24e"
+command = "railway deployments 862be93d (relay-archive-b) and 2c6b8645 (relay-archive-a), started by the push of the rw-22 merge"
+environment = "Railway layerx/beta"
+started_at = "2026-10-07T12:47:00Z"
+outcome = "fail"
+evidence = "railway api deploymentLogs/buildLogs for the two deployment ids, 13:05Z"
+note = "Both images now build on Railway (the VOLUME rejection is gone) and start; the shim refuses on LAYERX_INTERNAL_CA_ROOT, the internal CA PEM that only the owner certificate run of gate.3.1.2 produces, so the healthcheck never answers."
