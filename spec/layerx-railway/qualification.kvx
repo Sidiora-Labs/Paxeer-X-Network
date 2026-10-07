@@ -171,3 +171,14 @@ symbol = "authority_lni_compatibility, authority_readiness_contract, real_gatewa
 observed = "Four cases panic 'real ... case required: NotPresent' without their environment inputs; the native registry case misses the Spot and Web modules; src/rpc.rs lists 30 public methods where the schema test expects 28."
 assumption = "Pre-existing failures of the gateway crate unrelated to the UI bindings owner change; the module set and the method count drift belong to whichever task added the two methods and the Spot and Web modules."
 severity = "major"
+
+[gate.2.4.1]
+task = "2.4"
+reqs = ["2.4"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "docker build -f docker/kernel/Dockerfile -t ghcr.io/sidiora-labs/kernel:fe0326d95a5d . && docker run --rm --entrypoint test ghcr.io/sidiora-labs/kernel:fe0326d95a5d -f /opt/layerx/node/generation_client.py -a -f /opt/layerx/node/generation_transport.py"
+environment = "kernel box, docker 28, build script /root/lx-build/kernel-build.sh"
+started_at = "2026-10-07T11:48:25Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/image-bump-fe0326d95.log"
+note = "Image pushed as kernel:fe0326d95a5d, :-full and :-native-runtime; the kernel unit now runs it and is active."

@@ -416,7 +416,7 @@ stop_condition = "Stop on the verify result, two failed repair cycles or 30 minu
 
 [task.2.4]
 title = "Ship generation_client.py and generation_transport.py in the kernel runtime stage"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.1", "1.10"]
