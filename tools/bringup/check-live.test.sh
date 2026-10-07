@@ -89,6 +89,15 @@ up-*) ;;
 hang-*) exec sleep 5 ;;
 *) exit 255 ;;
 esac
+case "$dest" in
+up-box-*)
+	box="$CHECK_LIVE_TEST_BOXES/$dest"
+	mkdir -p "$box/data"
+	command="${command//\/data\//$box/data/}"
+	tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
+	exit
+	;;
+esac
 case "$command" in
 true) exit 0 ;;
 *"@@sites"*)
@@ -195,7 +204,14 @@ case "$sub" in
 	command="${command//\/run\/authority-private/$root/$group/run/authority-private}"
 	command="${command//\/run\/mirror-signer/$root/$group/run/mirror-signer}"
 	command="${command//\/run\/mirror-publisher/$root/$group/run/mirror-publisher}"
-	tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
+	case "$command" in
+	"sh -c 'python3 - $root/$group/run/layerx/init "*)
+		# The kernel-app probe reports each material path it was given; the
+		# machine sees its own paths, so the fixture prefix is taken back off.
+		tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command" | sed "s#$root/$group/#/#g"
+		;;
+	*) tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command" ;;
+	esac
 	;;
 "secrets import")
 	[ "$stage" -eq 1 ] || exit 97
@@ -215,6 +231,59 @@ case "$sub" in
 esac
 SH
 chmod +x "$work/bin/flyctl"
+
+# A local railway stand-in: keeps each service's variables of environment
+# beta as files under CHECK_LIVE_TEST_RAILWAY/<service>, answers variable set
+# --stdin by storing the value and recording only the name, and variable list
+# --json with every variable of the service; records every call.
+cat >"$work/bin/railway" <<'SH'
+#!/usr/bin/env bash
+set -eu
+sub="${1:-} ${2:-}"
+shift 2
+name=""
+service=""
+environment=""
+stdin=0
+if [ "$sub" = "variable set" ]; then
+	name="$1"
+	shift
+fi
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--service)
+		service="$2"
+		shift 2
+		;;
+	--environment)
+		environment="$2"
+		shift 2
+		;;
+	--stdin)
+		stdin=1
+		shift
+		;;
+	--skip-deploys | --json) shift ;;
+	*) exit 98 ;;
+	esac
+done
+printf 'railway %s %s %s\n' "$service" "$sub" "$name" >>"$CHECK_LIVE_TEST_CALLS"
+[ "$environment" = beta ] || exit 97
+dir="$CHECK_LIVE_TEST_RAILWAY/$service"
+case "$sub" in
+"variable set")
+	[ "$stdin" -eq 1 ] || exit 97
+	mkdir -p "$dir"
+	cat >"$dir/$name"
+	printf '%s %s\n' "$service" "$name" >>"$CHECK_LIVE_TEST_IMPORTS"
+	;;
+"variable list")
+	python3 -c 'import json, os, sys; d = sys.argv[1]; print(json.dumps({n: open(os.path.join(d, n)).read() for n in (sorted(os.listdir(d)) if os.path.isdir(d) else [])}))' "$dir"
+	;;
+*) exit 96 ;;
+esac
+SH
+chmod +x "$work/bin/railway"
 
 # A local curl stand-in: answers eth_blockNumber for the public names, at the
 # fixed head minus the lag CHECK_LIVE_TEST_LAG ("apiN:blocks ...") assigns,
@@ -498,6 +567,9 @@ export CHECK_LIVE_TEST_STDIN="$work/stdin"
 export CHECK_LIVE_TEST_REAL_CURL="$real_curl"
 export CHECK_LIVE_TEST_FLY="$work/fly"
 export CHECK_LIVE_TEST_IMPORTS="$work/imports"
+export CHECK_LIVE_TEST_BOXES="$work/boxes"
+export CHECK_LIVE_TEST_RAILWAY="$work/railway"
+export LAYERX_RAILWAY_BIN="$work/bin/railway"
 export CHECK_LIVE_TEST_EDGE="$work/edge-manifest"
 export LAYERX_CA_DIR="$work/ca"
 
@@ -507,7 +579,11 @@ ARCHIVE_HOST=up-archive
 VALIDATOR_HOSTS="up-validator-a up-validator-b"
 RPC_HOSTS="up-rpc-1 up-rpc-2 up-rpc-3"
 OLD_WALLET_HOST=up-old-wallet
+KERNEL_HOST=up-box-kernel
+REGISTRY_HOST=up-box-registry
 ENV
+grep -v '^KERNEL_HOST=' "$work/hosts-good.env" >"$work/hosts-no-kernel-box.env"
+grep -v '^REGISTRY_HOST=' "$work/hosts-good.env" >"$work/hosts-no-registry-box.env"
 
 cat >"$work/hosts-down.env" <<'ENV'
 EDGE_HOST=up-edge
@@ -668,13 +744,13 @@ CHECK_LIVE_TEST_TIMEOUT=1 expect check_live_hosts_timeout "$work/hosts-hang.env"
 	"fail OLD_WALLET_HOST reachable=0/1 ssh=124" \
 	"check-live: 1 check(s) failed"
 
-# The CA cases run both scripts from a fixture tree whose tomls stand in for
-# the Fly apps: every toml of the service list gets an app line naming its
-# fixture app, and every secret prefix a [[files]] entry mounting
-# <PREFIX>_CERT.
+# The CA cases run both scripts from a fixture tree. ca.sh reaches the box
+# rows through the ssh stand-in, whose box up-box-kernel is the kernel
+# fixture app's volume, and the Railway rows through the railway stand-in.
+# The tomls of the fixture apps the later checks read get an app line.
 fx="$work/repo"
 mkdir -p "$fx/tools/bringup"
-cp "$root/tools/bringup/check-live.sh" "$root/tools/bringup/ca.sh" "$root/tools/bringup/human-state-preserve.sh" "$fx/tools/bringup/"
+cp "$root/tools/bringup/check-live.sh" "$root/tools/bringup/ca.sh" "$root/tools/bringup/human-state-preserve.sh" "$root/tools/bringup/railway-names.env" "$fx/tools/bringup/"
 ca="$fx/tools/bringup/ca.sh"
 mkdir -p "$fx/tools/qualification/paxeer-x"
 cp "$root/tools/qualification/paxeer-x/registry-router-bootstrap.py" "$fx/tools/qualification/paxeer-x/"
@@ -684,21 +760,27 @@ fx_app() {
 	app="${app//\//-}"
 	printf 'fx-%s' "${app//./-}"
 }
-while read -r _ toml _ custody _; do
+for toml in human/wallet/deploy/human.toml human/wallet/deploy/redis.toml human/wallet/deploy/endpoint.toml \
+	platform/hosted/identity/fly.toml platform/hosted/internal/fly.toml platform/hosted/internal/redis.toml \
+	platform/hosted/indexer/fly.toml platform/hosted/interop/fly.toml platform/hosted/webhooks/fly.toml \
+	platform/hosted/dashboard/fly.toml platform/ramps/fly.toml; do
 	mkdir -p "$fx/$(dirname "$toml")"
-	[ -e "$fx/$toml" ] || printf 'app = "%s"\n' "$(fx_app "$toml")" >"$fx/$toml"
-	if [ "$custody" != volume ]; then
-		printf '\n[[files]]\n  guest_path = "/run/secrets/%s_CERT"\n  secret_name = "%s_CERT"\n' "$custody" "$custody" >>"$fx/$toml"
-	fi
-done < <("$ca" services)
+	printf 'app = "%s"\n' "$(fx_app "$toml")" >"$fx/$toml"
+done
 kernel="$(fx_app human/wallet/deploy/human.toml)"
-redis="$(fx_app human/wallet/deploy/redis.toml)"
 endpoint="$(fx_app human/wallet/deploy/endpoint.toml)"
 identity="$(fx_app platform/hosted/identity/fly.toml)"
 internal="$(fx_app platform/hosted/internal/fly.toml)"
 interop="$(fx_app platform/hosted/interop/fly.toml)"
 webhooks="$(fx_app platform/hosted/webhooks/fly.toml)"
 fly="$CHECK_LIVE_TEST_FLY"
+rw="$CHECK_LIVE_TEST_RAILWAY"
+mkdir -p "$CHECK_LIVE_TEST_BOXES" "$fly/$kernel/app"
+ln -s "$fly/$kernel/app" "$CHECK_LIVE_TEST_BOXES/up-box-kernel"
+# rv <service> <variable>: the decoded value of a railway stand-in variable.
+rv() {
+	base64 -d <"$rw/$1/$2"
+}
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" LAYERX_CA_DIR="$work/absent-ca" expect check_live_ca_without_a_ca "$work/hosts-good.env" 1 ca -- \
 	"fail ca ca cert=absent" \
@@ -740,54 +822,52 @@ fi
 CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_unknown_service "$work/hosts-good.env" 2 issue nonexistent -- \
 	"ca: unknown service nonexistent"
 
-mv "$fx/platform/hosted/identity/fly.toml" "$work/identity.toml"
-CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_refuses_a_missing_toml "$work/hosts-good.env" 1 issue identity -- \
-	"ca: identity: platform/hosted/identity/fly.toml names no app"
+CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_refuses_a_missing_box_host "$work/hosts-no-kernel-box.env" 1 issue human -- \
+	"fail material missing=BRINGUP_HOSTS_FILE:KERNEL_HOST producer=the private hosts file"
 if [ ! -s "$CHECK_LIVE_TEST_CALLS" ]; then
-	echo "ok   ca_issue_missing_toml_calls_no_app"
+	echo "ok   ca_issue_missing_box_host_calls_no_box"
 else
-	echo "FAIL ca_issue_missing_toml_calls_no_app: want no flyctl call"
+	echo "FAIL ca_issue_missing_box_host_calls_no_box: want no ssh or railway call"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
-mv "$work/identity.toml" "$fx/platform/hosted/identity/fly.toml"
 
 shm_before="$(ls /dev/shm)"
 : >"$CHECK_LIVE_TEST_STDIN"
 CHECK_LIVE_TEST_PROGRAM="$ca" expect ca_issue_receipt_authority_on_the_volume "$work/hosts-good.env" 0 issue receipt-authority -- \
-	"issued receipt-authority app=$kernel custody=volume fingerprint=" \
+	"issued receipt-authority target=box:KERNEL_HOST custody=volume fingerprint=" \
 	"expires_in=39"
 
 tls="$fly/$kernel/app/data/tls/receipt-authority"
 san="$(openssl x509 -in "$tls/cert.pem" -noout -ext subjectAltName 2>/dev/null || true)"
 if [ "$(stat -c %a "$tls")" = 700 ] &&
 	[ "$(stat -c %a "$tls/key.pem")$(stat -c %a "$tls/key.der")$(stat -c %a "$tls/identity.p12")$(stat -c %a "$tls/password")" = 600600600600 ] &&
-	[ ! -e "$tls/key.pem.new" ] && [ ! -e "$tls/cert.pem.new" ] && [ ! -e "$tls/ca.pem.new" ] && [ ! -e "$tls/bundle.new" ] &&
+	[ ! -e "$tls/key.pem.new" ] && [ ! -e "$tls/incoming.new" ] &&
 	cmp -s "$tls/ca.pem" "$work/ca/ca.pem" && cmp -s "$tls/ca.der" "$work/ca/ca.der" &&
 	openssl verify -CAfile "$work/ca/ca.pem" "$tls/cert.pem" >/dev/null 2>&1 &&
 	[ "$(openssl pkey -in "$tls/key.pem" -pubout 2>/dev/null)" = "$(openssl x509 -in "$tls/cert.pem" -noout -pubkey)" ] &&
 	[ "$(openssl pkey -inform DER -in "$tls/key.der" -pubout 2>/dev/null)" = "$(openssl x509 -inform DER -in "$tls/cert.der" -noout -pubkey)" ] &&
 	openssl pkcs12 -in "$tls/identity.p12" -passin "file:$tls/password" -noout >/dev/null 2>&1 &&
 	grep -q 'DNS:layerx-receipt-authority' <<<"$san" && grep -q 'DNS:authority' <<<"$san" &&
-	grep -q "DNS:$kernel.internal" <<<"$san" &&
+	grep -q 'DNS:kernel.paxeer.network' <<<"$san" &&
 	grep -q 'DNS:localhost' <<<"$san" && grep -q 'IP Address:127.0.0.1' <<<"$san" &&
 	[ "$(grep -o 'DNS:\|IP Address:' <<<"$san" | wc -l)" -eq 5 ] &&
 	openssl x509 -in "$tls/cert.pem" -noout -ext extendedKeyUsage | grep -q 'TLS Web Server Authentication'; then
 	echo "ok   ca_issue_lands_the_material_on_the_volume"
 else
-	echo "FAIL ca_issue_lands_the_material_on_the_volume: want 0600 key, der, p12 and password files in a 0700 directory, no .new leftovers, the CA copied, a chained certificate on the machine's key with exactly the receipt authority SANs, the app's .internal name, localhost and the loopback address"
+	echo "FAIL ca_issue_lands_the_material_on_the_volume: want 0600 key, der, p12 and password files in a 0700 directory, no .new leftovers, the CA copied, a chained certificate on the box's key with exactly the receipt authority SANs, the kernel box's public name, localhost and the loopback address"
 	ls -la "$tls" 2>&1 || true
 	printf '%s\n' "$san"
 	failures=$((failures + 1))
 fi
 
-if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 2 ] && [ "$(grep -c "^$kernel app ssh console sh -c '" "$CHECK_LIVE_TEST_CALLS")" -eq 2 ] &&
+if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 3 ] && [ "$(grep -c "^up-box-kernel sh -c '" "$CHECK_LIVE_TEST_CALLS")" -eq 3 ] &&
 	! grep -q 'PRIVATE KEY' "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_STDIN" &&
 	[ "$(grep -c 'BEGIN CERTIFICATE' "$CHECK_LIVE_TEST_STDIN")" -eq 2 ] &&
 	[ "$(ls /dev/shm)" = "$shm_before" ]; then
 	echo "ok   ca_issue_never_moves_a_volume_key"
 else
-	echo "FAIL ca_issue_never_moves_a_volume_key: want two ssh console calls to the kernel app, the certificate and the CA on stdin, no private key in any call or on stdin and no directory left in /dev/shm"
+	echo "FAIL ca_issue_never_moves_a_volume_key: want three ssh calls to the kernel box (inventory, request, install), the certificate and the CA on stdin, no private key in any call or on stdin and no directory left in /dev/shm"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
@@ -796,22 +876,27 @@ fi
 : >"$CHECK_LIVE_TEST_IMPORTS"
 status=0
 output="$(CHECK_LIVE_TIMEOUT=5 "$ca" issue gateway-redis 2>&1)" || status=$?
-sec="$fly/$redis/secrets"
+sec="$work/redis-secrets"
+mkdir -p "$sec"
+for name in CA CA_DER CERT CERT_DER KEY KEY_DER P12 PASSWORD; do
+	rv redis-router "REDIS_TLS_$name" >"$sec/REDIS_TLS_$name" 2>/dev/null || true
+done
 san="$(openssl x509 -in "$sec/REDIS_TLS_CERT" -noout -ext subjectAltName 2>/dev/null || true)"
 if [ "$status" -eq 0 ] && [ "$(wc -l <<<"$output")" -eq 1 ] &&
-	[[ "$output" =~ ^issued\ gateway-redis\ app=$redis\ custody=secrets\ fingerprint=([0-9A-F]{2}:){31}[0-9A-F]{2}\ expires_in=39[0-9]d$ ]] &&
-	[ "$(sort "$CHECK_LIVE_TEST_IMPORTS" | tr '\n' ' ')" = "$redis REDIS_TLS_CA $redis REDIS_TLS_CA_DER $redis REDIS_TLS_CERT $redis REDIS_TLS_CERT_DER $redis REDIS_TLS_KEY $redis REDIS_TLS_KEY_DER $redis REDIS_TLS_P12 $redis REDIS_TLS_PASSWORD " ] &&
-	[ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 1 ] && grep -q "^$redis app secrets import $" "$CHECK_LIVE_TEST_CALLS" &&
+	[[ "$output" =~ ^issued\ gateway-redis\ target=railway:redis-router\ custody=secrets\ fingerprint=([0-9A-F]{2}:){31}[0-9A-F]{2}\ expires_in=39[0-9]d$ ]] &&
+	[ "$(sort "$CHECK_LIVE_TEST_IMPORTS" | tr '\n' ' ')" = "redis-router REDIS_TLS_CA redis-router REDIS_TLS_CA_DER redis-router REDIS_TLS_CERT redis-router REDIS_TLS_CERT_DER redis-router REDIS_TLS_KEY redis-router REDIS_TLS_KEY_DER redis-router REDIS_TLS_P12 redis-router REDIS_TLS_PASSWORD " ] &&
+	[ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq 9 ] && [ "$(grep -c '^railway redis-router variable list $' "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
+	[ "$(grep -c '^railway redis-router variable set REDIS_TLS_' "$CHECK_LIVE_TEST_CALLS")" -eq 8 ] &&
 	cmp -s "$sec/REDIS_TLS_CA" "$work/ca/ca.pem" && cmp -s "$sec/REDIS_TLS_CA_DER" "$work/ca/ca.der" &&
 	openssl verify -CAfile "$work/ca/ca.pem" "$sec/REDIS_TLS_CERT" >/dev/null 2>&1 &&
 	[ "$(openssl pkey -in "$sec/REDIS_TLS_KEY" -pubout 2>/dev/null)" = "$(openssl x509 -in "$sec/REDIS_TLS_CERT" -noout -pubkey)" ] &&
 	[ "$(openssl pkey -inform DER -in "$sec/REDIS_TLS_KEY_DER" -pubout 2>/dev/null)" = "$(openssl x509 -inform DER -in "$sec/REDIS_TLS_CERT_DER" -noout -pubkey)" ] &&
 	openssl pkcs12 -in "$sec/REDIS_TLS_P12" -passin "file:$sec/REDIS_TLS_PASSWORD" -noout >/dev/null 2>&1 &&
-	grep -q 'DNS:layerx-gateway-redis' <<<"$san" && grep -q "DNS:$redis.internal" <<<"$san" &&
+	grep -q 'DNS:layerx-gateway-redis' <<<"$san" && grep -q 'DNS:redis-router.railway.internal' <<<"$san" &&
 	[ "$(ls /dev/shm)" = "$shm_before" ]; then
-	echo "ok   ca_issue_gateway_redis_as_staged_secrets"
+	echo "ok   ca_issue_gateway_redis_as_railway_variables"
 else
-	echo "FAIL ca_issue_gateway_redis_as_staged_secrets: want one issued line with the fingerprint only, the eight staged secrets of the REDIS_TLS prefix holding a chained identity with the app's .internal name, one secrets import call and no directory left in /dev/shm, got exit $status"
+	echo "FAIL ca_issue_gateway_redis_as_railway_variables: want one issued line with the fingerprint only, the eight REDIS_TLS variables of the redis-router service holding a chained identity with its Railway private name, one variable list and eight variable set calls and no directory left in /dev/shm, got exit $status"
 	printf '%s\n' "$output"
 	cat "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_IMPORTS"
 	failures=$((failures + 1))
@@ -827,82 +912,93 @@ want="${#expected_ca_services[@]}"
 LAYERX_CA_DIR="$work/attestor-ca" "$ca" init >/dev/null
 status=0
 output="$("$ca" services | while read -r service _; do
-	CHECK_LIVE_TIMEOUT=5 LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" "$ca" issue "$service" </dev/null || exit 1
+	BRINGUP_HOSTS_FILE="$work/hosts-good.env" CHECK_LIVE_TIMEOUT=5 LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" "$ca" issue "$service" </dev/null || exit 1
 done 2>&1)" || status=$?
 attestor_client="$fly/$kernel/app/data/tls/human-attestor-client"
-if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$(sort -u <<<"$expected_ca_set" | wc -l)" -eq "$want" ] &&
+if [ "$status" -eq 0 ] && [ "$(grep -c '^\(issued\|reused\) ' <<<"$output")" -eq "$want" ] && [ "$(sort -u <<<"$expected_ca_set" | wc -l)" -eq "$want" ] &&
 	[ "$("$ca" services | awk '{print $1}' | sort)" = "$expected_ca_set" ] &&
-	[ "$(sed -n 's/^issued \([^ ]*\) .*/\1/p' <<<"$output" | sort)" = "$expected_ca_set" ] &&
+	[ "$(sed -n 's/^\(issued\|reused\) \([^ ]*\) .*/\2/p' <<<"$output" | sort)" = "$expected_ca_set" ] &&
 	openssl verify -CAfile "$work/attestor-ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
 	! openssl verify -CAfile "$work/ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
 	cmp -s "$attestor_client/ca.der" "$work/attestor-ca/ca.der" && [ -s "$attestor_client/key.der" ] && [ -s "$attestor_client/cert.der" ] &&
 	! grep -q 'PRIVATE KEY' <<<"$output" &&
-	grep -q "DNS:kms.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/kms/data/tls/internal-kms/cert.pem" -noout -ext subjectAltName)" &&
-	grep -q "DNS:programs.process.$internal.internal" <<<"$(openssl x509 -in "$fly/$internal/programs/data/tls/internal-programs/cert.pem" -noout -ext subjectAltName)" &&
-	grep -q "DNS:ingress.process.$webhooks.internal" <<<"$(openssl x509 -in "$fly/$webhooks/secrets/WEBHOOKS_INGRESS_TLS_CERT" -noout -ext subjectAltName)" &&
-	[ -s "$fly/$endpoint/secrets/ENDPOINT_CLIENT_P12" ] && [ -s "$fly/$interop/secrets/INTEROP_CLIENT_P12" ] &&
-	grep -q "DNS:$(fx_app platform/ramps/fly.toml).internal" <<<"$(openssl x509 -in "$fly/$(fx_app platform/ramps/fly.toml)/secrets/RAMP_CLIENT_CERT" -noout -ext subjectAltName)" &&
-	[ -s "$fly/$(fx_app platform/ramps/fly.toml)/secrets/RAMP_CLIENT_P12" ]; then
+	grep -q "DNS:internal-kms.railway.internal" <<<"$(rv internal-kms INTERNAL_TLS_CERT | openssl x509 -noout -ext subjectAltName)" &&
+	grep -q "DNS:internal-programs.railway.internal" <<<"$(rv internal-programs INTERNAL_TLS_CERT | openssl x509 -noout -ext subjectAltName)" &&
+	grep -q "DNS:webhooks-ingress.railway.internal" <<<"$(rv webhooks-ingress WEBHOOKS_INGRESS_TLS_CERT | openssl x509 -noout -ext subjectAltName)" &&
+	cmp -s "$rw/webhooks-ingress/WEBHOOKS_INGRESS_TLS_CERT" "$rw/webhooks-public/WEBHOOKS_INGRESS_TLS_CERT" &&
+	[ -s "$rw/router/ENDPOINT_CLIENT_P12" ] && [ -s "$rw/interop/INTEROP_CLIENT_P12" ] && [ -s "$rw/ramp/RAMP_CLIENT_P12" ] &&
+	[ -s "$CHECK_LIVE_TEST_BOXES/up-box-registry/data/tls/registry/cert.pem" ]; then
 	echo "ok   ca_issue_every_service"
 else
-	echo "FAIL ca_issue_every_service: want exit 0 and $want issued lines, the internal groups' certificates on their own volumes under their process-group names and the webhooks ingress certificate staged under its group name, got exit $status"
+	echo "FAIL ca_issue_every_service: want exit 0 and $want issued lines, the box rows' certificates on their boxes, the Railway rows' identities as variables of every service of the row with their Railway private names, got exit $status"
 	printf '%s\n' "$output"
 	failures=$((failures + 1))
 fi
+# The indexer fixture app's volume carries the internal CA its readiness
+# probe trusts, as the indexer's INDEXER_TLS_CA variable holds it.
+mkdir -p "$fly/$(fx_app platform/hosted/indexer/fly.toml)/app/data/tls/indexer"
+rv indexer INDEXER_TLS_CA >"$fly/$(fx_app platform/hosted/indexer/fly.toml)/app/data/tls/indexer/ca.pem"
 
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" expect check_live_ca_passing "$work/hosts-good.env" 0 ca -- \
 	"pass ca ca expires_in=36" \
-	"pass receipt-authority app=$kernel chain=ok san=5/5 expires_in=39" \
-	"pass human-attestor-client app=$kernel chain=ok san=0/0 expires_in=39" \
-	"pass agentd-client app=$kernel chain=ok san=0/0 expires_in=39" \
-	"pass agentd app=$kernel chain=ok san=5/5 expires_in=39" \
-	"pass internal-kms app=$internal chain=ok san=4/4 expires_in=39" \
-	"pass gateway-redis app=$redis chain=ok san=4/4 expires_in=39" \
-	"pass gateway-client app=$endpoint chain=ok san=0/0 expires_in=39" \
-	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
+	"pass receipt-authority target=box:KERNEL_HOST chain=ok san=5/5 expires_in=39" \
+	"pass human-attestor-client target=box:KERNEL_HOST chain=ok san=0/0 expires_in=39" \
+	"pass agentd-client target=box:KERNEL_HOST chain=ok san=0/0 expires_in=39" \
+	"pass agentd target=box:KERNEL_HOST chain=ok san=5/5 expires_in=39" \
+	"pass registry target=box:REGISTRY_HOST chain=ok san=4/4 expires_in=39" \
+	"pass internal-kms target=railway:internal-kms chain=ok san=4/4 expires_in=39" \
+	"pass gateway-redis target=railway:redis-router chain=ok san=4/4 expires_in=39" \
+	"pass gateway-client target=railway:router chain=ok san=1/1 expires_in=39" \
+	"pass developer target=railway:webhooks-public,webhooks-ingress chain=ok san=5/5 expires_in=39" \
 	"check-live: all checks passed"
 
-if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq "$want" ] && ! grep -qvE "^fx-[a-z0-9-]+ [a-z]+ ssh console sh -c 'cat /[^ ']+'$" "$CHECK_LIVE_TEST_CALLS" &&
-	[ "$(grep -c "^$internal kms ssh console " "$CHECK_LIVE_TEST_CALLS")" -eq 1 ] &&
-	[ "$(grep -c "^$webhooks ingress ssh console sh -c 'cat /run/secrets/WEBHOOKS_INGRESS_TLS_CERT'" "$CHECK_LIVE_TEST_CALLS")" -eq 1 ]; then
+reads="$("$ca" services | awk '$2 ~ /^railway:/ { t = $2; sub(/^railway:/, "", t); n += split(t, s, ","); next } { n++ } END { print n }')"
+if [ "$(wc -l <"$CHECK_LIVE_TEST_CALLS")" -eq "$reads" ] &&
+	! grep -qvE "^(up-box-[a-z]+ cat /data/tls/[a-z-]+/cert\.pem|railway [a-z-]+ variable list )$" "$CHECK_LIVE_TEST_CALLS" &&
+	[ "$(grep -c "^railway webhooks-ingress variable list " "$CHECK_LIVE_TEST_CALLS")" -eq 2 ] &&
+	[ "$(grep -c "^railway webhooks-public variable list " "$CHECK_LIVE_TEST_CALLS")" -eq 2 ]; then
 	echo "ok   check_live_ca_reads_one_certificate_per_service"
 else
-	echo "FAIL check_live_ca_reads_one_certificate_per_service: want $want read-only cat calls, in the process group a row names"
+	echo "FAIL check_live_ca_reads_one_certificate_per_service: want $reads read-only calls, one cat over ssh per box row and one variable list per Railway service of each row"
 	cat "$CHECK_LIVE_TEST_CALLS"
 	failures=$((failures + 1))
 fi
 
-# Six ways a certificate fails: absent, signed by another CA, short of its
-# SANs, inside thirty days of expiry, its app's toml missing, and its secret
-# not mounted by the toml.
+# Seven ways a certificate fails: absent on the box, signed by another CA,
+# short of its SANs, inside thirty days of expiry, its box unassigned in the
+# hosts file, its Railway variable unset, and an attestor row without the
+# attestors' CA.
 rm "${fly:?}/${kernel:?}/app/data/tls/human/cert.pem"
 LAYERX_CA_DIR="$work/other-ca" "$ca" init >/dev/null
-LAYERX_CA_DIR="$work/other-ca" "$ca" issue identity >/dev/null
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "$work/identity.key" -subj '/CN=layerx-identity' -out "$work/identity.csr" 2>/dev/null
+printf 'subjectAltName=%s\n' "$("$ca" services | awk '$1 == "identity" {print $6}')" >"$work/identity.cnf"
+openssl x509 -req -in "$work/identity.csr" -CA "$work/other-ca/ca.pem" -CAkey "$work/other-ca/ca.key" -CAcreateserial \
+	-days 397 -sha256 -extfile "$work/identity.cnf" -out "$work/identity.pem" 2>/dev/null
+base64 -w 0 "$work/identity.pem" >"$rw/identity/IDENTITY_TLS_CERT"
 openssl req -new -key "$sec/REDIS_TLS_KEY" -subj '/CN=layerx-gateway-redis' -out "$work/redis.csr" 2>/dev/null
 printf 'subjectAltName=DNS:localhost\n' >"$work/redis.cnf"
 openssl x509 -req -in "$work/redis.csr" -CA "$work/ca/ca.pem" -CAkey "$work/ca/ca.key" -CAcreateserial \
-	-days 397 -sha256 -extfile "$work/redis.cnf" -out "$sec/REDIS_TLS_CERT" 2>/dev/null
+	-days 397 -sha256 -extfile "$work/redis.cnf" -out "$work/redis.pem" 2>/dev/null
+base64 -w 0 "$work/redis.pem" >"$rw/redis-router/REDIS_TLS_CERT"
 relay="$fly/$kernel/app/data/tls/relay-archive"
 openssl req -new -key "$relay/key.pem" -subj '/CN=layerx-relay-archive' -out "$work/relay.csr" 2>/dev/null
-sans="$("$ca" services | awk '$1 == "relay-archive" {print $7}')"
-printf 'subjectAltName=%s\n' "${sans//<app>/$kernel}" >"$work/relay.cnf"
+printf 'subjectAltName=%s\n' "$("$ca" services | awk '$1 == "relay-archive" {print $6}')" >"$work/relay.cnf"
 openssl x509 -req -in "$work/relay.csr" -CA "$work/ca/ca.pem" -CAkey "$work/ca/ca.key" -CAcreateserial \
 	-days 10 -sha256 -extfile "$work/relay.cnf" -out "$relay/cert.pem" 2>/dev/null
-rm "${fx:?}/platform/hosted/registry/fly.toml"
-printf 'app = "%s"\n' "$interop" >"$fx/platform/hosted/interop/fly.toml"
+rm "${rw:?}/interop/INTEROP_CLIENT_CERT"
 
-CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-good.env" 1 ca -- \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_ca_failing "$work/hosts-no-registry-box.env" 1 ca -- \
 	"pass ca ca expires_in=36" \
-	"pass receipt-authority app=$kernel chain=ok san=5/5 expires_in=39" \
-	"fail human app=$kernel cert=absent" \
-	"fail identity app=$identity chain=untrusted san=5/5 expires_in=39" \
-	"fail gateway-redis app=$redis chain=ok san=1/4 missing=DNS:layerx-gateway-redis,DNS:$redis.internal,IP:127.0.0.1 expires_in=39" \
-	"fail relay-archive app=$kernel chain=ok san=4/4 expires_in=" \
-	"fail registry toml=absent" \
-	"fail registry-event-client toml=absent" \
-	"fail interop-client app=$interop cert=unmounted" \
-	"fail human-attestor-client app=$kernel attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=unset" \
-	"pass developer app=$webhooks chain=ok san=4/4 expires_in=39" \
+	"pass receipt-authority target=box:KERNEL_HOST chain=ok san=5/5 expires_in=39" \
+	"fail human target=box:KERNEL_HOST cert=absent" \
+	"fail identity target=railway:identity chain=untrusted san=5/5 expires_in=39" \
+	"fail gateway-redis target=railway:redis-router chain=ok san=1/4 missing=DNS:layerx-gateway-redis,IP:127.0.0.1,DNS:redis-router.railway.internal expires_in=39" \
+	"fail relay-archive target=box:KERNEL_HOST chain=ok san=4/4 expires_in=" \
+	"fail registry target=box:REGISTRY_HOST host=absent" \
+	"fail registry-event-client target=box:REGISTRY_HOST host=absent" \
+	"fail interop-client target=railway:interop cert=absent" \
+	"fail human-attestor-client target=box:KERNEL_HOST attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=unset" \
+	"pass developer target=railway:webhooks-public,webhooks-ingress chain=ok san=5/5 expires_in=39" \
 	"check-live: 8 check(s) failed"
 
 # The kernel boundary cases reach the kernel fixture app, whose volume holds
@@ -1131,17 +1227,17 @@ expect check_live_edge_empty_manifest "$work/hosts-good.env" 1 edge -- \
 	"fail manifest names=0" \
 	"check-live: 1 check(s) failed"
 
-printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" @@sites \
+printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-wallet-gateway 443" @@sites \
 	"# rendered by tools/bringup/edge.sh; edit the manifest through it, not this file" \
 	"proxy_pass https://\$edge_upstream;" >"$CHECK_LIVE_TEST_EDGE"
 export CHECK_LIVE_TEST_DNS="api-mainnet-beta:up-edge up-edge:up-edge search:up-edge machine:up-edge"
 expect check_live_edge_passing "$work/hosts-good.env" 0 edge -- \
 	"pass manifest names=1" \
 	"pass sites validator=0" \
-	"pass api-mainnet-beta.paxeer.network mode=http app=paxeer-shared-endpoint edge=yes tls=verified route=/readyz http=200 fly-request-id=present body=match" \
+	"pass api-mainnet-beta.paxeer.network mode=http app=paxeer-wallet-gateway edge=yes tls=verified route=/readyz http=200 fly-request-id=present body=match" \
 	"check-live: all checks passed"
 
-printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-shared-endpoint 443" \
+printf '%s\n' "api-mainnet-beta.paxeer.network http paxeer-wallet-gateway 443" \
 	"search.paxeer.network http paxeer-search-front 443" \
 	"hooks.paxeer.network http paxeer-no-such-app 443" \
 	"machine.paxeer.network stream fx-stream-app 9454" @@sites \
@@ -1150,7 +1246,7 @@ export CHECK_LIVE_TEST_DNS="api-mainnet-beta:up-rpc-1 up-edge:up-edge search:up-
 expect check_live_edge_failing "$work/hosts-good.env" 1 edge -- \
 	"pass manifest names=4" \
 	"fail sites validator=1" \
-	"fail api-mainnet-beta.paxeer.network mode=http app=paxeer-shared-endpoint edge=no tls=verified route=/readyz http=200 fly-request-id=present body=match" \
+	"fail api-mainnet-beta.paxeer.network mode=http app=paxeer-wallet-gateway edge=no tls=verified route=/readyz http=200 fly-request-id=present body=match" \
 	"fail search.paxeer.network mode=http app=paxeer-search-front edge=yes tls=verified route=/healthz http=200 fly-request-id=present body=differ" \
 	"fail hooks.paxeer.network mode=http app=paxeer-no-such-app edge=yes route=unknown" \
 	"fail machine.paxeer.network mode=stream app=fx-stream-app port=9454 edge=yes presented=none" \
@@ -1314,15 +1410,15 @@ CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_passing "$wor
 	"pass role human uid=4020 state=running" \
 	"pass role human-tls uid=4020 state=running" \
 	"pass role layerxd uid=4020 state=running" \
-	"pass roster app=$kernel candidate=$kernel_candidate roles=24 running=24 operational=yes" \
+	"pass roster app=$kernel candidate=$kernel_candidate roles=25 running=25 operational=yes" \
 	"check-live: all checks passed"
 kernel_fixture "$work/kernel-plan-genesis"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_pre_genesis "$work/hosts-good.env" 3 kernel-app -- \
 	"pass role human uid=4020 state=running" \
 	"wait role layerxd uid=4020 state=waiting-genesis candidate=$kernel_candidate" \
 	"wait role human-kms uid=4026 state=waiting-genesis candidate=$kernel_candidate" \
-	"bootstrap app=$kernel candidate=$kernel_candidate state=pre-genesis roles=24 running=7 waiting-genesis=17 operational=no" \
-	"check-live: pre-genesis bootstrap, 17 role(s) waiting on the genesis; not operational"
+	"bootstrap app=$kernel candidate=$kernel_candidate state=pre-genesis roles=25 running=7 waiting-genesis=18 operational=no" \
+	"check-live: pre-genesis bootstrap, 18 role(s) waiting on the genesis; not operational"
 kernel_fixture "$work/kernel-plan-failing"
 chmod 0755 "$kinit_root/run/human-private/movement"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_failing "$work/hosts-good.env" 1 kernel-app -- \

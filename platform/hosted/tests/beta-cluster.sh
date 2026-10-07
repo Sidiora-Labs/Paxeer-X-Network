@@ -596,7 +596,7 @@ random_hex() { openssl rand -hex "$1"; }
 
 write_token() {
     local path=$1
-    (umask 077; printf '%s' "$(random_hex 32)" > "$path")
+    (umask 077; printf '%s\n' "$(random_hex 32)" > "$path")
 }
 
 component_secrets_generate() {

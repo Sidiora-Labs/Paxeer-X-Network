@@ -357,6 +357,7 @@ COPY platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh \
      platform/hosted/node/genesis_fees.py platform/hosted/node/genesis-module-fees.json \
      platform/hosted/node/data_directory.py platform/hosted/node/guarantor.sh \
      platform/hosted/node/checkpoint-authority.py /opt/layerx/
+COPY platform/hosted/node/generation_client.py platform/hosted/node/generation_transport.py /opt/layerx/node/
 COPY precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
 COPY platform/hosted/node/signer /opt/layerx/signer
 COPY platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py
@@ -398,6 +399,7 @@ COPY --from=build /src/platform/hosted/node/bootstrap.sh /src/platform/hosted/no
      /src/platform/hosted/node/genesis_fees.py /src/platform/hosted/node/genesis-module-fees.json \
      /src/platform/hosted/node/data_directory.py /src/platform/hosted/node/supervisor.sh \
      /src/platform/hosted/node/guarantor.sh /src/platform/hosted/node/checkpoint-authority.py /opt/layerx/
+COPY --from=build /src/platform/hosted/node/generation_client.py /src/platform/hosted/node/generation_transport.py /opt/layerx/node/
 COPY --from=build /src/precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
 COPY --from=build /src/platform/hosted/node/signer /opt/layerx/signer
 COPY --from=build /src/platform/hosted/paxeer/evm.py /opt/layerx/paxeer/evm.py

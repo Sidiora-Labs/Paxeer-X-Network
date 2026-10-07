@@ -9,14 +9,18 @@ import stat
 import subprocess
 import sys
 import time
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 STAGES = ('material', 'registry-bootstrap', 'router-activation', 'routed-proof')
 PUBLIC = 'https://api-mainnet-beta.paxeer.network'
-REGISTRY_TOML = 'platform/hosted/registry/fly.toml'
-ENDPOINT_TOML = 'human/wallet/deploy/endpoint.toml'
-SCOPE = (REGISTRY_TOML, 'docker/platform-registry/init.sh', ENDPOINT_TOML, 'tools/bringup/ca.sh',
+REGISTRY_ENV = 'docker/platform-registry/registry.env.example'
+REGISTRY_UNIT = 'docker/platform-registry/layerx-registry.service'
+ENDPOINT_ENV = 'platform/hosted/gateway/railway.env.example'
+ENDPOINT_FILES = 'docker/platform-gateway/files.tsv'
+REGISTRY_TARGET = 'box:REGISTRY_HOST'
+ENDPOINT_TARGET = 'railway:router'
+REGISTRY_NAME = 'index.paxeer.network'
+SCOPE = (REGISTRY_ENV, REGISTRY_UNIT, 'docker/platform-registry/init.sh', ENDPOINT_ENV, ENDPOINT_FILES, 'tools/bringup/ca.sh',
          'tools/bringup/check-live.sh', 'tools/bringup/check-live.test.sh',
          'tools/qualification/paxeer-x/registry-router-bootstrap.py')
 REFUSAL = 'fail router-activation missing=registry-bootstrap producer=stage:registry-bootstrap'
@@ -68,9 +72,24 @@ class Run:
         return result
 
 
-def load_toml(relative):
-    with open(ROOT / relative, 'rb') as handle:
-        return tomllib.load(handle)
+def load_env(relative, files=None):
+    env = {}
+    for line in (ROOT / relative).read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        name, separator, value = line.partition('=')
+        require(separator and re.fullmatch(r'[A-Z][A-Z0-9_]*', name), f'{relative}: malformed line {line}')
+        require(name not in env, f'{relative}: {name} set twice')
+        env[name] = value
+    rows = []
+    if files:
+        for line in (ROOT / files).read_text().splitlines():
+            if not line or line.startswith('#'):
+                continue
+            fields = line.split('\t')
+            require(len(fields) == 4, f'{files}: row with {len(fields)} columns: {line}')
+            rows.append({'secret_name': fields[0], 'guest_path': fields[1]})
+    return {'env': env, 'files': rows}
 
 
 def validate_stage(directory, stage, revision, image, generation):
@@ -111,7 +130,7 @@ def case_material_tokens(run, state, **_):
            'LAYERX_REGISTRY_JOURNAL': str(material / 'journal')}
     init = 'docker/platform-registry/init.sh'
     missing = run.script('registry-no-token-generation-during-startup', [init], env)
-    require(missing.returncode == 1 and 'producer=registry-fly-init--prepare-material' in missing.stderr,
+    require(missing.returncode == 1 and 'producer=registry-env-init--prepare-material' in missing.stderr,
             'startup did not refuse missing material before privileged setup')
     require(not Path(env['LAYERX_REGISTRY_REQUEST_TOKEN_FILE']).exists(), 'startup generated a replacement token')
     created = run.script('registry-material-producer', [init, '--prepare-material'], env)
@@ -198,8 +217,8 @@ def ca_rows(run):
     rows = {}
     for line in result.stdout.splitlines():
         fields = line.split()
-        require(len(fields) == 7, f'ca.sh services row has {len(fields)} fields: {line}')
-        rows[fields[0]] = dict(zip(('service', 'toml', 'group', 'custody', 'cn', 'eku', 'sans'), fields))
+        require(len(fields) == 6, f'ca.sh services row has {len(fields)} fields: {line}')
+        rows[fields[0]] = dict(zip(('service', 'target', 'custody', 'cn', 'eku', 'sans'), fields))
     return rows
 
 
@@ -286,7 +305,7 @@ def case_registry_independent(plan, **_):
 
 def case_producers(plan, rows, registry, endpoint, **_):
     secrets = {item['secret_name'] for item in endpoint.get('files', [])}
-    comment = (ROOT / REGISTRY_TOML).read_text()
+    comment = (ROOT / REGISTRY_ENV).read_text()
     for row in plan:
         for need in row['needs']:
             producer = row['producers'].get(need)
@@ -296,7 +315,7 @@ def case_producers(plan, rows, registry, endpoint, **_):
                 require(name in rows, f'{need}: ca.sh has no service {name}')
             elif kind == 'fly-secret':
                 require(name in secrets or re.search(r'\b' + re.escape(name) + r'\b', comment),
-                        f'{need}: Fly secret {name} is declared by neither toml')
+                        f'{need}: secret {name} is declared by neither env file')
             elif kind == 'stage':
                 require(STAGES.index(name) < STAGES.index(row['name']), f'{need}: producer stage {name} is not earlier')
             else:
@@ -312,23 +331,25 @@ def case_shared_material(rows, registry, endpoint, **_):
                           ('registry-event-client', ('LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12',
                                                      'LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE'))):
         row = rows.get(service)
-        require(row and row['toml'] == REGISTRY_TOML and row['custody'] == 'volume', f'ca.sh row {service}')
+        require(row and row['target'] == REGISTRY_TARGET and row['custody'] == 'volume', f'ca.sh row {service}')
         for key in keys:
             require(Path(env[key]).parent == Path('/data/tls') / service, f'{key} is not under the ca.sh {service} directory')
     gateway = rows.get('gateway-client')
-    require(gateway and gateway['toml'] == ENDPOINT_TOML and gateway['eku'] == 'clientAuth', 'ca.sh row gateway-client')
+    require(gateway and gateway['target'] == ENDPOINT_TARGET and gateway['eku'] == 'clientAuth', 'ca.sh row gateway-client')
     files = {item['guest_path']: item['secret_name'] for item in endpoint.get('files', [])}
     genv = endpoint['env']
     prefix = gateway['custody']
     require(files.get(genv['LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12']) == prefix + '_P12', 'gateway client identity is not the ca.sh gateway-client P12')
     require(files.get(genv['LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE']) == prefix + '_PASSWORD', 'gateway client password is not the ca.sh gateway-client password')
     port = env['LAYERX_REGISTRY_LISTEN'].rsplit(':', 1)[1]
-    require(genv['LAYERX_GATEWAY_PROGRAM_REGISTRY_URL'] == f'https://{registry["app"]}.internal:{port}',
-            'router registry URL is not the registry app ingress')
+    require(genv['LAYERX_GATEWAY_PROGRAM_REGISTRY_URL'] == f'https://{REGISTRY_NAME}:{port}',
+            'router registry URL is not the registry box ingress')
     require(files.get(genv['LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE']), 'router registry token has no producing secret')
-    require('DNS:<app>.internal' in rows['registry']['sans'], 'registry private ingress SAN absent')
-    require(not registry.get('http_service') and not any(row.get('ports') for row in registry.get('services', [])),
-            'registry must expose only private service ingress')
+    require('DNS:' + REGISTRY_NAME in rows['registry']['sans'].split(','), 'registry ingress SAN absent')
+    published = re.findall(r'(?:^|\s)-p (\S+)', (ROOT / REGISTRY_UNIT).read_text())
+    health = env['LAYERX_REGISTRY_HEALTH_LISTEN'].rsplit(':', 1)[1]
+    require(published == ['%s:%s' % (port, port), '127.0.0.1:%s:%s' % (health, health)],
+            'registry must expose only its mTLS listener and a loopback health listener')
     return 'registry and router consume the ca.sh identities and one internal CA'
 
 
@@ -347,7 +368,7 @@ def case_no_key_material(staged, **_):
 def case_public_interface(registry, endpoint, staged, **_):
     probe = (ROOT / 'tools/bringup/check-live.sh').read_text()
     require(f'local url={PUBLIC} ' in probe, 'check_router no longer targets the public unified interface')
-    for relative in (REGISTRY_TOML, ENDPOINT_TOML):
+    for relative in (REGISTRY_ENV, ENDPOINT_ENV):
         require('.fly.dev' not in (ROOT / relative).read_text(), f'{relative} routes through a fly.dev name')
     require(staged, 'staged evidence absent: DNS API1-API16 and the routed URL are runtime facts')
     dns = staged['doc']['dns']
@@ -654,8 +675,8 @@ def main():
     try:
         context['plan'] = render_plan(run)
         context['rows'] = ca_rows(run)
-        context['registry'] = load_toml(REGISTRY_TOML)
-        context['endpoint'] = load_toml(ENDPOINT_TOML)
+        context['registry'] = load_env(REGISTRY_ENV)
+        context['endpoint'] = load_env(ENDPOINT_ENV, ENDPOINT_FILES)
     except (Refused, OSError, KeyError, ValueError, subprocess.SubprocessError) as error:
         print(f'FAIL inputs {error}', flush=True)
         print('PAXEER_X_GATE tests=0 skipped=0', flush=True)
