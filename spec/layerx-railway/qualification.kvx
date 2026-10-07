@@ -53,7 +53,7 @@ environment = "edge box, CA under /etc/layerx/ca"
 started_at = "2026-10-07T11:33:44Z"
 outcome = "blocked"
 evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
-note = "Owner input: certificate issuance is refused to the agent harness; the owner runs /root/lx-ops-edge/issue-all.sh (written, not run) on the edge box."
+note = "Owner input: certificate issuance is refused to the agent harness; the owner runs tools/bringup/ca.sh init and issue <row> per row on the edge box (the helper script write was also refused)."
 
 [observation.3.1.1]
 task = "3.1"
