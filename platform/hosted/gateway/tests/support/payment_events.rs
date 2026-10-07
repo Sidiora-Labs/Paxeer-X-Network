@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 
 use super::{command, fs, path, Duration, RedisProcess, TcpListener};
 use layerx_platform_internal::{
-    events::{Kind, ProducerCredential, Service},
+    events::{enrollment_snapshot_mac, Kind, ProducerCredential, Service, ENROLLMENT_VERSION},
     http,
     producer::{Client, Outbox},
     tls::{Origin, Upstream},
@@ -383,10 +383,42 @@ fn event_source(
     directory: &std::path::Path,
     port: u16,
 ) -> Listener {
+    use std::os::unix::fs::PermissionsExt;
+    let enrollment = directory.with_extension("enrollment");
+    fs::create_dir_all(&enrollment).unwrap_or_else(|error| panic!("{error}"));
+    let enrollment_key = "0123456789abcdef0123456789abcdef";
+    let snapshot_path = enrollment.join("snapshot.json");
+    let mut files = Vec::new();
+    let mut principals = Vec::new();
+    for (index, (principal, credential)) in credentials.iter().enumerate() {
+        let credential_path = enrollment.join(format!("principal-{index}.credential"));
+        principals.push(serde_json::json!({
+            "principal": principal,
+            "credential_file": credential_path,
+        }));
+        files.push((credential_path, credential.as_str().to_owned()));
+    }
+    let entries: Vec<(&str, &str)> = credentials
+        .iter()
+        .map(|(principal, credential)| (principal.as_str(), credential.as_str()))
+        .collect();
+    let snapshot = serde_json::json!({
+        "version": ENROLLMENT_VERSION,
+        "generation": 1,
+        "principals": principals,
+        "mac": enrollment_snapshot_mac(Kind::Payment, 1, &entries, enrollment_key),
+    });
+    files.push((snapshot_path.clone(), snapshot.to_string()));
+    for (path, contents) in files {
+        fs::write(&path, contents).unwrap_or_else(|error| panic!("{error}"));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
     let service = Service::open(
         Kind::Payment,
         upstream,
-        credentials,
+        &snapshot_path,
+        enrollment_key,
         Zeroizing::new("consumer-token".to_owned()),
         directory,
     )
@@ -397,5 +429,8 @@ fn event_source(
         }])
     })
     .unwrap_or_else(|error| panic!("{error}"));
+    service
+        .refresh()
+        .unwrap_or_else(|error| panic!("payment source enrollment: {error:?}"));
     Listener::start_on(tls, port, move |request| service.route(request))
 }
