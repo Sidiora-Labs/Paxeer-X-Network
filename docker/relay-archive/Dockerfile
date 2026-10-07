@@ -31,15 +31,16 @@ COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layer
 ENV LAYERX_RELAY_ARCHIVE_RUNTIME=/opt/layerx/relay_archive/runtime.py \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-VOLUME ["/var/lib/layerx/relay-archive"]
 
-FROM base AS fly
-EXPOSE 8080
-ENTRYPOINT ["/opt/layerx/relay_archive/install.sh", "--fly-start"]
-CMD []
-
-FROM base
+FROM base AS box
 EXPOSE 9443
 USER 4027:4027
 ENTRYPOINT ["/usr/local/bin/layerxd"]
 CMD ["--relay-archive", "/etc/layerx/relay-archive.json"]
+
+FROM base AS railway
+COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/relay-archive/files.tsv /etc/layerx/files.tsv
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/opt/layerx/relay_archive/install.sh", "--railway-start"]
+CMD []

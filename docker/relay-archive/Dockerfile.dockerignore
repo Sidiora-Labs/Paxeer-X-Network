@@ -47,3 +47,5 @@ wasm-runtime
 wasmbinding
 human/apps
 tools/qualification/output
+!docker/common/env-files.sh
+!docker/relay-archive/files.tsv
