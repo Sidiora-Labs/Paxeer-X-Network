@@ -14,9 +14,12 @@ RUN pnpm --filter ./gateway run build
 RUN find . -name node_modules -type d -prune -exec rm -rf {} + && pnpm install --frozen-lockfile --prod --filter ./gateway...
 
 FROM node:22-bookworm-slim
-ARG SOURCE_REVISION
+ARG RAILWAY_GIT_COMMIT_SHA
+ARG SOURCE_REVISION=$RAILWAY_GIT_COMMIT_SHA
 ARG SOURCE_TREE
-RUN test "${#SOURCE_REVISION}" -eq 40 && test "${#SOURCE_TREE}" -eq 40 \
+# A Railway build has the commit but no git tree; every other build names both.
+RUN test "${#SOURCE_REVISION}" -eq 40 \
+    && { test "${#SOURCE_TREE}" -eq 40 || { test -n "$RAILWAY_GIT_COMMIT_SHA" && test -z "$SOURCE_TREE"; }; } \
     && case "$SOURCE_REVISION$SOURCE_TREE" in *[!0-9a-f]*) exit 1;; esac
 LABEL org.opencontainers.image.revision="$SOURCE_REVISION" \
       network.paxeer.source-tree="$SOURCE_TREE"
