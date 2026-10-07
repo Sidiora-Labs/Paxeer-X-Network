@@ -267,8 +267,8 @@ class Gate:
         return branches
 
     def issue(self, ca, service, row, out):
-        _, _, _, _, cn, eku, sans = row
-        sans = '' if sans == '-' else sans.replace('<app>', self.app)
+        _, _, _, cn, eku, sans = row
+        sans = '' if sans == '-' else sans
         out.mkdir(mode=0o700)
         script = '\n'.join([
             shell_function(CA, 'sign'),
@@ -287,10 +287,10 @@ class Gate:
 
     def usage_matches(self, ca, service, cert):
         script = '\n'.join([
-            shell_function(CA, 'ca_services'), shell_function(CA, 'service_row'),
+            'table=' + shlex.quote(self.table), shell_function(CA, 'service_row'),
             shell_function(CA, 'certificate_usage_matches'),
-            'certificate_usage_matches %s "$(cat %s)" %s %s' % (
-                shlex.quote(service), shlex.quote(str(cert)), shlex.quote(str(ca)), shlex.quote(self.app))])
+            'certificate_usage_matches %s "$(cat %s)" %s' % (
+                shlex.quote(service), shlex.quote(str(cert)), shlex.quote(str(ca)))])
         return self.bash(script, check=False).returncode == 0
 
     def authority(self, name):
@@ -302,23 +302,23 @@ class Gate:
         return ca
 
     def ca_cases(self):
-        listed = self.run(['bash', str(CA), 'services']).stdout.decode().splitlines()
+        self.table = self.run(['bash', str(CA), 'services']).stdout.decode()
+        listed = self.table.splitlines()
         rows = {line.split()[0]: line.split() for line in listed if line.split()}
-        self.app = re.search(r'^app = "([^"]+)"', (ROOT / 'human/wallet/deploy/human.toml').read_text(), re.M).group(1)
         host = self.material.HUMAN_KMS_ENDPOINT.rsplit(':', 1)[0]
         want = {'human-kms': ('layerx-human-kms', 'serverAuth'),
                 'human-kms-client': ('layerx-human-components', 'clientAuth'),
                 'human-kms-executor': ('layerx-human-movement', 'clientAuth')}
         for service, (cn, eku) in want.items():
             row = rows.get(service)
-            require(row is not None and len(row) == 7 and row[1] == 'human/wallet/deploy/human.toml'
-                    and row[3] == 'volume' and row[4] == cn and row[5] == eku,
+            require(row is not None and len(row) == 6 and row[1] == 'box:KERNEL_HOST'
+                    and row[2] == 'volume' and row[3] == cn and row[4] == eku,
                     'CA catalog row %s is not the exact Human KMS identity' % service)
-            require((row[6] == '-') == (eku == 'clientAuth'), 'CA catalog row %s SAN policy' % service)
-        sans = rows['human-kms'][6].split(',')
+            require((row[5] == '-') == (eku == 'clientAuth'), 'CA catalog row %s SAN policy' % service)
+        sans = rows['human-kms'][5].split(',')
         require('DNS:' + self.material.HUMAN_KMS_SERVER_NAME in sans and 'IP:' + host in sans,
                 'the Human KMS server row does not name the movement endpoint and server name')
-        require(len({rows[s][4] for s in IDENTITIES}) == 3, 'Human KMS identities share a common name')
+        require(len({rows[s][3] for s in IDENTITIES}) == 3, 'Human KMS identities share a common name')
         self.case('ca-catalog-exact-human-kms-rows')
         self.ca = self.authority('ca')
         foreign = self.authority('foreign-ca')
@@ -328,7 +328,7 @@ class Gate:
         self.issue(self.ca, 'paxeer-boundary-loopback', rows['paxeer-boundary-loopback'], issued / 'paxeer-origin')
         self.issue(foreign, 'human-kms-executor', rows['human-kms-executor'], issued / 'foreign-executor')
         stripped = list(rows['human-kms'])
-        stripped[6] = 'DNS:<app>.internal,DNS:localhost,IP:127.0.0.1'
+        stripped[5] = ','.join(name for name in sans if name != 'DNS:layerx-human-kms')
         self.issue(self.ca, 'human-kms', stripped, issued / 'nameless-server')
         for service in IDENTITIES:
             directory = issued / service

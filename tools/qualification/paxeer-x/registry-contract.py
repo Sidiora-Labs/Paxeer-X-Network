@@ -638,7 +638,7 @@ READINESS_SOURCES = {
     'platform/hosted/registry/src/main.rs',
     'platform/hosted/registry/src/routes.rs',
     'platform/hosted/registry/src/event_producer.rs',
-    'platform/hosted/registry/fly.toml',
+    'docker/platform-registry/registry.env.example',
     'platform/hosted/registry/deployment.yaml',
     'platform/hosted/registry/tests/readiness.py',
     'docker/platform-registry/init.sh',

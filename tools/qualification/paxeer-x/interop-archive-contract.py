@@ -686,11 +686,12 @@ class RelayFlyContract(Contract):
         require(env.get("LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK") == "1"
                 and "LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV" not in env,
                 "replica does not admit exactly the Fly private network for its .internal origin")
-        rows = [line.split() for line in (ROOT / "tools/bringup/ca.sh").read_text().splitlines()
-                if line.startswith("relay-archive ")]
-        require(len(rows) == 1 and rows[0][1] == "human/wallet/deploy/human.toml"
-                and "DNS:<app>.internal" in rows[0][6].split(","),
-                "relay-archive certificate is not issued for the kernel app's .internal name")
+        listed = subprocess.run(["bash", str(ROOT / "tools/bringup/ca.sh"), "services"], capture_output=True, text=True,
+                                check=True).stdout
+        rows = [line.split() for line in listed.splitlines() if line.startswith("relay-archive ")]
+        require(len(rows) == 1 and rows[0][1] == "box:KERNEL_HOST"
+                and "DNS:kernel.paxeer.network" in rows[0][5].split(","),
+                "relay-archive certificate is not issued for the kernel box's network name")
         require(env["LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM"] == "https://api-mainnet-beta.paxeer.network/v1/activities",
                 "replica submissions do not go to the router")
         require(env["LAYERX_RELAY_ARCHIVE_PUBLIC_URL"] == "https://archive.paxeer.network",

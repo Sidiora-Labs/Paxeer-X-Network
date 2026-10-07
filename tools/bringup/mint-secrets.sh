@@ -20,7 +20,8 @@ host, each token once, and writes it to every consumer that needs it, under
 
 Values of file secrets are base64, as the image's env-files shim decodes
 them; values a service reads straight from its environment (the identity
-binding tenant, the registry tokens and bearers) are plain. Nothing secret is
+binding tenant, the kernel bearers, the registry tokens and bearers) are
+plain. Nothing secret is
 printed; stdout lists the written paths.
 
 ATTESTOR_CERT_DIR     attestor-1.crt .. attestor-5.crt, the deployed attestor
@@ -28,8 +29,8 @@ ATTESTOR_CERT_DIR     attestor-1.crt .. attestor-5.crt, the deployed attestor
                       custody inventory members.
 MODULE_REGISTRY_FILE  the kernel deployment's module-registry.json.
 
-The issuer and tenant are read from human/wallet/deploy/attestor-*.toml and
-must agree across the five attestors. <out-dir>/keys keeps the operator
+The issuer and tenant are read from human/wallet/deploy/attestor-*.env.example
+and must agree across the five attestors. <out-dir>/keys keeps the operator
 custody inventory signing key, the only copy; the inventory expires 30 days
 after minting and is re-signed with that key.
 EOF
@@ -43,15 +44,15 @@ out=$1
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 deploy=$root/human/wallet/deploy
 
-toml_env() { sed -n "s/^  $2 = \"\(.*\)\"$/\1/p" "$1"; }
-issuer=$(toml_env "$deploy/attestor-1.toml" ATTESTOR_AUTHORITY_ISSUER)
-tenant=$(toml_env "$deploy/attestor-1.toml" ATTESTOR_AUTHORITY_TENANT)
-[ -n "$issuer" ] && [ -n "$tenant" ] || { echo "mint-secrets: attestor-1.toml lacks the authority issuer or tenant" >&2; exit 1; }
+dotenv() { sed -n "s/^$2=//p" "$1"; }
+issuer=$(dotenv "$deploy/attestor-1.env.example" ATTESTOR_AUTHORITY_ISSUER)
+tenant=$(dotenv "$deploy/attestor-1.env.example" ATTESTOR_AUTHORITY_TENANT)
+[ -n "$issuer" ] && [ -n "$tenant" ] || { echo "mint-secrets: attestor-1.env.example lacks the authority issuer or tenant" >&2; exit 1; }
 case "$issuer" in https://*/auth/v1) ;; *) echo "mint-secrets: issuer must be <supabase url>/auth/v1" >&2; exit 1 ;; esac
 for i in 2 3 4 5; do
-	[ "$(toml_env "$deploy/attestor-$i.toml" ATTESTOR_AUTHORITY_ISSUER)" = "$issuer" ] &&
-		[ "$(toml_env "$deploy/attestor-$i.toml" ATTESTOR_AUTHORITY_TENANT)" = "$tenant" ] ||
-		{ echo "mint-secrets: attestor-$i.toml disagrees with attestor-1.toml on issuer or tenant" >&2; exit 1; }
+	[ "$(dotenv "$deploy/attestor-$i.env.example" ATTESTOR_AUTHORITY_ISSUER)" = "$issuer" ] &&
+		[ "$(dotenv "$deploy/attestor-$i.env.example" ATTESTOR_AUTHORITY_TENANT)" = "$tenant" ] ||
+		{ echo "mint-secrets: attestor-$i.env.example disagrees with attestor-1.env.example on issuer or tenant" >&2; exit 1; }
 done
 python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$MODULE_REGISTRY_FILE" ||
 	{ echo "mint-secrets: $MODULE_REGISTRY_FILE is not JSON" >&2; exit 1; }
@@ -101,7 +102,7 @@ kms=$(rand) seal=$(rand)
 journey_source=$(rand) payment_source=$(rand) approval_source=$(rand) program_source=$(rand)
 id_gateway=$(rand) id_registry=$(rand) id_webhooks=$(rand) id_dashboard=$(rand) id_faucet=$(rand)
 id_testnet=$(rand) id_ramp=$(rand) id_provisioning=$(rand) id_registrar=$(rand)
-backend_admin=$(rand) gateway_component=$(rand) gateway_authority=$(rand)
+program_token=$(rand) replica_token=$(rand) backend_admin=$(rand) gateway_component=$(rand) gateway_authority=$(rand)
 webhooks_component=$(rand) webhooks_authority=$(rand)
 registry_component=$(rand) registry_authority=$(rand)
 registry_request=$(rand) registry_publication=$(rand)
@@ -164,11 +165,13 @@ box_app paxeer-human-service \
 	"HUMAN_EVENTS_JOURNEY_TOKEN=$(b64v "$journey")" \
 	"HUMAN_EVENTS_APPROVAL_TOKEN=$(b64v "$approval")" \
 	"HUMAN_EVENTS_WEBHOOKS_TOKEN=$(b64v "$trigger")" \
-	"KERNEL_BACKEND_ADMIN_TOKEN=$(b64v "$backend_admin")" \
-	"KERNEL_GATEWAY_COMPONENT_TOKEN=$(b64v "$gateway_component")" \
-	"KERNEL_GATEWAY_AUTHORITY_TOKEN=$(b64v "$gateway_authority")" \
-	"KERNEL_WEBHOOKS_COMPONENT_TOKEN=$(b64v "$webhooks_component")" \
-	"KERNEL_WEBHOOKS_AUTHORITY_TOKEN=$(b64v "$webhooks_authority")" \
+	"LAYERX_KERNEL_PROGRAM_TOKEN=$program_token" \
+	"LAYERX_KERNEL_REPLICA_TOKEN=$replica_token" \
+	"LAYERX_KERNEL_BACKEND_ADMIN_TOKEN=$backend_admin" \
+	"LAYERX_KERNEL_GATEWAY_COMPONENT_TOKEN=$gateway_component" \
+	"LAYERX_KERNEL_GATEWAY_AUTHORITY_TOKEN=$gateway_authority" \
+	"LAYERX_KERNEL_WEBHOOKS_COMPONENT_TOKEN=$webhooks_component" \
+	"LAYERX_KERNEL_WEBHOOKS_AUTHORITY_TOKEN=$webhooks_authority" \
 	"LAYERX_REGISTRY_NODE_AUTHORIZATION=$registry_component" \
 	"LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION=$registry_authority"
 

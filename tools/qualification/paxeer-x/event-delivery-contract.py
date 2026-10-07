@@ -722,12 +722,12 @@ def secret_scan(results, work, secrets, responses, exclude):
     print(f'scanned artifacts={scanned} secrets={len(secrets)}')
 
 
-def fly_init_enrollment(results):
-    init = (ROOT / 'platform/hosted/internal/fly-init.sh').read_text()
-    results.check('fly init exports the enrollment key of every source group',
-                  'LAYERX_EVENTS_ENROLLMENT_KEY_FILE=' in init, 'fly-init.sh')
-    results.check('fly init no longer writes a legacy flat credential map',
-                  "printf '{}\\n' >\"$run_dir/credentials.json\"" not in init, 'fly-init.sh')
+def env_init_enrollment(results):
+    init = (ROOT / 'platform/hosted/internal/env-init.sh').read_text()
+    results.check('env init exports the enrollment key of every source group',
+                  'LAYERX_EVENTS_ENROLLMENT_KEY_FILE=' in init, 'env-init.sh')
+    results.check('env init no longer writes a legacy flat credential map',
+                  "printf '{}\\n' >\"$run_dir/credentials.json\"" not in init, 'env-init.sh')
 
 
 def principal_credential_lifecycle(manifest, results):
@@ -743,7 +743,7 @@ def principal_credential_lifecycle(manifest, results):
     bind_binary(manifest, MANIFEST_DIGEST, binary)
     roles = upstream_inputs()
     print(f'candidate schema={manifest["schema"]} services={len(manifest["services"])}')
-    fly_init_enrollment(results)
+    env_init_enrollment(results)
     evidence = os.environ.get('PAXEER_X_EVIDENCE_DIR')
     if not evidence:
         raise Missing('PAXEER_X_EVIDENCE_DIR is required')
@@ -1305,12 +1305,12 @@ def roles_webhook_ingress_roles(manifest, results):
         role_variables = [name for name in fly.get('env', {}) if name.endswith(
             ('SOURCE_TRIGGER_TOKEN_FILE', 'OPERATOR_TOKEN_FILE', 'IDENTITY_TOKEN_FILE', 'INGRESS_CLIENT_CA_DER'))]
         results.check('fly shared env carries no role credential path', not role_variables, role_variables)
-        init = (ROOT / 'platform/hosted/webhooks/fly-init.sh').read_text()
+        init = (ROOT / 'platform/hosted/webhooks/env-init.sh').read_text()
         public, _, ingress = init.partition('\ningress)\n')
-        results.check('fly init public role is public and reads only the identity token',
+        results.check('env init public role is public and reads only the identity token',
                       'LAYERX_WEBHOOKS_ROLE=public' in public and 'IDENTITY_TOKEN_FILE' in public
                       and 'SOURCE_TRIGGER' not in public and 'OPERATOR_TOKEN' not in public, 'public branch')
-        results.check('fly init ingress role is TLS with the internal client CA',
+        results.check('env init ingress role is TLS with the internal client CA',
                       'LAYERX_WEBHOOKS_ROLE=ingress' in ingress and 'LAYERX_WEBHOOKS_LISTENER=tls' in ingress
                       and 'LAYERX_WEBHOOKS_INGRESS_CLIENT_CA_DER=/run/layerx/ca/internal.der' in ingress
                       and 'IDENTITY_TOKEN_FILE' not in ingress, 'ingress branch')

@@ -49,28 +49,29 @@ archive-node  reads the archive host's retention keys, paxd unit state and
              pruned public nodes retain
           Exits 0 only when all three pass.
 
-ca        reads the internal CA under LAYERX_CA_DIR on this host and, through
-          flyctl ssh console, the certificate of every service that
-          tools/bringup/ca.sh services lists, inside a machine of the Fly app
-          whose toml the service's row names (of the row's process group when
-          it names one): LAYERX_FLY_TLS_DIR/<service>/cert.pem on the volume
-          for a volume row, the guest path of the toml's [[files]] entry
-          <PREFIX>_CERT for a row whose custody is the secret prefix PREFIX.
+ca        reads the internal CA under LAYERX_CA_DIR on this host and the
+          certificate of every service that tools/bringup/ca.sh services
+          lists, from the row's target: for box:<VARIABLE>, over ssh to the
+          box the hosts file assigns to the variable,
+          LAYERX_TLS_DIR/<service>/cert.pem; for railway:<service>[,...],
+          the base64 <PREFIX>_CERT variable of every Railway service of the
+          row in environment LAYERX_RAILWAY_ENVIRONMENT, which must agree.
           A row of ca.sh attestor_services is verified against the
           attestors' gateway CA under LAYERX_ATTESTOR_CA_DIR instead of the
           internal CA. One line each:
   ca      "pass ca ca expires_in=<days>d" when the CA certificate is readable
           and more than thirty days from expiry
   <service>
-          "pass <service> app=<app> chain=ok san=<m>/<m> expires_in=<days>d"
-          when the certificate chains to the CA, carries every SAN the
-          service list declares with <app> read as the app's name, and is
-          more than thirty days from expiry; "fail <service> toml=absent"
-          when the toml or its app line is missing; "fail <service>
-          app=<app> cert=unmounted" when the toml mounts no <PREFIX>_CERT;
-          "fail <service> app=<app> cert=absent" when the machine holds none;
+          "pass <service> target=<target> chain=ok san=<m>/<m>
+          expires_in=<days>d" when the certificate chains to the CA, carries
+          every SAN the service list declares, and is more than thirty days
+          from expiry; "fail <service> target=<target> host=absent" when the
+          hosts file assigns no box to the variable; "fail <service>
+          target=<target> cert=absent" when the box or a Railway service
+          holds none; "fail <service> target=<target> cert=differs" when the
+          Railway services of the row hold different certificates;
           otherwise "fail" with chain=untrusted, san=<n>/<m> missing=<names>
-          or the expiry as observed; "fail <service> app=<app>
+          or the expiry as observed; "fail <service> target=<target>
           attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=<dir or unset>" for an
           attestor_services row when that directory holds no ca.pem.
           Exits 0 only when the CA and every certificate pass.
@@ -252,8 +253,11 @@ Environment:
   LAYERX_ATTESTOR_CA_DIR
                        the attestors' gateway CA directory on this host,
                        required by ca for the rows of ca.sh attestor_services
-  LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a
-                       Fly app, default /data/tls
+  LAYERX_TLS_DIR       the certificate directory root on a box, default
+                       /data/tls
+  LAYERX_RAILWAY_ENVIRONMENT
+                       the Railway environment ca reads, default beta
+  LAYERX_RAILWAY_BIN   the railway CLI, default ~/.railway/bin/railway
   CHECK_LIVE_GAS_ACCOUNT_KEYSTORE, CHECK_LIVE_GAS_ACCOUNT_PASSWORD_FILE
                        the keystore and password file of the gas check's
                        account, already delegated to the paymaster and
@@ -274,7 +278,9 @@ EOF
 
 timeout="${CHECK_LIVE_TIMEOUT:-30}"
 ca_dir="${LAYERX_CA_DIR:-/etc/layerx/ca}"
-fly_tls_dir="${LAYERX_FLY_TLS_DIR:-/data/tls}"
+tls_dir="${LAYERX_TLS_DIR:-/data/tls}"
+railway_env="${LAYERX_RAILWAY_ENVIRONMENT:-beta}"
+railway_bin="${LAYERX_RAILWAY_BIN:-$HOME/.railway/bin/railway}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 roles=(EDGE_HOST ARCHIVE_HOST VALIDATOR_HOSTS RPC_HOSTS OLD_WALLET_HOST)
@@ -348,28 +354,20 @@ fly_ssh() {
 	timeout "$timeout" flyctl ssh console --quiet --app "$1" ${group[@]+"${group[@]}"} --command "sh -c '$3'" 2>/dev/null
 }
 
-# fly_guest_path <toml> <secret name>: prints the guest path of the toml's
-# [[files]] entry that mounts the secret; status 1 when none does.
-fly_guest_path() {
-	python3 - "$repo_root/$1" "$2" 2>/dev/null <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as handle:
-    doc = tomllib.load(handle)
-for entry in doc.get("files", []):
-    if entry.get("secret_name") == sys.argv[2] and entry.get("guest_path"):
-        print(entry["guest_path"])
-        sys.exit(0)
-sys.exit(1)
-PY
-}
-
-# app_sans <sans> <app>: the comma-separated SAN list a certificate of the
-# app carries: the declared list ("-" for none) with <app> read as the app's
-# name.
-app_sans() {
-	[ "$1" = - ] || printf '%s' "${1//<app>/$2}"
+# railway_cert <service> <prefix>: prints the PEM of the base64 <PREFIX>_CERT
+# variable of the Railway service, or nothing when it is unset; status 1 when
+# the variables cannot be read. No other value is printed.
+railway_cert() {
+	timeout "$timeout" "$railway_bin" variable list --service "$1" --environment "$railway_env" --json </dev/null 2>/dev/null |
+		python3 -c '
+import base64, json, sys
+doc = json.load(sys.stdin)
+if isinstance(doc, list):
+    doc = {v.get("name"): v.get("value") for v in doc}
+cert = doc.get(sys.argv[1] + "_CERT") or ""
+if cert:
+    sys.stdout.write(base64.b64decode(cert, validate=True).decode("ascii"))
+' "$2" 2>/dev/null
 }
 
 # days_left: whole days from now until the notAfter of the PEM certificate on
@@ -755,8 +753,8 @@ check_archive_node() {
 }
 
 check_ca() {
-	local table service toml group custody eku sans app path cert chain
-	local want got san missing n m days line failures=0 attestors trust
+	local table service target custody eku sans var host svc cert one chain
+	local got san missing n m days line failures=0 attestors trust
 	if [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "fail ca ca cert=absent"
 		finish 1
@@ -770,36 +768,56 @@ check_ca() {
 	fi
 	table="$("$(dirname "${BASH_SOURCE[0]}")/ca.sh" services)"
 	attestors="$(sed -n 's/^attestor_services="\(.*\)"$/\1/p' "$(dirname "${BASH_SOURCE[0]}")/ca.sh")"
-	while read -r service toml group custody _ eku sans; do
-		if ! app="$(fly_app "$toml")"; then
-			echo "fail $service toml=absent"
-			failures=$((failures + 1))
-			continue
-		fi
+	while read -r service target custody _ eku sans; do
 		trust="$ca_dir/ca.pem"
 		if [[ " $attestors " == *" $service "* ]]; then
 			trust="${LAYERX_ATTESTOR_CA_DIR:-}/ca.pem"
 			if [ -z "${LAYERX_ATTESTOR_CA_DIR:-}" ] || [ ! -r "$trust" ]; then
-				echo "fail $service app=$app attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=${LAYERX_ATTESTOR_CA_DIR:-unset}"
+				echo "fail $service target=$target attestor_ca=absent LAYERX_ATTESTOR_CA_DIR=${LAYERX_ATTESTOR_CA_DIR:-unset}"
 				failures=$((failures + 1))
 				continue
 			fi
 		fi
-		if [ "$custody" = volume ]; then
-			path="$fly_tls_dir/$service/cert.pem"
-		elif ! path="$(fly_guest_path "$toml" "${custody}_CERT")"; then
-			echo "fail $service app=$app cert=unmounted"
+		cert=""
+		case "$target" in
+		box:*)
+			var="${target#box:}"
+			host="${!var:-}"
+			if [ -z "$host" ]; then
+				echo "fail $service target=$target host=absent"
+				failures=$((failures + 1))
+				continue
+			fi
+			cert="$(ssh_read "$host" "cat $tls_dir/$service/cert.pem")" || cert=""
+			;;
+		railway:*)
+			for svc in $(tr , ' ' <<<"${target#railway:}"); do
+				one="$(railway_cert "$svc" "$custody")" || one=""
+				if [ -z "$one" ]; then
+					cert=""
+					break
+				fi
+				if [ -n "$cert" ] && [ "$one" != "$cert" ]; then
+					cert=differs
+					break
+				fi
+				cert="$one"
+			done
+			;;
+		esac
+		if [ -z "$cert" ]; then
+			echo "fail $service target=$target cert=absent"
 			failures=$((failures + 1))
 			continue
 		fi
-		if ! cert="$(fly_ssh "$app" "$group" "cat $path" </dev/null)" || [ -z "$cert" ]; then
-			echo "fail $service app=$app cert=absent"
+		if [ "$cert" = differs ]; then
+			echo "fail $service target=$target cert=differs"
 			failures=$((failures + 1))
 			continue
 		fi
 		chain=ok
 		openssl verify -CAfile "$trust" <<<"$cert" >/dev/null 2>&1 || chain=untrusted
-		want="$(app_sans "$sans" "$app")"
+		[ "$sans" != - ] || sans=""
 		got="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/IP Address:/IP:/g; s/, /,/g; s/^ *//')"
 		missing=""
 		n=0
@@ -812,9 +830,9 @@ check_ca() {
 			else
 				missing="${missing:+$missing,}$san"
 			fi
-		done <<<"${want:+$want,}"
+		done <<<"${sans:+$sans,}"
 		days="$(days_left <<<"$cert")"
-		line="$service app=$app chain=$chain san=$n/$m${missing:+ missing=$missing} expires_in=${days}d"
+		line="$service target=$target chain=$chain san=$n/$m${missing:+ missing=$missing} expires_in=${days}d"
 		if [ "$chain" = ok ] && [ -z "$missing" ] && [ "$days" -gt 30 ]; then
 			echo "pass $line"
 		else
@@ -1897,7 +1915,7 @@ check_agent_public() {
 		printf '%s\n' "$agent_public_head"
 		cat "$repo_root/platform/hosted/agentd/probe.sh"
 		printf '%s\n' LXPROBE "$agent_public_tail"
-	} | fly_ssh "$app" - "tls=$fly_tls_dir/agentd-client url=$url limit=$timeout sh -s")" || reply=""
+	} | fly_ssh "$app" - "tls=$tls_dir/agentd-client url=$url limit=$timeout sh -s")" || reply=""
 	agentd="$(sed -n 's/^@@agentd //p' <<<"$reply" | head -n 1)"
 	if [ "$agentd" != found ]; then
 		echo "fail agentd app=$app process=${agentd:-unreachable}"
@@ -2298,7 +2316,7 @@ check_internal() {
 		fi
 	done
 
-	reply="$(printf '%s\n' "$internal_ready_script" | fly_ssh "$kernel" - "tls=$fly_tls_dir/human-event-client app=$app limit=$timeout sh -s")" || reply=""
+	reply="$(printf '%s\n' "$internal_ready_script" | fly_ssh "$kernel" - "tls=$tls_dir/human-event-client app=$app limit=$timeout sh -s")" || reply=""
 	for group in kms journeys payments approvals programs; do
 		url="https://$group.process.$app.internal:9443/readyz"
 		line="$(sed -n "s/^@@$group //p" <<<"$reply" | head -n 1)"
@@ -2640,7 +2658,7 @@ print(len(ms), ",".join(str(p) for p in ports) or "none")
 	fi
 	answer=""
 	for attempt in 1 2; do
-		answer="$(fly_ssh "$app" - "d=$fly_tls_dir/agentd-client; for p in 9443 9444 9445 9446; do printf \"%s \" \$p; curl -sS -m $timeout --cacert \$d/ca.pem --cert \$d/cert.pem --key \$d/key.pem -w \" %{http_code}\" https://$app.internal:\$p/readyz 2>/dev/null | tr -d \"\\n\"; echo; done")" || true
+		answer="$(fly_ssh "$app" - "d=$tls_dir/agentd-client; for p in 9443 9444 9445 9446; do printf \"%s \" \$p; curl -sS -m $timeout --cacert \$d/ca.pem --cert \$d/cert.pem --key \$d/key.pem -w \" %{http_code}\" https://$app.internal:\$p/readyz 2>/dev/null | tr -d \"\\n\"; echo; done")" || true
 		[ "$(grep -c ' 200$' <<<"$answer")" != 4 ] || break
 		[ "$attempt" = 2 ] || sleep 10
 	done
@@ -2725,7 +2743,7 @@ print(json.loads(base64.urlsafe_b64decode(ceremony + "=" * (-len(ceremony) % 4))
 
 # kernel_roster: the expected service roster of the kernel app's launch
 # contract, the full profile docker/kernel/init.sh runs from the final stage of
-# docker/kernel/Dockerfile that human/wallet/deploy/human.toml builds. One row
+# docker/kernel/Dockerfile on the kernel box. One row
 # per role: name, uid, "genesis" when the role's waits name a genesis output
 # (so waiting on the genesis is its permitted bootstrap state) or "-", and the
 # role's material boundary as comma-separated path=uid:gid[:mode] entries, or
@@ -2755,6 +2773,7 @@ human 4020 - /run/human-private/service=4020:4020:700
 human-tls 4020 - /run/human-private/service=4020:4020:700,/data/tls/human=4020:4020
 mirror-signer 4021 genesis /run/mirror-signer=4021:4020:700
 mirror-publisher 4021 genesis /run/mirror-publisher=4021:4020:700
+oracle-feeder 4021 genesis /run/layerx/oracle-feeder=4021:4020:700,/data/layerx/oracle-feeder/state=4021:4020:700
 relay-archive 4020 genesis /data/layerx/relay-archive=4020:4020:2700,/data/tls/relay-archive=4020:4020
 ROSTER
 }
@@ -3755,7 +3774,7 @@ answer=$(curl -sS -m "$limit" --cacert "$tls/ca.pem" -w "\n%{http_code}" "https:
 echo "@@health $status $(printf "%s" "$answer" | tail -n 1) $(printf "%s" "$answer" | head -n 1 | tr -d " " | cut -c1-120)"
 echo "@@cutover $(cat "$(dirname "$db")/cutover-height" 2>/dev/null)"
 echo "@@cursors $(sqlite3 -readonly -separator " " "$db" "SELECT (SELECT position FROM backfill_cursors WHERE chain = '\''paxeer'\''), (SELECT position FROM cursors WHERE chain = '\''paxeer'\'');" 2>/dev/null)"'
-	reply="$(printf '%s\n' "$script" | fly_ssh "$app" - "tls=$fly_tls_dir/indexer app=$app limit=$timeout sh -s")" || reply=""
+	reply="$(printf '%s\n' "$script" | fly_ssh "$app" - "tls=$tls_dir/indexer app=$app limit=$timeout sh -s")" || reply=""
 	if [ -z "$reply" ] || grep -q '^@@process none' <<<"$reply"; then
 		[ -n "$reply" ] && answer=none || answer=unreachable
 		echo "fail indexer app=$app process=$answer"
@@ -4246,7 +4265,7 @@ PYCONFIG
 		failures=$((failures + 1))
 	fi
 
-	reply="$(printf '%s\n' "$script" | fly_ssh "$kernel" - "tls=$fly_tls_dir/human-event-client url=$url limit=$timeout sh -s")" || reply=""
+	reply="$(printf '%s\n' "$script" | fly_ssh "$kernel" - "tls=$tls_dir/human-event-client url=$url limit=$timeout sh -s")" || reply=""
 	line="$(sed -n 's/^@@healthz //p' <<<"$reply" | head -n 1)"
 	anonymous="$(sed -n 's/^@@anonymous //p' <<<"$reply" | head -n 1)"
 	read -r status code body <<<"${line:-none none}"
@@ -4966,7 +4985,7 @@ fi
 
 tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != explorer ] || tools=(curl python3 psql)
-[ "$mode" != ca ] || tools+=(flyctl)
+[ "$mode" != ca ] || tools+=("$railway_bin")
 [ "$mode" != gas ] || tools+=(flyctl cast)
 [ "$mode" != relay ] || tools+=(flyctl)
 [ "$mode" != interop-adapters ] || tools+=(make)

@@ -1632,7 +1632,7 @@ def registry_material():
                 ('node', 'PAXEER_X_NODE_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
                                                 '/opt/layerx/supervisor.sh': 'platform/hosted/node/supervisor.sh'}),
                 ('registry', 'PAXEER_X_REGISTRY_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
-                                                        '/usr/local/bin/registry-fly-init': 'docker/platform-registry/init.sh'})):
+                                                        '/usr/local/bin/registry-env-init': 'docker/platform-registry/init.sh'})):
             image = os.environ.get(environment, '')
             if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
                 raise FileNotFoundError(environment + ' actual source-bound packaged image required')
@@ -1680,7 +1680,7 @@ def registry_material():
         imported = json.loads(execute(registry, '4030:4030', *importer).stdout)
         require(imported['generation'] == generation, 'handoff selected another producer generation')
         consumer = imported['directory']
-        validator = ('/usr/local/bin/registry-fly-init', '--validate-kernel-material', '/case/consumer/material')
+        validator = ('/usr/local/bin/registry-env-init', '--validate-kernel-material', '/case/consumer/material')
         validated = json.loads(execute(registry, '4030:4030', *validator).stdout)
         require(validated['generation'] == generation, 'actual registry readiness validator selected another generation')
         python(registry, '0:0', "from pathlib import Path; import sys; a,b=map(Path,sys.argv[1:]); assert {p.name for p in a.iterdir()}=={'generation.json','replica-id','trust-history'}; assert all((a/p.name).read_bytes()==p.read_bytes() for p in b.iterdir())", selected, consumer)
@@ -3062,61 +3062,47 @@ def ca_roster():
     import shlex
     quote = shlex.quote
     tool = ROOT / 'tools/bringup/ca.sh'
-    columns = ('toml', 'process group', 'custody', 'common name', 'extended key usage', 'SAN list', 'authority')
+    columns = ('target', 'custody', 'common name', 'extended key usage', 'SAN list', 'authority')
     organisation = 'Paxeer X Network'
-    apps = {
-        'platform/hosted/node/fly.toml': 'paxeer-x-core',
-        'human/wallet/deploy/human.toml': 'paxeer-human-service',
-        'human/wallet/deploy/redis.toml': 'paxeer-shared-endpoint-redis',
-        'human/wallet/deploy/endpoint.toml': 'paxeer-shared-endpoint',
-        'platform/hosted/identity/fly.toml': 'paxeer-identity',
-        'platform/hosted/internal/fly.toml': 'paxeer-internal',
-        'platform/hosted/internal/redis.toml': 'paxeer-internal-redis',
-        'platform/hosted/registry/fly.toml': 'paxeer-registry',
-        'platform/hosted/indexer/fly.toml': 'paxeer-indexer',
-        'platform/hosted/interop/fly.toml': 'paxeer-interop',
-        'platform/hosted/webhooks/fly.toml': 'paxeer-webhooks',
-        'platform/hosted/dashboard/fly.toml': 'paxeer-dashboard',
-        'platform/ramps/fly.toml': 'paxeer-ramp',
-    }
+    boxes = {'box:KERNEL_HOST': 'kernel.paxeer.network', 'box:REGISTRY_HOST': 'index.paxeer.network'}
     # The approved integrated identity set, the Human KMS roles included.
     expected = {
-        'pending-core': ('platform/hosted/node/fly.toml', '-', 'volume', 'layerx-pending-core', 'serverAuth', 'DNS:layerx-pending-core,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'pending-core-admin': ('platform/hosted/node/fly.toml', '-', 'volume', 'layerx-pending-core-admin', 'serverAuth', 'DNS:layerx-pending-core-admin,DNS:<app>.internal', 'internal'),
-        'receipt-authority': ('platform/hosted/node/fly.toml', '-', 'volume', 'layerx-receipt-authority', 'serverAuth', 'DNS:layerx-receipt-authority,DNS:authority,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'agent-boundary': ('platform/hosted/node/fly.toml', '-', 'volume', 'layerx-agent-boundary', 'serverAuth', 'DNS:layerx-agent-boundary,DNS:component,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'agentd': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-agentd', 'serverAuth', 'DNS:layerx-agentd,DNS:machine.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'agentd-client': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-agentd-client', 'clientAuth', '-', 'internal'),
-        'paxeer-boundary-loopback': ('human/wallet/deploy/human.toml', '-', 'volume', 'paxeer-boundary', 'serverAuth', 'DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'paxeer-boundary-public': ('human/wallet/deploy/human.toml', '-', 'volume', 'paxeer-observer-boundary', 'serverAuth', 'DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'guarantor': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-guarantor', 'serverAuth,clientAuth', 'DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'human': ('platform/hosted/node/fly.toml', '-', 'volume', 'layerx-human', 'serverAuth', 'DNS:layerx-human,DNS:<app>.internal,DNS:paxeer-human-service.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'human-event-client': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-human-events', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
-        'human-attestor-client': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-human-components', 'clientAuth', '-', 'attestor'),
-        'human-kms': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-human-kms', 'serverAuth', 'DNS:layerx-human-kms,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'human-kms-client': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-human-components', 'clientAuth', '-', 'internal'),
-        'human-kms-executor': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-human-movement', 'clientAuth', '-', 'internal'),
-        'relay-archive': ('human/wallet/deploy/human.toml', '-', 'volume', 'layerx-relay-archive', 'serverAuth', 'DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'gateway-redis': ('human/wallet/deploy/redis.toml', '-', 'REDIS_TLS', 'layerx-gateway-redis', 'serverAuth', 'DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'gateway-client': ('human/wallet/deploy/endpoint.toml', '-', 'ENDPOINT_CLIENT', 'layerx-gateway', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
-        'identity': ('platform/hosted/identity/fly.toml', '-', 'volume', 'layerx-identity', 'serverAuth', 'DNS:layerx-identity,DNS:identity,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-kms': ('platform/hosted/internal/fly.toml', 'kms', 'volume', 'kms', 'serverAuth', 'DNS:kms,DNS:kms.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-journeys': ('platform/hosted/internal/fly.toml', 'journeys', 'volume', 'journeys', 'serverAuth', 'DNS:journeys,DNS:journeys.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-payments': ('platform/hosted/internal/fly.toml', 'payments', 'volume', 'payments', 'serverAuth', 'DNS:payments,DNS:payments.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-approvals': ('platform/hosted/internal/fly.toml', 'approvals', 'volume', 'approvals', 'serverAuth', 'DNS:approvals,DNS:approvals.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-programs': ('platform/hosted/internal/fly.toml', 'programs', 'volume', 'programs', 'serverAuth', 'DNS:programs,DNS:programs.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'internal-redis': ('platform/hosted/internal/redis.toml', '-', 'REDIS_TLS', 'redis', 'serverAuth', 'DNS:redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'registry': ('platform/hosted/registry/fly.toml', '-', 'volume', 'layerx-program-registry', 'serverAuth', 'DNS:layerx-program-registry,DNS:index.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'registry-event-client': ('platform/hosted/registry/fly.toml', '-', 'volume', 'layerx-registry-events', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
-        'indexer': ('platform/hosted/indexer/fly.toml', '-', 'volume', 'layerx-indexer', 'serverAuth', 'DNS:layerx-indexer,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'interop-client': ('platform/hosted/interop/fly.toml', '-', 'INTEROP_CLIENT', 'layerx-interop-gateway', 'clientAuth', '-', 'internal'),
-        'developer': ('platform/hosted/webhooks/fly.toml', 'ingress', 'WEBHOOKS_INGRESS_TLS', 'layerx-developer', 'serverAuth', 'DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:public.process.<app>.internal,DNS:localhost,IP:127.0.0.1', 'internal'),
-        'developer-client': ('platform/hosted/webhooks/fly.toml', '-', 'WEBHOOKS_CLIENT', 'layerx-developer', 'clientAuth', '-', 'internal'),
-        'dashboard-client': ('platform/hosted/dashboard/fly.toml', '-', 'DASHBOARD_CLIENT', 'layerx-dashboard', 'clientAuth', '-', 'internal'),
-        'ramp-client': ('platform/ramps/fly.toml', '-', 'RAMP_CLIENT', 'layerx-reference-ramp', 'clientAuth', 'DNS:<app>.internal', 'internal'),
+        'pending-core': ('box:KERNEL_HOST', 'volume', 'layerx-pending-core', 'serverAuth', 'DNS:layerx-pending-core,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'pending-core-admin': ('box:KERNEL_HOST', 'volume', 'layerx-pending-core-admin', 'serverAuth', 'DNS:layerx-pending-core-admin,DNS:kernel.paxeer.network', 'internal'),
+        'receipt-authority': ('box:KERNEL_HOST', 'volume', 'layerx-receipt-authority', 'serverAuth', 'DNS:layerx-receipt-authority,DNS:authority,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'agent-boundary': ('box:KERNEL_HOST', 'volume', 'layerx-agent-boundary', 'serverAuth', 'DNS:layerx-agent-boundary,DNS:component,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'agentd': ('box:KERNEL_HOST', 'volume', 'layerx-agentd', 'serverAuth', 'DNS:layerx-agentd,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network,DNS:machine.paxeer.network', 'internal'),
+        'agentd-client': ('box:KERNEL_HOST', 'volume', 'layerx-agentd-client', 'clientAuth', '-', 'internal'),
+        'paxeer-boundary-loopback': ('box:KERNEL_HOST', 'volume', 'paxeer-boundary', 'serverAuth', 'DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'paxeer-boundary-public': ('box:KERNEL_HOST', 'volume', 'paxeer-observer-boundary', 'serverAuth', 'DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'guarantor': ('box:KERNEL_HOST', 'volume', 'layerx-guarantor', 'serverAuth,clientAuth', 'DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'human': ('box:KERNEL_HOST', 'volume', 'layerx-human', 'serverAuth', 'DNS:layerx-human,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'human-event-client': ('box:KERNEL_HOST', 'volume', 'layerx-human-events', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
+        'human-attestor-client': ('box:KERNEL_HOST', 'volume', 'layerx-human-components', 'clientAuth', '-', 'attestor'),
+        'human-kms': ('box:KERNEL_HOST', 'volume', 'layerx-human-kms', 'serverAuth', 'DNS:layerx-human-kms,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'human-kms-client': ('box:KERNEL_HOST', 'volume', 'layerx-human-components', 'clientAuth', '-', 'internal'),
+        'human-kms-executor': ('box:KERNEL_HOST', 'volume', 'layerx-human-movement', 'clientAuth', '-', 'internal'),
+        'relay-archive': ('box:KERNEL_HOST', 'volume', 'layerx-relay-archive', 'serverAuth', 'DNS:layerx-relay-archive,DNS:localhost,IP:127.0.0.1,DNS:kernel.paxeer.network', 'internal'),
+        'gateway-redis': ('railway:redis-router', 'REDIS_TLS', 'layerx-gateway-redis', 'serverAuth', 'DNS:layerx-gateway-redis,DNS:localhost,IP:127.0.0.1,DNS:redis-router.railway.internal', 'internal'),
+        'gateway-client': ('railway:router', 'ENDPOINT_CLIENT', 'layerx-gateway', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
+        'identity': ('railway:identity', 'IDENTITY_TLS', 'layerx-identity', 'serverAuth', 'DNS:layerx-identity,DNS:identity,DNS:localhost,IP:127.0.0.1,DNS:identity.railway.internal', 'internal'),
+        'internal-kms': ('railway:internal-kms', 'INTERNAL_TLS', 'kms', 'serverAuth', 'DNS:kms,DNS:localhost,IP:127.0.0.1,DNS:internal-kms.railway.internal', 'internal'),
+        'internal-journeys': ('railway:internal-journeys', 'INTERNAL_TLS', 'journeys', 'serverAuth', 'DNS:journeys,DNS:localhost,IP:127.0.0.1,DNS:internal-journeys.railway.internal', 'internal'),
+        'internal-payments': ('railway:internal-payments', 'INTERNAL_TLS', 'payments', 'serverAuth', 'DNS:payments,DNS:localhost,IP:127.0.0.1,DNS:internal-payments.railway.internal', 'internal'),
+        'internal-approvals': ('railway:internal-approvals', 'INTERNAL_TLS', 'approvals', 'serverAuth', 'DNS:approvals,DNS:localhost,IP:127.0.0.1,DNS:internal-approvals.railway.internal', 'internal'),
+        'internal-programs': ('railway:internal-programs', 'INTERNAL_TLS', 'programs', 'serverAuth', 'DNS:programs,DNS:localhost,IP:127.0.0.1,DNS:internal-programs.railway.internal', 'internal'),
+        'internal-redis': ('railway:redis-internal', 'REDIS_TLS', 'redis', 'serverAuth', 'DNS:redis,DNS:localhost,IP:127.0.0.1,DNS:redis-internal.railway.internal', 'internal'),
+        'registry': ('box:REGISTRY_HOST', 'volume', 'layerx-program-registry', 'serverAuth', 'DNS:layerx-program-registry,DNS:localhost,IP:127.0.0.1,DNS:index.paxeer.network', 'internal'),
+        'registry-event-client': ('box:REGISTRY_HOST', 'volume', 'layerx-registry-events', 'clientAuth', 'URI:urn:layerx:webhooks:role:producer', 'internal'),
+        'indexer': ('railway:indexer', 'INDEXER_TLS', 'layerx-indexer', 'serverAuth', 'DNS:layerx-indexer,DNS:localhost,IP:127.0.0.1,DNS:indexer.railway.internal', 'internal'),
+        'interop-client': ('railway:interop', 'INTEROP_CLIENT', 'layerx-interop-gateway', 'clientAuth', '-', 'internal'),
+        'developer': ('railway:webhooks-public,webhooks-ingress', 'WEBHOOKS_INGRESS_TLS', 'layerx-developer', 'serverAuth', 'DNS:layerx-webhooks,DNS:localhost,IP:127.0.0.1,DNS:webhooks-ingress.railway.internal,DNS:webhooks-public.railway.internal', 'internal'),
+        'developer-client': ('railway:webhooks-public,webhooks-ingress', 'WEBHOOKS_CLIENT', 'layerx-developer', 'clientAuth', '-', 'internal'),
+        'dashboard-client': ('railway:dashboard', 'DASHBOARD_CLIENT', 'layerx-dashboard', 'clientAuth', '-', 'internal'),
+        'ramp-client': ('railway:ramp', 'RAMP_CLIENT', 'layerx-reference-ramp', 'clientAuth', '-', 'internal'),
     }
     expected_local = {
-        'webhook-operator-client': ('-', '-', 'local', 'layerx-webhooks-operator', 'clientAuth', 'URI:urn:layerx:webhooks:role:operator', 'internal'),
+        'webhook-operator-client': ('-', 'local', 'layerx-webhooks-operator', 'clientAuth', 'URI:urn:layerx:webhooks:role:operator', 'internal'),
     }
     kms_roles = ('human-kms', 'human-kms-client', 'human-kms-executor')
     usages = {'serverAuth': 'TLS Web Server Authentication', 'clientAuth': 'TLS Web Client Authentication'}
@@ -3170,9 +3156,10 @@ def ca_roster():
         the functions of the ca.sh at path."""
         text = Path(path).read_text()
         return '\n'.join(['set -euo pipefail', '. ' + quote(str(Path(path).with_name('check-live.sh')))]
-                         + [assignment(text, name) for name in ('subject_org', 'cert_days', 'identity_files', 'attestor_services')]
-                         + [function(text, name) for name in ('ca_services', 'local_services', 'service_row', 'row_ca_dir',
-                                                              'certificate_usage_matches', 'sign', 'derive_cmd')])
+                         + [assignment(text, name) for name in ('subject_org', 'cert_days', 'names_file', 'identity_files',
+                                                                 'attestor_services')]
+                         + [function(text, name) for name in ('ca_services', 'local_services', 'ca_rows', 'service_row',
+                                                              'row_ca_dir', 'certificate_usage_matches', 'sign', 'derive_cmd')])
 
     def bash(script, *arguments, path=tool, environment=None, check=True):
         return run(['bash', '-c', prelude(path) + '\n' + script, 'ca-roster', *arguments], environment, check)
@@ -3186,7 +3173,7 @@ def ca_roster():
         problems, rows = [], {}
         for line in lines:
             fields = line.split()
-            if len(fields) != 7:
+            if len(fields) != 6:
                 problems.append('row with %d fields: %s' % (len(fields), line))
                 continue
             if fields[0] in rows:
@@ -3204,11 +3191,28 @@ def ca_roster():
             problems.append('%d rows, not the %d pinned identities' % (len(lines), len(pinned)))
         return problems
 
-    def fly_app(toml):
-        return bash('fly_app "$1"', toml).stdout
+    def names(path):
+        listed = {}
+        for line in Path(path).read_text().splitlines():
+            if line.strip() and not line.lstrip().startswith('#'):
+                key, _, value = line.partition('=')
+                listed[key] = value
+        return listed
 
-    def sans_of(template, app):
-        return [] if template == '-' else sorted(item.replace('<app>', app) for item in template.split(','))
+    def completed(lines, path):
+        """The raw table rows of ca_services with each SAN list completed by
+        its line of the names file, as ca.sh services completes them."""
+        listed, rows = names(path), []
+        for line in lines:
+            fields = line.split()
+            key = fields[0].upper().replace('-', '_')
+            if len(fields) == 6 and listed.get(key):
+                fields[5] = listed[key] if fields[5] == '-' else fields[5] + ',' + listed[key]
+            rows.append(' '.join(fields))
+        return rows
+
+    def sans_of(template):
+        return [] if template == '-' else sorted(template.split(','))
 
     def text_extensions(cert):
         text = run(['openssl', 'x509', '-in', cert, '-noout', '-text']).stdout.splitlines()
@@ -3226,10 +3230,10 @@ def ca_roster():
         return run(['openssl', 'verify', '-no-CApath', '-no-CAstore', *options, '-CAfile', Path(ca) / 'ca.pem', cert],
                    check=False).returncode == 0
 
-    def inspect(directory, row, app, authority):
+    def inspect(directory, row, authority):
         """Every reason the identity in directory is not exactly row: name,
         ownership is the caller's, role, EKU/SAN, trust and the files."""
-        _, _, _, cn, eku, sans, _ = row
+        _, _, cn, eku, sans, _ = row
         cert = directory / 'cert.pem'
         problems = []
         subject = run(['openssl', 'x509', '-in', cert, '-noout', '-subject', '-nameopt', 'RFC2253']).stdout.strip()
@@ -3240,7 +3244,7 @@ def ca_roster():
             problems.append('extended key usage ' + values.get('X509v3 Extended Key Usage', 'absent'))
         listed = values.get('X509v3 Subject Alternative Name')
         got = [] if listed is None else sorted(item.replace('IP Address:', 'IP:') for item in listed.split(', '))
-        if got != sans_of(sans, app):
+        if got != sans_of(sans):
             problems.append('SAN list %s' % ','.join(got))
         if values.get('X509v3 Basic Constraints') != 'CA:FALSE':
             problems.append('basic constraints ' + str(values.get('X509v3 Basic Constraints')))
@@ -3254,7 +3258,7 @@ def ca_roster():
             if verifies(cert, other):
                 problems.append('also chains to ' + other.name)
         if 'serverAuth' in eku:
-            for item in sans_of(sans, app):
+            for item in sans_of(sans):
                 option = ('-verify_hostname', item[4:]) if item.startswith('DNS:') else ('-verify_ip', item[3:])
                 if not verifies(cert, authority, '-purpose', 'sslserver', *option):
                     problems.append('server name %s not verified' % item)
@@ -3295,8 +3299,9 @@ def ca_roster():
         return result.stdout.strip().split('=', 1)[-1] if result.returncode == 0 else None
 
     issue_script = '''umask 077
-read -r _ toml _ _ cn eku sans <<<"$(service_row "$1")"
-app="$(fly_app "$toml")"
+table="$(ca_rows)"
+read -r _ target _ cn eku sans <<<"$(service_row "$1")"
+[ "$sans" != - ] || sans=""
 ca_dir="$(row_ca_dir "$1")"
 work="$2"
 mkdir -m 0700 "$work"
@@ -3306,7 +3311,7 @@ mkdir -m 0700 "$work"
 	openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem 2>/dev/null
 	openssl req -new -key key.pem -subj "/O=$subject_org/CN=$cn" -out csr.pem
 )
-sign "$1" "$eku" "$(app_sans "$sans" "$app")"
+sign "$1" "$eku" "$sans"
 (
 	umask 077
 	cd "$work"
@@ -3314,7 +3319,7 @@ sign "$1" "$eku" "$(app_sans "$sans" "$app")"
 	sh -c "$(derive_cmd "$cn")"
 	rm -f csr.pem ext.cnf
 )
-printf '%s %s' "$app" "$ca_dir"
+printf '%s %s' "$target" "$ca_dir"
 '''
     corrupt_script = '''umask 077
 ca_dir="$3"
@@ -3336,15 +3341,18 @@ sign "$1" "$5" "$6"
 )
 '''
 
-    def usage_matches(service, cert, authority, app):
-        return bash('certificate_usage_matches "$1" "$(cat "$2")" "$3" "$4"', service, cert, authority, app,
+    def usage_matches(service, cert, authority):
+        return bash('table="$(ca_rows)"\ncertificate_usage_matches "$1" "$(cat "$2")" "$3"', service, cert, authority,
                     check=False).returncode == 0
 
-    def tree(label, mutate):
-        """A copy of ca.sh and check-live.sh whose source text mutate edits."""
+    def tree(label, mutate, rename=None):
+        """A copy of ca.sh, check-live.sh and the names file whose ca.sh
+        source text mutate edits and whose names file rename edits."""
         directory = scratch / 'drift' / label / 'tools/bringup'
         directory.mkdir(mode=0o700, parents=True)
         shutil.copyfile(ROOT / 'tools/bringup/check-live.sh', directory / 'check-live.sh')
+        listing = (ROOT / 'tools/bringup/railway-names.env').read_text()
+        (directory / 'railway-names.env').write_text(rename(listing) if rename else listing)
         original = tool.read_text()
         changed = mutate(original)
         require(changed != original, 'mutation %s left ca.sh unchanged' % label)
@@ -3354,7 +3362,7 @@ sign "$1" "$5" "$6"
     def row_edit(service, edit):
         def mutate(text):
             lines = text.split('\n')
-            index = [i for i, line in enumerate(lines) if line.split(' ', 1)[0] == service and line.count(' ') == 6]
+            index = [i for i, line in enumerate(lines) if line.split(' ', 1)[0] == service and line.count(' ') == 5]
             require(len(index) == 1, 'the table holds no single row %s to mutate' % service)
             lines[index[0]:index[0] + 1] = edit(lines[index[0]].split(' '))
             return '\n'.join(lines)
@@ -3379,35 +3387,43 @@ sign "$1" "$5" "$6"
         local_lines = [line for line in run(['bash', tool, 'local-services']).stdout.split('\n') if line]
         problems = drift(local_lines, set(), expected_local)
         require(not problems, 'the ca.sh local roster differs from the pinned set: ' + '; '.join(problems))
-        require(not (expected.keys() & expected_local.keys()), 'a local identity is also a Fly row')
+        require(not (expected.keys() & expected_local.keys()), 'a local identity is also a services row')
         case('roster-is-exactly-the-pinned-identity-set')
 
-        for toml, app in sorted(apps.items()):
-            require(fly_app(toml) == app, '%s does not name the app %s' % (toml, app))
-        require({row[0] for row in expected.values()} == apps.keys(), 'a pinned row names an app outside the pinned owners')
+        deployed = set(re.findall(r'^railway_service = "([a-z0-9-]+)"$', (ROOT / 'deploy/rollout.kvx').read_text(), re.M))
         for service, row in expected.items():
-            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[6]]
+            if row[0].startswith('railway:'):
+                owners = row[0].removeprefix('railway:').split(',')
+                require(set(owners) <= deployed, '%s names a Railway service outside deploy/rollout.kvx: %s' % (service, row[0]))
+                owners = [name + '.railway.internal' for name in owners]
+            else:
+                require(row[0] in boxes, '%s names a box outside the pinned owners: %s' % (service, row[0]))
+                owners = [boxes[row[0]]]
+            if 'serverAuth' in row[3]:
+                require(all('DNS:' + name in row[4].split(',') for name in owners),
+                        '%s does not carry the network names of %s' % (service, row[0]))
+        for service, row in expected.items():
+            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[5]]
             got = bash('row_ca_dir "$1"', service, check=False)
             require(got.returncode == 0 and got.stdout == str(authority),
-                    '%s is signed under %s, not the %s authority' % (service, got.stdout or 'no authority', row[6]))
+                    '%s is signed under %s, not the %s authority' % (service, got.stdout or 'no authority', row[5]))
         for same in (internal_ca, str(internal_ca) + '/.'):
             require(bash('row_ca_dir "$1"', 'human-attestor-client', environment={'LAYERX_ATTESTOR_CA_DIR': str(same)},
                          check=False).returncode != 0, 'the internal CA was admitted as the attestors\' gateway CA')
-        case('every-row-owned-by-its-pinned-app-and-authority')
+        case('every-row-owned-by-its-pinned-target-and-authority')
 
         # ac_2/ac_4: drift and malformed rows are refused.
         valid_drift = {
             'removed-human-kms-executor': (row_edit('human-kms-executor', lambda fields: []), 'missing human-kms-executor'),
             'added-unapproved-identity': (row_edit('human-kms-client', lambda fields: [
-                ' '.join(fields), 'human-kms-admin human/wallet/deploy/human.toml - volume layerx-human-kms-admin clientAuth -']),
+                ' '.join(fields), 'human-kms-admin box:KERNEL_HOST volume layerx-human-kms-admin clientAuth -']),
                 'extra human-kms-admin'),
-            'kms-client-role-as-movement': (column('human-kms-client', 4, 'layerx-human-movement'), 'human-kms-client common name'),
+            'kms-client-role-as-movement': (column('human-kms-client', 3, 'layerx-human-movement'), 'human-kms-client common name'),
             'kms-executor-as-server': (row_edit('human-kms-executor', lambda fields: [' '.join(
-                fields[:5] + ['serverAuth', 'DNS:layerx-human-movement'])]), 'human-kms-executor extended key usage'),
-            'kms-server-moved-app': (column('human-kms', 1, 'platform/hosted/node/fly.toml'), 'human-kms toml'),
-            'kms-server-name-stripped': (column('human-kms', 6, 'DNS:<app>.internal,DNS:localhost,IP:127.0.0.1'), 'human-kms SAN list'),
-            'producer-as-operator': (column('gateway-client', 6, 'URI:urn:layerx:webhooks:role:operator'), 'gateway-client SAN list'),
-            'secret-custody-to-volume': (column('gateway-redis', 3, 'volume'), 'gateway-redis custody'),
+                fields[:4] + ['serverAuth', 'DNS:layerx-human-movement'])]), 'human-kms-executor extended key usage'),
+            'kms-server-moved-target': (column('human-kms', 1, 'box:REGISTRY_HOST'), 'human-kms target'),
+            'kms-server-name-stripped': (column('human-kms', 5, 'DNS:localhost,IP:127.0.0.1'), 'human-kms SAN list'),
+            'producer-as-operator': (column('gateway-client', 5, 'URI:urn:layerx:webhooks:role:operator'), 'gateway-client SAN list'),
             'attestor-client-under-internal-ca': (lambda text: text.replace('attestor_services="human-attestor-client"',
                                                                              'attestor_services=""'), 'human-attestor-client authority'),
             'kms-client-under-attestor-ca': (lambda text: text.replace('attestor_services="human-attestor-client"',
@@ -3416,17 +3432,24 @@ sign "$1" "$5" "$6"
         }
         malformed = {
             'duplicate-human-kms': (row_edit('human-kms', lambda fields: [' '.join(fields)] * 2), 'duplicate human-kms'),
-            'unknown-extended-key-usage': (column('human-kms-client', 5, 'codeSigning'), 'human-kms-client extended key usage'),
-            'six-field-row': (row_edit('human-kms', lambda fields: [' '.join(fields[:6])]), 'row with 6 fields'),
-            'lowercase-secret-prefix': (column('gateway-redis', 3, 'redis_tls'), 'gateway-redis custody'),
-            'server-without-san-list': (column('human-kms', 6, '-'), 'human-kms SAN list'),
-            'foreign-san-type': (column('human-kms-executor', 6, 'email:ops@paxeer.network'), 'human-kms-executor SAN list'),
-            'repeated-san': (column('human-kms', 6, 'DNS:layerx-human-kms,DNS:layerx-human-kms,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1'),
+            'unknown-extended-key-usage': (column('human-kms-client', 4, 'codeSigning'), 'human-kms-client extended key usage'),
+            'five-field-row': (row_edit('human-kms', lambda fields: [' '.join(fields[:5])]), 'row with 5 fields'),
+            'secret-custody-to-volume': (column('gateway-redis', 2, 'volume'), 'gateway-redis custody'),
+            'lowercase-secret-prefix': (column('gateway-redis', 2, 'redis_tls'), 'gateway-redis custody'),
+            'server-without-san-list': (column('human-kms', 5, '-'), 'human-kms SAN list'),
+            'foreign-san-type': (column('human-kms-executor', 5, 'email:ops@paxeer.network'), 'human-kms-executor SAN list'),
+            'repeated-san': (column('human-kms', 5, 'DNS:layerx-human-kms,DNS:layerx-human-kms,DNS:localhost,IP:127.0.0.1'),
                              'human-kms SAN list'),
         }
+        renames = {
+            'removed-human-kms-executor': lambda text: text.replace('\nHUMAN_KMS_EXECUTOR=\n', '\n'),
+            'added-unapproved-identity': lambda text: text + 'HUMAN_KMS_ADMIN=\n',
+            'server-without-san-list': lambda text: text.replace('\nHUMAN_KMS=DNS:kernel.paxeer.network\n', '\nHUMAN_KMS=\n'),
+        }
         for label, (mutate, reason) in {**valid_drift, **malformed}.items():
-            copy = tree(label, mutate)
-            table = [line for line in bash('ca_services', path=copy).stdout.split('\n') if line]
+            copy = tree(label, mutate, renames.get(label))
+            table = completed([line for line in bash('ca_services', path=copy).stdout.split('\n') if line],
+                              copy.with_name('railway-names.env'))
             problems = drift(table, attestors(copy), expected)
             require(any(problem.startswith(reason) for problem in problems),
                     '%s was not refused as %s: %s' % (label, reason, problems))
@@ -3443,43 +3466,42 @@ sign "$1" "$5" "$6"
         issued = scratch / 'issued'
         issued.mkdir(mode=0o700)
         for service, row in expected.items():
-            app_and_ca = bash(issue_script, service, issued / service).stdout.split(' ', 1)
-            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[6]]
-            require(app_and_ca == [apps[row[0]], str(authority)], '%s was issued for %s' % (service, app_and_ca))
-            problems = inspect(issued / service, row, apps[row[0]], authority)
+            target_and_ca = bash(issue_script, service, issued / service).stdout.split(' ', 1)
+            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[5]]
+            require(target_and_ca == [row[0], str(authority)], '%s was issued for %s' % (service, target_and_ca))
+            problems = inspect(issued / service, row, authority)
             require(not problems, 'issued %s is not its pinned identity: %s' % (service, '; '.join(problems)))
-            require(usage_matches(service, issued / service / 'cert.pem', authority, apps[row[0]]),
+            require(usage_matches(service, issued / service / 'cert.pem', authority),
                     'ca.sh does not accept issued %s for its own row' % service)
             fingerprints[service] = fingerprint_of((issued / service / 'cert.pem').read_text())
         require(len(fingerprints) == len(expected) and len(set(fingerprints.values())) == len(expected),
                 'the issued identities are not one distinct certificate per pinned row')
         case('every-pinned-identity-issued-and-inspected-row-by-row')
 
-        kernel = apps['human/wallet/deploy/human.toml']
         for service in kms_roles:
             for other in kms_roles:
                 if other != service:
-                    require(not usage_matches(other, issued / service / 'cert.pem', internal_ca, kernel),
+                    require(not usage_matches(other, issued / service / 'cert.pem', internal_ca),
                             'issued %s was admitted as %s' % (service, other))
-                    require(inspect(issued / service, expected[other], kernel, internal_ca),
+                    require(inspect(issued / service, expected[other], internal_ca),
                             'issued %s passed inspection as %s' % (service, other))
         for service in ('human-attestor-client', 'gateway-client', 'agentd-client', 'human-event-client'):
             for other in ('human-kms-client', 'human-kms-executor'):
-                require(not usage_matches(other, issued / service / 'cert.pem', internal_ca, kernel)
-                        and inspect(issued / service, expected[other], kernel, internal_ca),
+                require(not usage_matches(other, issued / service / 'cert.pem', internal_ca)
+                        and inspect(issued / service, expected[other], internal_ca),
                         '%s was admitted as %s' % (service, other))
         case('human-kms-roles-never-stand-in-for-one-another')
 
         # ac_2: identities issued under corrupted roles are refused.
         corrupted = scratch / 'corrupted'
         corrupted.mkdir(mode=0o700)
-        kms_sans = 'DNS:layerx-human-kms,DNS:%s.internal,DNS:localhost,IP:127.0.0.1' % kernel
+        kms_sans = expected['human-kms'][4]
         corruptions = [
             ('kms-client-with-movement-name', 'human-kms-client', internal_ca, 'layerx-human-movement', 'clientAuth', ''),
             ('kms-executor-with-server-usage', 'human-kms-executor', internal_ca, 'layerx-human-movement', 'serverAuth', kms_sans),
             ('kms-client-with-both-usages', 'human-kms-client', internal_ca, 'layerx-human-components', 'serverAuth,clientAuth', kms_sans),
             ('kms-server-without-server-name', 'human-kms', internal_ca, 'layerx-human-kms', 'serverAuth',
-             'DNS:%s.internal,DNS:localhost,IP:127.0.0.1' % kernel),
+             ','.join(name for name in kms_sans.split(',') if name != 'DNS:layerx-human-kms')),
             ('kms-client-under-attestor-ca', 'human-kms-client', attestor_ca, 'layerx-human-components', 'clientAuth', ''),
             ('kms-executor-from-foreign-ca', 'human-kms-executor', foreign_ca, 'layerx-human-movement', 'clientAuth', ''),
             ('producer-client-as-operator', 'gateway-client', internal_ca, 'layerx-gateway', 'clientAuth',
@@ -3490,11 +3512,10 @@ sign "$1" "$5" "$6"
         for label, service, authority, cn, eku, sans in corruptions:
             bash(corrupt_script, service, corrupted / label, authority, cn, eku, sans)
             row = expected[service]
-            pinned_authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[6]]
-            app = apps[row[0]]
-            require(inspect(corrupted / label, row, app, pinned_authority), '%s passed as the pinned %s' % (label, service))
+            pinned_authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[5]]
+            require(inspect(corrupted / label, row, pinned_authority), '%s passed as the pinned %s' % (label, service))
             if service in kms_roles or service == 'gateway-client':
-                require(not usage_matches(service, corrupted / label / 'cert.pem', pinned_authority, app),
+                require(not usage_matches(service, corrupted / label / 'cert.pem', pinned_authority),
                         'ca.sh accepted %s as %s' % (label, service))
             case('corrupted-role-refused-' + label)
 
@@ -3513,7 +3534,7 @@ sign "$1" "$5" "$6"
         made = run(['bash', tool, 'issue-local', 'webhook-operator-client', '--output-dir', operator])
         require(re.fullmatch(r'issued webhook-operator-client custody=local fingerprint=([0-9A-F]{2}:){31}[0-9A-F]{2} expires_in=39\dd\n',
                              made.stdout) is not None, 'issue-local printed %r' % made.stdout)
-        problems = inspect(operator, expected_local['webhook-operator-client'], '-', internal_ca)
+        problems = inspect(operator, expected_local['webhook-operator-client'], internal_ca)
         require(not problems, 'the local operator identity is not its pinned row: ' + '; '.join(problems))
         fingerprints['webhook-operator-client'] = fingerprint_of((operator / 'cert.pem').read_text())
         retained = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in operator.iterdir()}
@@ -3522,7 +3543,7 @@ sign "$1" "$5" "$6"
                 and retained == {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in operator.iterdir()},
                 'a second issue-local replaced the retained operator identity')
         for refused, argv, status in (
-                ('fly-row-as-local', ['issue-local', 'human-kms-client', '--output-dir', local / 'kms-client'], 2),
+                ('service-row-as-local', ['issue-local', 'human-kms-client', '--output-dir', local / 'kms-client'], 2),
                 ('inside-the-ca', ['issue-local', 'webhook-operator-client', '--output-dir', internal_ca / 'operator'], 1),
                 ('relative-destination', ['issue-local', 'webhook-operator-client', '--output-dir', 'operator'], 1)):
             answer = run(['bash', tool, *argv], check=False)
@@ -3530,8 +3551,8 @@ sign "$1" "$5" "$6"
         require(not (local / 'kms-client').exists() and not (internal_ca / 'operator').exists(),
                 'a refused issue-local left material behind')
         for service, row in expected.items():
-            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[6]]
-            require(not inspect(issued / service, row, apps[row[0]], authority)
+            authority = {'internal': internal_ca, 'attestor': attestor_ca}[row[5]]
+            require(not inspect(issued / service, row, authority)
                     and fingerprint_of((issued / service / 'cert.pem').read_text()) == fingerprints[service],
                     'the retained %s generation changed' % service)
         case('existing-generations-idempotent-and-incompatible-material-refused')
@@ -3679,12 +3700,16 @@ def service_roster():
                       check_live_sha256=hashlib.sha256(checker.read_bytes()).hexdigest())
         print('service-roster revision=%s candidate=%s' % (revision, candidate), flush=True)
 
-        # The chosen launch contract: human.toml builds docker/kernel/Dockerfile
-        # whose final stage leaves the init on its default full profile.
-        toml = (ROOT / 'human/wallet/deploy/human.toml').read_text()
-        app = re.search(r'^app = "([^"]+)"$', toml, re.M)
-        require(app is not None and re.search(r'^\s*dockerfile = "docker/kernel/Dockerfile"$', toml, re.M),
-                'human.toml no longer builds the kernel image')
+        # The chosen launch contract: layerx-kernel.service runs the kernel image
+        # kernel.env.example names, built from docker/kernel/Dockerfile whose
+        # final stage leaves the init on its default full profile.
+        settings = (ROOT / 'docker/kernel/kernel.env.example').read_text()
+        unit = (ROOT / 'docker/kernel/layerx-kernel.service').read_text()
+        app = re.search(r'^LAYERX_KERNEL_IMAGE=\S+/([a-z0-9-]+):.+$', settings, re.M)
+        require(app is not None and 'EnvironmentFile=/etc/layerx/kernel.env\n' in unit
+                and re.search(r'^ExecStart=/usr/bin/docker run .*--env-file /etc/layerx/kernel\.env .* \$\{LAYERX_KERNEL_IMAGE\}$',
+                              unit, re.M),
+                'layerx-kernel.service no longer runs the kernel image of kernel.env.example')
         app = app.group(1)
         dockerfile = (ROOT / 'docker/kernel/Dockerfile').read_text()
         final = dockerfile[dockerfile.rindex('\nFROM '):]

@@ -52,8 +52,9 @@ for i in 1 2 3 4 5; do
 	expect "paxeer-attestor-$i.box.env" WALLET_IDENTITY_BINDING_PUBLIC_KEY WALLET_CUSTODY_INVENTORY_PUBLIC_KEY WALLET_CUSTODY_INVENTORY
 done
 expect paxeer-human-service.box.env HUMAN_EVENTS_JOURNEY_TOKEN HUMAN_EVENTS_APPROVAL_TOKEN HUMAN_EVENTS_WEBHOOKS_TOKEN \
-	KERNEL_BACKEND_ADMIN_TOKEN KERNEL_GATEWAY_COMPONENT_TOKEN KERNEL_GATEWAY_AUTHORITY_TOKEN KERNEL_WEBHOOKS_COMPONENT_TOKEN \
-	KERNEL_WEBHOOKS_AUTHORITY_TOKEN LAYERX_REGISTRY_NODE_AUTHORIZATION LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION
+	LAYERX_KERNEL_PROGRAM_TOKEN LAYERX_KERNEL_REPLICA_TOKEN LAYERX_KERNEL_BACKEND_ADMIN_TOKEN \
+	LAYERX_KERNEL_GATEWAY_COMPONENT_TOKEN LAYERX_KERNEL_GATEWAY_AUTHORITY_TOKEN LAYERX_KERNEL_WEBHOOKS_COMPONENT_TOKEN \
+	LAYERX_KERNEL_WEBHOOKS_AUTHORITY_TOKEN LAYERX_REGISTRY_NODE_AUTHORIZATION LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION
 expect paxeer-program-registry.box.env REGISTRY_IDENTITY_TOKEN REGISTRY_PROGRAM_EVENTS_TOKEN REGISTRY_WEBHOOKS_EVENTS_TOKEN \
 	REGISTRY_REQUEST_TOKEN REGISTRY_PUBLICATION_TOKEN LAYERX_REGISTRY_NODE_AUTHORIZATION LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION
 expect router.railway.env ENDPOINT_EVENTS_PAYMENT_TOKEN ENDPOINT_EVENTS_WEBHOOKS_TOKEN ENDPOINT_COMPONENT_TOKEN \
@@ -103,11 +104,22 @@ same "$(plain identity.railway.env IDENTITY_WEBHOOKS_TOKEN)" "$(plain webhooks-p
 same "$(plain identity.railway.env IDENTITY_DASHBOARD_TOKEN)" "$(plain dashboard.railway.env DASHBOARD_IDENTITY_TOKEN)"
 same "$(plain identity.railway.env IDENTITY_RAMP_TOKEN)" "$(plain ramp.railway.env RAMP_IDENTITY_TOKEN)"
 same "$(plain identity.railway.env IDENTITY_REGISTRY_TOKEN)" "$(value paxeer-program-registry.box.env REGISTRY_IDENTITY_TOKEN)"
-same "$(plain paxeer-human-service.box.env KERNEL_GATEWAY_COMPONENT_TOKEN)" "$(plain router.railway.env ENDPOINT_COMPONENT_TOKEN)"
-same "$(plain paxeer-human-service.box.env KERNEL_GATEWAY_AUTHORITY_TOKEN)" "$(plain router.railway.env ENDPOINT_AUTHORITY_TOKEN)" \
+# The kernel init writes LAYERX_KERNEL_*_TOKEN verbatim to its token files.
+same "$(value paxeer-human-service.box.env LAYERX_KERNEL_GATEWAY_COMPONENT_TOKEN)" "$(plain router.railway.env ENDPOINT_COMPONENT_TOKEN)"
+same "$(value paxeer-human-service.box.env LAYERX_KERNEL_GATEWAY_AUTHORITY_TOKEN)" "$(plain router.railway.env ENDPOINT_AUTHORITY_TOKEN)" \
 	"$(plain interop.railway.env INTEROP_AUTHORITY_TOKEN)"
-same "$(plain paxeer-human-service.box.env KERNEL_WEBHOOKS_COMPONENT_TOKEN)" "$(plain webhooks-ingress.railway.env WEBHOOKS_COMPONENT_TOKEN)"
-same "$(plain paxeer-human-service.box.env KERNEL_WEBHOOKS_AUTHORITY_TOKEN)" "$(plain webhooks-ingress.railway.env WEBHOOKS_AUTHORITY_TOKEN)"
+same "$(value paxeer-human-service.box.env LAYERX_KERNEL_WEBHOOKS_COMPONENT_TOKEN)" "$(plain webhooks-ingress.railway.env WEBHOOKS_COMPONENT_TOKEN)" \
+	"$(plain webhooks-public.railway.env WEBHOOKS_COMPONENT_TOKEN)"
+same "$(value paxeer-human-service.box.env LAYERX_KERNEL_WEBHOOKS_AUTHORITY_TOKEN)" "$(plain webhooks-ingress.railway.env WEBHOOKS_AUTHORITY_TOKEN)" \
+	"$(plain webhooks-public.railway.env WEBHOOKS_AUTHORITY_TOKEN)"
+kernel_tokens=""
+for name in PROGRAM REPLICA BACKEND_ADMIN GATEWAY_COMPONENT GATEWAY_AUTHORITY WEBHOOKS_COMPONENT WEBHOOKS_AUTHORITY; do
+	v=$(value paxeer-human-service.box.env "LAYERX_KERNEL_${name}_TOKEN")
+	hex "$v" "LAYERX_KERNEL_${name}_TOKEN"
+	kernel_tokens="$kernel_tokens$v
+"
+done
+[ "$(printf '%s' "$kernel_tokens" | sort -u | wc -l)" -eq 7 ] || fail "kernel bearers collide"
 same "$(value paxeer-human-service.box.env LAYERX_REGISTRY_NODE_AUTHORIZATION)" "$(value paxeer-program-registry.box.env LAYERX_REGISTRY_NODE_AUTHORIZATION)"
 same "$(value paxeer-human-service.box.env LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION)" \
 	"$(value paxeer-program-registry.box.env LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION)"
@@ -155,7 +167,7 @@ for pair in WALLET_IDENTITY_BINDING_KEY:binding.key WALLET_CUSTODY_INVENTORY:inv
 	chmod 600 "$gw/${pair#*:}"
 done
 touch "$gw/client.crt" "$gw/client.key" "$gw/ca.crt"
-issuer=$(sed -n 's/^  ATTESTOR_AUTHORITY_ISSUER = "\(.*\)"$/\1/p' "$root/human/wallet/deploy/attestor-1.toml")
+issuer=$(sed -n 's/^ATTESTOR_AUTHORITY_ISSUER=//p' "$root/human/wallet/deploy/attestor-1.env.example")
 pins=$(for i in 1 2 3 4 5; do openssl x509 -in "$work/certs/attestor-$i.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1; done | paste -sd,)
 cat >"$work/check.mts" <<'EOF'
 import { createPrivateKey } from 'node:crypto';
@@ -178,7 +190,7 @@ EOF
 		WALLET_IDENTITY_BINDING_TENANT="$(value wallet-gateway.railway.env WALLET_IDENTITY_BINDING_TENANT)" \
 		WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE="$gw/binding.key" \
 		WALLET_CUSTODY_INVENTORY_FILE="$gw/inventory.jwt" WALLET_CUSTODY_INVENTORY_PUBLIC_KEY_FILE="$gw/inventory.pem" \
-		ATTESTOR_ENDPOINTS="$(sed -n 's/^  ATTESTOR_ENDPOINTS = "\(.*\)"$/\1/p' "$root/human/wallet/deploy/gateway.toml")" \
+		ATTESTOR_ENDPOINTS="$(sed -n 's/^ATTESTOR_ENDPOINTS=//p' "$root/human/wallet/deploy/railway.env.example")" \
 		ATTESTOR_CLIENT_CERT_FILE="$gw/client.crt" ATTESTOR_CLIENT_KEY_FILE="$gw/client.key" ATTESTOR_CA_FILE="$gw/ca.crt" \
 		ATTESTOR_QUORUM=3 EXPECTED_PINS="$pins" GATEWAY_SRC="$root/human/wallet/gateway/src" \
 		node_modules/.bin/tsx "$work/check.mts"

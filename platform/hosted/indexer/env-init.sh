@@ -1,9 +1,9 @@
 #!/bin/sh
-# Init of the indexer app on Fly (platform/hosted/indexer/fly.toml). Runs as
-# root on the app's one machine, or on the one-off backfill machine on the
-# same volume:
-#   indexer-fly-init backfill
-#   indexer-fly-init serve
+# Init of the Railway service indexer (platform/hosted/indexer/railway.env.example).
+# Runs as root on the service's one replica, or on a one-off backfill run on
+# the same volume:
+#   indexer-env-init backfill
+#   indexer-env-init serve
 # Both read LAYERX_INDEXER_START_BLOCK, the archive node's first retained
 # block, from the CometBFT location of LAYERX_INDEXER_COMET_URL once and keep
 # it on the volume. backfill reads the archive node's head from
@@ -16,7 +16,7 @@
 set -eu
 umask 077
 usage() {
-	echo "usage: indexer-fly-init backfill | serve" >&2
+	echo "usage: indexer-env-init backfill | serve" >&2
 	exit 2
 }
 [ "$#" -eq 1 ] || usage
@@ -44,7 +44,7 @@ once() {
 		value="$("$@")"
 		case "$value" in
 		'' | *[!0-9]*)
-			echo "indexer-fly-init: $file: the node answered no height" >&2
+			echo "indexer-env-init: $file: the node answered no height" >&2
 			exit 1
 			;;
 		esac
@@ -76,18 +76,18 @@ if [ "$1" = backfill ]; then
 	chown -R 4020:4020 "$state_dir"
 	setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs /usr/local/bin/layerx-indexer backfill --cutover-height "$cutover"
 	: >"$state_dir/backfill-done"
-	echo "indexer-fly-init: the backfill reached the cutover $cutover"
+	echo "indexer-env-init: the backfill reached the cutover $cutover"
 	exit 0
 fi
 
 if [ ! -e "$state_dir/backfill-done" ]; then
-	echo "indexer-fly-init: waiting for indexer-fly-init backfill to reach its cutover on this volume"
+	echo "indexer-env-init: waiting for indexer-env-init backfill to reach its cutover on this volume"
 	until [ -e "$state_dir/backfill-done" ]; do
 		sleep 5
 	done
 fi
 if [ ! -s "$LAYERX_INDEXER_TLS_CERT_DER" ] || [ ! -s "$LAYERX_INDEXER_TLS_KEY_DER" ]; then
-	echo "indexer-fly-init: waiting for $tls_dir from tools/bringup/ca.sh issue indexer"
+	echo "indexer-env-init: waiting for $tls_dir from tools/bringup/ca.sh issue indexer"
 	until [ -s "$LAYERX_INDEXER_TLS_CERT_DER" ] && [ -s "$LAYERX_INDEXER_TLS_KEY_DER" ]; do
 		sleep 5
 	done
