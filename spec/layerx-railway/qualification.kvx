@@ -122,3 +122,14 @@ started_at = "2026-10-07T11:33:44Z"
 outcome = "pass"
 evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/"
 note = "Unit and env file installed with image layerx-program-registry:fe0326d95a5d; the unit cannot start before the registry and registry-event-client certificates, the kernel bearers of mint-secrets and the three Railway TCP proxy URLs exist."
+
+[gate.2.2.1]
+task = "2.2"
+reqs = ["2.2"]
+revision = "65ccb175eb60708dcdf2f4f899944e45f25a50d5"
+command = "ATTESTOR_CERT_DIR=<dir> MODULE_REGISTRY_FILE=<file> tools/bringup/mint-secrets.sh <out-dir>"
+environment = "edge box"
+started_at = "2026-10-07T11:39:50Z"
+outcome = "blocked"
+evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
+note = "Owner input: the five attestor certificates come from the refused ca.sh run and module-registry.json from the kernel's full profile, whose LAYERX_NODE_NETWORK_NAME and agentd peer values are unknown; the script refuses to run without both."
