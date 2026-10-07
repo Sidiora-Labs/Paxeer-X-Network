@@ -46,3 +46,6 @@ wasm-runtime
 wasmbinding
 human/apps
 tools/qualification/output
+!docker/common/env-files.sh
+!docker/platform-gateway/files.tsv
+!docker/platform-gateway/entrypoint.sh
