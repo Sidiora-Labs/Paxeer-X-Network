@@ -2,6 +2,8 @@ use super::{Config, IncomingRequest};
 use crate::rpc::error;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::cell::Cell;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
 
@@ -12,6 +14,75 @@ const SUBJECT_DOMAIN: &[u8] = b"layerx-register-subject-v1";
 const REGISTRATIONS_PER_MINUTE: u32 = 30;
 
 static REGISTER_WINDOW: Mutex<(u64, u32)> = Mutex::new((0, 0));
+
+thread_local! {
+    static PEER: Cell<Option<SocketAddr>> = const { Cell::new(None) };
+}
+
+pub(super) fn bind_peer(peer: SocketAddr) {
+    PEER.with(|cell| cell.set(Some(peer)));
+}
+
+pub(super) type TrustedProxies = Vec<(IpAddr, u8)>;
+
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or(IpAddr::V6(ip), IpAddr::V4),
+        ip => ip,
+    }
+}
+
+fn parse_trusted_proxies(value: &str) -> Result<TrustedProxies, String> {
+    let mut proxies = Vec::new();
+    for entry in value.split(',').map(str::trim) {
+        let (address, prefix) = entry
+            .split_once('/')
+            .map_or((entry, None), |(a, p)| (a, Some(p)));
+        let address: IpAddr = address
+            .parse()
+            .map_err(|_| "LAYERX_GATEWAY_TRUSTED_PROXIES entry is not an address")?;
+        let address = canonical_ip(address);
+        let width = if address.is_ipv4() { 32 } else { 128 };
+        let prefix = prefix
+            .map_or(Ok(width), str::parse::<u8>)
+            .map_err(|_| "LAYERX_GATEWAY_TRUSTED_PROXIES prefix is invalid".to_owned())?;
+        if prefix > width || proxies.len() >= 32 {
+            return Err("LAYERX_GATEWAY_TRUSTED_PROXIES entry is out of bounds".into());
+        }
+        proxies.push((address, prefix));
+    }
+    Ok(proxies)
+}
+
+pub(super) fn configured_trusted_proxies() -> Result<TrustedProxies, String> {
+    std::env::var("LAYERX_GATEWAY_TRUSTED_PROXIES")
+        .ok()
+        .map_or(Ok(Vec::new()), |value| parse_trusted_proxies(&value))
+}
+
+fn trusted(proxies: &[(IpAddr, u8)], ip: IpAddr) -> bool {
+    proxies
+        .iter()
+        .any(|&(network, prefix)| match (network, ip) {
+            (IpAddr::V4(network), IpAddr::V4(ip)) => {
+                u32::from(network)
+                    .checked_shr(32 - u32::from(prefix))
+                    .unwrap_or(0)
+                    == u32::from(ip)
+                        .checked_shr(32 - u32::from(prefix))
+                        .unwrap_or(0)
+            }
+            (IpAddr::V6(network), IpAddr::V6(ip)) => {
+                u128::from(network)
+                    .checked_shr(128 - u32::from(prefix))
+                    .unwrap_or(0)
+                    == u128::from(ip)
+                        .checked_shr(128 - u32::from(prefix))
+                        .unwrap_or(0)
+            }
+            _ => false,
+        })
+}
 
 fn tagged(domain: &[u8], tenant: &str, signer_public_key: &[u8; 32]) -> [u8; 32] {
     let mut hash = Sha256::new();
@@ -75,19 +146,31 @@ fn register_step(params: Option<&Value>) -> Result<([u8; 32], [u8; 64], Step), i
     }
 }
 
-fn client_ip(request: &IncomingRequest) -> String {
-    request
-        .headers
-        .get("fly-client-ip")
-        .filter(|ip| {
-            !ip.is_empty()
-                && ip.len() <= 64
-                && ip
-                    .bytes()
-                    .all(|byte| byte.is_ascii_hexdigit() || b".:".contains(&byte))
-        })
-        .cloned()
-        .unwrap_or_else(|| "unattributed".to_owned())
+fn client_ip(
+    proxies: &[(IpAddr, u8)],
+    peer: Option<SocketAddr>,
+    forwarded: Option<&str>,
+) -> String {
+    let Some(peer) = peer else {
+        return "unattributed".to_owned();
+    };
+    let mut current = canonical_ip(peer.ip());
+    if !trusted(proxies, current) {
+        return current.to_string();
+    }
+    let Some(chain) = forwarded.filter(|chain| chain.len() <= 1024) else {
+        return current.to_string();
+    };
+    for hop in chain.rsplit(',').take(16) {
+        let Ok(hop) = hop.trim().parse::<IpAddr>() else {
+            return "unattributed".to_owned();
+        };
+        current = canonical_ip(hop);
+        if !trusted(proxies, current) {
+            break;
+        }
+    }
+    current.to_string()
 }
 
 fn register_params(params: Option<&Value>) -> Result<([u8; 32], [u8; 64]), i32> {
@@ -256,7 +339,11 @@ fn register(
             "/v1/signup",
             json!({
                 "email": email,
-                "client_ip": client_ip(request),
+                "client_ip": client_ip(
+                    &config.trusted_proxies,
+                    PEER.with(Cell::get),
+                    request.headers.get("x-forwarded-for").map(String::as_str),
+                ),
                 "tenant": TENANT,
                 "sub": sub,
                 "signer_public_key": signer,
@@ -326,6 +413,63 @@ mod tests {
 
     fn signing_key(seed: u8) -> SigningKey {
         SigningKey::from_bytes(&[seed; 32])
+    }
+
+    #[test]
+    fn client_ip_is_the_rightmost_untrusted_forwarded_hop() {
+        let proxies = parse_trusted_proxies("100.64.0.0/10, fd12::/16,192.0.2.10").unwrap();
+        let edge: SocketAddr = "[fd12:3456::7]:41000".parse().unwrap();
+        let direct: SocketAddr = "198.51.100.23:50000".parse().unwrap();
+        assert_eq!(
+            client_ip(&proxies, Some(edge), Some("203.0.113.9, 100.64.1.2")),
+            "203.0.113.9"
+        );
+        assert_eq!(
+            client_ip(
+                &proxies,
+                Some(edge),
+                Some("1.1.1.1, 203.0.113.9, 192.0.2.10")
+            ),
+            "203.0.113.9"
+        );
+        assert_eq!(
+            client_ip(&proxies, Some(edge), Some("2001:db8::5")),
+            "2001:db8::5"
+        );
+        assert_eq!(
+            client_ip(&proxies, Some(direct), Some("203.0.113.9")),
+            "198.51.100.23"
+        );
+        assert_eq!(client_ip(&proxies, Some(edge), None), "fd12:3456::7");
+        assert_eq!(
+            client_ip(&proxies, Some(edge), Some("evil, 100.64.1.2")),
+            "unattributed"
+        );
+        assert_eq!(
+            client_ip(&[], Some(edge), Some("203.0.113.9")),
+            "fd12:3456::7"
+        );
+        let mapped: SocketAddr = "[::ffff:100.64.0.1]:443".parse().unwrap();
+        assert_eq!(
+            client_ip(&proxies, Some(mapped), Some("203.0.113.9")),
+            "203.0.113.9"
+        );
+        assert_eq!(
+            client_ip(&proxies, None, Some("203.0.113.9")),
+            "unattributed"
+        );
+        let everyone = parse_trusted_proxies("0.0.0.0/0").unwrap();
+        assert!(trusted(&everyone, "8.8.8.8".parse().unwrap()));
+        assert!(!trusted(&proxies, "100.128.0.1".parse().unwrap()));
+        for value in [
+            "",
+            "10.0.0.0/33",
+            "fd12::/129",
+            "edge.railway.internal",
+            "10.0.0.0/x",
+        ] {
+            assert!(parse_trusted_proxies(value).is_err(), "{value}");
+        }
     }
 
     #[test]

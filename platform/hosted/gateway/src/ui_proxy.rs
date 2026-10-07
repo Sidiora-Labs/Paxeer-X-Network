@@ -6,9 +6,7 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::OnceLock;
 use zeroize::Zeroizing;
 
-const HOST: &str = "api-mainnet-beta.paxeer.network";
-const ORIGIN: &str = "https://api-mainnet-beta.paxeer.network";
-const EXPLORER: &str = "https://explorer-frontend-production-6eef.up.railway.app";
+static PUBLIC: OnceLock<Option<Public>> = OnceLock::new();
 static WALLET: OnceLock<Option<http::Endpoint>> = OnceLock::new();
 static HUMAN_WEB: OnceLock<Option<http::Endpoint>> = OnceLock::new();
 
@@ -20,13 +18,83 @@ struct Bindings {
     human_web_origin: Option<String>,
 }
 
+pub(super) struct Public {
+    pub(super) host: String,
+    pub(super) origin: String,
+    explorer_frontend: Option<String>,
+    pub(super) explorer_backend: Option<String>,
+}
+
+pub(super) fn public() -> Option<&'static Public> {
+    PUBLIC.get().and_then(Option::as_ref)
+}
+
+fn origin_url(value: &str) -> Result<String, String> {
+    let endpoint = http::Endpoint::parse(value)?;
+    if value != format!("https://{}", endpoint.host) {
+        return Err("public origin is not canonical".into());
+    }
+    Ok(value.to_owned())
+}
+
+fn configured_public(
+    host: Option<String>,
+    explorer_frontend: Option<String>,
+    explorer_backend: Option<String>,
+) -> Result<Option<Public>, String> {
+    let Some(host) = host else {
+        if explorer_frontend.is_some() || explorer_backend.is_some() {
+            return Err("explorer upstreams require LAYERX_GATEWAY_PUBLIC_HOST".into());
+        }
+        return Ok(None);
+    };
+    let origin = origin_url(&format!("https://{host}"))?;
+    Ok(Some(Public {
+        host,
+        origin,
+        explorer_frontend: explorer_frontend.as_deref().map(origin_url).transpose()?,
+        explorer_backend: explorer_backend.as_deref().map(origin_url).transpose()?,
+    }))
+}
+
+#[cfg(test)]
+pub(super) fn beta_public() -> &'static Public {
+    PUBLIC
+        .get_or_init(|| {
+            configured_public(
+                Some("api-mainnet-beta.paxeer.network".into()),
+                Some("https://explorer-frontend-production-6eef.up.railway.app".into()),
+                Some("https://explorer-backend-production-6fc2.up.railway.app".into()),
+            )
+            .ok()
+            .flatten()
+        })
+        .as_ref()
+        .unwrap_or_else(|| panic!("beta public origin refused"))
+}
+
+fn owner_admitted(file_uid: u32, process_uid: u32) -> bool {
+    file_uid == 0 || file_uid == process_uid
+}
+
 pub(super) fn configure() -> Result<(), String> {
+    let public = configured_public(
+        std::env::var("LAYERX_GATEWAY_PUBLIC_HOST").ok(),
+        std::env::var("LAYERX_GATEWAY_EXPLORER_FRONTEND_URL").ok(),
+        std::env::var("LAYERX_GATEWAY_EXPLORER_BACKEND_URL").ok(),
+    )?;
+    PUBLIC
+        .set(public)
+        .map_err(|_| "public origin already configured")?;
     let (endpoint, human_web) =
         if let Some(path) = std::env::var_os("LAYERX_GATEWAY_UI_BINDINGS_FILE") {
             let before = std::fs::symlink_metadata(&path).map_err(|_| "UI bindings unavailable")?;
+            let process_uid = std::fs::metadata("/proc/self")
+                .map_err(|_| "UI bindings owner unavailable")?
+                .uid();
             if !before.is_file()
                 || before.nlink() != 1
-                || before.uid() != 0
+                || !owner_admitted(before.uid(), process_uid)
                 || before.mode() & 0o077 != 0
                 || before.len() > 8192
             {
@@ -84,7 +152,7 @@ fn ui_origin(origin: &str) -> Result<http::Endpoint, String> {
     let endpoint = http::Endpoint::parse(origin)?;
     if endpoint.port != 443
         || !endpoint.base_path.is_empty()
-        || endpoint.host == HOST
+        || public().is_some_and(|public| endpoint.host == public.host)
         || endpoint.host.len() > 253
         || !endpoint.host.contains('.')
         || endpoint.host.split('.').any(|label| {
@@ -384,7 +452,11 @@ fn prepare(
             },
         );
     }
-    if request.headers.get("host").is_none_or(|v| v != HOST)
+    let public = public().ok_or(503_u16)?;
+    if request
+        .headers
+        .get("host")
+        .is_none_or(|v| *v != public.host)
         || request.headers.contains_key("x-layerx-principal")
         || request.headers.contains_key("x-layerx-api-key")
         || request.headers.contains_key("upgrade")
@@ -399,8 +471,15 @@ fn prepare(
         return Err(400);
     }
     let mutating = !matches!(request.method.as_str(), "GET" | "HEAD");
-    if request.headers.get("origin").is_some_and(|v| v != ORIGIN)
-        || (mutating && request.headers.get("origin").is_none_or(|v| v != ORIGIN))
+    if request
+        .headers
+        .get("origin")
+        .is_some_and(|v| *v != public.origin)
+        || (mutating
+            && request
+                .headers
+                .get("origin")
+                .is_none_or(|v| *v != public.origin))
         || request
             .headers
             .get("sec-fetch-site")
@@ -429,12 +508,16 @@ fn prepare(
             .cloned()
             .ok_or(503_u16)?
     } else {
-        http::Endpoint::parse(EXPLORER).map_err(|_| 503_u16)?
+        public
+            .explorer_frontend
+            .as_deref()
+            .and_then(|url| http::Endpoint::parse(url).ok())
+            .ok_or(503_u16)?
     };
     let mut headers = vec![
         (
             "x-forwarded-host".to_owned(),
-            Zeroizing::new(HOST.to_owned()),
+            Zeroizing::new(public.host.clone()),
         ),
         (
             "x-forwarded-proto".to_owned(),
@@ -466,7 +549,7 @@ fn prepare(
             }
             headers.push((name.clone(), Zeroizing::new(value.clone())));
         } else if name == "referer" {
-            if let Some(target) = value.strip_prefix(ORIGIN) {
+            if let Some(target) = value.strip_prefix(public.origin.as_str()) {
                 if confined(target, prefix) {
                     headers.push((name.clone(), Zeroizing::new(value.clone())));
                 }
@@ -492,7 +575,7 @@ fn safe_response(
         if name == "location" {
             let target = value
                 .strip_prefix(&upstream_origin)
-                .or_else(|| value.strip_prefix(ORIGIN))
+                .or_else(|| public().and_then(|public| value.strip_prefix(public.origin.as_str())))
                 .unwrap_or(&value);
             if !confined(target, prefix) {
                 return Err("UI redirect escapes mount".into());
@@ -1472,3 +1555,78 @@ const API: &[(&str, &str)] = &[
     ("GET", "/wallet/api/sdk/ranking/rankings/unusual"),
     ("GET", "/wallet/api/sdk/ranking/rankings/movers"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_bindings_owner_is_root_or_the_process() {
+        assert!(owner_admitted(0, 4020));
+        assert!(owner_admitted(4020, 4020));
+        assert!(!owner_admitted(4021, 4020));
+        assert!(!owner_admitted(65534, 0));
+    }
+
+    #[test]
+    fn upstreams_are_dns_names_including_private_ipv6_names() {
+        let identity = http::Endpoint::parse("https://identity.railway.internal:9443").unwrap();
+        assert_eq!(
+            (identity.host.as_str(), identity.port),
+            ("identity.railway.internal", 9443)
+        );
+        for literal in [
+            "https://[fd12::1]:9443",
+            "https://[::1]",
+            "https://10.0.0.1:9443",
+        ] {
+            assert!(http::Endpoint::parse(literal).is_err(), "{literal}");
+        }
+    }
+
+    #[test]
+    fn public_origin_is_configuration() {
+        assert!(configured_public(None, None, None).unwrap().is_none());
+        assert!(configured_public(
+            None,
+            None,
+            Some("https://explorer-backend-production-6fc2.up.railway.app".into())
+        )
+        .is_err());
+        let public = configured_public(
+            Some("api-mainnet-beta.paxeer.network".into()),
+            Some("https://explorer-frontend-production-6eef.up.railway.app".into()),
+            Some("https://explorer-backend-production-6fc2.up.railway.app".into()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(public.origin, "https://api-mainnet-beta.paxeer.network");
+        assert_eq!(
+            public.explorer_backend.as_deref(),
+            Some("https://explorer-backend-production-6fc2.up.railway.app")
+        );
+        for host in [
+            "api-mainnet-beta.paxeer.network:8443",
+            "203.0.113.7",
+            "a.b/c",
+            "",
+        ] {
+            assert!(configured_public(Some(host.into()), None, None).is_err());
+        }
+        for url in [
+            "http://explorer.example",
+            "https://explorer.example/",
+            "https://explorer.example/api",
+            "https://explorer.example:8443",
+            "https://[2001:db8::1]",
+            "https://[2001:db8::1]:443",
+        ] {
+            assert!(configured_public(
+                Some("api-mainnet-beta.paxeer.network".into()),
+                Some(url.into()),
+                None
+            )
+            .is_err());
+        }
+    }
+}

@@ -146,7 +146,7 @@ impl Endpoint {
                 ))
             },
         )?;
-        if host.is_empty() || host.parse::<IpAddr>().is_ok() {
+        if host.is_empty() || host.contains(['[', ']']) || host.parse::<IpAddr>().is_ok() {
             return Err("component TLS endpoint must use a DNS name".to_owned());
         }
         let base_path = if path.is_empty() {
