@@ -77,6 +77,37 @@ fn owner_admitted(file_uid: u32, process_uid: u32) -> bool {
     file_uid == 0 || file_uid == process_uid
 }
 
+fn protected_bindings(path: &std::path::Path, process_uid: u32) -> Result<Vec<u8>, String> {
+    let before = std::fs::symlink_metadata(path).map_err(|_| "UI bindings unavailable")?;
+    if !before.is_file()
+        || before.nlink() != 1
+        || !owner_admitted(before.uid(), process_uid)
+        || before.mode() & 0o077 != 0
+        || before.len() > 8192
+    {
+        return Err("UI bindings are not protected".into());
+    }
+    let mut file = std::fs::File::open(path).map_err(|_| "UI bindings unavailable")?;
+    let after = file.metadata().map_err(|_| "UI bindings unavailable")?;
+    if before.dev() != after.dev()
+        || before.ino() != after.ino()
+        || before.uid() != after.uid()
+        || before.mode() != after.mode()
+        || before.len() != after.len()
+    {
+        return Err("UI binding identity changed".into());
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(8193)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "UI bindings unreadable")?;
+    if bytes.len() > 8192 {
+        return Err("UI bindings exceed bound".into());
+    }
+    Ok(bytes)
+}
+
 pub(super) fn configure() -> Result<(), String> {
     let public = configured_public(
         std::env::var("LAYERX_GATEWAY_PUBLIC_HOST").ok(),
@@ -88,36 +119,10 @@ pub(super) fn configure() -> Result<(), String> {
         .map_err(|_| "public origin already configured")?;
     let (endpoint, human_web) =
         if let Some(path) = std::env::var_os("LAYERX_GATEWAY_UI_BINDINGS_FILE") {
-            let before = std::fs::symlink_metadata(&path).map_err(|_| "UI bindings unavailable")?;
             let process_uid = std::fs::metadata("/proc/self")
                 .map_err(|_| "UI bindings owner unavailable")?
                 .uid();
-            if !before.is_file()
-                || before.nlink() != 1
-                || !owner_admitted(before.uid(), process_uid)
-                || before.mode() & 0o077 != 0
-                || before.len() > 8192
-            {
-                return Err("UI bindings are not protected".into());
-            }
-            let mut file = std::fs::File::open(&path).map_err(|_| "UI bindings unavailable")?;
-            let after = file.metadata().map_err(|_| "UI bindings unavailable")?;
-            if before.dev() != after.dev()
-                || before.ino() != after.ino()
-                || before.uid() != after.uid()
-                || before.mode() != after.mode()
-                || before.len() != after.len()
-            {
-                return Err("UI binding identity changed".into());
-            }
-            let mut bytes = Vec::new();
-            (&mut file)
-                .take(8193)
-                .read_to_end(&mut bytes)
-                .map_err(|_| "UI bindings unreadable")?;
-            if bytes.len() > 8192 {
-                return Err("UI bindings exceed bound".into());
-            }
+            let bytes = protected_bindings(std::path::Path::new(&path), process_uid)?;
             let binding: Bindings =
                 serde_json::from_slice(&bytes).map_err(|_| "UI bindings malformed")?;
             let document: serde_json::Value =
@@ -1566,6 +1571,72 @@ mod tests {
         assert!(owner_admitted(4020, 4020));
         assert!(!owner_admitted(4021, 4020));
         assert!(!owner_admitted(65534, 0));
+    }
+
+    fn shim_staged(owner: &str, bindings: &[u8]) -> std::path::PathBuf {
+        let work = std::env::temp_dir().join(format!(
+            "layerx-ui-bindings-{}-{}",
+            std::process::id(),
+            owner.replace(':', "-")
+        ));
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).unwrap();
+        let guest = work.join("secrets/ui-bindings.json");
+        let table = work.join("files.tsv");
+        std::fs::write(
+            &table,
+            format!("ENDPOINT_UI_BINDINGS\t{}\t0600\t*\n", guest.display()),
+        )
+        .unwrap();
+        let mut encoder = std::process::Command::new("base64")
+            .arg("-w0")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        encoder.stdin.take().unwrap().write_all(bindings).unwrap();
+        let encoded = encoder.wait_with_output().unwrap();
+        assert!(encoded.status.success());
+        let shim = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../docker/common/env-files.sh");
+        let status = std::process::Command::new("sh")
+            .arg(shim)
+            .arg("true")
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("LAYERX_FILES_TABLE", &table)
+            .env("LAYERX_ROLE", "router")
+            .env("LAYERX_FILES_OWNER_ENDPOINT_UI_BINDINGS", owner)
+            .env(
+                "ENDPOINT_UI_BINDINGS",
+                String::from_utf8(encoded.stdout).unwrap(),
+            )
+            .status()
+            .unwrap();
+        assert!(status.success());
+        guest
+    }
+
+    #[test]
+    fn shim_staged_ui_bindings_pass_the_gateway_owner_check() {
+        let bindings = br#"{"schema":"paxeer-x.ui-bindings.v2","wallet_origin":"https://wallet.paxeer.network","human_web_origin":"https://app.paxeer.network"}"#;
+        let current = std::fs::metadata("/proc/self").unwrap().uid();
+        let gateway = if current == 0 { 4020 } else { current };
+        let staged = shim_staged(&format!("{gateway}:{gateway}"), bindings);
+        let metadata = std::fs::symlink_metadata(&staged).unwrap();
+        assert_eq!(metadata.uid(), gateway);
+        assert_eq!(metadata.mode() & 0o777, 0o600);
+        assert_eq!(protected_bindings(&staged, gateway).unwrap(), bindings);
+        if current == 0 {
+            let other = shim_staged("4021:4021", bindings);
+            assert_eq!(std::fs::symlink_metadata(&other).unwrap().uid(), 4021);
+            assert_eq!(
+                protected_bindings(&other, gateway).unwrap_err(),
+                "UI bindings are not protected"
+            );
+            std::fs::remove_dir_all(other.parent().unwrap().parent().unwrap()).unwrap();
+        }
+        std::fs::remove_dir_all(staged.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     #[test]
