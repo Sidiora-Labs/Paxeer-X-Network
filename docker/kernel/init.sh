@@ -1,6 +1,6 @@
 #!/bin/bash
-# Root init of the kernel app (human/wallet/deploy/human.toml), the node pod of
-# platform/hosted/node/deployment.yaml on one Fly machine. It replays the pod's
+# Root init of the kernel box (docker/kernel/layerx-kernel.service), the node pod
+# of platform/hosted/node/deployment.yaml in one container. It replays the pod's
 # init containers on the volume, mounts the pod's memory volumes, and runs each
 # container command under its uid through setpriv and the runtime clock,
 # restarting one that exits. A service starts once every file it waits on
@@ -52,14 +52,15 @@ trust_history_file=$human_state/trust-history
 if [ "$kernel_profile" = native ]; then
     trust_history_file=$layerx/trust/history
 fi
-tls=${LAYERX_FLY_TLS_DIR:-/data/tls}
+tls=${LAYERX_TLS_DIR:-/data/tls}
 run=/run/layerx
 status=$run/init
+settlement_env=$layerx/settlement/settlement.env
 genesis_files="$genesis/metadata.lxgb $keys/sequencer.key $genesis/asset-id $genesis/replica-id $keys/publication/binding-policy.json $keys/publication/authorization.json"
 
 # The layerx-node-config ConfigMap of the pod, and the precompile addresses of
-# its layerxd container. The network id is kernel_network_id of the spec's
-# [design.fly], set in the app env; the asset id (the PAX record of the custody
+# its layerxd container. The network id is kernel_network_id of the spec, set
+# in the box env file; the asset id (the PAX record of the custody
 # asset map) and the replica id are the ones tools/bringup/kernel-genesis.sh
 # wrote beside the genesis metadata.
 : "${LAYERX_NODE_NETWORK_ID:?the kernel network id is set in the app env}"
@@ -750,8 +751,8 @@ memory() {
 	mountpoint -q "$1" || mount -t tmpfs -o "nosuid,nodev,mode=$2" tmpfs "$1"
 }
 
-# The mirror-signer and mirror-publisher containers' secrets, imported as Fly
-# secrets of the app, each base64: the Ethereum secp256k1 publisher key, the
+# The mirror-signer and mirror-publisher containers' secrets, in the box env
+# file, each base64: the Ethereum secp256k1 publisher key, the
 # Solana ed25519 publisher keypair, the config interop/deploy/mirror/
 # render-config.py rendered, and a tar of the <backend>.ca.der and
 # <backend>.token files its RPC endpoints name under $mirror_run/rpc.
@@ -813,6 +814,14 @@ echo "$$" >"$status/pid"
 install -d -o 0 -g 4020 -m 2775 "$layerx" "$layerx/settlement"
 install -d -o 0 -g 4020 -m 0750 "$genesis"
 chmod g-s "$genesis"
+# The guarantors' settlement inputs: the chain id, the relayed Paxeer RPC URL
+# and the three precompiles, unless the ceremony already wrote them.
+fresh "$settlement_env" 0:4020 0440 printf '%s=%s\n' \
+	LAYERX_NODE_PAXEER_CHAIN_ID "$LAYERX_NODE_PAXEER_CHAIN_ID" \
+	LAYERX_NODE_PAXEER_RPC_URL "$LAYERX_NODE_PAXEER_RPC_URL" \
+	LAYERX_NODE_REGISTRY_PRECOMPILE "$LAYERX_NODE_REGISTRY_PRECOMPILE" \
+	LAYERX_NODE_CUSTODY_PRECOMPILE "$LAYERX_NODE_CUSTODY_PRECOMPILE" \
+	LAYERX_NODE_ANCHOR_PRECOMPILE "$LAYERX_NODE_ANCHOR_PRECOMPILE"
 if [ "$kernel_profile" = native ]; then
     chmod 3775 "$layerx"
     if [ -L "$layerx/trust" ] || { [ -e "$layerx/trust" ] && [ ! -d "$layerx/trust" ]; }; then
@@ -904,21 +913,31 @@ install -d -m 0755 /run/human-material /var/lib/layerx/human
 install -d -o 0 -g 0 -m 0700 "$keys/human-policy"
 fi
 
-# The trust root of the [[files]] entry, where the pod mounted it.
+# The internal CA root, bind-mounted read-only by the box unit.
+ca_cert_file=${LAYERX_CA_CERT_FILE:-/etc/layerx/trust/ca.crt}
+[ -f "$ca_cert_file" ] && [ -s "$ca_cert_file" ] || {
+	log "the internal CA root $ca_cert_file is absent; bind-mount it read-only"
+	exit 1
+}
 install -d -m 0755 "$run/trust"
-install -m 0444 /etc/layerx/trust/ca.crt "$run/trust/ca.crt"
+install -m 0444 "$ca_cert_file" "$run/trust/ca.crt"
 
 # Material the pod read from secrets and the machine now makes on the volume.
 fresh "$keys/treasury.key" 4020:4020 0400 openssl rand -hex 32
-fresh "$keys/tokens/program-token" 4020:4020 0440 openssl rand -hex 32
-fresh "$keys/tokens/replica-token" 4020:4020 0440 openssl rand -hex 32
-# The bearers of the core boundary, the receipt authority and the agent
-# boundary that the pod mounted from secrets: the core admin plane, the
-# router's component and authority bearers, the webhooks component and
-# authority bearers, and the human agent's authority token. The owner receives
-# these locations only; the router and webhooks deploy steps import each from
-# here.
-for token in backend-admin gateway-component gateway-authority webhooks-component webhooks-authority; do
+# The kernel bearers: layerxd's program and replica tokens, the core admin
+# plane, the router's component and authority bearers and the webhooks
+# component and authority bearers. LAYERX_KERNEL_<TOKEN>_TOKEN from the box env
+# file (tools/bringup/mint-secrets.sh) replaces the volume copy; a token whose
+# variable is unset is generated once on the volume.
+for token in program-token replica-token backend-admin gateway-component gateway-authority webhooks-component webhooks-authority; do
+	variable=${token%-token}
+	variable=LAYERX_KERNEL_${variable^^}
+	variable=${variable//-/_}_TOKEN
+	if [ -n "${!variable:-}" ]; then
+		printf '%s' "${!variable}" >"$keys/tokens/$token.new"
+		mv "$keys/tokens/$token.new" "$keys/tokens/$token"
+	fi
+	unset "$variable"
 	fresh "$keys/tokens/$token" 4020:4020 0440 openssl rand -hex 32
 done
 if [ "$kernel_profile" = full ]; then
@@ -928,8 +947,8 @@ fi
 install -d -o 4021 -g 4020 -m 0700 "$layerx/core" "$layerx/agent-boundary"
 fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
 
-# The registry's two bearers, Fly secrets of this app and of the registry app
-# (platform/hosted/registry/fly.toml): the agent boundary reads the node bearer
+# The registry's two bearers, in the box env file of this box and of the
+# registry: the agent boundary reads the node bearer
 # from registry-component/token and the receipt authority the authority bearer
 # from registry-authority/token of LAYERX_AUTHORITY_TOKEN_FILES, where the pod
 # mounted the layerx-program-registry-node-client and
@@ -1126,7 +1145,7 @@ guarantor() {
 		LAYERX_GUARANTOR_IDENTITY_DIR="$layerx/guarantor-$identity/identity" \
 		LAYERX_GUARANTOR_STATE_DIR="$layerx/guarantor-$identity/state" \
 		LAYERX_GUARANTOR_LNI_SOCKET="$run/node/layerxd.lni.sock" \
-		LAYERX_GUARANTOR_SETTLEMENT_ENV="$layerx/settlement/settlement.env" \
+		LAYERX_GUARANTOR_SETTLEMENT_ENV="$settlement_env" \
 		LAYERX_GUARANTOR_SETTLEMENT_FILE="$layerx/settlement/checkpoint-settlement.json" \
 		LAYERX_GUARANTOR_SETTLEMENT_DOMAIN=beta \
 		LAYERX_GUARANTOR_LISTEN_PORT="$port" \
@@ -1193,7 +1212,7 @@ start_paxeer() {
 		service "$boundary" 4020 "$tls/$boundary/cert.der $tls/$boundary/key.der $tls/$boundary/ca.pem" \
 			"${paxeer_prepares[$k]}" - -- \
 			env \
-			"LAYERX_PAXEER_BOUNDARY_LISTEN=[::]:${paxeer_boundary_ports[$k]}" \
+			"LAYERX_PAXEER_BOUNDARY_LISTEN=127.0.0.1:${paxeer_boundary_ports[$k]}" \
 			"LAYERX_PAXEER_NODE_URL=http://127.0.0.1:${paxeer_hop_ports[$k]}" \
 			"LAYERX_PAXEER_CHAIN_ID=$LAYERX_NODE_PAXEER_CHAIN_ID" \
 			"LAYERX_PAXEER_BOUNDARY_TLS_CERT_DER=$tls/$boundary/cert.der" \
@@ -1713,27 +1732,45 @@ human_env='for f in /run/human-material/env/*; do [ ! -f "$f" ] || export "${f##
 human_paxeer_urls='["https://localhost:9447","https://127.0.0.1:9448"]'
 human_paxeer_ca=$tls/paxeer-boundary-loopback/ca.der
 
-# The five attestor apps of human/wallet/deploy/attestor-1..5.toml, node id
-# N on paxeer-attestor-N, their API on 8443 as gateway.toml names it. The
-# components loader takes id=socket-address pairs, so the prepare resolves
-# each .internal name to its private address and the role reads the table from
-# its material.
+# The five attestor nodes, node id N being the Nth host:port of
+# LAYERX_HUMAN_ATTESTOR_NODES in the box env file. The components loader takes
+# id=socket-address pairs, so the prepare resolves each host to its first
+# address of either family and the role reads the table from its material.
+attestor_nodes_input=${LAYERX_HUMAN_ATTESTOR_NODES:-}
+unset LAYERX_HUMAN_ATTESTOR_NODES
 human_attestor_nodes() {
-	local n address nodes=
-	for n in 1 2 3 4 5; do
-		address="$(getent ahostsv6 "paxeer-attestor-$n.internal" | awk 'NR == 1 { print $1 }')"
-		[ -n "$address" ] || {
-			log "paxeer-attestor-$n.internal does not resolve; the human components wait for it"
+	local n=0 entry host port address nodes= entries
+	IFS=, read -r -a entries <<<"$attestor_nodes_input"
+	[ "${#entries[@]}" -eq 5 ] || {
+		log "LAYERX_HUMAN_ATTESTOR_NODES must hold five host:port entries; the human components wait for it"
+		return 1
+	}
+	for entry in "${entries[@]}"; do
+		n=$((n + 1))
+		host=${entry%:*}
+		host=${host#[}
+		host=${host%]}
+		port=${entry##*:}
+		[[ -n "$host" && "$port" =~ ^[1-9][0-9]{0,4}$ ]] || {
+			log "LAYERX_HUMAN_ATTESTOR_NODES entry $n is not host:port"
 			return 1
 		}
-		nodes="$nodes${nodes:+,}$n=[$address]:8443"
+		address="$(getent ahosts "$host" | awk 'NR == 1 { print $1 }')"
+		[ -n "$address" ] || {
+			log "attestor $n host $host does not resolve; the human components wait for it"
+			return 1
+		}
+		case "$address" in
+		*:*) nodes="$nodes${nodes:+,}$n=[$address]:$port" ;;
+		*) nodes="$nodes${nodes:+,}$n=$address:$port" ;;
+		esac
 	done
 	printf '%s' "$nodes" >"$human_material/attestor-nodes.new"
 	mv "$human_material/attestor-nodes.new" "$human_material/attestor-nodes"
 }
 
 # The settlement fee bounds of the components have no generator in the tree;
-# the deploy imports them as Fly secrets of the app.
+# the box env file carries them.
 human_evm_bounds() {
 	local name
 	for name in LAYERX_HUMAN_EVM_GAS_LIMIT LAYERX_HUMAN_EVM_MAX_FEE_PER_GAS LAYERX_HUMAN_EVM_MAX_PRIORITY_FEE_PER_GAS; do
@@ -2053,6 +2090,50 @@ service mirror-signer 4021 "$genesis_files $mirror_material/ethereum.key" - - --
 service mirror-publisher 4021 \
 	"$genesis_files $run/node/layerxd.lni.sock $mirror_run/config.json /run/mirror-signer/signer.sock" - - -- \
 	/usr/local/bin/layerx-mirror-publisher "$mirror_run/config.json"
+
+# The kernel perps oracle feeder, full profile only: it signs its activities
+# with the oracle key and submits them on the LNI socket, so the prepare
+# renders its feeder.json with lni_socket pinned to layerxd's socket.
+if [ "$kernel_profile" = full ]; then
+	feeder_config=${LAYERX_FEEDER_CONFIG:-$layerx/oracle-feeder/feeder.json}
+	feeder_key=${LAYERX_FEEDER_ORACLE_KEY_FILE:-$keys/oracle-feeder/oracle.key}
+	feeder_readyz=${LAYERX_FEEDER_READYZ_ADDR:-127.0.0.1:9458}
+	unset LAYERX_FEEDER_CONFIG LAYERX_FEEDER_ORACLE_KEY_FILE LAYERX_FEEDER_READYZ_ADDR
+	install -d -o 0 -g 4020 -m 0750 "$layerx/oracle-feeder"
+	install -d -o 4021 -g 4020 -m 0700 "$layerx/oracle-feeder/state"
+	install -d -o 0 -g 0 -m 0700 "$keys/oracle-feeder"
+
+	oracle_feeder_prepare() {
+		install -d -o 4021 -g 4020 -m 0700 "$run/oracle-feeder" || return 1
+		python3 - "$feeder_config" "$run/node/layerxd.lni.sock" "$run/oracle-feeder/feeder.json" <<'PY_FEEDER' || return 1
+import json
+import os
+import sys
+
+source, socket, target = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    config = json.load(handle)
+if not isinstance(config, dict):
+    raise SystemExit("feeder config is not a JSON object")
+config["lni_socket"] = socket
+with open(target + ".new", "w", encoding="utf-8") as handle:
+    json.dump(config, handle)
+os.chown(target + ".new", 4021, 4020)
+os.chmod(target + ".new", 0o400)
+os.replace(target + ".new", target)
+PY_FEEDER
+		install -o 4021 -g 4020 -m 0400 "$feeder_key" "$run/oracle-feeder/oracle.key"
+	}
+
+	service oracle-feeder 4021 "$genesis_files $run/node/layerxd.lni.sock $feeder_config $feeder_key" \
+		oracle_feeder_prepare - -- \
+		env \
+		LAYERX_FEEDER_CONFIG="$run/oracle-feeder/feeder.json" \
+		LAYERX_FEEDER_ORACLE_KEY_FILE="$run/oracle-feeder/oracle.key" \
+		LAYERX_FEEDER_STATE_DIR="$layerx/oracle-feeder/state" \
+		LAYERX_FEEDER_READYZ_ADDR="$feeder_readyz" \
+		/usr/local/bin/layerx-oracle-feeder
+fi
 
 relay_archive_prepare() {
     local config_dir sequencer_id sequencer_public genesis_digest
