@@ -7,7 +7,9 @@ RUN cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates libgcc openssl python3 su-exec && addgroup -g 4020 layerx && adduser -D -H -u 4020 -G layerx layerx
 COPY --from=build /src/platform/target/release/layerx-gateway /usr/local/bin/layerx-gateway
+COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-gateway/files.tsv /etc/layerx/files.tsv
 COPY docker/platform-gateway/entrypoint.sh /usr/local/bin/layerx-gateway-entrypoint
 RUN chmod 0755 /usr/local/bin/layerx-gateway-entrypoint
 USER 0:0
-ENTRYPOINT ["/usr/local/bin/layerx-gateway-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/layerx-gateway-entrypoint"]

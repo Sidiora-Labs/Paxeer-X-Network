@@ -16,12 +16,10 @@ RUN apk add --no-cache ca-certificates libgcc openssl && addgroup -g 4020 layerx
 COPY --from=build /src/platform/target/release/layerx-indexer /usr/local/bin/
 COPY --from=build /abi /usr/local/share/layerx/precompiles
 
-FROM base AS fly
+FROM base AS env-init
 RUN apk add --no-cache setpriv curl jq sqlite
-COPY --chmod=0555 platform/hosted/indexer/fly-init.sh /usr/local/bin/indexer-fly-init
-ENTRYPOINT ["/usr/local/bin/indexer-fly-init"]
+COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-indexer/files.tsv /etc/layerx/files.tsv
+COPY --chmod=0555 platform/hosted/indexer/fly-init.sh /usr/local/bin/indexer-env-init
+ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/indexer-env-init"]
 CMD ["serve"]
-
-FROM base
-USER 4020:4020
-ENTRYPOINT ["/usr/local/bin/layerx-indexer"]

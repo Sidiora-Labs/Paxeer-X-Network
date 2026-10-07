@@ -1,6 +1,6 @@
 #!/bin/sh
-# Init of the identity app on Fly (platform/hosted/identity/fly.toml). Runs as
-# root on the machine: generates the store key and the nine service tokens on
+# Init of the identity service. Runs as root in the container: generates
+# the store key and the nine service tokens on
 # the volume on first boot, waits until tools/bringup/ca.sh issue identity has
 # put the TLS identity on the volume, hands every file to uid 4020 and starts
 # the service under that uid.
@@ -21,7 +21,7 @@ for service in gateway registry webhooks dashboard faucet testnet ramp provision
 done
 
 if [ ! -s "$LAYERX_IDENTITY_TLS_CERT_DER" ] || [ ! -s "$LAYERX_IDENTITY_TLS_KEY_DER" ]; then
-	echo "identity-fly-init: waiting for $tls_dir from tools/bringup/ca.sh issue identity"
+	echo "identity-env-init: waiting for $tls_dir from tools/bringup/ca.sh issue identity"
 	until [ -s "$LAYERX_IDENTITY_TLS_CERT_DER" ] && [ -s "$LAYERX_IDENTITY_TLS_KEY_DER" ]; do
 		sleep 5
 	done
