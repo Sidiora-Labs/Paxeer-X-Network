@@ -258,3 +258,22 @@ symbol = "LAYERX_INTEROP_HOSTED_GATEWAY_URL"
 observed = "The interop client admits only https:// upstreams while the Railway router listens with LAYERX_GATEWAY_LISTENER=plain on 9443, so the interop to router hop cannot connect inside the private network; the Redis client likewise admits only rediss://, which redis-internal serves."
 assumption = "The interop service needs the same explicit private-network opt-in the relay archive got in rw-22 (http:// admitted only for *.railway.internal authorities), handed to lane rw-25."
 severity = "major"
+
+[gate.3.1.6]
+task = "3.1"
+reqs = ["3.1"]
+revision = "db6057b07"
+command = "bash -n platform/ramps/env-init.sh && bash tools/railway/tests/env-files.test.sh && docker build -f docker/ramps/Dockerfile --target railway -t ramp:check ."
+environment = "lane rw-23 worktree, local docker"
+started_at = "2026-10-07T12:55:00Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-23-verify-2.log"
+note = "ramp image ported: railway stage through the env-files shim, fly-init.sh renamed env-init.sh, fly.toml renamed railway.env.example, dockerignore admits the shim; merged as 4e0003c76, 17 non-secret variables set, healthcheck moved to /readyz, the push started deployment 884ef44b; 19 owner values and 14 base64 secrets remain."
+
+[observation.3.1.6]
+task = "3.1"
+file = "tools/bringup/check-live.test.sh"
+symbol = "platform/ramps/fly.toml"
+observed = "Lines 766 and 2211 still read platform/ramps/fly.toml, renamed by rw-23 to railway.env.example, so the ramp cases of that test fail; the rw-23 verify_cmd wrapped the docker build in '|| echo', which hid a real build failure as exit 0 in its first cycle."
+assumption = "The test reference belongs to the consistency sweep of task 2.1; verify commands must not wrap a gate in a fallback echo."
+severity = "minor"
