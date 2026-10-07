@@ -1,0 +1,211 @@
+# rollout.kvx — the rollout manifest read by tools/rollout/rollout.sh.
+#
+# Format: sectioned KV using the portable .kvx convention. String values are
+# ALWAYS double-quoted.
+#   [section] / [section.sub]   key = "string"   num = 80   list = ["a","b"]
+# Comments start with # outside quotes. One key = value per line.
+#
+# One [service.<name>] per deployed service. target "railway" deploys the
+# Railway service railway_service of project layerx at the pinned commit;
+# target "box" pulls ghcr.io/sidiora-labs/<image>:<sha12> on the host named
+# <BOX_ROLE>_HOST in the private deploy/hosts.env and restarts box_unit.
+# health is an HTTP path on $PORT (box: 127.0.0.1:8080) or tcp:<port>.
+# order is the wave; a wave starts only after every lower wave passed.
+
+[meta]
+name = "LayerX rollout manifest"
+kind = "rollout-manifest"
+environment = "beta"
+
+[service.redis-router]
+target = "railway"
+image = "redis"
+railway_service = "redis-router"
+health = "tcp:6379"
+order = 1
+
+[service.redis-internal]
+target = "railway"
+image = "redis"
+railway_service = "redis-internal"
+health = "tcp:6379"
+order = 1
+
+[service.identity]
+target = "railway"
+image = "layerx-identity"
+railway_service = "identity"
+health = "/healthz"
+order = 2
+
+[service.kernel]
+target = "box"
+image = "kernel"
+box_role = "kernel"
+box_unit = "layerx-kernel.service"
+health = "tcp:9443"
+order = 3
+
+[service.program-registry]
+target = "box"
+image = "layerx-program-registry"
+box_role = "program-registry"
+box_unit = "layerx-program-registry.service"
+health = "tcp:9420"
+order = 4
+
+[service.router]
+target = "railway"
+image = "layerx-gateway"
+railway_service = "router"
+health = "/healthz"
+order = 5
+
+[service.internal-kms]
+target = "railway"
+image = "layerx-internal"
+railway_service = "internal-kms"
+health = "/healthz"
+order = 6
+
+[service.internal-payments]
+target = "railway"
+image = "layerx-internal"
+railway_service = "internal-payments"
+health = "/healthz"
+order = 6
+
+[service.internal-programs]
+target = "railway"
+image = "layerx-internal"
+railway_service = "internal-programs"
+health = "/healthz"
+order = 6
+
+[service.internal-journeys]
+target = "railway"
+image = "layerx-internal"
+railway_service = "internal-journeys"
+health = "/healthz"
+order = 6
+
+[service.internal-approvals]
+target = "railway"
+image = "layerx-internal"
+railway_service = "internal-approvals"
+health = "/healthz"
+order = 6
+
+[service.webhooks-ingress]
+target = "railway"
+image = "layerx-webhooks"
+railway_service = "webhooks-ingress"
+health = "/healthz"
+order = 7
+
+[service.webhooks-public]
+target = "railway"
+image = "layerx-webhooks"
+railway_service = "webhooks-public"
+health = "/healthz"
+order = 8
+
+[service.dashboard]
+target = "railway"
+image = "layerx-dashboard"
+railway_service = "dashboard"
+health = "/healthz"
+order = 8
+
+[service.dashboard-web]
+target = "railway"
+image = "layerx-dashboard-web"
+railway_service = "dashboard-web"
+health = "/healthz"
+order = 8
+
+[service.wallet-postgres]
+target = "railway"
+image = "postgres"
+railway_service = "wallet-postgres"
+health = "tcp:5432"
+order = 9
+
+[service.wallet-gateway]
+target = "railway"
+image = "wallet-gateway"
+railway_service = "wallet-gateway"
+health = "/healthz"
+order = 10
+
+[service.gas-station]
+target = "railway"
+image = "gas-station"
+railway_service = "gas-station"
+health = "/healthz"
+order = 11
+
+[service.interop]
+target = "railway"
+image = "layerx-interop-gateway"
+railway_service = "interop"
+health = "/healthz"
+order = 11
+
+[service.relay-archive-a]
+target = "railway"
+image = "layerx-relay-archive"
+railway_service = "relay-archive-a"
+health = "/healthz"
+order = 11
+
+[service.relay-archive-b]
+target = "railway"
+image = "layerx-relay-archive"
+railway_service = "relay-archive-b"
+health = "/healthz"
+order = 11
+
+[service.indexer]
+target = "railway"
+image = "platform-indexer"
+railway_service = "indexer"
+health = "/healthz"
+order = 11
+
+[service.oracle-feeder]
+target = "box"
+image = "kernel"
+box_role = "oracle-feeder"
+box_unit = "layerx-oracle-feeder.service"
+health = "/readyz"
+order = 12
+
+[service.explorer-index]
+target = "box"
+image = "kernel"
+box_role = "explorer-index"
+box_unit = "layerx-explorer-index.service"
+health = "tcp:9457"
+order = 12
+
+[service.intent-ingester]
+target = "railway"
+image = "intent-ingester"
+railway_service = "intent-ingester"
+health = "/healthz"
+order = 13
+
+[service.search-front]
+target = "railway"
+image = "search-front"
+railway_service = "search-front"
+health = "/healthz"
+order = 14
+
+[service.ramp]
+target = "railway"
+image = "layerx-reference-ramp"
+railway_service = "ramp"
+health = "/healthz"
+order = 14
