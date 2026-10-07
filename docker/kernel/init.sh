@@ -833,6 +833,7 @@ if [ "$kernel_profile" = native ]; then
         exit 1
     fi
     install -d -o 0 -g 4020 -m 0750 "$layerx/trust"
+    chmod g-s "$layerx/trust"
 fi
 install -d -o 0 -g 4020 -m 0750 "$keys" "$keys/tokens"
 install -d -o 0 -g 0 -m 0700 "$keys/checkpoint-authority" "$keys/publication"
