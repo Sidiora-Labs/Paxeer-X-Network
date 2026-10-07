@@ -20,3 +20,4 @@ ENDPOINT_SEQUENCER_FIRST_BATCH	/run/secrets/sequencer-first-batch		*
 ENDPOINT_SEQUENCER_LAST_BATCH	/run/secrets/sequencer-last-batch		*
 ENDPOINT_KEY_PROVISIONING_KEY	/run/secrets/key-provisioning-key		*
 ENDPOINT_MODULE_REGISTRY	/run/secrets/module-registry.json		*
+ENDPOINT_UI_BINDINGS	/run/secrets/ui-bindings.json	0600	*

@@ -133,3 +133,22 @@ started_at = "2026-10-07T11:39:50Z"
 outcome = "blocked"
 evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
 note = "Owner input: the five attestor certificates come from the refused ca.sh run and module-registry.json from the kernel's full profile, whose LAYERX_NODE_NETWORK_NAME and agentd peer values are unknown; the script refuses to run without both."
+
+[gate.2.3.1]
+task = "2.3"
+reqs = ["2.3"]
+revision = "9bfadd140"
+command = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/2.3/platform cargo test -p layerx-platform-gateway --manifest-path platform/Cargo.toml && bash tools/railway/tests/env-files.test.sh"
+environment = "lane rw-20, cargo stable"
+started_at = "2026-10-07T11:40:52Z"
+outcome = "fail"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-20-verify-1.log"
+note = "Exit 101 on a pre-existing compile error in a test support file the lane did not touch (observation.2.3.1); the ui_proxy tests and the shim test pass alone (rw-20-verify-2.log), so 2.3 is implemented, not qualified."
+
+[observation.2.3.1]
+task = "2.3"
+file = "platform/hosted/gateway/tests/support/payment_events.rs"
+symbol = "events::Service::open"
+observed = "Line 386 calls the five-argument Service::open while events.rs (ef0ab7aba, 51687bb44) takes six since the enrollment snapshot path and key were added; the tap_nonce test target fails with E0061."
+assumption = "Pre-existing drift between the events service and its test support, outside the lane; one call-site update in the test support repairs it."
+severity = "major"
