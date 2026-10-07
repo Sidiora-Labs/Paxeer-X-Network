@@ -1,0 +1,5 @@
+REDIS_CONF	/run/secrets/redis.conf		*
+REDIS_TLS_CERT	/run/secrets/redis.crt		*
+REDIS_TLS_KEY	/run/secrets/redis.key		*
+REDIS_TLS_CA	/run/secrets/ca.crt		*
+REDIS_ACL	/run/secrets/users.acl		*
