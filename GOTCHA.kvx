@@ -4790,3 +4790,7 @@ observed = "a verify_cmd of the form 'docker build ... || echo \"docker unavaila
 [gotcha.1021]
 title = "dockerignore hides the shim"
 observed = "the per-image Dockerfile.dockerignore files ignore docker/ wholesale; an image that copies docker/common/env-files.sh and its files.tsv needs the two '!docker/...' exceptions or the COPY fails with 'not found'"
+
+[gotcha.1022]
+title = "railway builds the last stage"
+observed = "Railway builds a Dockerfile with no --target, so the last stage is what runs; a railway stage placed before the box stage is silently ignored and the box entrypoint starts without the env-files shim"

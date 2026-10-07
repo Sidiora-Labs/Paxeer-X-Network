@@ -307,3 +307,14 @@ symbol = "interop/deploy/gateway/config.example.json"
 observed = "All three plain_listener cases fail with 'AP2 trust-root declaration is invalid' raised while loading config.example.json, before any rw-25 code runs; cargo test stops at that file unless --no-fail-fast is given."
 assumption = "The example config drifted from validate_ap2_roots in an earlier change; it is a fixture repair outside the Railway move."
 severity = "major"
+
+[gate.3.1.9]
+task = "3.1"
+reqs = ["3.1"]
+revision = "4e0003c76"
+command = "railway deployments 3bfe2f38 (interop) and 884ef44b (ramp), started by the pushes of the rw-24 and rw-23 merges"
+environment = "Railway layerx/beta"
+started_at = "2026-10-07T12:58:00Z"
+outcome = "fail"
+evidence = "railway api deploymentLogs/buildLogs for the two deployment ids, 13:25Z"
+note = "interop builds and the shim refuses on INTEROP_CONFIG (owner secret); ramp built the unnamed last stage, which bypasses the shim and the env-init, so the binary refused with 'protected config unavailable' - Railway builds a Dockerfile without --target, fixed by making the railway stage last and naming the other stage box (local build /root/lx-ops/railway-move-2026-10-07/fleet/logs/ramp-default-stage-build.log, entrypoint verified)."
