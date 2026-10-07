@@ -93,6 +93,7 @@ fn run() -> Result<(), String> {
         }
         thread::sleep(events::PRINCIPAL_POLL);
     });
+    http::serve_health("layerx-event-source", http::health_listen()?)?;
     http::serve("layerx-event-source", listen, &server, move |request| {
         source.route(request)
     })

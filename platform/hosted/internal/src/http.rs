@@ -331,6 +331,58 @@ where
     Ok(())
 }
 
+/// Address of the plain HTTP health listener: `LAYERX_HEALTH_ADDR`, by
+/// default `[::]:8080`.
+///
+/// # Errors
+/// Returns a description when the address does not parse.
+pub fn health_listen() -> Result<SocketAddr, String> {
+    std::env::var("LAYERX_HEALTH_ADDR")
+        .unwrap_or_else(|_| "[::]:8080".to_owned())
+        .parse()
+        .map_err(|_| "invalid LAYERX_HEALTH_ADDR".to_owned())
+}
+
+fn health_response(stream: &mut TcpStream) -> Response {
+    match parse_client_request(stream) {
+        Ok(request) if request.path != "/healthz" => refusal(404, "not_found", None),
+        Ok(request) if request.method != "GET" => refusal(405, "method_not_allowed", None),
+        Ok(_) => ok(r#"{"status":"ok"}"#.to_owned()),
+        Err(_) => refusal(400, "invalid_request", None),
+    }
+}
+
+/// Binds a plain HTTP listener on `listen` answering `GET /healthz` and
+/// serves it on a background thread.
+///
+/// # Errors
+/// Returns a description when the listener cannot bind.
+pub fn serve_health(name: &'static str, listen: SocketAddr) -> Result<SocketAddr, String> {
+    let listener = TcpListener::bind(listen).map_err(|error| error.to_string())?;
+    let bound = listener.local_addr().map_err(|error| error.to_string())?;
+    eprintln!("{name} health listening on {bound}");
+    thread::spawn(move || {
+        for connection in listener.incoming() {
+            let Ok(mut stream) = connection else {
+                continue;
+            };
+            let Some(permit) = ConnectionPermit::acquire() else {
+                continue;
+            };
+            thread::spawn(move || {
+                let _permit = permit;
+                if stream.set_read_timeout(Some(IO_TIMEOUT)).is_ok()
+                    && stream.set_write_timeout(Some(IO_TIMEOUT)).is_ok()
+                {
+                    let response = health_response(&mut stream);
+                    let _ = write_response(&mut stream, &response);
+                }
+            });
+        }
+    });
+    Ok(bound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
