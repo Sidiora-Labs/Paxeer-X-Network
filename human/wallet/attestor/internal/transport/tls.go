@@ -140,9 +140,10 @@ func (t *Transport) serverTLSConfig(clientCAs *x509.CertPool) *tls.Config {
 	}
 }
 
-func (t *Transport) clientTLSConfig(want [32]byte) *tls.Config {
+func (t *Transport) clientTLSConfig(want [32]byte, serverName string) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS13,
+		ServerName:   serverName,
 		Certificates: []tls.Certificate{t.cert},
 		RootCAs:      t.roots,
 		VerifyConnection: func(cs tls.ConnectionState) error {

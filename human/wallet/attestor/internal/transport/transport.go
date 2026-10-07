@@ -201,10 +201,14 @@ func New(cfg Config) (*Transport, error) {
 		if id == t.self {
 			continue
 		}
+		host, _, err := net.SplitHostPort(p.address)
+		if err != nil || host == "" {
+			return nil, fmt.Errorf("%w: peer %s address %q is not host:port", ErrConfig, id, p.address)
+		}
 		t.clients[id] = &http.Client{
 			Timeout: limits.RequestTimeout,
 			Transport: &http.Transport{
-				TLSClientConfig:     t.clientTLSConfig(p.spki),
+				TLSClientConfig:     t.clientTLSConfig(p.spki, host),
 				ForceAttemptHTTP2:   true,
 				MaxIdleConnsPerHost: 4,
 				IdleConnTimeout:     90 * time.Second,
