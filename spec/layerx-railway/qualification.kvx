@@ -367,3 +367,25 @@ started_at = "2026-10-07T20:45:03Z"
 outcome = "pass"
 evidence = "/root/lx-ops-edge/issue-all.log"
 note = "33 rows issued (18 kernel-box, 2 registry, 13 Railway); both paxeer boundaries listen with TLS after the data-root mode fix (gotcha 1023) and the registry rows moved into the registry volume (gotcha 1024); kernel.env and registry.env carry the proxy URLs."
+
+[gate.3.1.11]
+task = "3.1"
+reqs = ["3.1"]
+revision = "e9b46b83b"
+command = "python3 /root/lx-railway/rolling-redeploy.py <21 services> ; railway deployment list / railway api deploymentLogs per service"
+environment = "Railway project layerx env beta, after the owner cert run (gate.3.2.4)"
+started_at = "2026-10-07T20:42:00Z"
+outcome = "partial"
+evidence = "/root/lx-railway/rolling-redeploy-certs.log"
+note = "LIVE with TLS: identity, internal-kms, internal-journeys, internal-payments, internal-approvals, internal-programs (plus dashboard-web, wallet-postgres). Stopped at the next missing owner input: router ENDPOINT_ROUTE_BINDINGS; webhooks-public/ingress WEBHOOKS_REDIS_USERNAME; dashboard DASHBOARD_WEBHOOKS_REDIS_USERNAME; wallet-gateway WALLET_IDENTITY_BINDING_KEY; gas-station GAS_STATION_PAYMASTER; interop INTEROP_CONFIG; relay-archive-a/b LAYERX_RELAY_ARCHIVE_GENESIS_SHA256; indexer LAYERX_INDEXER_COMET_URL; intent-ingester INTENT_INGESTER_SIGNER_KEY; search-front SEARCH_FRONT_UPSTREAMS; ramp RAMP_QUOTES."
+
+[gate.3.1.12]
+task = "3.1"
+reqs = ["3.1"]
+revision = "e9b46b83b"
+command = "railway variable set REDIS_ACL/REDIS_CONF + five client credential rows --skip-deploys ; railway redeploy --service redis-router|redis-internal --from-source --yes"
+environment = "Railway env beta; credentials generated on the edge box, kept only in /root/lx-ops-edge/redis-creds.env"
+started_at = "2026-10-07T21:58:00Z"
+outcome = "pass"
+evidence = "railway api deploymentLogs b2a388be (redis-router), fa6238d5 (redis-internal), 22:02Z"
+note = "Both redis services report 'Ready to accept connections tls' with the ACL file loaded; the earlier crash loop was the missing REDIS_CONF row of the env-files shim."
