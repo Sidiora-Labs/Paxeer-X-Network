@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=exec
 EnvironmentFile=/etc/layerx/registry.env
-ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/layerx/registry
+ExecStartPre=/usr/bin/install -d -m 0711 /var/lib/layerx/registry
 ExecStartPre=-/usr/bin/docker rm -f layerx-registry
 ExecStartPre=/usr/bin/docker pull ${LAYERX_REGISTRY_IMAGE}
 ExecStartPre=/usr/bin/docker run --rm --name layerx-registry-material --env-file /etc/layerx/registry.env -v /var/lib/layerx/registry:/data ${LAYERX_REGISTRY_IMAGE} --prepare-material

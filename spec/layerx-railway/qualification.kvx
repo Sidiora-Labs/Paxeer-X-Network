@@ -356,3 +356,14 @@ symbol = "check_ramp"
 observed = "check_ramp and its tests are built on Fly machine and volume JSON, the Fly app name and fly-request-id and still read platform/ramps/fly.toml, which rw-23 renamed; the contract id relay-fly-assembly also survives in spec/paxeer-x/spec.kvx, spec/paxeer-x/tasks.md and CHANGELOG.md."
 assumption = "A Railway check_ramp needs the real railway CLI JSON shapes, to be written against a live service once the ramp runs; left Fly-shaped rather than guessed."
 severity = "major"
+
+[gate.3.2.4]
+task = "3.2"
+reqs = ["2.1", "2.2"]
+revision = "4ff4f369bdffa2cfc021689374cb55f787b3bbf8"
+command = "owner: tools/bringup/ca.sh issue <row> for all 33 rows; systemctl restart layerx-kernel.service"
+environment = "edge box, internal CA /etc/layerx/ca, attestor CA /etc/layerx/attestor-ca, five Railway TCP proxies"
+started_at = "2026-10-07T20:45:03Z"
+outcome = "pass"
+evidence = "/root/lx-ops-edge/issue-all.log"
+note = "33 rows issued (18 kernel-box, 2 registry, 13 Railway); both paxeer boundaries listen with TLS after the data-root mode fix (gotcha 1023) and the registry rows moved into the registry volume (gotcha 1024); kernel.env and registry.env carry the proxy URLs."

@@ -7,7 +7,8 @@ Wants=network-online.target
 [Service]
 Type=exec
 EnvironmentFile=/etc/layerx/kernel.env
-ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/layerx/kernel /etc/layerx/kernel-secrets
+ExecStartPre=/usr/bin/install -d -m 0711 /var/lib/layerx/kernel
+ExecStartPre=/usr/bin/install -d -m 0700 /etc/layerx/kernel-secrets
 ExecStartPre=/usr/bin/test -s /etc/layerx/ca.crt
 ExecStartPre=-/usr/bin/docker rm -f layerx-kernel
 ExecStartPre=/usr/bin/docker pull ${LAYERX_KERNEL_IMAGE}

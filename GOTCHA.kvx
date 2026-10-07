@@ -4794,3 +4794,11 @@ observed = "the per-image Dockerfile.dockerignore files ignore docker/ wholesale
 [gotcha.1022]
 title = "railway builds the last stage"
 observed = "Railway builds a Dockerfile with no --target, so the last stage is what runs; a railway stage placed before the box stage is silently ignored and the box entrypoint starts without the env-files shim"
+
+[gotcha.1023]
+title = "box data root 0700 hides the volume from service uids"
+observed = "the kernel and registry units created their /var/lib/layerx/<app> data root with mode 0700, so every in-container service uid (4020, 4030) got 'Permission denied' on /data/tls/<row> the moment the certificates existed; the data root needs 0711 and the per-row ownership the init applies"
+
+[gotcha.1024]
+title = "one LAYERX_TLS_DIR per ca.sh run, one volume per unit"
+observed = "ca.sh issue writes every box row under the single LAYERX_TLS_DIR of the run; when the kernel and registry share a host the registry rows land in the kernel volume and must be moved to /var/lib/layerx/registry/tls where the registry container mounts /data"
