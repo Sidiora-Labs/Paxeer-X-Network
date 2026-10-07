@@ -3582,7 +3582,7 @@ def service_roster():
     quote = shlex.quote
     checker = ROOT / 'tools/bringup/check-live.sh'
     variables = ('layerx=/data/layerx\n', 'node_data=$layerx/node\n', 'keys=$layerx/keys\n', 'genesis=$layerx/genesis\n',
-                 'human_state=/data/human-state\n', 'tls=${LAYERX_FLY_TLS_DIR:-/data/tls}\n', 'run=/run/layerx\n',
+                 'human_state=/data/human-state\n', 'tls=${LAYERX_TLS_DIR:-/data/tls}\n', 'run=/run/layerx\n',
                  'status=$run/init\n', 'mirror_material=/run/mirror-material\n', 'mirror_run=/run/mirror-publisher\n',
                  'human_policy=$keys/human-policy/policy.json\n')
     functions = ('log', 'fresh', 'memory', 'missing', 'service', 'tls_for', 'private_runtime_directories')

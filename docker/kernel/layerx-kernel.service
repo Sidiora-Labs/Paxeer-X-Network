@@ -1,0 +1,22 @@
+[Unit]
+Description=LayerX kernel
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+EnvironmentFile=/etc/layerx/kernel.env
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/layerx/kernel /etc/layerx/kernel-secrets
+ExecStartPre=/usr/bin/test -s /etc/layerx/ca.crt
+ExecStartPre=-/usr/bin/docker rm -f layerx-kernel
+ExecStartPre=/usr/bin/docker pull ${LAYERX_KERNEL_IMAGE}
+ExecStart=/usr/bin/docker run --rm --name layerx-kernel --privileged --stop-timeout 60 --env-file /etc/layerx/kernel.env -v /var/lib/layerx/kernel:/data -v /etc/layerx/ca.crt:/etc/layerx/trust/ca.crt:ro -v /etc/layerx/kernel-secrets:/run/secrets:ro -p 9443:9443 -p 9445:9445 -p 9446:9446 -p 9449:9449 -p 9454:9454 -p 9457:9457 -p 8080:8080 ${LAYERX_KERNEL_IMAGE}
+ExecStop=/usr/bin/docker stop -t 60 layerx-kernel
+Restart=always
+RestartSec=5
+TimeoutStartSec=900
+TimeoutStopSec=70
+
+[Install]
+WantedBy=multi-user.target
