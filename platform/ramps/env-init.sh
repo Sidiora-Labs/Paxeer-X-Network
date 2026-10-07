@@ -1,11 +1,12 @@
 #!/bin/sh
-# Init of the reference ramp app on Fly (platform/ramps/fly.toml). Runs as
-# root on the machine, as the materialize-private-files init container of
-# platform/ramps/deployment.yaml does: copies the [[files]] secrets to
+# Init of the Railway service ramp (platform/ramps/railway.env.example). Runs
+# as root on the service's one replica, as the materialize-private-files init
+# container of platform/ramps/deployment.yaml does: layerx-env-files has
+# written the files.tsv secrets to /run/ramp-source; this copies them to
 # /run/secrets as uid 4020 with mode 0600, renders the ramp config from the
-# app's env and secrets to /run/layerx-ramp/config/config.json, hands the
-# journal directory on the volume to uid 4020 and starts the ramp under that
-# uid on the plain listener. No secret value is printed.
+# service's variables and those files to /run/layerx-ramp/config/config.json,
+# hands the journal directory on the volume to uid 4020 and starts the ramp
+# under that uid on the plain listener. No secret value is printed.
 set -eu
 umask 077
 source_dir=/run/ramp-source
@@ -17,7 +18,7 @@ need() {
 	value=""
 	eval "value=\${$1:-}"
 	if ! printf '%s' "$value" | grep -Eqx "$2"; then
-		echo "ramp-fly-init: $1 is unset or malformed" >&2
+		echo "ramp-env-init: $1 is unset or malformed" >&2
 		exit 2
 	fi
 }
@@ -63,7 +64,7 @@ need RAMP_RPC_NAMES '[a-z0-9.-]+ [a-z0-9.-]+'
 # shellcheck disable=SC2086 # two validated names, split on purpose
 set -- $RAMP_RPC_NAMES
 if [ "$1" = "$2" ]; then
-	echo "ramp-fly-init: RAMP_RPC_NAMES names one RPC name twice" >&2
+	echo "ramp-env-init: RAMP_RPC_NAMES names one RPC name twice" >&2
 	exit 2
 fi
 
@@ -71,7 +72,7 @@ for f in quotes.json outbound-ca.pem outbound-identity.p12 outbound-identity-pas
 	identity-token compliance-token provider-token gateway-key receipt-authority-token kms-token \
 	paxeer-custody-token operator-control-token; do
 	if [ ! -s "$source_dir/$f" ]; then
-		echo "ramp-fly-init: $source_dir/$f is missing or empty" >&2
+		echo "ramp-env-init: $source_dir/$f is missing or empty" >&2
 		exit 2
 	fi
 done
