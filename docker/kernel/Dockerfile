@@ -2,7 +2,6 @@
 # docker/platform-node, platform-core, platform-authority,
 # platform-agent-boundary, paxeer, interop-mirror and human-service plus layerx-mcp,
 # one machine running the node pod under docker/kernel/init.sh.
-ARG NATIVE_RUNTIME_BASE=registry.fly.io/paxeer-human-service@sha256:8cd734a37546f94c66ae3efc2220513018a4a27c4a0938433f0a49ac126d141a
 FROM rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS build
 WORKDIR /src
 ARG CARGO_BUILD_JOBS=4
@@ -19,7 +18,7 @@ RUN rustup show active-toolchain \
     && test -f programs/target/release/liblayerx_programs_sandbox.a
 RUN cargo build --locked --release --manifest-path platform/Cargo.toml \
         -p layerx-platform-core -p layerx-platform-authority -p layerx-runtime-clock -p layerx-platform-agent-boundary \
-        -p layerx-platform-paxeer-boundary
+        -p layerx-platform-paxeer-boundary -p layerx-oracle-feeder
 RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path interop/Cargo.toml --release \
         --package layerx-mirror --bin layerx-mirror-publisher --bin layerx-mirror-verify \
     && CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path interop/Cargo.toml --release \
@@ -38,13 +37,140 @@ RUN cargo build --locked --release --manifest-path platform/hosted/node/tests/pr
 FROM docker.io/golang:1.25.6-bookworm@sha256:2f768d462dbffbb0f0b3a5171009f162945b086f326e0b2a8fd5d29c3219ff14 AS custody-proof
 WORKDIR /src
 COPY . .
-RUN make custody-proof-build && test -x build/bin/layerx-custody-proof
+RUN make custody-proof-build && test -x build/bin/layerx-custody-proof \
+    && go list -mod=readonly -deps -f '{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .HFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .SFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .EmbedFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' \
+        ./daemon/layerx-custody-proof >build/custody-proof.deps \
+    && test -s build/custody-proof.deps
 
-FROM ${NATIVE_RUNTIME_BASE} AS native-runtime
+FROM build AS native-manifest
+ARG LXP_REVISION
+COPY --from=custody-proof /src/build/bin/layerx-custody-proof /src/build/custody-proof.deps /src/build/custody-proof/
+RUN --mount=type=bind,source=.,target=/source,ro \
+    python3 - "$LXP_REVISION" <<'PY_MANIFEST'
+import glob
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+
+
+def refuse(message):
+    raise SystemExit("native artifact manifest not produced: " + message)
+
+
+revision = sys.argv[1]
+if re.fullmatch(r"[0-9a-f]{40}", revision) is None or revision == "0" * 40:
+    refuse("LXP_REVISION must identify the candidate source")
+src = "/src"
+source_root = Path("/source")
+c_deps = sorted(glob.glob(src + "/build/obj/**/*.d", recursive=True)) + [
+    src + "/programs/target/release/liblayerx_programs_sandbox.d",
+    src + "/programs/target/debug/liblayerx_programs_sandbox.d",
+]
+c_extra = ["Makefile"] + sorted(
+    os.path.relpath(path, src)
+    for pattern in ("cmd/layerx-genesis/*.[ch]", "cmd/layerx-module-registry/*.[ch]")
+    for path in glob.glob(os.path.join(src, pattern))
+)
+artifacts = {
+    name: ("build/bin/" + name, c_deps, c_extra, None)
+    for name in ("layerxd", "layerx-genesis-build", "layerx-handover", "layerx-guarantor",
+                 "layerx-module-registry", "layerx-archive-codec")
+}
+artifacts["layerxctl"] = ("build/bin/layerxctl", [src + "/cmd/layerxctl/target/release/layerxctl.d"], ["Makefile"], None)
+for name in ("layerx-core-boundary", "layerx-receipt-authority", "layerx-runtime-clock",
+             "layerx-agent-boundary", "layerx-paxeer-boundary"):
+    artifacts[name] = ("platform/target/release/" + name, [src + "/platform/target/release/" + name + ".d"], [], None)
+for name in ("layerx-mirror-signer", "layerx-mirror-publisher", "layerx-mirror-verify"):
+    artifacts[name] = (".lane-target/release/" + name, [src + "/.lane-target/release/" + name + ".d"], [], None)
+artifacts["layerx-custody-proof"] = ("build/custody-proof/layerx-custody-proof", [], ["Makefile", "go.mod", "go.sum"],
+                                     src + "/build/custody-proof/custody-proof.deps")
+
+
+def dep_paths(dep_file):
+    if not os.path.isfile(dep_file):
+        refuse("missing dependency file " + dep_file)
+    text = Path(dep_file).read_text(encoding="utf-8").replace("\\\n", " ")
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        target, sep, prerequisites = line.partition(": ")
+        if not sep:
+            if line.rstrip().endswith(":"):
+                continue
+            refuse("unparsed dependency line in " + dep_file)
+        yield from prerequisites.split()
+
+
+def closure_entry(path, closure):
+    real = os.path.realpath(path if os.path.isabs(path) else os.path.join(src, path))
+    if not real.startswith(src + "/"):
+        return
+    relative = os.path.relpath(real, src)
+    parts = relative.split("/")
+    if parts[0] in ("build", ".lane-target") or "target" in parts:
+        return
+    candidate = source_root / relative
+    if candidate.is_symlink() or not candidate.is_file():
+        refuse("dependency " + relative + " is not a regular candidate file")
+    if relative not in closure:
+        with candidate.open("rb") as stream:
+            closure[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+out = Path("/native")
+(out / "bin").mkdir(parents=True)
+records = {}
+digests = {}
+for name, (binary, dep_files, extra, listing) in sorted(artifacts.items()):
+    closure = {}
+    for dep_file in dep_files:
+        for path in dep_paths(dep_file):
+            closure_entry(path, closure)
+    if listing is not None:
+        for path in Path(listing).read_text(encoding="utf-8").splitlines():
+            if path:
+                closure_entry(path, closure)
+    for path in extra:
+        closure_entry(path, closure)
+    if not closure:
+        refuse("empty source closure for " + name)
+    executable = Path(src) / binary
+    if not executable.is_file() or executable.is_symlink() or not os.access(executable, os.X_OK):
+        refuse("missing regular executable " + binary)
+    shutil.copyfile(executable, out / "bin" / name)
+    with (out / "bin" / name).open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    records[name] = {
+        "sha256": digest,
+        "producer_revision": revision,
+        "source_inputs": dict(sorted(closure.items())),
+    }
+manifest = {"schema": "layerx.native-artifacts.v1", "candidate_revision": revision, "artifacts": records}
+(out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY_MANIFEST
+
+FROM scratch AS native-artifacts
+COPY --from=native-manifest /native/ /
+
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS native-runtime
 ARG LXP_REVISION
 LABEL org.opencontainers.image.revision="$LXP_REVISION" \
       io.layerx.kernel.profile="native"
 ENV LAYERX_KERNEL_PROFILE=native
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libssl3 libsqlite3-0 openssl socat bash coreutils jq curl util-linux \
+        python3 python3-venv python3-cryptography \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 4020 layerx && useradd -M -u 4020 -g 4020 -s /usr/sbin/nologin layerx \
+    && mkdir -p /opt/layerx/migrations /opt/layerx/paxeer /etc/layerx/trust
+RUN setpriv --help | grep -- --pdeathsig
+COPY cmd/layerx-guarantor/requirements.txt /opt/layerx/guarantor/requirements.txt
+RUN python3 -m venv /opt/layerx/guarantor/venv \
+    && /opt/layerx/guarantor/venv/bin/pip install --no-cache-dir -r /opt/layerx/guarantor/requirements.txt
 COPY --from=native-artifacts --chmod=0555 /bin/layerxd /usr/local/bin/layerxd
 COPY --from=native-artifacts --chmod=0555 /bin/layerx-genesis-build /usr/local/bin/layerx-genesis-build
 COPY --from=native-artifacts --chmod=0555 /bin/layerx-handover /usr/local/bin/layerx-handover
@@ -239,14 +365,14 @@ COPY platform/relay_archive/__init__.py platform/relay_archive/runtime.py \
      platform/relay_archive/store.py platform/relay_archive/protocol.py \
      platform/relay_archive/forward.py platform/relay_archive/peers.py /opt/layerx/relay_archive/
 COPY --chmod=0555 platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
+COPY platform/hosted/human/provision.py platform/hosted/human/owner_native.py platform/hosted/human/owner_kms.py \
+     platform/hosted/human/onboarding_socket.py platform/hosted/human/onboarding_bootstrap.py \
+     platform/hosted/human/onboarding_material.py platform/hosted/human/material.py \
+     platform/hosted/human/recipient_binding.py platform/hosted/human/recipient_check.py /usr/local/lib/layerx-human/
+COPY --from=build --chmod=0555 /src/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
+COPY --chmod=0555 tools/bringup/kernel-genesis.sh /opt/layerx/kernel-genesis.sh
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
-RUN chmod 0555 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh \
-    && rm -f /usr/local/bin/layerx-node-probe /usr/local/bin/sign-credit \
-        /usr/local/bin/layerx-human-service /usr/local/bin/layerx-human-components \
-        /usr/local/bin/layerx-human-onboarding /usr/local/bin/layerx-human-kms \
-        /usr/local/bin/layerx-explorer-index /usr/local/bin/layerx-human-identity-provider \
-        /usr/local/bin/layerx-human-security-provider /usr/local/bin/layerx-human-movement-provider \
-        /usr/local/bin/layerx-agentd /usr/local/bin/layerx-mcp /usr/local/bin/human-entrypoint
+RUN chmod 0555 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh
 ENTRYPOINT ["/usr/local/bin/kernel-init"]
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
@@ -304,5 +430,7 @@ COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layer
 COPY --from=build /src/platform/hosted/node/tests/probe/target/release/layerx-node-probe \
      /src/build/tests/bridge/sign-credit /usr/local/bin/
 COPY --from=custody-proof /src/build/bin/layerx-custody-proof /usr/local/bin/layerx-custody-proof
+COPY --from=build /src/platform/target/release/layerx-oracle-feeder /usr/local/bin/layerx-oracle-feeder
+COPY --chmod=0555 tools/bringup/kernel-genesis.sh /opt/layerx/kernel-genesis.sh
 COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init
 ENTRYPOINT ["/usr/local/bin/kernel-init"]
