@@ -5,11 +5,23 @@ usage() {
 	cat >&2 <<'EOF'
 usage: ATTESTOR_CERT_DIR=<dir> MODULE_REGISTRY_FILE=<file> tools/bringup/mint-secrets.sh <out-dir>
 
-Mints the beta secrets of the wallet, router, human service, webhooks and
-internal apps on this host and writes one file per Fly app under <out-dir>
-(created with mode 0700, every file 0600) holding a ready
-"fly secrets set" command. Values of [[files]] secrets are base64, as Fly
-reads them. Nothing secret is printed; stdout lists the written paths.
+Mints the beta secrets of the wallet, router, human service, webhooks,
+internal, identity, registry, dashboard, ramp and interop services on this
+host, each token once, and writes it to every consumer that needs it, under
+<out-dir> (created with mode 0700, every file 0600):
+
+  <service>.railway.env  KEY=value lines of one Railway service
+  <service>.railway.sh   sets each of them with railway variable set
+                         --stdin --skip-deploys (run with sh; the CLI is
+                         LAYERX_RAILWAY_BIN, default ~/.railway/bin/railway,
+                         the environment LAYERX_RAILWAY_ENVIRONMENT, default
+                         beta)
+  <app>.box.env          KEY=value lines of one box app, its EnvironmentFile
+
+Values of file secrets are base64, as the image's env-files shim decodes
+them; values a service reads straight from its environment (the identity
+binding tenant, the registry tokens and bearers) are plain. Nothing secret is
+printed; stdout lists the written paths.
 
 ATTESTOR_CERT_DIR     attestor-1.crt .. attestor-5.crt, the deployed attestor
                       TLS certificates (PEM); their SPKI SHA-256 pins are the
@@ -81,83 +93,154 @@ const signature = sign('sha256', Buffer.from(input, 'ascii'), { key: createPriva
 process.stdout.write(`${input}.${signature.toString('base64url')}\n`);
 EOF
 
-# 32-byte hex values, the format platform/hosted/internal/fly-init.sh mints
-# and the router's parse_hex32 reads.
+# 32-byte hex values, the format the internal, identity and kernel inits
+# mint and the router's parse_hex32 reads.
 rand() { openssl rand -hex 32; }
 journey=$(rand) approval=$(rand) payment=$(rand) program_producer=$(rand) trigger=$(rand)
 kms=$(rand) seal=$(rand)
 journey_source=$(rand) payment_source=$(rand) approval_source=$(rand) program_source=$(rand)
+id_gateway=$(rand) id_registry=$(rand) id_webhooks=$(rand) id_dashboard=$(rand) id_faucet=$(rand)
+id_testnet=$(rand) id_ramp=$(rand) id_provisioning=$(rand) id_registrar=$(rand)
+backend_admin=$(rand) gateway_component=$(rand) gateway_authority=$(rand)
+webhooks_component=$(rand) webhooks_authority=$(rand)
+registry_component=$(rand) registry_authority=$(rand)
+registry_request=$(rand) registry_publication=$(rand)
 
 b64() { base64 -w0; }
 b64v() { printf '%s' "$1" | b64; }
 b64f() { b64 <"$1"; }
 
-# block <app> NAME=value...: one ready command per app file, 0600.
-block() {
-	local app=$1 file=$out/$1.fly-secrets
+# envfile <file> NAME=value...: one KEY=value line per pair, 0600.
+envfile() {
+	local file=$1
 	shift
-	{
-		printf 'fly secrets set --app %s' "$app"
-		printf ' \\\n  %s' "$@"
-		printf '\n'
-	} >"$file"
+	printf '%s\n' "$@" >"$file"
 	chmod 0600 "$file"
 	echo "$file"
 }
 
-block paxeer-wallet-gateway \
+# railway_service <service> NAME=value...: the service's dotenv and the
+# script that sets each variable from it on standard input.
+railway_service() {
+	local service=$1
+	shift
+	envfile "$out/$service.railway.env" "$@"
+	cat >"$out/$service.railway.sh" <<EOF
+#!/bin/sh
+set -eu
+railway=\${LAYERX_RAILWAY_BIN:-\$HOME/.railway/bin/railway}
+while IFS= read -r pair; do
+	printf '%s' "\${pair#*=}" | "\$railway" variable set "\${pair%%=*}" --stdin --service $service --environment "\${LAYERX_RAILWAY_ENVIRONMENT:-beta}" --skip-deploys >/dev/null
+done <"\$(dirname "\$0")/$service.railway.env"
+EOF
+	chmod 0600 "$out/$service.railway.sh"
+	echo "$out/$service.railway.sh"
+}
+
+# box_app <app> NAME=value...
+box_app() {
+	local app=$1
+	shift
+	envfile "$out/$app.box.env" "$@"
+}
+
+railway_service wallet-gateway \
 	"WALLET_IDENTITY_BINDING_TENANT=$tenant" \
 	"WALLET_IDENTITY_BINDING_KEY=$(b64f "$keys/wallet_identity_binding_key.pem")" \
 	"WALLET_CUSTODY_INVENTORY=$(b64f "$keys/wallet_custody_inventory.jwt")" \
 	"WALLET_CUSTODY_INVENTORY_PUBLIC_KEY=$(b64f "$keys/wallet_custody_inventory_authority.pem")"
 
 for i in 1 2 3 4 5; do
-	block "paxeer-attestor-$i" \
+	box_app "paxeer-attestor-$i" \
 		"WALLET_IDENTITY_BINDING_PUBLIC_KEY=$(b64f "$keys/wallet_identity_binding_public.pem")" \
 		"WALLET_CUSTODY_INVENTORY_PUBLIC_KEY=$(b64f "$keys/wallet_custody_inventory_authority.pem")" \
 		"WALLET_CUSTODY_INVENTORY=$(b64f "$keys/wallet_custody_inventory.jwt")"
 done
 
-block paxeer-human-service \
+# The kernel box: the human service's event producer tokens, the kernel
+# bearers its init takes from the environment instead of minting them, and
+# the registry bearers it shares with the registry.
+box_app paxeer-human-service \
 	"HUMAN_EVENTS_JOURNEY_TOKEN=$(b64v "$journey")" \
 	"HUMAN_EVENTS_APPROVAL_TOKEN=$(b64v "$approval")" \
-	"HUMAN_EVENTS_WEBHOOKS_TOKEN=$(b64v "$trigger")"
+	"HUMAN_EVENTS_WEBHOOKS_TOKEN=$(b64v "$trigger")" \
+	"KERNEL_BACKEND_ADMIN_TOKEN=$(b64v "$backend_admin")" \
+	"KERNEL_GATEWAY_COMPONENT_TOKEN=$(b64v "$gateway_component")" \
+	"KERNEL_GATEWAY_AUTHORITY_TOKEN=$(b64v "$gateway_authority")" \
+	"KERNEL_WEBHOOKS_COMPONENT_TOKEN=$(b64v "$webhooks_component")" \
+	"KERNEL_WEBHOOKS_AUTHORITY_TOKEN=$(b64v "$webhooks_authority")" \
+	"LAYERX_REGISTRY_NODE_AUTHORIZATION=$registry_component" \
+	"LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION=$registry_authority"
 
-block paxeer-shared-endpoint \
+box_app paxeer-program-registry \
+	"REGISTRY_IDENTITY_TOKEN=$id_registry" \
+	"REGISTRY_PROGRAM_EVENTS_TOKEN=$program_producer" \
+	"REGISTRY_WEBHOOKS_EVENTS_TOKEN=$trigger" \
+	"REGISTRY_REQUEST_TOKEN=$registry_request" \
+	"REGISTRY_PUBLICATION_TOKEN=$registry_publication" \
+	"LAYERX_REGISTRY_NODE_AUTHORIZATION=$registry_component" \
+	"LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION=$registry_authority"
+
+railway_service router \
 	"ENDPOINT_EVENTS_PAYMENT_TOKEN=$(b64v "$payment")" \
 	"ENDPOINT_EVENTS_WEBHOOKS_TOKEN=$(b64v "$trigger")" \
-	"ENDPOINT_COMPONENT_TOKEN=$(b64v "$(rand)")" \
-	"ENDPOINT_AUTHORITY_TOKEN=$(b64v "$(rand)")" \
-	"ENDPOINT_IDENTITY_TOKEN=$(b64v "$(rand)")" \
-	"ENDPOINT_IDENTITY_PROVISIONING_TOKEN=$(b64v "$(rand)")" \
-	"ENDPOINT_PROGRAM_REGISTRY_TOKEN=$(b64v "$(rand)")" \
+	"ENDPOINT_COMPONENT_TOKEN=$(b64v "$gateway_component")" \
+	"ENDPOINT_AUTHORITY_TOKEN=$(b64v "$gateway_authority")" \
+	"ENDPOINT_IDENTITY_TOKEN=$(b64v "$id_gateway")" \
+	"ENDPOINT_IDENTITY_PROVISIONING_TOKEN=$(b64v "$id_provisioning")" \
+	"ENDPOINT_PROGRAM_REGISTRY_TOKEN=$(b64v "$registry_request")" \
 	"ENDPOINT_KEY_PROVISIONING_KEY=$(b64v "$(rand)")" \
 	"ENDPOINT_MODULE_REGISTRY=$(b64f "$MODULE_REGISTRY_FILE")"
 
-block paxeer-webhooks \
-	"WEBHOOKS_KMS_TOKEN=$(b64v "$kms")" \
-	"WEBHOOKS_IDENTITY_TOKEN=$(b64v "$(rand)")" \
-	"WEBHOOKS_COMPONENT_TOKEN=$(b64v "$(rand)")" \
-	"WEBHOOKS_AUTHORITY_TOKEN=$(b64v "$(rand)")" \
-	"WEBHOOKS_JOURNEY_SOURCE_TOKEN=$(b64v "$journey_source")" \
-	"WEBHOOKS_PAYMENT_SOURCE_TOKEN=$(b64v "$payment_source")" \
-	"WEBHOOKS_APPROVAL_SOURCE_TOKEN=$(b64v "$approval_source")" \
-	"WEBHOOKS_PROGRAM_SOURCE_TOKEN=$(b64v "$program_source")" \
-	"WEBHOOKS_SOURCE_TRIGGER_TOKEN=$(b64v "$trigger")" \
-	"WEBHOOKS_OPERATOR_TOKEN=$(b64v "$(rand)")" \
+# The webhooks app's two process roles are two Railway services holding the
+# same secrets.
+webhooks=(
+	"WEBHOOKS_KMS_TOKEN=$(b64v "$kms")"
+	"WEBHOOKS_IDENTITY_TOKEN=$(b64v "$id_webhooks")"
+	"WEBHOOKS_COMPONENT_TOKEN=$(b64v "$webhooks_component")"
+	"WEBHOOKS_AUTHORITY_TOKEN=$(b64v "$webhooks_authority")"
+	"WEBHOOKS_JOURNEY_SOURCE_TOKEN=$(b64v "$journey_source")"
+	"WEBHOOKS_PAYMENT_SOURCE_TOKEN=$(b64v "$payment_source")"
+	"WEBHOOKS_APPROVAL_SOURCE_TOKEN=$(b64v "$approval_source")"
+	"WEBHOOKS_PROGRAM_SOURCE_TOKEN=$(b64v "$program_source")"
+	"WEBHOOKS_SOURCE_TRIGGER_TOKEN=$(b64v "$trigger")"
+	"WEBHOOKS_OPERATOR_TOKEN=$(b64v "$(rand)")"
 	"WEBHOOKS_CURSOR_KEY=$(b64v "$(rand)")"
+)
+railway_service webhooks-public "${webhooks[@]}"
+railway_service webhooks-ingress "${webhooks[@]}"
 
-# The internal app's groups: the kms token and seal secret, each event
+# Each internal role's service: the kms token and seal secret, each event
 # source's consumer token (the webhooks *_SOURCE_TOKEN) and producer token
-# (the human service and router upstream tokens).
-block paxeer-internal \
+# (the human service, router and registry upstream tokens).
+railway_service internal-kms \
 	"INTERNAL_KMS_TOKEN=$(b64v "$kms")" \
-	"INTERNAL_KMS_SEAL_SECRET=$(b64v "$seal")" \
+	"INTERNAL_KMS_SEAL_SECRET=$(b64v "$seal")"
+railway_service internal-journeys \
 	"INTERNAL_JOURNEYS_TOKEN=$(b64v "$journey_source")" \
-	"INTERNAL_JOURNEYS_PRODUCER_TOKEN=$(b64v "$journey")" \
+	"INTERNAL_JOURNEYS_PRODUCER_TOKEN=$(b64v "$journey")"
+railway_service internal-payments \
 	"INTERNAL_PAYMENTS_TOKEN=$(b64v "$payment_source")" \
-	"INTERNAL_PAYMENTS_PRODUCER_TOKEN=$(b64v "$payment")" \
+	"INTERNAL_PAYMENTS_PRODUCER_TOKEN=$(b64v "$payment")"
+railway_service internal-approvals \
 	"INTERNAL_APPROVALS_TOKEN=$(b64v "$approval_source")" \
-	"INTERNAL_APPROVALS_PRODUCER_TOKEN=$(b64v "$approval")" \
+	"INTERNAL_APPROVALS_PRODUCER_TOKEN=$(b64v "$approval")"
+railway_service internal-programs \
 	"INTERNAL_PROGRAMS_TOKEN=$(b64v "$program_source")" \
 	"INTERNAL_PROGRAMS_PRODUCER_TOKEN=$(b64v "$program_producer")"
+
+# The identity service's nine service tokens, each also its caller's
+# *_IDENTITY_TOKEN.
+railway_service identity \
+	"IDENTITY_GATEWAY_TOKEN=$(b64v "$id_gateway")" \
+	"IDENTITY_REGISTRY_TOKEN=$(b64v "$id_registry")" \
+	"IDENTITY_WEBHOOKS_TOKEN=$(b64v "$id_webhooks")" \
+	"IDENTITY_DASHBOARD_TOKEN=$(b64v "$id_dashboard")" \
+	"IDENTITY_FAUCET_TOKEN=$(b64v "$id_faucet")" \
+	"IDENTITY_TESTNET_TOKEN=$(b64v "$id_testnet")" \
+	"IDENTITY_RAMP_TOKEN=$(b64v "$id_ramp")" \
+	"IDENTITY_PROVISIONING_TOKEN=$(b64v "$id_provisioning")" \
+	"IDENTITY_REGISTRAR_TOKEN=$(b64v "$id_registrar")"
+railway_service dashboard "DASHBOARD_IDENTITY_TOKEN=$(b64v "$id_dashboard")"
+railway_service ramp "RAMP_IDENTITY_TOKEN=$(b64v "$id_ramp")"
+railway_service interop "INTEROP_AUTHORITY_TOKEN=$(b64v "$gateway_authority")"
