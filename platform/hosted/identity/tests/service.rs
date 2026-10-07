@@ -48,6 +48,7 @@ struct Fixture {
 struct Server {
     child: Child,
     port: u16,
+    health_port: u16,
     state_dir: PathBuf,
 }
 
@@ -221,6 +222,7 @@ impl Fixture {
         command
             .env_clear()
             .env("LAYERX_IDENTITY_LISTEN", "127.0.0.1:0")
+            .env("LAYERX_IDENTITY_HEALTH_ADDR", "127.0.0.1:0")
             .env(
                 "LAYERX_IDENTITY_TLS_CERT_DER",
                 self.root.join("server.crt.der"),
@@ -269,12 +271,18 @@ impl Fixture {
         let stderr = child.stderr.take().unwrap_or_else(|| panic!("stderr pipe"));
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
+        let mut health_port = None;
         let port = loop {
             line.clear();
             let count = reader
                 .read_line(&mut line)
                 .unwrap_or_else(|error| panic!("stderr: {error}"));
             assert!(count > 0, "layerx-identity exited before listening");
+            if let Some(address) = line.trim().strip_prefix("layerx-identity health on ") {
+                health_port = address
+                    .rsplit_once(':')
+                    .and_then(|(_, port)| port.parse::<u16>().ok());
+            }
             if let Some(address) = line
                 .trim()
                 .strip_prefix("layerx-identity listening on ")
@@ -295,6 +303,7 @@ impl Fixture {
         Server {
             child,
             port,
+            health_port: health_port.unwrap_or_else(|| panic!("health address not announced")),
             state_dir: state_dir.to_path_buf(),
         }
     }
@@ -598,6 +607,41 @@ fn health_routes_answer_without_a_service_token() {
     );
     assert_eq!(forwarded.status, 400);
     assert!(forwarded.body.contains("untrusted_identity_header"));
+}
+
+fn plain_get(port: u16, path: &str) -> Reply {
+    let mut tcp =
+        TcpStream::connect(("127.0.0.1", port)).unwrap_or_else(|error| panic!("connect: {error}"));
+    tcp.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap_or_else(|error| panic!("timeout: {error}"));
+    write!(
+        tcp,
+        "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap_or_else(|error| panic!("write: {error}"));
+    let mut raw = Vec::new();
+    tcp.read_to_end(&mut raw)
+        .unwrap_or_else(|error| panic!("read: {error}"));
+    parse_reply(&raw)
+}
+
+#[test]
+fn plain_health_listener_reports_serving_state() {
+    let fixture = fixture("plain-health");
+    let state = fixture.root.join("state");
+    let server = fixture.spawn(&state);
+    let healthy = plain_get(server.health_port, "/healthz");
+    assert_eq!(healthy.status, 200);
+    assert_eq!(
+        healthy.body,
+        "{\"status\":\"ready\",\"service\":\"identity\"}"
+    );
+    let other = plain_get(server.health_port, "/v1/principals");
+    assert_eq!(other.status, 404);
+    fs::remove_dir_all(&state).unwrap_or_else(|error| panic!("remove state: {error}"));
+    let broken = plain_get(server.health_port, "/healthz");
+    assert_eq!(broken.status, 503);
+    assert!(broken.body.contains("store_unavailable"));
 }
 
 #[test]
