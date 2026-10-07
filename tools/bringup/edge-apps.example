@@ -1,0 +1,29 @@
+# EDGE_APP map for tools/bringup/edge.sh set: one line per public name, four
+# tab-separated fields:
+#   <served name>[:<public port>]	railway|box|stream	<upstream host:port>	<sni or ->
+# railway  https to the Railway public domain of the service; sni - uses that
+#          domain as Host and TLS name.
+# box      a box host:port; sni - proxies plain http, a TLS name proxies https
+#          verified against the internal CA at /etc/layerx/ca.crt.
+# stream   TLS passthrough by SNI to a box port; the public port defaults to
+#          the upstream port; sni is -.
+# Replace each <...> with the real domain or address; the env file passed to
+# edge.sh set names this file as EDGE_APP.
+api-mainnet-beta.paxeer.network	railway	<router railway public domain>:443	-
+api-hull.paxeer.network	railway	<railway public domain>:443	-
+dev.paxeer.network	railway	<railway public domain>:443	-
+api-dev.paxeer.network	railway	<railway public domain>:443	-
+hooks.paxeer.network	railway	<railway public domain>:443	-
+interchain.paxeer.network	railway	<railway public domain>:443	-
+chain.paxeer.network	railway	<railway public domain>:443	-
+archive.paxeer.network	railway	<railway public domain>:443	-
+search.paxeer.network	railway	<railway public domain>:443	-
+wallet-api.paxeer.network	railway	<railway public domain>:443	-
+ramp.paxeer.network	railway	<railway public domain>:443	-
+machine.paxeer.network	stream	<kernel box>:9454	-
+index.paxeer.network:443	stream	<kernel box>:9420	-
+kernel.paxeer.network	stream	<kernel box>:9443	-
+kernel.paxeer.network	stream	<kernel box>:9445	-
+kernel.paxeer.network	stream	<kernel box>:9446	-
+kernel.paxeer.network	stream	<kernel box>:9449	-
+kernel.paxeer.network	stream	<kernel box>:9457	-
