@@ -675,6 +675,7 @@ name = "layerx-agent-api"
 version = "0.1.0"
 dependencies = [
  "layerx-client",
+ "layerx-proof",
  "layerx-types",
 ]
 
@@ -808,12 +809,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-program-sdk"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "layerx-programs-runtime"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
  "k256",
+ "layerx-program-sdk",
  "num-bigint",
  "sha2",
  "sha3",
