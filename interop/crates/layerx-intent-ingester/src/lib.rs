@@ -84,105 +84,235 @@ pub trait JsonRpc {
     fn call(&self, method: &str, params: Value) -> Result<Value, IngestError>;
 }
 
-/// Plain HTTP JSON-RPC to the co-located node (`http://host:port/path`).
-pub struct HttpRpc {
+/// One `http://` or `https://` endpoint; https trusts the system roots plus
+/// the configured roots.
+pub struct HttpEndpoint {
+    tls: Option<native_tls::TlsConnector>,
     host: String,
     port: u16,
     path: String,
     timeout: Duration,
 }
 
-impl HttpRpc {
+impl HttpEndpoint {
     /// # Errors
     ///
-    /// Refuses a URL that is not `http://host[:port][/path]`.
-    pub fn new(url: &str, timeout: Duration) -> Result<Self, IngestError> {
-        let rest = url
-            .strip_prefix("http://")
-            .ok_or_else(|| IngestError::Configuration(format!("rpc url must be http://: {url}")))?;
+    /// Refuses a URL that is not `http(s)://host[:port][/path]` or a TLS
+    /// connector that cannot be built.
+    pub fn new(
+        url: &str,
+        timeout: Duration,
+        roots: &[native_tls::Certificate],
+    ) -> Result<Self, IngestError> {
+        let bad = |detail: &str| IngestError::Configuration(format!("{detail}: {url}"));
+        let (rest, tls, default_port) = if let Some(rest) = url.strip_prefix("https://") {
+            let mut builder = native_tls::TlsConnector::builder();
+            for root in roots {
+                builder.add_root_certificate(root.clone());
+            }
+            let connector = builder
+                .build()
+                .map_err(|error| IngestError::Configuration(format!("tls: {error}")))?;
+            (rest, Some(connector), 443)
+        } else if let Some(rest) = url.strip_prefix("http://") {
+            (rest, None, 80)
+        } else {
+            return Err(bad("url must be http:// or https://"));
+        };
+        if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(bad("url"));
+        }
         let (authority, path) = rest
             .find('/')
             .map_or((rest, "/"), |index| (&rest[..index], &rest[index..]));
         let (host, port) = match authority.rsplit_once(':') {
-            Some((host, port)) => (
-                host,
-                port.parse::<u16>()
-                    .map_err(|_| IngestError::Configuration(format!("rpc port: {url}")))?,
-            ),
-            None => (authority, 80),
+            Some((host, port)) => (host, port.parse::<u16>().map_err(|_| bad("url port"))?),
+            None => (authority, default_port),
         };
         if host.is_empty() {
-            return Err(IngestError::Configuration(format!("rpc host: {url}")));
+            return Err(bad("url host"));
         }
         Ok(Self {
+            tls,
             host: host.to_owned(),
             port,
             path: path.to_owned(),
             timeout,
         })
     }
-}
 
-impl JsonRpc for HttpRpc {
-    fn call(&self, method: &str, params: Value) -> Result<Value, IngestError> {
+    /// POSTs a JSON body with the extra header lines (each ending `\r\n`)
+    /// and returns the status code and the reply body.
+    ///
+    /// # Errors
+    ///
+    /// Returns the transport failure or a reply without an HTTP head.
+    pub fn post(
+        &self,
+        headers: &str,
+        body: &str,
+        limit: u64,
+    ) -> Result<(String, Vec<u8>), IngestError> {
         let transport = |error: std::io::Error| IngestError::Transport(error.to_string());
         let address = (self.host.as_str(), self.port)
             .to_socket_addrs()
             .map_err(transport)?
             .next()
             .ok_or_else(|| IngestError::Transport(format!("no address for {}", self.host)))?;
-        let mut stream = TcpStream::connect_timeout(&address, self.timeout).map_err(transport)?;
+        let stream = TcpStream::connect_timeout(&address, self.timeout).map_err(transport)?;
         stream
             .set_read_timeout(Some(self.timeout))
             .map_err(transport)?;
         stream
             .set_write_timeout(Some(self.timeout))
             .map_err(transport)?;
-        let body =
-            json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
         // HTTP/1.0 keeps the reply unchunked and closes the connection after it.
         let request = format!(
-            "POST {} HTTP/1.0\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            "POST {} HTTP/1.0\r\nHost: {}:{}\r\n{headers}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
             self.path,
             self.host,
             self.port,
             body.len()
         );
-        stream.write_all(request.as_bytes()).map_err(transport)?;
-        let mut reply = Vec::new();
-        stream
-            .take(MAX_RESPONSE_BYTES)
-            .read_to_end(&mut reply)
-            .map_err(transport)?;
-        let split = reply
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .ok_or_else(|| IngestError::Malformed("no http header terminator".to_owned()))?;
-        let head = String::from_utf8_lossy(&reply[..split]);
-        let status = head.split_whitespace().nth(1).unwrap_or_default();
+        match &self.tls {
+            None => exchange(stream, &request, limit),
+            Some(connector) => {
+                let stream = connector
+                    .connect(&self.host, stream)
+                    .map_err(|error| IngestError::Transport(format!("tls: {error}")))?;
+                exchange(stream, &request, limit)
+            }
+        }
+    }
+}
+
+/// Writes the request and reads one reply, stopping at its `Content-Length`
+/// so a TLS peer that closes without `close_notify` still yields the reply.
+fn exchange(
+    mut stream: impl std::io::Read + std::io::Write,
+    request: &str,
+    limit: u64,
+) -> Result<(String, Vec<u8>), IngestError> {
+    let transport = |error: std::io::Error| IngestError::Transport(error.to_string());
+    stream.write_all(request.as_bytes()).map_err(transport)?;
+    stream.flush().map_err(transport)?;
+    let mut stream = stream.take(limit);
+    let mut reply = Vec::new();
+    let mut chunk = [0_u8; 16 * 1024];
+    let mut expected = None;
+    loop {
+        if let Some((split, length)) = expected {
+            if reply.len() >= split + 4 + length {
+                reply.truncate(split + 4 + length);
+                break;
+            }
+        }
+        let read = stream.read(&mut chunk).map_err(transport)?;
+        if read == 0 {
+            break;
+        }
+        reply.extend_from_slice(&chunk[..read]);
+        if expected.is_none() {
+            if let Some(split) = reply.windows(4).position(|window| window == b"\r\n\r\n") {
+                let length = String::from_utf8_lossy(&reply[..split])
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.trim()
+                            .eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())?
+                    });
+                expected = length.map(|length| (split, length));
+            }
+        }
+    }
+    let split = reply
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .ok_or_else(|| IngestError::Malformed("no http header terminator".to_owned()))?;
+    let status = String::from_utf8_lossy(&reply[..split])
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .to_owned();
+    Ok((status, reply.split_off(split + 4)))
+}
+
+/// Reads every PEM certificate in a CA bundle file.
+///
+/// # Errors
+///
+/// Refuses an unreadable or certificate-free bundle.
+pub fn load_roots(path: &Path) -> Result<Vec<native_tls::Certificate>, IngestError> {
+    let roots = native_tls::Certificate::stack_from_pem(&fs::read(path)?).map_err(|error| {
+        IngestError::Configuration(format!("ca bundle {}: {error}", path.display()))
+    })?;
+    if roots.is_empty() {
+        return Err(IngestError::Configuration(format!(
+            "ca bundle {} holds no certificate",
+            path.display()
+        )));
+    }
+    Ok(roots)
+}
+
+/// JSON-RPC to the node (`http(s)://host[:port][/path]`).
+pub struct HttpRpc {
+    endpoint: HttpEndpoint,
+}
+
+impl HttpRpc {
+    /// # Errors
+    ///
+    /// Refuses a URL that is not `http(s)://host[:port][/path]`.
+    pub fn new(
+        url: &str,
+        timeout: Duration,
+        roots: &[native_tls::Certificate],
+    ) -> Result<Self, IngestError> {
+        Ok(Self {
+            endpoint: HttpEndpoint::new(url, timeout, roots)?,
+        })
+    }
+}
+
+impl JsonRpc for HttpRpc {
+    fn call(&self, method: &str, params: Value) -> Result<Value, IngestError> {
+        let body =
+            json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
+        let (status, reply) = self.endpoint.post("", &body, MAX_RESPONSE_BYTES)?;
         if status != "200" {
             return Err(IngestError::Transport(format!("http status {status}")));
         }
-        let value: Value = serde_json::from_slice(&reply[split + 4..])
-            .map_err(|error| IngestError::Malformed(error.to_string()))?;
-        if let Some(error) = value.get("error") {
-            return Err(IngestError::Rpc {
-                code: error
-                    .get("code")
-                    .and_then(Value::as_i64)
-                    .unwrap_or_default(),
-                message: error
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-            });
-        }
-        value
-            .get("result")
-            .cloned()
-            .ok_or_else(|| IngestError::Malformed("reply without result".to_owned()))
+        rpc_result(&reply)
     }
+}
+
+/// The `result` of a JSON-RPC reply body, or its `error` as a refusal.
+///
+/// # Errors
+///
+/// Returns the node refusal or a malformed reply.
+pub fn rpc_result(reply: &[u8]) -> Result<Value, IngestError> {
+    let value: Value =
+        serde_json::from_slice(reply).map_err(|error| IngestError::Malformed(error.to_string()))?;
+    if let Some(error) = value.get("error") {
+        return Err(IngestError::Rpc {
+            code: error
+                .get("code")
+                .and_then(Value::as_i64)
+                .unwrap_or_default(),
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        });
+    }
+    value
+        .get("result")
+        .cloned()
+        .ok_or_else(|| IngestError::Malformed("reply without result".to_owned()))
 }
 
 /// One decoded precompile intent, as journaled.

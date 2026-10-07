@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use layerx_intent_ingester::{
-    hex, readyz_body, Config, HttpRpc, IngestError, Ingester, Journal, Status, DEFAULT_MAX_RANGE,
-    DEFAULT_RETENTION_WINDOW,
+    hex, load_roots, readyz_body, Config, HttpRpc, IngestError, Ingester, Journal, Status,
+    DEFAULT_MAX_RANGE, DEFAULT_RETENTION_WINDOW,
 };
 use submit::{GatewayRpc, MarketMap, Outcome, Scope, Signer, Submitter};
 
@@ -67,9 +67,14 @@ fn serve_readyz(listener: &TcpListener, shared: &Shared) {
 }
 
 fn run() -> Result<(), IngestError> {
+    let roots = std::env::var_os("LAYERX_INGESTER_CA_BUNDLE")
+        .map(|path| load_roots(&PathBuf::from(path)))
+        .transpose()?
+        .unwrap_or_default();
     let rpc = HttpRpc::new(
         &required("INGESTER_RPC_URL")?,
         Duration::from_millis(env_u64("INGESTER_RPC_TIMEOUT_MS", 10_000)?),
+        &roots,
     )?;
     let mut config = Config::new(PathBuf::from(required("INGESTER_STATE_DIR")?));
     config.start_block = std::env::var("INGESTER_START_BLOCK")
@@ -86,8 +91,10 @@ fn run() -> Result<(), IngestError> {
 
     let gateway = GatewayRpc::new(
         &required("LAYERX_INGESTER_GATEWAY_URL")?,
-        required("LAYERX_INGESTER_GATEWAY_API_KEY")?,
+        &required("LAYERX_INGESTER_GATEWAY_KEY_ID")?,
+        &required("LAYERX_INGESTER_GATEWAY_API_KEY")?,
         Duration::from_millis(env_u64("INGESTER_RPC_TIMEOUT_MS", 10_000)?),
+        &roots,
     )?;
     let signer = Signer::from_file(&PathBuf::from(required("LAYERX_INGESTER_SIGNER_KEY_FILE")?))?;
     let markets = MarketMap::parse(&std::fs::read_to_string(required(
