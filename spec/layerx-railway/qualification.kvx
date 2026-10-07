@@ -288,3 +288,22 @@ started_at = "2026-10-07T12:47:00Z"
 outcome = "fail"
 evidence = "railway api deploymentLogs/buildLogs for the two deployment ids, 13:05Z"
 note = "Both images now build on Railway (the VOLUME rejection is gone) and start; the shim refuses on LAYERX_INTERNAL_CA_ROOT, the internal CA PEM that only the owner certificate run of gate.3.1.2 produces, so the healthcheck never answers."
+
+[gate.3.1.8]
+task = "3.1"
+reqs = ["3.1"]
+revision = "28a1c779d"
+command = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-25/interop cargo test -p layerx-interop-service --manifest-path interop/Cargo.toml --no-fail-fast"
+environment = "lane rw-25 worktree"
+started_at = "2026-10-07T13:10:00Z"
+outcome = "fail"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-25-verify-2.log; gateway crate type-check /root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-25-gateway-check.log exit 0"
+note = "All 17 unit tests and the 6 new tests/private_network.rs cases pass; only tests/plain_listener.rs fails (observation.3.1.7, pre-existing fixture); LAYERX_INTEROP_ALLOW_RAILWAY_PRIVATE_NETWORK=1 admits http://<host>.railway.internal:<port> for the hosted gateway URL only, with a real plain transport in the shared client; the platform gateway crate and its tests type-check against it."
+
+[observation.3.1.7]
+task = "3.1"
+file = "interop/crates/layerx-interop-service/tests/plain_listener.rs"
+symbol = "interop/deploy/gateway/config.example.json"
+observed = "All three plain_listener cases fail with 'AP2 trust-root declaration is invalid' raised while loading config.example.json, before any rw-25 code runs; cargo test stops at that file unless --no-fail-fast is given."
+assumption = "The example config drifted from validate_ap2_roots in an earlier change; it is a fixture repair outside the Railway move."
+severity = "major"
