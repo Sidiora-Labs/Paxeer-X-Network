@@ -57,8 +57,9 @@ if [ -f "$table" ]; then
 			fail "variable $name is not valid base64 (for $guest)"
 		fi
 		chmod "$mode" "$tmp" || { rm -f "$tmp"; fail "chmod $mode failed for $name"; }
-		if [ -n "${LAYERX_FILES_OWNER:-}" ] && [ "$(id -u)" = 0 ]; then
-			chown "$LAYERX_FILES_OWNER" "$tmp" || { rm -f "$tmp"; fail "chown $LAYERX_FILES_OWNER failed for $name"; }
+		eval "owner=\${LAYERX_FILES_OWNER_$name:-\${LAYERX_FILES_OWNER:-}}"
+		if [ -n "$owner" ] && [ "$(id -u)" = 0 ]; then
+			chown "$owner" "$tmp" || { rm -f "$tmp"; fail "chown $owner failed for $name"; }
 		fi
 		mv -f "$tmp" "$guest" || { rm -f "$tmp"; fail "cannot rename into $guest for $name"; }
 	done <"$table"

@@ -105,6 +105,11 @@ if [ "$(id -u)" = 0 ]; then
 	env -i PATH="$PATH" LAYERX_FILES_TABLE="$work/owned.tsv" LAYERX_FILES_OWNER=65534:65534 TEST_OWNED=dG9r sh "$shim" true ||
 		fail "chown row failed"
 	[ "$(stat -c %u:%g:%a "$work/owned/file")" = 65534:65534:640 ] || fail "owner/mode of chowned file"
+	printf 'TEST_ROW_OWNED\t%s\t0600\t*\nTEST_GLOBAL_OWNED\t%s\t0600\t*\n' "$work/owned/row" "$work/owned/global" >"$work/row-owned.tsv"
+	env -i PATH="$PATH" LAYERX_FILES_TABLE="$work/row-owned.tsv" LAYERX_FILES_OWNER=65534:65534 LAYERX_FILES_OWNER_TEST_ROW_OWNED=4020:4020 \
+		TEST_ROW_OWNED=dG9r TEST_GLOBAL_OWNED=dG9r sh "$shim" true || fail "per-row chown failed"
+	[ "$(stat -c %u:%g:%a "$work/owned/row")" = 4020:4020:600 ] || fail "per-row owner did not override the global owner"
+	[ "$(stat -c %u:%g:%a "$work/owned/global")" = 65534:65534:600 ] || fail "global owner not applied beside a per-row owner"
 fi
 
 for t in "$root"/docker/*/files.tsv; do
