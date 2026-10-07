@@ -53,6 +53,11 @@ authority client secret (receipt authority token and the sequencer pins), its
 Redis credentials on the shared gateway keyspace, and the
 `layerx-interop-runtime` secret holding `config.json` and `registry.json`.
 
+On Railway the same image runs as the `interop` service with the variables in
+`railway.env.example`: each file the service reads is a base64 variable that
+`layerx-env-files` writes to its `/run/layerx` path from
+`docker/interop-gateway/files.tsv` before the gateway starts.
+
 `config.example.json` is the shape of the document `LAYERX_INTEROP_CONFIG`
 selects. Its derived fields, including all eight conformance suites, are the
 real ones this checkout renders; every key, principal and account in it is an
