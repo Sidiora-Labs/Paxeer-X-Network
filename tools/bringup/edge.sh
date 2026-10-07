@@ -3,49 +3,63 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/edge.sh add <name> <app> [<port> stream] | register <name> <app> | remove <name> | render <name> | list
+usage: tools/bringup/edge.sh add <name>[:<port>] <railway|box|stream> <host:port> <sni|-> | register <name> <host>[:<port>]
+       tools/bringup/edge.sh remove <name> | render <name> | render --dry-run <env-file> | list
        tools/bringup/edge.sh set <env-file> [--render-only] | rpc-health | rerender
 
 Serves a public name on the edge host, where the *.paxeer.network wildcard
-lands, by proxying it to its Fly app at <app>.fly.dev. Acts on this host when
-the host map's EDGE_HOST resolves to one of its addresses (or EDGE_LOCAL=1),
-over ssh to EDGE_HOST otherwise. Only names this script registered are ever
-rendered, changed or removed; the manifest it owns, EDGE_NGINX_DIR/edge/manifest,
-holds one "<name> <mode> <app> <port>" line per name and no address.
+lands, by proxying it to the upstream its map line names. Acts on this host
+when the host map's EDGE_HOST resolves to one of its addresses (or
+EDGE_LOCAL=1), over ssh to EDGE_HOST otherwise. Only names this script
+registered are ever rendered, changed or removed; the manifest it owns,
+EDGE_NGINX_DIR/edge/manifest, holds one
+"<name> <http|stream|rpc> <upstream> <port> <railway|box|stream|rpc> <sni|->"
+line per name and port.
 
-add       http mode (no port): renders EDGE_NGINX_DIR/sites-available/<name>.conf
-          with the plain listener and the ACME location first, obtains the
-          certbot certificate for the name over HTTP-01 when absent (renewed by
-          certbot's timer, which reloads nginx), then renders the TLS server
-          that proxies to https://<app>.fly.dev with Host <app>.fly.dev,
-          X-Forwarded-Host, X-Forwarded-For, X-Real-IP and X-Forwarded-Proto,
-          Upgrade and Connection passed, the upstream verified against the
-          system roots and re-resolved every 30 seconds.
-          stream mode (<port> stream): passes the port through unchanged by SNI
-          to <app>.fly.dev on the same port (the app's dedicated IPv4) from an
-          nginx stream block, so client certificates reach the app; on a port
-          the HTTP names share (443) those names move behind the stream block
-          to a loopback listener that keeps the client address.
-          Every step runs nginx -t and reloads; a failing nginx -t restores the
-          previous files. Prints "added <name> mode=<mode> app=<app> port=<port>".
-register  the same as add; a trailing .fly.dev on <app> is dropped.
-remove    deletes the name's site or stream entry and reloads; prints
+Upstream modes, one per map line (tools/bringup/edge-apps.example):
+  railway  the TLS site proxies to https://<host:port>, the service's Railway
+           public domain, with Host and the TLS name (proxy_ssl_server_name on,
+           proxy_ssl_name) set to that domain, or to <sni> when given, verified
+           against the system roots and re-resolved every 30 seconds.
+  box      the TLS site proxies to a box at <host:port>: plain http when <sni>
+           is -, https otherwise with the TLS name <sni> verified against the
+           internal CA at /etc/layerx/ca.crt. Host stays the public name.
+  stream   an nginx stream block passes TLS through unchanged by SNI to the box
+           at <host:port>, so client certificates reach it. <name>:<port> sets
+           the public port, which defaults to the upstream's; on a port the
+           HTTP names share (443) those names move behind the stream block to a
+           loopback listener that keeps the client address. <sni> is -.
+Both HTTP modes pass X-Forwarded-Host, X-Forwarded-For, X-Real-IP,
+X-Forwarded-Proto, Upgrade and Connection.
+
+add       renders the name: an HTTP name gets
+          EDGE_NGINX_DIR/sites-available/<name>.conf with the plain listener
+          and the ACME location first, the certbot certificate for the name
+          over HTTP-01 when absent (renewed by certbot's timer, which reloads
+          nginx), then its TLS server; a stream name gets its port's stream
+          block. Every step runs nginx -t and reloads; a failing nginx -t
+          restores the previous files. Prints
+          "added <name> mode=<mode> upstream=<host:port> port=<port>".
+register  add <name> railway <host>:<port, default 443> -.
+remove    deletes every site or stream entry of the name and reloads; prints
           "removed <name>".
-render    prints the file add renders for a registered name: the TLS site of
-          an http name, the stream block of a stream name's port.
+render    prints the files add renders for a registered name: the TLS site of
+          an HTTP name, the stream block of each port of a stream name.
+          --dry-run renders the whole set of <env-file> as set would and
+          prints every file, each after a "# <path>" line naming where set
+          writes it, without writing anything; it runs on this host.
 list      prints the manifest.
 set       registers the whole served set from <env-file> on this host: every
-          name of the served table below whose EDGE_APP_<KEY> is set (KEY the
-          table key upper-cased, - and . as _), and the balanced RPC name
-          EDGE_RPC_NAME (default rpc.paxeer.network) over the full nodes of
-          EDGE_RPC_POOL (space-separated public RPC names). Names registered
-          otherwise stay. Renders, runs nginx -t, reloads, keeps a copy of this
-          script in EDGE_NGINX_DIR/edge and installs EDGE_CRON_DIR/edge-rpc-health
-          running rpc-health every minute. --render-only writes the files
-          without the checks, the reload and the cron entry. Names without an
-          app are skipped with a line on stderr. No certbot runs: edge-sync.sh
-          obtains the certificates on the primary edge; a name without one keeps
-          its plain listener.
+          line of the map file EDGE_APP names (relative to the env file), and
+          the balanced RPC name EDGE_RPC_NAME (default rpc.paxeer.network) over
+          the full nodes of EDGE_RPC_POOL (space-separated public RPC names).
+          Names registered otherwise stay. Renders, runs nginx -t, reloads,
+          keeps a copy of this script in EDGE_NGINX_DIR/edge and installs
+          EDGE_CRON_DIR/edge-rpc-health running rpc-health every minute.
+          --render-only writes the files without the checks, the reload and
+          the cron entry. No certbot runs: edge-sync.sh obtains the
+          certificates on the primary edge; a name without one keeps its plain
+          listener.
 rpc-health
           asks every pool member for eth_blockNumber, marks a member down when
           it does not answer or lags the highest answer by more than
@@ -55,10 +69,6 @@ rpc-health
 rerender  renders every registered name from the state on this host, runs
           nginx -t and reloads (edge-sync.sh runs it on the secondary edges).
 
-Served table (key, name, mode, port):
-EOF
-	sed 's/^/  /' <<<"$served"
-	cat <<'EOF'
 Environment:
   BRINGUP_HOSTS_FILE  the private host map naming EDGE_HOST; never printed
   EDGE_LOCAL          1 acts on this host without reading the host map
@@ -79,20 +89,9 @@ Exits 1 when a step fails or a name is refused, 2 on a usage error.
 EOF
 }
 
-served="api-mainnet-beta api-mainnet-beta.paxeer.network http 443
-api-hull api-hull.paxeer.network http 443
-machine machine.paxeer.network stream 9454
-index index.paxeer.network stream 443
-dev dev.paxeer.network http 443
-api-dev api-dev.paxeer.network http 443
-hooks hooks.paxeer.network http 443
-interchain interchain.paxeer.network http 443
-chain chain.paxeer.network http 443
-archive archive.paxeer.network http 443
-search search.paxeer.network http 443
-node.hyperpaxeer node.hyperpaxeer.com http 443
-wallet-api wallet-api.paxeer.network http 443
-human human.paxeer.network http 443"
+dns_re='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+upstream_re='^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?:[0-9]{1,5}$'
+box_ca=/etc/layerx/ca.crt
 
 nginx_dir="${EDGE_NGINX_DIR:-/etc/nginx}"
 webroot="${EDGE_WEBROOT:-/var/www/certbot}"
@@ -153,8 +152,31 @@ http_shared() {
 	stream_ports | grep -qx 443
 }
 
+# upstream_tls <tls name> <trusted roots>: the verified upstream TLS lines.
+upstream_tls() {
+	printf '\t\tproxy_ssl_server_name on;\n\t\tproxy_ssl_name %s;\n\t\tproxy_ssl_verify on;\n\t\tproxy_ssl_verify_depth 4;\n\t\tproxy_ssl_trusted_certificate %s;\n' "$1" "$2"
+}
+
+# render_http <name> <railway|box|-> <host:port> <sni|-> <tls|plain>: the site
+# of an HTTP name; a plain site carries only the port 80 listener.
 render_http() {
-	local name="$1" app="$2" tls="$3" listen
+	local name="$1" kind="$2" up="$3" sni="$4" tls="$5" listen scheme host_header upstream_tls=""
+	case "$kind" in
+	railway)
+		scheme=https
+		host_header="${up%:*}"
+		[ "$sni" = - ] || host_header="$sni"
+		upstream_tls="$(upstream_tls "$host_header" /etc/ssl/certs/ca-certificates.crt)"$'\n'
+		;;
+	box)
+		scheme=http
+		host_header="$name"
+		if [ "$sni" != - ]; then
+			scheme=https
+			upstream_tls="$(upstream_tls "$sni" "$box_ca")"$'\n'
+		fi
+		;;
+	esac
 	echo "$marker"
 	cat <<EOF
 server {
@@ -196,10 +218,10 @@ $listen
 	resolver $resolver valid=30s ipv6=off;
 
 	location / {
-		set \$edge_upstream $app.fly.dev;
-		proxy_pass https://\$edge_upstream;
+		set \$edge_upstream $up;
+		proxy_pass $scheme://\$edge_upstream;
 		proxy_http_version 1.1;
-		proxy_set_header Host $app.fly.dev;
+		proxy_set_header Host $host_header;
 		proxy_set_header X-Forwarded-Host $name;
 		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 		proxy_set_header X-Real-IP \$remote_addr;
@@ -209,12 +231,7 @@ $listen
 		proxy_set_header Access-Control-Request-Headers \$http_access_control_request_headers;
 		proxy_set_header Upgrade \$http_upgrade;
 		proxy_set_header Connection \$http_connection;
-		proxy_ssl_server_name on;
-		proxy_ssl_name $app.fly.dev;
-		proxy_ssl_verify on;
-		proxy_ssl_verify_depth 4;
-		proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
-		proxy_read_timeout 3600s;
+$upstream_tls		proxy_read_timeout 3600s;
 		proxy_send_timeout 3600s;
 	}
 }
@@ -227,7 +244,7 @@ EOF
 # down.
 render_rpc() {
 	local name="$1" tls="$2" host i=0 down listen
-	render_http "$name" - plain
+	render_http "$name" - - - plain
 	[ "$tls" = tls ] || return 0
 	echo
 	echo "upstream edge_rpc_pool {"
@@ -320,7 +337,7 @@ EOF
 # bytes reach the app, so the app sees the client's TLS untouched.
 render_stream() {
 	local port="$1" names
-	names="$(awk -v p="$port" '$2 == "stream" && $4 == p {printf "\t%s %s.fly.dev:%s;\n", $1, $3, p}' "$manifest")"
+	names="$(awk -v p="$port" '$2 == "stream" && $4 == p {printf "\t%s %s;\n", $1, $3}' "$manifest")"
 	echo "$marker"
 	if [ "$port" = 443 ]; then
 		cat <<EOF
@@ -430,22 +447,64 @@ apply() {
 	nginx -s reload
 }
 
-# write_all <tls-for-name|-> <name>: renders every registered name's files
-# from the manifest; the named name gets only its plain listener unless its
-# certificate is present.
+# map_line <name>[:<port>] <railway|box|stream> <host:port> <sni|->: checks one
+# map line and prints its manifest line.
+map_line() {
+	local name="${1%%:*}" kind="$2" up="$3" sni="$4" port=443 mode=http
+	[ "$name" = "$1" ] || port="${1#*:}"
+	[[ "$name" =~ $dns_re ]] || die "not a DNS name: $1"
+	case "$name" in
+	api[0-9]*.mainnet-beta.paxeer.network | paxscan.io) die "refuse $name: served on its own host" ;;
+	esac
+	[[ "$up" =~ $upstream_re ]] || die "not an upstream host:port for $name: $up"
+	[ "$sni" = - ] || [[ "$sni" =~ $dns_re ]] || die "not a TLS name for $name: $sni"
+	case "$kind" in
+	railway | box) [ "$name" = "$1" ] || die "a public port on $1 applies to stream names only" ;;
+	stream)
+		mode=stream
+		[ "$name" != "$1" ] || port="${up##*:}"
+		[ "$sni" = - ] || die "a stream name passes TLS through and takes no TLS name: $name $sni"
+		;;
+	*) die "unknown mode for $name: $kind (railway, box or stream)" ;;
+	esac
+	[[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "not a port for $name: $port"
+	[[ "${up##*:}" =~ ^[0-9]{1,5}$ ]] && [ "${up##*:}" -ge 1 ] && [ "${up##*:}" -le 65535 ] || die "not a port for $name: $up"
+	echo "$name $mode $up $port $kind $sni"
+}
+
+# read_map <file>: the manifest lines of every map line; blank lines and lines
+# starting with # are skipped.
+read_map() {
+	local name kind up sni extra lines="" dup
+	while IFS=$'\t' read -r name kind up sni extra || [ -n "$name" ]; do
+		case "$name" in '' | '#'*) continue ;; esac
+		[ -n "$sni" ] && [ -z "$extra" ] || die "$1: want four tab-separated fields: $name"
+		lines+="$(map_line "$name" "$kind" "$up" "$sni")"$'\n' || exit 1
+	done <"$1"
+	dup="$(awk 'NF {print $1 ":" $4}' <<<"$lines" | sort | uniq -d | paste -sd, -)"
+	[ -z "$dup" ] || die "$1: names mapped twice on one port: $dup"
+	printf '%s' "$lines"
+}
+
+# write_all: renders every registered name's files from the manifest; an HTTP
+# name gets only its plain listener unless its certificate is present.
 write_all() {
-	local name mode app port tls port_file
+	local name mode up port kind sni tls port_file
 	mkdir -p "$state/stream" "$nginx_dir/sites-available" "$nginx_dir/sites-enabled" "$nginx_dir/modules-enabled"
 	rm -f -- "$state"/stream/*.conf
-	while read -r name mode app port; do
+	while read -r name mode up port kind sni; do
 		[ -n "$name" ] || continue
+		case "$mode:$kind" in
+		http:railway | http:box | rpc:rpc | stream:stream) ;;
+		*) die "manifest line of $name has no upstream mode this script renders; register it again: $name $mode $up $port" ;;
+		esac
 		if [ "$mode" = http ] || [ "$mode" = rpc ]; then
 			tls=tls
 			[ -r "$cert_dir/$name/fullchain.pem" ] || tls=plain
 			if [ "$mode" = rpc ]; then
 				render_rpc "$name" "$tls" >"$nginx_dir/sites-available/$name.conf"
 			else
-				render_http "$name" "$app" "$tls" >"$nginx_dir/sites-available/$name.conf"
+				render_http "$name" "$kind" "$up" "$sni" "$tls" >"$nginx_dir/sites-available/$name.conf"
 			fi
 			ln -sfn "$nginx_dir/sites-available/$name.conf" "$nginx_dir/sites-enabled/$name.conf"
 		fi
@@ -466,19 +525,9 @@ stream_module_loaded() {
 }
 
 edge_add() {
-	local name="$1" app="${2%.fly.dev}" port="${3:-443}" mode=http line users
-	[[ "$name" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "not a DNS name: $name"
-	[[ "$app" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "not a Fly app name: $app"
-	if [ "$#" -eq 4 ]; then
-		if [ "$4" != stream ] || ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-			usage >&2
-			exit 2
-		fi
-		mode=stream
-	fi
-	case "$name" in
-	api[0-9]*.mainnet-beta.paxeer.network | paxscan.io) die "refuse $name: served on its own host" ;;
-	esac
+	local line name mode up port users
+	line="$(map_line "$@")" || exit 1
+	read -r name mode up port _ <<<"$line"
 	if claimed_elsewhere "$name"; then
 		die "refuse $name: a site this script did not render serves it"
 	fi
@@ -489,10 +538,8 @@ edge_add() {
 	fi
 	mkdir -p "$state" "$webroot"
 	touch "$manifest"
-	line="$name $mode $app $port"
-	[ "$mode" = stream ] || line="$name http $app 443"
 	snapshot
-	awk -v n="$name" '$1 != n' "$manifest" >"$manifest.new"
+	awk -v n="$name" -v p="$port" '!($1 == n && $4 == p)' "$manifest" >"$manifest.new"
 	echo "$line" >>"$manifest.new"
 	sort -o "$manifest.new" "$manifest.new"
 	mv "$manifest.new" "$manifest"
@@ -513,7 +560,7 @@ edge_add() {
 		fi
 	fi
 	rm -rf -- "${backup:?}"
-	echo "added $name mode=$mode app=$app port=$port"
+	echo "added $name mode=$mode upstream=$up port=$port"
 }
 
 edge_remove() {
@@ -530,20 +577,20 @@ edge_remove() {
 }
 
 cmd_render() {
-	local name mode app port
-	read -r name mode app port <<<"$(entry "$1")" || die "not registered: $1"
-	if [ "$mode" = stream ]; then
-		render_stream "$port"
-	elif [ "$mode" = rpc ]; then
-		render_rpc "$name" tls
-	else
-		render_http "$name" "$app" tls
-	fi
+	local lines name mode up port kind sni
+	lines="$(entry "$1")" || die "not registered: $1"
+	while read -r name mode up port kind sni; do
+		case "$mode" in
+		stream) render_stream "$port" ;;
+		rpc) render_rpc "$name" tls ;;
+		*) render_http "$name" "$kind" "$up" "$sni" tls ;;
+		esac
+	done <<<"$lines"
 }
 
 # cmd_set <env-file> [--render-only]: registers the served set of the env file.
 cmd_set() {
-	local env="$1" only="${2:-}" key name mode port var app lines="" rpc_name users
+	local env="$1" only="${2:-}" key name mode port map lines="" rpc_name users
 	[ -z "$only" ] || [ "$only" = --render-only ] || {
 		usage >&2
 		exit 2
@@ -551,26 +598,27 @@ cmd_set() {
 	[ -r "$env" ] || die "env file unreadable: $env"
 	# shellcheck disable=SC1090
 	. "$env"
-	while read -r key name mode port; do
-		var="EDGE_APP_$(tr 'a-z.-' 'A-Z__' <<<"$key")"
-		app="${!var:-}"
-		app="${app%.fly.dev}"
-		if [ -z "$app" ]; then
-			echo "edge: skipped $name: $var is not set" >&2
-			continue
-		fi
-		[[ "$app" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "not a Fly app name: $var=$app"
+	[ -n "${EDGE_APP:-}" ] || die "$env does not set EDGE_APP, the map file"
+	case "$EDGE_APP" in
+	/*) map="$EDGE_APP" ;;
+	*) map="$(dirname -- "$env")/$EDGE_APP" ;;
+	esac
+	[ -r "$map" ] || die "map file unreadable: $map"
+	lines="$(read_map "$map")" || exit 1
+	[ -z "$lines" ] || lines+=$'\n'
+	while read -r name _; do
+		[ -n "$name" ] || continue
 		claimed_elsewhere "$name" && die "refuse $name: a site this script did not render serves it"
-		lines+="$name $mode $app $port"$'\n'
-	done <<<"$served"
+	done <<<"$lines"
 	rpc_name="${EDGE_RPC_NAME:-rpc.paxeer.network}"
 	if [ -n "${EDGE_RPC_POOL:-}" ]; then
-		[[ "$rpc_name" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "not a DNS name: $rpc_name"
+		[[ "$rpc_name" =~ $dns_re ]] || die "not a DNS name: $rpc_name"
 		for key in $EDGE_RPC_POOL; do
-			[[ "$key" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || die "not a DNS name in EDGE_RPC_POOL: $key"
+			[[ "$key" =~ $dns_re ]] || die "not a DNS name in EDGE_RPC_POOL: $key"
 		done
+		awk -v n="$rpc_name" '$1 == n {f = 1} END {exit !f}' <<<"$lines" && die "refuse $rpc_name: the map file names it too"
 		claimed_elsewhere "$rpc_name" && die "refuse $rpc_name: a site this script did not render serves it"
-		lines+="$rpc_name rpc - 443"$'\n'
+		lines+="$rpc_name rpc - 443 rpc -"$'\n'
 	else
 		echo "edge: skipped $rpc_name: EDGE_RPC_POOL is not set" >&2
 	fi
@@ -611,7 +659,26 @@ cmd_set() {
 		fi
 	fi
 	rm -rf -- "${backup:?}"
-	awk 'NF {print "set " $1 " mode=" $2 " app=" $3 " port=" $4}' <<<"$lines"
+	awk 'NF {print "set " $1 " mode=" $5 " upstream=" $3 " sni=" $6 " port=" $4}' <<<"$lines"
+}
+
+# cmd_dry_run <env-file>: renders the set of the env file into a scratch root
+# and prints each file under the path set writes it to.
+cmd_dry_run() {
+	local real="$nginx_dir" f
+	scratch="$(mktemp -d)"
+	trap 'rm -rf -- "${scratch:?}"' EXIT
+	nginx_dir="$scratch"
+	state="$nginx_dir/edge"
+	manifest="$state/manifest"
+	rpc_pool="$state/rpc-pool"
+	rpc_down="$state/rpc-down"
+	stream_root="$nginx_dir/modules-enabled/99-edge-stream.conf"
+	cmd_set "$1" --render-only >/dev/null
+	while IFS= read -r f; do
+		echo "# $real${f#"$scratch"}"
+		sed "s#$scratch#$real#g" "$f"
+	done < <(find "$scratch/sites-available" "$scratch/modules-enabled" "$state/stream" -type f -name '*.conf' | sort)
 }
 
 # cmd_rpc_health: marks lagging or silent pool members down, re-renders on a
@@ -666,8 +733,16 @@ cmd_rerender() {
 
 sub="${1:-}"
 case "$sub:$#" in
-add:3 | add:5 | register:3) ;;
+add:5 | register:3) ;;
 remove:2 | render:2) ;;
+render:3)
+	[ "$2" = --dry-run ] || {
+		usage >&2
+		exit 2
+	}
+	cmd_dry_run "$3"
+	exit 0
+	;;
 list:1) ;;
 set:2 | set:3 | rpc-health:1 | rerender:1)
 	shift
@@ -694,7 +769,12 @@ fi
 
 shift
 case "$sub" in
-add | register) edge_add "$@" ;;
+add) edge_add "$@" ;;
+register)
+	up="$2"
+	[[ "$up" == *:* ]] || up="$up:443"
+	edge_add "$1" railway "$up" -
+	;;
 remove) edge_remove "$1" ;;
 render) cmd_render "$1" ;;
 list) [ ! -r "$manifest" ] || cat "$manifest" ;;
