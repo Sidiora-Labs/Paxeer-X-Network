@@ -1,15 +1,17 @@
 #!/bin/sh
-# Root init of the registry app (platform/hosted/registry/fly.toml). It does on
-# the machine what platform/hosted/registry/node-provision-build-boundary.sh
+# Root init of the registry box (docker/platform-registry/layerx-registry.service).
+# It does in the container what platform/hosted/registry/node-provision-build-boundary.sh
 # and the pod's init containers do on a Kubernetes node, without systemd:
 # consumes retained request and publication tokens prepared on the volume and
-# writes the supplied token secrets into /run/layerx, waits until deployment has put the
+# takes them from REGISTRY_REQUEST_TOKEN and REGISTRY_PUBLICATION_TOKEN when
+# minted, writes the supplied token secrets into /run/layerx, waits until the
+# deployment has copied over ssh into /data the
 # TLS identities of tools/bringup/ca.sh issue registry and
 # registry-event-client, the builder rootfs of
 # builder-environment/build-env.sh, and the receipt authority replica id and
 # sequencer trust history of the kernel app on the volume, loop-mounts one
 # ext4 quota image per build slot, gives the registry a cgroup v2 subtree of
-# its own with the host view of the hierarchy at
+# its own with the container view of the hierarchy at
 # LAYERX_REGISTRY_HOST_CGROUP_MOUNT, and starts the registry as root in a
 # cgroup namespace rooted at that subtree; the registry delegates the subtree
 # and drops to uid 4030 itself.
@@ -23,8 +25,8 @@
 #   /data/state, /data/journal the registry's state and deployment journal
 #
 # Stage order of the deployment: material (ca.sh issue registry and
-# registry-event-client from the one internal CA, the Fly secrets below, the
-# builder environment and the kernel material) -> registry-bootstrap (this
+# registry-event-client from the one internal CA, the env secrets below
+# (/etc/layerx/registry.env), the builder environment and the kernel material) -> registry-bootstrap (this
 # script) -> router-activation (human/wallet/deploy/endpoint.toml) ->
 # routed-proof. This stage consumes only material: nothing here waits on,
 # probes or names the router, so the registry comes up ready before the router
@@ -74,7 +76,7 @@ if [ -L "$tokens/.material.lock" ] || { [ -e "$tokens/.material.lock" ] && [ ! -
 	missing "material-lock" "the-retained-registry-volume"; exit 1
 fi
 exec 9>"$tokens/.material.lock"
-flock -x -w 30 9 || { missing "material-lock" "registry-fly-init--prepare-material"; exit 1; }
+flock -x -w 30 9 || { missing "material-lock" "registry-env-init--prepare-material"; exit 1; }
 if [ -L "$tokens/.initialized" ] || { [ -e "$tokens/.initialized" ] && [ ! -f "$tokens/.initialized" ]; }; then
 	missing "token-material-marker" "the-retained-registry-volume"; exit 1
 fi
@@ -88,32 +90,46 @@ if [ -e "$tokens/.initialized" ] || [ -e "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" ]
 	retained_tokens=1
 fi
 
+# fresh <file> <variable>: the retained token; else, while preparing material,
+# the minted value the variable carries, generated only when it is unset. A
+# minted value that differs from the retained token is refused by name.
 fresh() {
 	if [ -L "$1" ] || [ -L "$1.new" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
 		missing "$1" "the-retained-registry-volume"
 		log "the retained token must be a regular file"
 		exit 1
 	fi
-	if [ ! -s "$1" ] && [ "$retained_tokens" = 1 ]; then
-		missing "$1" "the-retained-registry-volume"
-		log "registry material already exists; restore the original token pair from the retained volume"
+	eval "value=\${$2:-}"
+	unset "$2"
+	if [ -n "$value" ] && [ -s "$1" ] && [ "$(cat "$1")" != "$value" ]; then
+		missing "$2=$1" "tools/bringup/mint-secrets.sh-from-the-retained-registry-volume"
+		log "$2 differs from the retained token; mint it from the retained volume"
 		exit 1
 	fi
-	[ -s "$1" ] || { openssl rand -hex 32 >"$1.new" && mv "$1.new" "$1"; }
+	if [ "$mode" = material ] && [ ! -s "$1" ]; then
+		if [ -n "$value" ]; then
+			printf '%s\n' "$value" >"$1.new" && mv "$1.new" "$1"
+		elif [ "$retained_tokens" = 1 ]; then
+			missing "$1" "the-retained-registry-volume"
+			log "registry material already exists; restore the original token pair from the retained volume"
+			exit 1
+		else
+			openssl rand -hex 32 >"$1.new" && mv "$1.new" "$1"
+		fi
+	fi
+	unset value
 }
-if [ "$mode" = material ]; then
-	fresh "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE"
-	fresh "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"
-fi
+fresh "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" REGISTRY_REQUEST_TOKEN
+fresh "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE" REGISTRY_PUBLICATION_TOKEN
 for token in "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"; do
 	if [ -L "$token" ] || [ ! -s "$token" ] || [ ! -f "$token" ]; then
-		missing "$token" "registry-fly-init--prepare-material"
+		missing "$token" "registry-env-init--prepare-material"
 		exit 1
 	fi
 	mode_bits=$(stat -c %a "$token")
-	[ "$((0$mode_bits & 7))" = 0 ] || { missing "$token-mode" "registry-fly-init--prepare-material"; exit 1; }
+	[ "$((0$mode_bits & 7))" = 0 ] || { missing "$token-mode" "registry-env-init--prepare-material"; exit 1; }
 	[ "$(stat -c %h "$token")" = 1 ] && [ "$(wc -c <"$token")" -le 4098 ] || {
-		missing "$token-bounds" "registry-fly-init--prepare-material"; exit 1;
+		missing "$token-bounds" "registry-env-init--prepare-material"; exit 1;
 	}
 done
 if cmp -s "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"; then
@@ -126,7 +142,7 @@ if [ "$mode" = material ]; then
 	exit 0
 fi
 [ -f "$tokens/.initialized" ] && [ ! -L "$tokens/.initialized" ] || {
-	missing "token-material-marker" "registry-fly-init--prepare-material"; exit 1;
+	missing "token-material-marker" "registry-env-init--prepare-material"; exit 1;
 }
 
 flock -u 9
@@ -135,6 +151,14 @@ exec 9>&-
 # The readiness verdict listener of the registry: plain HTTP serving only the
 # verdict of the mTLS /healthz route, on a port of its own so the transport
 # check of the mTLS listener stays separate.
+# The upstreams are box-reachable public TLS names (identity, internal
+# programs and webhooks ingress through their Railway TCP proxies, the kernel
+# human service at kernel.paxeer.network); each is refused by name when unset.
+for name in LAYERX_REGISTRY_IDENTITY_URL LAYERX_REGISTRY_NODE_ENDPOINT LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT \
+	LAYERX_EVENTS_PROGRAM_UPSTREAM_URL LAYERX_EVENTS_WEBHOOKS_UPSTREAM_URL; do
+	eval "url=\${$name:-}"
+	case "$url" in https://?*) ;; *) missing "$name" "/etc/layerx/registry.env"; exit 1 ;; esac
+done
 case "${LAYERX_REGISTRY_HEALTH_LISTEN:-}" in
 *:[0-9]*) ;;
 *) missing "LAYERX_REGISTRY_HEALTH_LISTEN" "registry-deployment-material"; exit 1 ;;
@@ -164,13 +188,13 @@ install -d -o 4030 -g 4030 -m 0700 "$run/secrets"
 mkdir -p "$builder" "$kernel" "$quota"
 
 
-# secret <variable> <file>: writes the Fly secret the variable carries to the
+# secret <variable> <file>: writes the env secret the variable carries to the
 # file for uid 4030 and drops it from the environment the registry inherits.
 secret() {
 	eval "value=\${$1:-}"
 	if [ -z "$value" ]; then
-		missing "$1" "fly-secrets-import-of-the-registry-app"
-		log "the Fly secret $1 is unset; import it as the deploy step says"
+		missing "$1" "tools/bringup/mint-secrets.sh-into-/etc/layerx/registry.env"
+		log "the env secret $1 is unset; set it in /etc/layerx/registry.env from the minted set"
 		exit 1
 	fi
 	printf '%s' "$value" >"$2"
@@ -181,19 +205,19 @@ secret() {
 secret REGISTRY_IDENTITY_TOKEN "$LAYERX_REGISTRY_IDENTITY_TOKEN_FILE"
 secret REGISTRY_PROGRAM_EVENTS_TOKEN "$LAYERX_EVENTS_PROGRAM_UPSTREAM_TOKEN_FILE"
 secret REGISTRY_WEBHOOKS_EVENTS_TOKEN "$LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE"
-# bearer <variable>: the bearer the kernel app holds as well; refused by name
+# bearer <variable>: the bearer the kernel box holds as well; refused by name
 # when unset, never printed.
 bearer() {
 	eval "value=\${$1:-}"
 	if [ -z "$value" ]; then
-		missing "$1" "fly-secrets-import-of-the-registry-app-and-the-kernel-app"
+		missing "$1" "tools/bringup/mint-secrets.sh-into-the-registry-and-kernel-env"
 		log "$2"
 		exit 1
 	fi
 	unset value
 }
-bearer LAYERX_REGISTRY_NODE_AUTHORIZATION "the node bearer is a Fly secret of this app and of the kernel app"
-bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION "the receipt authority bearer is a Fly secret of this app and of the kernel app"
+bearer LAYERX_REGISTRY_NODE_AUTHORIZATION "the node bearer is an env secret of this box and of the kernel"
+bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION "the receipt authority bearer is an env secret of this box and of the kernel"
 
 # wait_for <producer> <files...>: blocks until every file is non-empty or the
 # material deadline passes; at the deadline every file still empty is refused
@@ -220,10 +244,10 @@ wait_for() {
 }
 tls_dir=$(dirname "$LAYERX_REGISTRY_TLS_CERT_DER")
 client_dir=$(dirname "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12")
-wait_for "tools/bringup/ca.sh issue registry" "$LAYERX_REGISTRY_TLS_CERT_DER" "$LAYERX_REGISTRY_TLS_KEY_DER" "$LAYERX_REGISTRY_CLIENT_CA_DER"
-wait_for "tools/bringup/ca.sh issue registry-event-client" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE" "$client_dir/ca.der"
-wait_for "the builder environment step of the deploy" "$builder/environment-tree-digest" "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT$LAYERX_REGISTRY_BUILDER_ENTRYPOINT"
-wait_for "the authenticated kernel material step of the deploy" "$kernel/current/generation.json"
+wait_for "tools/bringup/ca.sh issue registry copied over ssh into /data/tls/registry" "$LAYERX_REGISTRY_TLS_CERT_DER" "$LAYERX_REGISTRY_TLS_KEY_DER" "$LAYERX_REGISTRY_CLIENT_CA_DER"
+wait_for "tools/bringup/ca.sh issue registry-event-client copied over ssh into /data/tls/registry-event-client" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE" "$client_dir/ca.der"
+wait_for "build-env.sh rootfs and environment-tree-digest copied over ssh into /data/builder" "$builder/environment-tree-digest" "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT$LAYERX_REGISTRY_BUILDER_ENTRYPOINT"
+wait_for "the authenticated kernel material copied over ssh from the kernel box into /data/kernel" "$kernel/current/generation.json"
 generation=$(verify_kernel_material "$kernel") || exit 1
 selected=$(printf '%s' "$generation" | python3 -c 'import json,sys; print(json.load(sys.stdin)["directory"])')
 generation_id=$(printf '%s' "$generation" | python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])')
@@ -321,9 +345,12 @@ chmod 0400 "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_T
 # ca.sh makes the certificate root under umask 077; uid 4030 only traverses it.
 chmod 0711 "$(dirname "$tls_dir")"
 
-# The cgroup v2 subtree the Kubernetes node gives the pod: controllers enabled
-# at the root, a registry cgroup this process moves into, and the host view of
-# the hierarchy bound where the registry finds its own cgroup by inode.
+# The cgroup v2 subtree of the container's private cgroup namespace: every
+# process of the namespace root moves into the init leaf first, since cgroup v2
+# refuses controllers in subtree_control of a cgroup that holds processes;
+# then controllers are enabled at the root, this process moves into the
+# registry cgroup, and the container view of the hierarchy is bound where the
+# registry finds its own cgroup by inode.
 cgroup=/sys/fs/cgroup
 mountpoint -q "$cgroup" || mount -t cgroup2 -o nosuid,nodev,noexec cgroup2 "$cgroup"
 for controller in cpu memory pids io; do
@@ -332,8 +359,14 @@ for controller in cpu memory pids io; do
 		exit 1
 	}
 done
+mkdir -p "$cgroup/init" "$cgroup/registry" "$run/host-cgroup"
+while read -r pid; do
+	echo "$pid" >"$cgroup/init/cgroup.procs" || [ ! -d "/proc/$pid" ] || {
+		log "process $pid of the cgroup namespace root cannot move into $cgroup/init"
+		exit 1
+	}
+done <"$cgroup/cgroup.procs"
 echo "+cpu +memory +pids +io" >"$cgroup/cgroup.subtree_control"
-mkdir -p "$cgroup/registry" "$run/host-cgroup"
 mountpoint -q "$run/host-cgroup" || mount --bind "$cgroup" "$run/host-cgroup"
 echo "$$" >"$cgroup/registry/cgroup.procs"
 exec unshare --cgroup --mount --propagation private -- /bin/sh -c \
