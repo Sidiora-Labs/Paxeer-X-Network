@@ -318,3 +318,14 @@ started_at = "2026-10-07T12:58:00Z"
 outcome = "fail"
 evidence = "railway api deploymentLogs/buildLogs for the two deployment ids, 13:25Z"
 note = "interop builds and the shim refuses on INTEROP_CONFIG (owner secret); ramp built the unnamed last stage, which bypasses the shim and the env-init, so the binary refused with 'protected config unavailable' - Railway builds a Dockerfile without --target, fixed by making the railway stage last and naming the other stage box (local build /root/lx-ops/railway-move-2026-10-07/fleet/logs/ramp-default-stage-build.log, entrypoint verified)."
+
+[gate.3.1.10]
+task = "3.1"
+reqs = ["3.1"]
+revision = "7eab983d1"
+command = "railway deployment f1b2f599 (ramp), started by the push of the stage-order fix"
+environment = "Railway layerx/beta"
+started_at = "2026-10-07T13:30:00Z"
+outcome = "fail"
+evidence = "railway api deploymentLogs for f1b2f599, 13:40Z"
+note = "The image now starts through the env-files shim and stops at RAMP_QUOTES, the first of the 14 owner base64 secrets; every one of the 22 Railway services now builds from the repo and reaches its first owner-supplied secret or certificate."
