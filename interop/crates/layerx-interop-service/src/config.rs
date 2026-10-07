@@ -239,6 +239,7 @@ struct ModuleDeclaration {
 }
 
 pub fn load() -> Result<Config, String> {
+    let hosted_gateway = hosted_gateway_endpoint()?;
     let manifest_path = env::var("LAYERX_INTEROP_CONFIG")
         .map_err(|_| "LAYERX_INTEROP_CONFIG is required".to_owned())?;
     let manifest_bytes = fs::read(manifest_path).map_err(|error| error.to_string())?;
@@ -329,10 +330,7 @@ pub fn load() -> Result<Config, String> {
             .map_err(|_| "interop listen address is invalid".to_owned())?,
         listener: listener_config()?,
         client: Client::new(outbound_ca.clone(), identity),
-        hosted_gateway: Endpoint::parse(
-            &env::var("LAYERX_INTEROP_HOSTED_GATEWAY_URL")
-                .map_err(|_| "LAYERX_INTEROP_HOSTED_GATEWAY_URL is required".to_owned())?,
-        )?,
+        hosted_gateway,
         receipt_authority: Endpoint::parse(
             &env::var("LAYERX_INTEROP_RECEIPT_AUTHORITY_URL")
                 .map_err(|_| "LAYERX_INTEROP_RECEIPT_AUTHORITY_URL is required".to_owned())?,
@@ -353,6 +351,47 @@ pub fn load() -> Result<Config, String> {
         manifest,
         migration_v2: migration_v2_config()?,
     })
+}
+
+fn hosted_gateway_endpoint() -> Result<Endpoint, String> {
+    let value = env::var("LAYERX_INTEROP_HOSTED_GATEWAY_URL")
+        .map_err(|_| "LAYERX_INTEROP_HOSTED_GATEWAY_URL is required".to_owned())?;
+    let private_network = match env::var("LAYERX_INTEROP_ALLOW_RAILWAY_PRIVATE_NETWORK") {
+        Err(env::VarError::NotPresent) => false,
+        Ok(flag) if flag == "0" => false,
+        Ok(flag) if flag == "1" => true,
+        _ => return Err("LAYERX_INTEROP_ALLOW_RAILWAY_PRIVATE_NETWORK must be 0 or 1".to_owned()),
+    };
+    match value.strip_prefix("http://") {
+        Some(authority) if private_network => railway_private_endpoint(authority),
+        _ => Endpoint::parse(&value),
+    }
+}
+
+fn railway_private_endpoint(authority: &str) -> Result<Endpoint, String> {
+    let refused = || {
+        "LAYERX_INTEROP_HOSTED_GATEWAY_URL may use http:// only as http://<name>.railway.internal:<port>"
+            .to_owned()
+    };
+    let (host, port) = authority.rsplit_once(':').ok_or_else(refused)?;
+    let name = host.strip_suffix(".railway.internal").ok_or_else(refused)?;
+    if name.is_empty()
+        || name.len() > 63
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || port.is_empty()
+        || port.len() > 5
+        || !port.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(refused());
+    }
+    match port.parse::<u16>() {
+        Ok(port) if port != 0 => Ok(Endpoint::plain(host.to_owned(), port)),
+        _ => Err(refused()),
+    }
 }
 
 fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
@@ -393,8 +432,13 @@ fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
             .map_err(|_| "migration V2 Paxeer binding authority is invalid".to_owned())?,
         mapping_store: AccountMappingStoreV2::new(&profile.mapping_journal)
             .map_err(|_| "migration V2 mapping journal is invalid".to_owned())?,
-        history: profile.history_journal.as_ref().map(DurableExternalHistory::new).transpose()
-            .map_err(|_| "migration V2 history journal is invalid".to_owned())?.map(Mutex::new),
+        history: profile
+            .history_journal
+            .as_ref()
+            .map(DurableExternalHistory::new)
+            .transpose()
+            .map_err(|_| "migration V2 history journal is invalid".to_owned())?
+            .map(Mutex::new),
         ramp_intake: profile
             .ramp_intake
             .map(|ramp| -> Result<RampIntakeV2Config, String> {
@@ -958,4 +1002,80 @@ pub fn decode_hex(value: &str, maximum: usize) -> Result<Vec<u8>, String> {
             u8::from_str_radix(text, 16).map_err(|_| "hexadecimal payload is invalid".to_owned())
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use layerx_platform_gateway::http::{Client, Endpoint, OutboundRequest};
+    use native_tls::Certificate;
+    use openssl::asn1::Asn1Time;
+    use openssl::ec::{EcGroup, EcKey};
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::PKey;
+    use openssl::x509::X509;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn certificate() -> Certificate {
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).expect("curve");
+        let key = PKey::from_ec_key(EcKey::generate(&group).expect("key")).expect("pkey");
+        let mut builder = X509::builder().expect("builder");
+        builder.set_pubkey(&key).expect("public key");
+        builder
+            .set_not_before(&Asn1Time::days_from_now(0).expect("time"))
+            .expect("not before");
+        builder
+            .set_not_after(&Asn1Time::days_from_now(1).expect("time"))
+            .expect("not after");
+        builder.sign(&key, MessageDigest::sha256()).expect("sign");
+        Certificate::from_der(&builder.build().to_der().expect("der")).expect("certificate")
+    }
+
+    #[test]
+    fn plain_endpoint_carries_a_request_without_tls() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = Vec::new();
+            let mut byte = [0_u8; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                stream.read_exact(&mut byte).expect("request byte");
+                request.push(byte[0]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}")
+                .expect("response");
+            String::from_utf8(request).expect("utf-8 request")
+        });
+        let response = Client::without_identity(certificate())
+            .request(
+                &Endpoint::plain("localhost".to_owned(), port),
+                "readiness",
+                &OutboundRequest {
+                    method: "GET",
+                    path: "/readyz/core",
+                    idempotency: None,
+                    content_type: "application/json",
+                    body: &[],
+                },
+            )
+            .expect("plain upstream answers");
+        let request = server.join().expect("server thread");
+        assert!(
+            request.starts_with("GET /readyz/core HTTP/1.1\r\n"),
+            "{request}"
+        );
+        assert!(
+            request.contains(&format!("Host: localhost:{port}\r\n")),
+            "{request}"
+        );
+        assert!(
+            request.contains("Authorization: Bearer readiness\r\n"),
+            "{request}"
+        );
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, b"{\"ok\":true}");
+    }
 }
