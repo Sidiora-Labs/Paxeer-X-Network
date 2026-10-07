@@ -118,9 +118,22 @@ pub struct Endpoint {
     pub host: String,
     pub port: u16,
     pub base_path: String,
+    plain: bool,
 }
 
 impl Endpoint {
+    /// A plain-HTTP endpoint for a private-network hop; the caller owns the
+    /// policy that admits it.
+    #[must_use]
+    pub fn plain(host: String, port: u16) -> Self {
+        Self {
+            host,
+            port,
+            base_path: String::new(),
+            plain: true,
+        }
+    }
+
     /// # Errors
     /// Refuses noncanonical HTTPS endpoints or invalid DNS names and ports.
     pub fn parse(value: &str) -> Result<Self, String> {
@@ -158,6 +171,7 @@ impl Endpoint {
             host,
             port,
             base_path,
+            plain: false,
         })
     }
 
@@ -177,8 +191,38 @@ pub struct Client {
     idle: Mutex<BTreeMap<String, Vec<IdleConnection>>>,
 }
 
+enum Upstream {
+    Tls(TlsStream<TcpStream>),
+    Plain(TcpStream),
+}
+
+impl Read for Upstream {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Tls(stream) => stream.read(buffer),
+            Self::Plain(stream) => stream.read(buffer),
+        }
+    }
+}
+
+impl Write for Upstream {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Tls(stream) => stream.write(buffer),
+            Self::Plain(stream) => stream.write(buffer),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Tls(stream) => stream.flush(),
+            Self::Plain(stream) => stream.flush(),
+        }
+    }
+}
+
 struct IdleConnection {
-    stream: TlsStream<TcpStream>,
+    stream: Upstream,
     retained_at: Instant,
 }
 
@@ -240,6 +284,9 @@ impl Client {
     }
 
     pub fn connect_tls(&self, endpoint: &Endpoint) -> Result<TlsStream<TcpStream>, String> {
+        if endpoint.plain {
+            return Err("plain endpoint refused on a TLS connection".to_owned());
+        }
         let mut failure = "upstream unavailable".to_owned();
         for address in (endpoint.host.as_str(), endpoint.port)
             .to_socket_addrs()
@@ -279,7 +326,7 @@ impl Client {
         }
     }
 
-    fn take_idle(&self, pool_key: &str) -> Result<Option<TlsStream<TcpStream>>, String> {
+    fn take_idle(&self, pool_key: &str) -> Result<Option<Upstream>, String> {
         let mut idle = self
             .idle
             .lock()
@@ -296,7 +343,7 @@ impl Client {
         Ok(None)
     }
 
-    fn retain_idle(&self, pool_key: &str, stream: TlsStream<TcpStream>) -> Result<(), String> {
+    fn retain_idle(&self, pool_key: &str, stream: Upstream) -> Result<(), String> {
         let mut idle = self
             .idle
             .lock()
@@ -635,9 +682,18 @@ impl Client {
         let total_started = Instant::now();
         check_outbound_boundary(authorization, request, headers)?;
         let connector_started = Instant::now();
-        let connector = self.connector()?;
+        let connector = if endpoint.plain {
+            None
+        } else {
+            Some(self.connector()?)
+        };
         pay_timing("gateway.http.connector", connector_started);
-        let pool_key = format!("{}:{}", endpoint.host, endpoint.port);
+        let pool_key = format!(
+            "{}{}:{}",
+            if endpoint.plain { "http://" } else { "" },
+            endpoint.host,
+            endpoint.port
+        );
         let pool_started = Instant::now();
         let pooled = self.take_idle(&pool_key)?;
         pay_timing("gateway.http.pool", pool_started);
@@ -670,11 +726,17 @@ impl Client {
                         .map_err(|error| error.to_string())?;
                     tcp.set_write_timeout(Some(IO_TIMEOUT))
                         .map_err(|error| error.to_string())?;
-                    let tls_started = Instant::now();
-                    let mut stream = connector
-                        .connect(&endpoint.host, tcp)
-                        .map_err(|error| error.to_string())?;
-                    pay_timing("gateway.http.tls_handshake", tls_started);
+                    let mut stream = match connector {
+                        Some(connector) => {
+                            let tls_started = Instant::now();
+                            let stream = connector
+                                .connect(&endpoint.host, tcp)
+                                .map_err(|error| error.to_string())?;
+                            pay_timing("gateway.http.tls_handshake", tls_started);
+                            Upstream::Tls(stream)
+                        }
+                        None => Upstream::Plain(tcp),
+                    };
                     let exchange_started = Instant::now();
                     let result = exchange(&mut stream, endpoint, authorization, request, headers);
                     pay_timing("gateway.http.exchange", exchange_started);
@@ -928,7 +990,7 @@ pub struct UpstreamResponse {
 }
 
 fn send_request(
-    stream: &mut TlsStream<TcpStream>,
+    stream: &mut impl Write,
     endpoint: &Endpoint,
     authorization: &str,
     request: &OutboundRequest<'_>,
@@ -1025,7 +1087,7 @@ fn send_request(
 }
 
 fn exchange(
-    stream: &mut TlsStream<TcpStream>,
+    stream: &mut (impl Read + Write),
     endpoint: &Endpoint,
     authorization: &str,
     request: &OutboundRequest<'_>,
@@ -1685,7 +1747,8 @@ mod tests {
 }
 
 pub fn connect_public_tls(endpoint: &Endpoint) -> Result<TlsStream<TcpStream>, String> {
-    if !endpoint.base_path.is_empty()
+    if endpoint.plain
+        || !endpoint.base_path.is_empty()
         || endpoint.host.is_empty()
         || !endpoint
             .host
