@@ -4774,3 +4774,11 @@ observed = "deploy/rollout.kvx rows oracle-feeder and explorer-index name system
 [gotcha.1017]
 title = "railway build slots"
 observed = "redeploying all 22 services at once leaves most queued on 'Waiting for build slot' until they FAIL with 'Deployment does not have an associated build' and no logs; redeploy at most three at a time (pro plan)"
+
+[gotcha.1018]
+title = "railway rejects VOLUME"
+observed = "a Dockerfile with a VOLUME instruction fails the Railway build with 'dockerfile invalid: docker VOLUME at Line N is not supported'; drop the instruction and mount a Railway volume at the same path"
+
+[gotcha.1019]
+title = "next standalone on railway"
+observed = "Next.js standalone server listens on the container hostname by default and Railway's healthcheck never reaches it; set HOSTNAME=0.0.0.0 and PORT in the image and serve a static /healthz route"

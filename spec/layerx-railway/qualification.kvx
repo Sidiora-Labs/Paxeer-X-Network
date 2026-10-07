@@ -193,3 +193,22 @@ started_at = "2026-10-07T11:54:38Z"
 outcome = "fail"
 evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/registry-first-start.log"
 note = "--prepare-material passes (request and publication tokens retained on the volume); the bootstrap stage refuses on REGISTRY_IDENTITY_TOKEN from the minted set of task 2.2 (gate.2.2.1 blocked); the unit is stopped until the secrets exist."
+
+[gate.3.1.3]
+task = "3.1"
+reqs = ["3.1"]
+revision = "4b9cafc62"
+command = "python3 /root/lx-railway/rolling-redeploy.py <22 services>  (railway redeploy --from-source, three build slots)"
+environment = "Railway layerx/beta from the edge box, 12:05Z-12:40Z"
+started_at = "2026-10-07T12:05:00Z"
+outcome = "fail"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rolling-redeploy-1242Z.log"
+note = "Every service builds; dashboard-web, redis-router and redis-internal reach SUCCESS; identity, router, internal-*, webhooks-*, dashboard, indexer, wallet-gateway, intent-ingester and search-front start and refuse on the custody or owner secrets that gate.3.1.2 and the variables report leave unset; gas-station refuses on GAS_STATION_PAYMASTER; interop, relay-archive-a/b and ramp are unported images handled by lanes rw-22, rw-23 and rw-24."
+
+[observation.3.1.2]
+task = "3.1"
+file = "docker/relay-archive/Dockerfile"
+symbol = "VOLUME"
+observed = "Railway rejects the image at build time with 'dockerfile invalid: docker VOLUME at Line 34 is not supported'; dashboard-web failed its healthcheck until the Next standalone server bound 0.0.0.0 and answered /healthz."
+assumption = "Fly-shaped images need the same port: no VOLUME, HOSTNAME=0.0.0.0 for Next, a /healthz route, and private-network upstream names."
+severity = "minor"
