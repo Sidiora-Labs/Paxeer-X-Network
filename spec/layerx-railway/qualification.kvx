@@ -152,3 +152,22 @@ symbol = "events::Service::open"
 observed = "Line 386 calls the five-argument Service::open while events.rs (ef0ab7aba, 51687bb44) takes six since the enrollment snapshot path and key were added; the tap_nonce test target fails with E0061."
 assumption = "Pre-existing drift between the events service and its test support, outside the lane; one call-site update in the test support repairs it."
 severity = "major"
+
+[gate.2.3.2]
+task = "2.3"
+reqs = ["2.3"]
+revision = "4d9a75a89"
+command = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/2.3/platform cargo test -p layerx-platform-gateway --manifest-path platform/Cargo.toml && bash tools/railway/tests/env-files.test.sh"
+environment = "lane rw-21, cargo stable, no redis-server on the host"
+started_at = "2026-10-07T11:45:57Z"
+outcome = "fail"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-21-verify-1.log"
+note = "The crate and every test target compile after the call-site repair; the gateway binary's unit tests stop the run with six pre-existing failures (observation.2.3.2), and the tap_nonce and degraded integration tests need a redis-server this host lacks (rw-21-verify-2.log)."
+
+[observation.2.3.2]
+task = "2.3"
+file = "platform/hosted/gateway/src/main.rs"
+symbol = "authority_lni_compatibility, authority_readiness_contract, real_gateway_readiness_capabilities, real_core_and_identity_readiness, native_generated_registry_admits_exactly_the_closed_protocol_module_set, rpc::tests::schema_lists_every_public_method"
+observed = "Four cases panic 'real ... case required: NotPresent' without their environment inputs; the native registry case misses the Spot and Web modules; src/rpc.rs lists 30 public methods where the schema test expects 28."
+assumption = "Pre-existing failures of the gateway crate unrelated to the UI bindings owner change; the module set and the method count drift belong to whichever task added the two methods and the Spot and Web modules."
+severity = "major"
