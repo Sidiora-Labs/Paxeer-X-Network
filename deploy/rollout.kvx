@@ -50,7 +50,7 @@ order = 3
 target = "box"
 image = "layerx-program-registry"
 box_role = "program-registry"
-box_unit = "layerx-program-registry.service"
+box_unit = "layerx-registry.service"
 health = "tcp:9420"
 order = 4
 
