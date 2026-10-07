@@ -329,3 +329,30 @@ started_at = "2026-10-07T13:30:00Z"
 outcome = "fail"
 evidence = "railway api deploymentLogs for f1b2f599, 13:40Z"
 note = "The image now starts through the env-files shim and stops at RAMP_QUOTES, the first of the 14 owner base64 secrets; every one of the 22 Railway services now builds from the repo and reaches its first owner-supplied secret or certificate."
+
+[gate.2.1.2]
+task = "2.1"
+reqs = ["2.1"]
+revision = "d9cd2c99e"
+command = "python3 tools/qualification/paxeer-x/interop-archive-contract.py (static manifest_contract of RelayRailwayContract) ; PATH=$HOME/.foundry/bin:$PATH bash tools/bringup/check-live.test.sh"
+environment = "lane rw-26 worktree"
+started_at = "2026-10-07T13:50:00Z"
+outcome = "fail"
+evidence = "/root/lx-ops/railway-move-2026-10-07/fleet/logs/rw-26-verify-1.log, rw-26-verify-2.log, rw-26-verify-2-checklive-full.log"
+note = "relay-fly-assembly became relay-railway-assembly and the static relay contract passes against main; the full case needs --candidate-manifest and build/bin binaries; check-live.test.sh stops at its line 1471 kernel readiness step before the relay cases run (observation.2.1.2); merged as the rw-26 merge commit."
+
+[observation.2.1.2]
+task = "2.1"
+file = "tools/bringup/check-live.test.sh"
+symbol = "check_live_edge_passing, check_live_edge_failing, check_live_agent_public_passing, check_live_agent_public_refused, line 1471"
+observed = "Pre-existing: the edge cases grep a 4-field edge manifest that edge.sh now writes with 6 fields; the agent-public cases cannot set up the agentd-probe stalled TLS peer; tests/daemon/paxeer_x_kernel_readiness.py exits 1 at line 1471 and stops the harness before the relay cases."
+assumption = "Unrelated to the Railway move; the relay cases are verified only by the lane's isolated runs until the harness is repaired."
+severity = "major"
+
+[observation.2.1.3]
+task = "2.1"
+file = "tools/bringup/check-live.sh"
+symbol = "check_ramp"
+observed = "check_ramp and its tests are built on Fly machine and volume JSON, the Fly app name and fly-request-id and still read platform/ramps/fly.toml, which rw-23 renamed; the contract id relay-fly-assembly also survives in spec/paxeer-x/spec.kvx, spec/paxeer-x/tasks.md and CHANGELOG.md."
+assumption = "A Railway check_ramp needs the real railway CLI JSON shapes, to be written against a live service once the ramp runs; left Fly-shaped rather than guessed."
+severity = "major"
