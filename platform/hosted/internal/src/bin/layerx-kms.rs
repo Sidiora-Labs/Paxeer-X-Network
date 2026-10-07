@@ -19,6 +19,7 @@ fn run() -> Result<(), String> {
         SealKey::derive(kms::SEAL_LABEL, seal_secret.as_bytes()),
     )?;
     let service = kms::Service::new(store, token, true);
+    http::serve_health("layerx-kms", http::health_listen()?)?;
     http::serve(
         "layerx-kms",
         listen,

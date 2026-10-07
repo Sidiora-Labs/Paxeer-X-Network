@@ -1,23 +1,28 @@
 #!/bin/sh
-# Init of one process group of the internal app on Fly
-# (platform/hosted/internal/fly.toml). Runs as root on the group's machine:
-#   internal-fly-init kms
-#   internal-fly-init <kind> <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2
-# generates the group's tokens, the kms seal secret and the event source's
-# producer file, enrollment key and signed empty enrollment snapshot on the
-# volume on first boot, waits until
-# tools/bringup/ca.sh issue internal-<group> has put the TLS identity on the
-# volume, writes the upstream root (the internal CA, or the named ISRG root of
-# the image's trust store) as DER, hands every file to uid 4020 and starts the
-# service under that uid on [::]:9443.
+# Init of one role of the internal service image; each role is its own
+# service with its own volume at /data, selected by LAYERX_ROLE:
+#   LAYERX_ROLE=kms
+#   LAYERX_ROLE=journeys|payments|approvals|programs with
+#     LAYERX_INTERNAL_UPSTREAM_URL (upstream origin) and
+#     LAYERX_INTERNAL_UPSTREAM_ROOT (internal|ISRG_Root_X1|ISRG_Root_X2)
+# writes the role's tokens and the kms seal secret from the INTERNAL_<ROLE>_*
+# variables of tools/bringup/mint-secrets.sh (base64) when they are set and
+# generates them on the volume only when unset, writes the event source's
+# producer file, enrollment key and signed empty enrollment snapshot on first
+# boot, waits until tools/bringup/ca.sh issue internal-<role> has put the TLS
+# identity on the volume, writes the upstream root (the internal CA, or the
+# named ISRG root of the image's trust store) as DER, hands every file to uid
+# 4020 and starts the service under that uid on [::]:9443 with a plain
+# GET /healthz listener on LAYERX_HEALTH_ADDR (default [::]:8080).
 set -eu
 umask 077
 usage() {
-	echo "usage: internal-fly-init kms | journeys|payments|approvals|programs <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2" >&2
+	echo "usage: LAYERX_ROLE=kms | LAYERX_ROLE=journeys|payments|approvals|programs LAYERX_INTERNAL_UPSTREAM_URL=<upstream origin> LAYERX_INTERNAL_UPSTREAM_ROOT=internal|ISRG_Root_X1|ISRG_Root_X2 internal-env-init" >&2
 	exit 2
 }
-[ "$#" -ge 1 ] || usage
-group="$1"
+[ "$#" -eq 0 ] || usage
+group="${LAYERX_ROLE:-}"
+[ -n "$group" ] || usage
 tls_dir="/data/tls/internal-$group"
 state_dir=/data/state
 run_dir=/data/run
@@ -31,7 +36,7 @@ fi
 fresh() {
 	if [ -e "$1" ] || [ -L "$1" ]; then
 		[ -f "$1" ] && [ ! -L "$1" ] && [ -s "$1" ] || {
-			echo "internal-fly-init: invalid retained material $1" >&2
+			echo "internal-env-init: invalid retained material $1" >&2
 			exit 1
 		}
 		[ "$(stat -c %h "$1")" = 1 ] || exit 1
@@ -40,7 +45,7 @@ fresh() {
 		return
 	fi
 	if [ "$retained" = true ]; then
-		echo "internal-fly-init: retained material missing $1" >&2
+		echo "internal-env-init: retained material missing $1" >&2
 		exit 1
 	fi
 	temporary=$(mktemp "$run_dir/.secret.XXXXXX")
@@ -50,28 +55,71 @@ fresh() {
 	rm "$temporary"
 }
 
+# provide <path> <variable>: the variable's base64 value when set, otherwise
+# the retained or freshly generated value. A set seal secret never replaces a
+# different retained one, which would orphan the sealed keys.
+provide() {
+	eval "encoded=\${$2:-}"
+	if [ -z "$encoded" ]; then
+		fresh "$1"
+		return
+	fi
+	temporary=$(mktemp "$run_dir/.secret.XXXXXX")
+	printf '%s' "$encoded" | base64 -d >"$temporary" 2>/dev/null || {
+		rm -f "$temporary"
+		echo "internal-env-init: $2 is not base64" >&2
+		exit 1
+	}
+	[ -s "$temporary" ] || {
+		rm -f "$temporary"
+		echo "internal-env-init: $2 is empty" >&2
+		exit 1
+	}
+	if [ -e "$1" ] || [ -L "$1" ]; then
+		[ -f "$1" ] && [ ! -L "$1" ] || {
+			rm -f "$temporary"
+			echo "internal-env-init: invalid retained material $1" >&2
+			exit 1
+		}
+		if [ "$2" = INTERNAL_KMS_SEAL_SECRET ] && ! cmp -s "$temporary" "$1"; then
+			rm -f "$temporary"
+			echo "internal-env-init: $2 differs from the retained seal secret" >&2
+			exit 1
+		fi
+	elif [ "$2" = INTERNAL_KMS_SEAL_SECRET ] && [ "$retained" = true ]; then
+		rm -f "$temporary"
+		echo "internal-env-init: retained material missing $1" >&2
+		exit 1
+	fi
+	chmod 0600 "$temporary"
+	mv -f "$temporary" "$1"
+	unset "$2"
+}
+
 case "$group" in
 kms)
-	[ "$#" -eq 1 ] || usage
-	fresh "$run_dir/token"
-	fresh "$run_dir/seal-secret"
+	provide "$run_dir/token" INTERNAL_KMS_TOKEN
+	provide "$run_dir/seal-secret" INTERNAL_KMS_SEAL_SECRET
 	;;
 journeys | approvals | payments | programs)
-	[ "$#" -eq 3 ] || usage
-	case "$3" in
+	upstream_url="${LAYERX_INTERNAL_UPSTREAM_URL:-}"
+	upstream_root="${LAYERX_INTERNAL_UPSTREAM_ROOT:-}"
+	[ -n "$upstream_url" ] || usage
+	case "$upstream_root" in
 	internal | ISRG_Root_X1 | ISRG_Root_X2) ;;
 	*) usage ;;
 	esac
-	fresh "$run_dir/token"
-	fresh "$run_dir/producer-token"
+	variable=INTERNAL_$(printf '%s' "$group" | tr a-z A-Z)
+	provide "$run_dir/token" "${variable}_TOKEN"
+	provide "$run_dir/producer-token" "${variable}_PRODUCER_TOKEN"
 	fresh "$run_dir/enrollment-key"
 	if [ -L "$run_dir/credentials.json" ]; then
-		echo "internal-fly-init: enrollment snapshot is a symbolic link" >&2
+		echo "internal-env-init: enrollment snapshot is a symbolic link" >&2
 		exit 1
 	fi
 	if [ ! -e "$run_dir/credentials.json" ]; then
 		[ "$retained" = false ] || {
-			echo "internal-fly-init: retained enrollment snapshot is missing" >&2
+			echo "internal-env-init: retained enrollment snapshot is missing" >&2
 			exit 1
 		}
 		chown 4020:4020 "$run_dir" "$run_dir/enrollment-key"
@@ -98,7 +146,7 @@ journeys | approvals | payments | programs)
 esac
 
 if [ ! -s "$tls_dir/cert.der" ] || [ ! -s "$tls_dir/key.der" ] || [ ! -s "$tls_dir/ca.der" ]; then
-	echo "internal-fly-init: waiting for $tls_dir from tools/bringup/ca.sh issue internal-$group"
+	echo "internal-env-init: waiting for $tls_dir from tools/bringup/ca.sh issue internal-$group"
 	until [ -s "$tls_dir/cert.der" ] && [ -s "$tls_dir/key.der" ] && [ -s "$tls_dir/ca.der" ]; do
 		sleep 5
 	done
@@ -114,10 +162,10 @@ if [ "$group" = kms ]; then
 	export LAYERX_KMS_CLIENT_CA_DER="$tls_dir/ca.der"
 	binary=/usr/local/bin/layerx-kms
 else
-	if [ "$3" = internal ]; then
+	if [ "$upstream_root" = internal ]; then
 		cp "$tls_dir/ca.der" "$run_dir/upstream-ca.der.new"
 	else
-		openssl x509 -in "/usr/share/ca-certificates/mozilla/$3.crt" -outform DER -out "$run_dir/upstream-ca.der.new"
+		openssl x509 -in "/usr/share/ca-certificates/mozilla/$upstream_root.crt" -outform DER -out "$run_dir/upstream-ca.der.new"
 	fi
 	mv "$run_dir/upstream-ca.der.new" "$run_dir/upstream-ca.der"
 	export LAYERX_EVENTS_LISTEN="[::]:9443"
@@ -127,13 +175,14 @@ else
 	export LAYERX_EVENTS_TLS_CERT_DER="$tls_dir/cert.der"
 	export LAYERX_EVENTS_TLS_KEY_DER="$tls_dir/key.der"
 	export LAYERX_EVENTS_CLIENT_CA_DER="$tls_dir/ca.der"
-	export LAYERX_EVENTS_UPSTREAM_URL="$2"
+	export LAYERX_EVENTS_UPSTREAM_URL="$upstream_url"
 	export LAYERX_EVENTS_UPSTREAM_CA_DER="$run_dir/upstream-ca.der"
 	export LAYERX_EVENTS_PRODUCERS_FILE="$run_dir/producers.json"
 	export LAYERX_EVENTS_CREDENTIALS_FILE="$run_dir/credentials.json"
 	export LAYERX_EVENTS_ENROLLMENT_KEY_FILE="$run_dir/enrollment-key"
 	binary=/usr/local/bin/layerx-event-source
 fi
+export LAYERX_HEALTH_ADDR="${LAYERX_HEALTH_ADDR:-[::]:8080}"
 
 chown -R 4020:4020 "$state_dir" "$run_dir" "$tls_dir"
 # ca.sh makes the certificate root under umask 077; uid 4020 only traverses it.

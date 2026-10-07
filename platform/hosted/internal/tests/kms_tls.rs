@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ struct Fixture {
     directory: PathBuf,
     child: Child,
     port: u16,
+    health_port: u16,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -35,9 +37,16 @@ fn command(directory: &Path, args: &[&str]) {
         String::from_utf8_lossy(&output.stderr)
     );
 }
-fn spawn(directory: &Path, port: u16) -> Child {
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .unwrap_or_else(|error| panic!("port: {error}"))
+        .port()
+}
+fn spawn(directory: &Path, port: u16, health_port: u16) -> Child {
     Command::new(env!("CARGO_BIN_EXE_layerx-kms"))
         .env("LAYERX_KMS_LISTEN", format!("127.0.0.1:{port}"))
+        .env("LAYERX_HEALTH_ADDR", format!("127.0.0.1:{health_port}"))
         .env("LAYERX_KMS_STATE_DIR", directory.join("state"))
         .env("LAYERX_KMS_TOKEN_FILE", directory.join("token"))
         .env("LAYERX_KMS_SEAL_SECRET_FILE", directory.join("seal"))
@@ -163,7 +172,12 @@ fn convert_certificates(directory: &Path) {
 }
 impl Fixture {
     fn start() -> Self {
-        let directory = std::env::temp_dir().join(format!("layerx-kms-tls-{}", std::process::id()));
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "layerx-kms-tls-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir(&directory).unwrap_or_else(|error| panic!("directory: {error}"));
         create_certificates(&directory);
         convert_certificates(&directory);
@@ -174,18 +188,14 @@ impl Fixture {
             "kms-integration-seal-secret-32-bytes",
         )
         .unwrap_or_else(|error| panic!("seal: {error}"));
-        let listener =
-            TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("port: {error}"));
-        let port = listener
-            .local_addr()
-            .unwrap_or_else(|error| panic!("address: {error}"))
-            .port();
-        drop(listener);
-        let child = spawn(&directory, port);
+        let port = free_port();
+        let health_port = free_port();
+        let child = spawn(&directory, port, health_port);
         let fixture = Self {
             directory,
             child,
             port,
+            health_port,
         };
         fixture.wait();
         fixture
@@ -198,6 +208,29 @@ impl Fixture {
             thread::sleep(Duration::from_millis(25));
         }
         panic!("KMS never listened");
+    }
+    fn health(&self, method: &str, path: &str) -> (u16, String) {
+        let mut tcp = TcpStream::connect(("127.0.0.1", self.health_port))
+            .unwrap_or_else(|error| panic!("health connect: {error}"));
+        tcp.set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap_or_else(|error| panic!("timeout: {error}"));
+        write!(
+            tcp,
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n"
+        )
+        .unwrap_or_else(|error| panic!("health request: {error}"));
+        let mut response = String::new();
+        tcp.read_to_string(&mut response)
+            .unwrap_or_else(|error| panic!("health response: {error}"));
+        let (headers, body) = response
+            .split_once("\r\n\r\n")
+            .unwrap_or_else(|| panic!("framed health response"));
+        let status = headers
+            .split_whitespace()
+            .nth(1)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_else(|| panic!("health status"));
+        (status, body.to_owned())
     }
     fn request(&self, path: &str, token: &str, certificate: bool, body: &Value) -> (u16, Value) {
         let ca =
@@ -293,7 +326,7 @@ fn real_tls_kms_refuses_missing_credentials_and_preserves_signing_identity_after
         .child
         .wait()
         .unwrap_or_else(|error| panic!("wait: {error}"));
-    fixture.child = spawn(&fixture.directory, fixture.port);
+    fixture.child = spawn(&fixture.directory, fixture.port, fixture.health_port);
     fixture.wait();
     assert_eq!(
         fixture.request("/v1/signing-keys", "kms-integration-token", true, &create),
@@ -322,4 +355,21 @@ fn real_tls_kms_refuses_missing_credentials_and_preserves_signing_identity_after
             &Signature::from_bytes(&signature)
         )
         .is_err());
+}
+
+#[test]
+fn kms_serves_plain_healthz_beside_its_tls_listener() {
+    let fixture = Fixture::start();
+    for _ in 0..100 {
+        if TcpStream::connect(("127.0.0.1", fixture.health_port)).is_ok() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        fixture.health("GET", "/healthz"),
+        (200, r#"{"status":"ok"}"#.to_owned())
+    );
+    assert_eq!(fixture.health("POST", "/healthz").0, 405);
+    assert_eq!(fixture.health("GET", "/readyz").0, 404);
 }
