@@ -1,0 +1,34 @@
+# qualification.kvx - LayerX Fly-to-Railway move evidence ledger.
+#
+# This file is the single ledger of the layerx-railway feature. It is
+# append-only: records are never edited or removed; a rerun appends a new
+# record.
+#
+# Two record shapes live here.
+#
+# [observation.<task>.<n>]  - an assumption, an unrelated or pre-existing
+#   failure, a cross-task contradiction, a missing external interface, or a
+#   repair that would require weakening a check. Keys, all required:
+#     task       = "2.1"
+#     file       = "<repository path the observation is about>"
+#     symbol     = "<symbol, key or section inside that file>"
+#     observed   = "<what was seen>"
+#     assumption = "<what the work assumes until it is resolved>"
+#     severity   = "blocker" | "suspect" | "assumption" | "note"
+#
+# [gate.<task>.<n>]  - an EXECUTED gate, appended only after the named command
+#   ran against the named revision. Keys, all required:
+#     task        = "2.1"                       task that ran the gate
+#     reqs        = ["11"]                      acceptance criteria it qualifies
+#     revision    = "<40-hex commit>"           commit the command ran against
+#     command     = "<command line as run>"
+#     environment = "<os/arch/toolchain identity>"
+#     started_at  = "2026-10-07T07:00:00Z"      UTC, seconds precision
+#     outcome     = "pass" | "fail" | "blocked"
+#     evidence    = "<private evidence location; never a host address>"
+#     note        = "free text; for blocked, the owner input required"
+#
+# The <task> part of a record name equals its task key. A blocked gate names
+# the missing input and is never recorded as pass. Rollout ledger lines written
+# by tools/rollout/ledger.sh are gate records of task 4.2 and its reruns.
+# Observations never raise a task to done.

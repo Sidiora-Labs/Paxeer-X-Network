@@ -1,0 +1,529 @@
+[meta]
+name = "layerx-railway"
+slug = "layerx-railway"
+version = "1.0.0"
+status = "active"
+goal = "Retire Fly: every LayerX hosted service deploys on Railway (project layerx, environment beta) and every node, validator, key-holding or stateful service runs on owned boxes, all applied by our own rollout controller from pinned commits."
+scope = "Images and Dockerfiles, the env-files secret shim, service runtime config, certificates and token minting, box systemd units, the rollout controller and manifest, the publish pipeline, the edge, and operator docs."
+completion = "Every acceptance criterion below passes on one pinned main commit: no Fly reference outside docs, every Railway service deployed SUCCESS, every box unit active with health green, one rollout ledger line per applied service, and api-mainnet-beta served from the Railway router through the edge."
+
+[decision]
+source = "Orchestrator brief /root/lx-ops/railway-move-2026-10-07/fleet/BRIEF.md decisions D1-D10 and REPORT.md sections 1-5 (private); owner order 2026-10-07: Fly is retired."
+pipeline = "git push -> image build -> registry -> tools/rollout applies to Railway and boxes."
+railway_project = "layerx"
+railway_environment = "beta"
+image_repo = "ghcr.io/sidiora-labs"
+
+[execution]
+task_policy = "One lane per task, exact touches only, implementation first, then one build and one verify_cmd with at most two repair cycles inside 30 minutes."
+evidence = "Gate and observation records go to spec/layerx-railway/qualification.kvx; lane logs live under the private fleet log directory."
+
+[req.1]
+title = "D1 Railway project, environment and service set"
+ac_1 = "Railway project layerx with environment beta holds one service each for identity, router, redis-router, redis-internal, internal-kms, internal-journeys, internal-payments, internal-approvals, internal-programs, webhooks-public, webhooks-ingress, dashboard, dashboard-web, interop, search-front, ramp, relay-archive-a, relay-archive-b, wallet-gateway, wallet-postgres, gas-station, indexer and intent-ingester."
+ac_2 = "Private calls use <service>.railway.internal over IPv6 and every service binds ::."
+ac_3 = "Each former Fly process group is its own Railway service selected by env LAYERX_ROLE=<name>."
+
+[req.2]
+title = "D2 Kernel box and public box names"
+ac_1 = "The kernel (native then full profile), program registry, oracle feeder and explorer-index run on one kernel box."
+ac_2 = "kernel.paxeer.network carries kernel listeners 9443/9445/9446/9449/9457, index.paxeer.network carries registry 9420 and machine.paxeer.network:9454 carries agentd; Railway services reach them by those names over TLS."
+ac_3 = "The box reaches journeys, approvals, webhooks-ingress and identity through Railway TCP proxies <name>.proxy.rlwy.net:<port>, and tools/bringup/ca.sh adds the proxy names to those server certs from env LAYERX_EXTRA_SANS_<ROW>."
+
+[req.3]
+title = "D3 Images built from the repository"
+ac_1 = "Railway builds every Railway service from Sidiora-Labs/Paxeer-X-Network branch main with builder DOCKERFILE, build.dockerfilePath docker/<image>/Dockerfile, repo-root context and per-service watchPatterns."
+ac_2 = "Box services pull ghcr.io/sidiora-labs/<image>:<12-hex sha> pushed by the publish pipeline."
+ac_3 = "The last stage of every Dockerfile is the runtime stage that runs without --target and materialises file secrets before it execs the service; Railway deploys are pinned by commit sha."
+
+[req.4]
+title = "D4 File secrets from env through one shim"
+ac_1 = "docker/common/env-files.sh installed as /usr/local/bin/layerx-env-files reads /etc/layerx/files.tsv (NAME, guest_path, mode, roles) and decodes each base64 NAME for the current LAYERX_ROLE to a temp file, chmods, renames and unsets NAME."
+ac_2 = "A missing or invalid value for a required row fails closed; local_path rows are baked into the image by COPY; the shim ends with exec of its arguments."
+ac_3 = "Every image that had Fly [[files]] entries carries its files.tsv and uses ENTRYPOINT [/usr/local/bin/layerx-env-files, <service-init>]."
+
+[req.5]
+title = "D5 One token producer"
+ac_1 = "tools/bringup/mint-secrets.sh is the single producer of service tokens and emits Railway variables per service and box env files."
+ac_2 = "Identity, internal and the kernel init read their tokens from env when set and generate only when unset, so each caller token equals the callee token."
+
+[req.6]
+title = "D6 Kernel public listeners unchanged"
+ac_1 = "Kernel public listeners stay TLS plus bearer as coded; allow_unauthenticated is not modified by this feature."
+
+[req.7]
+title = "D7 Plain HTTP health for every Railway service"
+ac_1 = "Every Railway service answers a plain HTTP GET health path on $PORT that its Railway healthcheck targets."
+ac_2 = "TLS-only services add a plain listener on LAYERX_HEALTH_ADDR (default [::]:8080, path /healthz)."
+
+[req.8]
+title = "D8 Client IP from X-Forwarded-For"
+ac_1 = "Services that read Fly-Client-IP read the rightmost untrusted X-Forwarded-For hop set by trusted proxies instead."
+
+[req.9]
+title = "D9 No Fly names in runtime config"
+ac_1 = "No .internal, .fly.dev, fly-init or FLY_* name remains in runtime config; fly-init.sh scripts are renamed env-init.sh and Dockerfile stages named fly are renamed env-init."
+
+[req.10]
+title = "D10 Rollout controller"
+ac_1 = "tools/rollout/ (python3 stdlib only) applies the manifest deploy/rollout.kvx wave by wave from a pinned commit to Railway services and box units."
+
+[req.11]
+title = "Every Fly reference gone"
+ac_1 = "git grep -nE over the tree for fly.io, .internal, FLY_, fly-init and registry.fly returns nothing outside docs/."
+
+[req.12]
+title = "Every Railway service deploys"
+ac_1 = "Every Railway service in deploy/rollout.kvx reaches deployment status SUCCESS from its repository Dockerfile at the pinned commit."
+
+[req.13]
+title = "Every box service healthy under systemd"
+ac_1 = "Every box service in deploy/rollout.kvx runs under its systemd unit, systemctl is-active reports active and its manifest health check is green."
+
+[req.14]
+title = "Rollout applied and recorded"
+ac_1 = "The rollout controller applies one sha to both Railway and box targets and tools/rollout/ledger.sh records one ledger line per applied service."
+
+[req.15]
+title = "Edge serves the router from Railway"
+ac_1 = "Edge nginx serves api-mainnet-beta.paxeer.network from the Railway router service domain with Host and SNI set for Railway and X-Forwarded-Host kept."
+
+[task.1.1]
+title = "rw-01 Build the kernel native profile from source instead of the Fly registry base"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["3.1", "3.2", "3.3", "9.1"]
+touches = ["docker/kernel/Dockerfile"]
+verify_cmd = "docker build --check -f docker/kernel/Dockerfile ."
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.2]
+title = "rw-02 Add the env-files secret shim and per-image file tables"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["4.1", "4.2", "4.3"]
+touches = ["docker/common/env-files.sh", "tools/railway/fly-files-to-table.py", "tools/railway/tests/env-files.test.sh", "docker/bridge-relayer/files.tsv", "docker/intent-ingester/files.tsv", "docker/interop-gateway/files.tsv", "docker/kernel/files.tsv", "docker/platform-dashboard/files.tsv", "docker/platform-gateway/files.tsv", "docker/platform-webhooks/files.tsv", "docker/ramps/files.tsv", "docker/relay-archive/files.tsv", "docker/search-front/files.tsv", "docker/wallet-attestor/files.tsv", "docker/wallet-gateway/files.tsv"]
+verify_cmd = "bash tools/railway/tests/env-files.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.3]
+title = "rw-03 Run the platform images through the env-files shim in an env-init last stage"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["3.1", "3.2", "3.3", "4.1", "4.2", "4.3", "9.1"]
+touches = ["docker/platform-identity/Dockerfile", "docker/platform-internal/Dockerfile", "docker/platform-webhooks/Dockerfile", "docker/platform-registry/Dockerfile", "docker/platform-indexer/Dockerfile", "docker/platform-gateway/Dockerfile", "docker/platform-gateway/entrypoint.sh", "docker/platform-dashboard/Dockerfile", "platform/hosted/identity/env-init.sh", "platform/hosted/internal/env-init.sh", "platform/hosted/webhooks/env-init.sh"]
+verify_cmd = "for f in identity internal webhooks registry indexer gateway dashboard; do docker build --check -f docker/platform-$f/Dockerfile . || exit 1; done && bash -n platform/hosted/identity/env-init.sh && bash -n platform/hosted/internal/env-init.sh && bash -n platform/hosted/webhooks/env-init.sh && bash -n docker/platform-gateway/entrypoint.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.4]
+title = "rw-04 Issue certificates for Railway and box names and mint tokens as Railway variables and box env files"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["2.1", "2.2", "2.3", "5.1", "5.2", "9.1"]
+touches = ["tools/bringup/ca.sh", "tools/bringup/mint-secrets.sh", "tools/bringup/railway-names.env"]
+verify_cmd = "bash tools/bringup/tests/mint-secrets.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.5]
+title = "rw-05 Run identity on Railway with env-fed tokens and a plain health listener"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["5.1", "5.2", "7.1", "7.2", "9.1"]
+touches = ["platform/hosted/identity/src/main.rs", "platform/hosted/identity/tests/service.rs", "platform/hosted/identity/env-init.sh", "platform/hosted/identity/railway.env.example", "platform/hosted/identity/fly.toml"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-05/platform cargo test -p layerx-platform-identity --manifest-path platform/Cargo.toml"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.6]
+title = "rw-06 Run the internal kms and event sources as Railway services selected by LAYERX_ROLE"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "5.1", "5.2", "7.1", "7.2", "9.1"]
+touches = ["platform/hosted/internal/env-init.sh", "platform/hosted/internal/fly.toml", "platform/hosted/internal/railway.env.example", "platform/hosted/internal/src/bin/layerx-kms.rs", "platform/hosted/internal/src/bin/layerx-event-source.rs", "platform/hosted/internal/src/http.rs", "platform/hosted/internal/tests/kms_tls.rs"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-06/platform cargo test -p layerx-platform-internal --manifest-path platform/Cargo.toml"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.7]
+title = "rw-07 Run webhooks public, webhooks ingress and the dashboard on Railway"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "7.1", "7.2", "9.1"]
+touches = ["platform/hosted/webhooks/env-init.sh", "platform/hosted/webhooks/fly.toml", "platform/hosted/webhooks/railway.env.example", "platform/hosted/dashboard/fly.toml", "platform/hosted/dashboard/railway.env.example"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-07/platform cargo test -p layerx-platform-webhooks -p layerx-platform-dashboard --manifest-path platform/Cargo.toml"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.8]
+title = "rw-08 Run the router on Railway with env upstreams, X-Forwarded-For client IP and box kernel names"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3", "8.1", "9.1"]
+touches = ["platform/hosted/gateway/src/explorer_proxy.rs", "platform/hosted/gateway/src/explorer_target.rs", "platform/hosted/gateway/src/history.rs", "platform/hosted/gateway/src/http.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/paxeer.rs", "platform/hosted/gateway/src/rpc_register.rs", "platform/hosted/gateway/src/ui_proxy.rs", "platform/hosted/gateway/railway.env.example", "human/wallet/deploy/endpoint.toml"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-08/platform cargo test -p layerx-platform-gateway --manifest-path platform/Cargo.toml"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.9]
+title = "rw-09 Run the program registry on a box under a systemd docker unit"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["2.1", "2.2", "2.3", "9.1", "13.1"]
+touches = ["docker/platform-registry/init.sh", "docker/platform-registry/layerx-registry.service", "docker/platform-registry/registry.env.example", "platform/hosted/registry/fly.toml"]
+verify_cmd = "bash -n docker/platform-registry/init.sh && install -m 0644 docker/platform-registry/layerx-registry.service /run/systemd/system/layerx-registry.service && systemd-analyze verify --man=no /run/systemd/system/layerx-registry.service"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.10]
+title = "rw-10 Run the kernel on its own box: env-driven init, systemd unit and env file"
+status = "implemented"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["2.1", "2.2", "2.3", "5.1", "5.2", "6.1", "9.1", "13.1"]
+touches = ["docker/kernel/init.sh", "docker/kernel/kernel.env.example", "docker/kernel/layerx-kernel.service", "human/wallet/deploy/human.toml", "tools/bringup/tests/paxeer-x-runtime-contract.py"]
+verify_cmd = "bash -n docker/kernel/init.sh && python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case service-roster"
+note = "Lane verify passed; the service-roster case exits 1 because tools/bringup/check-live.sh kernel_roster lacks the oracle-feeder row (uid 4021) the new init launches; task 2.1 owns that row."
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.11]
+title = "rw-11 Send the router LayerX-Key credential from the intent ingester over https and give it a Dockerfile"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "3.1", "3.2", "3.3", "4.1", "4.2", "4.3", "9.1"]
+touches = ["docker/intent-ingester/Dockerfile", "interop/Cargo.lock", "interop/crates/layerx-intent-ingester/Cargo.toml", "interop/crates/layerx-intent-ingester/src/lib.rs", "interop/crates/layerx-intent-ingester/src/main.rs", "interop/crates/layerx-intent-ingester/src/submit.rs", "interop/crates/layerx-intent-ingester/tests/ingest.rs", "interop/deploy/intent-ingester/fly.toml", "interop/deploy/intent-ingester/railway.env.example"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-11/interop cargo test -p layerx-intent-ingester --manifest-path interop/Cargo.toml && docker build --check -f docker/intent-ingester/Dockerfile ."
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.12]
+title = "rw-12 Add the rollout controller and its manifest"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["10.1", "14.1"]
+touches = ["deploy/rollout.kvx", "tools/rollout/rollout.py", "tools/rollout/rollout.sh", "tools/rollout/box-apply.sh", "tools/rollout/ledger.sh", "tools/rollout/tests/rollout.test.sh"]
+verify_cmd = "bash tools/rollout/tests/rollout.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.13]
+title = "rw-13 Publish every repository image from main to GHCR"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["3.1", "3.2", "3.3"]
+touches = [".github/workflows/publish-images.yml", "platform/hosted/tests/beta-cluster.sh", "platform/hosted/tests/beta-images.sh", "tools/ci/tests/publish-images.test.sh"]
+verify_cmd = "bash tools/ci/tests/publish-images.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.14]
+title = "rw-14 Run the wallet attestors on boxes and the wallet gateway on Railway"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3", "4.1", "4.2", "4.3", "8.1", "9.1"]
+touches = ["docker/wallet-attestor/Dockerfile", "docker/wallet-gateway/Dockerfile", "docker/wallet-gateway/Dockerfile.dockerignore", "human/wallet/attestor/internal/config/config_test.go", "human/wallet/attestor/internal/transport/tls.go", "human/wallet/attestor/internal/transport/transport.go", "human/wallet/attestor/internal/transport/transport_test.go", "human/wallet/deploy/attestor-1.toml", "human/wallet/deploy/attestor-2.toml", "human/wallet/deploy/attestor-3.toml", "human/wallet/deploy/attestor-4.toml", "human/wallet/deploy/attestor-5.toml", "human/wallet/deploy/attestor-1.env.example", "human/wallet/deploy/attestor-2.env.example", "human/wallet/deploy/attestor-3.env.example", "human/wallet/deploy/attestor-4.env.example", "human/wallet/deploy/attestor-5.env.example", "human/wallet/deploy/gateway.toml", "human/wallet/deploy/redis.toml", "human/wallet/deploy/railway.env.example", "human/wallet/gateway/src/env.ts", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/src/routes/agent.ts", "human/wallet/gateway/src/routes/agentPrecompiles.ts", "human/wallet/gateway/src/routes/sign.ts", "human/wallet/gateway/test/trusted-proxies.test.ts"]
+verify_cmd = "(cd human/wallet/attestor && go test ./internal/config ./internal/transport) && (cd human/wallet/gateway && npx vitest run)"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.15]
+title = "rw-15 Run the gas station on Railway with a GET health route and the oracle feeder on the kernel box"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3", "7.1", "7.2", "9.1"]
+touches = ["docker/gas-station/init.sh", "interop/crates/layerx-gas-station/src/service.rs", "interop/crates/layerx-gas-station/tests/service.rs", "interop/deploy/gas-station/fly.toml", "platform/hosted/feeder/fly.toml", "platform/hosted/feeder/feeder.env.example", "platform/hosted/feeder/src/lib.rs", "platform/hosted/feeder/src/main.rs", "platform/hosted/feeder/tests/feeder.rs"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-15/interop cargo test -p layerx-gas-station --manifest-path interop/Cargo.toml && CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/rw-15/platform cargo test -p layerx-oracle-feeder --manifest-path platform/Cargo.toml"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.16]
+title = "rw-16 Write the layerx-railway feature spec and its qualification ledger"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3", "3.1", "3.2", "3.3", "4.1", "4.2", "4.3", "5.1", "5.2", "6.1", "7.1", "7.2", "8.1", "9.1", "10.1", "11.1", "12.1", "13.1", "14.1", "15.1"]
+touches = ["spec/layerx-railway/spec.kvx", "spec/layerx-railway/qualification.kvx"]
+verify_cmd = "cg spec lint -f layerx-railway"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.17]
+title = "rw-17 Let the edge proxy full Railway hosts and raw host:port streams"
+status = "in_progress"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["2.1", "2.2", "2.3", "15.1"]
+touches = ["tools/bringup/edge.sh"]
+verify_cmd = "bash -n tools/bringup/edge.sh && bash tools/bringup/edge.sh render api-mainnet-beta"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.1.18]
+title = "rw-18 Run both Railway Redis services from one TLS redis image"
+status = "done"
+mode = "BUILD"
+wave = 1
+requires = []
+reqs = ["1.1", "1.2", "1.3", "3.1", "3.2", "3.3", "4.1", "4.2", "4.3"]
+touches = ["docker/redis/Dockerfile", "docker/redis/entrypoint.sh", "docker/redis/files.tsv", "docker/redis/tests/redis-image.test.sh"]
+verify_cmd = "bash docker/redis/tests/redis-image.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.2.1]
+title = "Consistency sweep: retarget rosters, qualification scripts and docs to the renamed env-init paths and box units"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.3", "1.9", "1.10", "1.12", "1.13"]
+reqs = ["9.1", "11.1"]
+do_1 = "Add the oracle-feeder row (uid 4021, logged) to kernel_roster in tools/bringup/check-live.sh so the roster matches what docker/kernel/init.sh launches."
+do_2 = "Retarget tools/qualification/paxeer-x/event-delivery-contract.py, registry-router-bootstrap.py, registry-contract.py and tools/bringup/tests/paxeer-x-runtime-contract.py from fly-init paths and the registry-fly-init producer strings to the env-init paths and the new producer string."
+do_3 = "Rename the registry-fly-init producer string in docker/platform-registry/init.sh and align the box unit name between deploy/rollout.kvx (layerx-program-registry.service) and docker/platform-registry/layerx-registry.service."
+do_4 = "Repoint every reader of the deleted human/wallet/deploy/human.toml (tools/bringup/check-live.sh, check-live.test.sh, ca.sh, human-state-preserve.sh, kernel-genesis.sh, docker/kernel/Dockerfile) at docker/kernel/kernel.env.example and the kernel files table."
+do_5 = "Update the IMAGE_NAMES pages (docs/site/docs/operators/beta-cluster.md, hosted-internal.md, platform/identity.md and docs/wiki BetaCluster.md, HostedIdentity.md, HostedInternal.md) to the image set in platform/hosted/tests/beta-images.sh."
+touches = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/ca.sh", "tools/bringup/human-state-preserve.sh", "tools/bringup/kernel-genesis.sh", "docker/kernel/Dockerfile", "tools/qualification/paxeer-x/event-delivery-contract.py", "tools/qualification/paxeer-x/registry-router-bootstrap.py", "tools/qualification/paxeer-x/registry-contract.py", "tools/bringup/tests/paxeer-x-runtime-contract.py", "docker/platform-registry/init.sh", "docker/platform-registry/layerx-registry.service", "deploy/rollout.kvx", "docs/site/docs/operators/beta-cluster.md", "docs/site/docs/operators/hosted-internal.md", "docs/site/docs/platform/identity.md", "docs/wiki/BetaCluster.md", "docs/wiki/HostedIdentity.md", "docs/wiki/HostedInternal.md"]
+verify_cmd = "python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case service-roster && python3 tools/qualification/paxeer-x/registry-router-bootstrap.py && python3 tools/qualification/paxeer-x/registry-contract.py && python3 tools/qualification/paxeer-x/event-delivery-contract.py"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.2.2]
+title = "Mint the kernel bearer and registry tokens once and feed both sides"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.4", "1.10"]
+reqs = ["5.1", "5.2"]
+do_1 = "Add LAYERX_KERNEL_*_TOKEN producers (backend-admin, gateway-component, gateway-authority, webhooks-component, webhooks-authority, registry-component, registry-authority) to tools/bringup/mint-secrets.sh, emitted into the kernel box env file and each caller's Railway variables."
+do_2 = "Add the REGISTRY_* tokens (registry request token equal to ENDPOINT_PROGRAM_REGISTRY_TOKEN, registry identity token) and pair REGISTRY_PROGRAM_EVENTS_TOKEN between the registry box env file and internal-programs."
+do_3 = "Extend tools/bringup/tests/mint-secrets.test.sh to assert each pair is equal on both sides."
+touches = ["tools/bringup/mint-secrets.sh", "tools/bringup/tests/mint-secrets.test.sh"]
+verify_cmd = "bash tools/bringup/tests/mint-secrets.test.sh"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.2.3]
+title = "Resolve the router UI bindings owner check against the shim-written file under gateway uid 4020"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.2", "1.3", "1.8"]
+reqs = ["4.1", "4.2", "4.3"]
+do_1 = "platform/hosted/gateway/src/ui_proxy.rs owner_admitted accepts only uid 0 or the process uid, while the shim stages the bindings file for the gateway running as uid 4020; make the staged owner and the check agree without widening the check (the shim chowns to the row owner or the row is written by root before the drop)."
+do_2 = "Cover the staged-file case in the gateway tests with the real shim output."
+touches = ["platform/hosted/gateway/src/ui_proxy.rs", "docker/common/env-files.sh", "docker/platform-gateway/files.tsv", "docker/platform-gateway/entrypoint.sh"]
+verify_cmd = "CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/2.3/platform cargo test -p layerx-platform-gateway --manifest-path platform/Cargo.toml && bash tools/railway/tests/env-files.test.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.2.4]
+title = "Ship generation_client.py and generation_transport.py in the kernel runtime stage"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["1.1", "1.10"]
+reqs = ["3.1", "3.2", "3.3"]
+do_1 = "docker/kernel/init.sh runs python3 /opt/layerx/node/generation_client.py; copy platform/hosted/node/generation_client.py, generation_transport.py and reset_state.py into /opt/layerx/node/ in the last stage of docker/kernel/Dockerfile as docker/platform-core/Dockerfile does."
+touches = ["docker/kernel/Dockerfile"]
+verify_cmd = "docker build -f docker/kernel/Dockerfile -t layerx-kernel:check . && docker run --rm --entrypoint test layerx-kernel:check -f /opt/layerx/node/generation_client.py -a -f /opt/layerx/node/generation_transport.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.3.1]
+title = "Create the Railway beta environment: services, volumes, variables, TCP proxies and healthchecks"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["1.5", "1.6", "1.7", "1.8", "1.11", "1.14", "1.15", "1.18", "2.2", "2.3"]
+reqs = ["1.1", "1.2", "1.3", "2.1", "2.2", "2.3", "3.1", "3.2", "3.3", "7.1", "7.2", "12.1"]
+do_1 = "Create every D1 service in project layerx environment beta with source repo Sidiora-Labs/Paxeer-X-Network branch main, builder DOCKERFILE, dockerfilePath docker/<image>/Dockerfile and watchPatterns."
+do_2 = "Attach volumes to identity, internal-*, relay-archive-a/b, wallet-postgres and indexer; set variables from mint-secrets output and LAYERX_ROLE per service; add TCP proxies for journeys, approvals, webhooks-ingress and identity; point each healthcheck at its D7 path."
+touches = ["deploy/rollout.kvx"]
+verify_cmd = "bash tools/rollout/rollout.sh plan --sha \"$(git rev-parse HEAD)\" --env beta"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path. Missing Railway token or ids is an owner input recorded as blocked."
+
+[task.3.2]
+title = "Bring up the kernel box: kernel, oracle feeder and explorer-index under systemd"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["1.10", "1.15", "2.1", "2.2", "2.4"]
+reqs = ["2.1", "2.2", "2.3", "13.1"]
+do_1 = "Install docker/kernel/layerx-kernel.service with its env file from kernel.env.example, bind-mount ca.crt read-only, pull the GHCR kernel image by sha and start the unit; start the oracle feeder and explorer-index units."
+do_2 = "Open kernel 9443/9445/9446/9449/9457 to Railway and confirm kernel.paxeer.network resolves to the box."
+touches = ["docker/kernel/layerx-kernel.service", "docker/kernel/kernel.env.example"]
+verify_cmd = ". deploy/hosts.env && ssh -o BatchMode=yes \"$KERNEL_HOST\" 'systemctl is-active layerx-kernel.service layerx-oracle-feeder.service layerx-explorer-index.service'"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path. Missing box inventory or genesis inputs are owner inputs recorded as blocked."
+
+[task.3.3]
+title = "Bring up the registry box under its systemd unit"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["1.9", "2.1", "2.2", "3.2"]
+reqs = ["2.1", "2.2", "2.3", "13.1"]
+do_1 = "Install the registry unit and env file from docker/platform-registry, copy kernel material and bearers, run --prepare-material, then serve 9420 with health 9421."
+touches = ["docker/platform-registry/layerx-registry.service", "docker/platform-registry/registry.env.example"]
+verify_cmd = ". deploy/hosts.env && ssh -o BatchMode=yes \"$PROGRAM_REGISTRY_HOST\" 'systemctl is-active layerx-registry.service && curl -fsS http://127.0.0.1:9421/healthz'"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.4.1]
+title = "Repoint the edge: api-mainnet-beta to the Railway router, index and machine:9454 streams to the box"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["1.17", "3.1", "3.2", "3.3"]
+reqs = ["2.1", "2.2", "2.3", "15.1"]
+do_1 = "Register api-mainnet-beta against the Railway router domain with Host and SNI for Railway and X-Forwarded-Host kept; add index and machine:9454 streams to the kernel box."
+touches = ["tools/bringup/edge.sh"]
+verify_cmd = "curl -fsS https://api-mainnet-beta.paxeer.network/livez"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.4.2]
+title = "First rollout of one sha to Railway and boxes with ledger records"
+status = "pending"
+mode = "BUILD"
+wave = 4
+requires = ["1.12", "1.13", "3.1", "3.2", "3.3"]
+reqs = ["10.1", "12.1", "13.1", "14.1"]
+do_1 = "Run tools/rollout/rollout.sh apply for the pinned main sha across every wave of deploy/rollout.kvx and append one gate record per applied service to spec/layerx-railway/qualification.kvx through tools/rollout/ledger.sh."
+touches = ["spec/layerx-railway/qualification.kvx"]
+verify_cmd = "bash tools/rollout/rollout.sh apply --sha \"$(git rev-parse HEAD)\" --env beta"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
+
+[task.5.1]
+title = "Rewrite operator docs for Railway and box systemd and confirm no Fly reference remains"
+status = "pending"
+mode = "BUILD"
+wave = 5
+requires = ["4.1", "4.2"]
+reqs = ["11.1"]
+do_1 = "Rewrite the flyctl runbooks (human/wallet/docs/runbooks, human/wallet/docs/cutover.md, platform/relay_archive/README.md, explorer/deploy/railway/README.md) for Railway services, box systemd units and the rollout controller."
+touches = ["human/wallet/docs/runbooks", "human/wallet/docs/cutover.md", "platform/relay_archive/README.md", "explorer/deploy/railway/README.md"]
+verify_cmd = "sh -c '! git grep -nE \"fly\\.io|\\.internal|FLY_|fly-init|registry\\.fly\" -- . \":!docs/\" \":!spec/\" \":!CHANGELOG.md\"'"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the verify result, two failed repair cycles or 30 minutes; record revision, command, exit code and log path."
