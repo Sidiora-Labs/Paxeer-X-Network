@@ -23,7 +23,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 CASES = ("archive-origin-freshness", "ramp-journal-readiness", "mirror-checkpoint-acquisition",
-         "interop-settlement-readiness", "relay-fly-assembly")
+         "interop-settlement-readiness", "relay-railway-assembly")
 BUDGET_SECONDS = 3.0
 POLL_SECONDS = 0.2
 
@@ -635,9 +635,13 @@ class RouterInterposer:
         self.server.server_close()
 
 
-class RelayFlyContract(Contract):
-    MANIFEST = ROOT / "platform/relay_archive/fly.toml"
+class RelayRailwayContract(Contract):
+    MANIFEST = ROOT / "platform/relay_archive/railway.env.example"
     DOCKERFILE = ROOT / "docker/relay-archive/Dockerfile"
+    FILES = ROOT / "docker/relay-archive/files.tsv"
+    INSTALL = ROOT / "platform/relay_archive/install.sh"
+    ROLLOUT = ROOT / "deploy/rollout.kvx"
+    SERVICES = ("relay-archive-a", "relay-archive-b")
 
     def __init__(self, build, candidate):
         super().__init__(build, candidate)
@@ -650,60 +654,80 @@ class RelayFlyContract(Contract):
         super().close()
 
     def manifest_contract(self):
+        import re
         import tomllib
-        with self.MANIFEST.open("rb") as source:
-            fly = tomllib.load(source)
-        env = fly["env"]
-        self.fly_env = env
-        require(fly["app"] == "paxeer-relay-archive" and fly["primary_region"] == "ams",
-                "relay archive app or primary region differs from the decided paxeer-relay-archive/ams")
         text = self.MANIFEST.read_text()
-        require("--region ams" in text and "--region fra" in text and "fly scale count 2 --region ams,fra" in text,
-                "manifest does not document one volume and one machine in each of ams and fra")
-        require(fly["build"]["dockerfile"] == "../../docker/relay-archive/Dockerfile"
-                and fly["build"]["build-target"] == "fly", "manifest does not build the relay archive fly target")
+        pairs = [line.split("=", 1) for line in text.splitlines() if line.strip() and not line.startswith("#")]
+        require(all(len(pair) == 2 for pair in pairs), "railway.env.example holds a line that is not KEY=VALUE")
+        env = dict(pairs)
+        require(len(env) == len(pairs), "railway.env.example repeats a variable")
+        self.railway_env = env
+        with self.ROLLOUT.open("rb") as source:
+            services = tomllib.load(source)["service"]
+        relays = {name: row for name, row in services.items() if row.get("image") == "layerx-relay-archive"}
+        require(sorted(relays) == list(self.SERVICES)
+                and all(row["target"] == "railway" and row["railway_service"] == name for name, row in relays.items())
+                and len({row["order"] for row in relays.values()}) == 1,
+                "rollout ledger does not deploy exactly the Railway services relay-archive-a and relay-archive-b in one wave")
+        comments = " ".join(line for line in text.splitlines() if line.startswith("#"))
+        require(all(name in comments for name in self.SERVICES)
+                and f"each with its own volume at {env['LAYERX_RELAY_ARCHIVE_DATA_DIR']}" in comments,
+                "env example does not document one volume per replica service at the data directory")
         dockerfile = self.DOCKERFILE.read_text()
-        require("FROM base AS fly" in dockerfile
-                and 'ENTRYPOINT ["/opt/layerx/relay_archive/install.sh", "--fly-start"]' in dockerfile
+        stages = re.findall(r"^FROM .* AS (\S+)$", dockerfile, re.M)
+        railway = dockerfile[dockerfile.index("FROM base AS railway"):] if "FROM base AS railway" in dockerfile else ""
+        require(stages[-1:] == ["railway"]
+                and 'ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/opt/layerx/relay_archive/install.sh", '
+                    '"--railway-start"]' in railway
+                and "COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files" in railway
+                and "COPY docker/relay-archive/files.tsv /etc/layerx/files.tsv" in railway
                 and "/src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh" in dockerfile,
-                "Dockerfile fly target does not start through install.sh --fly-start")
-        mounts = fly["mounts"] if isinstance(fly["mounts"], list) else [fly["mounts"]]
-        require(len(mounts) == 1 and mounts[0]["source"] == "relay_archive_data"
-                and mounts[0]["destination"] == env["LAYERX_RELAY_ARCHIVE_DATA_DIR"],
-                "each machine does not mount its own relay_archive_data volume at the data directory")
-        service = fly["http_service"]
-        require(service["internal_port"] == int(env["LAYERX_RELAY_ARCHIVE_LISTEN"].rsplit(":", 1)[1])
-                and service["min_machines_running"] >= 2 and service["auto_stop_machines"] == "off",
-                "public route does not keep two machines on the relay listener")
-        require(any(check["path"] == "/readyz" for check in service["checks"]), "public route is not gated on /readyz")
-        require(service["concurrency"]["hard_limit"] >= service["concurrency"]["soft_limit"] > 0,
-                "public route concurrency is unbounded")
-        vm = fly["vm"][0]
-        require(vm["cpus"] >= 1 and vm["memory"].endswith("gb"), "machine resources are unbounded")
+                "Dockerfile railway target is not the last stage starting install.sh --railway-start through the shim")
+        require(not re.search(r"^VOLUME", dockerfile, re.M), "Dockerfile declares a VOLUME Railway refuses")
+        install = self.INSTALL.read_text()
+        require('if [ "${1:-}" = --railway-start ]; then' in install
+                and "--allow-railway-private-network) ALLOW_RAILWAY_PRIVATE_NETWORK=1; shift ;;" in install
+                and "fd12::/16" in install and "fly" not in install.lower(),
+                "install.sh does not dispatch --railway-start and admit only the Railway private network flag")
+        port = env["LAYERX_RELAY_ARCHIVE_LISTEN"].rsplit(":", 1)[1]
+        require(env["PORT"] == port and env["LAYERX_HEALTH_ADDR"].rsplit(":", 1)[1] == port
+                and f"EXPOSE {port}" in railway,
+                "Railway PORT, health address and EXPOSE are not the relay listener port")
+        require(all(row["health"] == "/healthz" for row in relays.values()),
+                "rollout ledger does not gate each replica service on /healthz")
+        block = install[install.index("railway_start() {"):]
+        block = block[:block.index("; do")]
+        required = re.findall(r"LAYERX_RELAY_ARCHIVE_[A-Z0-9_]+", block)
+        baked = set(re.findall(r"(LAYERX_RELAY_ARCHIVE_[A-Z0-9_]+)=", dockerfile))
+        missing = [name for name in required if name not in env and name not in baked]
+        require(len(required) == 14 and not missing,
+                f"env example lacks variables install.sh --railway-start requires: {missing}")
         upstream = urllib.parse.urlsplit(env["LAYERX_RELAY_ARCHIVE_UPSTREAM"])
-        require(upstream.scheme == "https" and upstream.hostname == "paxeer-human-service.internal"
-                and upstream.port == 9457, "replica origin is not the kernel app's TLS relay-archive listener")
-        require(env.get("LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK") == "1"
+        require(upstream.scheme == "https" and upstream.hostname == "kernel.paxeer.network"
+                and upstream.port == 9457, "replica origin is not the kernel box's TLS relay-archive listener")
+        require(env.get("LAYERX_RELAY_ARCHIVE_ALLOW_RAILWAY_PRIVATE_NETWORK") == "0"
                 and "LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV" not in env,
-                "replica does not admit exactly the Fly private network for its .internal origin")
+                "replica admits a private or loopback origin while its origin is the public kernel name")
         listed = subprocess.run(["bash", str(ROOT / "tools/bringup/ca.sh"), "services"], capture_output=True, text=True,
                                 check=True).stdout
         rows = [line.split() for line in listed.splitlines() if line.startswith("relay-archive ")]
         require(len(rows) == 1 and rows[0][1] == "box:KERNEL_HOST"
-                and "DNS:kernel.paxeer.network" in rows[0][5].split(","),
+                and f"DNS:{upstream.hostname}" in rows[0][5].split(","),
                 "relay-archive certificate is not issued for the kernel box's network name")
         require(env["LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM"] == "https://api-mainnet-beta.paxeer.network/v1/activities",
                 "replica submissions do not go to the router")
         require(env["LAYERX_RELAY_ARCHIVE_PUBLIC_URL"] == "https://archive.paxeer.network",
                 "replica public URL is not archive.paxeer.network")
-        require({(item["secret_name"], item["guest_path"]) for item in fly["files"]}
-                == {("LAYERX_INTERNAL_CA_ROOT", env["LAYERX_RELAY_ARCHIVE_INTERNAL_CA"])},
+        files = [line.split("\t") for line in self.FILES.read_text().splitlines() if line and not line.startswith("#")]
+        require([row[:2] for row in files] == [["LAYERX_INTERNAL_CA_ROOT", env["LAYERX_RELAY_ARCHIVE_INTERNAL_CA"]]]
+                and "LAYERX_INTERNAL_CA_ROOT" in env,
                 "replica holds secret files beyond the internal CA root")
-        self.passed("Fly manifest declares bounded replicas in ams and fra with their own volumes behind /readyz",
-                    ["app=paxeer-relay-archive primary_region=ams second=fra",
-                     f"mount relay_archive_data -> {env['LAYERX_RELAY_ARCHIVE_DATA_DIR']}",
-                     f"min_machines_running={service['min_machines_running']} vm={vm['cpus']}cpu/{vm['memory']}",
-                     "origin=https://paxeer-human-service.internal:9457 submission=router"])
+        self.passed("Railway env example and rollout ledger declare two replica services with their own volumes "
+                    "behind /healthz",
+                    ["services=relay-archive-a,relay-archive-b target=railway",
+                     f"volume per service -> {env['LAYERX_RELAY_ARCHIVE_DATA_DIR']}",
+                     f"railway stage entrypoint layerx-env-files install.sh --railway-start port={port}",
+                     "origin=https://kernel.paxeer.network:9457 submission=router"])
 
     def replica_env(self, name, **override):
         port = unused_port()
@@ -716,7 +740,7 @@ class RelayFlyContract(Contract):
                    LAYERX_RELAY_ARCHIVE_UPSTREAM=self.relay_origin,
                    LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM=self.router.url + "/v1/activities",
                    LAYERX_RELAY_ARCHIVE_INTERNAL_CA=str(self.work / "tls.crt"),
-                   LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS=self.fly_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"],
+                   LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS=self.railway_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"],
                    LAYERX_RELAY_ARCHIVE_DATA_DIR=str(base / "data"),
                    LAYERX_RELAY_ARCHIVE_RUN_DIR=str(base / "run"),
                    LAYERX_RELAY_ARCHIVE_LISTEN=f"127.0.0.1:{port}",
@@ -727,14 +751,14 @@ class RelayFlyContract(Contract):
         return {key: value for key, value in env.items() if value is not None}
 
     def start_replica(self, name, env):
-        process = self.start(name, ["bash", self.runtime / "install.sh", "--fly-start"], env=env)
+        process = self.start(name, ["bash", self.runtime / "install.sh", "--railway-start"], env=env)
         url = "http://" + env["LAYERX_RELAY_ARCHIVE_LISTEN"]
         self.replicas[name] = (url, process, env)
         return url, process
 
     def origin_contract(self):
         self.token = self.work / "submission-token"
-        self.token.write_text("relay-fly-" + os.urandom(32).hex())
+        self.token.write_text("relay-railway-" + os.urandom(32).hex())
         self.token.chmod(0o600)
         port = unused_port()
         self.relay_origin = f"https://127.0.0.1:{port}"
@@ -751,7 +775,7 @@ class RelayFlyContract(Contract):
 
     def start_refusals(self):
         refused = []
-        roots = self.fly_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"].split()
+        roots = self.railway_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"].split()
         variants = {
             "origin-unset": ({"LAYERX_RELAY_ARCHIVE_UPSTREAM": None}, "LAYERX_RELAY_ARCHIVE_UPSTREAM is unset"),
             "internal-ca-unset": ({"LAYERX_RELAY_ARCHIVE_INTERNAL_CA": None},
@@ -767,7 +791,7 @@ class RelayFlyContract(Contract):
         }
         for name, (override, message) in variants.items():
             env = self.replica_env("refused-" + name, **override)
-            result = self.execute(["bash", self.runtime / "install.sh", "--fly-start"], env=env, success=False)
+            result = self.execute(["bash", self.runtime / "install.sh", "--railway-start"], env=env, success=False)
             stderr = result.stderr.decode(errors="replace")
             require(message in stderr, f"{name}: refusal did not name the violated contract: {stderr[-500:]}")
             require(not (self.work / ("refused-" + name) / "run/relay-archive.json").exists(),
@@ -776,13 +800,13 @@ class RelayFlyContract(Contract):
                     f"{name}: refused start created archive state")
             refused.append({"variant": name, "exit_code": result.returncode, "message": message})
         self.refusals.extend(refused)
-        self.passed("Fly replica start refuses an incomplete environment, foreign roots and a plain origin",
+        self.passed("Railway replica start refuses an incomplete environment, foreign roots and a plain origin",
                     [f"{item['variant']} exits {item['exit_code']}" for item in refused])
 
     def replicas_ready(self):
         origin_head = self.request(self.relay_origin, "/v1/sync/head")[1]
         evidence = []
-        for name in ("replica-ams", "replica-fra"):
+        for name in ("replica-a", "replica-b"):
             url, _process = self.start_replica(name, self.replica_env(name))
             self.until(lambda: self.ready(url)[0] == 200, name + " pinned readiness")
             code, status = self.ready(url)
@@ -831,7 +855,7 @@ class RelayFlyContract(Contract):
             return response.status, response.read()
 
     def forwarding(self):
-        url = self.replicas["replica-ams"][0]
+        url = self.replicas["replica-a"][0]
         activity = self.execute([self.build / "tests/relay-archive-sign", "1"]).stdout
         authorization = "Bearer " + self.token.read_text()
         status, body = self.post(url, activity, authorization)
@@ -864,11 +888,11 @@ class RelayFlyContract(Contract):
                      "refused before forwarding" if len(self.router.received) == before else "router refused"])
 
     def restart(self):
-        url, process, env = self.replicas["replica-fra"]
+        url, process, env = self.replicas["replica-b"]
         before = self.request(url, "/v1/sync/head")[1]
         self.stop(process)
         restarted = now_ms()
-        url, _process = self.start_replica("replica-fra", env)
+        url, _process = self.start_replica("replica-b", env)
 
         def revalidated():
             value = self.ready(url)
@@ -2284,8 +2308,8 @@ def main():
                      "tests/relay-archive-sign"):
             require((build / path).is_file() and os.access(build / path, os.X_OK),
                     f"required built executable {path} is absent; run make relay-archive-build")
-        relay = arguments.case == "relay-fly-assembly"
-        contract = (RelayFlyContract if relay else Contract)(build, candidate)
+        relay = arguments.case == "relay-railway-assembly"
+        contract = (RelayRailwayContract if relay else Contract)(build, candidate)
         contract.run()
         expected = 8 if relay else 17
         require(len(contract.cases) == expected, f"expected {expected} executed cases, ran {len(contract.cases)}")
