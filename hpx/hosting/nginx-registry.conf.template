@@ -1,21 +1,20 @@
-# The hpx registry vhost of hpx/hosting/nginx.conf for the Fly app of
-# hpx/hosting/fly.toml: the Fly edge terminates TLS and forwards to this plain
-# listener, and the client address comes from its Fly-Client-IP header.
+# The hpx registry vhost of hpx/hosting/nginx.conf for the container of
+# docker/hpx-registry: the edge terminates TLS and forwards to this plain
+# listener on PORT, the registry listens on HPX_ADDR, and the client address
+# is the rightmost X-Forwarded-For hop outside LAYERX_TRUSTED_PROXIES. The
+# entrypoint substitutes both placeholders at start.
 limit_req_zone $binary_remote_addr zone=hpx_register:10m rate=10r/m;
 
 upstream hpx_registry {
-    server 127.0.0.1:8099;
+    server ${HPX_ADDR};
     keepalive 16;
 }
 
 server {
-    listen [::]:8080 ipv6only=off default_server;
+    listen [::]:${PORT} ipv6only=off default_server;
     server_name node.hyperpaxeer.com;
 
-    # ponytail: trusts Fly-Client-IP from any peer, since only the Fly proxy and the private network reach 8080; narrow to the proxy range if the app joins a shared network.
-    set_real_ip_from 0.0.0.0/0;
-    set_real_ip_from ::/0;
-    real_ip_header Fly-Client-IP;
+    include /etc/nginx/hpx-real-ip.conf;
 
     client_max_body_size 64k;
 

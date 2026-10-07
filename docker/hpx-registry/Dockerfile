@@ -1,5 +1,4 @@
-# hpx-registry — tiny stdlib-only Go service behind nginx, the image of the Fly
-# app of hpx/hosting/fly.toml. Artifacts and registry data live on the volume
+# hpx-registry — tiny stdlib-only Go service behind nginx. Artifacts and registry data live on the volume
 # at /srv/hpx (not baked), so re-publishing is just a file copy.
 FROM golang:1.22-alpine AS build
 ARG SOURCE_REVISION=unknown
@@ -32,7 +31,8 @@ COPY --from=build /hpx-registry /usr/local/bin/hpx-registry
 COPY --from=fonts /fonts/ /var/www/hpx/fonts/
 COPY hpx/hosting/index.html /var/www/hpx/index.html
 COPY assets/PaxeerLogo.png /var/www/hpx/paxeer-logo.png
-COPY hpx/hosting/nginx-fly.conf /etc/nginx/http.d/hpx-registry.conf
+COPY hpx/hosting/nginx-registry.conf.template /etc/nginx/hpx-registry.conf.template
+COPY --chmod=0555 docker/search-front/real-ip.sh /usr/local/bin/real-ip
 COPY docker/hpx-registry/entrypoint.sh /usr/local/bin/hpx-entrypoint
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/hpx-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/real-ip", "/etc/nginx/hpx-real-ip.conf", "/usr/local/bin/hpx-entrypoint"]
