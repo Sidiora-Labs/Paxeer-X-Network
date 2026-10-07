@@ -4770,3 +4770,7 @@ observed = "kernel-genesis.sh names tools/bringup/custody-governance.sh as step 
 [gotcha.1016]
 title = "ledger box units"
 observed = "deploy/rollout.kvx rows oracle-feeder and explorer-index name systemd units no file defines; the kernel init runs the oracle feeder inside the kernel container and explorer-index has no role at all"
+
+[gotcha.1017]
+title = "railway build slots"
+observed = "redeploying all 22 services at once leaves most queued on 'Waiting for build slot' until they FAIL with 'Deployment does not have an associated build' and no logs; redeploy at most three at a time (pro plan)"
