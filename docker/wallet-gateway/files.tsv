@@ -1,0 +1,7 @@
+WALLET_IDENTITY_BINDING_KEY	/run/secrets/wallet_identity_binding_key	0600	*
+WALLET_CUSTODY_INVENTORY	/run/secrets/wallet_custody_inventory.jwt	0600	*
+WALLET_CUSTODY_INVENTORY_PUBLIC_KEY	/run/secrets/wallet_custody_inventory_authority.pem	0600	*
+SPONSOR_PRIVATE_KEY	/run/secrets/sponsor_private_key		*
+ATTESTOR_CLIENT_CERT	/run/secrets/attestor_client.crt		*
+ATTESTOR_CLIENT_KEY	/run/secrets/attestor_client.key		*
+ATTESTOR_CA	/run/secrets/attestor_ca.crt		*

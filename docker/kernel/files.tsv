@@ -1,0 +1,4 @@
+LAYERX_INTERNAL_CA_ROOT	/etc/layerx/trust/ca.crt		*
+HUMAN_EVENTS_JOURNEY_TOKEN	/run/secrets/events-journey-token		*
+HUMAN_EVENTS_APPROVAL_TOKEN	/run/secrets/events-approval-token		*
+HUMAN_EVENTS_WEBHOOKS_TOKEN	/run/secrets/events-webhooks-token		*

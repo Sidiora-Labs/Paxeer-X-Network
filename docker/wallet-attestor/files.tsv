@@ -1,0 +1,11 @@
+ATTESTOR_NODE_KEY	/run/secrets/node.key		*
+ATTESTOR_BACKUP_KEY	/run/secrets/backup.key		*
+ATTESTOR_TLS_CERT	/run/secrets/tls.crt		*
+ATTESTOR_TLS_KEY	/run/secrets/tls.key		*
+ATTESTOR_TLS_CA	/run/secrets/ca.crt		*
+ATTESTOR_OPERATOR_CA	/run/secrets/operator-ca.crt		*
+ATTESTOR_REPLICA_KEY	/run/secrets/replica.key		*
+ATTESTOR_REPLICA_HOST_KEY	/run/secrets/replica-host.pub		*
+WALLET_IDENTITY_BINDING_PUBLIC_KEY	/run/secrets/wallet_identity_binding_public.pem	0600	*
+WALLET_CUSTODY_INVENTORY_PUBLIC_KEY	/run/secrets/wallet_custody_inventory_authority.pem	0600	*
+WALLET_CUSTODY_INVENTORY	/run/secrets/wallet_custody_inventory.jwt	0600	*

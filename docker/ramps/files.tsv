@@ -1,0 +1,14 @@
+RAMP_QUOTES	/run/ramp-source/quotes.json		*
+RAMP_CA_BUNDLE_PEM	/run/ramp-source/outbound-ca.pem		*
+RAMP_CLIENT_CERT	/run/ramp-source/outbound-cert.pem		*
+RAMP_CLIENT_P12	/run/ramp-source/outbound-identity.p12		*
+RAMP_CLIENT_PASSWORD	/run/ramp-source/outbound-identity-password		*
+RAMP_RPC_TRUST_ANCHOR_DER	/run/ramp-source/paxeer-rpc-ca.der		*
+RAMP_IDENTITY_TOKEN	/run/ramp-source/identity-token		*
+RAMP_COMPLIANCE_TOKEN	/run/ramp-source/compliance-token		*
+RAMP_PROVIDER_CREDENTIAL	/run/ramp-source/provider-token		*
+RAMP_GATEWAY_KEY	/run/ramp-source/gateway-key		*
+RAMP_AUTHORITY_TOKEN	/run/ramp-source/receipt-authority-token		*
+RAMP_SIGNER_TOKEN	/run/ramp-source/kms-token		*
+RAMP_CUSTODY_CREDENTIAL	/run/ramp-source/paxeer-custody-token		*
+RAMP_OPERATOR_CONTROL_TOKEN	/run/ramp-source/operator-control-token		*

@@ -1,0 +1,22 @@
+ENDPOINT_ROUTE_BINDINGS	/run/secrets/route-bindings.json	0600	*
+ENDPOINT_OUTBOUND_CA	/run/secrets/ca.crt.der		*
+ENDPOINT_REDIS_USERNAME	/run/secrets/redis-username		*
+ENDPOINT_REDIS_PASSWORD	/run/secrets/redis-password		*
+ENDPOINT_CLIENT_P12	/run/secrets/events-client.p12		*
+ENDPOINT_CLIENT_PASSWORD	/run/secrets/events-client-password		*
+ENDPOINT_EVENTS_PAYMENT_TOKEN	/run/secrets/events-payment-token		*
+ENDPOINT_EVENTS_WEBHOOKS_TOKEN	/run/secrets/events-webhooks-token		*
+ENDPOINT_CLIENT_CERT	/run/secrets/client.crt		*
+ENDPOINT_CLIENT_P12	/run/secrets/client.p12		*
+ENDPOINT_CLIENT_PASSWORD	/run/secrets/client-password		*
+ENDPOINT_COMPONENT_TOKEN	/run/secrets/component-token		*
+ENDPOINT_AUTHORITY_TOKEN	/run/secrets/authority-token		*
+ENDPOINT_IDENTITY_TOKEN	/run/secrets/identity-token		*
+ENDPOINT_IDENTITY_PROVISIONING_TOKEN	/run/secrets/identity-provisioning-token		*
+ENDPOINT_PROGRAM_REGISTRY_TOKEN	/run/secrets/program-registry-token		*
+ENDPOINT_SEQUENCER_PUBLIC_KEY	/run/secrets/sequencer-public-key		*
+ENDPOINT_SEQUENCER_ID	/run/secrets/sequencer-id		*
+ENDPOINT_SEQUENCER_FIRST_BATCH	/run/secrets/sequencer-first-batch		*
+ENDPOINT_SEQUENCER_LAST_BATCH	/run/secrets/sequencer-last-batch		*
+ENDPOINT_KEY_PROVISIONING_KEY	/run/secrets/key-provisioning-key		*
+ENDPOINT_MODULE_REGISTRY	/run/secrets/module-registry.json		*
