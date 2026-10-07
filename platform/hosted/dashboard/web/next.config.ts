@@ -15,7 +15,7 @@ const config: NextConfig = {
     return [
       {
         source: "/v1/dashboard/:path*",
-        destination: "http://paxeer-dashboard.internal:9445/v1/dashboard/:path*",
+        destination: "http://dashboard.railway.internal:9445/v1/dashboard/:path*",
       },
     ];
   },
