@@ -1,0 +1,9 @@
+DASHBOARD_CLIENT_CERT	/run/layerx/client/cert.pem		*
+DASHBOARD_CLIENT_P12	/run/layerx/client/identity.p12		*
+DASHBOARD_CLIENT_PASSWORD	/run/layerx/client/password		*
+DASHBOARD_CLIENT_CA_DER	/run/layerx/ca/internal.der		*
+DASHBOARD_WEBHOOKS_REDIS_USERNAME	/run/layerx/redis/username		*
+DASHBOARD_WEBHOOKS_REDIS_PASSWORD	/run/layerx/redis/password		*
+DASHBOARD_GATEWAY_REDIS_USERNAME	/run/layerx/dashboard-redis/username		*
+DASHBOARD_GATEWAY_REDIS_PASSWORD	/run/layerx/dashboard-redis/password		*
+DASHBOARD_IDENTITY_TOKEN	/run/layerx/tokens/identity		*

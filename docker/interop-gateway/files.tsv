@@ -1,0 +1,12 @@
+INTEROP_CONFIG	/run/layerx/interop/config.json		*
+INTEROP_MODULE_REGISTRY	/run/layerx/interop/registry.json		*
+INTEROP_CLIENT_CA_DER	/run/layerx/trust/ca.crt.der		*
+INTEROP_CLIENT_P12	/run/layerx/client/client.p12		*
+INTEROP_CLIENT_PASSWORD	/run/layerx/client/password		*
+INTEROP_AUTHORITY_TOKEN	/run/layerx/authority/token		*
+INTEROP_SEQUENCER_PUBLIC_KEY	/run/layerx/authority/sequencer-public-key		*
+INTEROP_SEQUENCER_ID	/run/layerx/authority/sequencer-id		*
+INTEROP_SEQUENCER_FIRST_BATCH	/run/layerx/authority/sequencer-first-batch		*
+INTEROP_SEQUENCER_LAST_BATCH	/run/layerx/authority/sequencer-last-batch		*
+INTEROP_REDIS_USERNAME	/run/layerx/redis/username		*
+INTEROP_REDIS_PASSWORD	/run/layerx/redis/password		*
