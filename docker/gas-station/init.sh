@@ -1,16 +1,17 @@
 #!/bin/bash
-# Init of the gas station app on Fly (interop/deploy/gas-station/fly.toml).
-# Runs as root on the machine: renders the station configuration and the rate
-# publisher configuration from the app's env and secrets onto the volume, hands
-# the journal directory to uid 4020 and runs both processes of the machine
-# under that uid: paxeer-gas-station serving quotes and submissions, and
+# Init of the gas-station service on Railway
+# (interop/deploy/gas-station/railway.env.example). Runs as root in the
+# container: renders the station configuration and the rate publisher
+# configuration from the service's env and secrets onto the volume, hands the
+# journal directory to uid 4020 and runs both processes of the container under
+# that uid: paxeer-gas-station serving quotes and submissions, and
 # paxeer-gas-station rate publishing the owner's rate file
 # /data/gas-station/rate.toml to the paymaster with setRate. The relayer key
 # stays in the env variable GAS_STATION_RELAYER_KEY_ENV names and reaches only
 # the station; the paymaster owner's key stays in GAS_STATION_RATE_OWNER_KEY
 # and reaches only the publisher; neither is written out. When either process
 # exits, the other is stopped and the init exits with its status, so the
-# machine restarts both.
+# service restarts both.
 set -eu
 umask 077
 dir=/data/gas-station

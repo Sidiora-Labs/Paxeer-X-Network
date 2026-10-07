@@ -2,8 +2,9 @@ use std::path::Path;
 
 use ed25519_dalek::SigningKey;
 use layerx_oracle_feeder::{
-    aggregate, hex_decode, median, oracle_registry, parse_fixed, parse_quote, signed_activity,
-    ActivityScope, AggregateError, Config, Journal, MarketRecord, Observation, Quote,
+    aggregate, health_status, hex_decode, median, oracle_registry, parse_fixed, parse_quote,
+    signed_activity, ActivityScope, AggregateError, Config, Journal, MarketRecord, Observation,
+    Quote,
 };
 use layerx_types::payload::{ActivityType, ModuleId, PerpsPayload};
 use serde_json::Value;
@@ -238,4 +239,23 @@ fn journal_round_trip() -> Result {
     assert_eq!(loaded.next_observation_sequence("BTC-USD"), 13);
     std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[test]
+fn health_listener_routes() {
+    let healthz = b"GET /healthz HTTP/1.1\r\nHost: feeder\r\n\r\n";
+    let readyz = b"GET /readyz HTTP/1.1\r\nHost: feeder\r\n\r\n";
+    assert_eq!(health_status(healthz, false), "200 OK");
+    assert_eq!(health_status(healthz, true), "200 OK");
+    assert_eq!(health_status(readyz, true), "200 OK");
+    assert_eq!(health_status(readyz, false), "503 Service Unavailable");
+    assert_eq!(
+        health_status(b"POST /healthz HTTP/1.1\r\n\r\n", true),
+        "404 Not Found"
+    );
+    assert_eq!(
+        health_status(b"GET /healthzz HTTP/1.1\r\n\r\n", true),
+        "404 Not Found"
+    );
+    assert_eq!(health_status(b"", true), "404 Not Found");
 }

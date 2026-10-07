@@ -3,6 +3,7 @@
 !hpx/registry/main.go
 !hpx/hosting/fonts.sha256
 !hpx/hosting/index.html
-!hpx/hosting/nginx-fly.conf
+!hpx/hosting/nginx-registry.conf.template
+!docker/search-front/real-ip.sh
 !assets/PaxeerLogo.png
 !docker/hpx-registry/entrypoint.sh

@@ -26,6 +26,22 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
+/// Status line of the plain health listener: `GET /healthz` answers 200
+/// while the process runs, `GET /readyz` answers 200 only while the last
+/// complete round is fresh, anything else 404.
+#[must_use]
+pub fn health_status(request: &[u8], ready: bool) -> &'static str {
+    if request.starts_with(b"GET /healthz ") {
+        "200 OK"
+    } else if !request.starts_with(b"GET /readyz ") {
+        "404 Not Found"
+    } else if ready {
+        "200 OK"
+    } else {
+        "503 Service Unavailable"
+    }
+}
+
 /// Perps oracle push ordinal (`0x00060003`).
 pub const ORACLE_PUSH_ORDINAL: u16 = 3;
 /// `LX_ORACLE_OBSERVATION_BYTES`.

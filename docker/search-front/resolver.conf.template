@@ -1,0 +1,1 @@
+resolver ${NGINX_LOCAL_RESOLVERS} valid=30s;

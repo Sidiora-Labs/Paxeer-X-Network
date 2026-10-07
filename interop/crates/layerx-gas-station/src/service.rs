@@ -618,6 +618,13 @@ where
             Ok(head) => head,
             Err(error) => return ("-", Err(error), None, false),
         };
+        if head.path == "/healthz" {
+            return if head.method == "GET" {
+                ("/healthz", Ok(json!({"status": "ok"})), None, false)
+            } else {
+                ("/healthz", Err(ServiceError::MethodNotAllowed), None, false)
+            };
+        }
         let route = match head.path.as_str() {
             "/quote" => "/quote",
             "/submit" => "/submit",

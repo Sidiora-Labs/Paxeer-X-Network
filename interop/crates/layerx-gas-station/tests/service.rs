@@ -503,6 +503,20 @@ fn quote_and_sponsored_submission_over_a_socket() -> TestResult {
 }
 
 #[test]
+fn healthz_answers_a_plain_get_and_refuses_other_methods() -> TestResult {
+    let harness = start("HEALTH")?;
+    let (status, body) = harness.exchange(b"GET /healthz HTTP/1.1\r\nHost: station\r\n\r\n")?;
+    assert_eq!((status, body), (200, json!({"status": "ok"})));
+    let (status, body) = harness.post("/healthz", &json!({}))?;
+    assert_eq!(
+        (status, body),
+        (405, json!({"error": "method_not_allowed"}))
+    );
+    harness.assert_log_clean(&["/healthz 200", "/healthz 405"]);
+    harness.finish()
+}
+
+#[test]
 fn quote_refusals_are_4xx_and_unavailability_is_5xx() -> TestResult {
     let harness = start("SPLIT")?;
     let mut lines = Vec::new();
