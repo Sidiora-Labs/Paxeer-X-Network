@@ -1,11 +1,8 @@
+use super::{http, response, ui_proxy, ws, IncomingRequest, OutgoingResponse};
 use layerx_platform_gateway::explorer_target::{owns_target, split_target, MAX_TARGET, PREFIX};
-use super::{http, response, ws, IncomingRequest, OutgoingResponse};
 use std::collections::BTreeSet;
 use zeroize::Zeroizing;
 
-const ORIGIN: &str = "https://api-mainnet-beta.paxeer.network";
-const HOST: &str = "api-mainnet-beta.paxeer.network";
-const UPSTREAM: &str = "https://explorer-backend-production-6fc2.up.railway.app";
 const MAX_BODY: usize = 8 * 1024 * 1024;
 const SOCKET_PATH: &str = "/socket/v2/websocket";
 
@@ -124,17 +121,23 @@ pub(super) fn scope_cookie(value: &str) -> Result<Option<String>, String> {
     Ok(Some(output))
 }
 
-fn same_origin_referer(value: &str) -> bool {
-    value.strip_prefix(ORIGIN).is_some_and(|rest| {
-        rest == "/explorer" || rest.starts_with("/explorer/") || rest.starts_with("/explorer?")
-    })
+fn same_origin_referer(public: &ui_proxy::Public, value: &str) -> bool {
+    value
+        .strip_prefix(public.origin.as_str())
+        .is_some_and(|rest| {
+            rest == "/explorer" || rest.starts_with("/explorer/") || rest.starts_with("/explorer?")
+        })
 }
 
 fn admitted_headers(
     request: &IncomingRequest,
     route: &Route,
 ) -> Result<Vec<(String, Zeroizing<String>)>, u16> {
-    if request.headers.get("host").is_none_or(|v| v != HOST)
+    let public = ui_proxy::public().ok_or(503_u16)?;
+    if request
+        .headers
+        .get("host")
+        .is_none_or(|v| *v != public.host)
         || request.headers.contains_key("x-layerx-principal")
         || request.headers.contains_key("x-layerx-api-key")
         || request.body.len() > MAX_BODY
@@ -143,8 +146,8 @@ fn admitted_headers(
     }
     let origin = request.headers.get("origin");
     let referer = request.headers.get("referer");
-    if origin.is_some_and(|v| v != ORIGIN)
-        || referer.is_some_and(|v| !same_origin_referer(v))
+    if origin.is_some_and(|v| *v != public.origin)
+        || referer.is_some_and(|v| !same_origin_referer(public, v))
         || request
             .headers
             .get("sec-fetch-site")
@@ -204,13 +207,16 @@ fn admitted_headers(
             forwarded.push(("cookie".into(), value));
         }
     }
-    forwarded.push(("x-forwarded-host".into(), Zeroizing::new(HOST.into())));
+    forwarded.push((
+        "x-forwarded-host".into(),
+        Zeroizing::new(public.host.clone()),
+    ));
     forwarded.push(("x-forwarded-proto".into(), Zeroizing::new("https".into())));
     Ok(forwarded)
 }
 
-fn location(value: &str) -> Result<String, String> {
-    if let Some(path) = value.strip_prefix(UPSTREAM) {
+fn location(upstream: &str, value: &str) -> Result<String, String> {
+    if let Some(path) = value.strip_prefix(upstream) {
         if !path.starts_with('/') {
             return Err("explorer redirect origin refused".into());
         }
@@ -263,7 +269,11 @@ fn http_route(request: &IncomingRequest) -> OutgoingResponse {
         Ok(value) => value,
         Err(status) => return response(status, "explorer_request_refused", None),
     };
-    let Ok(endpoint) = http::Endpoint::parse(UPSTREAM) else {
+    let Some(upstream) = ui_proxy::public().and_then(|public| public.explorer_backend.as_deref())
+    else {
+        return response(503, "explorer_not_configured", None);
+    };
+    let Ok(endpoint) = http::Endpoint::parse(upstream) else {
         return response(503, "explorer_not_configured", None);
     };
     let target = &request.path[PREFIX.len()..];
@@ -305,7 +315,7 @@ fn http_route(request: &IncomingRequest) -> OutgoingResponse {
                 Err(_) => return response(502, "explorer_cookie_refused", None),
             }
         } else if name == "location" {
-            match location(&value) {
+            match location(upstream, &value) {
                 Ok(value) => output.headers.push((name, value)),
                 Err(_) => return response(502, "explorer_redirect_refused", None),
             }
@@ -339,9 +349,12 @@ pub(super) fn websocket<S: ws::Connection>(
         Ok(value) => value,
         Err(status) => return Some(refusal(stream, status, "explorer_request_refused")),
     };
-    let endpoint = match http::Endpoint::parse(UPSTREAM) {
-        Ok(value) => value,
-        Err(_) => return Some(refusal(stream, 503, "explorer_not_configured")),
+    let endpoint = match ui_proxy::public()
+        .and_then(|public| public.explorer_backend.as_deref())
+        .map(http::Endpoint::parse)
+    {
+        Some(Ok(value)) => value,
+        _ => return Some(refusal(stream, 503, "explorer_not_configured")),
     };
     let headers: Vec<(&str, &str)> = forwarded
         .iter()
@@ -365,6 +378,8 @@ pub(super) fn websocket<S: ws::Connection>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const HOST: &str = "api-mainnet-beta.paxeer.network";
+    const ORIGIN: &str = "https://api-mainnet-beta.paxeer.network";
     #[test]
     fn explorer_query_and_finite_routes() {
         assert_eq!(ROUTES.len(), 141);
@@ -407,6 +422,7 @@ mod tests {
     }
     #[test]
     fn explorer_dynamic_proof_is_endpoint_scoped() {
+        assert_eq!(ui_proxy::beta_public().host, HOST);
         let mut request = IncomingRequest {
             method: "GET".into(),
             path: format!("{PREFIX}/api/account/v2/authenticate_via_dynamic"),
@@ -434,6 +450,7 @@ mod tests {
     }
     #[test]
     fn explorer_session_origin_and_csrf() {
+        assert_eq!(ui_proxy::beta_public().origin, ORIGIN);
         let route = selected("POST", "/api/account/v2/user/watchlist").unwrap();
         let mut request = IncomingRequest {
             method: "POST".into(),
