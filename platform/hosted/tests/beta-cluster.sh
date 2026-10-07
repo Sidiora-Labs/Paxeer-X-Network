@@ -427,18 +427,25 @@ image_selected() {
 }
 
 build_images() {
-    local name canonical dockerfile ref id
-    local -a build_args
+    local name canonical dockerfile ref id target sha describe
+    local -a build_args target_args
     mkdir -p "$LOG_DIR"
     : > "$WORK_DIR/images"
     build_context
+    sha=$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)
+    describe=$(git -C "$REPO_ROOT" describe --tags --always --abbrev=12)
     for name in "${IMAGE_NAMES[@]}"; do
         image_selected "$name" || continue
         read -r canonical dockerfile <<<"$(image_source "$name")"
         ref=$(image_ref "$name")
         read -r -a build_args <<<"$(image_build_args "$name")"
-        log "building $ref from $dockerfile"
-        docker build --file "$dockerfile" --tag "$ref" --label "$IMAGE_LABEL=$CLUSTER_NAME" "${build_args[@]}" - < "$WORK_DIR/context.tar" \
+        target=$(image_target "$name")
+        target_args=()
+        [ -z "$target" ] || target_args=(--target "$target")
+        log "building $ref from $dockerfile${target:+ (stage $target)}"
+        docker build --file "$dockerfile" "${target_args[@]}" --tag "$ref" \
+            --tag "ghcr.io/sidiora-labs/$name:$sha" --tag "ghcr.io/sidiora-labs/$name:$describe" \
+            --label "$IMAGE_LABEL=$CLUSTER_NAME" "${build_args[@]}" - < "$WORK_DIR/context.tar" \
             > "$LOG_DIR/build-$name.log" 2>&1 || { tail -n 40 "$LOG_DIR/build-$name.log" >&2; fail "image build failed for $name (log $LOG_DIR/build-$name.log)"; }
         id=$(docker image inspect --format '{{.Id}}' "$ref")
         if [ "$name" = paxd ]; then
