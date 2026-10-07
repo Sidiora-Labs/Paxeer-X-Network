@@ -1,0 +1,2 @@
+INDEXER_TLS_CERT_DER	/data/tls/indexer/cert.der		*
+INDEXER_TLS_KEY_DER	/data/tls/indexer/key.der		*

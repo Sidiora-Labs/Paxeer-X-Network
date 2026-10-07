@@ -1,0 +1,2 @@
+IDENTITY_TLS_CERT_DER	/data/tls/identity/cert.der		*
+IDENTITY_TLS_KEY_DER	/data/tls/identity/key.der		*

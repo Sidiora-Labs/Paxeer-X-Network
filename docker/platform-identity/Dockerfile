@@ -11,5 +11,6 @@ COPY --from=build /src/platform/target/release/layerx-identity /usr/local/bin/la
 FROM base AS env-init
 RUN apk add --no-cache setpriv
 COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-identity/files.tsv /etc/layerx/files.tsv
 COPY --chmod=0555 platform/hosted/identity/env-init.sh /usr/local/bin/identity-env-init
 ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/identity-env-init"]

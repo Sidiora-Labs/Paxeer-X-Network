@@ -1,0 +1,15 @@
+INTERNAL_TLS_CERT_DER	/data/tls/internal-kms/cert.der		kms
+INTERNAL_TLS_KEY_DER	/data/tls/internal-kms/key.der		kms
+INTERNAL_TLS_CA_DER	/data/tls/internal-kms/ca.der		kms
+INTERNAL_TLS_CERT_DER	/data/tls/internal-journeys/cert.der		journeys
+INTERNAL_TLS_KEY_DER	/data/tls/internal-journeys/key.der		journeys
+INTERNAL_TLS_CA_DER	/data/tls/internal-journeys/ca.der		journeys
+INTERNAL_TLS_CERT_DER	/data/tls/internal-payments/cert.der		payments
+INTERNAL_TLS_KEY_DER	/data/tls/internal-payments/key.der		payments
+INTERNAL_TLS_CA_DER	/data/tls/internal-payments/ca.der		payments
+INTERNAL_TLS_CERT_DER	/data/tls/internal-approvals/cert.der		approvals
+INTERNAL_TLS_KEY_DER	/data/tls/internal-approvals/key.der		approvals
+INTERNAL_TLS_CA_DER	/data/tls/internal-approvals/ca.der		approvals
+INTERNAL_TLS_CERT_DER	/data/tls/internal-programs/cert.der		programs
+INTERNAL_TLS_KEY_DER	/data/tls/internal-programs/key.der		programs
+INTERNAL_TLS_CA_DER	/data/tls/internal-programs/ca.der		programs

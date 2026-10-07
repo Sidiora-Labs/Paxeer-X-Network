@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY artifacts/layerx-kms artifacts/layerx-event-source /usr/local/bin/
 RUN test -n "$SOURCE_REVISION" && test -n "$PACKAGING_REVISION" && test -n "$KMS_SHA256" && test -n "$EVENTS_SHA256" && printf '%s  %s\n' "$KMS_SHA256" /usr/local/bin/layerx-kms "$EVENTS_SHA256" /usr/local/bin/layerx-event-source | sha256sum -c -
 COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-internal/files.tsv /etc/layerx/files.tsv
 COPY platform/hosted/internal/env-init.sh /usr/local/bin/internal-env-init
 RUN chmod 0755 /usr/local/bin/layerx-kms /usr/local/bin/layerx-event-source && chmod 0555 /usr/local/bin/internal-env-init
 ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/internal-env-init"]
@@ -25,5 +26,6 @@ ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/internal-env-init
 FROM base AS env-init
 RUN apk add --no-cache setpriv
 COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-internal/files.tsv /etc/layerx/files.tsv
 COPY --chmod=0555 platform/hosted/internal/env-init.sh /usr/local/bin/internal-env-init
 ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/internal-env-init"]
