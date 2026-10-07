@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -122,6 +122,7 @@ struct ServiceToken {
 
 struct Config {
     listen: SocketAddr,
+    health: SocketAddr,
     tls: Arc<ServerConfig>,
     state_dir: PathBuf,
     store_key: StoreKey,
@@ -424,11 +425,20 @@ fn server_tls_config() -> Result<Arc<ServerConfig>, String> {
     Ok(Arc::new(config))
 }
 
-fn config() -> Result<Config, String> {
-    let listen = env::var("LAYERX_IDENTITY_LISTEN")
-        .unwrap_or_else(|_| "0.0.0.0:9443".to_owned())
+fn listen_address(name: &str, default: &str) -> Result<SocketAddr, String> {
+    let mut address = env::var(name)
+        .unwrap_or_else(|_| default.to_owned())
         .parse::<SocketAddr>()
-        .map_err(|_| "LAYERX_IDENTITY_LISTEN must be a socket address".to_owned())?;
+        .map_err(|_| format!("{name} must be a socket address"))?;
+    if address.ip() == IpAddr::from([0, 0, 0, 0]) {
+        address.set_ip(IpAddr::V6(Ipv6Addr::UNSPECIFIED));
+    }
+    Ok(address)
+}
+
+fn config() -> Result<Config, String> {
+    let listen = listen_address("LAYERX_IDENTITY_LISTEN", "[::]:9443")?;
+    let health = listen_address("LAYERX_IDENTITY_HEALTH_ADDR", "[::]:8080")?;
     let state_dir = PathBuf::from(
         env::var("LAYERX_IDENTITY_STATE_DIR")
             .map_err(|_| "LAYERX_IDENTITY_STATE_DIR is required")?,
@@ -496,6 +506,7 @@ fn config() -> Result<Config, String> {
         outbox_dir,
         smtp,
         listen,
+        health,
         tls: server_tls_config()?,
         state_dir,
         store_key: StoreKey::derive(store_secret.as_bytes()),
@@ -1394,7 +1405,7 @@ fn write_response(stream: &mut impl Write, response: &Response) -> Result<(), St
     .map_err(|error| error.to_string())
 }
 
-fn handle_connection(shared: &Arc<Shared>, tcp: TcpStream) -> Result<(), String> {
+fn handle_connection(shared: &Shared, tcp: TcpStream) -> Result<(), String> {
     tcp.set_read_timeout(Some(IO_TIMEOUT))
         .map_err(|error| error.to_string())?;
     tcp.set_write_timeout(Some(IO_TIMEOUT))
@@ -1411,6 +1422,46 @@ fn handle_connection(shared: &Arc<Shared>, tcp: TcpStream) -> Result<(), String>
     stream.conn.send_close_notify();
     let _ = stream.conn.write_tls(&mut stream.sock);
     Ok(())
+}
+
+fn handle_health(shared: &Shared, mut stream: TcpStream) -> Result<(), String> {
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .map_err(|error| error.to_string())?;
+    stream
+        .set_write_timeout(Some(IO_TIMEOUT))
+        .map_err(|error| error.to_string())?;
+    let response = match parse_client_request(&mut stream) {
+        Ok(request) if request.method == "GET" && request.path == "/healthz" => readiness(shared),
+        Ok(_) => refusal(404, "not_found", None),
+        Err(_) => refusal(400, "invalid_request", None),
+    };
+    write_response(&mut stream, &response)?;
+    stream.flush().map_err(|error| error.to_string())
+}
+
+fn serve(
+    listener: &TcpListener,
+    shared: &Arc<Shared>,
+    handle: fn(&Shared, TcpStream) -> Result<(), String>,
+) {
+    for connection in listener.incoming() {
+        match connection {
+            Ok(stream) => {
+                let Some(permit) = ConnectionPermit::acquire() else {
+                    continue;
+                };
+                let shared = Arc::clone(shared);
+                thread::spawn(move || {
+                    let _permit = permit;
+                    if let Err(error) = handle(&shared, stream) {
+                        eprintln!("layerx-identity connection failed: {error}");
+                    }
+                });
+            }
+            Err(error) => eprintln!("layerx-identity accept failed: {error}"),
+        }
+    }
 }
 
 struct ConnectionPermit;
@@ -1437,6 +1488,8 @@ fn platform_identity(config: Config) -> Result<(), String> {
     store.probe_writable()?;
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     let bound = listener.local_addr().map_err(|error| error.to_string())?;
+    let health = TcpListener::bind(config.health).map_err(|error| error.to_string())?;
+    let health_bound = health.local_addr().map_err(|error| error.to_string())?;
     let desk = Desk::new(config.signup_limits, config.disposable_domains.clone());
     let mut config = config;
     if let Some(smtp) = config.smtp.take() {
@@ -1453,24 +1506,11 @@ fn platform_identity(config: Config) -> Result<(), String> {
         store: Mutex::new(store),
         desk: Mutex::new(desk),
     });
+    let health_shared = Arc::clone(&shared);
+    thread::spawn(move || serve(&health, &health_shared, handle_health));
+    eprintln!("layerx-identity health on {health_bound}");
     eprintln!("layerx-identity listening on {bound} with TLS");
-    for connection in listener.incoming() {
-        match connection {
-            Ok(stream) => {
-                let Some(permit) = ConnectionPermit::acquire() else {
-                    continue;
-                };
-                let shared = Arc::clone(&shared);
-                thread::spawn(move || {
-                    let _permit = permit;
-                    if let Err(error) = handle_connection(&shared, stream) {
-                        eprintln!("layerx-identity connection failed: {error}");
-                    }
-                });
-            }
-            Err(error) => eprintln!("layerx-identity accept failed: {error}"),
-        }
-    }
+    serve(&listener, &shared, handle_connection);
     Ok(())
 }
 
@@ -1774,6 +1814,9 @@ mod resolver_tests {
         let shared = Shared {
             config: Config {
                 listen: "127.0.0.1:0"
+                    .parse()
+                    .unwrap_or_else(|error| panic!("{error}")),
+                health: "127.0.0.1:0"
                     .parse()
                     .unwrap_or_else(|error| panic!("{error}")),
                 tls: Arc::new(
