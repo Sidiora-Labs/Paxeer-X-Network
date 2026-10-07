@@ -1145,6 +1145,7 @@ dependencies = [
  "layerx-intents",
  "layerx-types",
  "layerx-wire",
+ "native-tls",
  "serde_json",
 ]
 

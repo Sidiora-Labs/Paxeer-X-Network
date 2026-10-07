@@ -7,14 +7,15 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-use std::net::{TcpStream, ToSocketAddrs as _};
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signer as _, SigningKey};
 use layerx_crypto::SignatureMessage;
-use layerx_intent_ingester::{hex, unhex, IngestError, IngestedIntent, JsonRpc};
+use layerx_intent_ingester::{
+    hex, rpc_result, unhex, HttpEndpoint, IngestError, IngestedIntent, JsonRpc,
+};
 use layerx_intents::precompile::{route_event, OrderPlaced, PrecompileEvent, RouteBinding};
 use layerx_intents::{compile, IntentKind};
 use layerx_types::activity::{Authority, EnvelopeBuilder, Signature, TimestampBound};
@@ -481,101 +482,56 @@ fn chain_owner(event: &PrecompileEvent) -> Option<[u8; 20]> {
     }
 }
 
-/// JSON-RPC to the gateway with its API key as a bearer credential.
+/// JSON-RPC to the gateway with its API key as a `LayerX-Key <id>:<secret>`
+/// credential.
 pub struct GatewayRpc {
-    host: String,
-    port: u16,
-    path: String,
-    api_key: String,
-    timeout: Duration,
+    endpoint: HttpEndpoint,
+    authorization: String,
 }
 
 impl GatewayRpc {
     /// # Errors
     ///
-    /// Refuses a URL that is not `http://host[:port][/path]`.
-    pub fn new(url: &str, api_key: String, timeout: Duration) -> Result<Self, IngestError> {
-        let bad = || IngestError::Configuration(format!("gateway url: {url}"));
-        let rest = url.strip_prefix("http://").ok_or_else(bad)?;
-        let (authority, path) = rest
-            .find('/')
-            .map_or((rest, "/"), |index| (&rest[..index], &rest[index..]));
-        let (host, port) = match authority.rsplit_once(':') {
-            Some((host, port)) => (host, port.parse::<u16>().map_err(|_| bad())?),
-            None => (authority, 80),
+    /// Refuses a URL that is not `http(s)://host[:port][/path]`, or a key id
+    /// or secret that is empty or carries a colon, whitespace or control byte.
+    pub fn new(
+        url: &str,
+        key_id: &str,
+        key_secret: &str,
+        timeout: Duration,
+        roots: &[native_tls::Certificate],
+    ) -> Result<Self, IngestError> {
+        let refused = |part: &str| {
+            part.is_empty()
+                || part
+                    .chars()
+                    .any(|c| c == ':' || c.is_whitespace() || c.is_control())
         };
-        if host.is_empty() {
-            return Err(bad());
+        if refused(key_id) || refused(key_secret) {
+            return Err(IngestError::Configuration(
+                "gateway key id and secret must be non-empty tokens".to_owned(),
+            ));
         }
         Ok(Self {
-            host: host.to_owned(),
-            port,
-            path: path.to_owned(),
-            api_key,
-            timeout,
+            endpoint: HttpEndpoint::new(url, timeout, roots)?,
+            authorization: format!("Authorization: LayerX-Key {key_id}:{key_secret}\r\n"),
         })
     }
 }
 
 impl JsonRpc for GatewayRpc {
     fn call(&self, method: &str, params: Value) -> Result<Value, IngestError> {
-        let transport = |error: std::io::Error| IngestError::Transport(error.to_string());
-        let address = (self.host.as_str(), self.port)
-            .to_socket_addrs()
-            .map_err(transport)?
-            .next()
-            .ok_or_else(|| IngestError::Transport(format!("no address for {}", self.host)))?;
-        let mut stream = TcpStream::connect_timeout(&address, self.timeout).map_err(transport)?;
-        stream
-            .set_read_timeout(Some(self.timeout))
-            .map_err(transport)?;
-        stream
-            .set_write_timeout(Some(self.timeout))
-            .map_err(transport)?;
         let body =
             json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string();
-        let request = format!(
-            "POST {} HTTP/1.0\r\nHost: {}:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-            self.path,
-            self.host,
-            self.port,
-            self.api_key,
-            body.len()
-        );
-        stream.write_all(request.as_bytes()).map_err(transport)?;
-        let mut reply = Vec::new();
-        stream
-            .take(16 * 1024 * 1024)
-            .read_to_end(&mut reply)
-            .map_err(transport)?;
-        let split = reply
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .ok_or_else(|| IngestError::Malformed("no http header terminator".to_owned()))?;
-        let value: Value = serde_json::from_slice(&reply[split + 4..])
-            .map_err(|error| IngestError::Malformed(error.to_string()))?;
-        if let Some(error) = value.get("error") {
-            return Err(IngestError::Rpc {
-                code: error
-                    .get("code")
-                    .and_then(Value::as_i64)
-                    .unwrap_or_default(),
-                message: error
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-            });
+        let (status, reply) = self
+            .endpoint
+            .post(&self.authorization, &body, 16 * 1024 * 1024)?;
+        match rpc_result(&reply) {
+            Err(IngestError::Malformed(_)) | Ok(_) if status != "200" => {
+                Err(IngestError::Transport(format!("http status {status}")))
+            }
+            other => other,
         }
-        let head = String::from_utf8_lossy(&reply[..split]);
-        let status = head.split_whitespace().nth(1).unwrap_or_default();
-        if status != "200" {
-            return Err(IngestError::Transport(format!("http status {status}")));
-        }
-        value
-            .get("result")
-            .cloned()
-            .ok_or_else(|| IngestError::Malformed("reply without result".to_owned()))
     }
 }
 
@@ -760,7 +716,8 @@ mod tests {
     use super::*;
     use layerx_intent_ingester::{Config, Ingester, Journal};
     use layerx_intents::precompile::{PrecompileEventKind, EXCHANGE_PRECOMPILE};
-    use std::net::TcpListener;
+    use std::io::Read as _;
+    use std::net::{TcpListener, TcpStream};
     use std::sync::{Arc, Mutex};
 
     const VECTORS: &str = include_str!("../../../../tests/fixtures/trading-payloads/vectors.json");
@@ -862,6 +819,7 @@ mod tests {
         let rpc = checked(layerx_intent_ingester::HttpRpc::new(
             &format!("http://{address}/"),
             Duration::from_secs(5),
+            &[],
         ));
         let mut config = Config::new(dir.to_owned());
         config.start_block = Some(5);
@@ -877,7 +835,8 @@ mod tests {
             let read = checked(stream.read(&mut chunk));
             buffer.extend_from_slice(&chunk[..read]);
             if let Some(split) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-                let head = String::from_utf8_lossy(&buffer[..split]).to_lowercase();
+                let raw_head = String::from_utf8_lossy(&buffer[..split]).into_owned();
+                let head = raw_head.to_lowercase();
                 let length: usize = head
                     .lines()
                     .find_map(|line| line.strip_prefix("content-length:"))
@@ -890,10 +849,10 @@ mod tests {
                     buffer.extend_from_slice(&chunk[..read]);
                 }
                 let mut value: Value = checked(serde_json::from_slice(&buffer[split + 4..]));
-                value["authorization"] = json!(head
+                value["authorization"] = json!(raw_head
                     .lines()
-                    .find_map(|line| line.strip_prefix("authorization:"))
-                    .map(str::trim));
+                    .find(|line| line.to_lowercase().starts_with("authorization:"))
+                    .map(|line| line["authorization:".len()..].trim()));
                 return value;
             }
             if read == 0 {
@@ -923,12 +882,15 @@ mod tests {
     /// A gateway that verifies every signed activity with the real wire
     /// decoder and Ed25519 verifier, refuses spot cancels with -32602, and
     /// otherwise executes the activity at the signer's next sequence.
-    fn gateway(public_key: [u8; 32], api_key: &str) -> (GatewayRpc, Arc<Mutex<Kernel>>) {
+    const KEY_SECRET: &str =
+        "lxp_live_00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+
+    fn gateway(public_key: [u8; 32], key_id: &str) -> (GatewayRpc, Arc<Mutex<Kernel>>) {
         let listener = checked(TcpListener::bind("127.0.0.1:0"));
         let address = checked(listener.local_addr());
         let kernel = Arc::new(Mutex::new(Kernel::default()));
         let state = Arc::clone(&kernel);
-        let expected = format!("bearer {}", api_key.to_lowercase());
+        let expected = format!("LayerX-Key {key_id}:{KEY_SECRET}");
         std::thread::spawn(move || {
             let registry = checked(trading_registry());
             for stream in listener.incoming() {
@@ -982,8 +944,10 @@ mod tests {
         (
             checked(GatewayRpc::new(
                 &format!("http://{address}/rpc"),
-                api_key.to_owned(),
+                key_id,
+                KEY_SECRET,
                 Duration::from_secs(5),
+                &[],
             )),
             kernel,
         )
@@ -1062,7 +1026,7 @@ mod tests {
             assert_eq!(payload, bytes, "{name}");
         }
         let signer = Signer::new([0x09; 32]);
-        let (gateway, kernel) = gateway(signer.public_key(), "ingester-key");
+        let (gateway, kernel) = gateway(signer.public_key(), "0a1b2c3d4e5f60718293a4b5");
         let mut submitter = checked(Submitter::open(gateway, signer, SCOPE, markets(), &dir));
         for intent in &intents {
             let outcome = checked(submitter.submit(intent, now_ms()));
@@ -1091,7 +1055,7 @@ mod tests {
         let dir = state_dir("idempotent");
         let intents = ingest(&dir, vec![order([0x31; 32], CHAIN_PERPS, 2, 7, 5000)]);
         let seed = [0x0a; 32];
-        let (rpc, kernel) = gateway(Signer::new(seed).public_key(), "k");
+        let (rpc, kernel) = gateway(Signer::new(seed).public_key(), "ingester");
         let mut submitter = checked(Submitter::open(
             rpc,
             Signer::new(seed),
@@ -1108,7 +1072,7 @@ mod tests {
         };
         assert_eq!(receipt, format!("receipt-{}", hex(&first)));
         assert_eq!(checked(submitter.submit(&intents[0], now_ms())), None);
-        let (rpc, _) = gateway(Signer::new(seed).public_key(), "k");
+        let (rpc, _) = gateway(Signer::new(seed).public_key(), "ingester");
         let mut reopened = checked(Submitter::open(
             rpc,
             Signer::new(seed),
@@ -1150,7 +1114,7 @@ mod tests {
         );
         assert_eq!(intents.len(), 5);
         let seed = [0x0b; 32];
-        let (rpc, kernel) = gateway(Signer::new(seed).public_key(), "k");
+        let (rpc, kernel) = gateway(Signer::new(seed).public_key(), "ingester");
         let mut submitter = checked(Submitter::open(
             rpc,
             Signer::new(seed),
@@ -1203,7 +1167,7 @@ mod tests {
             ["settled", "refused", "refused", "skipped", "skipped"]
         );
         assert_eq!(states[1]["code"], "rpc:-32602");
-        let (rpc, _) = gateway(Signer::new(seed).public_key(), "k");
+        let (rpc, _) = gateway(Signer::new(seed).public_key(), "ingester");
         let mut reopened = checked(Submitter::open(
             rpc,
             Signer::new(seed),
@@ -1215,5 +1179,23 @@ mod tests {
             assert_eq!(checked(reopened.submit(intent, now_ms())), None);
         }
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gateway_config_refuses_malformed_keys_and_schemes() {
+        let timeout = Duration::from_secs(1);
+        assert!(GatewayRpc::new("https://router.example/", "id", KEY_SECRET, timeout, &[]).is_ok());
+        assert!(GatewayRpc::new("ftp://router.example/", "id", KEY_SECRET, timeout, &[]).is_err());
+        for (id, secret) in [
+            ("", KEY_SECRET),
+            ("a:b", KEY_SECRET),
+            ("id", ""),
+            ("id", "x\r\nX: y"),
+        ] {
+            assert!(
+                GatewayRpc::new("http://127.0.0.1:1/", id, secret, timeout, &[]).is_err(),
+                "{id:?} {secret:?}"
+            );
+        }
     }
 }

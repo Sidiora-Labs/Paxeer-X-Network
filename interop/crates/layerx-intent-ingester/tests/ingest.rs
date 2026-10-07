@@ -300,7 +300,7 @@ impl Node {
     }
 
     fn rpc(&self) -> HttpRpc {
-        checked(HttpRpc::new(&self.url, Duration::from_secs(5)))
+        checked(HttpRpc::new(&self.url, Duration::from_secs(5), &[]))
     }
 
     fn set(&self, update: impl FnOnce(&mut NodeState)) {
