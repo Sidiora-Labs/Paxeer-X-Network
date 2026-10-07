@@ -970,6 +970,7 @@ except FileExistsError:
     pass
 else:
     with os.fdopen(descriptor, "wb") as output:
+        os.fchown(output.fileno(), 0, 0)
         output.write(secrets.token_hex(32).encode("ascii"))
         output.flush()
         os.fsync(output.fileno())
