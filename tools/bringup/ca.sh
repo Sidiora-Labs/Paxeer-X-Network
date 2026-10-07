@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The Fly helpers, the CA settings and the certificate arithmetic are the
-# probe's.
+# The CA settings and the certificate arithmetic are the probe's.
 # shellcheck source=tools/bringup/check-live.sh
 . "$(dirname "${BASH_SOURCE[0]}")/check-live.sh"
 
@@ -14,8 +13,24 @@ usage: tools/bringup/ca.sh init | inventory [<service>] | issue <service> | serv
        tools/bringup/ca.sh sign-server paxeer-comet-boundary-api4 --csr <file> --output-dir <dir>
        tools/bringup/ca.sh install-server paxeer-comet-boundary-api4 --input-dir <signed-dir> --output-dir <request-dir> --ca-file <operator-ca.pem>
 
-The internal CA of the Paxeer X Network bring-up. Runs on the edge host, the
-operator host that holds the CA key and the Fly login.
+The internal CA of the Paxeer X Network bring-up. Runs on the CA host, the
+operator host that holds the CA key, the Railway CLI login and ssh access to
+the boxes.
+
+Every row names a target: box:<VARIABLE>, a box whose ssh host alias is the
+variable of that name in the private hosts file BRINGUP_HOSTS_FILE, or
+railway:<service>[,<service>...], one or more services of the Railway
+project in environment LAYERX_RAILWAY_ENVIRONMENT. A box row keeps its
+identity under LAYERX_TLS_DIR/<service> on the box (custody volume); a
+Railway row keeps it as the eight service variables PREFIX_CERT, PREFIX_KEY,
+PREFIX_CA, PREFIX_CERT_DER, PREFIX_KEY_DER, PREFIX_CA_DER, PREFIX_P12 and
+PREFIX_PASSWORD, base64 without line breaks, on every service of the row
+(custody secrets). A row's SAN list is its fixed SANs, then its line of the
+names file LAYERX_CA_NAMES_FILE, then LAYERX_EXTRA_SANS_<ROW>, the row's
+name in upper case with - read as _ (for example
+LAYERX_EXTRA_SANS_IDENTITY=DNS:<name>.proxy.rlwy.net for a Railway TCP
+proxy name). The names file holds one ROW=<SAN list> line per row and no
+other row.
 
 init      generates the CA key and certificate under LAYERX_CA_DIR with mode
           0600 and prints nothing but the certificate's SHA-256 fingerprint.
@@ -24,65 +39,59 @@ init      generates the CA key and certificate under LAYERX_CA_DIR with mode
 inventory [<service>]
           inventories the identity material already retained for every row
           (or the one service) before any deployment action, and changes
-          nothing: for a volume row the presence of cert.pem, key.der,
+          nothing: for a box row the presence of cert.pem, key.der,
           cert.der, ca.der, identity.p12 and password under
-          LAYERX_FLY_TLS_DIR/<service> on a machine of the app, and whether
-          the retained certificate chains to the row's CA; for a secrets row
-          the presence of the eight PREFIX_* names in flyctl secrets list
+          LAYERX_TLS_DIR/<service> on the box over ssh, and whether the
+          retained certificate chains to the row's CA; for a Railway row the
+          presence of the eight PREFIX_* variables on each service of the row
           and verification of the deployed public PREFIX_CERT against the
-          same CA through its declared [[files]] guest path.
-          Only names, fingerprints and day counts are read; no key, password
-          or secret value is read or printed. One line per row:
-          "inventory <service> app=<app> custody=volume|secrets
+          same CA.
+          Only names, fingerprints and day counts are printed; no key,
+          password or secret value is printed. One line per row:
+          "inventory <service> target=<target> custody=volume|secrets
           state=present|absent|partial|incompatible|foreign|unreadable
           [fingerprint=<sha256> expires_in=<days>d]
           producer=tools/bringup/ca.sh issue <service>".
-          A volume row whose CA directory is not readable here (an
-          attestor row without LAYERX_ATTESTOR_CA_DIR) is unreadable.
-          Exits 1 when any row is unreadable or foreign.
+          A row whose CA directory is not readable here (an attestor row
+          without LAYERX_ATTESTOR_CA_DIR) or whose box or service cannot be
+          read is unreadable. Exits 1 when any row is unreadable or foreign.
 
 issue <service>
           inventories the service first. Retained material that is present,
           chains to the row's CA and expires in more than
           LAYERX_CA_RENEW_DAYS days is reused and never regenerated: prints
-          "reused <service> app=<app> custody=volume|secrets
+          "reused <service> target=<target> custody=volume|secrets
           fingerprint=<sha256> expires_in=<days>d". A retained
-          same-CA certificate missing its required role or service name is renewed
-          under that CA. A certificate that does not chain to the row's CA, or material that
-          cannot be inventoried, is refused, so no second, incompatible
-          authority is ever issued beside it. Otherwise it issues the certificate of one service for the Fly app whose toml
-          the service's row names, with the row's SAN list and <app> read as
-          the app name from the toml's app line. For a volume row, a machine
-          of the app (of the row's process group when it names one)
-          generates the key and signing request under
-          LAYERX_FLY_TLS_DIR/<service> on its volume through flyctl ssh
-          console; only the request comes back, the CA signs it here and the
-          certificate goes back the same way with the CA certificate, and
-          the machine derives key.der, cert.der, ca.der and identity.p12
-          locked by a password file it generates. For an app with several
-          machines, whose row names a secret prefix PREFIX, the key and
-          request are generated in a directory on the /dev/shm tmpfs of this
-          host, the same files are derived there and piped base64-encoded,
-          as [[files]] secrets are read, into flyctl secrets import --stage
-          on standard input as PREFIX_CERT, PREFIX_KEY, PREFIX_CA,
-          PREFIX_CERT_DER, PREFIX_KEY_DER, PREFIX_CA_DER, PREFIX_P12 and
-          PREFIX_PASSWORD, and the directory is removed. No key is printed.
-          Prints one line:
-          "issued <service> app=<app> custody=volume|secrets
+          same-CA certificate missing its required role or service name is
+          renewed under that CA. A certificate that does not chain to the
+          row's CA, or material that cannot be inventoried, is refused, so no
+          second, incompatible authority is ever issued beside it. Otherwise
+          it issues the certificate of one service with the row's SAN list.
+          For a box row, the box generates the key and signing request under
+          LAYERX_TLS_DIR/<service> through ssh <alias> sh -c; only the
+          request comes back, the CA signs it here and the certificate goes
+          back the same way with the CA certificate as a tar stream on
+          standard input, and the box derives key.der, cert.der, ca.der and
+          identity.p12 locked by a password file it generates. For a Railway
+          row the key and request are generated in a directory on the
+          /dev/shm tmpfs of this host, the same files are derived there and
+          each is set base64-encoded on standard input through railway
+          variable set --stdin --skip-deploys on every service of the row,
+          and the directory is removed. No key is printed. Prints one line:
+          "issued <service> target=<target> custody=volume|secrets
           fingerprint=<sha256> expires_in=<days>d".
-          A missing CA or app is also reported on stdout as
+          A missing CA or box host is also reported on stdout as
           "fail material missing=<prerequisite> producer=<producer>".
 
-services  prints the service list, one per line: service, Fly app toml,
-          process group ("-" for the whole app), custody ("volume" or the
-          secret prefix), common name, extended key usage, SAN list ("-" for
-          a client identity).
+services  prints the service list, one per line: service, target, custody
+          ("volume" or the variable prefix), common name, extended key
+          usage, SAN list as issued ("-" for a client identity).
 
 issue-local <local service> --output-dir <dir>
           issues one fixed local identity of local-services on this host,
-          never through Fly: the identity, role, extended key usage and SAN
-          list are the row's and nothing else is accepted. <dir> is an
-          absolute path that must not exist, whose components are no
+          never on a box or Railway: the identity, role, extended key usage
+          and SAN list are the row's and nothing else is accepted. <dir> is
+          an absolute path that must not exist, whose components are no
           symbolic links, whose parent is a directory owned by the caller
           or root and writable by neither group nor others, and which
           neither lies in LAYERX_CA_DIR nor contains it. The key, the
@@ -95,7 +104,7 @@ issue-local <local service> --output-dir <dir>
 
 local-services
           prints the local identity list in the columns of services, with
-          "-" for the toml and the process group and "local" for custody.
+          "-" for the target and "local" for custody.
 
 request-server creates a new protected directory holding only api4-key.der
           (PKCS8) and api4-request.pem. Run on the server; transfer only CSR.
@@ -109,7 +118,7 @@ install-server requires the retained request directory and explicit expected
           caller; no symlink components or arbitrary server roles are accepted.
 
 Environment:
-  CHECK_LIVE_TIMEOUT   seconds per flyctl call, default 30
+  CHECK_LIVE_TIMEOUT   seconds per ssh or railway call, default 30
   LAYERX_CA_DIR        the CA directory, default /etc/layerx/ca
   LAYERX_ATTESTOR_CA_DIR
                        the directory holding ca.key and ca.pem of the
@@ -117,15 +126,23 @@ Environment:
                        ATTESTOR_TLS_CA of paxeer-attestor-1 to 5 bundles with
                        the node CA; issue signs the rows of attestor_services
                        under it and never under the internal CA
-  LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a Fly
-                       app, default /data/tls
+  LAYERX_TLS_DIR       the certificate directory root on a box, default
+                       /data/tls
+  LAYERX_CA_NAMES_FILE the names file, default
+                       tools/bringup/railway-names.env
+  LAYERX_EXTRA_SANS_<ROW>
+                       extra SANs of one row, comma separated
+  LAYERX_RAILWAY_ENVIRONMENT
+                       the Railway environment, default beta
+  LAYERX_RAILWAY_BIN   the railway CLI, default ~/.railway/bin/railway
+  BRINGUP_HOSTS_FILE   the private hosts file naming each box row's ssh alias
   LAYERX_CA_RENEW_DAYS days of remaining validity below which issue renews
                        a retained certificate under the same CA, default 30
 
-Exits 1 when the CA is missing, already present on init, a toml names no
-app, retained material is foreign or cannot be inventoried, a Fly step
-fails, or a row of the service tables is malformed or listed twice; 2 on a
-usage error or an unknown service.
+Exits 1 when the CA is missing, already present on init, a box host is
+unknown, retained material is foreign or cannot be inventoried, an ssh or
+railway step fails, or a row of the service tables or of the names file is
+malformed, missing or listed twice; 2 on a usage error or an unknown service.
 EOF
 }
 
@@ -133,58 +150,60 @@ subject_org="Paxeer X Network"
 ca_days=3650
 cert_days=397
 renew_days="${LAYERX_CA_RENEW_DAYS:-30}"
+tls_dir="${LAYERX_TLS_DIR:-/data/tls}"
+names_file="${LAYERX_CA_NAMES_FILE:-$repo_root/tools/bringup/railway-names.env}"
+railway_env="${LAYERX_RAILWAY_ENVIRONMENT:-beta}"
+railway_bin="${LAYERX_RAILWAY_BIN:-$HOME/.railway/bin/railway}"
 
 # ca_services: every certificate the bring-up issues, after the issue_cert
-# calls of platform/hosted/tests/beta-cluster.sh: service, Fly app toml,
-# process group, custody, common name, extended key usage, SAN list. Every
-# server certificate carries its app's .internal name, or its process
-# group's <group>.process.<app>.internal name; a service reached on loopback
-# carries localhost and 127.0.0.1; a public name only on the two TCP
-# passthrough surfaces.
+# calls of platform/hosted/tests/beta-cluster.sh: service, target, custody,
+# common name, extended key usage, fixed SAN list. The network names of a row
+# (<service>.railway.internal, the box names) come from the names file; a
+# service reached on loopback carries localhost and 127.0.0.1.
 ca_services() {
 	cat <<'EOF'
-pending-core human/wallet/deploy/human.toml - volume layerx-pending-core serverAuth DNS:layerx-pending-core,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-pending-core-admin human/wallet/deploy/human.toml - volume layerx-pending-core-admin serverAuth DNS:layerx-pending-core-admin,DNS:<app>.internal
-receipt-authority human/wallet/deploy/human.toml - volume layerx-receipt-authority serverAuth DNS:layerx-receipt-authority,DNS:authority,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-agent-boundary human/wallet/deploy/human.toml - volume layerx-agent-boundary serverAuth DNS:layerx-agent-boundary,DNS:component,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-agentd human/wallet/deploy/human.toml - volume layerx-agentd serverAuth DNS:layerx-agentd,DNS:machine.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-agentd-client human/wallet/deploy/human.toml - volume layerx-agentd-client clientAuth -
-paxeer-boundary-loopback human/wallet/deploy/human.toml - volume paxeer-boundary serverAuth DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,clientAuth DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-human human/wallet/deploy/human.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:paxeer-human-service.internal,DNS:localhost,IP:127.0.0.1
-human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
-human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
-human-kms human/wallet/deploy/human.toml - volume layerx-human-kms serverAuth DNS:layerx-human-kms,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-human-kms-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
-human-kms-executor human/wallet/deploy/human.toml - volume layerx-human-movement clientAuth -
-relay-archive human/wallet/deploy/human.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-gateway-redis human/wallet/deploy/redis.toml - REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth URI:urn:layerx:webhooks:role:producer
-identity platform/hosted/identity/fly.toml - volume layerx-identity serverAuth DNS:layerx-identity,DNS:identity,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-kms platform/hosted/internal/fly.toml kms volume kms serverAuth DNS:kms,DNS:kms.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-journeys platform/hosted/internal/fly.toml journeys volume journeys serverAuth DNS:journeys,DNS:journeys.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-payments platform/hosted/internal/fly.toml payments volume payments serverAuth DNS:payments,DNS:payments.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-approvals platform/hosted/internal/fly.toml approvals volume approvals serverAuth DNS:approvals,DNS:approvals.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-programs platform/hosted/internal/fly.toml programs volume programs serverAuth DNS:programs,DNS:programs.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-internal-redis platform/hosted/internal/redis.toml - REDIS_TLS redis serverAuth DNS:redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-registry platform/hosted/registry/fly.toml - volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:index.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth URI:urn:layerx:webhooks:role:producer
-indexer platform/hosted/indexer/fly.toml - volume layerx-indexer serverAuth DNS:layerx-indexer,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
-developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:public.process.<app>.internal,DNS:localhost,IP:127.0.0.1
-developer-client platform/hosted/webhooks/fly.toml - WEBHOOKS_CLIENT layerx-developer clientAuth -
-dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
-ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
+pending-core box:KERNEL_HOST volume layerx-pending-core serverAuth DNS:layerx-pending-core,DNS:localhost,IP:127.0.0.1
+pending-core-admin box:KERNEL_HOST volume layerx-pending-core-admin serverAuth DNS:layerx-pending-core-admin
+receipt-authority box:KERNEL_HOST volume layerx-receipt-authority serverAuth DNS:layerx-receipt-authority,DNS:authority,DNS:localhost,IP:127.0.0.1
+agent-boundary box:KERNEL_HOST volume layerx-agent-boundary serverAuth DNS:layerx-agent-boundary,DNS:component,DNS:localhost,IP:127.0.0.1
+agentd box:KERNEL_HOST volume layerx-agentd serverAuth DNS:layerx-agentd,DNS:localhost,IP:127.0.0.1
+agentd-client box:KERNEL_HOST volume layerx-agentd-client clientAuth -
+paxeer-boundary-loopback box:KERNEL_HOST volume paxeer-boundary serverAuth DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:localhost,IP:127.0.0.1
+paxeer-boundary-public box:KERNEL_HOST volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:localhost,IP:127.0.0.1
+guarantor box:KERNEL_HOST volume layerx-guarantor serverAuth,clientAuth DNS:localhost,IP:127.0.0.1
+human box:KERNEL_HOST volume layerx-human serverAuth DNS:layerx-human,DNS:localhost,IP:127.0.0.1
+human-event-client box:KERNEL_HOST volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
+human-attestor-client box:KERNEL_HOST volume layerx-human-components clientAuth -
+human-kms box:KERNEL_HOST volume layerx-human-kms serverAuth DNS:layerx-human-kms,DNS:localhost,IP:127.0.0.1
+human-kms-client box:KERNEL_HOST volume layerx-human-components clientAuth -
+human-kms-executor box:KERNEL_HOST volume layerx-human-movement clientAuth -
+relay-archive box:KERNEL_HOST volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:localhost,IP:127.0.0.1
+gateway-redis railway:redis-router REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:localhost,IP:127.0.0.1
+gateway-client railway:router ENDPOINT_CLIENT layerx-gateway clientAuth URI:urn:layerx:webhooks:role:producer
+identity railway:identity IDENTITY_TLS layerx-identity serverAuth DNS:layerx-identity,DNS:identity,DNS:localhost,IP:127.0.0.1
+internal-kms railway:internal-kms INTERNAL_TLS kms serverAuth DNS:kms,DNS:localhost,IP:127.0.0.1
+internal-journeys railway:internal-journeys INTERNAL_TLS journeys serverAuth DNS:journeys,DNS:localhost,IP:127.0.0.1
+internal-payments railway:internal-payments INTERNAL_TLS payments serverAuth DNS:payments,DNS:localhost,IP:127.0.0.1
+internal-approvals railway:internal-approvals INTERNAL_TLS approvals serverAuth DNS:approvals,DNS:localhost,IP:127.0.0.1
+internal-programs railway:internal-programs INTERNAL_TLS programs serverAuth DNS:programs,DNS:localhost,IP:127.0.0.1
+internal-redis railway:redis-internal REDIS_TLS redis serverAuth DNS:redis,DNS:localhost,IP:127.0.0.1
+registry box:REGISTRY_HOST volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:localhost,IP:127.0.0.1
+registry-event-client box:REGISTRY_HOST volume layerx-registry-events clientAuth URI:urn:layerx:webhooks:role:producer
+indexer railway:indexer INDEXER_TLS layerx-indexer serverAuth DNS:layerx-indexer,DNS:localhost,IP:127.0.0.1
+interop-client railway:interop INTEROP_CLIENT layerx-interop-gateway clientAuth -
+developer railway:webhooks-public,webhooks-ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:localhost,IP:127.0.0.1
+developer-client railway:webhooks-public,webhooks-ingress WEBHOOKS_CLIENT layerx-developer clientAuth -
+dashboard-client railway:dashboard DASHBOARD_CLIENT layerx-dashboard clientAuth -
+ramp-client railway:ramp RAMP_CLIENT layerx-reference-ramp clientAuth -
 EOF
 }
 
 # local_services: identities issue-local makes on the operator host for an
-# operator holding them by hand; they are never part of a Fly app, so they
-# stay out of ca_services and every Fly mount.
+# operator holding them by hand; they are never on a box or Railway, so they
+# stay out of ca_services and the names file.
 local_services() {
 	cat <<'EOF'
-webhook-operator-client - - local layerx-webhooks-operator clientAuth URI:urn:layerx:webhooks:role:operator
+webhook-operator-client - local layerx-webhooks-operator clientAuth URI:urn:layerx:webhooks:role:operator
 EOF
 }
 
@@ -192,11 +211,70 @@ EOF
 # attestors admit keys.generate and sign only from a client chaining to it.
 attestor_services="human-attestor-client"
 
+# ca_rows: ca_services with each fixed SAN list completed by the row's line of
+# the names file and LAYERX_EXTRA_SANS_<ROW>; status 1 naming the problem when
+# the names file is unreadable, lacks a row, names an unknown row or a line
+# twice, or an extra SAN variable names no row.
+ca_rows() {
+	if [ ! -r "$names_file" ]; then
+		echo "ca: the names file $names_file is not readable" >&2
+		return 1
+	fi
+	ca_services | awk -v names="$names_file" -v extras=<(env | sed -n 's/^LAYERX_EXTRA_SANS_\([A-Za-z0-9_]*=.*\)$/\1/p') '
+	function bad(why) {
+		printf "ca: %s\n", why >"/dev/stderr"
+		failed = 1
+	}
+	function add(list, more) {
+		if (more == "") return list
+		return list == "" ? more : list "," more
+	}
+	BEGIN {
+		while ((getline line <names) > 0) {
+			n++
+			if (line ~ /^[[:space:]]*(#|$)/) continue
+			if (line !~ /^[A-Z0-9_]+=[^[:space:]]*$/) {
+				bad(names " line " n " is malformed")
+				continue
+			}
+			key = substr(line, 1, index(line, "=") - 1)
+			if (key in name) bad(names " names " key " twice")
+			name[key] = substr(line, index(line, "=") + 1)
+		}
+		while ((getline line <extras) > 0) {
+			key = substr(line, 1, index(line, "=") - 1)
+			extra[key] = substr(line, index(line, "=") + 1)
+		}
+	}
+	{
+		if (NF != 6) {
+			bad("ca_services row " NR " is malformed: want 6 fields, got " NF)
+			next
+		}
+		key = toupper($1)
+		gsub(/-/, "_", key)
+		seen[key] = 1
+		if (!(key in name)) {
+			bad(names " has no line " key " for row " $1)
+			next
+		}
+		sans = ($6 == "-") ? "" : $6
+		sans = add(add(sans, name[key]), extra[key])
+		print $1, $2, $3, $4, $5, (sans == "" ? "-" : sans)
+	}
+	END {
+		for (key in name) if (!(key in seen)) bad(names " line " key " names no row")
+		for (key in extra) if (!(key in seen)) bad("LAYERX_EXTRA_SANS_" key " names no row")
+		exit failed
+	}'
+}
+
 # table_check <table>: refuses the rows of the table on stdin unless each is
-# exactly one identity: seven fields, a service named once, a Fly toml,
-# process group and custody (or none and local custody for local_services),
-# one secret prefix per toml, a known extended key usage, a SAN list of
-# DNS, IP and URN entries named once, and a SAN list on every server identity.
+# exactly one identity: six fields, a service named once, a box target with
+# volume custody or a Railway target with a variable prefix (one prefix per
+# Railway service), or none and local custody for local_services, a known
+# extended key usage, a SAN list of DNS, IP and URN entries named once, and a
+# SAN list on every server identity.
 table_check() {
 	awk -v table="$1" '
 	function bad(why) {
@@ -204,31 +282,34 @@ table_check() {
 		failed = 1
 	}
 	{
-		if (NF != 7) {
-			bad("want 7 fields, got " NF)
+		if (NF != 6) {
+			bad("want 6 fields, got " NF)
 			next
 		}
 		if ($1 !~ /^[a-z0-9][a-z0-9-]*$/) bad("service " $1)
 		else if ($1 in seen) bad("service " $1 " listed twice")
 		seen[$1] = 1
 		if (table == "local_services") {
-			if ($2 != "-" || $3 != "-" || $4 != "local") bad("a local identity names no toml or process group and has local custody")
+			if ($2 != "-" || $3 != "local") bad("a local identity names no target and has local custody")
+		} else if ($2 ~ /^box:[A-Z][A-Z0-9_]*$/) {
+			if ($3 != "volume") bad("a box row has volume custody")
+		} else if ($2 ~ /^railway:[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$/) {
+			if ($3 !~ /^[A-Z][A-Z0-9_]*$/) bad("a railway row has a variable prefix, not " $3)
+			k = split(substr($2, 9), services, ",")
+			for (i = 1; i <= k; i++) {
+				if ((services[i] " " $3) in prefixes) bad("prefix " $3 " of railway service " services[i] " listed twice")
+				prefixes[services[i] " " $3] = 1
+			}
+		} else bad("target " $2)
+		if ($4 !~ /^[a-z][a-z0-9-]*$/) bad("common name " $4)
+		if ($5 != "serverAuth" && $5 != "clientAuth" && $5 != "serverAuth,clientAuth") bad("extended key usage " $5)
+		if ($6 == "-") {
+			if ($5 ~ /serverAuth/) bad("a server identity without a SAN list")
 		} else {
-			if ($2 !~ /^[a-z0-9][a-z0-9_\/.-]*\.toml$/) bad("toml " $2)
-			if ($3 != "-" && $3 !~ /^[a-z][a-z0-9-]*$/) bad("process group " $3)
-			if ($4 != "volume" && $4 !~ /^[A-Z][A-Z0-9_]*$/) bad("custody " $4)
-			else if ($4 != "volume" && (($2 " " $4) in prefixes)) bad("secret prefix " $4 " of " $2 " listed twice")
-			prefixes[$2 " " $4] = 1
-		}
-		if ($5 !~ /^[a-z][a-z0-9-]*$/) bad("common name " $5)
-		if ($6 != "serverAuth" && $6 != "clientAuth" && $6 != "serverAuth,clientAuth") bad("extended key usage " $6)
-		if ($7 == "-") {
-			if ($6 ~ /serverAuth/) bad("a server identity without a SAN list")
-		} else {
-			n = split($7, sans, ",")
+			n = split($6, sans, ",")
 			delete names
 			for (i = 1; i <= n; i++) {
-				if (sans[i] !~ /^(DNS:[a-z0-9<>.-]+|IP:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|URI:urn:[a-z0-9:._-]+)$/) bad("SAN " sans[i])
+				if (sans[i] !~ /^(DNS:[a-z0-9.-]+|IP:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|URI:urn:[a-z0-9:._-]+)$/) bad("SAN " sans[i])
 				else if (sans[i] in names) bad("SAN " sans[i] " listed twice")
 				names[sans[i]] = 1
 			}
@@ -240,12 +321,54 @@ table_check() {
 	}'
 }
 
-# The files every issued identity consists of, as <file>:<secret suffix>.
+# The files every issued identity consists of, as <file>:<variable suffix>.
 # derive_cmd turns key.pem, cert.pem and ca.pem into the rest; it carries no
-# single quote so it runs the same through fly_ssh and here.
+# single quote so it runs the same through box_ssh and here.
 identity_files="cert.pem:CERT key.pem:KEY ca.pem:CA cert.der:CERT_DER key.der:KEY_DER ca.der:CA_DER identity.p12:P12 password:PASSWORD"
 derive_cmd() {
 	printf '%s' "openssl x509 -in cert.pem -outform DER -out cert.der && openssl pkcs8 -topk8 -nocrypt -in key.pem -outform DER -out key.der && openssl x509 -in ca.pem -outform DER -out ca.der && openssl rand -hex 32 >password && openssl pkcs12 -export -inkey key.pem -in cert.pem -certfile ca.pem -name $1 -passout file:password -out identity.p12"
+}
+
+# box_host <variable>: prints the ssh host alias the private hosts file
+# assigns to the variable; status 1 when the file or the variable is missing.
+# The alias is never printed elsewhere.
+box_host() {
+	local host
+	{ [ -n "${BRINGUP_HOSTS_FILE:-}" ] && [ -r "$BRINGUP_HOSTS_FILE" ]; } || return 1
+	# shellcheck disable=SC1090
+	host="$(. "$BRINGUP_HOSTS_FILE" >/dev/null 2>&1 && printf '%s' "${!1:-}")" || return 1
+	[ -n "$host" ] && printf '%s' "$host"
+}
+
+# box_ssh <host> <command>: runs the command under sh on the box without
+# prompting, bounded by CHECK_LIVE_TIMEOUT. stdin passes through and stdout is
+# the result; stderr is dropped. The command carries no single quote.
+box_ssh() {
+	timeout "$timeout" ssh -o BatchMode=yes -- "$1" "sh -c '$2'" 2>/dev/null
+}
+
+# railway_set <service> <name> <file>: sets the service variable to the file's
+# base64 on standard input, never on a command line, without a deploy.
+railway_set() {
+	base64 -w 0 "$3" | timeout "$timeout" "$railway_bin" variable set "$2" --stdin --service "$1" \
+		--environment "$railway_env" --skip-deploys >/dev/null 2>&1
+}
+
+# railway_read <service> <prefix>: prints the variable names of the service on
+# one line, then the PEM of its PREFIX_CERT when set. No other value is
+# printed.
+railway_read() {
+	timeout "$timeout" "$railway_bin" variable list --service "$1" --environment "$railway_env" --json </dev/null 2>/dev/null |
+		python3 -c '
+import base64, json, sys
+doc = json.load(sys.stdin)
+if isinstance(doc, list):
+    doc = {v.get("name"): v.get("value") for v in doc}
+print(" ".join(sorted(k for k in doc if k)))
+cert = doc.get(sys.argv[1] + "_CERT") or ""
+if cert:
+    sys.stdout.write(base64.b64decode(cert, validate=True).decode("ascii"))
+' "$2" 2>/dev/null
 }
 
 ca_init() {
@@ -283,26 +406,28 @@ sign() {
 		-days "$cert_days" -sha256 -extfile "$work/ext.cnf" -out "$work/cert.pem" 2>/dev/null
 }
 
-# issue_volume <service> <app> <group> <cn> <eku> <sans>: the key and request
-# are made on the machine's volume and the key stays there.
-issue_volume() {
-	local service="$1" app="$2" group="$3" cn="$4" dir="$fly_tls_dir/$1"
-	fly_ssh "$app" "$group" "umask 077 && mkdir -p $dir && chmod 0700 $dir && cd $dir && openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem.new 2>/dev/null && openssl req -new -key key.pem.new -subj \"/O=$subject_org/CN=$cn\"" </dev/null >"$work/csr.pem" || {
-		echo "ca: $service on $app: the machine did not produce a signing request" >&2
+# issue_box <service> <host> <cn> <eku> <sans>: the key and request are made
+# on the box under LAYERX_TLS_DIR/<service> and the key stays there; the
+# certificate and the CA certificate return as a tar stream.
+issue_box() {
+	local service="$1" host="$2" cn="$3" dir="$tls_dir/$1"
+	box_ssh "$host" "umask 077 && mkdir -p $dir && chmod 0700 $dir && cd $dir && openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem.new 2>/dev/null && openssl req -new -key key.pem.new -subj \"/O=$subject_org/CN=$cn\"" </dev/null >"$work/csr.pem" || {
+		echo "ca: $service: the box did not produce a signing request" >&2
 		exit 1
 	}
-	sign "$service" "$5" "$6"
-	cat "$work/cert.pem" "$ca_dir/ca.pem" | fly_ssh "$app" "$group" "umask 077 && cd $dir && cat >bundle.new && sed -n \"1,/END CERTIFICATE/p\" bundle.new >cert.pem.new && sed \"1,/END CERTIFICATE/d\" bundle.new >ca.pem.new && rm bundle.new && openssl verify -CAfile ca.pem.new cert.pem.new >/dev/null && mv ca.pem.new ca.pem && mv key.pem.new key.pem && mv cert.pem.new cert.pem && $(derive_cmd "$cn")" >/dev/null || {
-		echo "ca: $service on $app: the machine did not accept the certificate" >&2
+	sign "$service" "$4" "$5"
+	cp "$ca_dir/ca.pem" "$work/ca.pem"
+	tar -C "$work" -cf - cert.pem ca.pem | box_ssh "$host" "umask 077 && cd $dir && rm -rf incoming.new && mkdir incoming.new && tar -x -o -f - -C incoming.new && openssl verify -CAfile incoming.new/ca.pem incoming.new/cert.pem >/dev/null && mv incoming.new/ca.pem ca.pem && mv key.pem.new key.pem && mv incoming.new/cert.pem cert.pem && rmdir incoming.new && $(derive_cmd "$cn")" >/dev/null || {
+		echo "ca: $service: the box did not accept the certificate" >&2
 		exit 1
 	}
 }
 
-# issue_secrets <service> <app> <prefix> <cn> <eku> <sans>: the key and
-# request are made in the tmpfs work directory and the identity files are
-# piped into flyctl secrets import on standard input.
-issue_secrets() {
-	local service="$1" app="$2" prefix="$3" cn="$4" file
+# issue_railway <service> <services> <prefix> <cn> <eku> <sans>: the key and
+# request are made in the tmpfs work directory and every identity file is set
+# as PREFIX_* on each Railway service of the row.
+issue_railway() {
+	local service="$1" prefix="$3" cn="$4" file svc
 	(
 		umask 077
 		cd "$work"
@@ -316,18 +441,21 @@ issue_secrets() {
 		cp "$ca_dir/ca.pem" ca.pem
 		sh -c "$(derive_cmd "$cn")"
 	)
-	for file in $identity_files; do
-		printf '%s_%s=%s\n' "$prefix" "${file#*:}" "$(base64 -w 0 "$work/${file%%:*}")"
-	done | timeout "$timeout" flyctl secrets import --app "$app" --stage >/dev/null 2>&1 || {
-		echo "ca: $service on $app: flyctl secrets import failed" >&2
-		exit 1
-	}
+	for svc in ${2//,/ }; do
+		for file in $identity_files; do
+			railway_set "$svc" "${prefix}_${file#*:}" "$work/${file%%:*}" || {
+				echo "ca: $service on railway service $svc: railway variable set ${prefix}_${file#*:} failed" >&2
+				exit 1
+			}
+		done
+	done
 }
 
-# service_row <service>: the row of the service; exits 2 when there is none.
+# service_row <service>: the completed row of the service; exits 2 when there
+# is none.
 service_row() {
 	local line
-	line="$(ca_services | awk -v s="$1" '$1 == s')"
+	line="$(awk -v s="$1" '$1 == s' <<<"$table")"
 	if [ -z "$line" ]; then
 		echo "ca: unknown service $1; see tools/bringup/ca.sh services" >&2
 		exit 2
@@ -354,13 +482,13 @@ row_ca_dir() {
 }
 
 certificate_usage_matches() {
-	local service="$1" cert="$2" row_ca="$3" app="$4" roles cn eku sans want_cn want_eku want_sans
+	local service="$1" cert="$2" row_ca="$3" roles cn eku sans want_cn want_eku want_sans host
 	case "$service" in
 	human-kms | human-kms-client | human-kms-executor)
 		# Each Human KMS identity is exactly its own row: the server, the
 		# components' service client and movement's restricted executor never
 		# stand in for one another.
-		read -r _ _ _ _ want_cn want_eku want_sans <<<"$(service_row "$service")"
+		read -r _ _ _ want_cn want_eku want_sans <<<"$(service_row "$service")"
 		cn="$(openssl x509 -noout -subject -nameopt multiline <<<"$cert" 2>/dev/null | sed -n 's/^ *commonName *= //p')"
 		eku="$(openssl x509 -noout -ext extendedKeyUsage <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
 		sans="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
@@ -369,7 +497,7 @@ certificate_usage_matches() {
 		serverAuth)
 			[ "$eku" = "TLS Web Server Authentication" ] &&
 				[[ ", $sans, " == *", DNS:layerx-human-kms, "* ]] &&
-				[ "$sans" = "$(printf '%s' "${want_sans//<app>/$app}" | sed 's/,/, /g; s/IP:/IP Address:/g')" ] &&
+				[ "$sans" = "$(printf '%s' "$want_sans" | sed 's/,/, /g; s/IP:/IP Address:/g')" ] &&
 				openssl verify -purpose sslserver -verify_hostname layerx-human-kms -verify_ip 127.0.0.1 \
 					-CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
 			;;
@@ -387,59 +515,43 @@ certificate_usage_matches() {
 			openssl verify -purpose sslclient -CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
 		;;
 	developer)
-		openssl verify -purpose sslserver -verify_hostname "public.process.$app.internal" \
+		host="$(service_row developer | awk '{print $6}' | tr ',' '\n' | sed -n 's/^DNS:\(.*\.railway\.internal\)$/\1/p' | head -n 1)"
+		[ -n "$host" ] && openssl verify -purpose sslserver -verify_hostname "$host" \
 			-CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
 		;;
 	*) return 0 ;;
 	esac
 }
 
-# inventory_row <service> <app> <group> <custody> <row ca dir>: prints
-# "<state> <fingerprint> <days>" for the material the service already has,
-# state one of present, absent, partial, incompatible, foreign or unreadable. It reads
-# file names and the public certificate only.
-inventory_row() {
-	local service="$1" app="$2" group="$3" custody="$4" row_ca="$5" dir="$fly_tls_dir/$1" answer missing cert listed file name toml path fingerprint days have=0 want=0
-	if [ "$custody" != volume ]; then
-		listed="$(timeout "$timeout" flyctl secrets list --app "$app" --json </dev/null 2>/dev/null | python3 -c 'import json, sys; print(" ".join(s.get("Name") or s.get("name") or "" for s in json.load(sys.stdin) or []))' 2>/dev/null)" || {
-			echo "unreadable - -"
-			return
-		}
-		for file in $identity_files; do
-			name="${custody}_${file#*:}"
-			want=$((want + 1))
-			[[ " $listed " != *" $name "* ]] || have=$((have + 1))
-		done
-		if [ "$have" -eq "$want" ]; then
-			read -r _ toml _ <<<"$(service_row "$service")"
-			if ! path="$(fly_guest_path "$toml" "${custody}_CERT")" ||
-				! cert="$(fly_ssh "$app" "$group" "cat $path" </dev/null)" ||
-				[ -z "$row_ca" ] || [ ! -r "$row_ca/ca.pem" ]; then
-				echo "unreadable - -"
-				return
-			fi
-			if ! fingerprint="$(openssl x509 -noout -fingerprint -sha256 <<<"$cert" 2>/dev/null | cut -d= -f2)" ||
-				! days="$(days_left <<<"$cert" 2>/dev/null)"; then
-				echo "unreadable - -"
-				return
-			fi
-			if openssl verify -CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1; then
-				if certificate_usage_matches "$service" "$cert" "$row_ca" "$app"; then
-					echo "present $fingerprint $days"
-				else
-					echo "incompatible $fingerprint $days"
-				fi
-			else
-				echo "foreign $fingerprint $days"
-			fi
-		elif [ "$have" -eq 0 ]; then
-			echo "absent - -"
-		else
-			echo "partial - -"
-		fi
+# cert_state <service> <row ca dir> <missing> <cert>: prints "<state>
+# <fingerprint> <days>" for a retained public certificate, <missing> the
+# count of its absent companion files.
+cert_state() {
+	local fingerprint days
+	if [ -z "$2" ] || [ ! -r "$2/ca.pem" ] ||
+		! fingerprint="$(openssl x509 -noout -fingerprint -sha256 <<<"$4" 2>/dev/null | cut -d= -f2)" ||
+		! days="$(days_left <<<"$4" 2>/dev/null)"; then
+		echo "unreadable - -"
+	elif ! openssl verify -CAfile "$2/ca.pem" <<<"$4" >/dev/null 2>&1; then
+		echo "foreign $fingerprint $days"
+	elif ! certificate_usage_matches "$1" "$4" "$2"; then
+		echo "incompatible $fingerprint $days"
+	elif [ "$3" -gt 0 ]; then
+		echo "partial $fingerprint $days"
+	else
+		echo "present $fingerprint $days"
+	fi
+}
+
+# inventory_box <service> <host variable> <row ca dir>: the state of the
+# identity under LAYERX_TLS_DIR/<service> on the box.
+inventory_box() {
+	local service="$1" dir="$tls_dir/$1" host answer missing cert
+	if ! host="$(box_host "$2")"; then
+		echo "unreadable - -"
 		return
 	fi
-	answer="$(fly_ssh "$app" "$group" "if [ -d $dir ]; then cd $dir && for f in key.der cert.der ca.der identity.p12 password; do [ -s \$f ] || echo missing=\$f; done && if [ -s cert.pem ]; then cat cert.pem; else echo missing=cert.pem; fi; else echo directory=absent; fi; echo inventory=done" </dev/null)" || answer=""
+	answer="$(box_ssh "$host" "if [ -d $dir ]; then cd $dir && for f in key.der cert.der ca.der identity.p12 password; do [ -s \$f ] || echo missing=\$f; done && if [ -s cert.pem ]; then cat cert.pem; else echo missing=cert.pem; fi; else echo directory=absent; fi; echo inventory=done" </dev/null)" || answer=""
 	if [[ "$answer" != *inventory=done* ]]; then
 		echo "unreadable - -"
 		return
@@ -454,47 +566,77 @@ inventory_row() {
 		[ "$missing" -ge 6 ] && echo "absent - -" || echo "partial - -"
 		return
 	fi
-	if [ -z "$row_ca" ] || [ ! -r "$row_ca/ca.pem" ]; then
-		echo "unreadable - -"
-		return
-	fi
-	if ! openssl verify -CAfile "$row_ca/ca.pem" <(printf '%s\n' "$cert") >/dev/null 2>&1; then
-		echo "foreign $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
-		return
-	fi
-	if ! certificate_usage_matches "$service" "$cert" "$row_ca" "$app"; then
-		echo "incompatible $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
-	elif [ "$missing" -gt 0 ]; then
-		echo "partial $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
-	else
-		echo "present $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
-	fi
+	cert_state "$service" "$3" "$missing" "$cert"
+}
+
+# inventory_railway <service> <services> <prefix> <row ca dir>: the state of
+# the PREFIX_* variables on every Railway service of the row; services that
+# disagree make the row partial unless one is unreadable or foreign.
+inventory_railway() {
+	local service="$1" prefix="$3" svc answer listed cert file have want state result="" states=""
+	for svc in ${2//,/ }; do
+		if ! answer="$(railway_read "$svc" "$prefix")"; then
+			state="unreadable - -"
+		else
+			listed="$(head -n 1 <<<"$answer")"
+			cert="$(tail -n +2 <<<"$answer")"
+			have=0
+			want=0
+			for file in $identity_files; do
+				want=$((want + 1))
+				[[ " $listed " != *" ${prefix}_${file#*:} "* ]] || have=$((have + 1))
+			done
+			if [ "$have" -eq 0 ]; then
+				state="absent - -"
+			elif [ -z "$cert" ]; then
+				state="partial - -"
+			else
+				state="$(cert_state "$service" "$4" $((want - have)) "$cert")"
+			fi
+		fi
+		states="$states${state%% *} "
+		if [ -z "$result" ]; then
+			result="$state"
+		elif [ "$result" != "$state" ]; then
+			result="partial - -"
+		fi
+	done
+	case " $states" in
+	*" unreadable "*) echo "unreadable - -" ;;
+	*" foreign "*) [[ "$result" == foreign* ]] && echo "$result" || echo "foreign - -" ;;
+	*) echo "$result" ;;
+	esac
+}
+
+# inventory_row <service> <target> <custody> <row ca dir>: prints "<state>
+# <fingerprint> <days>" for the material the service already has, state one
+# of present, absent, partial, incompatible, foreign or unreadable. It reads
+# file and variable names and the public certificate only.
+inventory_row() {
+	case "$2" in
+	box:*) inventory_box "$1" "${2#box:}" "$4" ;;
+	railway:*) inventory_railway "$1" "${2#railway:}" "$3" "$4" ;;
+	esac
 }
 
 # ca_inventory [<service>]: one inventory line per row; exits 1 when any row
 # is unreadable or foreign, so a deployment action never starts on material
 # nobody has accounted for.
 ca_inventory() {
-	local service line toml group custody app row_ca state fingerprint days failures=0 rows
+	local service target custody row_ca state fingerprint days failures=0 rows
 	if [ -n "${1:-}" ]; then
 		rows="$(service_row "$1")"
 	else
-		rows="$(ca_services)"
+		rows="$table"
 	fi
-	while read -r service toml group custody _; do
-		if ! app="$(fly_app "$toml")"; then
-			echo "fail material missing=$toml producer=the app line of $toml"
-			failures=$((failures + 1))
-			continue
-		fi
+	while read -r service target custody _; do
 		row_ca="$(row_ca_dir "$service")" || row_ca=""
-		read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$row_ca")"
+		read -r state fingerprint days <<<"$(inventory_row "$service" "$target" "$custody" "$row_ca")"
 		[ "$custody" = volume ] || custody=secrets
 		if [ "$fingerprint" != - ]; then
-			days="${days}d"
-			echo "inventory $service app=$app custody=$custody state=$state fingerprint=$fingerprint expires_in=$days producer=tools/bringup/ca.sh issue $service"
+			echo "inventory $service target=$target custody=$custody state=$state fingerprint=$fingerprint expires_in=${days}d producer=tools/bringup/ca.sh issue $service"
 		else
-			echo "inventory $service app=$app custody=$custody state=$state producer=tools/bringup/ca.sh issue $service"
+			echo "inventory $service target=$target custody=$custody state=$state producer=tools/bringup/ca.sh issue $service"
 		fi
 		case "$state" in unreadable | foreign) failures=$((failures + 1)) ;; esac
 	done <<<"$rows"
@@ -502,9 +644,9 @@ ca_inventory() {
 }
 
 ca_issue() {
-	local service="$1" line toml group custody cn eku sans app state fingerprint days
+	local service="$1" line target custody cn eku sans host="" state fingerprint days
 	line="$(service_row "$service")"
-	read -r _ toml group custody cn eku sans <<<"$line"
+	read -r _ target custody cn eku sans <<<"$line"
 	if [[ " $attestor_services " == *" $service "* ]]; then
 		ca_dir="$(row_ca_dir "$service")" || {
 			echo "fail material missing=LAYERX_ATTESTOR_CA_DIR producer=the attestors' gateway CA"
@@ -514,12 +656,12 @@ ca_issue() {
 	fi
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
 		echo "fail material missing=$ca_dir/ca.pem producer=tools/bringup/ca.sh init"
-		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
+		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the CA host" >&2
 		exit 1
 	fi
-	if ! app="$(fly_app "$toml")"; then
-		echo "fail material missing=$toml producer=the app line of $toml"
-		echo "ca: $service: $toml names no app" >&2
+	if [[ "$target" == box:* ]] && ! host="$(box_host "${target#box:}")"; then
+		echo "fail material missing=BRINGUP_HOSTS_FILE:${target#box:} producer=the private hosts file"
+		echo "ca: $service: BRINGUP_HOSTS_FILE does not assign ${target#box:}" >&2
 		exit 1
 	fi
 	umask 077
@@ -528,27 +670,26 @@ ca_issue() {
 		echo "ca: the established authority issuer is busy" >&2
 		exit 1
 	}
-	read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$ca_dir")"
+	read -r state fingerprint days <<<"$(inventory_row "$service" "$target" "$custody" "$ca_dir")"
 	case "$state" in
 	unreadable)
-		echo "ca: $service on $app: the retained material cannot be inventoried; nothing is issued before it is" >&2
+		echo "ca: $service on $target: the retained material cannot be inventoried; nothing is issued before it is" >&2
 		exit 1
 		;;
 	foreign)
-		echo "ca: $service on $app: the retained certificate $fingerprint does not chain to $ca_dir/ca.pem; issuing beside it would make a second, incompatible authority, so remove it deliberately first" >&2
+		echo "ca: $service on $target: the retained certificate $fingerprint does not chain to $ca_dir/ca.pem; issuing beside it would make a second, incompatible authority, so remove it deliberately first" >&2
 		exit 1
 		;;
 	partial)
 		if [ "$custody" != volume ]; then
-			echo "ca: $service on $app: retained secret material is partial; restore the original identity before issuing" >&2
+			echo "ca: $service on $target: retained variable material is partial; restore the original identity before issuing" >&2
 			exit 1
 		fi
 		;;
 	present)
 		if [ "$days" -gt "$renew_days" ]; then
 			[ "$custody" = volume ] || custody=secrets
-			days="${days}d"
-			echo "reused $service app=$app custody=$custody fingerprint=$fingerprint expires_in=$days"
+			echo "reused $service target=$target custody=$custody fingerprint=$fingerprint expires_in=${days}d"
 			return
 		fi
 		;;
@@ -559,14 +700,14 @@ ca_issue() {
 	fi
 	work="$(mktemp -d -p /dev/shm)"
 	trap 'rm -rf "$work"' EXIT
-	sans="$(app_sans "$sans" "$app")"
+	[ "$sans" != - ] || sans=""
 	if [ "$custody" = volume ]; then
-		issue_volume "$service" "$app" "$group" "$cn" "$eku" "$sans"
+		issue_box "$service" "$host" "$cn" "$eku" "$sans"
 	else
-		issue_secrets "$service" "$app" "$custody" "$cn" "$eku" "$sans"
+		issue_railway "$service" "${target#railway:}" "$custody" "$cn" "$eku" "$sans"
 		custody=secrets
 	fi
-	echo "issued $service app=$app custody=$custody fingerprint=$(openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$work/cert.pem")d"
+	echo "issued $service target=$target custody=$custody fingerprint=$(openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$work/cert.pem")d"
 }
 
 # local_refuse <message>: refuses an issue-local destination or bundle.
@@ -626,9 +767,9 @@ ca_issue_local() {
 		echo "ca: unknown local service $service; see tools/bringup/ca.sh local-services" >&2
 		exit 2
 	fi
-	read -r _ _ _ _ cn eku sans <<<"$line"
+	read -r _ _ _ cn eku sans <<<"$line"
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
-		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
+		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the CA host" >&2
 		exit 1
 	fi
 	umask 077
@@ -1062,8 +1203,8 @@ case "$mode" in
 request-server | sign-server | install-server) tools+=(python3 stat realpath mktemp flock) ;;
 esac
 [ "$mode" != issue-local ] || tools+=(stat realpath mktemp find flock)
-[ "$mode" != issue ] || tools+=(timeout flyctl base64 python3 flock realpath)
-[ "$mode" != inventory ] || tools+=(timeout flyctl python3 realpath)
+[ "$mode" != issue ] || tools+=(timeout ssh tar base64 python3 flock realpath "$railway_bin")
+[ "$mode" != inventory ] || tools+=(timeout ssh base64 python3 realpath "$railway_bin")
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "ca: $tool is required" >&2
@@ -1072,7 +1213,10 @@ for tool in "${tools[@]}"; do
 done
 
 case "$mode" in
-services | inventory | issue) ca_services | table_check ca_services || exit 1 ;;
+services | inventory | issue)
+	table="$(ca_rows)" || exit 1
+	table_check ca_services <<<"$table" || exit 1
+	;;
 local-services | issue-local) local_services | table_check local_services || exit 1 ;;
 esac
 
@@ -1081,7 +1225,7 @@ request-server) ca_request_server "$2" "$4" ;;
 sign-server) ca_sign_server "$2" "$4" "$6" ;;
 install-server) ca_install_server "$2" "$4" "$6" "$8" ;;
 init) ca_init ;;
-services) ca_services ;;
+services) printf '%s\n' "$table" ;;
 local-services) local_services ;;
 inventory) ca_inventory "${2:-}" ;;
 issue) ca_issue "$2" ;;
