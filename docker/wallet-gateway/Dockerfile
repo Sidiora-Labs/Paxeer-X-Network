@@ -30,7 +30,10 @@ COPY --from=build --chown=node:node /app/gateway/package.json ./gateway/package.
 COPY --from=build --chown=node:node /app/gateway/dist ./gateway/dist
 COPY --from=build --chown=node:node /app/gateway/migrations ./gateway/migrations
 COPY --chmod=0555 docker/wallet-gateway/entrypoint.sh /usr/local/bin/wallet-entrypoint
+COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/wallet-gateway/files.tsv /etc/layerx/files.tsv
+ENV LAYERX_FILES_OWNER=node:node
 USER root
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/wallet-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/wallet-entrypoint"]
 CMD ["node", "/app/gateway/dist/index.js"]

@@ -264,6 +264,27 @@ func TestLoadPeerPinsAndActivityTypes(t *testing.T) {
 	}
 }
 
+func TestParsePeersTakesHostPortFromEnv(t *testing.T) {
+	peers, err := ParsePeers("2=attestor-2.example:9443, 3=shuttle.proxy.rlwy.net:41234,4=[2001:db8::4]:9443,5=192.0.2.5:9443", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Peer{{"2", "attestor-2.example:9443"}, {"3", "shuttle.proxy.rlwy.net:41234"}, {"4", "[2001:db8::4]:9443"}, {"5", "192.0.2.5:9443"}}
+	if len(peers) != len(want) {
+		t.Fatalf("peers %v", peers)
+	}
+	for i := range want {
+		if peers[i] != want[i] {
+			t.Fatalf("peers %v, want %v", peers, want)
+		}
+	}
+	for _, bad := range []string{"2=attestor-2.example", "2=attestor-2.example:0", "2=attestor-2.example:x", "attestor-2.example:9443", "1=attestor-1.example:9443", "2=a:1,2=b:1", "2=a:1,"} {
+		if peers, err := ParsePeers(bad, "1"); err == nil {
+			t.Fatalf("ParsePeers(%q) accepted: %v", bad, peers)
+		}
+	}
+}
+
 func TestLoadSnapshotSchedule(t *testing.T) {
 	dir := t.TempDir()
 	path := writeKey(t, dir, "node.key", randomKey(t), 0o600)

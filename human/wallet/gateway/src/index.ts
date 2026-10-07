@@ -41,7 +41,7 @@ export async function buildApp(): Promise<FastifyInstance> {
           ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', colorize: true } }
           : undefined,
     },
-    trustProxy: true,
+    trustProxy: env.LAYERX_TRUSTED_PROXIES.length > 0 ? env.LAYERX_TRUSTED_PROXIES : false,
     bodyLimit: 1_048_576, // 1 MB
   });
 
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
   try {
-    await app.listen({ port: env.PORT, host: '0.0.0.0' });
+    await app.listen({ port: env.PORT, host: '::' });
     app.log.info(
       `paxeer-wallet-api listening on :${env.PORT} (chain_id=${env.HYPERPAXEER_CHAIN_ID})`,
     );

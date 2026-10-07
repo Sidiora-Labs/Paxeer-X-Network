@@ -48,16 +48,10 @@ function hashRequest(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-function clientIp(req: FastifyRequest): string | null {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]?.trim() ?? req.ip;
-  return req.ip;
-}
-
 function audit(req: FastifyRequest, payload: unknown): { request_hash: string; ip: string | null; user_agent: string | null } {
   return {
     request_hash: hashRequest(payload),
-    ip: clientIp(req),
+    ip: req.ip,
     user_agent: (req.headers['user-agent'] as string | undefined) ?? null,
   };
 }

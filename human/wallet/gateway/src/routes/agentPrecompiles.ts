@@ -50,11 +50,9 @@ function buildAudit(req: FastifyRequest, payload: unknown): {
   ip: string | null;
   user_agent: string | null;
 } {
-  const xff = req.headers['x-forwarded-for'];
-  const ip = typeof xff === 'string' && xff.length > 0 ? (xff.split(',')[0]?.trim() ?? req.ip) : req.ip;
   return {
     request_hash: hashRequest(payload),
-    ip,
+    ip: req.ip,
     user_agent: (req.headers['user-agent'] as string | undefined) ?? null,
   };
 }

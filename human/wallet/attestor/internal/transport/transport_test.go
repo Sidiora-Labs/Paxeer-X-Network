@@ -527,6 +527,40 @@ func TestConfigRejectsBadPins(t *testing.T) {
 	}
 }
 
+func TestPeerClientsUseConfiguredServerName(t *testing.T) {
+	c := newCluster(t, 3)
+	for i, id := range c.ids[1:] {
+		tc := c.nodes[0].clients[id].Transport.(*http.Transport).TLSClientConfig
+		host, _, err := net.SplitHostPort(c.addrs[i+1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.ServerName != host {
+			t.Fatalf("peer %s server name %q, want %q", id, tc.ServerName, host)
+		}
+	}
+	own := c.ca.issue(t, c.dir, "named")
+	ownPin := SPKIHash(own.cert)
+	peerPin := SPKIHash(c.ca.issue(t, c.dir, "named-peer").cert)
+	peers := []Peer{
+		{ID: "a", Address: ":9443", SPKISHA256: hex.EncodeToString(ownPin[:])},
+		{ID: "b", Address: "attestor-2.example:9443", SPKISHA256: hex.EncodeToString(peerPin[:])},
+	}
+	tr, err := New(Config{SelfID: "a", CertFile: own.certPath, KeyFile: own.keyPath, CAFile: c.ca.pemPath, Peers: peers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.clients["b"].Transport.(*http.Transport).TLSClientConfig.ServerName; got != "attestor-2.example" {
+		t.Fatalf("server name %q, want attestor-2.example", got)
+	}
+	for _, addr := range []string{":9443", "attestor-2.example"} {
+		peers[1].Address = addr
+		if _, err := New(Config{SelfID: "a", CertFile: own.certPath, KeyFile: own.keyPath, CAFile: c.ca.pemPath, Peers: peers}); !errors.Is(err, ErrConfig) {
+			t.Fatalf("peer address %q accepted: %v", addr, err)
+		}
+	}
+}
+
 func openKind(t *testing.T, tr *Transport, id string, participants []string, kind SessionKind) *Session {
 	t.Helper()
 	s, err := tr.OpenKind(id, participants, testProtocol, kind)

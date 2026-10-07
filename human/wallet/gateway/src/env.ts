@@ -1,7 +1,30 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { compileOrigin } from './cors.js';
 
 export { compileOrigin };
+
+/**
+ * Parse LAYERX_TRUSTED_PROXIES: a comma-separated list of proxy addresses or
+ * CIDR ranges whose X-Forwarded-For hops are trusted. The client address is
+ * the rightmost hop not in this list.
+ */
+export function parseTrustedProxies(value: string): string[] {
+  return value
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [addr = '', prefix, extra] = entry.split('/');
+      const family = isIP(addr);
+      const max = family === 4 ? 32 : 128;
+      const prefixOk = prefix === undefined || (/^\d{1,3}$/.test(prefix) && Number(prefix) <= max);
+      if (family === 0 || extra !== undefined || !prefixOk) {
+        throw new Error(`LAYERX_TRUSTED_PROXIES: invalid address or CIDR ${JSON.stringify(entry)}`);
+      }
+      return entry;
+    });
+}
 
 /**
  * Environment schema. Validated once at startup; every other module imports
@@ -10,6 +33,17 @@ export { compileOrigin };
 const Env = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8787),
+  LAYERX_TRUSTED_PROXIES: z
+    .string()
+    .default('')
+    .transform((s, ctx) => {
+      try {
+        return parseTrustedProxies(s);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: (err as Error).message });
+        return z.NEVER;
+      }
+    }),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   CORS_ORIGINS: z
     .string()

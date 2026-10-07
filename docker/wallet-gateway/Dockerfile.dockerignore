@@ -19,6 +19,9 @@
 !docker/
 !docker/wallet-gateway/
 !docker/wallet-gateway/entrypoint.sh
+!docker/wallet-gateway/files.tsv
+!docker/common/
+!docker/common/env-files.sh
 **/.git
 **/node_modules
 **/dist

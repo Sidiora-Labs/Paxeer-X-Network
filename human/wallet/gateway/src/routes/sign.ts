@@ -71,14 +71,6 @@ function hashRequest(payload: unknown): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-function clientIp(headers: Record<string, string | string[] | undefined>, fallback: string | null): string | null {
-  const xff = headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) {
-    return xff.split(',')[0]?.trim() ?? fallback;
-  }
-  return fallback;
-}
-
 function bearerToken(req: FastifyRequest): string {
   const header = req.headers.authorization ?? '';
   return header.slice('Bearer '.length).trim();
@@ -432,8 +424,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     };
   }
 
-  const ipOf = (req: FastifyRequest): string | null =>
-    clientIp(req.headers as Record<string, string | string[] | undefined>, req.ip);
+  const ipOf = (req: FastifyRequest): string | null => req.ip;
 
   app.get('/v1/wallet/custody/:id',{preHandler:requireAuth},async(req,reply)=>{
     const id=(req.params as {id:string}).id;
