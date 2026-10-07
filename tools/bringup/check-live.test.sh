@@ -235,10 +235,41 @@ chmod +x "$work/bin/flyctl"
 # A local railway stand-in: keeps each service's variables of environment
 # beta as files under CHECK_LIVE_TEST_RAILWAY/<service>, answers variable set
 # --stdin by storing the value and recording only the name, and variable list
-# --json with every variable of the service; records every call.
+# --json with every variable of the service; records every call. ssh runs
+# its one command line on this box for a service with a loopback file under
+# CHECK_LIVE_TEST_RAILWAY_SSH/<service>, its first address mapped to the
+# second, and fails for any other service.
 cat >"$work/bin/railway" <<'SH'
 #!/usr/bin/env bash
 set -eu
+if [ "${1:-}" = ssh ]; then
+	shift
+	service=""
+	environment=""
+	while [ "$#" -gt 0 ]; do
+		case "$1" in
+		--service)
+			service="$2"
+			shift 2
+			;;
+		--environment)
+			environment="$2"
+			shift 2
+			;;
+		--)
+			shift
+			break
+			;;
+		*) exit 98 ;;
+		esac
+	done
+	[ "$#" -eq 1 ] || exit 98
+	printf 'railway %s ssh %s\n' "$service" "$1" >>"$CHECK_LIVE_TEST_CALLS"
+	[ "$environment" = beta ] || exit 97
+	[ -f "$CHECK_LIVE_TEST_RAILWAY_SSH/$service/loopback" ] || exit 1
+	read -r from to <"$CHECK_LIVE_TEST_RAILWAY_SSH/$service/loopback"
+	exec bash -c "${1//$from/$to}"
+fi
 sub="${1:-} ${2:-}"
 shift 2
 name=""
@@ -3684,15 +3715,16 @@ CHECK_LIVE_HUMAN_BASE="$origin/good" expect check_live_human_no_probe_email "$wo
 	"fail rp-id email=unset" \
 	"check-live: 1 check(s) failed"
 
-# The relay cases read a TLS origin in the kernel fixture machine, two relay
-# machines and the public route, all answered by one loopback responder whose
-# scenario file picks the fault: a stale origin, a replica with a wrong
-# genesis pin, a replica two batches behind, or a route that accepts flipped
-# activity bytes. The machines list of the relay app names the started
-# machines; one machine stands for a missing replica.
-relay_app=fx-relay-archive
-mkdir -p "$fx/platform/relay_archive" "$work/relay"
-printf 'app = "%s"\n' "$relay_app" >"$fx/platform/relay_archive/fly.toml"
+# The relay cases read a TLS origin in the kernel fixture machine, the two
+# relay-archive Railway services of the real rollout ledger and the public
+# route, all answered by one loopback responder whose scenario file picks the
+# fault: a stale origin, a replica with a wrong genesis pin, a replica two
+# batches behind, or a route that accepts flipped activity bytes. A service
+# without a loopback file stands for a missing replica.
+mkdir -p "$fx/platform/relay_archive" "$fx/deploy" "$work/relay"
+cp "$root/platform/relay_archive/railway.env.example" "$fx/platform/relay_archive/"
+cp "$root/deploy/rollout.kvx" "$fx/deploy/"
+export CHECK_LIVE_TEST_RAILWAY_SSH="$work/railway-ssh"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=relay-test-ca \
 	-keyout "$work/relay/ca.key" -out "$work/relay/ca.pem" \
 	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign >/dev/null 2>&1
@@ -3800,22 +3832,21 @@ if [ ! -s "$work/relay/ports" ]; then
 fi
 read -r relay_tls relay_plain <"$work/relay/ports"
 echo "127.0.0.1:9457 127.0.0.1:$relay_tls" >"$fly/$kernel/app/loopback"
-for machine in m1 m2; do
-	mkdir -p "$fly/$relay_app/$machine"
-	echo "127.0.0.1:8080 127.0.0.1:$relay_plain/$machine" >"$fly/$relay_app/$machine/loopback"
+for pair in relay-archive-a:m1 relay-archive-b:m2; do
+	mkdir -p "$CHECK_LIVE_TEST_RAILWAY_SSH/${pair%%:*}"
+	echo "127.0.0.1:8080 127.0.0.1:$relay_plain/${pair#*:}" >"$CHECK_LIVE_TEST_RAILWAY_SSH/${pair%%:*}/loopback"
 done
-relay_machines='[{"id":"m1","region":"ams","state":"started"},{"id":"m2","region":"fra","state":"started"}]'
 relay_activity_id="$(sha256sum "$work/relay/activity" | cut -d' ' -f1)"
 export CHECK_LIVE_RELAY_ORIGIN="http://127.0.0.1:$relay_plain/public" CHECK_LIVE_RELAY_ACTIVITY="$work/relay/activity"
 export CHECK_LIVE_RELAY_ACTIVITY_ID="$relay_activity_id" CHECK_LIVE_RELAY_KEY_FILE="$work/relay/key"
 
-CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_relay_passing - 0 relay -- \
 	"pass relay-origin app=$kernel head=10 ready=true freshness=fresh genesis=match" \
 	"pass relay-public origin=http://127.0.0.1:$relay_plain/public head=10 lag=0 ready=true freshness=fresh pins=match bytes=match" \
-	"pass machines started=2 regions=ams,fra app=$relay_app" \
-	"pass relay-replica machine=m1 region=ams head=10 lag=0" \
-	"pass relay-replica machine=m2 region=fra head=9 lag=1 ready=true freshness=fresh pins=match bytes=match" \
+	"pass services answered=2 services=relay-archive-a,relay-archive-b" \
+	"pass relay-replica service=relay-archive-a head=10 lag=0" \
+	"pass relay-replica service=relay-archive-b head=9 lag=1 ready=true freshness=fresh pins=match bytes=match" \
 	"pass relay-origin-recheck app=$kernel head=10" \
 	"pass relay-forward http=200 activity=match" \
 	"pass relay-altered http=400 refused=activity_refused" \
@@ -3827,34 +3858,42 @@ else
 	echo "ok   check_live_relay_key_stays_local"
 fi
 
-CHECK_LIVE_TEST_MACHINES='[{"id":"m1","region":"ams","state":"started"},{"id":"m2","region":"fra","state":"stopped"}]' \
-	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_missing_replica - 1 relay -- \
-	"fail machines started=1 regions=ams app=$relay_app" \
-	"pass relay-replica machine=m1 region=ams" \
+mv "$CHECK_LIVE_TEST_RAILWAY_SSH/relay-archive-b/loopback" "$work/relay/b-loopback"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_missing_replica - 1 relay -- \
+	"fail services answered=1 services=relay-archive-a,relay-archive-b" \
+	"pass relay-replica service=relay-archive-a" \
+	"fail relay-replica service=relay-archive-b head=none" \
+	"check-live: 2 check(s) failed"
+mv "$work/relay/b-loopback" "$CHECK_LIVE_TEST_RAILWAY_SSH/relay-archive-b/loopback"
+
+mv "$fx/platform/relay_archive/railway.env.example" "$work/relay/env.example"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_env_absent - 1 relay -- \
+	"fail relay env=absent services=relay-archive-a,relay-archive-b" \
 	"check-live: 1 check(s) failed"
+mv "$work/relay/env.example" "$fx/platform/relay_archive/railway.env.example"
 
 echo wrong-pin >"$work/relay/scenario"
-CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_relay_wrong_pin - 1 relay -- \
-	"pass relay-replica machine=m1 region=ams" \
-	"fail relay-replica machine=m2 region=fra head=9 lag=1 ready=true freshness=fresh pins=mismatch" \
+	"pass relay-replica service=relay-archive-a" \
+	"fail relay-replica service=relay-archive-b head=9 lag=1 ready=true freshness=fresh pins=mismatch" \
 	"check-live: 1 check(s) failed"
 
 echo lagging >"$work/relay/scenario"
-CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_relay_lagging_replica - 1 relay -- \
-	"fail relay-replica machine=m2 region=fra head=7 lag=3" \
+	"fail relay-replica service=relay-archive-b head=7 lag=3" \
 	"check-live: 1 check(s) failed"
 
 echo stale >"$work/relay/scenario"
-CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_relay_stale_origin - 1 relay -- \
 	"fail relay-origin app=$kernel head=10 ready=false freshness=stale genesis=match" \
-	"fail relay-replica machine=m1 region=ams" \
+	"fail relay-replica service=relay-archive-a" \
 	"fail relay-origin-recheck app=$kernel head=10 ready=false freshness=stale"
 
 echo altered-accepted >"$work/relay/scenario"
-CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
 	expect check_live_relay_altered_bytes_accepted - 1 relay -- \
 	"pass relay-forward http=200 activity=match" \
 	"fail relay-altered http=200 activity=$relay_activity_id refused=no" \

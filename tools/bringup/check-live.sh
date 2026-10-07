@@ -203,13 +203,15 @@ router    requires protected material and registry-bootstrap records under
           missing=program_registry when the router's program_registry backend
           is absent or not configured.
 
-relay     reads the relay archive of platform/relay_archive/fly.toml against
-          its origin in the kernel app of human/wallet/deploy/human.toml and
-          prints one line per check: relay-origin (ready, fresh, genesis equal
-          to the kernel's manifest), relay-public and one relay-replica per
-          started machine (ready, fresh, pins equal, head within one batch of
-          the origin read before and no further than the one after, exact
-          batch bytes), machines (two started in two regions),
+relay     reads the relay archive of platform/relay_archive/railway.env.example
+          (its public URL) and the relay-archive Railway services of
+          deploy/rollout.kvx against its origin in the kernel app of
+          human/wallet/deploy/human.toml and prints one line per check:
+          relay-origin (ready, fresh, genesis equal to the kernel's manifest),
+          relay-public and one relay-replica per Railway service (ready,
+          fresh, pins equal, head within one batch of the origin read before
+          and no further than the one after, exact batch bytes), services
+          (at least two in the ledger, every one answering),
           relay-origin-recheck, relay-forward (the original signed activity
           answered with the router's verdict) and relay-altered (the flipped
           bytes refused with a 4xx). Needs no host map.
@@ -3150,14 +3152,16 @@ else:
 	finish "$failures"
 }
 
-# check_relay: the relay archive of platform/relay_archive/fly.toml against
-# its origin, the relay-archive service the kernel app of
+# check_relay: the relay archive of platform/relay_archive/railway.env.example
+# against its origin, the relay-archive service the kernel app of
 # human/wallet/deploy/human.toml runs beside the sequencer. Reads the origin
 # inside the kernel machine over its internal-CA TLS listener (head, pins,
 # readiness, the genesis.manifest digest and the bytes of the batch one below
-# its head), then the public route CHECK_LIVE_RELAY_ORIGIN, then every
-# started relay machine through flyctl ssh console --machine, then the origin
-# again: the app runs at least two started machines in two regions, and each
+# its head), then the public route CHECK_LIVE_RELAY_ORIGIN (default the
+# LAYERX_RELAY_ARCHIVE_PUBLIC_URL of the env example), then every Railway
+# service of image layerx-relay-archive in deploy/rollout.kvx through railway
+# ssh, then the origin again: the ledger names at least two replica services
+# and every one answers, and each
 # replica and the public route answer ready and fresh, carry the origin's
 # network, genesis and sequencer pins with the genesis equal to the kernel's
 # manifest, hold a head no more than one batch behind the first origin read
@@ -3200,9 +3204,11 @@ except (OSError, ValueError, TypeError, AttributeError) as error:
 print("@@relay " + json.dumps(out, sort_keys=True))'
 
 check_relay() {
-	local origin="${CHECK_LIVE_RELAY_ORIGIN:-https://archive.paxeer.network}"
+	local origin public_url
 	local ca="${CHECK_LIVE_RELAY_CA:--}"
-	local name app kernel records ids id region reply target answer code activity refusal failures=0
+	local name kernel records services svcs svc answered probe reply target answer code activity refusal failures=0
+	public_url="$(sed -n 's/^LAYERX_RELAY_ARCHIVE_PUBLIC_URL=\(https:\/\/[a-z0-9.-]*\)$/\1/p' "$repo_root/platform/relay_archive/railway.env.example" 2>/dev/null | head -n 1)"
+	origin="${CHECK_LIVE_RELAY_ORIGIN:-$public_url}"
 	for name in CHECK_LIVE_RELAY_ACTIVITY CHECK_LIVE_RELAY_KEY_FILE; do
 		if [ -z "${!name:-}" ]; then
 			echo "check-live: $name is unset" >&2
@@ -3224,8 +3230,14 @@ check_relay() {
 		echo "check-live: CHECK_LIVE_RELAY_CA does not name a readable file" >&2
 		exit 2
 	fi
-	if ! app="$(fly_app platform/relay_archive/fly.toml)" || ! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
-		echo "fail relay toml=absent"
+	services="$(python3 -c '
+import sys, tomllib
+with open(sys.argv[1], "rb") as source:
+    rows = tomllib.load(source).get("service", {}).values()
+print(" ".join(r["railway_service"] for r in rows if r.get("image") == "layerx-relay-archive" and r.get("target") == "railway"))
+' "$repo_root/deploy/rollout.kvx" 2>/dev/null)" || services=""
+	if [ -z "$public_url" ] || [ -z "$services" ] || ! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail relay env=$([ -n "$public_url" ] && echo present || echo absent) services=$(tr " " , <<<"${services:-absent}")"
 		finish 1
 	fi
 
@@ -3235,19 +3247,24 @@ check_relay() {
 	reply="$(python3 -c "$relay_probe" "$origin" "$ca" - "$target" "$timeout" 2>/dev/null)" || reply=""
 	records+=$'\n'"public $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
 
-	fly_regions "$app" || failures=$((failures + 1))
-	ids="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
-import json, sys
-for m in json.load(sys.stdin):
-    if m.get("state") == "started":
-        print(m.get("id", ""), m.get("region", "") or "none")
-' 2>/dev/null)" || ids=""
-	while read -r id region; do
-		[ -n "$id" ] || continue
-		reply="$(printf '%s\n' "$relay_probe" | timeout "$timeout" flyctl ssh console --quiet --app "$app" --machine "$id" \
-			--command "sh -c 'python3 - http://$relay_listen - - $target $timeout'" 2>/dev/null)" || reply=""
-		records+=$'\n'"replica:$id:$region $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
-	done <<<"$ids"
+	# railway ssh runs one command line in the service's active instance; the
+	# probe travels base64 in it, so no stdin has to reach the instance.
+	probe="$(printf '%s\n' "$relay_probe" | base64 -w0)"
+	answered=0
+	for svc in $services; do
+		reply="$(timeout "$timeout" "$railway_bin" ssh --service "$svc" --environment "$railway_env" -- \
+			"sh -c 'echo $probe | base64 -d | python3 - http://$relay_listen - - $target $timeout'" </dev/null 2>/dev/null)" || reply=""
+		reply="$(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
+		[ -z "$reply" ] || answered=$((answered + 1))
+		records+=$'\n'"replica:$svc $reply"
+	done
+	read -ra svcs <<<"$services"
+	if [ "${#svcs[@]}" -ge 2 ] && [ "$answered" -eq "${#svcs[@]}" ]; then
+		echo "pass services answered=$answered services=$(tr ' ' , <<<"$services")"
+	else
+		echo "fail services answered=$answered services=$(tr ' ' , <<<"$services")"
+		failures=$((failures + 1))
+	fi
 
 	reply="$(printf '%s\n' "$relay_probe" | fly_ssh "$kernel" - "python3 - https://$relay_origin_listen /data/tls/relay-archive/ca.pem /data/layerx/node/genesis/genesis.manifest - $timeout")" || reply=""
 	records+=$'\n'"origin2 $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
@@ -3263,7 +3280,7 @@ for line in sys.argv[3].splitlines():
         value = {}
     value = value if isinstance(value, dict) else {}
     if tag.startswith("replica:"):
-        replicas.append((tag.split(":")[1], tag.split(":")[2], value))
+        replicas.append((tag.split(":")[1], value))
     else:
         {"origin1": origin1, "public": public, "origin2": origin2}[tag].update(value)
 def number(value):
@@ -3297,8 +3314,8 @@ def replica(label, row):
              label, head if head is not None else "none", lag, str(row.get("ready") is True).lower(),
              row.get("freshness") or "none", pins, "match" if same else "mismatch"))
 replica("relay-public origin=%s" % sys.argv[2], public)
-for machine, region, row in replicas:
-    replica("relay-replica machine=%s region=%s" % (machine, region), row)
+for service, row in replicas:
+    replica("relay-replica service=%s" % service, row)
 recheck = fresh(origin2) and origin2.get("genesis") == kernel and last is not None and first is not None and last >= first
 emit(recheck, "relay-origin-recheck app=%s head=%s ready=%s freshness=%s" % (
     sys.argv[1], last if last is not None else "none", str(origin2.get("ready") is True).lower(),
@@ -4987,7 +5004,7 @@ tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != explorer ] || tools=(curl python3 psql)
 [ "$mode" != ca ] || tools+=("$railway_bin")
 [ "$mode" != gas ] || tools+=(flyctl cast)
-[ "$mode" != relay ] || tools+=(flyctl)
+[ "$mode" != relay ] || tools+=(flyctl "$railway_bin")
 [ "$mode" != interop-adapters ] || tools+=(make)
 [ "$mode" != registry-plan ] || tools=(grep)
 if [ "$mode" = kernel-node ] && [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ]; then tools=(timeout python3 sha256sum); fi
