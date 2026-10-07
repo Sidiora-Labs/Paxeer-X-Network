@@ -1,22 +1,22 @@
 #!/bin/sh
-# Init of one process group of the webhooks app on Fly
-# (platform/hosted/webhooks/fly.toml). Runs as root on the group's machine:
-#   webhooks-fly-init public|ingress
+# Init of one process group of the webhooks service. Runs as root in the
+# group's container:
+#   webhooks-env-init public|ingress
 # public serves only the developer API, private TLS on [::]:9444 behind the
 # unified endpoint, and reads only the developer identity token of the role credentials.
 # ingress serves only the internal producer and operator routes, TLS on
 # [::]:443 with the certificate of the developer row of tools/bringup/ca.sh,
 # requiring an internal-CA client leaf with a webhook role URI SAN, and reads
 # the trigger, operator, source, receipt and sequencer credentials. Each
-# machine is its own delivery instance, named by its Fly machine id, and the
+# replica is its own delivery instance, named by its Railway replica id, and the
 # service runs as uid 65532.
 set -eu
 [ "$#" -eq 1 ] || {
-	echo "usage: webhooks-fly-init public|ingress" >&2
+	echo "usage: webhooks-env-init public|ingress" >&2
 	exit 2
 }
-: "${FLY_MACHINE_ID:?webhooks-fly-init runs on a Fly machine}"
-export LAYERX_WEBHOOKS_INSTANCE_ID="$FLY_MACHINE_ID"
+: "${RAILWAY_REPLICA_ID:?webhooks-env-init needs RAILWAY_REPLICA_ID}"
+export LAYERX_WEBHOOKS_INSTANCE_ID="$RAILWAY_REPLICA_ID"
 case "$1" in
 public)
 	export LAYERX_WEBHOOKS_ROLE=public LAYERX_WEBHOOKS_LISTENER=tls LAYERX_WEBHOOKS_LISTEN="[::]:9444" \
@@ -48,7 +48,7 @@ ingress)
 		/usr/local/bin/layerx-webhooks
 	;;
 *)
-	echo "usage: webhooks-fly-init public|ingress" >&2
+	echo "usage: webhooks-env-init public|ingress" >&2
 	exit 2
 	;;
 esac

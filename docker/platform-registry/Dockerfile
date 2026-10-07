@@ -13,11 +13,9 @@ COPY platform/hosted/human/material.py platform/hosted/human/provision.py /usr/l
 COPY --from=build /src/platform/target/release/layerx-program-registry /usr/local/bin/layerx-program-registry
 COPY --from=build /src/platform/target/release/layerx-cgroup-exec /usr/bin/layerx-cgroup-exec
 
-FROM ${REGISTRY_RUNTIME_BASE} AS fly
+FROM ${REGISTRY_RUNTIME_BASE} AS env-init
 RUN apk add --no-cache curl e2fsprogs util-linux
-COPY --chmod=0555 docker/platform-registry/init.sh /usr/local/bin/registry-fly-init
-ENTRYPOINT ["/usr/local/bin/registry-fly-init"]
-
-FROM base
-USER 4030:4030
-CMD ["layerx-program-registry"]
+COPY --chmod=0555 docker/common/env-files.sh /usr/local/bin/layerx-env-files
+COPY docker/platform-registry/files.tsv /etc/layerx/files.tsv
+COPY --chmod=0555 docker/platform-registry/init.sh /usr/local/bin/registry-env-init
+ENTRYPOINT ["/usr/local/bin/layerx-env-files", "/usr/local/bin/registry-env-init"]

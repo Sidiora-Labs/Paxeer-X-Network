@@ -1,8 +1,8 @@
 #!/bin/sh
-# Init of one process group of the internal app on Fly
-# (platform/hosted/internal/fly.toml). Runs as root on the group's machine:
-#   internal-fly-init kms
-#   internal-fly-init <kind> <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2
+# Init of one process group of the internal service. Runs as root in the
+# group's container:
+#   internal-env-init kms
+#   internal-env-init <kind> <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2
 # generates the group's tokens, the kms seal secret and the event source's
 # producer file, enrollment key and signed empty enrollment snapshot on the
 # volume on first boot, waits until
@@ -13,7 +13,7 @@
 set -eu
 umask 077
 usage() {
-	echo "usage: internal-fly-init kms | journeys|payments|approvals|programs <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2" >&2
+	echo "usage: internal-env-init kms | journeys|payments|approvals|programs <upstream origin> internal|ISRG_Root_X1|ISRG_Root_X2" >&2
 	exit 2
 }
 [ "$#" -ge 1 ] || usage
@@ -31,7 +31,7 @@ fi
 fresh() {
 	if [ -e "$1" ] || [ -L "$1" ]; then
 		[ -f "$1" ] && [ ! -L "$1" ] && [ -s "$1" ] || {
-			echo "internal-fly-init: invalid retained material $1" >&2
+			echo "internal-env-init: invalid retained material $1" >&2
 			exit 1
 		}
 		[ "$(stat -c %h "$1")" = 1 ] || exit 1
@@ -40,7 +40,7 @@ fresh() {
 		return
 	fi
 	if [ "$retained" = true ]; then
-		echo "internal-fly-init: retained material missing $1" >&2
+		echo "internal-env-init: retained material missing $1" >&2
 		exit 1
 	fi
 	temporary=$(mktemp "$run_dir/.secret.XXXXXX")
@@ -66,12 +66,12 @@ journeys | approvals | payments | programs)
 	fresh "$run_dir/producer-token"
 	fresh "$run_dir/enrollment-key"
 	if [ -L "$run_dir/credentials.json" ]; then
-		echo "internal-fly-init: enrollment snapshot is a symbolic link" >&2
+		echo "internal-env-init: enrollment snapshot is a symbolic link" >&2
 		exit 1
 	fi
 	if [ ! -e "$run_dir/credentials.json" ]; then
 		[ "$retained" = false ] || {
-			echo "internal-fly-init: retained enrollment snapshot is missing" >&2
+			echo "internal-env-init: retained enrollment snapshot is missing" >&2
 			exit 1
 		}
 		chown 4020:4020 "$run_dir" "$run_dir/enrollment-key"
@@ -98,7 +98,7 @@ journeys | approvals | payments | programs)
 esac
 
 if [ ! -s "$tls_dir/cert.der" ] || [ ! -s "$tls_dir/key.der" ] || [ ! -s "$tls_dir/ca.der" ]; then
-	echo "internal-fly-init: waiting for $tls_dir from tools/bringup/ca.sh issue internal-$group"
+	echo "internal-env-init: waiting for $tls_dir from tools/bringup/ca.sh issue internal-$group"
 	until [ -s "$tls_dir/cert.der" ] && [ -s "$tls_dir/key.der" ] && [ -s "$tls_dir/ca.der" ]; do
 		sleep 5
 	done
