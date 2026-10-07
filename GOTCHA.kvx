@@ -4738,3 +4738,35 @@ observed = "the v6.11 handler reads node/testdata/sid-holders.json shaped [{addr
 [gotcha.1008]
 title = "fleet 109 platform"
 observed = "the oracle feeder talks to the kernel over the LNI Unix socket -> the feeder must run on the same machine as the kernel (same Fly app) and cannot be a separate app"
+
+[gotcha.1009]
+title = "railway cli volume add"
+observed = "railway volume add panics without a TTY (interactive prompt) -> create volumes with railway api mutation volumeCreate(input:{projectId,environmentId,serviceId,mountPath})"
+
+[gotcha.1010]
+title = "railway environment edit"
+observed = "railway environment edit --service-config is a no-op on cli 5.62.1 -> use railway api with serviceInstanceUpdate / variableDelete / deploymentCancel GraphQL"
+
+[gotcha.1011]
+title = "railway dockerfile build args"
+observed = "a Railway Dockerfile build passes no SOURCE_REVISION/SOURCE_TREE; only RAILWAY_GIT_COMMIT_SHA is available as a build arg, and RAILWAY_GIT_COMMIT_SHA resolves empty in railway variable list"
+
+[gotcha.1012]
+title = "gnu chmod keeps setgid"
+observed = "under a setgid parent (chmod 3775) GNU chmod 0750 on a child directory keeps the inherited setgid bit -> chmod g-s explicitly before an owner-and-mode check"
+
+[gotcha.1013]
+title = "ssh background job"
+observed = "ssh host 'nohup cmd &' hangs the session until the job ends -> ssh host '(nohup cmd > log 2>&1 < /dev/null &)'"
+
+[gotcha.1014]
+title = "publish beta images"
+observed = "the Publish beta images workflow has had no green run since 2026-09-10, so GHCR holds no kernel/registry image for recent shas; box images must be built on the box (/root/lx-build/*-build.sh) until it is green"
+
+[gotcha.1015]
+title = "custody governance tool"
+observed = "kernel-genesis.sh names tools/bringup/custody-governance.sh as step B but the file never landed (planned path in spec/paxeer-x 108.1.4); genesis step C stays blocked without it"
+
+[gotcha.1016]
+title = "ledger box units"
+observed = "deploy/rollout.kvx rows oracle-feeder and explorer-index name systemd units no file defines; the kernel init runs the oracle feeder inside the kernel container and explorer-index has no role at all"

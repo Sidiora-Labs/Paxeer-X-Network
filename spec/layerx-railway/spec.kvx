@@ -361,7 +361,7 @@ stop_condition = "Stop on the verify result, two failed repair cycles or 30 minu
 
 [task.2.1]
 title = "Consistency sweep: retarget rosters, qualification scripts and docs to the renamed env-init paths and box units"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 2
 requires = ["1.3", "1.9", "1.10", "1.12", "1.13"]
@@ -432,7 +432,7 @@ stop_condition = "Stop on the verify result, two failed repair cycles or 30 minu
 
 [task.3.1]
 title = "Create the Railway beta environment: services, volumes, variables, TCP proxies and healthchecks"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["1.5", "1.6", "1.7", "1.8", "1.11", "1.14", "1.15", "1.18", "2.2", "2.3"]
@@ -449,7 +449,7 @@ stop_condition = "Stop on the verify result, two failed repair cycles or 30 minu
 
 [task.3.2]
 title = "Bring up the kernel box: kernel, oracle feeder and explorer-index under systemd"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["1.10", "1.15", "2.1", "2.2", "2.4"]
@@ -466,7 +466,7 @@ stop_condition = "Stop on the verify result, two failed repair cycles or 30 minu
 
 [task.3.3]
 title = "Bring up the registry box under its systemd unit"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["1.9", "2.1", "2.2", "3.2"]

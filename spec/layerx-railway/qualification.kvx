@@ -32,3 +32,93 @@
 # the missing input and is never recorded as pass. Rollout ledger lines written
 # by tools/rollout/ledger.sh are gate records of task 4.2 and its reruns.
 # Observations never raise a task to done.
+
+[gate.3.1.1]
+task = "3.1"
+reqs = ["2.1", "2.2", "2.3"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "railway api tcpProxyCreate (identity, internal-journeys, internal-approvals, webhooks-ingress, applicationPort 9443)"
+environment = "railway cli 5.62.1 on the edge box"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "blocked"
+evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
+note = "Owner input: the agent harness refuses to create the four Railway TCP proxies; the owner creates them and sets LAYERX_EXTRA_SANS_<ROW>=DNS:<name>.proxy.rlwy.net before ca.sh issue."
+
+[gate.3.1.2]
+task = "3.1"
+reqs = ["2.1", "2.2"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "tools/bringup/ca.sh issue <row> for every railway:* row"
+environment = "edge box, CA under /etc/layerx/ca"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "blocked"
+evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
+note = "Owner input: certificate issuance is refused to the agent harness; the owner runs /root/lx-ops-edge/issue-all.sh (written, not run) on the edge box."
+
+[observation.3.1.1]
+task = "3.1"
+file = "deploy/rollout.kvx"
+symbol = "service.* target railway"
+observed = "22 services, 16 volumes and the wallet-postgres database exist in environment beta; builds are repo-connected on main; the Postgres service was renamed wallet-postgres over the API after railway service rename was unavailable; every mTLS-bearing service stays DEPLOYING or crash-looping until the PREFIX_* custody secrets exist."
+assumption = "Non-secret variables land through the variables lane; the custody secrets follow the owner's ca.sh run."
+severity = "blocking"
+
+[gate.3.2.1]
+task = "3.2"
+reqs = ["2.1", "2.2", "2.3", "13.1"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "systemctl is-active layerx-kernel.service"
+environment = "kernel box, docker, native profile, image kernel:14ec3e8cfd66"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/"
+note = "The unit is active; every role waits on genesis and the paxeer boundaries wait on /data/tls/<row>; layerx-oracle-feeder.service and layerx-explorer-index.service of the ledger do not exist as units because docker/kernel/init.sh runs the oracle feeder inside the kernel container (gotcha 1008)."
+
+[gate.3.2.2]
+task = "3.2"
+reqs = ["2.2"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "docker exec layerx-kernel /opt/layerx/kernel-genesis.sh keys"
+environment = "kernel box"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/genesis-keys-stepA.txt"
+note = "Step A done, public keys recorded; step B is blocked: tools/bringup/custody-governance.sh is a planned path of spec/paxeer-x that never landed, and the chain 125 custody asset map plus deposit root authority are owner governance inputs."
+
+[gate.3.2.3]
+task = "3.2"
+reqs = ["2.1"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "tools/bringup/ca.sh issue <row> for every box:KERNEL_HOST row with LAYERX_TLS_DIR=/var/lib/layerx/kernel/tls"
+environment = "edge box"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "blocked"
+evidence = "/root/lx-ops/railway-move-2026-10-07/handoff/owner-needs.md"
+note = "Owner input: same refusal as gate.3.1.2; the attestors' gateway CA (LAYERX_ATTESTOR_CA_DIR) is created by the same script run."
+
+[observation.3.2.1]
+task = "3.2"
+file = "deploy/rollout.kvx"
+symbol = "service.oracle-feeder, service.explorer-index"
+observed = "Both rows name box units that no file in docker/ defines; the kernel init starts oracle-feeder as a role of the kernel container, and no explorer-index role or unit exists anywhere in the tree."
+assumption = "The two ledger rows are stale against the kernel init; the spec 3.2 verify_cmd that asks systemd for them cannot pass as written."
+severity = "major"
+
+[observation.3.2.2]
+task = "3.2"
+file = ".github/workflows/publish-images.yml"
+symbol = "Publish beta images"
+observed = "No successful run since 2026-09-10, so GHCR holds no kernel or registry image for any recent sha; the kernel image was built and pushed from the kernel box (tags 14ec3e8cfd66, rebuilds at c81fbe3db and fe0326d95 queued), and the registry image build is queued the same way."
+assumption = "Box images come from the box build scripts until the publish workflow is green."
+severity = "major"
+
+[gate.3.3.1]
+task = "3.3"
+reqs = ["2.1", "2.2", "2.3", "13.1"]
+revision = "fe0326d95a5dcb16514694d1b095befac4bf52b5"
+command = "systemd-analyze verify --man=no /etc/systemd/system/layerx-registry.service"
+environment = "registry box (the kernel box hosts the registry unit)"
+started_at = "2026-10-07T11:33:44Z"
+outcome = "pass"
+evidence = "/root/lx-ops/railway-move-2026-10-07/kernel/"
+note = "Unit and env file installed with image layerx-program-registry:fe0326d95a5d; the unit cannot start before the registry and registry-event-client certificates, the kernel bearers of mint-secrets and the three Railway TCP proxy URLs exist."
