@@ -26,7 +26,7 @@ usage() {
     cat <<'EOF'
 usage: install.sh (--bundle DIR | --release HTTPS_URL) --manifest-sha256 HEX [options]
        install.sh --config-only --config FILE --codec FILE [config options]
-       install.sh --fly-start
+       install.sh --railway-start
 
 Release verification:
   --bundle DIR                 install an already unpacked release bundle
@@ -61,13 +61,15 @@ Optional generated-config fields:
   --tls-key FILE               paired with --tls-cert
   --peer-seed ORIGIN           repeatable public discovery seed
   --allow-loopback-dev         explicitly allow loopback HTTP for local development
-  --allow-fly-private-network  admit origins resolving into the Fly 6PN range fdaa::/16
+  --allow-railway-private-network
+                               admit origins resolving into the Railway private
+                               network range fd12::/16
   --listener tls|plain         tls (default) or plain HTTP behind a terminating edge
 
-Fly replica start (--fly-start, the entrypoint of the fly target of
+Railway replica start (--railway-start, the entrypoint of the railway target of
 docker/relay-archive/Dockerfile): renders a new config from the environment
-of platform/relay_archive/fly.toml and execs layerxd, under uid 4027 when
-started as root. Required environment:
+of platform/relay_archive/railway.env.example and execs layerxd, under uid
+4027 when started as root. Required environment:
   LAYERX_RELAY_ARCHIVE_NETWORK_ID, LAYERX_RELAY_ARCHIVE_GENESIS_SHA256,
   LAYERX_RELAY_ARCHIVE_SEQUENCER_ID, LAYERX_RELAY_ARCHIVE_SEQUENCER_PUBLIC_KEY
                                the kernel's independently pinned identity
@@ -80,7 +82,8 @@ started as root. Required environment:
   LAYERX_RELAY_ARCHIVE_LISTEN, LAYERX_RELAY_ARCHIVE_PUBLIC_URL,
   LAYERX_RELAY_ARCHIVE_CODEC, LAYERX_RELAY_ARCHIVE_RUNTIME
 Optional: LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV=1 for loopback development and
-LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK=1 for an origin on Fly 6PN.
+LAYERX_RELAY_ARCHIVE_ALLOW_RAILWAY_PRIVATE_NETWORK=1 for an origin on the
+Railway private network.
 EOF
 }
 
@@ -117,7 +120,7 @@ CA_FILE=
 TLS_CERT=
 TLS_KEY=
 ALLOW_LOOPBACK_DEV=0
-ALLOW_FLY_PRIVATE_NETWORK=0
+ALLOW_RAILWAY_PRIVATE_NETWORK=0
 UPSTREAMS=()
 SUBMISSION_UPSTREAMS=()
 PEER_SEEDS=()
@@ -125,9 +128,9 @@ LISTENER=tls
 RELAY_UID=4027
 ISRG_ROOT_FINGERPRINTS="96bcec06264976f37460779acf28c5a7cfe8a3c0aae11a8ffcee05c0bddf08c6 69729b8e15a86efc177a57afb7171dfc64add28c2fca8cf1507e34453ccb1470"
 
-fly_start() {
-    local name config bundle loopback=() fly_private=()
-    [ "$#" -eq 0 ] || fail "--fly-start takes no further arguments"
+railway_start() {
+    local name config bundle loopback=() railway_private=()
+    [ "$#" -eq 0 ] || fail "--railway-start takes no further arguments"
     for name in LAYERX_RELAY_ARCHIVE_NETWORK_ID LAYERX_RELAY_ARCHIVE_GENESIS_SHA256 \
         LAYERX_RELAY_ARCHIVE_SEQUENCER_ID LAYERX_RELAY_ARCHIVE_SEQUENCER_PUBLIC_KEY \
         LAYERX_RELAY_ARCHIVE_UPSTREAM LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM \
@@ -141,10 +144,10 @@ fly_start() {
         1) loopback=(--allow-loopback-dev) ;;
         *) fail "LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV must be 0 or 1" ;;
     esac
-    case "${LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK:-0}" in
+    case "${LAYERX_RELAY_ARCHIVE_ALLOW_RAILWAY_PRIVATE_NETWORK:-0}" in
         0) ;;
-        1) fly_private=(--allow-fly-private-network) ;;
-        *) fail "LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK must be 0 or 1" ;;
+        1) railway_private=(--allow-railway-private-network) ;;
+        *) fail "LAYERX_RELAY_ARCHIVE_ALLOW_RAILWAY_PRIVATE_NETWORK must be 0 or 1" ;;
     esac
     command -v layerxd >/dev/null 2>&1 || fail "layerxd is not on PATH"
     [[ $LAYERX_RELAY_ARCHIVE_UPSTREAM == https://* ]] || fail "the relay origin upstream must be HTTPS"
@@ -213,7 +216,7 @@ PY
         --listener plain --public-url "$LAYERX_RELAY_ARCHIVE_PUBLIC_URL" \
         --upstream "$LAYERX_RELAY_ARCHIVE_UPSTREAM" \
         --submission-upstream "$LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM" \
-        --ca-file "$bundle" ${loopback[@]+"${loopback[@]}"} ${fly_private[@]+"${fly_private[@]}"} >/dev/null
+        --ca-file "$bundle" ${loopback[@]+"${loopback[@]}"} ${railway_private[@]+"${railway_private[@]}"} >/dev/null
     if ! python3 - "$config" <<'PY'
 import json
 import sys
@@ -225,7 +228,7 @@ if [urllib.parse.urlsplit(value).scheme for value in document["upstreams"]] != [
     raise SystemExit("the relay origin upstream must be HTTPS")
 for name in ("tls_cert", "tls_key", "source_log", "source_lni_socket", "source_submission_token_file"):
     if name in document:
-        raise SystemExit(f"a Fly replica config must not carry {name}")
+        raise SystemExit(f"a Railway replica config must not carry {name}")
 PY
     then
         rm -f -- "$config" "$bundle"
@@ -240,9 +243,9 @@ PY
     exec layerxd --relay-archive "$config"
 }
 
-if [ "${1:-}" = --fly-start ]; then
+if [ "${1:-}" = --railway-start ]; then
     shift
-    fly_start "$@"
+    railway_start "$@"
 fi
 
 while [ "$#" -gt 0 ]; do
@@ -271,7 +274,7 @@ while [ "$#" -gt 0 ]; do
         --tls-key) require_value "$@"; TLS_KEY=$2; shift 2 ;;
         --peer-seed) require_value "$@"; PEER_SEEDS+=("$2"); shift 2 ;;
         --allow-loopback-dev) ALLOW_LOOPBACK_DEV=1; shift ;;
-        --allow-fly-private-network) ALLOW_FLY_PRIVATE_NETWORK=1; shift ;;
+        --allow-railway-private-network) ALLOW_RAILWAY_PRIVATE_NETWORK=1; shift ;;
         --listener) require_value "$@"; LISTENER=$2; shift 2 ;;
         --no-service) NO_SERVICE=1; shift ;;
         --config-only) CONFIG_ONLY=1; NO_SERVICE=1; shift ;;
@@ -417,7 +420,7 @@ if [ -e "$CONFIG" ]; then
     if [ -n "$NETWORK_ID$GENESIS_SHA256$SEQUENCER_ID$SEQUENCER_PUBLIC_KEY$DATA_DIR$LISTEN$PUBLIC_URL$CODEC$GENESIS_MANIFEST$GENESIS_SNAPSHOT$SOURCE_LOG$CA_FILE$TLS_CERT$TLS_KEY" ] \
         || [ "${#UPSTREAMS[@]}" -ne 0 ] || [ "${#SUBMISSION_UPSTREAMS[@]}" -ne 0 ] \
         || [ "${#PEER_SEEDS[@]}" -ne 0 ] || [ "$ALLOW_LOOPBACK_DEV" -ne 0 ] || [ "$LISTENER" != tls ] \
-        || [ "$ALLOW_FLY_PRIVATE_NETWORK" -ne 0 ]; then
+        || [ "$ALLOW_RAILWAY_PRIVATE_NETWORK" -ne 0 ]; then
         fail "config generation options cannot be combined with an existing --config file"
     fi
 else
@@ -536,7 +539,7 @@ if [ ! -e "$CONFIG" ]; then
     python3 - "$CONFIG" "$NETWORK_ID" "$GENESIS_SHA256" "$SEQUENCER_ID" \
         "$SEQUENCER_PUBLIC_KEY" "$DATA_DIR" "$LISTEN" "$PUBLIC_URL" "$CODEC" \
         "$GENESIS_MANIFEST" "$GENESIS_SNAPSHOT" "$SOURCE_LOG" "$CA_FILE" \
-        "$TLS_CERT" "$TLS_KEY" "$ALLOW_LOOPBACK_DEV" "$ALLOW_FLY_PRIVATE_NETWORK" "$LISTENER" \
+        "$TLS_CERT" "$TLS_KEY" "$ALLOW_LOOPBACK_DEV" "$ALLOW_RAILWAY_PRIVATE_NETWORK" "$LISTENER" \
         "${#UPSTREAMS[@]}" "${#SUBMISSION_UPSTREAMS[@]}" "${#PEER_SEEDS[@]}" \
         "${UPSTREAMS[@]}" "${SUBMISSION_UPSTREAMS[@]}" "${PEER_SEEDS[@]}" <<'PY'
 import ipaddress
@@ -550,7 +553,7 @@ import urllib.parse
 (
     destination, network_id, genesis_sha256, sequencer_id, sequencer_public_key,
     data_dir, listen, public_url, codec, genesis_manifest, genesis_snapshot,
-    source_log, ca_file, tls_cert, tls_key, allow_loopback, allow_fly_private, listener, upstream_count,
+    source_log, ca_file, tls_cert, tls_key, allow_loopback, allow_railway_private, listener, upstream_count,
     submission_count, peer_count, *values
 ) = sys.argv[1:]
 allow_loopback = allow_loopback == "1"
@@ -654,8 +657,8 @@ for name, value in (
         document[name] = value
 if listener == "plain":
     document["listener"] = listener
-if allow_fly_private == "1":
-    document["allow_fly_private_network"] = True
+if allow_railway_private == "1":
+    document["allow_railway_private_network"] = True
 
 parent = pathlib.Path(destination).parent
 descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
