@@ -1,39 +1,167 @@
 name: Publish beta images
 
-# The beta images are published from a release tag or from the named release
-# candidate only, never from an arbitrary push to a branch: the moving :beta tag
-# is repointed in the promote job after the published digest of every image has
-# been verified against its signature, its SBOM attestation and its build
+# Every push to main that touches an image input builds each row of the shared image table
+# (platform/hosted/tests/beta-images.sh) and pushes it to GHCR as :<12-hex sha> and :<git describe>.
+# The signed release path (gate, publish, attest, promote) runs only from a release tag or from the
+# named release candidate: the moving :beta tag is repointed in the promote job after the published
+# digest of every image has been verified against its signature, its SBOM attestation and its build
 # provenance.
 on:
   push:
+    branches: [main]
     tags: ["sdk-v*"]
+    paths:
+      - docker/**
+      - platform/**
+      - interop/**
+      - human/wallet/**
+      - explorer/**
   workflow_dispatch:
     inputs:
       release_candidate:
         description: The 40-hex default-branch commit matching this workflow dispatch SHA
         required: true
         type: string
+      runner:
+        description: Runner label for the gate and image build jobs
+        required: false
+        default: ubuntu-latest
+        type: choice
+        options: [ubuntu-latest, lx-runner]
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-beta-images
+  group: publish-images-${{ github.ref }}
   cancel-in-progress: false
 
 env:
   CARGO_BUILD_JOBS: '4'
   MAKEFLAGS: -j4
   LAYERX_PUBLISH_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate || github.sha }}
-  LAYERX_PUBLISH_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+  LAYERX_PUBLISH_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
   LAYERX_PUBLISH_RELEASE_CANDIDATE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate || '' }}
   LAYERX_PUBLISH_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
   LAYERX_PUBLISH_OUTPUT: build/beta-cluster/publication
 
 jobs:
+  plan:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      images: ${{ steps.plan.outputs.images }}
+      dependent: ${{ steps.plan.outputs.dependent }}
+      sha: ${{ steps.plan.outputs.sha }}
+      describe: ${{ steps.plan.outputs.describe }}
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Turn every row of the shared image table into a build matrix entry
+        id: plan
+        run: |
+          set -euo pipefail
+          fail() { echo "$*" >&2; exit 1; }
+          source platform/hosted/tests/beta-images.sh
+          REVISION=$(git rev-parse --short=12 HEAD)
+          image_ref() { printf 'ghcr.io/sidiora-labs/%s:%s' "$1" "$REVISION"; }
+          entries=$(for name in "${IMAGE_NAMES[@]}"; do
+            read -r canonical dockerfile <<<"$(image_source "$name")"
+            jq -n -c --arg name "$name" --arg dockerfile "$dockerfile" --arg target "$(image_target "$name")" \
+              --arg args "$(image_build_args "$name" | sed -E 's/--build-arg //g; s/ +/\n/g')" \
+              '{name: $name, dockerfile: $dockerfile, target: $target, build_args: $args}'
+          done)
+          {
+            # paxd builds FROM the pushed paxd-node image, so it runs after the matrix
+            printf 'images=%s\n' "$(jq -s -c 'map(select(.name != "paxd"))' <<<"$entries")"
+            printf 'dependent=%s\n' "$(jq -s -c 'map(select(.name == "paxd"))' <<<"$entries")"
+            printf 'sha=%s\n' "$REVISION"
+            printf 'describe=%s\n' "$(git describe --tags --always --abbrev=12)"
+          } >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: [plan]
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.images) }}
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.image.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          target: ${{ matrix.image.target }}
+          build-args: ${{ matrix.image.build_args }}
+          push: true
+          tags: |
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.sha }}
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.describe }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+
+  images-dependent:
+    needs: [plan, images]
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.dependent) }}
+    steps:
+      - name: Check out the pushed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.image.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          target: ${{ matrix.image.target }}
+          build-args: ${{ matrix.image.build_args }}
+          push: true
+          tags: |
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.sha }}
+            ghcr.io/sidiora-labs/${{ matrix.image.name }}:${{ needs.plan.outputs.describe }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+
   gate:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'lx-runner' }}
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 60
     outputs:
       revision: ${{ steps.revision.outputs.revision }}

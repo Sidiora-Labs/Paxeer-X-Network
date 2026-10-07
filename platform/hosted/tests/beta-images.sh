@@ -3,7 +3,10 @@
 IMAGE_NAMES=(layerx-testnet-control layerx-gateway layerx-faucet layerx-program-registry layerx-webhooks layerx-dashboard layerx-dashboard-web
     layerx-internal layerx-human layerx-human-web layerx-node layerx-core-boundary layerx-receipt-authority layerx-agent-boundary layerx-identity layerx-paxeer-boundary
     layerx-mirror layerx-relay-archive layerx-interop-gateway layerx-reference-ramp
-    paxd-node paxd)
+    paxd-node paxd
+    bridge-relayer explorer-backend explorer-elixir-builder explorer-frontend explorer-sig-provider explorer-smart-contract-verifier flyci-controller flyci-runner
+    gas-station hpx-registry kernel layerx localnode platform-indexer platform-registry-builder rpcnode
+    search-front wallet-attestor wallet-gateway wallet-pwa x-websearch intent-ingester redis feeder)
 
 image_source() {
     case "$1" in
@@ -29,6 +32,30 @@ image_source() {
         layerx-reference-ramp) printf 'ghcr.io/sidiora-labs/layerx-reference-ramp:0.1.0 docker/ramps/Dockerfile' ;;
         paxd-node) printf 'ghcr.io/sidiora-labs/paxd-node:0.1.0 docker/paxeer/Dockerfile.paxd-node' ;;
         paxd) printf 'ghcr.io/sidiora-labs/paxd:0.1.0 docker/paxeer/Dockerfile.paxd' ;;
+        bridge-relayer) printf 'ghcr.io/sidiora-labs/bridge-relayer:0.1.0 docker/bridge-relayer/Dockerfile' ;;
+        explorer-backend) printf 'ghcr.io/sidiora-labs/explorer-backend:0.1.0 docker/explorer-backend/Dockerfile' ;;
+        explorer-elixir-builder) printf 'ghcr.io/sidiora-labs/explorer-elixir-builder:0.1.0 docker/explorer-elixir-builder/Dockerfile' ;;
+        explorer-frontend) printf 'ghcr.io/sidiora-labs/explorer-frontend:0.1.0 docker/explorer-frontend/Dockerfile' ;;
+        explorer-sig-provider) printf 'ghcr.io/sidiora-labs/explorer-sig-provider:0.1.0 docker/explorer-sig-provider/Dockerfile' ;;
+        explorer-smart-contract-verifier) printf 'ghcr.io/sidiora-labs/explorer-smart-contract-verifier:0.1.0 docker/explorer-smart-contract-verifier/Dockerfile' ;;
+        flyci-controller) printf 'ghcr.io/sidiora-labs/flyci-controller:0.1.0 docker/flyci-controller/Dockerfile' ;;
+        flyci-runner) printf 'ghcr.io/sidiora-labs/flyci-runner:0.1.0 docker/flyci-runner/Dockerfile' ;;
+        gas-station) printf 'ghcr.io/sidiora-labs/gas-station:0.1.0 docker/gas-station/Dockerfile' ;;
+        hpx-registry) printf 'ghcr.io/sidiora-labs/hpx-registry:0.1.0 docker/hpx-registry/Dockerfile' ;;
+        kernel) printf 'ghcr.io/sidiora-labs/kernel:0.1.0 docker/kernel/Dockerfile' ;;
+        layerx) printf 'ghcr.io/sidiora-labs/layerx:0.1.0 docker/layerx/Dockerfile' ;;
+        localnode) printf 'ghcr.io/sidiora-labs/localnode:0.1.0 docker/localnode/Dockerfile' ;;
+        platform-indexer) printf 'ghcr.io/sidiora-labs/platform-indexer:0.1.0 docker/platform-indexer/Dockerfile' ;;
+        platform-registry-builder) printf 'ghcr.io/sidiora-labs/platform-registry-builder:0.1.0 docker/platform-registry-builder/Dockerfile' ;;
+        rpcnode) printf 'ghcr.io/sidiora-labs/rpcnode:0.1.0 docker/rpcnode/Dockerfile' ;;
+        search-front) printf 'ghcr.io/sidiora-labs/search-front:0.1.0 docker/search-front/Dockerfile' ;;
+        wallet-attestor) printf 'ghcr.io/sidiora-labs/wallet-attestor:0.1.0 docker/wallet-attestor/Dockerfile' ;;
+        wallet-gateway) printf 'ghcr.io/sidiora-labs/wallet-gateway:0.1.0 docker/wallet-gateway/Dockerfile' ;;
+        wallet-pwa) printf 'ghcr.io/sidiora-labs/wallet-pwa:0.1.0 docker/wallet-pwa/Dockerfile' ;;
+        x-websearch) printf 'ghcr.io/sidiora-labs/x-websearch:0.1.0 docker/x-websearch/Dockerfile' ;;
+        intent-ingester) printf 'ghcr.io/sidiora-labs/intent-ingester:0.1.0 docker/intent-ingester/Dockerfile' ;;
+        redis) printf 'ghcr.io/sidiora-labs/redis:0.1.0 docker/redis/Dockerfile' ;;
+        feeder) printf 'ghcr.io/sidiora-labs/feeder:0.1.0 platform/hosted/feeder/Dockerfile' ;;
         *) fail "unknown image $1" ;;
     esac
 }
@@ -37,10 +64,25 @@ image_source() {
 image_build_args() {
     case "$1" in
         layerx-node|layerx-relay-archive) printf -- '--build-arg LXP_REVISION=%s' "$REVISION" ;;
+        kernel) printf -- '--build-arg LXP_REVISION=%s' "$(git -C "${REPO_ROOT:-.}" rev-parse HEAD)" ;;
+        flyci-controller) printf -- '--build-arg SOURCE_REVISION=%s' "$(git -C "${REPO_ROOT:-.}" rev-parse HEAD)" ;;
+        wallet-gateway) printf -- '--build-arg SOURCE_REVISION=%s --build-arg SOURCE_TREE=%s' \
+            "$(git -C "${REPO_ROOT:-.}" rev-parse HEAD)" "$(git -C "${REPO_ROOT:-.}" rev-parse 'HEAD^{tree}')" ;;
         paxd-node) printf -- '--build-arg PAX_CHAIN_REF=%s' "$REVISION" ;;
         paxd) printf -- '--build-arg PAXD_IMAGE=%s' "$(image_ref paxd-node)" ;;
         *) ;;
     esac
+}
+
+image_target() {
+    # image_target NAME: the name of the last (runtime) stage of a multi-stage Dockerfile, empty otherwise
+    local canonical dockerfile
+    read -r canonical dockerfile <<<"$(image_source "$1")"
+    dockerfile="${REPO_ROOT:-.}/$dockerfile"
+    [ -f "$dockerfile" ] || return 0
+    [ "$(grep -cE '^FROM[[:space:]]' "$dockerfile")" -gt 1 ] || return 0
+    grep -E '^FROM[[:space:]]' "$dockerfile" | tail -n 1 \
+        | sed -nE 's/^FROM[[:space:]].*[[:space:]][Aa][Ss][[:space:]]+([^[:space:]]+)[[:space:]]*$/\1/p'
 }
 
 paxd_build_plan() {
