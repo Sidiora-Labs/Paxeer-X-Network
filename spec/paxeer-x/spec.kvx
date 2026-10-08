@@ -24451,7 +24451,7 @@ qualification = "UNRUN"
 [acceptance.AI.CORE-A01]
 title = "CORE-A01"
 criteria = "Real canonical codecs/domain hashes/signature digests/error registry reject unknown/noncanonical/trailing/overflow fields and preserve native namespaces; versioned wire allocations are shared by independent clients."
-qualification = "UNRUN"
+qualification = "PASSED"
 
 [acceptance.AI.CORE-A02]
 title = "CORE-A02"
@@ -34974,7 +34974,7 @@ worker_role_id = "W-STORAGE-PROFILE"
 
 [task.ai.T-C01]
 title = "Create common Programs application and wire contracts"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 15
 requires = ["ai.P-WORKSPACE"]
@@ -34991,8 +34991,8 @@ entry_condition = "ai.P-WORKSPACE passed; FM-CORE exclusively owns crate/workspa
 touches = ["programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs", "spec/paxeer-x/ai-markets/contracts/core.kvx", "spec/paxeer-x/ai-markets/contracts/operation-registry.json", "spec/paxeer-x/ai-markets/contracts/wire.schema.json"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract"
-gate_kind = "planned"
-qualification = "UNRUN"
+gate_kind = "executable"
+qualification = "PASSED"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -35002,6 +35002,8 @@ local_wave = 1
 acceptance_cases = ["AI.CORE-A01"]
 paths = ["programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs", "spec/paxeer-x/ai-markets/contracts/core.kvx", "spec/paxeer-x/ai-markets/contracts/operation-registry.json", "spec/paxeer-x/ai-markets/contracts/wire.schema.json"]
 worker_role_id = "W-CORE-CODEC"
+evidence = "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d5d48f0ba3c78ea28a9e34149479a1f57a6d3630bcdd5 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-correction-qualification-01.log"
+
 
 [task.ai.F01-T01]
 title = "Define canonical market identity and task policy"

@@ -177,7 +177,7 @@
         "ai.P-WORKSPACE"
       ],
       "wave": 15,
-      "status": "implemented",
+      "status": "done",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
       "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C01]",
@@ -213,8 +213,8 @@
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
-        "gate_kind": "planned",
-        "qualification": "UNRUN",
+        "gate_kind": "executable",
+        "qualification": "PASSED",
         "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
       },
       "local_wave": 1,
@@ -222,11 +222,20 @@
         "AI.CORE-A01"
       ],
       "implementation_evidence": {
-        "source_manifest_sha256": "3641a6adcdd89c24d8723bdab42288ab17d7465e3883a17bcc35f791fca351f4",
+        "source_manifest_sha256": "0461a94c0abfd1334f4d5d48f0ba3c78ea28a9e34149479a1f57a6d3630bcdd5",
         "build_exit_code": 0,
-        "canonical_tests_passed": 11,
+        "canonical_tests_passed": 16,
         "graph_exit_code": 0,
-        "completion": "qualification pending"
+        "completion": "focused qualification passed"
+      },
+      "qualification_evidence": {
+        "revision": "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d5d48f0ba3c78ea28a9e34149479a1f57a6d3630bcdd5",
+        "command": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract",
+        "exit_code": 0,
+        "log_path": "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-correction-qualification-01.log",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0
       }
     },
     {

@@ -4876,3 +4876,15 @@ text = "The common codec test reported eleven passing cases, but Codify rejected
 [gotcha.1042]
 date = "2026-10-08"
 text = "Codify recognised the lockfile through the task-tagged commit and all twelve source-touch checks passed without force or another behavior test. Retain the earlier failure and distinguish implemented graph status from completed qualification."
+
+[gotcha.1043]
+date = "2026-10-08"
+text = "A fresh CLI author exited zero without source after confusing parent-controller restrictions with its own source-author role and attempting unavailable delegation. Require explicit direct-author authority, complete owned-file inventory and whole-task handoff; exit zero alone does not establish implementation."
+
+[gotcha.1044]
+date = "2026-10-08"
+text = "Derive SDK and hosted-service task paths and Cargo package names from the actual source tree before dispatch. A mistaken abbreviated prefix requires identical-byte private artifact relocation and exact handoff correction; never invent a facade crate to match it."
+
+[gotcha.1045]
+date = "2026-10-08"
+text = "NativeOwnerOutcome verification supports owner modules and prohibits monetary effects; Programs rewards must use the actual Programs outcome verifier and exact transfer/state join. A verifier name alone does not establish the supported module or authority scope."

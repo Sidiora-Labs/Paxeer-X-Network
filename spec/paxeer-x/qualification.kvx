@@ -646,3 +646,10 @@ command = "CG_AGENT=px26-fm1 cg spec implemented ai.T-C01"
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-codify-postcommit-graph.log"
 observation_and_assumption = "All twelve source-touch checks passed after tagged source publication; canonical tests reported eleven passed without repetition, and Codify records implemented with qualification pending."
+
+[qualification.ai-core-canonical-20261008-02]
+revision = "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d5d48f0ba3c78ea28a9e34149479a1f57a6d3630bcdd5"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-correction-qualification-01.log"
+observed = "16 passed, 0 failed, 0 ignored; Wasm build0 and Codify done0/all12touchchecks. Advisory GOTCHA/symbol drift retained in log. Full native CORE-A02/A03 remain UNRUN."

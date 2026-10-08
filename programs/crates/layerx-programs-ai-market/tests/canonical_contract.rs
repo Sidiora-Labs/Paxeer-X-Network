@@ -1257,3 +1257,294 @@ fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
     assert_eq!(EpochWindows::new(0, u64::MAX), Err(ARITHMETIC));
     assert_eq!(EpochWindows::new(u64::MAX, 0), Err(ARITHMETIC));
 }
+
+#[test]
+fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
+    let fixture = hex(NATIVE_BYTES);
+    let base = decode_envelope(&fixture).unwrap().envelope;
+    // Exact RefundFree payload: cursor:u128 || amount:u128 || recipient32.
+    let mut payload = [0; 64];
+    payload[16..32].copy_from_slice(&20_u128.to_be_bytes());
+    payload[32..64].fill(9);
+    let refund = Envelope {
+        operation: REFUND_FREE,
+        config: 1,
+        payload: &payload,
+        ..base
+    };
+    assert_eq!(refund.epoch, 0);
+    assert_eq!(refund.roster, Presence::Absent);
+    assert_eq!(refund.validate(), Ok(()));
+    let mut bytes = [0; 512];
+    let n = encode_envelope(&refund, &mut bytes).unwrap();
+    assert_eq!(n, ENVELOPE_PREFIX_BYTES + 64 + 1);
+    assert_eq!(&bytes[8..10], &0x0604_u16.to_be_bytes());
+    assert_eq!(&bytes[154..186], &[0; 32]);
+    let decoded = decode_envelope(&bytes[..n]).unwrap();
+    assert_eq!(decoded.envelope, refund);
+    assert_eq!(decoded.envelope.validate(), Ok(()));
+    // Admission exposes the envelope for handler checks; it supplies no ledger authority.
+    assert_eq!(
+        decoded
+            .envelope
+            .check_domain(base.chain, base.program, base.market),
+        Ok(())
+    );
+    assert_eq!(
+        decoded
+            .envelope
+            .check_domain(base.chain, base.program, MarketId::new([7; 32]).unwrap()),
+        Err(WRONG_MARKET)
+    );
+    assert_eq!(
+        compare_native_principal(&decoded.envelope, base.actor),
+        Ok(())
+    );
+    assert_eq!(
+        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32]).unwrap()),
+        Err(UNAUTHORIZED)
+    );
+    assert_eq!(decoded.envelope.check_expiry(99), Ok(()));
+    assert_eq!(decoded.envelope.check_expiry(100), Err(EXPIRED));
+    let mut roundtrip = [0; 512];
+    assert_eq!(
+        encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
+        n
+    );
+    assert_eq!(&roundtrip[..n], &bytes[..n]);
+
+    let nonzero_epoch = Envelope { epoch: 1, ..refund };
+    assert_eq!(nonzero_epoch.validate(), Err(WRONG_ROSTER));
+    assert_eq!(
+        encode_envelope(&nonzero_epoch, &mut roundtrip),
+        Err(WRONG_ROSTER)
+    );
+    let mut nonzero_wire = bytes[..n].to_vec();
+    nonzero_wire[138..146].copy_from_slice(&1_u64.to_be_bytes());
+    assert_eq!(decode_envelope(&nonzero_wire).unwrap_err(), WRONG_ROSTER);
+
+    // Existing canonical and authentication refusals still apply to the newly admitted selector.
+    for invalid in [
+        Envelope {
+            config: 0,
+            ..refund
+        },
+        Envelope {
+            sequence: 1,
+            ..refund
+        },
+        Envelope {
+            expiry: 0,
+            ..refund
+        },
+        Envelope {
+            payload: &payload[..63],
+            ..refund
+        },
+    ] {
+        assert!(invalid.validate().is_err());
+        assert!(encode_envelope(&invalid, &mut roundtrip).is_err());
+    }
+    let delegate = Envelope {
+        authentication: Authentication::Delegate {
+            key: PublicKey32([10; 32]),
+            signature: Signature64([11; 64]),
+        },
+        ..refund
+    };
+    assert_eq!(delegate.validate(), Err(UNAUTHORIZED));
+    assert_eq!(
+        encode_envelope(&delegate, &mut roundtrip),
+        Err(UNAUTHORIZED)
+    );
+    let mut delegate_wire = bytes[..n - 1].to_vec();
+    delegate_wire.push(1);
+    delegate_wire.extend_from_slice(&[10; 32]);
+    delegate_wire.extend_from_slice(&[11; 64]);
+    assert_eq!(decode_envelope(&delegate_wire).unwrap_err(), UNAUTHORIZED);
+    let mut trailing = bytes[..n].to_vec();
+    trailing.push(0);
+    assert_eq!(decode_envelope(&trailing).unwrap_err(), NON_CANONICAL);
+}
+
+#[test]
+fn epoch_bound_reward_operations_require_roster_even_at_epoch_zero() {
+    let fixture = hex(NATIVE_BYTES);
+    let base = decode_envelope(&fixture).unwrap().envelope;
+    let claim_payload = [1; 80];
+    for (operation, payload) in [
+        (CLAIM, &claim_payload[..]),
+        (EXPIRE_EPOCH_CLAIMS, &[][..]),
+        (PRUNE_EPOCH, &[][..]),
+    ] {
+        for epoch in [0, 1] {
+            let absent = Envelope {
+                operation,
+                epoch,
+                config: 1,
+                roster: Presence::Absent,
+                payload,
+                ..base
+            };
+            assert_eq!(absent.validate(), Err(WRONG_ROSTER));
+            let mut bytes = [0; 512];
+            assert_eq!(encode_envelope(&absent, &mut bytes), Err(WRONG_ROSTER));
+            // Produce real canonical bytes with a roster, then remove only that binding.
+            let bound = Envelope {
+                roster: Presence::Present(RosterDigest::new([4; 32]).unwrap()),
+                ..absent
+            };
+            assert_eq!(bound.validate(), Ok(()));
+            let n = encode_envelope(&bound, &mut bytes).unwrap();
+            assert_eq!(decode_envelope(&bytes[..n]).unwrap().envelope, bound);
+            bytes[154..186].fill(0);
+            assert_eq!(decode_envelope(&bytes[..n]).unwrap_err(), WRONG_ROSTER);
+        }
+    }
+}
+
+#[test]
+fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
+    let fixture = hex(NATIVE_BYTES);
+    let base = decode_envelope(&fixture).unwrap().envelope;
+    // The pinned check_open_binding accepts this binding only before any epoch is opened.
+    // Codec admission supplies no lifecycle, readiness, or caller authority.
+    let first_open = Envelope {
+        operation: OPEN_EPOCH,
+        config: 1,
+        ..base
+    };
+    assert_eq!(first_open.epoch, 0);
+    assert_eq!(first_open.roster, Presence::Absent);
+    assert_eq!(first_open.sequence, 0);
+    assert_eq!(first_open.authentication, Authentication::Native);
+    assert_eq!(first_open.validate(), Ok(()));
+    let mut bytes = [0; 512];
+    let n = encode_envelope(&first_open, &mut bytes).unwrap();
+    assert_eq!(n, ENVELOPE_PREFIX_BYTES + 1);
+    assert_eq!(&bytes[8..10], &0x0111_u16.to_be_bytes());
+    assert_eq!(&bytes[138..146], &0_u64.to_be_bytes());
+    assert_eq!(&bytes[154..186], &[0; 32]);
+    let decoded = decode_envelope(&bytes[..n]).unwrap();
+    assert_eq!(decoded.envelope, first_open);
+    assert_eq!(decoded.envelope.validate(), Ok(()));
+    assert_eq!(
+        decoded
+            .envelope
+            .check_domain(base.chain, base.program, base.market),
+        Ok(())
+    );
+    assert_eq!(
+        decoded
+            .envelope
+            .check_domain(base.chain, base.program, MarketId::new([7; 32]).unwrap()),
+        Err(WRONG_MARKET)
+    );
+    assert_eq!(
+        compare_native_principal(&decoded.envelope, base.actor),
+        Ok(())
+    );
+    assert_eq!(
+        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32]).unwrap()),
+        Err(UNAUTHORIZED)
+    );
+    assert_eq!(decoded.envelope.check_expiry(100), Err(EXPIRED));
+    let mut roundtrip = [0; 512];
+    assert_eq!(
+        encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
+        n
+    );
+    assert_eq!(&roundtrip[..n], &bytes[..n]);
+
+    for invalid in [
+        Envelope {
+            config: 0,
+            ..first_open
+        },
+        Envelope {
+            sequence: 1,
+            ..first_open
+        },
+        Envelope {
+            expiry: 0,
+            ..first_open
+        },
+    ] {
+        assert_eq!(invalid.validate(), Err(NON_CANONICAL));
+        assert_eq!(
+            encode_envelope(&invalid, &mut roundtrip),
+            Err(NON_CANONICAL)
+        );
+    }
+    let delegate = Envelope {
+        authentication: Authentication::Delegate {
+            key: PublicKey32([10; 32]),
+            signature: Signature64([11; 64]),
+        },
+        ..first_open
+    };
+    assert_eq!(delegate.validate(), Err(UNAUTHORIZED));
+    assert_eq!(
+        encode_envelope(&delegate, &mut roundtrip),
+        Err(UNAUTHORIZED)
+    );
+    let mut delegate_wire = bytes[..n - 1].to_vec();
+    delegate_wire.push(1);
+    delegate_wire.extend_from_slice(&[10; 32]);
+    delegate_wire.extend_from_slice(&[11; 64]);
+    assert_eq!(decode_envelope(&delegate_wire).unwrap_err(), UNAUTHORIZED);
+}
+
+#[test]
+fn open_epoch_absent_roster_refuses_nonzero_epochs() {
+    let fixture = hex(NATIVE_BYTES);
+    let base = decode_envelope(&fixture).unwrap().envelope;
+    let first_open = Envelope {
+        operation: OPEN_EPOCH,
+        config: 1,
+        ..base
+    };
+    let mut bytes = [0; 512];
+    let n = encode_envelope(&first_open, &mut bytes).unwrap();
+    for epoch in [1, 2, u64::MAX] {
+        let invalid = Envelope {
+            epoch,
+            ..first_open
+        };
+        assert_eq!(invalid.validate(), Err(WRONG_ROSTER));
+        let mut output = [0; 512];
+        assert_eq!(encode_envelope(&invalid, &mut output), Err(WRONG_ROSTER));
+        bytes[138..146].copy_from_slice(&epoch.to_be_bytes());
+        assert_eq!(decode_envelope(&bytes[..n]).unwrap_err(), WRONG_ROSTER);
+    }
+}
+
+#[test]
+fn open_epoch_present_roster_retains_ordinary_envelope_binding() {
+    let fixture = hex(NATIVE_BYTES);
+    let base = decode_envelope(&fixture).unwrap().envelope;
+    let roster = RosterDigest::new([4; 32]).unwrap();
+    // The handler must compare these fields to the actual current frozen binding.
+    for epoch in [0, 1, u64::MAX] {
+        let bound = Envelope {
+            operation: OPEN_EPOCH,
+            epoch,
+            config: 1,
+            roster: Presence::Present(roster),
+            ..base
+        };
+        assert_eq!(bound.validate(), Ok(()));
+        let mut bytes = [0; 512];
+        let n = encode_envelope(&bound, &mut bytes).unwrap();
+        assert_eq!(&bytes[154..186], roster.as_bytes());
+        let decoded = decode_envelope(&bytes[..n]).unwrap();
+        assert_eq!(decoded.envelope, bound);
+        assert_eq!(decoded.envelope.validate(), Ok(()));
+        let mut roundtrip = [0; 512];
+        assert_eq!(
+            encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
+            n
+        );
+        assert_eq!(&roundtrip[..n], &bytes[..n]);
+    }
+}
