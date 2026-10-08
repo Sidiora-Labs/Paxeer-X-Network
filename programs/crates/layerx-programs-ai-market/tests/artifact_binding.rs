@@ -1413,7 +1413,7 @@ fn seal_payload_and_envelope_refusals() -> TestResult {
         (|c, _, _| Req { expiry: 1192, ..c }, EXPIRED),
         (
             |c, _, _| Req {
-                operation: dispatch::ADMIT_TASK,
+                operation: dispatch::Heartbeat,
                 ..c
             },
             UNKNOWN_OPERATION,
@@ -1951,27 +1951,44 @@ fn a24_tampered_evidence_fails_integrity_or_binding() -> TestResult {
     };
     let root_mismatch = Conclusion::Fails(ArtifactError::RootMismatch);
     let invalid = Conclusion::Fails(ArtifactError::InvalidContext);
-    for tampered in [
-        Proof {
-            generation: 2,
-            ..proof
-        },
-        Proof {
-            score: 899_999,
-            ..proof
-        },
-        Proof {
-            status: TerminalStatus::Refused,
-            ..proof
-        },
-        Proof {
-            task: TaskId::new([0x5a; 32])?,
-            ..proof
-        },
-        Proof {
-            model: [0x79; 32],
-            ..proof
-        },
+    // A24 requires detection by external verification: every tamper changes the root and
+    // fails integrity; status is not part of the F02 task record, so only it keeps binding.
+    for (tampered, binding) in [
+        (
+            Proof {
+                generation: 2,
+                ..proof
+            },
+            invalid,
+        ),
+        (
+            Proof {
+                score: 899_999,
+                ..proof
+            },
+            invalid,
+        ),
+        (
+            Proof {
+                status: TerminalStatus::Refused,
+                ..proof
+            },
+            Conclusion::Holds,
+        ),
+        (
+            Proof {
+                task: TaskId::new([0x5a; 32])?,
+                ..proof
+            },
+            invalid,
+        ),
+        (
+            Proof {
+                model: [0x79; 32],
+                ..proof
+            },
+            invalid,
+        ),
     ] {
         assert_ne!(tampered.root()?, proof.root()?);
         let bytes = tampered.manifest()?;
@@ -1980,7 +1997,7 @@ fn a24_tampered_evidence_fails_integrity_or_binding() -> TestResult {
             ..base
         });
         assert_eq!(conclusions.integrity, root_mismatch);
-        assert_eq!(conclusions.binding, invalid);
+        assert_eq!(conclusions.binding, binding);
         assert_eq!(conclusions.quality, Conclusion::Unproven);
     }
     let stale = [ProvenTask {
