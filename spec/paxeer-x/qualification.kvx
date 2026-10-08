@@ -749,3 +749,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F06-T01-verify-2.log"
 observed = "ai.F06-T01 added reward_math::lower_median while ai.F05-T02 landed aggregation median separately on a parallel branch."
 assumption = "Cross-task duplication; the F06-T02 or F05-T03 owner reconciles to one median implementation without changing either gate."
+
+[qualification.ai-market-clippy-debt-20261008-01]
+revision = "949fddc91"
+command = "cargo clippy --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --all-targets --no-deps"
+exit_code = 101
+log = "private ops log wt/logs/ai.F10-T01-clippy-5.log"
+observed = "Deny-level clippy findings in files landed by earlier ai.* tasks (codec.rs 116, aggregation_codec.rs 89, evidence.rs 64, workers.rs 33, state.rs 31, more in other src and test files) plus the layerx-program-sdk build script."
+assumption = "Wave-level lint debt; cleared by a dedicated per-file-owner clippy pass once the in-flight wave lands, without changing any gate."

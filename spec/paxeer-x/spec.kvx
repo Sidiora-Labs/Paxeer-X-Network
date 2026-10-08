@@ -35497,7 +35497,7 @@ worker_role_id = "W-F09-SERVICE"
 
 [task.ai.F10-T01]
 title = "Implement bounded coherent state queries"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C01", "ai.T-C02-STATE", "ai.F01-T01", "ai.F02-T01"]
@@ -35559,7 +35559,7 @@ worker_role_id = "W-STORAGE-CAPACITY"
 
 [task.ai.F03-T02]
 title = "Implement evaluator grant authority"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 19
 requires = ["ai.F03-T01", "ai.F01-T02", "ai.F08-T01"]

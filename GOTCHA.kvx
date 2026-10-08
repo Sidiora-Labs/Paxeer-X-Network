@@ -4976,3 +4976,19 @@ text = "In a crate whose lib.rs is the only file under src/, a sed run from src/
 [gotcha.1068]
 area = "programs/ai-market"
 text = "A reward ledger header in shared state keeps record count consistent with rows only when terminalization increments retained_epochs; the prune path must decrement it or check_rows refuses."
+
+[gotcha.1069]
+area = "programs/ai-market"
+text = "Tests that glob-import both workers::* and registry_ops::* hit a compile ambiguity on CallContext and apply; qualify them through the module path."
+
+[gotcha.1070]
+area = "programs/ai-market"
+text = "The common state frame reaches exactly 196608 bytes only when every section is at its cap; a real F01 policy section cannot fill its cap, so a full-size capture test needs framing-level filler sections."
+
+[gotcha.1071]
+area = "programs/ai-market"
+text = "Workspace clippy denies unwrap_used and expect_used with no test allowance: clean tests return Result, and a derived Debug on a test error enum trips dead_code, so write Debug by hand. To see per-file findings while other files fail at deny level pass -- -W clippy::all -W clippy::pedantic -W clippy::unwrap_used -W clippy::expect_used."
+
+[gotcha.1072]
+area = "programs/ai-market"
+text = "PrincipalId and RequestId refuse all-zero bytes; test helpers that build ids as [n; 32] must never use n=0."
