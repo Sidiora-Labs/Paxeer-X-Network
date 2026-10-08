@@ -5024,3 +5024,15 @@ text = "When filtering clippy output for owned files match the relative --> src/
 [gotcha.1080]
 area = "programs/ai-market"
 text = "An unframed fixed-row region can use all-zero as the unused marker only because a valid reward row always carries a non-zero budget; any new row type needs its own non-zero sentinel field or explicit framing."
+
+[gotcha.1081]
+area = "programs/ai-market"
+text = "Turning glob imports into explicit lists can drop names used only under cfg(target_arch = \"wasm32\"); host clippy still passes and only the wasm build catches it, so run the wasm build after any import cleanup."
+
+[gotcha.1082]
+area = "programs/ai-market"
+text = "When a test helper's error type is the same as the refusal under test, ? can make a setup failure look like that refusal; keep them apart with a nested Result."
+
+[gotcha.1083]
+area = "tooling"
+text = "clippy --fix can leave doc backticks malformed around parenthesised expressions, and a blanket text replace of helper() with helper()? also hits test names ending in that word; review every mechanical edit."

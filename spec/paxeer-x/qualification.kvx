@@ -765,3 +765,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F09-T03-verify-3.log"
 observed = "Focused gate passed (12 tests, TLS on loopback, purge, UnknownDelivery, restore gating) while prerequisite ai.P-REAL-SERVICES remains unapproved; production certificate, KMS and live-mark authority are local files."
 assumption = "Task held at implemented until the services prerequisite is approved at deployment time; no code change expected."
+
+[qualification.ai-market-clippy-debt-20261008-02]
+revision = "047fb02b8"
+command = "cargo clippy --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --all-targets --no-deps"
+exit_code = 0
+log = "private ops log wt/logs/ai.LINT-AI-MARKET-build-1.log (verify 121 passed: -verify-1.log; wasm: -wasm-1.log)"
+observed = "Crate lint debt cleared, 1536 findings to zero with byte layouts, encodings and error order unchanged; 30 dead_code warnings remain in programs/sdk/rust bindgen files outside the crate."
+assumption = "Closes ai-market-clippy-debt-20261008-01; the SDK warnings belong to the SDK owner."
