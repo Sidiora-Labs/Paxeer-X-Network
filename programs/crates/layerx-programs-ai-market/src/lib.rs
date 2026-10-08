@@ -30,6 +30,7 @@ pub mod reward_math;
 pub mod rewards;
 pub mod roster;
 pub mod state;
+pub mod tasks;
 pub mod types;
 pub mod workers;
 
