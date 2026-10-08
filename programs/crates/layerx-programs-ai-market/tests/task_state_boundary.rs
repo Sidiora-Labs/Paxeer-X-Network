@@ -1658,7 +1658,9 @@ fn a17_seal_phase_and_evidence_views() -> TestResult {
 
 /// Epoch 1 with one admitted task, optionally sealed, terminalized at 1240 and followed by
 /// the opening of epoch 2 at 1256 (Work is [1256, 1320)).
-fn next_epoch(seal: bool) -> CodecResult<(Market, Vec<u8>)> {
+/// Epoch 1 with one admitted task, sealed when `seal`, terminalized and moved to the epoch 2
+/// opening height; returns the market and the committed epoch-1 region.
+fn before_next_epoch(seal: bool) -> CodecResult<(Market, Vec<u8>)> {
     let mut m = opened(&[1], true)?;
     let a = m.admission(0x21, 0, 1, 1172)?;
     m.admit(&a, 1140)?;
@@ -1670,19 +1672,19 @@ fn next_epoch(seal: bool) -> CodecResult<(Market, Vec<u8>)> {
     let frozen = m.frozen;
     let entry = m.workers[0];
     m.world.terminalize(&frozen, &entry, 1240)?;
-    m.frozen = m.world.open(1256)?;
-    assert_eq!(m.frozen.epoch, 2);
-    assert_eq!(m.region()?, previous);
     Ok((m, previous))
 }
 
 #[test]
 fn a17_next_opening_reads_only_a_sealed_set_as_empty() -> TestResult {
-    let (mut m, previous) = next_epoch(true)?;
+    let (mut m, previous) = before_next_epoch(true)?;
     assert_eq!(
         tasks::region_after_open(&previous)?,
         EMPTY_TASK_REGION.as_slice()
     );
+    m.frozen = m.world.open(1256)?;
+    assert_eq!(m.frozen.epoch, 2);
+    assert_eq!(m.region()?, EMPTY_TASK_REGION);
     {
         let state = decode_shared_state(&m.world.bytes)?;
         assert_eq!(
@@ -1700,12 +1702,82 @@ fn a17_next_opening_reads_only_a_sealed_set_as_empty() -> TestResult {
     assert_eq!(tasks.len(), 1);
     assert_eq!((tasks[0].task, tasks[0].deadline), (task, 1300));
     assert_eq!(m.region()?[..3], [0, 1, 0]);
-    let (mut stale, previous) = next_epoch(false)?;
+    let (mut stale, previous) = before_next_epoch(false)?;
     assert_eq!(tasks::region_after_open(&previous), Err(WRONG_PHASE));
-    let a = stale.admission(0x21, 0, 1, 1300)?;
-    let revision = stale.world.revision()?;
-    assert_eq!(stale.admit(&a, 1268), Err(WRONG_PHASE));
-    assert_eq!(stale.world.revision()?, revision);
+    let before = stale.world.bytes.clone();
+    assert_eq!(stale.world.open(1256).map(|f| f.epoch), Err(WRONG_PHASE));
+    assert_eq!(stale.world.bytes, before);
+    assert_eq!(stale.region()?, previous);
+    Ok(())
+}
+
+#[test]
+fn a17_open_epoch_resets_the_sealed_region() -> TestResult {
+    let (m, previous) = before_next_epoch(true)?;
+    let sealed = {
+        let state = decode_shared_state(&m.world.bytes)?;
+        let sealed = tasks::sealed_task_set(&state, 1)?;
+        assert_eq!(TaskSet::decode(&previous)?.seal(), Some(sealed));
+        let mut unsealed = previous[..2].to_vec();
+        unsealed.push(0);
+        unsealed.extend_from_slice(&previous[35..]);
+        assert_eq!(sealed, m.expected_digest(&unsealed)?);
+        sealed
+    };
+    let before = m.world.bytes.clone();
+    let revision = m.world.revision()?;
+    let mut next = vec![0; MAX_STATE_BYTES];
+    let mut scratch = vec![0; OPEN_SCRATCH_BYTES];
+    let preview = epoch::preview_open(&before, 1256, &mut next, &mut scratch)?;
+    assert_eq!(preview.epoch, 2);
+    let call = Req {
+        epoch: preview.epoch,
+        config: preview.config.get(),
+        roster: Presence::Present(preview.roster),
+        request: [0x61; 32],
+        ..req(dispatch::OPEN_EPOCH, principal(KEEPER)?, Vec::new())
+    };
+    let encoded = call.encode()?;
+    let mut event = vec![0; MAX_EVENT_BYTES];
+    let Opening::Opened {
+        frozen, state_len, ..
+    } = epoch::open_epoch(
+        &call.context(1256)?,
+        &decode_envelope(&encoded)?,
+        &before,
+        &mut next,
+        &mut scratch,
+        &mut event,
+    )?
+    else {
+        return Err(NON_CANONICAL);
+    };
+    assert_eq!(frozen.epoch, 2);
+    let opened = decode_shared_state(&next[..state_len])?;
+    assert_eq!(opened.revision, revision + 1);
+    let policy = PolicySection::decode(opened.feature_sections[0])?;
+    assert_eq!(policy.header.state_revision, opened.revision);
+    assert_eq!(policy.task_region, EMPTY_TASK_REGION.as_slice());
+    assert_eq!(
+        tasks::sealed_task_set(&opened, 2),
+        Err(F09_EVIDENCE_TASK_SET_UNSEALED)
+    );
+    assert_eq!(
+        tasks::terminal_task_set(&opened, 2)?,
+        tasks::task_set_digest(
+            &SetBinding {
+                epoch: frozen.epoch,
+                config: frozen.config,
+                policy: frozen.policy,
+                roster: frozen.roster,
+                ..m.binding()
+            },
+            &TaskSet::decode(&EMPTY_TASK_REGION)?
+        )?
+    );
+    assert_eq!(m.world.bytes, before);
+    let state = decode_shared_state(&m.world.bytes)?;
+    assert_eq!(tasks::sealed_task_set(&state, 1)?, sealed);
     Ok(())
 }
 

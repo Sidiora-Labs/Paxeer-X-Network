@@ -57,6 +57,7 @@ use crate::{
     rewards::{decode_reward_state, EpochStatus, REWARD_STATE_BYTES},
     roster::{self, ROLLOVER_SCRATCH_BYTES},
     state::{decode_shared_state, encode_shared_state, Section, SharedState},
+    tasks,
     types::{
         AccountId, Amount, EpochPhase, EvaluatorRosterEntry, PolicyDigest, Presence, PrincipalId,
         ResultDigest, RosterDigest, Version, WorkerRosterEntry,
@@ -437,6 +438,7 @@ fn compose(
     )?;
     let revision = state.revision.checked_add(1).ok_or(ARITHMETIC)?;
     let mut next_policy = selected;
+    next_policy.task_region = tasks::region_after_open(selected.task_region)?;
     next_policy.header.state_revision = revision;
     let policy_len = next_policy.encode(policy_out)?;
     let next_state = SharedState {
