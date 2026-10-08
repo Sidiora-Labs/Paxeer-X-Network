@@ -4848,3 +4848,31 @@ text = "Workspace qualification first refused without a reason label because the
 [gotcha.1035]
 date = "2026-10-08"
 text = "Codify advisory review without the named agent selected an older task and snapshot; use an explicit task packet and CG_AGENT for scoped ownership. Scoped guard still reported Python standard-library/name-resolution warnings; the canonical behavior gate and Codify graph-touch checks passed without force."
+
+[gotcha.1036]
+date = "2026-10-08"
+text = "Codify CLI work open emits human-readable text by default. Capture it as a log and retain the opaque cg work update revision; do not rerun admission solely to change the output format."
+
+[gotcha.1037]
+date = "2026-10-08"
+text = "Use an exact bounded filename inventory before opening private task metadata or neutral task-graph inputs; inferred filenames omitted their author or planning component and were absent."
+
+[gotcha.1038]
+date = "2026-10-08"
+text = "The protocol author emitted all nine declared files but timed out before the complete framing handoff. File presence alone does not admit qualification; preserve the private candidate and record all gates UNRUN."
+
+[gotcha.1039]
+date = "2026-10-08"
+text = "Reserve qualification time inside the task limit and finish exact framing allocations early. A source continuation stopped at its fixed deadline cannot be treated as completed implementation or used to claim a passing gate."
+
+[gotcha.1040]
+date = "2026-10-08"
+text = "CLI permission overrides require TOML inline maps rather than JSON object text. Three fresh parallel authors refused invalid configuration before source execution; exact original failure logs were retained and the serializer was repaired without changing confinement."
+
+[gotcha.1041]
+date = "2026-10-08"
+text = "The common codec test reported eleven passing cases, but Codify rejected the Cargo.lock touch. Explicitly staging the ignored lockfile did not resolve the graph-touch check; retain both code and check, record implemented-not-qualified, and do not rerun the passing behavior test or force completion."
+
+[gotcha.1042]
+date = "2026-10-08"
+text = "Codify recognised the lockfile through the task-tagged commit and all twelve source-touch checks passed without force or another behavior test. Retain the earlier failure and distinguish implemented graph status from completed qualification."

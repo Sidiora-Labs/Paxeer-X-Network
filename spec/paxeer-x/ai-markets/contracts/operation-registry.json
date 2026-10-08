@@ -903,7 +903,7 @@
       "application_error_hex": "0x0610"
     }
   ],
-  "remaining_feature_error_rule": "For feature-specific names without an explicit numeric table, ai.T-C01 owns a single generated declaration-order code table in that feature high-byte namespace. It must be frozen with shared codec before clients/tests are implemented; no runtime allocation, native-code substitution or per-agent number choice. Common aliases use the exact common code. This new table is an implementation-owned protocol allocation from the normative symbolic contracts.",
+  "remaining_feature_error_rule": "explicit common/F03/F06 mappings first. For other features consolidated normative catalog declaration order, then operation-only supplementary declarations in order; deduplicate, skip aliases without consuming ordinal, high feature byte plus nonzero ordinal. PascalCase equivalents of common names alias common codes; F02 explicit category mapping additionally applies. Ambiguous categories elsewhere remain feature allocations. Offchain ordinal spaces are independent starting1; 0 reserved.",
   "internal_operations": [
     "F03 ValidateReportAdmission",
     "F07 ApplyCompletedEpoch",
@@ -927,5 +927,946 @@
         "admitted_height:u64"
       ]
     }
+  },
+  "frozen_application_errors": [
+    {
+      "feature": "COMMON",
+      "name": "BAD_VERSION",
+      "code": 1
+    },
+    {
+      "feature": "COMMON",
+      "name": "NON_CANONICAL",
+      "code": 2
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_DOMAIN",
+      "code": 3
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_PROGRAM",
+      "code": 4
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_MARKET",
+      "code": 5
+    },
+    {
+      "feature": "COMMON",
+      "name": "UNAUTHORIZED",
+      "code": 6
+    },
+    {
+      "feature": "COMMON",
+      "name": "ROLE_CONFLICT",
+      "code": 7
+    },
+    {
+      "feature": "COMMON",
+      "name": "REVOKED",
+      "code": 8
+    },
+    {
+      "feature": "COMMON",
+      "name": "KEY_MISMATCH",
+      "code": 9
+    },
+    {
+      "feature": "COMMON",
+      "name": "BAD_SIGNATURE",
+      "code": 10
+    },
+    {
+      "feature": "COMMON",
+      "name": "EXPIRED",
+      "code": 11
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_EPOCH",
+      "code": 12
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_CONFIG",
+      "code": 13
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_ROSTER",
+      "code": 14
+    },
+    {
+      "feature": "COMMON",
+      "name": "WRONG_PHASE",
+      "code": 15
+    },
+    {
+      "feature": "COMMON",
+      "name": "REPLAY_CONFLICT",
+      "code": 16
+    },
+    {
+      "feature": "COMMON",
+      "name": "SEQUENCE_CONSUMED",
+      "code": 17
+    },
+    {
+      "feature": "COMMON",
+      "name": "SEQUENCE_GAP",
+      "code": 18
+    },
+    {
+      "feature": "COMMON",
+      "name": "STALE_CURSOR",
+      "code": 19
+    },
+    {
+      "feature": "COMMON",
+      "name": "CONFLICT",
+      "code": 20
+    },
+    {
+      "feature": "COMMON",
+      "name": "NOT_FOUND",
+      "code": 21
+    },
+    {
+      "feature": "COMMON",
+      "name": "CAPACITY",
+      "code": 22
+    },
+    {
+      "feature": "COMMON",
+      "name": "RETENTION_FULL",
+      "code": 23
+    },
+    {
+      "feature": "COMMON",
+      "name": "INSUFFICIENT_FREE",
+      "code": 24
+    },
+    {
+      "feature": "COMMON",
+      "name": "ACCOUNT_BINDING",
+      "code": 25
+    },
+    {
+      "feature": "COMMON",
+      "name": "HOST_CAPABILITY",
+      "code": 26
+    },
+    {
+      "feature": "COMMON",
+      "name": "HOST_TRANSFER",
+      "code": 27
+    },
+    {
+      "feature": "COMMON",
+      "name": "ARITHMETIC",
+      "code": 28
+    },
+    {
+      "feature": "COMMON",
+      "name": "EVIDENCE_BINDING",
+      "code": 29
+    },
+    {
+      "feature": "COMMON",
+      "name": "READINESS_BLOCKED",
+      "code": 30
+    },
+    {
+      "feature": "COMMON",
+      "name": "UNKNOWN_OPERATION",
+      "code": 31
+    },
+    {
+      "feature": "F03",
+      "name": "NO_GRANT",
+      "code": 769
+    },
+    {
+      "feature": "F03",
+      "name": "EVALUATOR_CAPACITY",
+      "code": 770
+    },
+    {
+      "feature": "F03",
+      "name": "BAD_ACTIVATION",
+      "code": 771
+    },
+    {
+      "feature": "F03",
+      "name": "KEY_REUSED",
+      "code": 772
+    },
+    {
+      "feature": "F03",
+      "name": "KEY_VERSION_CONFLICT",
+      "code": 773
+    },
+    {
+      "feature": "F03",
+      "name": "GRANT_VERSION_CONFLICT",
+      "code": 774
+    },
+    {
+      "feature": "F03",
+      "name": "REPORT_ALREADY_FINAL",
+      "code": 775
+    },
+    {
+      "feature": "F03",
+      "name": "CHALLENGE_CAPACITY",
+      "code": 776
+    },
+    {
+      "feature": "F03",
+      "name": "UNKNOWN_WORKER",
+      "code": 777
+    },
+    {
+      "feature": "F03",
+      "name": "NO_SCORES",
+      "code": 778
+    },
+    {
+      "feature": "F03",
+      "name": "SCORE_RANGE",
+      "code": 779
+    },
+    {
+      "feature": "F03",
+      "name": "NONCANONICAL_VECTOR",
+      "code": 780
+    },
+    {
+      "feature": "F03",
+      "name": "EVIDENCE_NOT_SEALED",
+      "code": 781
+    },
+    {
+      "feature": "F03",
+      "name": "EVIDENCE_ROOT_MISMATCH",
+      "code": 782
+    },
+    {
+      "feature": "F06",
+      "name": "FUNDING_POLICY_MISMATCH",
+      "code": 1537
+    },
+    {
+      "feature": "F06",
+      "name": "REFUND_RECIPIENT_MISMATCH",
+      "code": 1538
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_ASSET",
+      "code": 1539
+    },
+    {
+      "feature": "F06",
+      "name": "INVALID_AMOUNT",
+      "code": 1540
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_ALREADY_RESERVED",
+      "code": 1541
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_NOT_RESERVED",
+      "code": 1542
+    },
+    {
+      "feature": "F06",
+      "name": "AGGREGATION_MISMATCH",
+      "code": 1543
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_TERMINAL",
+      "code": 1544
+    },
+    {
+      "feature": "F06",
+      "name": "CLAIM_NOT_READY",
+      "code": 1545
+    },
+    {
+      "feature": "F06",
+      "name": "CLAIM_EXPIRED",
+      "code": 1546
+    },
+    {
+      "feature": "F06",
+      "name": "UNKNOWN_WORKER_ENTITLEMENT",
+      "code": 1547
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_CLAIM_RECIPIENT",
+      "code": 1548
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_CLAIM_AMOUNT",
+      "code": 1549
+    },
+    {
+      "feature": "F06",
+      "name": "NOTHING_TO_CLAIM",
+      "code": 1550
+    },
+    {
+      "feature": "F06",
+      "name": "LEDGER_INVARIANT_VIOLATION",
+      "code": 1551
+    },
+    {
+      "feature": "F06",
+      "name": "CONTRIBUTION_CONSENT_REQUIRED",
+      "code": 1552
+    },
+    {
+      "feature": "F01",
+      "name": "InvalidPolicy",
+      "code": 257
+    },
+    {
+      "feature": "F01",
+      "name": "PrincipalMismatch",
+      "code": 258
+    },
+    {
+      "feature": "F01",
+      "name": "StaleRevision",
+      "code": 259
+    },
+    {
+      "feature": "F01",
+      "name": "AlreadyCreated",
+      "code": 260
+    },
+    {
+      "feature": "F01",
+      "name": "AccountBindingMissing",
+      "code": 261
+    },
+    {
+      "feature": "F01",
+      "name": "VersionMismatch",
+      "code": 262
+    },
+    {
+      "feature": "F01",
+      "name": "PendingPolicyExists",
+      "code": 263
+    },
+    {
+      "feature": "F01",
+      "name": "NoPendingPolicy",
+      "code": 264
+    },
+    {
+      "feature": "F01",
+      "name": "ActivationTooEarly",
+      "code": 265
+    },
+    {
+      "feature": "F01",
+      "name": "ActivationNotReady",
+      "code": 266
+    },
+    {
+      "feature": "F01",
+      "name": "AlreadyActivated",
+      "code": 267
+    },
+    {
+      "feature": "F01",
+      "name": "WrongLifecycle",
+      "code": 268
+    },
+    {
+      "feature": "F01",
+      "name": "LifecycleClosed",
+      "code": 269
+    },
+    {
+      "feature": "F01",
+      "name": "InvalidReason",
+      "code": 270
+    },
+    {
+      "feature": "F01",
+      "name": "GrantAlreadyRevoked",
+      "code": 271
+    },
+    {
+      "feature": "F01",
+      "name": "AlreadyClosing",
+      "code": 272
+    },
+    {
+      "feature": "F01",
+      "name": "ObligationsOutstanding",
+      "code": 273
+    },
+    {
+      "feature": "F01",
+      "name": "CapacityUnavailable",
+      "code": 274
+    },
+    {
+      "feature": "F01",
+      "name": "NoTaskCapacity",
+      "code": 275
+    },
+    {
+      "feature": "F01",
+      "name": "UnknownWorker",
+      "code": 276
+    },
+    {
+      "feature": "F01",
+      "name": "TaskConflict",
+      "code": 277
+    },
+    {
+      "feature": "F01",
+      "name": "TaskExpired",
+      "code": 278
+    },
+    {
+      "feature": "F01",
+      "name": "PolicyMismatch",
+      "code": 279
+    },
+    {
+      "feature": "F01",
+      "name": "TaskNotFound",
+      "code": 280
+    },
+    {
+      "feature": "F01",
+      "name": "WrongWorker",
+      "code": 281
+    },
+    {
+      "feature": "F01",
+      "name": "TaskAlreadyAccepted",
+      "code": 282
+    },
+    {
+      "feature": "F02",
+      "name": "OwnerRequired",
+      "code": 513
+    },
+    {
+      "feature": "F02",
+      "name": "DelegateConsentRequired",
+      "code": 514
+    },
+    {
+      "feature": "F02",
+      "name": "DelegateRevoked",
+      "code": 515
+    },
+    {
+      "feature": "F02",
+      "name": "IdentityFrozen",
+      "code": 516
+    },
+    {
+      "feature": "F02",
+      "name": "StaleAuthority",
+      "code": 517
+    },
+    {
+      "feature": "F02",
+      "name": "WrongGeneration",
+      "code": 518
+    },
+    {
+      "feature": "F02",
+      "name": "WrongRevision",
+      "code": 519
+    },
+    {
+      "feature": "F02",
+      "name": "MetadataExpired",
+      "code": 520
+    },
+    {
+      "feature": "F02",
+      "name": "MetadataUnavailable",
+      "code": 521
+    },
+    {
+      "feature": "F02",
+      "name": "MetadataIntegrityFailure",
+      "code": 522
+    },
+    {
+      "feature": "F02",
+      "name": "CapabilityMismatch",
+      "code": 523
+    },
+    {
+      "feature": "F02",
+      "name": "AdmissionNotEffective",
+      "code": 524
+    },
+    {
+      "feature": "F02",
+      "name": "MarketPaused",
+      "code": 525
+    },
+    {
+      "feature": "F02",
+      "name": "RateLimited",
+      "code": 526
+    },
+    {
+      "feature": "F02",
+      "name": "InputTooLarge",
+      "code": 527
+    },
+    {
+      "feature": "F02",
+      "name": "OutputTooLarge",
+      "code": 528
+    },
+    {
+      "feature": "F02",
+      "name": "DeadlineInvalid",
+      "code": 529
+    },
+    {
+      "feature": "F02",
+      "name": "AccessDenied",
+      "code": 530
+    },
+    {
+      "feature": "F02",
+      "name": "UnknownExecution",
+      "code": 531
+    },
+    {
+      "feature": "F04",
+      "name": "F04_NO_SCORES",
+      "code": 1025
+    },
+    {
+      "feature": "F04",
+      "name": "F04_SALT_INVALID",
+      "code": 1026
+    },
+    {
+      "feature": "F04",
+      "name": "F04_COMMIT_MISMATCH",
+      "code": 1027
+    },
+    {
+      "feature": "F05",
+      "name": "F05_REPORT_INVARIANT",
+      "code": 1281
+    },
+    {
+      "feature": "F07",
+      "name": "IdentityFrozen",
+      "code": 1793
+    },
+    {
+      "feature": "F07",
+      "name": "SegmentMismatch",
+      "code": 1794
+    },
+    {
+      "feature": "F07",
+      "name": "GenerationMismatch",
+      "code": 1795
+    },
+    {
+      "feature": "F07",
+      "name": "UnknownWorker",
+      "code": 1796
+    },
+    {
+      "feature": "F07",
+      "name": "EpochNotSealed",
+      "code": 1797
+    },
+    {
+      "feature": "F07",
+      "name": "BindingMismatch",
+      "code": 1798
+    },
+    {
+      "feature": "F07",
+      "name": "ResourceLimit",
+      "code": 1799
+    },
+    {
+      "feature": "F07",
+      "name": "FinalityUnavailable",
+      "code": 1800
+    },
+    {
+      "feature": "F08",
+      "name": "OwnerRequired",
+      "code": 2049
+    },
+    {
+      "feature": "F08",
+      "name": "AdministratorApprovalRequired",
+      "code": 2050
+    },
+    {
+      "feature": "F08",
+      "name": "BadConsent",
+      "code": 2051
+    },
+    {
+      "feature": "F08",
+      "name": "PermitExpired",
+      "code": 2052
+    },
+    {
+      "feature": "F08",
+      "name": "PermitConsumed",
+      "code": 2053
+    },
+    {
+      "feature": "F08",
+      "name": "IdentityFrozen",
+      "code": 2054
+    },
+    {
+      "feature": "F08",
+      "name": "DelegateRevoked",
+      "code": 2055
+    },
+    {
+      "feature": "F08",
+      "name": "WrongGeneration",
+      "code": 2056
+    },
+    {
+      "feature": "F08",
+      "name": "MarketPaused",
+      "code": 2057
+    },
+    {
+      "feature": "F08",
+      "name": "DuplicateIdentity",
+      "code": 2058
+    },
+    {
+      "feature": "F08",
+      "name": "OwnerCapacityExceeded",
+      "code": 2059
+    },
+    {
+      "feature": "F08",
+      "name": "CapacityExceeded",
+      "code": 2060
+    },
+    {
+      "feature": "F08",
+      "name": "AdmissionWindowFull",
+      "code": 2061
+    },
+    {
+      "feature": "F08",
+      "name": "RateLimited",
+      "code": 2062
+    },
+    {
+      "feature": "F08",
+      "name": "NoPrunableMember",
+      "code": 2063
+    },
+    {
+      "feature": "F08",
+      "name": "CandidateChanged",
+      "code": 2064
+    },
+    {
+      "feature": "F08",
+      "name": "StaleState",
+      "code": 2065
+    },
+    {
+      "feature": "F08",
+      "name": "RetentionBlocked",
+      "code": 2066
+    },
+    {
+      "feature": "F08",
+      "name": "QuorumUnavailable",
+      "code": 2067
+    },
+    {
+      "feature": "F08",
+      "name": "IdempotencyConflict",
+      "code": 2068
+    },
+    {
+      "feature": "F08",
+      "name": "ResourceExhausted",
+      "code": 2069
+    },
+    {
+      "feature": "F09",
+      "name": "EVIDENCE_TASK_SET_UNSEALED",
+      "code": 2305
+    },
+    {
+      "feature": "F09",
+      "name": "EVIDENCE_SEAL_CONFLICT",
+      "code": 2306
+    },
+    {
+      "feature": "F07",
+      "name": "IdempotencyConflict",
+      "code": 1801
+    }
+  ],
+  "frozen_error_aliases": [
+    {
+      "feature": "F01",
+      "name": "InvalidEncoding",
+      "code": 2,
+      "target": "NON_CANONICAL"
+    },
+    {
+      "feature": "F01",
+      "name": "WrongDomain",
+      "code": 3,
+      "target": "WRONG_DOMAIN"
+    },
+    {
+      "feature": "F01",
+      "name": "Unauthorized",
+      "code": 6,
+      "target": "UNAUTHORIZED"
+    },
+    {
+      "feature": "F01",
+      "name": "ArithmeticOverflow",
+      "code": 28,
+      "target": "ARITHMETIC"
+    },
+    {
+      "feature": "F02",
+      "name": "NonCanonical",
+      "code": 2,
+      "target": "NON_CANONICAL"
+    },
+    {
+      "feature": "F02",
+      "name": "UnsupportedVersion",
+      "code": 1,
+      "target": "BAD_VERSION"
+    },
+    {
+      "feature": "F02",
+      "name": "WrongDomain",
+      "code": 3,
+      "target": "WRONG_DOMAIN"
+    },
+    {
+      "feature": "F02",
+      "name": "BadSignature",
+      "code": 10,
+      "target": "BAD_SIGNATURE"
+    },
+    {
+      "feature": "F02",
+      "name": "CapacityExceeded",
+      "code": 22,
+      "target": "CAPACITY"
+    },
+    {
+      "feature": "F02",
+      "name": "IdempotencyConflict",
+      "code": 16,
+      "target": "REPLAY_CONFLICT"
+    },
+    {
+      "feature": "F02",
+      "name": "SequenceGap",
+      "code": 18,
+      "target": "SEQUENCE_GAP"
+    },
+    {
+      "feature": "F02",
+      "name": "Overflow",
+      "code": 28,
+      "target": "ARITHMETIC"
+    },
+    {
+      "feature": "F02",
+      "name": "NotFound",
+      "code": 21,
+      "target": "NOT_FOUND"
+    },
+    {
+      "feature": "F02",
+      "name": "ExecutionUnavailable",
+      "code": 30,
+      "target": "READINESS_BLOCKED"
+    },
+    {
+      "feature": "F07",
+      "name": "NonCanonical",
+      "code": 2,
+      "target": "NON_CANONICAL"
+    },
+    {
+      "feature": "F07",
+      "name": "UnsupportedVersion",
+      "code": 1,
+      "target": "BAD_VERSION"
+    },
+    {
+      "feature": "F07",
+      "name": "WrongDomain",
+      "code": 3,
+      "target": "WRONG_DOMAIN"
+    },
+    {
+      "feature": "F07",
+      "name": "Unauthorized",
+      "code": 6,
+      "target": "UNAUTHORIZED"
+    },
+    {
+      "feature": "F07",
+      "name": "Overflow",
+      "code": 28,
+      "target": "ARITHMETIC"
+    },
+    {
+      "feature": "F08",
+      "name": "UnsupportedVersion",
+      "code": 1,
+      "target": "BAD_VERSION"
+    },
+    {
+      "feature": "F08",
+      "name": "NonCanonical",
+      "code": 2,
+      "target": "NON_CANONICAL"
+    },
+    {
+      "feature": "F08",
+      "name": "WrongDomain",
+      "code": 3,
+      "target": "WRONG_DOMAIN"
+    },
+    {
+      "feature": "F08",
+      "name": "WrongEpoch",
+      "code": 12,
+      "target": "WRONG_EPOCH"
+    },
+    {
+      "feature": "F08",
+      "name": "NotFound",
+      "code": 21,
+      "target": "NOT_FOUND"
+    },
+    {
+      "feature": "F08",
+      "name": "Overflow",
+      "code": 28,
+      "target": "ARITHMETIC"
+    }
+  ],
+  "frozen_offchain_errors": {
+    "F02": [
+      "NonCanonical",
+      "UnsupportedVersion",
+      "WrongDomain",
+      "BadSignature",
+      "OwnerRequired",
+      "DelegateConsentRequired",
+      "DelegateRevoked",
+      "IdentityFrozen",
+      "StaleAuthority",
+      "WrongGeneration",
+      "WrongRevision",
+      "MetadataExpired",
+      "MetadataUnavailable",
+      "MetadataIntegrityFailure",
+      "CapabilityMismatch",
+      "AdmissionNotEffective",
+      "MarketPaused",
+      "RateLimited",
+      "CapacityExceeded",
+      "InputTooLarge",
+      "OutputTooLarge",
+      "DeadlineInvalid",
+      "IdempotencyConflict",
+      "SequenceGap",
+      "Overflow",
+      "NotFound",
+      "AccessDenied",
+      "ExecutionUnavailable",
+      "UnknownExecution"
+    ],
+    "F09": [
+      "Malformed",
+      "UnsupportedVersion",
+      "UnsupportedKind",
+      "InvalidContext",
+      "Unauthorized",
+      "AuthorityRevoked",
+      "PurposeDenied",
+      "Expired",
+      "QuotaExceeded",
+      "CapacityUnavailable",
+      "MissingChunk",
+      "LengthMismatch",
+      "RootMismatch",
+      "SignatureInvalid",
+      "IdempotencyConflict",
+      "IntegrityConflict",
+      "Tombstoned",
+      "ContentUnavailable",
+      "UnsafeLocator",
+      "UnknownDelivery",
+      "StorageFailure"
+    ],
+    "F07": [
+      "HistoryOutsideRetention"
+    ],
+    "F10Projection": [
+      "InvalidEncoding",
+      "UnsupportedVersion",
+      "WrongDomain",
+      "IntegrityFailure",
+      "BindingMismatch",
+      "FinalityUnavailable",
+      "SnapshotConflict",
+      "ProjectionUnavailable",
+      "CapacityExceeded"
+    ],
+    "F10Query": [
+      "CursorExpired",
+      "CursorMismatch",
+      "RateLimited",
+      "SnapshotPruned",
+      "ResponseTooLarge"
+    ]
   }
 }

@@ -34974,7 +34974,7 @@ worker_role_id = "W-STORAGE-PROFILE"
 
 [task.ai.T-C01]
 title = "Create common Programs application and wire contracts"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 15
 requires = ["ai.P-WORKSPACE"]
@@ -34988,7 +34988,7 @@ worker_role = "Programs protocol codec specialist"
 worker = "W-T-C01"
 deliverables = ["Create application crate/workspace entry and canonical common typed IDs, operation/state/event framing, hashes, signature digests and error tables; freeze remaining feature-specific symbolic error numeric codes centrally in declaration order and reject malformed/unknown/overflow inputs.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
 entry_condition = "ai.P-WORKSPACE passed; FM-CORE exclusively owns crate/workspace and common declarations."
-touches = ["programs/Cargo.toml", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs"]
+touches = ["programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs", "spec/paxeer-x/ai-markets/contracts/core.kvx", "spec/paxeer-x/ai-markets/contracts/operation-registry.json", "spec/paxeer-x/ai-markets/contracts/wire.schema.json"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract"
 gate_kind = "planned"
@@ -35000,7 +35000,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 1
 acceptance_cases = ["AI.CORE-A01"]
-paths = ["programs/Cargo.toml", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs"]
+paths = ["programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/types.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/errors.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs", "spec/paxeer-x/ai-markets/contracts/core.kvx", "spec/paxeer-x/ai-markets/contracts/operation-registry.json", "spec/paxeer-x/ai-markets/contracts/wire.schema.json"]
 worker_role_id = "W-CORE-CODEC"
 
 [task.ai.F01-T01]

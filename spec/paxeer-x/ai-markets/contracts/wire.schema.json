@@ -690,5 +690,199 @@
         "application_event_bytes_max"
       ]
     }
+  },
+  "x-paxai-binary-framing-v1": {
+    "byte_order": "big-endian; offsets zero-based; no padding",
+    "state": {
+      "global_fields": [
+        {
+          "offset": 0,
+          "bytes": 6,
+          "field": "magic ASCII PAXAS1"
+        },
+        {
+          "offset": 6,
+          "bytes": 2,
+          "field": "schema_version u16=1"
+        },
+        {
+          "offset": 8,
+          "bytes": 8,
+          "field": "revision u64 nonzero"
+        }
+      ],
+      "sections_order": [
+        "F01 policy/lifecycle",
+        "F02/F03 identity+frozen roster",
+        "F03/F04 current reports",
+        "F05/F06 settlement+historical claims",
+        "F07/F08 reputation/admission",
+        "common/F09/F10 control"
+      ],
+      "section_fields": [
+        {
+          "relative_offset": 0,
+          "bytes": 2,
+          "field": "index u16=1..6 in exact order"
+        },
+        {
+          "relative_offset": 2,
+          "bytes": 2,
+          "field": "reserved u16=0"
+        },
+        {
+          "relative_offset": 4,
+          "bytes": 4,
+          "field": "payload byte length u32, excludes section header"
+        },
+        {
+          "relative_offset": 8,
+          "bytes": "declared length",
+          "field": "feature-owned canonical section payload"
+        }
+      ],
+      "offset_rule": "section1 starts at16; next section starts at previous_start+8+previous_payload_length",
+      "caps": [
+        16384,
+        24576,
+        24576,
+        81920,
+        24576,
+        24576
+      ],
+      "charge_rule": "Each section cap includes its own8-byte header; control section6 additionally pays global16. No framing is added outside allcaps.",
+      "payload_maxima": [
+        16376,
+        24568,
+        24568,
+        81912,
+        24568,
+        24552
+      ],
+      "total_rule": "16+sum(8+payload_length); min64; max196608 inclusive",
+      "refusal": [
+        "wrong magic/schema",
+        "revision zero",
+        "missing/duplicate/reordered/unknown section index",
+        "nonzero reserved",
+        "truncated header or payload",
+        "trailing bytes",
+        "section charge exceeds cap",
+        "total exceeds196608",
+        "checked arithmetic overflow"
+      ],
+      "semantics": "Shared codec validates framing; feature owners validate section contents. No business-state or host execution implementation claimed."
+    },
+    "events": {
+      "topic": "ASCII PAXAI/v1/<exact registered mutation operation name>, maximum64bytes; reads/unknown names refuse",
+      "body_max": 2048,
+      "common_length": 122,
+      "common_fields": [
+        {
+          "offset": 0,
+          "bytes": 2,
+          "field": "schema u16=1"
+        },
+        {
+          "offset": 2,
+          "bytes": 32,
+          "field": "market nonzero"
+        },
+        {
+          "offset": 34,
+          "bytes": 8,
+          "field": "epoch u64"
+        },
+        {
+          "offset": 42,
+          "bytes": 8,
+          "field": "config u64 nonzero"
+        },
+        {
+          "offset": 50,
+          "bytes": 8,
+          "field": "revision u64"
+        },
+        {
+          "offset": 58,
+          "bytes": 32,
+          "field": "request digest nonzero"
+        },
+        {
+          "offset": 90,
+          "bytes": 32,
+          "field": "result digest nonzero"
+        }
+      ],
+      "commit": {
+        "total_bytes": 194,
+        "suffix_fields": [
+          [
+            122,
+            32,
+            "evaluator nonzero"
+          ],
+          [
+            154,
+            32,
+            "commitment nonzero"
+          ],
+          [
+            186,
+            8,
+            "accepted_height u64"
+          ]
+        ],
+        "topic": "PAXAI/v1/CommitScore"
+      },
+      "reveal": {
+        "total_bytes": 228,
+        "suffix_fields": [
+          [
+            122,
+            32,
+            "evaluator nonzero"
+          ],
+          [
+            154,
+            32,
+            "report digest nonzero"
+          ],
+          [
+            186,
+            32,
+            "evidence root nonzero"
+          ],
+          [
+            218,
+            2,
+            "vector_count u16 1..32"
+          ],
+          [
+            220,
+            8,
+            "admitted_height u64"
+          ]
+        ],
+        "topic": "PAXAI/v1/RevealScore"
+      },
+      "suffix_rule": "Common-only codec accepts exactly122bytes. Commit/reveal codecs accept exactly194/228 and refuse trailing/truncated/invalid fields. Other registered mutation suffixes are bounded opaque feature-owned bytes; exact feature suffix validation is required by the consumer.",
+      "refusal": [
+        "unknown/read topic",
+        "bad prefix/non-ASCII or topic length>64",
+        "body>2048",
+        "bad schema",
+        "truncated common fields",
+        "zero typed identifiers/digests or config",
+        "invalid fixed commit/reveal suffix/count/trailing bytes"
+      ]
+    },
+    "error_registry_reference": [
+      "error_table",
+      "aliases",
+      "offchain_errors",
+      "selectors",
+      "error_allocation_policy"
+    ]
   }
 }

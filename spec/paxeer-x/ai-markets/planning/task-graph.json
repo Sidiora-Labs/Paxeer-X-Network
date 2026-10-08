@@ -177,7 +177,7 @@
         "ai.P-WORKSPACE"
       ],
       "wave": 15,
-      "status": "pending",
+      "status": "implemented",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
       "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C01]",
@@ -194,13 +194,17 @@
         "scope": "Create application crate/workspace entry and canonical common typed IDs, operation/state/event framing, hashes, signature digests and error tables; freeze remaining feature-specific symbolic error numeric codes centrally in declaration order and reject malformed/unknown/overflow inputs.",
         "exact_paths": [
           "programs/Cargo.toml",
+          "programs/Cargo.lock",
           "programs/crates/layerx-programs-ai-market/Cargo.toml",
           "programs/crates/layerx-programs-ai-market/src/lib.rs",
           "programs/crates/layerx-programs-ai-market/src/types.rs",
           "programs/crates/layerx-programs-ai-market/src/codec.rs",
           "programs/crates/layerx-programs-ai-market/src/errors.rs",
           "programs/crates/layerx-programs-ai-market/src/dispatch.rs",
-          "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs"
+          "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs",
+          "spec/paxeer-x/ai-markets/contracts/core.kvx",
+          "spec/paxeer-x/ai-markets/contracts/operation-registry.json",
+          "spec/paxeer-x/ai-markets/contracts/wire.schema.json"
         ],
         "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract",
@@ -216,7 +220,14 @@
       "local_wave": 1,
       "acceptance_cases": [
         "AI.CORE-A01"
-      ]
+      ],
+      "implementation_evidence": {
+        "source_manifest_sha256": "3641a6adcdd89c24d8723bdab42288ab17d7465e3883a17bcc35f791fca351f4",
+        "build_exit_code": 0,
+        "canonical_tests_passed": 11,
+        "graph_exit_code": 0,
+        "completion": "qualification pending"
+      }
     },
     {
       "id": "ai.F01-T01",

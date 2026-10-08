@@ -625,3 +625,24 @@ command = "CG_AGENT=px26-fm1 cg guard tools/paxeer-x/ai_evidence.py tools/paxeer
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/codify-guard-scoped.log"
 observation_and_assumption = "Advisory Python standard-library/name-resolution findings remain; assumed graph limitations, not behavior failures, and not investigated beyond this task."
+
+[finding.ai-core-attempt-20261008-time-limit]
+revision = "069566a6247745012d8513873243fe26a96b15f3+candidate-record-sha256:6343ee8b5102d8579e403bab69fe7af1aabf20c378af744ddfca716d30d928f7"
+command = "isolated implementation author; build and canonical_contract verification UNRUN"
+exit_code = 124
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-stopped.json"
+observation_and_assumption = "Author and bounded continuation timed out before complete framing/completion handoff; nine source files remain private and unmaterialized, no format/build/verify ran, and task qualification remains UNRUN."
+
+[finding.ai-core-codify-lock-touch-20261008]
+revision = "069566a6247745012d8513873243fe26a96b15f3+source-manifest-sha256:3641a6adcdd89c24d8723bdab42288ab17d7465e3883a17bcc35f791fca351f4"
+command = "CG_AGENT=px26-fm1 cg spec implemented ai.T-C01"
+exit_code = 1
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-codify-postgate-recovery2.log"
+observation_and_assumption = "Canonical codec test reported 11 passed and Wasm build exited 0; graph still refuses programs/Cargo.lock after exact staging, so task remains implemented-not-qualified without force or repeated behavior verification."
+
+[finding.ai-core-postcommit-graph-20261008]
+revision = "8576ccbc6c3da5746ee6eb84ba473b8b63455657+source-manifest-sha256:3641a6adcdd89c24d8723bdab42288ab17d7465e3883a17bcc35f791fca351f4"
+command = "CG_AGENT=px26-fm1 cg spec implemented ai.T-C01"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-codify-postcommit-graph.log"
+observation_and_assumption = "All twelve source-touch checks passed after tagged source publication; canonical tests reported eleven passed without repetition, and Codify records implemented with qualification pending."
