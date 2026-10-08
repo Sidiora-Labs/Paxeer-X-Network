@@ -5149,3 +5149,8 @@ text = "Clippy on a standalone hosted crate does not lint its path dependencies;
 area = "evidence"
 text = "tools/paxeer-x/ai_evidence.py with no PAXAI_ADMISSION_RECORD/PAXAI_APPROVAL_RECORD set refuses at stage=authority reason=path-string before reading anything; with the workspace authority records set it refuses at reason=git-head because the pinned base no longer equals HEAD. The storage-prerequisite-evidence selector binds every producer revision to the single admission base_revision, so producers qualified at different revisions can never be consumed together without re-pinning one candidate. Lane-branch producer revisions are re-committed on landing; match them with git patch-id --stable, not merge-base."
 
+
+[gotcha.1112]
+area = "ai-market"
+text = "The F03 challenge-identity preimage is 233 bytes (chain, program, market, epoch, evaluator, report, category, evidence, requester), not 265; count field widths from the spec instead of reusing remembered totals. evaluators::authority::apply does not re-bind the F01 header state_revision, so tests must re-encode with Parts::load(..).encode() or the next committed() read fails NON_CANONICAL. F03 report admission (evaluators::admission::admit_report) is reachable only through the F04 RevealScore path and the ChallengeAssessment selector routes to evaluators::admission::apply_challenge; the 228-byte RevealScore event is returned in a caller buffer because large_enum_variant is denied."
+

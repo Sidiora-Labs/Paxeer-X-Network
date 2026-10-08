@@ -36183,7 +36183,7 @@ worker_role_id = "W-F01-HANDOFF"
 
 [task.ai.F03-T03]
 title = "Admit immutable evaluator rows and challenges"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 26
 requires = ["ai.F03-T02", "ai.F04-T01", "ai.F09-T02"]
