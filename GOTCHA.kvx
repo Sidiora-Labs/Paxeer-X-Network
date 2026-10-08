@@ -5128,3 +5128,11 @@ text = "F08 allows only 4 successful enrollments per epoch and the counter reset
 [gotcha.1106]
 area = "programs/ai-market"
 text = "workers::apply (F02) bumps the shared revision but not the F01 header state_revision, so F01 transitions refuse its raw output NON_CANONICAL until the header is rebound; the router (T-C02) must keep the two in step. In a sealed task region the seal sits between the presence byte and the records, so hashing region[3..] is only right for an unsealed region. clippy struct_field_names rejects a test struct field named after its struct."
+
+[gotcha.1107]
+area = "programs/ai-market"
+text = "Envelope::validate checks payload length per operation at encode time, so a wrong-operation fixture must use an operation whose bounds accept the payload (e.g. Heartbeat, 0..15965) or it is refused NON_CANONICAL before the handler runs. F03 authority::apply leaves the F01 header revision unchanged; re-encode through the section loader to keep header and shared revision equal."
+
+[gotcha.1108]
+area = "fleet"
+text = "Clippy and rustfmt fixes are the format step, not repair cycles; the two repair cycles belong to build_cmd and verify_cmd failures only. Workers that spend the budget on lint must be sent back."

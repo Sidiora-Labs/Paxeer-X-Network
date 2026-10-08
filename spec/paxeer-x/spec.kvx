@@ -36121,7 +36121,7 @@ worker_role_id = "W-F02-JOBS"
 
 [task.ai.F09-T02]
 title = "Bind immutable evidence to sealed task context"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 25
 requires = ["ai.F09-T01", "ai.F01-T04", "ai.F03-T01"]
@@ -36183,7 +36183,7 @@ worker_role_id = "W-F01-HANDOFF"
 
 [task.ai.F03-T03]
 title = "Admit immutable evaluator rows and challenges"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 26
 requires = ["ai.F03-T02", "ai.F04-T01", "ai.F09-T02"]

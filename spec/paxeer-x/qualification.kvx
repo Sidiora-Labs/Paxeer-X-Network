@@ -837,3 +837,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F01-T04-verify-5.log"
 observed = "F01 stores no per-epoch frozen worker metadata or keys; task admission recomputes the roster digest from the F06 epoch row, live F02 attributes and the F03 snapshot, so a mid-epoch F02 metadata publish or key rotation by a rostered worker makes admission refuse WRONG_ROSTER until the next opening; the F08 REVOKED admission path has no producer-driven test."
 assumption = "F02-T02 (worker lifecycle) decides whether rostered attributes freeze per epoch; F09-T02 calls tasks::sealed_task_set for the SealEvidence hooks; T-C02 routes tasks::apply."
+
+[qualification.ai-f09-t02-evaluator-slots-20261008-01]
+revision = "7f51ff06e"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_binding"
+exit_code = 0
+log = "private ops log wt/logs/ai.F09-T02-verify-2.log"
+observed = "SealEvidence needs ActorSlot::evaluator(i) bound to the evaluator owner, and no producer binds the evaluator replay slots yet, so on a live chain SealEvidence refuses NOT_FOUND; F03/F04 report admission must take ReportContext.evidence from evidence::sealed_evidence; owning records must write roots through evidence::bind_root / check_root_binding; T-C02 must route SealEvidence."
+assumption = "ai.F03-T03 (evaluator admission) binds the evaluator slots at acceptance; F04-T02 and F01/F02 record owners add the root binding calls; T-C02 routes evidence::apply."
