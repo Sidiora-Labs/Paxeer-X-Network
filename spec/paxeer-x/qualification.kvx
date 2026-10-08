@@ -653,3 +653,17 @@ command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/core-correction-qualification-01.log"
 observed = "16 passed, 0 failed, 0 ignored; Wasm build0 and Codify done0/all12touchchecks. Advisory GOTCHA/symbol drift retained in log. Full native CORE-A02/A03 remain UNRUN."
+
+[qualification.ai-state-20261008-01]
+revision = "ee3148237882b732a29ff7c2dca5fb64daabfcd6"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test state_contract"
+exit_code = 101
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/state-qualification-02.log"
+observed = "Test compilation refused five ambiguous ReplayDecision imports; production Wasm build passed. Source-scoped explicit import correction preserves every assertion."
+
+[qualification.ai-state-20261008-02]
+revision = "ee3148237882b732a29ff7c2dca5fb64daabfcd6+source:1200b9f88ff487ece3da8e622ee38d8595abb752aad8b91a2ecc828024afb6ff"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test state_contract"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/state-qualification-repair-01.log"
+observed = "Eleven tests passed, none failed or ignored; Wasm build passed. Codify completion exceeded600seconds after verification; task remains implemented and overall qualification UNRUN. Native CORE-A02 remains UNRUN."

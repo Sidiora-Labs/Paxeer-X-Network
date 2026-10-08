@@ -4888,3 +4888,19 @@ text = "Derive SDK and hosted-service task paths and Cargo package names from th
 [gotcha.1045]
 date = "2026-10-08"
 text = "NativeOwnerOutcome verification supports owner modules and prohibits monetary effects; Programs rewards must use the actual Programs outcome verifier and exact transfer/state join. A verifier name alone does not establish the supported module or authority scope."
+
+[gotcha.1046]
+date = "2026-10-08"
+text = "Noninteractive qualification shells may omit the Rust toolchain directory from PATH. Resolve installed tool paths before qualification; a launcher failure before executing rustfmt or cargo is not a build or behavior run."
+
+[gotcha.1047]
+date = "2026-10-08"
+text = "Codify work open accepts --task rather than a positional task ID. Use the explicit flag and retain an unsuccessful invocation separately; do not rerun a successful work-open command merely to change log formatting."
+
+[gotcha.1048]
+date = "2026-10-08"
+text = "Fresh full-repository graph initialization can consume the task time budget. Reuse an already indexed clean manager worktree with a separate branch and identical-byte materialization; preserve the interrupted initialization log and original private worktree."
+
+[gotcha.1049]
+date = "2026-10-08"
+text = "A Codify claim and work-open record do not set canonical task status to in_progress. Run cg spec start explicitly before qualification. A done preflight rejection for pending status executed no behavior gate; preserve the completed build and do not repeat it."

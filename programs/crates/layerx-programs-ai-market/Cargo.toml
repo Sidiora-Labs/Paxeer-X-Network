@@ -10,6 +10,7 @@ publish = false
 crate-type = ["rlib"]
 
 [dependencies]
+layerx-program-sdk = { path = "../../sdk/rust" }
 sha2.workspace = true
 
 [lints]

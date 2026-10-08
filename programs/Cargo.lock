@@ -953,6 +953,7 @@ dependencies = [
 name = "layerx-programs-ai-market"
 version = "0.1.0"
 dependencies = [
+ "layerx-program-sdk",
  "sha2",
 ]
 

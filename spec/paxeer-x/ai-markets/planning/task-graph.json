@@ -313,11 +313,62 @@
       ]
     },
     {
-      "id": "ai.T-C02",
+      "id": "ai.T-C02-STATE",
       "requires": [
         "ai.T-C01"
       ],
       "wave": 16,
+      "status": "implemented",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C02-STATE]",
+      "manager": "FM-CORE",
+      "worker": "W-T-C02-STATE",
+      "worker_role": "Programs state codec and SDK adapter specialist",
+      "reqs": [
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.CORE-STATE-CODEC"
+      ],
+      "admission_contract": {
+        "scope": "Real pure codec canonical roundtrip/refusal, section/total including framing bounds and checked replay transitions. Concrete SDK host adapter compiles in Wasm only. No native execution/rollback/blob/signature/capability/height acceptance is claimed. No placeholder handlers or new test guest opcodes. Early rlib-only Wasm-target compilation is compilation evidence only and produces no executable guest. Adding the actual layerx-program-sdk dependency is owned in crate Cargo.toml and programs/Cargo.lock.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/state.rs",
+          "programs/crates/layerx-programs-ai-market/src/host_adapter.rs",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs",
+          "programs/crates/layerx-programs-ai-market/tests/state_contract.rs",
+          "programs/crates/layerx-programs-ai-market/Cargo.toml",
+          "programs/Cargo.lock"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test state_contract",
+        "entry_condition": "ai.T-C01 has passed its declared focused qualification; exclusive FM-CORE shared-file ownership is available.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "executable",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the declared focused codec gate or retain implemented-not-qualified with exact failure evidence after the time cap or two repair cycles. Native execution and full CORE-A02 remain separately required."
+      },
+      "local_wave": 2,
+      "acceptance_cases": [
+        "AI.CORE-STATE-CODEC"
+      ],
+      "qualification": "UNRUN",
+      "evidence": "ee3148237882b732a29ff7c2dca5fb64daabfcd6+source:1200b9f88ff487ece3da8e622ee38d8595abb752aad8b91a2ecc828024afb6ff | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test state_contract | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm1/state-qualification-repair-01.log"
+    },
+    {
+      "id": "ai.T-C02",
+      "requires": [
+        "ai.T-C02-STATE",
+        "ai.F01-T02",
+        "ai.F02-T01",
+        "ai.F03-T03",
+        "ai.F01-T03-EPOCH"
+      ],
+      "wave": 27,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -334,13 +385,17 @@
       "admission_contract": {
         "scope": "Implement one authoritative paxai/state/v1 value with exact section budgets and <=196608 bytes, host-authenticated context/height/principal, real storage finalization/crypto/events, replay and no nested calls; verify rollback and <=2 application content blobs plus actual native overhead within unchanged caps.",
         "exact_paths": [
-          "programs/crates/layerx-programs-ai-market/src/state.rs",
-          "programs/crates/layerx-programs-ai-market/src/host_adapter.rs",
-          "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs"
+          "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs",
+          "programs/crates/layerx-programs-ai-market/src/dispatch.rs",
+          "programs/crates/layerx-programs-ai-market/Cargo.toml",
+          "programs/Cargo.lock",
+          "tests/programs/test_ai_host_boundary.c",
+          "Makefile"
         ],
-        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "compile_cmd": "make paxai-host-boundary-build",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary",
-        "entry_condition": "ai.T-C01 passed; actual Programs interpreter/native adapter exposes admitted context/storage/crypto; absent real bridge is BLOCKED.",
+        "entry_condition": "Early state codec gate passed; concrete actual feature handlers and lib/dispatch exports wired by exact serial owner handoff; actual native account registry binding producer used for CREATE when required; native capture-enabled profile supplied; no synthetic state/bootstrap handlers. The actual crate manifest must admit cdylib and the concrete SDK entry exports; rlib-only artifact or an empty/no-handler cdylib is refused. Every feature-handler module invoked by dispatch must already exist and be implemented.",
         "max_builds": 1,
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
@@ -408,7 +463,7 @@
       "id": "ai.F01-T02",
       "requires": [
         "ai.F01-T01",
-        "ai.T-C02"
+        "ai.T-C02-STATE"
       ],
       "wave": 17,
       "status": "pending",
@@ -475,7 +530,7 @@
     {
       "id": "ai.F02-T01",
       "requires": [
-        "ai.T-C02",
+        "ai.T-C02-STATE",
         "ai.F01-T01"
       ],
       "wave": 17,
@@ -614,7 +669,7 @@
       "id": "ai.F06-T01",
       "requires": [
         "ai.T-C01",
-        "ai.T-C02"
+        "ai.T-C02-STATE"
       ],
       "wave": 17,
       "status": "pending",
@@ -678,7 +733,7 @@
       "id": "ai.F09-T01",
       "requires": [
         "ai.T-C01",
-        "ai.T-C02"
+        "ai.T-C02-STATE"
       ],
       "wave": 17,
       "status": "pending",
@@ -746,7 +801,7 @@
         "ai.T-C02",
         "ai.P-DEPLOYMENT"
       ],
-      "wave": 17,
+      "wave": 28,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -894,7 +949,7 @@
     {
       "id": "ai.F07-T01",
       "requires": [
-        "ai.T-C02",
+        "ai.T-C02-STATE",
         "ai.F01-T01",
         "ai.F02-T01"
       ],
@@ -972,7 +1027,7 @@
     {
       "id": "ai.F08-T01",
       "requires": [
-        "ai.T-C02",
+        "ai.T-C02-STATE",
         "ai.F01-T01",
         "ai.F02-T01",
         "ai.F03-T01"
@@ -1147,7 +1202,7 @@
       "id": "ai.F10-T01",
       "requires": [
         "ai.T-C01",
-        "ai.T-C02",
+        "ai.T-C02-STATE",
         "ai.F01-T01",
         "ai.F02-T01"
       ],
@@ -1389,7 +1444,7 @@
         "ai.F10-T01",
         "ai.T-C03"
       ],
-      "wave": 19,
+      "wave": 29,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -1573,7 +1628,7 @@
       "requires": [
         "ai.F10-T02"
       ],
-      "wave": 20,
+      "wave": 30,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -1637,7 +1692,7 @@
       "requires": [
         "ai.F10-T02"
       ],
-      "wave": 20,
+      "wave": 30,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -1701,7 +1756,7 @@
         "ai.F09-T01",
         "ai.F10-T03"
       ],
-      "wave": 21,
+      "wave": 31,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -1857,7 +1912,7 @@
       "requires": [
         "ai.F10-T03"
       ],
-      "wave": 21,
+      "wave": 31,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -1917,7 +1972,7 @@
       "requires": [
         "ai.F10-T03"
       ],
-      "wave": 21,
+      "wave": 31,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2186,7 +2241,7 @@
         "ai.F10-T03",
         "ai.F01-T03-EPOCH"
       ],
-      "wave": 24,
+      "wave": 31,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2249,7 +2304,7 @@
         "ai.F01-T04",
         "ai.P-REAL-SERVICES"
       ],
-      "wave": 25,
+      "wave": 32,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2389,7 +2444,7 @@
         "ai.F10-T03",
         "ai.P-REAL-SERVICES"
       ],
-      "wave": 26,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2524,7 +2579,7 @@
         "ai.F02-T03",
         "ai.F10-T02"
       ],
-      "wave": 26,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2588,7 +2643,7 @@
         "ai.F10-T02",
         "ai.F02-T03"
       ],
-      "wave": 26,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -2714,7 +2769,7 @@
         "ai.F04-T02",
         "ai.F10-T03"
       ],
-      "wave": 28,
+      "wave": 31,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -3025,7 +3080,7 @@
         "ai.F10-T03",
         "ai.P-REAL-SERVICES"
       ],
-      "wave": 30,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -3148,7 +3203,7 @@
         "ai.F06-T03",
         "ai.F02-T03"
       ],
-      "wave": 30,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -3192,7 +3247,7 @@
         "ai.T-C04",
         "ai.T-S04"
       ],
-      "wave": 31,
+      "wave": 34,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -3305,7 +3360,7 @@
         "ai.F09-T02",
         "ai.F02-T03"
       ],
-      "wave": 31,
+      "wave": 33,
       "status": "pending",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
@@ -3396,9 +3451,10 @@
         "ai.F01-T04-SERVICE",
         "ai.F10-T02-FULL",
         "60.8",
-        "113.16"
+        "113.16",
+        "ai.T-C02"
       ],
-      "wave": 40,
+      "wave": 43,
       "status": "pending",
       "task_kind": "release_gate",
       "spec": "spec/paxeer-x/spec.kvx",

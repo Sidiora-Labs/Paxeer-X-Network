@@ -5,6 +5,8 @@
 pub mod codec;
 pub mod dispatch;
 pub mod errors;
+pub mod host_adapter;
+pub mod state;
 pub mod types;
 
 pub use errors::{ApplicationError, CodecResult};
