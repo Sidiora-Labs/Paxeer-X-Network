@@ -6,6 +6,8 @@ pub mod codec;
 pub mod dispatch;
 pub mod errors;
 pub mod host_adapter;
+pub mod policy;
+pub mod registry;
 pub mod state;
 pub mod types;
 

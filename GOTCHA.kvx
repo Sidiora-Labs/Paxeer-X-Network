@@ -4904,3 +4904,7 @@ text = "Fresh full-repository graph initialization can consume the task time bud
 [gotcha.1049]
 date = "2026-10-08"
 text = "A Codify claim and work-open record do not set canonical task status to in_progress. Run cg spec start explicitly before qualification. A done preflight rejection for pending status executed no behavior gate; preserve the completed build and do not repeat it."
+
+[gotcha.1050]
+date = "2026-10-08"
+text = "Codify completion may outlast a bounded subprocess timeout after its behavior gate has passed. Retain separate verify and completion outcomes, publish an honest implemented checkpoint, and do not automatically repeat the unchanged gate or mark the task done."

@@ -21630,18 +21630,24 @@ feature = "F01"
 scenario = "CREATE at committed height1000 by owner A with valid prepared account, asset X and config1 results Registered, origin1000, revision1, no rewards and unchanged asset balances. B submitting the same owner A payload fails PrincipalMismatch with no record. A fresh CREATE at height1001 fails AlreadyCreated and origin remains1000."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A01"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [acceptance.AI.F01-A02]
 feature = "F01"
 scenario = "With origin1000, epoch0 ranges Work[1000,1064), Commit[1064,1080), Reveal[1080,1096), Settle[1096,1128). Epoch1 begins1128. Scheduling activation for epoch0 at height1001 fails ActivationTooEarly. Scheduling epoch1 succeeds. Advance at1127 fails because not Work; advance at1128 succeeds only if one worker, three independent evaluators, verified account and minimum funding exist. No phantom budget is booked for epoch0."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A02"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [acceptance.AI.F01-A03]
 feature = "F01"
 scenario = "At height1130 stage config2 effective_epoch2. Current epoch1 policy remains config1. At1256 open epoch2: atomically freeze config2 and clear pending. If minimum evaluator readiness fails, opening refuses and config1/pending2 remain unchanged. Cancel config2 before successful opening then stage config2 again fails VersionMismatch; next version is3."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A03"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [acceptance.AI.F01-A04]
 feature = "F01"
@@ -21678,6 +21684,8 @@ feature = "F01"
 scenario = "TaskPolicy workers33, evaluators9, tasks65, score_max999999, assessment_mode0 or3, nonzero reserved byte, zero rubric, embedding with zero dataset, or minimum funding above cap fails InvalidPolicy. Exact maxima32/8/64 and input/output16777216 are valid bounds. A 16385-byte F01 state fails before mutation. highest_config_version=18446744073709551615 refuses staging with ArithmeticOverflow."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A09"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [acceptance.AI.F01-A10]
 feature = "F01"
@@ -21720,6 +21728,8 @@ feature = "F01"
 scenario = "Policy1 has task_kind1/assessment_mode1 and serializes to307bytes. Changing only assessment_mode to2 produces a different policy digest; unknown0/3 refuses. Epoch1 freezes mode1: F09 evidence manifest/seal mode2 refuses binding with no sequence/state change; mode1 matching all other commitments can proceed only after explicit task-set seal. A later config2 may select mode2 for a future epoch, preserving epoch1's mode1 identity. Neither accepted mode produces an assertion of AI truth."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A16"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [acceptance.AI.F01-A17]
 feature = "F01"
@@ -21738,6 +21748,8 @@ feature = "F01"
 scenario = "Owner A creates with treasury absent: only A is an eligible F06 funding principal. CREATE with treasury T!=A and nonzero T records that immutable principal; T may later fund only through the real kind0 principal-funded F06 path. Presence2, presence1 followed by zero PrincipalId, treasury=A, absent presence followed by stray treasury bytes, or an attempted later treasury setter/rotation refuses. A full64-task state with both307byte policies, present treasury and four history headers is bounded by the16335byte worksheet; a serializer adding unbudgeted bytes beyond16384 refuses before writes/events/transfers. A treasury choice never changes owner or the immutable refund recipient."
 qualification = "UNRUN"
 contract = "ai-markets/features/F01-markets.kvx#acceptance.F01-A19"
+mandatory_full_integration_tasks = ["ai.T-C02"]
+integration_completion_rule = "The complete original scenario must genuinely pass the actual native host_boundary gate on compatible admitted producers before this case can be PASSED. Pure codec evidence does not qualify this case; qualification remains UNRUN."
 
 [feature.ai.F01]
 title = "Market and task-policy registry"
@@ -35007,21 +35019,21 @@ evidence = "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d
 
 [task.ai.F01-T01]
 title = "Define canonical market identity and task policy"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 16
 requires = ["ai.T-C01"]
 reqs = ["AI.F01-R001", "AI.F01-R002", "AI.F01-R003", "AI.F01-R004", "AI.F01-R005", "AI.F01-R006", "AI.F01-R007", "AI.F01-R008", "AI.F01-R009", "AI.F01-R010", "AI.F01-R011", "AI.F01-R012", "AI.F01-R025", "AI.F01-R029", "AI.F01-R032", "AI.F01-R033", "AI.F01-R034", "AI.F01-R035", "AI.F01-R038", "AI.F01-R039", "AI.F01-R045", "AI.CORE"]
 do_1 = "Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic."
-do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
+do_2 = "Create the owned registry/policy implementation and real market_policy_codec tests using the accepted production common types/codecs/hash and actual portable SDK derivation before qualification. Preserve every codec refusal/recovery/bound. Do not fabricate host, account registration, epoch, TaskBinding or finality producers; full runtime assertions remain in the explicit integration allocation."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
 manager = "FM-F01"
 worker_role = "Programs market lifecycle specialist"
 worker = "W-F01-T01"
-deliverables = ["Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
-touches = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs"]
+deliverables = ["Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success.", "All new codec acceptance records pass the unchanged single market_policy_codec gate with exact evidence; original full scenarios remain UNRUN."]
+entry_condition = "ai.T-C01 has exact passed evidence on compatible inputs and supplies real common codec/types/SHA-256 plus frozen error mapping. The three exact owned files and explicitly serialized lib.rs module-registration handoff are admitted on the claimed workspace/branch. This task qualifies pure canonical codecs/arithmetic and real portable SDK account derivation; it does not require or substitute unavailable host/funding/finality/epoch/evidence producers. Their unchanged assertions remain UNRUN in named integration tasks."
+touches = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 build_cmd = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec"
 gate_kind = "planned"
@@ -35032,8 +35044,8 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 2
-acceptance_cases = ["AI.F01-A01", "AI.F01-A02", "AI.F01-A03", "AI.F01-A09", "AI.F01-A16", "AI.F01-A19"]
-paths = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs"]
+acceptance_cases = ["AI.F01-CODEC-A01", "AI.F01-CODEC-A02", "AI.F01-CODEC-A03", "AI.F01-CODEC-A04", "AI.F01-CODEC-A05", "AI.F01-CODEC-A06", "AI.F01-CODEC-A07", "AI.F01-CODEC-A08", "AI.F01-CODEC-A09", "AI.F01-CODEC-A10", "AI.F01-CODEC-A11"]
+paths = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F01-POLICY"
 
 [task.ai.T-C02-STATE]
@@ -35093,9 +35105,10 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 2
-acceptance_cases = ["AI.CORE-A02"]
+acceptance_cases = ["AI.CORE-A02", "AI.F01-A01", "AI.F01-A02", "AI.F01-A03", "AI.F01-A09", "AI.F01-A16", "AI.F01-A19"]
 paths = ["programs/crates/layerx-programs-ai-market/tests/host_boundary.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock", "tests/programs/test_ai_host_boundary.c", "Makefile"]
 worker_role_id = "W-CORE-HOST"
+integration_obligations = "The unchanged complete AI.F01-A01/A02/A03/A09/A16/A19 scenarios are mandatory in this existing actual native host_boundary gate, including prepared account/asset binding, authenticated owner/height, funding, activation, policy administration, frozen assessment mode, task/evidence sealing, actual full-capacity serialization and every refusal/rollback/unchanged-balance assertion. Actual admitted producers and real native observations are required. Codec or partial producer evidence cannot pass any original full case; missing authority, producer, resource or complete witness keeps the full case UNRUN. Preserve AI.CORE-A02 and every existing native obligation; add no F01-T02 -> T-C03 dependency."
 
 [task.ai.T-S01]
 title = "Archive exact native state and restore historical proofs"
@@ -35259,7 +35272,7 @@ mode = "BUILD"
 wave = 17
 requires = ["ai.T-C01", "ai.T-C02-STATE"]
 reqs = ["AI.F09-R01", "AI.F09-R02", "AI.F09-R03", "AI.F09-R04", "AI.F09-R05", "AI.F09-R06", "AI.F09-R17", "AI.F09-R18", "AI.F09-R27", "AI.CORE"]
-do_1 = "Implement strict bounded manifest/publisher/evidence codecs, domain-separated roots, exact context binding and bounded chunk proofs with canonical privacy/authority enums."
+do_1 = "Implement exact bounded artifact, manifest, evidence and proof codecs with real production types, mathematical hashes and Ed25519 verification, preserving all original bounds, authority/context fields and strict refusal rules. Qualify only AI.F09-A26..A33 in the unchanged artifact_contract focused gate. Every original full publication/resolution/quota/economic-state/finality/minimal-proof scenario remains mandatory unchanged in ai.F10-T02-FULL; pure codecs do not qualify those scenarios."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -35267,7 +35280,7 @@ manager = "FM-F09"
 worker_role = "artifact security and provenance specialist"
 worker = "W-F09-T01"
 deliverables = ["Implement strict bounded manifest/publisher/evidence codecs, domain-separated roots, exact context binding and bounded chunk proofs with canonical privacy/authority enums.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_contract", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
+entry_condition = "All existing requires tasks have exact passed evidence on compatible inputs; exact owned paths and actual common/state codec interfaces are admitted. The focused artifact_contract task requires real canonical types, hashes and cryptography. Complete live artifact-service, protocol-state, authority, durable-capacity and finalized-producer obligations remain UNRUN in ai.F10-T02-FULL; no local authority table or metadata-only substitute is admitted."
 touches = ["programs/crates/layerx-programs-ai-market/src/evidence.rs", "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_contract"
@@ -35279,7 +35292,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 3
-acceptance_cases = ["AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A20", "AI.F09-A22"]
+acceptance_cases = ["AI.F09-A26", "AI.F09-A27", "AI.F09-A28", "AI.F09-A29", "AI.F09-A30", "AI.F09-A31", "AI.F09-A32", "AI.F09-A33"]
 paths = ["programs/crates/layerx-programs-ai-market/src/evidence.rs", "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"]
 worker_role_id = "W-F09-CODEC"
 
@@ -35352,7 +35365,7 @@ mode = "BUILD"
 wave = 18
 requires = ["ai.T-C01", "ai.F03-T01"]
 reqs = ["AI.F04-R03", "AI.F04-R04", "AI.F04-R08", "AI.F04-R10", "AI.F04-R11", "AI.CORE"]
-do_1 = "Implement exact domain-separated report/salt commitment, strict canonical report fields, nonzero 32-byte external salt and bounded signature/hash work; reject empty reports while retaining explicit zero votes."
+do_1 = "Implement exact bounded canonical commitment/report binding and operation framing against common/F03 types: pure preimages, SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. Runtime SDK cryptography, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with their original assertions intact."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -35360,7 +35373,7 @@ manager = "FM-F04"
 worker_role = "commitment and recovery specialist"
 worker = "W-F04-T01"
 deliverables = ["Implement exact domain-separated report/salt commitment, strict canonical report fields, nonzero 32-byte external salt and bounded signature/hash work; reject empty reports while retaining explicit zero votes.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
+entry_condition = "All existing requires tasks have exact passed evidence on compatible inputs; the exact owned paths and actual common/F03 types and codecs are admitted. This focused task qualifies pure canonical framing, checked bounds and mathematical SHA256 vectors. Runtime SDK cryptography, authenticated host admission, live state/replay/windows, OS-CSPRNG persistence and finality remain mandatory unchanged downstream integration obligations and stay UNRUN until their actual evidence exists."
 touches = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical"
@@ -35372,7 +35385,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 4
-acceptance_cases = ["AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A07", "AI.F04-A10"]
+acceptance_cases = ["AI.F04-CODEC-C01", "AI.F04-CODEC-C02", "AI.F04-CODEC-C03", "AI.F04-CODEC-C04", "AI.F04-CODEC-C05", "AI.F04-CODEC-C06", "AI.F04-CODEC-C07", "AI.F04-CODEC-C08", "AI.F04-CODEC-C09", "AI.F04-CODEC-C10"]
 paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"]
 worker_role_id = "W-F04-COMMITMENT"
 
@@ -35910,7 +35923,7 @@ mode = "BUILD"
 wave = 23
 requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02"]
 reqs = ["AI.F01-R015", "AI.F01-R020", "AI.F01-R027", "AI.F01-R028", "AI.F01-R029", "AI.F01-R030", "AI.F01-R036", "AI.F01-R037", "AI.CORE"]
-do_1 = "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers."
+do_1 = "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers. A10 overflow witness uses actual checked OpenEpoch arithmetic and refuses T+128 overflow without mutation. Its recorded producer result can be consumed by T02; do not rerun its gate or write another F01 implementation."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -35930,7 +35943,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 9
-acceptance_cases = ["AI.F01-A02", "AI.F01-A03", "AI.F01-A04"]
+acceptance_cases = ["AI.F01-A02", "AI.F01-A03", "AI.F01-A04", "AI.F04-A10"]
 paths = ["programs/crates/layerx-programs-ai-market/src/epoch.rs", "programs/crates/layerx-programs-ai-market/tests/market_epoch_open.rs"]
 worker_role_id = "W-F01-EPOCH"
 
@@ -36189,7 +36202,7 @@ mode = "BUILD"
 wave = 27
 requires = ["ai.F04-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]
 reqs = ["AI.F04-R01", "AI.F04-R02", "AI.F04-R05", "AI.F04-R06", "AI.F04-R07", "AI.F04-R08", "AI.F04-R10", "AI.F04-R11", "AI.CORE"]
-do_1 = "Implement one immutable commitment and one atomic reveal/admitted F03 row through real Programs dispatch; authenticate half-open heights, replay/expiry, versions/live revocation and concurrent first-write order; emit exact 194/228-byte events once."
+do_1 = "Implement one immutable commitment and one atomic reveal/admitted F03 row through real Programs dispatch; authenticate half-open heights, replay/expiry, versions/live revocation and concurrent first-write order; emit exact 194/228-byte events once. Retain all current original acceptance references and add AI.F04-A07. Require all A01/A02/A03/A04/A05/A08 host/window/state/retry/concurrency assertions; A06 reveal refusal and admitted-only output; A07 empty refusal and exact zero admission; A10 actual max-size admission,33-entry no mutation, currentreports/whole-state cap rollback and overflow fixture through real F01; A11 late reveal refusal; A12 next-epoch frozen versions/immediate revocation/epoch replay. Require production SDK hash vector and signature checks including host/context failures and preserved row/sequence/revision. No F05 final seal substitute."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36209,7 +36222,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 13
-acceptance_cases = ["AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A08", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12"]
+acceptance_cases = ["AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A08", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12", "AI.F04-A07"]
 paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal.rs", "programs/crates/layerx-programs-ai-market/tests/f04_windows.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F04-WINDOWS"
 
@@ -36220,7 +36233,7 @@ mode = "BUILD"
 wave = 31
 requires = ["ai.F04-T02", "ai.F10-T03"]
 reqs = ["AI.F04-R05", "AI.F04-R06", "AI.F04-R09", "AI.CORE"]
-do_1 = "Persist report/salt before submit and reconcile original finalized commit/reveal receipt/state after crashes and dropped responses; preserve epoch binding and irrevocable sealed exclusion cutpoint."
+do_1 = "Persist report/salt before submit and reconcile original finalized commit/reveal receipt/state after crashes and dropped responses; preserve epoch binding and irrevocable sealed exclusion cutpoint. Retain original A09/A12 references as feature obligations; task-local A12 recovery witness covers real next-epoch binding and historical-retry no recreation after actual rollover. Preserve first accepted/reveal heights and immutable C, exact expiry-limited replay, finalized crash/dropped-response reconciliation and missing-salt refusal. Add mandatory real OS-CSPRNG/per-report salt/persist-before-send client assertions; client implementation remains FM-F10-owned. Sealed exclusion witness is completed in F03-T04, never fake an F05 seal here."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36251,7 +36264,7 @@ mode = "BUILD"
 wave = 28
 requires = ["ai.F05-T02", "ai.F06-T02", "ai.F07-T01", "ai.F04-T02", "ai.F01-T03-EPOCH"]
 reqs = ["AI.F05-R02", "AI.F05-R04", "AI.F05-R05", "AI.F05-R06", "AI.F05-R09", "AI.F05-R10", "AI.F05-R11", "AI.F05-R12", "AI.F05-R13", "AI.CORE"]
-do_1 = "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access."
+do_1 = "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access. Add mandatory original AI.F04-A06/A07/A11 and A12 rollover/aggregation-consumer assertions. Consume actual admitted F04 rows: missing/expired/refused remain no vote, explicitzero is a vote, two of eight reveals supply exactlytwo rows, stable eligible set after reveal_end without expiry maintenance, quorum handled only by F05; no reward/slash from F04 event. Test actual seal/output not a locally invented eligible vector."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36271,7 +36284,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 14
-acceptance_cases = ["AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A18"]
+acceptance_cases = ["AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A18", "AI.F04-A06", "AI.F04-A07", "AI.F04-A11", "AI.F04-A12"]
 paths = ["programs/crates/layerx-programs-ai-market/src/aggregation.rs", "programs/tests/ai-market/run-aggregation-runtime.sh"]
 worker_role_id = "W-F05-FINALIZATION"
 
@@ -36282,7 +36295,7 @@ mode = "BUILD"
 wave = 29
 requires = ["ai.F03-T03", "ai.F05-T03", "ai.T-C03"]
 reqs = ["AI.F03-R11", "AI.F03-R29", "AI.F03-R30", "AI.F03-R31", "AI.F03-R36", "AI.F03-R37", "AI.F03-R38", "AI.F03-R41", "AI.F03-R42", "AI.CORE"]
-do_1 = "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs."
+do_1 = "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs. Add mandatory original AI.F04-A12 revocation/seal assertions unchanged: preseal excludes while retaining acceptance history, postseal leaves sealed set unchanged. Actual interpreter/native adapter and F05 seal implementation, already required by this task. Consume T02 admission evidence without rerunning its passed gate."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36302,7 +36315,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 15
-acceptance_cases = ["AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16"]
+acceptance_cases = ["AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16", "AI.F04-A12"]
 paths = ["programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs"]
 worker_role_id = "W-F03-HOST"
 
@@ -36528,9 +36541,9 @@ title = "Integrate complete finalized market projections"
 status = "pending"
 mode = "BUILD"
 wave = 33
-requires = ["ai.F10-T02", "ai.F03-T04", "ai.F05-T03", "ai.F06-T03", "ai.F07-T02", "ai.F08-T03", "ai.F09-T02", "ai.F02-T03"]
-reqs = ["AI.F10-R001", "AI.F10-R004", "AI.F10-R008", "AI.F10-R009", "AI.F10-R010", "AI.F10-R015", "AI.F10-R016", "AI.F10-R017", "AI.F10-R021", "AI.F10-R023", "AI.F10-R025", "AI.F10-R027", "AI.F10-R028", "AI.F10-R030", "AI.F10-R031", "AI.F10-R032", "AI.F10-R033", "AI.F10-R034", "AI.CORE"]
-do_1 = "Integrate real report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into exact coherent finalized snapshots; preserve zero versus absent, durable outbox, historical identity, conflict quarantine and feature availability."
+requires = ["ai.F10-T02", "ai.F03-T04", "ai.F05-T03", "ai.F06-T03", "ai.F07-T02", "ai.F08-T03", "ai.F09-T02", "ai.F02-T03", "ai.F09-T03", "ai.F09-T04"]
+reqs = ["AI.F10-R001", "AI.F10-R004", "AI.F10-R008", "AI.F10-R009", "AI.F10-R010", "AI.F10-R015", "AI.F10-R016", "AI.F10-R017", "AI.F10-R021", "AI.F10-R023", "AI.F10-R025", "AI.F10-R027", "AI.F10-R028", "AI.F10-R030", "AI.F10-R031", "AI.F10-R032", "AI.F10-R033", "AI.F10-R034", "AI.CORE", "AI.F09-R03", "AI.F09-R04", "AI.F09-R05", "AI.F09-R06", "AI.F09-R09", "AI.F09-R10", "AI.F09-R11", "AI.F09-R14", "AI.F09-R17", "AI.F09-R18", "AI.F09-R19", "AI.F09-R20", "AI.F09-R24", "AI.F09-R27"]
+do_1 = "Integrate real report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into exact coherent finalized snapshots; preserve zero versus absent, durable outbox, historical identity, conflict quarantine and feature availability. Run the unchanged complete F09-A01,A02,A03,A04,A05,A06,A20,A22 scenarios through the actual admitted artifact service, real owning Program/state and authenticated F02/F03/F10 finalized producers. Assert all publication, resolution, corruption quarantine, quota, root immutability, unchanged economic/application state and minimal-proof/coverage distinctions. Consume passed producer evidence without rerunning their task gates. Fail closed on unavailable producer, authority, durable capacity or finality; no metadata-only substitute qualifies a complete original scenario. Every verbatim scenario runs fully through the actual integrated fixture in this gate. Existing producer evidence is a prerequisite, not a substitute for any full-scenario assertion. Originals stay UNRUN until their exact scenario evidence exists. Missing quota/capacity for the32GiB boundary is BLOCKED, never skipped, reduced or marked passed."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36550,7 +36563,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 17
-acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15"]
+acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15", "AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A20", "AI.F09-A22"]
 paths = ["platform/hosted/indexer/tests/ai_snapshot_projection.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs"]
 worker_role_id = "W-F10-PROJECTION"
 
@@ -36756,7 +36769,7 @@ mode = "RELEASE"
 wave = 43
 requires = ["ai.F01-T03-CLOSE", "ai.F02-T04", "ai.F03-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F08-T03", "ai.F09-T04", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.T-S04", "ai.F01-T04-SERVICE", "ai.F10-T02-FULL", "60.8", "113.16", "ai.T-C02"]
 reqs = ["AI.OPERATIONS"]
-do_1 = "Bind one merged source/artifact/configuration/authority/state manifest and implement a single release dispatcher selector covering every declared system journey, actual service dependencies, funded account/finality/native storage continuity and release matrices; consume unchanged task evidence and run release-only aggregate gates once per identified candidate."
+do_1 = "Bind one merged source/artifact/configuration/authority/state manifest and implement a single release dispatcher selector covering every declared system journey, actual service dependencies, funded account/finality/native storage continuity and release matrices; consume unchanged task evidence and run release-only aggregate gates once per identified candidate. Original AI.F04-A01..A12 remain UNRUN until all assigned compatible mandatory real evidence completes each entire unchanged scenario. Consume records via existing declared dependencies; no release approval from codec acceptance alone or waived missing runtime producer. A global original case may remain UNRUN while a bounded codec task passes its new local cases."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Validate the declared candidate/evidence selector once; do not repeat unchanged passed gates or infer deployment/publication authority from this plan."
@@ -36776,7 +36789,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 18
-acceptance_cases = ["AI.RELEASE-A01"]
+acceptance_cases = ["AI.RELEASE-A01", "AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A07", "AI.F04-A08", "AI.F04-A09", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12"]
 paths = ["tools/paxeer-x/ai_release.py", "tools/paxeer-x/tests/ai_release_test.py", "spec/paxeer-x/ai-markets/evidence/release-candidate.kvx"]
 worker_role_id = "W-OPERATIONS-RELEASE"
 
@@ -44007,4 +44020,275 @@ title = "Bounded shared-state codec"
 criteria = "Pure production state codec roundtrips exact canonical bytes and refuses malformed/trailing/overflow inputs, enforces each declared section cap and <=196608 total bytes including framing, and preserves bounded replay transitions. Concrete host adapter compiles for Wasm. This case proves no native host execution, authenticated context, capabilities, crypto, events, storage commit, replay witness, capacity or rollback."
 qualification = "UNRUN"
 evidence = "ee3148237882b732a29ff7c2dca5fb64daabfcd6+source:1200b9f88ff487ece3da8e622ee38d8595abb752aad8b91a2ecc828024afb6ff | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test state_contract | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm1/state-qualification-repair-01.log"
+
+[acceptance.AI.F01-CODEC-A01]
+feature = "F01"
+scenario = "Actual registry/policy encoders and decoders consume the accepted common distinct ID/Digest/Amount types and strict bounded Reader/Writer; all integers are unsigned fixed-width big-endian, bytes are raw, booleans are exactly0/1, optionals use exactly0/1 presence and unknown trailing bytes refuse. Every truncated prefix of each supported canonical record refuses; extra bytes, invalid bool/presence, unknown enum, nonzero reserved byte and any zero required identifier/digest refuse with the frozen typed error. No floating-point, arbitrary strings, raw artifacts or JSON preimages exist in these records. ID comparisons and digest equality inspect all32bytes; values differing only in the final byte remain distinct."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R007", "AI.F01-R009", "AI.F01-R010", "AI.CORE"]
+criteria = ["Actual registry/policy encoders and decoders consume the accepted common distinct ID/Digest/Amount types and strict bounded Reader/Writer; all integers are unsigned fixed-width big-endian, bytes are raw, booleans are exactly0/1, optionals use exactly0/1 presence and unknown trailing bytes refuse.", "Every truncated prefix of each supported canonical record refuses; extra bytes, invalid bool/presence, unknown enum, nonzero reserved byte and any zero required identifier/digest refuse with the frozen typed error. No floating-point, arbitrary strings, raw artifacts or JSON preimages exist in these records.", "ID comparisons and digest equality inspect all32bytes; values differing only in the final byte remain distinct."]
+
+[acceptance.AI.F01-CODEC-A02]
+feature = "F01"
+scenario = "MarketId derives from SHA256(ASCII PAXAI/market/v1 ||00||deployment_chain_domain32||program32) through the accepted real SHA-256 implementation. Known canonical vectors match; changing either domain or Program changes the vector; identical Program/domain remains stable across policy metadata/code-version input changes because those are absent from this preimage. A decoded header checks schema1, exact derived identity, nonzero IDs, lifecycle1..5, nonzero revision/config versions and active_config<=highest_config. Zero-derived identity is refused without adding a retry salt. Header round trips preserve every R009 field exactly, including origin, immutable funding/refund/owner identities, schedule, closure journal, digests and reserved8zero. Registered/origin1000/revision1 is a codec vector, never evidence of successful CREATE. activation_scheduled=false requires activation_epoch0; close_phase0 requires closure_requested_at0 and close_cursor0. Valid absence fields use the specified zero representation. Unknown lifecycle/close-phase values refuse; codec restore preserves Closed tombstones and cannot manufacture a lifecycle transition."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R001", "AI.F01-R005", "AI.F01-R008", "AI.F01-R009"]
+criteria = ["MarketId derives from SHA256(ASCII PAXAI/market/v1 ||00||deployment_chain_domain32||program32) through the accepted real SHA-256 implementation. Known canonical vectors match; changing either domain or Program changes the vector; identical Program/domain remains stable across policy metadata/code-version input changes because those are absent from this preimage.", "A decoded header checks schema1, exact derived identity, nonzero IDs, lifecycle1..5, nonzero revision/config versions and active_config<=highest_config. Zero-derived identity is refused without adding a retry salt.", "Header round trips preserve every R009 field exactly, including origin, immutable funding/refund/owner identities, schedule, closure journal, digests and reserved8zero. Registered/origin1000/revision1 is a codec vector, never evidence of successful CREATE.", "activation_scheduled=false requires activation_epoch0; close_phase0 requires closure_requested_at0 and close_cursor0. Valid absence fields use the specified zero representation. Unknown lifecycle/close-phase values refuse; codec restore preserves Closed tombstones and cannot manufacture a lifecycle transition."]
+
+[acceptance.AI.F01-CODEC-A03]
+feature = "F01"
+scenario = "Treasury optional appears immediately after refund_recipient_account32. Absent encodes exactly one zero byte; present encodes one byte1 and exactly32 principal bytes. Header totals are384bytes absent and416bytes present; the remainder shifts by exactly32bytes. Presence2, truncated present principal, present zero principal, present owner principal, absent presence plus stray treasury bytes, and trailing bytes refuse. Valid T!=owner round trips unchanged and does not change owner/refund recipient. Codec data model contains the immutable creation-time optional choice only; a codec round trip supplies no treasury policy setter, funding authority or rotation operation."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R009", "AI.F01-R006", "AI.CORE"]
+criteria = ["Treasury optional appears immediately after refund_recipient_account32. Absent encodes exactly one zero byte; present encodes one byte1 and exactly32 principal bytes. Header totals are384bytes absent and416bytes present; the remainder shifts by exactly32bytes.", "Presence2, truncated present principal, present zero principal, present owner principal, absent presence plus stray treasury bytes, and trailing bytes refuse. Valid T!=owner round trips unchanged and does not change owner/refund recipient.", "Codec data model contains the immutable creation-time optional choice only; a codec round trip supplies no treasury policy setter, funding authority or rotation operation."]
+
+[acceptance.AI.F01-CODEC-A04]
+feature = "F01"
+scenario = "Actual TaskPolicyV1 serializes to exactly307bytes in the canonical R010 order recorded with offsets in admission.json. config_version starts offset0, task_kind8, assessment_mode9, seven digests10..233, remaining bounded numeric fields234..290 and reserved16 at291..306. task_kind is1/2/3 only; assessment_mode1/2 only. Version0, task_kind0/4/255, assessment_mode0/3/255, length306/308, all shorter prefixes, trailing bytes and any nonzero reserved byte refuse. Policy digest is SHA256(ASCII PAXAI/policy/v1 ||00||exact307bytes), including mode and reservedzero bytes. Known vectors use actual production hashing and canonical records. Changing only mode1to2 changes digest. A changed required artifact commitment changes the digest. Neither accepted task kind nor assessment mode encodes proof of model execution or semantic truth; modes classify the approved procedure."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R002", "AI.F01-R007", "AI.F01-R010", "AI.F01-R029"]
+criteria = ["Actual TaskPolicyV1 serializes to exactly307bytes in the canonical R010 order recorded with offsets in admission.json. config_version starts offset0, task_kind8, assessment_mode9, seven digests10..233, remaining bounded numeric fields234..290 and reserved16 at291..306.", "task_kind is1/2/3 only; assessment_mode1/2 only. Version0, task_kind0/4/255, assessment_mode0/3/255, length306/308, all shorter prefixes, trailing bytes and any nonzero reserved byte refuse.", "Policy digest is SHA256(ASCII PAXAI/policy/v1 ||00||exact307bytes), including mode and reservedzero bytes. Known vectors use actual production hashing and canonical records. Changing only mode1to2 changes digest. A changed required artifact commitment changes the digest.", "Neither accepted task kind nor assessment mode encodes proof of model execution or semantic truth; modes classify the approved procedure."]
+
+[acceptance.AI.F01-CODEC-A05]
+feature = "F01"
+scenario = "Reject max_workers0/33/255; accept1/32. Reject max_evaluators0/9/255 and any policy unable to satisfy minimum_evaluator_count>=3 and <=max_evaluators; accept3/8 with matching valid minima. Reject max_tasks0/65/65535; accept1/64. Reject max_input_bytes/max_output_bytes0/16777217/u32MAX; accept1/16777216. Reject timeout0/65/u16MAX; accept1/64. Reject minimum_worker_count0 or above max_workers; accept1/max_workers. Reject minimum_evaluator_count0/1/2 or above max_evaluators; accept3/max_evaluators. Reject score_min!=0, including1/u32MAX; reject score_max!=1000000, including999999/1000001/u32MAX. Reject owner_affiliation_policy0/2/255 and nonzero reserved16 byte. Reject zero epoch_budget_cap; reject zero minimum_epoch_funding or minimum_epoch_funding>cap; accept minimum1/cap and exact u128 maxima when otherwise valid. No decimal rescaling, float, saturation or wrap is permitted. Reject zero model/benchmark/rubric/task-schema/result-schema/service-terms digest independently, including zero rubric explicitly listed in A09. Reject zero dataset for embedding and training_evaluation. An inference zero-dataset vector can establish only syntactic admission; the rubric's explicit no-dataset declaration remains an external artifact validation obligation. The original A09 negatives workers33/evaluators9/tasks65/score_max999999/mode0or3/nonzeroreserved/zerorubric/embeddingzerodataset/minimumfundingabovecap all return InvalidPolicy through the actual production validator. Default bounded values are modeOBJECTIVE, workers32, evaluators8, tasks64, input/output1048576, timeout32, minimumworkers1 and minimumevaluators3. Required commitments and exact budget parameters remain explicit valid inputs; no placeholder policy is invented."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R010", "AI.F01-R011"]
+criteria = ["Reject max_workers0/33/255; accept1/32. Reject max_evaluators0/9/255 and any policy unable to satisfy minimum_evaluator_count>=3 and <=max_evaluators; accept3/8 with matching valid minima. Reject max_tasks0/65/65535; accept1/64.", "Reject max_input_bytes/max_output_bytes0/16777217/u32MAX; accept1/16777216. Reject timeout0/65/u16MAX; accept1/64.", "Reject minimum_worker_count0 or above max_workers; accept1/max_workers. Reject minimum_evaluator_count0/1/2 or above max_evaluators; accept3/max_evaluators.", "Reject score_min!=0, including1/u32MAX; reject score_max!=1000000, including999999/1000001/u32MAX. Reject owner_affiliation_policy0/2/255 and nonzero reserved16 byte.", "Reject zero epoch_budget_cap; reject zero minimum_epoch_funding or minimum_epoch_funding>cap; accept minimum1/cap and exact u128 maxima when otherwise valid. No decimal rescaling, float, saturation or wrap is permitted.", "Reject zero model/benchmark/rubric/task-schema/result-schema/service-terms digest independently, including zero rubric explicitly listed in A09. Reject zero dataset for embedding and training_evaluation. An inference zero-dataset vector can establish only syntactic admission; the rubric's explicit no-dataset declaration remains an external artifact validation obligation.", "The original A09 negatives workers33/evaluators9/tasks65/score_max999999/mode0or3/nonzeroreserved/zerorubric/embeddingzerodataset/minimumfundingabovecap all return InvalidPolicy through the actual production validator.", "Default bounded values are modeOBJECTIVE, workers32, evaluators8, tasks64, input/output1048576, timeout32, minimumworkers1 and minimumevaluators3. Required commitments and exact budget parameters remain explicit valid inputs; no placeholder policy is invented."]
+
+[acceptance.AI.F01-CODEC-A06]
+feature = "F01"
+scenario = "PendingPolicy is exactly379bytes: policy307,digest32,effective_epoch8,proposer32. Decoding validates its policy and exact digest; rejects zero proposer, mismatched digest, malformed presence or extra bytes. A representation admits at most current plus one pending policy. PolicyHistoryHeader is49bytes: version8,digest32,effective_epoch8,disposition1. Disposition1activated/2cancelled only, versions positive/ascending/duplicate-free, at most4 recent headers. Reject unknown dispositions, duplicate/reversed/inconsistent completed ordering and inconsistent pending/version bounds. Initial history root uses exactly H(PAXAI/policy-history/v1,empty). Fold uses previous_root32,disposition:u8,version:u64,digest32,effective_epoch:u64 in the normative hash order, with known real SHA-256 vectors. Initial policy1 activated/effective_epoch0 is representable without an opened epoch. Round trip current and pending records preserves independent policy bytes/digests/config versions and immutable history roots. Codec operations do not apply a pending policy, cancel one or consume a configuration version."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R012", "AI.F01-R029"]
+criteria = ["PendingPolicy is exactly379bytes: policy307,digest32,effective_epoch8,proposer32. Decoding validates its policy and exact digest; rejects zero proposer, mismatched digest, malformed presence or extra bytes. A representation admits at most current plus one pending policy.", "PolicyHistoryHeader is49bytes: version8,digest32,effective_epoch8,disposition1. Disposition1activated/2cancelled only, versions positive/ascending/duplicate-free, at most4 recent headers. Reject unknown dispositions, duplicate/reversed/inconsistent completed ordering and inconsistent pending/version bounds.", "Initial history root uses exactly H(PAXAI/policy-history/v1,empty). Fold uses previous_root32,disposition:u8,version:u64,digest32,effective_epoch:u64 in the normative hash order, with known real SHA-256 vectors. Initial policy1 activated/effective_epoch0 is representable without an opened epoch.", "Round trip current and pending records preserves independent policy bytes/digests/config versions and immutable history roots. Codec operations do not apply a pending policy, cancel one or consume a configuration version."]
+
+[acceptance.AI.F01-CODEC-A07]
+feature = "F01"
+scenario = "Actual checked version-successor arithmetic returns2from1 and u64MAXfromu64MAX-1; highest=u64MAX returns ArithmeticOverflow. No wrap, reuse or saturating value is returned. Revision/config/height/size computations used by owned codecs and arithmetic helpers use checked integer operations. Overflow refuses without partially updating any caller-visible owned record; ownership/state mutation is outside these helpers. The highest_config_version=u64MAX staging operation itself remains a separate real lifecycle clause; the arithmetic helper result does not mark that operation qualified."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R008", "AI.F01-R029"]
+criteria = ["Actual checked version-successor arithmetic returns2from1 and u64MAXfromu64MAX-1; highest=u64MAX returns ArithmeticOverflow. No wrap, reuse or saturating value is returned.", "Revision/config/height/size computations used by owned codecs and arithmetic helpers use checked integer operations. Overflow refuses without partially updating any caller-visible owned record; ownership/state mutation is outside these helpers.", "The highest_config_version=u64MAX staging operation itself remains a separate real lifecycle clause; the arithmetic helper result does not mark that operation qualified."]
+
+[acceptance.AI.F01-CODEC-A08]
+feature = "F01"
+scenario = "Pure clock/window helpers use checked height-origin, epoch*128, origin+product and endpoints+64/+80/+96/+128; h<origin and any unrepresentable endpoint refuse. Only clock floor/modulus divides; no wall clock or external finality assertion enters the helper. Origin1000 produces epoch0 Work[1000,1064), Commit[1064,1080), Reveal[1080,1096), Settle[1096,1128), epoch1start1128 and epoch2start1256. Positions63/64/79/80/95/96/127/128 satisfy exactly the half-open transitions. Vectors include origin0, origin1000, height0/u64MAX, multiplication/addition/subtraction overflow, and representable height with unrepresentable scheduled epoch end. Future-epoch increment overflow refuses. No codec/arithmetic call opens an epoch, books a budget, authenticates caller height or claims finalized execution."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R029", "AI.F01-R038", "AI.CORE"]
+criteria = ["Pure clock/window helpers use checked height-origin, epoch*128, origin+product and endpoints+64/+80/+96/+128; h<origin and any unrepresentable endpoint refuse. Only clock floor/modulus divides; no wall clock or external finality assertion enters the helper.", "Origin1000 produces epoch0 Work[1000,1064), Commit[1064,1080), Reveal[1080,1096), Settle[1096,1128), epoch1start1128 and epoch2start1256. Positions63/64/79/80/95/96/127/128 satisfy exactly the half-open transitions.", "Vectors include origin0, origin1000, height0/u64MAX, multiplication/addition/subtraction overflow, and representable height with unrepresentable scheduled epoch end. Future-epoch increment overflow refuses.", "No codec/arithmetic call opens an epoch, books a budget, authenticates caller height or claims finalized execution."]
+
+[acceptance.AI.F01-CODEC-A09]
+feature = "F01"
+scenario = "Use actual portable SDK PreparedProgramAccount::new(program,b\"paxai/rewards/v1\",asset), seed16bytes, to validate the derived rewards AccountId for a canonical funding binding; do not reimplement native derivation. A mismatched supplied rewards account refuses. Funding AssetId, derived rewards AccountId, owner and refund recipient are preserved in header round trips; distinct SDK/application identity types cross only checked constructors/bytes conversions. Derivation is not registration evidence. Codec tests must not claim asset existence, registry-bound readiness, native grants, sight balances, custody, deposits or transfer rollback."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R006", "AI.F01-R009", "AI.CORE"]
+criteria = ["Use actual portable SDK PreparedProgramAccount::new(program,b\"paxai/rewards/v1\",asset), seed16bytes, to validate the derived rewards AccountId for a canonical funding binding; do not reimplement native derivation. A mismatched supplied rewards account refuses.", "Funding AssetId, derived rewards AccountId, owner and refund recipient are preserved in header round trips; distinct SDK/application identity types cross only checked constructors/bytes conversions.", "Derivation is not registration evidence. Codec tests must not claim asset existence, registry-bound readiness, native grants, sight balances, custody, deposits or transfer rollback."]
+
+[acceptance.AI.F01-CODEC-A10]
+feature = "F01"
+scenario = "Measure actual owned maximum encodings: header416, operatorgrant50, currentpolicy307, pendingpolicy379 and fourhistoryheaders196. OperatorGrant validates principal32,permissions1..3,nonzerograntsequence,canonicalrevokedbool,reserved8zero. Framing/presence/counts and roots remain explicit bounded bytes. Worksheet is header416+operator50+policies686+history196+historyroot32+taskcount2+tasksetpresence/root33+pendingpresence1+operatorpresence1+historycount2+sectionframing4=1423 non-task bytes.64*233=14912; combined16335<=16384; headroom49. Checked size arithmetic must reject overflow and any requested F01 length16385. Owned codec output-buffer exhaustion and over-limit framing refuse before returning a successful encoded record. No dropping roots, authority fields, history or reducing64-task capacity can make the worksheet pass. Only implemented owned encodings and exact arithmetic are qualified here. Measurement of the actual full64-task shared-state serializer and no-writes/events/transfers on its refusal is reserved to the existing T04 integration clause; no synthetic TaskBinding stand-in satisfies it. The total196608 framing/native occupancy obligations remain CORE/storage/release-owned."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R009", "AI.F01-R012", "AI.F01-R034", "AI.F01-R035"]
+criteria = ["Measure actual owned maximum encodings: header416, operatorgrant50, currentpolicy307, pendingpolicy379 and fourhistoryheaders196. OperatorGrant validates principal32,permissions1..3,nonzerograntsequence,canonicalrevokedbool,reserved8zero. Framing/presence/counts and roots remain explicit bounded bytes.", "Worksheet is header416+operator50+policies686+history196+historyroot32+taskcount2+tasksetpresence/root33+pendingpresence1+operatorpresence1+historycount2+sectionframing4=1423 non-task bytes.64*233=14912; combined16335<=16384; headroom49. Checked size arithmetic must reject overflow and any requested F01 length16385.", "Owned codec output-buffer exhaustion and over-limit framing refuse before returning a successful encoded record. No dropping roots, authority fields, history or reducing64-task capacity can make the worksheet pass.", "Only implemented owned encodings and exact arithmetic are qualified here. Measurement of the actual full64-task shared-state serializer and no-writes/events/transfers on its refusal is reserved to the existing T04 integration clause; no synthetic TaskBinding stand-in satisfies it. The total196608 framing/native occupancy obligations remain CORE/storage/release-owned."]
+
+[acceptance.AI.F01-CODEC-A11]
+feature = "F01"
+scenario = "Actual codec/arithmetic errors use the accepted frozen common/F01 numeric mapping, not Rust discriminant inference. Invalid encoding/policy, derived identity mismatch, bounds refusal and arithmetic overflow remain refusals; no fallback converts failure to success. Canonical records contain fixed public commitments and bounded integers only; no raw prompts, model weights, datasets, credentials, URIs or mutable hidden policy defaults. Schema evolution/unknown fields refuse rather than silently default. Restoring an encoded header/policy preserves market/origin/version/tombstone and authority fields exactly; this is a codec invariant, not proof of an authorized upgrade or migration. The immutable upgrade/trust and continuous-operation release requirements remain unchanged and UNRUN."
+qualification = "UNRUN"
+task = "ai.F01-T01"
+kind = "pure_codec_and_checked_arithmetic"
+reqs = ["AI.F01-R025", "AI.F01-R032", "AI.F01-R033", "AI.F01-R039", "AI.F01-R045", "AI.CORE"]
+criteria = ["Actual codec/arithmetic errors use the accepted frozen common/F01 numeric mapping, not Rust discriminant inference. Invalid encoding/policy, derived identity mismatch, bounds refusal and arithmetic overflow remain refusals; no fallback converts failure to success.", "Canonical records contain fixed public commitments and bounded integers only; no raw prompts, model weights, datasets, credentials, URIs or mutable hidden policy defaults. Schema evolution/unknown fields refuse rather than silently default.", "Restoring an encoded header/policy preserves market/origin/version/tombstone and authority fields exactly; this is a codec invariant, not proof of an authorized upgrade or migration. The immutable upgrade/trust and continuous-operation release requirements remain unchanged and UNRUN."]
+
+[acceptance.AI.F04-CODEC-C01]
+feature = "F04"
+scenario = "Use common distinct ID/digest/version types. Encode B in exactly192 bytes: chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_hash32 || evaluator_id32 || grant_version:u64 || key_version:u64. Fixed big-endian integers and raw fixed bytes only; no schema/count/length/reserved bytes in B. Required IDs/digests and F04 roster are nonzero; versions obey common bounds and epoch0 remains a valid value. Refuse wrong length, zero required fields and noncanonical versions using actual common typed constructors/codecs."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Exact typed binding tuple"
+reqs = ["AI.F04-R03", "AI.CORE"]
+derived_from = ["AI.F04-A04"]
+
+[acceptance.AI.F04-CODEC-C02]
+feature = "F04"
+scenario = "Consume the actual F03 ReportBody codec without duplicating its schema or types. Require schema1, nonzero evidence_root and vector_count1..32, fixed36-byte entries, unsigned raw-ID ascending uniqueness, worker membership against the supplied immutable typed roster, and score0..1000000. Refuse reversed order, duplicates, unknown worker, count mismatch, truncation, trailing bytes, score1000001 and count33. Empty count0000 refuses F04_NO_SCORES; explicit(A,0) remains exactly one264-byte body with score00000000. Do not normalize scores, fill absent workers or turn refusal into a zero vector. Supplying expected frozen values to a pure validator is a value-level check, not proof of authenticated host membership."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Strict report rows and absent versus zero"
+reqs = ["AI.F04-R03", "AI.F04-R08", "AI.CORE"]
+derived_from = ["AI.F04-A03", "AI.F04-A07"]
+
+[acceptance.AI.F04-CODEC-C03]
+feature = "F04"
+scenario = "Produce the exact canonical report preimage ASCII PAXAI/score-report/v1 || NUL || body. Body length228+36*n, maximum1380; preimage250+36*n, maximum1402. For the fully specified section12 serialization vector, body300/preimage322. Use independently calculated real SHA256 mathematical vectors to bind exact preimage bytes to expected report_digest; changing any body field including evidence_root or score changes the corresponding vector. Signature bytes never enter this preimage. Never replace a zero derived report digest."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Report SHA256 mathematical binding"
+reqs = ["AI.F04-R03", "AI.F04-R08"]
+derived_from = ["AI.F04-A03", "AI.F04-A10"]
+
+[acceptance.AI.F04-CODEC-C04]
+feature = "F04"
+scenario = "Produce exactly59 bytes ASCII PAXAI/score-attestation/v1 || NUL || report_digest32, with26-byte domain. Independently calculated SHA256 yields the exact32-byte Ed25519 message, without prefix, JSON, text hex or Ed25519ph transformation. Signature framing is exactly64 bytes; reject short/long/trailing encodings. A correctly sized altered signature remains structurally valid and must NOT be reported cryptographically valid by T01; actual signature verification and BAD_SIGNATURE are mandatory later runtime assertions."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Attestation framing and signature bounds"
+reqs = ["AI.F04-R03", "AI.F04-R08"]
+derived_from = ["AI.F04-A04", "AI.F04-A05"]
+
+[acceptance.AI.F04-CODEC-C05]
+feature = "F04"
+scenario = "Produce exactly278 bytes ASCII PAXAI/score-commit/v1 || NUL || B192 || report_digest32 || salt32. The fixed tuple is256 bytes and domain21 bytes. No inserted schema, count, variable-length prefix, reserved field, extra NUL or signature. Compare its independently calculated real SHA256 mathematical vector to the specified known input; bind all nine B fields, canonical report digest/evidence root and salt. Exact32-byte equality only; unequal commitment refuses F04_COMMIT_MISMATCH. Reject zero required/derived digest values through real constructors; no substitute digest or injectable fake hash result."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Exact commitment preimage and digest"
+reqs = ["AI.F04-R03", "AI.F04-R04", "AI.F04-R08"]
+derived_from = ["AI.F04-A03", "AI.F04-A04", "AI.F04-A05"]
+
+[acceptance.AI.F04-CODEC-C06]
+feature = "F04"
+scenario = "Salt is exactly32 externally supplied bytes.31/33/truncated/trailing salt encodings refuse NON_CANONICAL; allzero32 bytes refuse F04_SALT_INVALID; a different nonzero32-byte salt yields a different commitment and refuses F04_COMMIT_MISMATCH against the original. The codec has no entropy/clock/key-derived generation or claim to prove randomness; fresh OS cryptographic sampling, no reuse and secret retention remain mandatory client integration obligations."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Salt framing and refusal"
+reqs = ["AI.F04-R04", "AI.F04-R03"]
+derived_from = ["AI.F04-A05"]
+
+[acceptance.AI.F04-CODEC-C07]
+feature = "F04"
+scenario = "Against a supplied expected common/F03 typed tuple, change each chain/program/market/epoch/config/roster/evaluator/grant/key field individually while retaining all other bytes. Refuse each mismatch through the allocated normative domain/program/market/epoch/config/roster/authority/key error category; never silently accept or rewrite the actual tuple. Outer-envelope versus payload/report binding comparison is exact where implemented by the common pure codec. Pure supplied values do not confer native principal, delegate, live revocation or frozen-epoch authority."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Full binding mismatch coverage"
+reqs = ["AI.F04-R03", "AI.CORE"]
+derived_from = ["AI.F04-A04"]
+
+[acceptance.AI.F04-CODEC-C08]
+feature = "F04"
+scenario = "CommitScore selector0x0401 payload B192 || C32 is exactly224 bytes and refuses allzero C. RevealScore selector0x0402 payload body_length:u32 || body || signature64 || salt32 has maximum1480 bytes. Reuse common selector/schema/framing/error types; reject wrong version, mismatched body length/count, overflow in checked length arithmetic, truncation and unknown trailing bytes before digest comparison. No alternate wire errors, float/JSON/native-object encoding or hidden bytes. No body/signature/salt is included in CommitScore payload."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Operation framing and canonical refusals"
+reqs = ["AI.F04-R03", "AI.F04-R08", "AI.F04-R11", "AI.CORE"]
+derived_from = ["AI.F04-A03", "AI.F04-A05", "AI.F04-A10"]
+
+[acceptance.AI.F04-CODEC-C09]
+feature = "F04"
+scenario = "At32entries require body1380,signed1444,reveal1480 and reject entry33. Eight maximum signed rows total11552; eight metadata slots at most256bytes each total2048; both share24576 with bookkeeping, and common state total bound remains196608. Static codec/work layout is bounded at32workers,8evaluators, at most1024 straightforward worker membership comparisons; hash inputs1402/278 and signature message32 stay within declared SDK limits. This does not claim a live shared-state write, serialized whole-state measurement, native capacity or epoch arithmetic gate passed."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "Maximum byte and work bounds"
+reqs = ["AI.F04-R08", "AI.F04-R11"]
+derived_from = ["AI.F04-A10"]
+
+[acceptance.AI.F04-CODEC-C10]
+feature = "F04"
+scenario = "The codec uses only actual producer types/codec functions and bounded immutable input values. It performs no state-machine transition, authority grant, fee/reward/slash/transfer, network fetch, inference, epoch rollover, storage reclamation or fabricated host response. Refusal returns a typed error and no accepted-row/status/zero-vector value. T01 cannot mark any original full integration scenario passed or satisfy a deferred assertion with a local duplicate state machine."
+qualification = "UNRUN"
+task = "ai.F04-T01"
+kind = "pure_codec_and_mathematical_hash"
+title = "No business state or authority surrogate"
+reqs = ["AI.F04-R10", "AI.F04-R11", "AI.CORE"]
+derived_from = ["AI.F04-A03", "AI.F04-A07", "AI.F04-A10"]
+
+[acceptance.AI.F09-A26]
+feature = "F09"
+scenario = "Encode and strictly decode the exact public RESULT manifest with task_id=0x31 repeated32, content bytes01 02 03 and publisher generation7 using real types and cryptography. Independently specified bytes reproduce the leaf, tree, content root, unsigned manifest root and publisher digest. Verify a real Ed25519 signature over the32-byte publisher digest. Different valid signatures do not change the unsigned manifest root. This case exercises no publication, grant admission, protocol state or availability."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec known-answer RESULT commitment"
+derived_from = "AI.F09-A01"
+
+[acceptance.AI.F09-A27]
+feature = "F09"
+scenario = "After constructing a valid manifest and bounded proof with real SHA256, change one chunk byte while preserving the expected manifest/content roots. Content/proof verification refuses RootMismatch or the admitted typed integrity refusal; the supplied immutable expected roots and canonical manifest bytes remain unchanged. Service INTEGRITY_FAILED status, quarantine and actual protocol-state preservation remain mandatory in the original complete scenario."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec corruption refusal"
+derived_from = "AI.F09-A02"
+
+[acceptance.AI.F09-A28]
+feature = "F09"
+scenario = "A zero-length PUBLIC manifest has chunk_count0 and exactly the domain-defined empty tree/content root. ENCRYPTED length0 refuses Malformed. Mandatory-zero roots refuse even for empty public content. ENCRYPTED requires a nonzero access_policy_root; optional absence follows explicit field rules. No service admission is asserted."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec empty and mandatory-root rules"
+derived_from = "AI.F09-A03"
+
+[acceptance.AI.F09-A29]
+feature = "F09"
+scenario = "Using real ordered chunk bytes,262144 bytes yields exactly one leaf;262145 yields exactly two and final length1. Complete content verification rejects swapped indices, conflicting repeated final bytes and missing index0, with checked lengths/counts. Identical idempotent delivery duplicates, where admitted by the normative complete-retrieval contract, do not count as additional coverage; no availability is inferred."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec chunk boundaries and completeness"
+derived_from = "AI.F09-A04"
+
+[acceptance.AI.F09-A30]
+feature = "F09"
+scenario = "The bounded manifest codec accepts the declared32GiB/131072chunk boundary as syntactically valid, without granting capacity or quota.32GiB+1 and131073chunks refuse before allocation. A mathematically valid independently specified real-SHA256 last-index membership vector has exactly17 siblings and passes; an eighteenth sibling, wrong implied sibling count, bad index, incorrect last-chunk length or noncanonical odd-node duplication refuses. The vector proves membership only, never stored32GiB completeness or admitted quota."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec object/proof limits"
+derived_from = "AI.F09-A05"
+
+[acceptance.AI.F09-A31]
+feature = "F09"
+scenario = "A real signed canonical manifest bound to marketA fails expected-marketB context validation with InvalidContext. Cross-chain/program/policy and wrong task/epoch contexts also refuse; epoch-independent MODEL/DATASET/BENCHMARK require epoch0 and subject=policy, task-bound INPUT/RESULT/EXECUTION_EVIDENCE require actual supplied epoch/task context. These are supplied typed context comparisons, not fabricated live policy or host authority. Actual F02/F03 state preservation remains in the complete scenario."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec exact context binding"
+derived_from = "AI.F09-A06"
+
+[acceptance.AI.F09-A32]
+feature = "F09"
+scenario = "Strictly encode/decode EvidenceManifestV1 in the normative order and compute H(PAXAI/evidence/v1,canonical bytes), without artifact wrapping or extra length prefix. Enforce1..32 sorted worker groups,>=1task/group,<=64tasks globally, global task-ID uniqueness, bounded scores/generations, modes/statuses and explicit optional-root policy inputs. Independently specified canonical vectors change root when task/model/policy/generation/score/status/rubric/config changes. ArtifactManifestRoot32 and EvidenceRoot32 remain distinct. Chunk membership cannot produce complete-availability, benchmark-coverage, authenticated-finality or quality conclusions. Actual F02/F03/F10 minimal-proof verification remains mandatory in A20."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec typed evidence commitment"
+derived_from = "AI.F09-A20"
+
+[acceptance.AI.F09-A33]
+feature = "F09"
+scenario = "Artifact/publisher/evidence/declaration/reproduction/proof codecs reject unsupported versions/enums, nonzero reserved fields, duplicate or unsorted parent/document/task/worker sets, trailing bytes, invalid declared UTF8, overflow and every normative size/count bound before allocation. Declaration document roles/masks/label lengths are exact and bounded. Publisher scheme/key/signature/generation fields follow exact canonical contracts. Differently normalized Unicode labels remain byte-distinct, with no repair, case folding or normalization. Missing rights stay UNDECLARED and DOCUMENTED is never legal clearance."
+qualification = "UNRUN"
+task = "ai.F09-T01"
+kind = "codec_only"
+title = "Codec strict versions, declarations and wrappers"
+derived_from = "AI.F09-A22"
 

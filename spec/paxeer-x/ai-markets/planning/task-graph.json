@@ -276,40 +276,58 @@
         "AI.CORE"
       ],
       "acceptance": [
-        "AI.F01-A01",
-        "AI.F01-A02",
-        "AI.F01-A03",
-        "AI.F01-A09",
-        "AI.F01-A16",
-        "AI.F01-A19"
+        "AI.F01-CODEC-A01",
+        "AI.F01-CODEC-A02",
+        "AI.F01-CODEC-A03",
+        "AI.F01-CODEC-A04",
+        "AI.F01-CODEC-A05",
+        "AI.F01-CODEC-A06",
+        "AI.F01-CODEC-A07",
+        "AI.F01-CODEC-A08",
+        "AI.F01-CODEC-A09",
+        "AI.F01-CODEC-A10",
+        "AI.F01-CODEC-A11"
       ],
       "admission_contract": {
         "scope": "Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/registry.rs",
           "programs/crates/layerx-programs-ai-market/src/policy.rs",
-          "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs"
+          "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs"
         ],
         "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec",
-        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "entry_condition": "ai.T-C01 has exact passed evidence on compatible inputs and supplies real common codec/types/SHA-256 plus frozen error mapping. The three exact owned files and explicitly serialized lib.rs module-registration handoff are admitted on the claimed workspace/branch. This task qualifies pure canonical codecs/arithmetic and real portable SDK account derivation; it does not require or substitute unavailable host/funding/finality/epoch/evidence producers. Their unchanged assertions remain UNRUN in named integration tasks.",
         "max_builds": 1,
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
         "gate_kind": "planned",
         "qualification": "UNRUN",
-        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs.",
+        "implementation_obligations": "Create the owned registry/policy implementation and real market_policy_codec tests using the accepted production common types/codecs/hash and actual portable SDK derivation before qualification. Preserve every codec refusal/recovery/bound. Do not fabricate host, account registration, epoch, TaskBinding or finality producers; full runtime assertions remain in the explicit integration allocation.",
+        "deliverables": [
+          "Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic.",
+          "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec",
+          "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success.",
+          "All new codec acceptance records pass the unchanged single market_policy_codec gate with exact evidence; original full scenarios remain UNRUN."
+        ]
       },
       "feature": "F01",
       "local_wave": 2,
       "acceptance_cases": [
-        "AI.F01-A01",
-        "AI.F01-A02",
-        "AI.F01-A03",
-        "AI.F01-A09",
-        "AI.F01-A16",
-        "AI.F01-A19"
+        "AI.F01-CODEC-A01",
+        "AI.F01-CODEC-A02",
+        "AI.F01-CODEC-A03",
+        "AI.F01-CODEC-A04",
+        "AI.F01-CODEC-A05",
+        "AI.F01-CODEC-A06",
+        "AI.F01-CODEC-A07",
+        "AI.F01-CODEC-A08",
+        "AI.F01-CODEC-A09",
+        "AI.F01-CODEC-A10",
+        "AI.F01-CODEC-A11"
       ]
     },
     {
@@ -380,7 +398,13 @@
         "AI.CORE"
       ],
       "acceptance": [
-        "AI.CORE-A02"
+        "AI.CORE-A02",
+        "AI.F01-A01",
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A09",
+        "AI.F01-A16",
+        "AI.F01-A19"
       ],
       "admission_contract": {
         "scope": "Implement one authoritative paxai/state/v1 value with exact section budgets and <=196608 bytes, host-authenticated context/height/principal, real storage finalization/crypto/events, replay and no nested calls; verify rollback and <=2 application content blobs plus actual native overhead within unchanged caps.",
@@ -406,8 +430,15 @@
       },
       "local_wave": 2,
       "acceptance_cases": [
-        "AI.CORE-A02"
-      ]
+        "AI.CORE-A02",
+        "AI.F01-A01",
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A09",
+        "AI.F01-A16",
+        "AI.F01-A19"
+      ],
+      "integration_obligations": "The unchanged complete AI.F01-A01/A02/A03/A09/A16/A19 scenarios are mandatory in this existing actual native host_boundary gate, including prepared account/asset binding, authenticated owner/height, funding, activation, policy administration, frozen assessment mode, task/evidence sealing, actual full-capacity serialization and every refusal/rollback/unchanged-balance assertion. Actual admitted producers and real native observations are required. Codec or partial producer evidence cannot pass any original full case; missing authority, producer, resource or complete witness keeps the full case UNRUN. Preserve AI.CORE-A02 and every existing native obligation; add no F01-T02 -> T-C03 dependency."
     },
     {
       "id": "ai.T-S01",
@@ -756,24 +787,24 @@
         "AI.CORE"
       ],
       "acceptance": [
-        "AI.F09-A01",
-        "AI.F09-A02",
-        "AI.F09-A03",
-        "AI.F09-A04",
-        "AI.F09-A05",
-        "AI.F09-A06",
-        "AI.F09-A20",
-        "AI.F09-A22"
+        "AI.F09-A26",
+        "AI.F09-A27",
+        "AI.F09-A28",
+        "AI.F09-A29",
+        "AI.F09-A30",
+        "AI.F09-A31",
+        "AI.F09-A32",
+        "AI.F09-A33"
       ],
       "admission_contract": {
-        "scope": "Implement strict bounded manifest/publisher/evidence codecs, domain-separated roots, exact context binding and bounded chunk proofs with canonical privacy/authority enums.",
+        "scope": "Implement exact bounded artifact, manifest, evidence and proof codecs with real production types, mathematical hashes and Ed25519 verification, preserving all original bounds, authority/context fields and strict refusal rules. Qualify only AI.F09-A26..A33 in the unchanged artifact_contract focused gate. Every original full publication/resolution/quota/economic-state/finality/minimal-proof scenario remains mandatory unchanged in ai.F10-T02-FULL; pure codecs do not qualify those scenarios.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/evidence.rs",
           "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"
         ],
         "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_contract",
-        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "entry_condition": "All existing requires tasks have exact passed evidence on compatible inputs; exact owned paths and actual common/state codec interfaces are admitted. The focused artifact_contract task requires real canonical types, hashes and cryptography. Complete live artifact-service, protocol-state, authority, durable-capacity and finalized-producer obligations remain UNRUN in ai.F10-T02-FULL; no local authority table or metadata-only substitute is admitted.",
         "max_builds": 1,
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
@@ -785,14 +816,14 @@
       "feature": "F09",
       "local_wave": 3,
       "acceptance_cases": [
-        "AI.F09-A01",
-        "AI.F09-A02",
-        "AI.F09-A03",
-        "AI.F09-A04",
-        "AI.F09-A05",
-        "AI.F09-A06",
-        "AI.F09-A20",
-        "AI.F09-A22"
+        "AI.F09-A26",
+        "AI.F09-A27",
+        "AI.F09-A28",
+        "AI.F09-A29",
+        "AI.F09-A30",
+        "AI.F09-A31",
+        "AI.F09-A32",
+        "AI.F09-A33"
       ]
     },
     {
@@ -913,21 +944,26 @@
         "AI.CORE"
       ],
       "acceptance": [
-        "AI.F04-A03",
-        "AI.F04-A04",
-        "AI.F04-A05",
-        "AI.F04-A07",
-        "AI.F04-A10"
+        "AI.F04-CODEC-C01",
+        "AI.F04-CODEC-C02",
+        "AI.F04-CODEC-C03",
+        "AI.F04-CODEC-C04",
+        "AI.F04-CODEC-C05",
+        "AI.F04-CODEC-C06",
+        "AI.F04-CODEC-C07",
+        "AI.F04-CODEC-C08",
+        "AI.F04-CODEC-C09",
+        "AI.F04-CODEC-C10"
       ],
       "admission_contract": {
-        "scope": "Implement exact domain-separated report/salt commitment, strict canonical report fields, nonzero 32-byte external salt and bounded signature/hash work; reject empty reports while retaining explicit zero votes.",
+        "scope": "Implement exact bounded canonical commitment/report binding and operation framing against common/F03 types: pure preimages, SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. Runtime SDK cryptography, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with their original assertions intact.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs",
           "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"
         ],
         "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical",
-        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "entry_condition": "All existing requires tasks have exact passed evidence on compatible inputs; the exact owned paths and actual common/F03 types and codecs are admitted. This focused task qualifies pure canonical framing, checked bounds and mathematical SHA256 vectors. Runtime SDK cryptography, authenticated host admission, live state/replay/windows, OS-CSPRNG persistence and finality remain mandatory unchanged downstream integration obligations and stay UNRUN until their actual evidence exists.",
         "max_builds": 1,
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
@@ -939,11 +975,16 @@
       "feature": "F04",
       "local_wave": 4,
       "acceptance_cases": [
-        "AI.F04-A03",
-        "AI.F04-A04",
-        "AI.F04-A05",
-        "AI.F04-A07",
-        "AI.F04-A10"
+        "AI.F04-CODEC-C01",
+        "AI.F04-CODEC-C02",
+        "AI.F04-CODEC-C03",
+        "AI.F04-CODEC-C04",
+        "AI.F04-CODEC-C05",
+        "AI.F04-CODEC-C06",
+        "AI.F04-CODEC-C07",
+        "AI.F04-CODEC-C08",
+        "AI.F04-CODEC-C09",
+        "AI.F04-CODEC-C10"
       ]
     },
     {
@@ -2142,10 +2183,11 @@
       "acceptance": [
         "AI.F01-A02",
         "AI.F01-A03",
-        "AI.F01-A04"
+        "AI.F01-A04",
+        "AI.F04-A10"
       ],
       "admission_contract": {
-        "scope": "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers.",
+        "scope": "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers. A10 overflow witness uses actual checked OpenEpoch arithmetic and refuses T+128 overflow without mutation. Its recorded producer result can be consumed by T02; do not rerun its gate or write another F01 implementation.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/epoch.rs",
           "programs/crates/layerx-programs-ai-market/tests/market_epoch_open.rs"
@@ -2166,7 +2208,8 @@
       "acceptance_cases": [
         "AI.F01-A02",
         "AI.F01-A03",
-        "AI.F01-A04"
+        "AI.F01-A04",
+        "AI.F04-A10"
       ]
     },
     {
@@ -2728,10 +2771,11 @@
         "AI.F04-A08",
         "AI.F04-A10",
         "AI.F04-A11",
-        "AI.F04-A12"
+        "AI.F04-A12",
+        "AI.F04-A07"
       ],
       "admission_contract": {
-        "scope": "Implement one immutable commitment and one atomic reveal/admitted F03 row through real Programs dispatch; authenticate half-open heights, replay/expiry, versions/live revocation and concurrent first-write order; emit exact 194/228-byte events once.",
+        "scope": "Implement one immutable commitment and one atomic reveal/admitted F03 row through real Programs dispatch; authenticate half-open heights, replay/expiry, versions/live revocation and concurrent first-write order; emit exact 194/228-byte events once. Retain all current original acceptance references and add AI.F04-A07. Require all A01/A02/A03/A04/A05/A08 host/window/state/retry/concurrency assertions; A06 reveal refusal and admitted-only output; A07 empty refusal and exact zero admission; A10 actual max-size admission,33-entry no mutation, currentreports/whole-state cap rollback and overflow fixture through real F01; A11 late reveal refusal; A12 next-epoch frozen versions/immediate revocation/epoch replay. Require production SDK hash vector and signature checks including host/context failures and preserved row/sequence/revision. No F05 final seal substitute.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/commit_reveal.rs",
           "programs/crates/layerx-programs-ai-market/tests/f04_windows.rs",
@@ -2760,7 +2804,8 @@
         "AI.F04-A08",
         "AI.F04-A10",
         "AI.F04-A11",
-        "AI.F04-A12"
+        "AI.F04-A12",
+        "AI.F04-A07"
       ]
     },
     {
@@ -2788,7 +2833,7 @@
         "AI.F04-A12"
       ],
       "admission_contract": {
-        "scope": "Persist report/salt before submit and reconcile original finalized commit/reveal receipt/state after crashes and dropped responses; preserve epoch binding and irrevocable sealed exclusion cutpoint.",
+        "scope": "Persist report/salt before submit and reconcile original finalized commit/reveal receipt/state after crashes and dropped responses; preserve epoch binding and irrevocable sealed exclusion cutpoint. Retain original A09/A12 references as feature obligations; task-local A12 recovery witness covers real next-epoch binding and historical-retry no recreation after actual rollover. Preserve first accepted/reveal heights and immutable C, exact expiry-limited replay, finalized crash/dropped-response reconciliation and missing-salt refusal. Add mandatory real OS-CSPRNG/per-report salt/persist-before-send client assertions; client implementation remains FM-F10-owned. Sealed exclusion witness is completed in F03-T04, never fake an F05 seal here.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/tests/f04_recovery.rs"
         ],
@@ -2847,10 +2892,14 @@
         "AI.F05-A14",
         "AI.F05-A15",
         "AI.F05-A16",
-        "AI.F05-A18"
+        "AI.F05-A18",
+        "AI.F04-A06",
+        "AI.F04-A07",
+        "AI.F04-A11",
+        "AI.F04-A12"
       ],
       "admission_contract": {
-        "scope": "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access.",
+        "scope": "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access. Add mandatory original AI.F04-A06/A07/A11 and A12 rollover/aggregation-consumer assertions. Consume actual admitted F04 rows: missing/expired/refused remain no vote, explicitzero is a vote, two of eight reveals supply exactlytwo rows, stable eligible set after reveal_end without expiry maintenance, quorum handled only by F05; no reward/slash from F04 event. Test actual seal/output not a locally invented eligible vector.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/aggregation.rs",
           "programs/tests/ai-market/run-aggregation-runtime.sh"
@@ -2876,7 +2925,11 @@
         "AI.F05-A14",
         "AI.F05-A15",
         "AI.F05-A16",
-        "AI.F05-A18"
+        "AI.F05-A18",
+        "AI.F04-A06",
+        "AI.F04-A07",
+        "AI.F04-A11",
+        "AI.F04-A12"
       ]
     },
     {
@@ -2913,10 +2966,11 @@
         "AI.F03-A10",
         "AI.F03-A14",
         "AI.F03-A15",
-        "AI.F03-A16"
+        "AI.F03-A16",
+        "AI.F04-A12"
       ],
       "admission_contract": {
-        "scope": "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs.",
+        "scope": "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs. Add mandatory original AI.F04-A12 revocation/seal assertions unchanged: preseal excludes while retaining acceptance history, postseal leaves sealed set unchanged. Actual interpreter/native adapter and F05 seal implementation, already required by this task. Consume T02 admission evidence without rerunning its passed gate.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs"
         ],
@@ -2940,7 +2994,8 @@
         "AI.F03-A10",
         "AI.F03-A14",
         "AI.F03-A15",
-        "AI.F03-A16"
+        "AI.F03-A16",
+        "AI.F04-A12"
       ]
     },
     {
@@ -3358,7 +3413,9 @@
         "ai.F07-T02",
         "ai.F08-T03",
         "ai.F09-T02",
-        "ai.F02-T03"
+        "ai.F02-T03",
+        "ai.F09-T03",
+        "ai.F09-T04"
       ],
       "wave": 33,
       "status": "pending",
@@ -3387,7 +3444,21 @@
         "AI.F10-R032",
         "AI.F10-R033",
         "AI.F10-R034",
-        "AI.CORE"
+        "AI.CORE",
+        "AI.F09-R03",
+        "AI.F09-R04",
+        "AI.F09-R05",
+        "AI.F09-R06",
+        "AI.F09-R09",
+        "AI.F09-R10",
+        "AI.F09-R11",
+        "AI.F09-R14",
+        "AI.F09-R17",
+        "AI.F09-R18",
+        "AI.F09-R19",
+        "AI.F09-R20",
+        "AI.F09-R24",
+        "AI.F09-R27"
       ],
       "acceptance": [
         "AI.F10-A01",
@@ -3398,10 +3469,18 @@
         "AI.F10-A06",
         "AI.F10-A09",
         "AI.F10-A14",
-        "AI.F10-A15"
+        "AI.F10-A15",
+        "AI.F09-A01",
+        "AI.F09-A02",
+        "AI.F09-A03",
+        "AI.F09-A04",
+        "AI.F09-A05",
+        "AI.F09-A06",
+        "AI.F09-A20",
+        "AI.F09-A22"
       ],
       "admission_contract": {
-        "scope": "Integrate real report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into exact coherent finalized snapshots; preserve zero versus absent, durable outbox, historical identity, conflict quarantine and feature availability.",
+        "scope": "Integrate real report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into exact coherent finalized snapshots; preserve zero versus absent, durable outbox, historical identity, conflict quarantine and feature availability. Run the unchanged complete F09-A01,A02,A03,A04,A05,A06,A20,A22 scenarios through the actual admitted artifact service, real owning Program/state and authenticated F02/F03/F10 finalized producers. Assert all publication, resolution, corruption quarantine, quota, root immutability, unchanged economic/application state and minimal-proof/coverage distinctions. Consume passed producer evidence without rerunning their task gates. Fail closed on unavailable producer, authority, durable capacity or finality; no metadata-only substitute qualifies a complete original scenario. Every verbatim scenario runs fully through the actual integrated fixture in this gate. Existing producer evidence is a prerequisite, not a substitute for any full-scenario assertion. Originals stay UNRUN until their exact scenario evidence exists. Missing quota/capacity for the32GiB boundary is BLOCKED, never skipped, reduced or marked passed.",
         "exact_paths": [
           "platform/hosted/indexer/tests/ai_snapshot_projection.rs",
           "platform/hosted/indexer/src/ai_market.rs",
@@ -3429,7 +3508,15 @@
         "AI.F10-A06",
         "AI.F10-A09",
         "AI.F10-A14",
-        "AI.F10-A15"
+        "AI.F10-A15",
+        "AI.F09-A01",
+        "AI.F09-A02",
+        "AI.F09-A03",
+        "AI.F09-A04",
+        "AI.F09-A05",
+        "AI.F09-A06",
+        "AI.F09-A20",
+        "AI.F09-A22"
       ]
     },
     {
@@ -3466,10 +3553,22 @@
         "AI.OPERATIONS"
       ],
       "acceptance": [
-        "AI.RELEASE-A01"
+        "AI.RELEASE-A01",
+        "AI.F04-A01",
+        "AI.F04-A02",
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A06",
+        "AI.F04-A07",
+        "AI.F04-A08",
+        "AI.F04-A09",
+        "AI.F04-A10",
+        "AI.F04-A11",
+        "AI.F04-A12"
       ],
       "admission_contract": {
-        "scope": "Bind one merged source/artifact/configuration/authority/state manifest and implement a single release dispatcher selector covering every declared system journey, actual service dependencies, funded account/finality/native storage continuity and release matrices; consume unchanged task evidence and run release-only aggregate gates once per identified candidate.",
+        "scope": "Bind one merged source/artifact/configuration/authority/state manifest and implement a single release dispatcher selector covering every declared system journey, actual service dependencies, funded account/finality/native storage continuity and release matrices; consume unchanged task evidence and run release-only aggregate gates once per identified candidate. Original AI.F04-A01..A12 remain UNRUN until all assigned compatible mandatory real evidence completes each entire unchanged scenario. Consume records via existing declared dependencies; no release approval from codec acceptance alone or waived missing runtime producer. A global original case may remain UNRUN while a bounded codec task passes its new local cases.",
         "exact_paths": [
           "tools/paxeer-x/ai_release.py",
           "tools/paxeer-x/tests/ai_release_test.py",
@@ -3488,7 +3587,19 @@
       },
       "local_wave": 18,
       "acceptance_cases": [
-        "AI.RELEASE-A01"
+        "AI.RELEASE-A01",
+        "AI.F04-A01",
+        "AI.F04-A02",
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A06",
+        "AI.F04-A07",
+        "AI.F04-A08",
+        "AI.F04-A09",
+        "AI.F04-A10",
+        "AI.F04-A11",
+        "AI.F04-A12"
       ]
     }
   ],
