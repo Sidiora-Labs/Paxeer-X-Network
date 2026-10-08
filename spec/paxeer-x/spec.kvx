@@ -35272,7 +35272,7 @@ worker_role_id = "W-F06-MATH"
 
 [task.ai.F09-T01]
 title = "Encode artifacts and evidence commitments"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-C01", "ai.T-C02-STATE"]

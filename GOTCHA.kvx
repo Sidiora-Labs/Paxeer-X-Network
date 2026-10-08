@@ -4960,3 +4960,7 @@ text = "SharedState::section() ties the returned slice to the &self borrow, not 
 [gotcha.1064]
 area = "programs/ai-market"
 text = "ReplayTable::record_success refuses revision 0, so a creating operation must build the initial replay records with the common replay codec to reach revision 1."
+
+[gotcha.1065]
+area = "programs/ai-market"
+text = "The ai-market crate is no_std without alloc: decoded variable-length lists must be borrowed typed-or-encoded views (like codec::ScoreVector) and complete-content checks need a caller-supplied leaf scratch buffer; publisher checks go through evaluators::codec::verify_digest, not ed25519-dalek directly, so host errors stay separate from bad signatures."
