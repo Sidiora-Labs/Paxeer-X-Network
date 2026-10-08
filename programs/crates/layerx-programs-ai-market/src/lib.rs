@@ -17,6 +17,7 @@ pub mod evaluators {
 pub mod host_adapter;
 pub mod policy;
 pub mod registry;
+pub mod registry_ops;
 pub mod reputation;
 pub mod reputation_codec;
 pub mod reputation_transition;
