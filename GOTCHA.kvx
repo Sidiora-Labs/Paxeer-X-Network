@@ -5080,3 +5080,11 @@ text = "cmd/layerx-archive-codec submit speaks LNI minor 7 while the daemon answ
 [gotcha.1094]
 area = "layerxd"
 text = "A clean shutdown always leaves the latest checkpoint at the head, so a restore test never exercises canonical replay unless it deletes the newest checkpoint pair first; replay from an older checkpoint had no coverage and fails with -101 for a Programs deploy batch. gdb is not installed on the build box."
+
+[gotcha.1095]
+area = "programs/ai-market"
+text = "When several features share one state section, the writer's scratch must cover the whole section payload cap, not only its own maximum, because the other features' bytes are copied through unread; growing the scratch raises the published minimum-scratch constant (workers::CONTROL_SCRATCH_BYTES), so every caller must size from the constant."
+
+[gotcha.1096]
+area = "programs/ai-market"
+text = "A full worker table plus a real F03 region (13825 bytes) never reaches the IdentityRoster cap (24568), so a capacity-refusal test needs opaque padding bytes, which only works because F02 copies the region without decoding it. too_many_lines (deny) also hits integration test functions: split long walks with a step helper."

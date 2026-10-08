@@ -35966,7 +35966,7 @@ worker_role_id = "W-F08-ROLLOVER"
 
 [task.ai.INTEG-IDENTITY-SECTION]
 title = "Route every IdentityRoster reader through the shared section split"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 23
 requires = ["ai.F02-T01", "ai.F03-T02", "ai.F10-T01"]
