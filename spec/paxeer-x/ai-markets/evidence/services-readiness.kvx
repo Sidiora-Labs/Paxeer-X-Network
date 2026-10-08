@@ -1,0 +1,84 @@
+[meta]
+task_id = "ai.P-REAL-SERVICES"
+selector = "real-services-admission"
+acceptance_case = "AI.SERVICES-A01"
+requirement = "AI.OPERATIONS"
+contract_version = 1
+readiness = "BLOCKED"
+qualification = "UNRUN"
+validator = "tools/paxeer-x/ai_evidence.py"
+verify_cmd = "python3 tools/paxeer-x/ai_evidence.py --selector real-services-admission"
+required_evidence = ["rights", "artifacts", "runner", "evaluator", "durable_storage", "tls", "tenant", "kms"]
+rule = "Every fact below is either established from a verifiable source or BLOCKED with the authority that must supply it; no license, artifact digest, tenant, receipt, certificate or key reference is invented, and service admission stays BLOCKED while any required resource is absent."
+
+[workspace]
+source = "ai.P-WORKSPACE admission and approval records, consumed through PAXAI_ADMISSION_RECORD and PAXAI_APPROVAL_RECORD"
+decision_id = "px26-fm1-workspace-2026-10-08-01"
+approved_by = "px26-leader-delegated-px26-fm1"
+pinned_base_revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd"
+pinned_branch = "px26/fm1/ai-workspace"
+admission_sha256 = "9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509"
+real_services_selector_reference = "absent"
+status = "BLOCKED"
+needs = "The workspace authority issues a re-pinned admission on the current candidate whose other_selector_records carries the real-services-admission selector record path and SHA-256; the pinned base and branch do not match this candidate checkout."
+
+[selector_record]
+schema = "paxai.selector-admission.v1"
+required_status = "APPROVED"
+required_namespace = "one-program-shared-key"
+required_finality_policy = "verified-authoritative-finality"
+native_caps = "committed_blobs 512, committed_bytes 67108864, staged_new_blobs 4, blob_bytes 1048576, module_kv 512, staged_writes 64"
+binding_rules = "runner, evaluator, durable_storage and kms tenant_identity equal tenant.tenant_identity; runner and evaluator artifact_sha256 equal artifacts.runner_sha256 and artifacts.evaluator_sha256"
+status = "BLOCKED"
+needs = "An APPROVED private selector record under the workspace evidence directory referencing eight PASS paxai.selector-evidence.v1 records with pinned logs and attachments; none of the eight exists."
+
+[fact.rights]
+source = "spec/paxeer-x/ai-markets/contracts/core.kvx#contract.C01::paragraph_003"
+established = "External services perform all model inference, training, benchmarking and semantic evaluation; no model, dataset or benchmark has been selected and no rights decision exists. The private third-party source license inventory covers chain-node source reuse only and grants no model, dataset or benchmark right."
+status = "BLOCKED"
+needs = "Owner and rights counsel: the approved model, dataset and benchmark list with license identifiers, a signed rights decision (authority_sha256, rights_sha256) and a live revocation check receipt."
+
+[fact.artifacts]
+source = "spec/paxeer-x/spec.kvx#task.ai.F02-T04"
+established = "No pinned runner or evaluator artifact exists; real-workload qualification with pinned artifacts (ai.F02-T04) is pending."
+status = "BLOCKED"
+needs = "FM-F02 and FM-F03: built runner and evaluator artifact SHA-256 values and the artifact manifest SHA-256, produced from the candidate revision."
+
+[fact.runner]
+source = "spec/paxeer-x/ai-markets/features/F02-workers.kvx::F02-T03"
+established = "The worker runner service path platform/hosted/paxai-worker is absent from the tree; ai.F02-T03 (durable jobs, store, runner) and ai.F02-T04 are pending, and no model runner product is selected."
+status = "BLOCKED"
+needs = "Owner: the selected model runner; FM-F02: the deployed runner artifact SHA-256 under the admitted tenant and a real execution receipt SHA-256."
+
+[fact.evaluator]
+source = "spec/paxeer-x/ai-markets/features/F03-evaluators.kvx"
+established = "No evaluator service exists in the tree or in deploy/rollout.kvx; evaluator admission (ai.F03-T03) is pending and no evaluator operator is chosen."
+status = "BLOCKED"
+needs = "Owner: the actual evaluator service choice and operator; FM-F03: deployed evaluator artifact SHA-256 under the admitted tenant and a real execution receipt SHA-256."
+
+[fact.durable_storage]
+source = "spec/paxeer-x/spec.kvx#task.ai.F09-T03"
+established = "The durable private artifact service platform/hosted/ai-artifacts is absent; ai.F09-T03 is pending; no AI market store provider or tenant is provisioned."
+status = "BLOCKED"
+needs = "Operations owner: provisioned durable store provider identity and tenant, plus write, read and restart-recovery receipt SHA-256 values from the real service."
+
+[fact.tls]
+source = "spec/paxeer-x/ai-markets/features/F02-workers.kvx::F02-R020"
+established = "VERIFIED_TRANSPORT requires an actual TLS handshake; the internal CA root and custody remain open owner values and no AI market endpoint certificate is issued."
+status = "BLOCKED"
+needs = "Operations owner: issued AI market endpoint identity, certificate SHA-256 from the approved internal CA, a handshake verification receipt SHA-256 and expiry time."
+
+[fact.tenant]
+established = "No AI market tenant identity or isolation policy exists in the tree or in the private operations record."
+status = "BLOCKED"
+needs = "Operations owner: the AI market tenant identity, isolation policy SHA-256 and an isolation verification receipt SHA-256."
+
+[fact.kms]
+source = "platform/hosted/internal/deployment.yaml"
+established = "An internal KMS service is defined in the hosted internal group; no AI market tenant key generation, key policy or signing receipt is bound to it."
+status = "BLOCKED"
+needs = "Operations owner: KMS key generation for the AI market tenant, key policy SHA-256, a signing receipt SHA-256 and a revocation check."
+
+[qualification]
+command = "python3 tools/paxeer-x/ai_evidence.py --selector real-services-admission"
+status = "UNRUN"
