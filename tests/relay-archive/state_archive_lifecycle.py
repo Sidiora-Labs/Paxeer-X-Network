@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.dont_write_bytecode = True
@@ -24,7 +26,9 @@ import state_archive as archive
 from protocol import NativeCodec, StateArchiveRefusal, load_config, sha256_hex
 
 LNI_UID = 4021
-ANCHOR_PRECOMPILE = "0x0000000000000000000000000000000000001014"
+NETWORK_ID = 77
+PAXEER_CHAIN_ID = 125
+SEQUENCER_SEED = bytes([0x22]) * 32
 ARCHIVE_UIDS = {"archive-a": 4031, "archive-b": 4032}
 ASSET = "b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898"
 
@@ -175,6 +179,7 @@ class Scenario:
                                      "layerx-archive-codec"),
             "sign": (self.arguments.sign_helper, build_root / "tests/relay-archive-sign",
                      f"{build_text}/tests/relay-archive-sign"),
+            "paxd": (self.arguments.paxd, ROOT / "build/paxd", "paxeer-build"),
         }
         resolved, targets = {"layerxd": node}, []
         for name, (override, sibling, target) in companions.items():
@@ -185,8 +190,10 @@ class Scenario:
                 targets.append(target)
             resolved[name] = path
         if targets:
+            go = Path("/usr/local/go/bin")
+            make_env = dict(os.environ, PATH=f"{go}:{os.environ['PATH']}") if go.is_dir() else None
             result = subprocess.run(["make", f"-j{os.cpu_count() or 1}", f"BUILD_DIR={build_text}", *targets], cwd=ROOT,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                    env=make_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             (self.work / "companion-build.log").write_bytes(result.stdout)
             require(result.returncode == 0, f"make {' '.join(targets)} failed ({result.returncode}); "
                                             f"see {self.work / 'companion-build.log'}")
@@ -194,33 +201,75 @@ class Scenario:
             require(path.is_file() and os.access(path, os.X_OK), f"make did not produce {name} at {path}")
         return resolved
 
+    def evm(self, method):
+        request = urllib.request.Request(self.rpc_url, json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": []}).encode(),
+            {"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=3) as response:
+            value = json.load(response)
+        require("result" in value and "error" not in value, f"Paxeer {method} refused: {value}")
+        return value["result"]
+
+    def start_chain(self):
+        keys = self.work / "chain-keys"
+        keys.mkdir(mode=0o700)
+        deployer = keys / "deployer.key"
+        deployer.write_text("0x" + os.urandom(32).hex())
+        deployer.chmod(0o600)
+        address = execute(["python3", ROOT / "platform/hosted/paxeer/evm.py", "address", deployer]).stdout.decode().strip()
+        public = Ed25519PrivateKey.from_private_bytes(SEQUENCER_SEED).public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+        self.sequencer_id = hashlib.sha256(("layerx-sequencer:" + public).encode()).hexdigest()
+        policy = json.loads((ROOT / "contracts/config/checkpoint-settlement.json").read_text())
+        execute(["python3", ROOT / "platform/hosted/paxeer/anchor-genesis.py", "--network-id", NETWORK_ID,
+                 "--sequencer-id", self.sequencer_id, "--sequencer-public-key", public,
+                 "--authority-evm", address, "--paxeer-chain-id", PAXEER_CHAIN_ID,
+                 "--threshold", policy["finality_policy"]["certificate_threshold"],
+                 "--output", self.work / "anchor.json"])
+        chain_home = self.work / "chain-home"
+        chain_home.mkdir(mode=0o700)
+        chain_env = dict(os.environ, HOME=str(chain_home), PAXD=str(self.paxd),
+                         LAYERX_PAXEER_HOME=str(self.work / "chain"),
+                         LAYERX_PAXEER_CHAIN_ID=str(PAXEER_CHAIN_ID),
+                         LAYERX_PAXEER_DEPLOYER_ADDRESS=address,
+                         LAYERX_PAXEER_ANCHOR_GENESIS_FILE=str(self.work / "anchor.json"),
+                         LAYERX_PAXEER_COMMIT_TIMEOUT_NANOSECONDS="1000000000")
+        ports = {name: unused_port() for name in ("EVM", "EVM_WS", "RPC", "P2P", "GRPC", "GRPC_WEB", "API")}
+        chain_env.update({f"LAYERX_PAXEER_{name}_PORT": str(port) for name, port in ports.items()})
+        execute(["bash", ROOT / "platform/hosted/paxeer/init-chain.sh"], env=chain_env, timeout=180)
+        self.rpc_url = f"http://127.0.0.1:{ports['EVM']}"
+        chain = self.start("paxeer-chain", [self.paxd, "start", "--home", self.work / "chain",
+                                            "--consensus.create-empty-blocks-interval=1s"], env=chain_env)
+        self.until(lambda: chain.poll() is None and self.evm("eth_chainId") == hex(PAXEER_CHAIN_ID)
+                   and int(self.evm("eth_blockNumber"), 16) >= 1, "Paxeer chain JSON-RPC", 120)
+
     def setup(self):
         require(os.geteuid() == 0, "native LNI and archive UID isolation scenario requires root")
         self.bin = self.work / "bin"
         self.bin.mkdir(mode=0o755)
-        for name, path in self.resolve_companions().items():
+        companions = self.resolve_companions()
+        self.paxd = companions.pop("paxd")
+        for name, path in companions.items():
             shutil.copy2(path, self.bin / name)
             (self.bin / name).chmod(0o755)
         self.runtime = self.work / "runtime"
         shutil.copytree(ROOT / "platform/relay_archive", self.runtime,
                         ignore=shutil.ignore_patterns("__pycache__"))
-        for name, seed in (("sequencer", 0x22), ("treasury", 0x11)):
+        for name, seed in (("sequencer", SEQUENCER_SEED), ("treasury", bytes([0x11]) * 32)):
             path = self.work / name
-            path.write_bytes(bytes([seed]) * 32)
+            path.write_bytes(seed)
             path.chmod(0o600)
+        self.start_chain()
         issuer = Ed25519PrivateKey.from_private_bytes(bytes([0x11]) * 32).public_key()
         issuer = issuer.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         (self.work / "metadata").write_bytes(metadata(bytes.fromhex(ASSET), issuer, os.urandom(32)))
         self.data = self.work / "native"
         self.run_dir = self.work / "run"
         environment = dict(os.environ,
-                           LAYERX_NODE_PAXEER_CHAIN_ID="31337",
-                           LAYERX_NODE_SETTLEMENT_CONTRACT=ANCHOR_PRECOMPILE,
-                           LAYERX_NODE_CHECKPOINT_REGISTRY=ANCHOR_PRECOMPILE,
-                           LAYERX_NODE_PAXEER_RPC_ADDRESS="127.0.0.1",
-                           LAYERX_NODE_PAXEER_RPC_PORT=str(unused_port()))
+                           LAYERX_NODE_PAXEER_CHAIN_ID=str(PAXEER_CHAIN_ID),
+                           LAYERX_NODE_PAXEER_RPC_URL=self.rpc_url)
         execute(["bash", ROOT / "platform/hosted/node/bootstrap.sh",
-                 "--data-dir", self.data, "--run-dir", self.run_dir, "--network-id", "77",
+                 "--data-dir", self.data, "--run-dir", self.run_dir, "--network-id", str(NETWORK_ID),
                  "--genesis-metadata", self.work / "metadata",
                  "--sequencer-key", self.work / "sequencer", "--treasury-key", self.work / "treasury",
                  "--lni-uid", str(LNI_UID), "--lni-gid", str(LNI_UID),
@@ -228,9 +277,11 @@ class Scenario:
                  "--layerxd", self.bin / "layerxd", "--genesis-build", self.bin / "layerx-genesis-build"],
                 env=environment, timeout=300)
         self.node = env_file(self.data / "node.env")
+        require(self.node["LAYERX_NODE_SEQUENCER_ID"] == self.sequencer_id,
+                "bootstrap sequencer differs from the sequencer the Paxeer anchor genesis authorizes")
         self.socket = self.run_dir / "layerxd.lni.sock"
         self.pins = {
-            "network_id": 77,
+            "network_id": NETWORK_ID,
             "genesis_sha256": sha256_hex((self.data / archive.GENESIS_MANIFEST_PATH).read_bytes()),
             "sequencer_id": self.node["LAYERX_NODE_SEQUENCER_ID"],
             "sequencer_public_key": self.node["LAYERX_NODE_SEQUENCER_PUBLIC_KEY"],
@@ -276,9 +327,9 @@ class Scenario:
     def clients(self, *names):
         return [self.archives[name]["client"] for name in names]
 
-    def lni(self, *arguments):
+    def lni(self, *arguments, data=None):
         return json.loads(execute([sys.executable, "-B", self.runtime / "state_archive.py", "lni",
-                                   *arguments], uid=LNI_UID).stdout)
+                                   *arguments], data=data, uid=LNI_UID).stdout)
 
     def info(self):
         return self.lni("node-info", self.socket)
@@ -323,9 +374,11 @@ class Scenario:
 
     def submit(self, number, batch):
         activity = execute([self.bin / "sign", str(number)]).stdout
-        ack = json.loads(execute([self.bin / "layerx-archive-codec", "submit", self.socket],
-                                 data=activity, uid=LNI_UID).stdout)
-        require(ack["state"] == "acknowledged", f"native submission {number} was not acknowledged")
+        activity_id = json.loads(execute([self.bin / "layerx-archive-codec", "activity"],
+                                         data=activity).stdout)["activity_id"]
+        ack = self.lni("submit", self.socket, activity_id, data=activity)
+        require(ack == {"activity_id": activity_id, "state": "acknowledged"},
+                f"native submission {number} was not acknowledged")
         self.until(lambda: self.info()["published_batch"] == batch, f"canonical batch {batch} published", 120)
         return ack["activity_id"]
 
@@ -626,6 +679,7 @@ def arguments():
     parser.add_argument("--genesis-build")
     parser.add_argument("--archive-codec")
     parser.add_argument("--sign-helper")
+    parser.add_argument("--paxd")
     return parser.parse_args()
 
 

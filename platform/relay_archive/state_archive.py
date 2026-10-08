@@ -66,7 +66,7 @@ GENESIS_MANIFEST_PATH = "genesis/genesis.manifest"
 GENESIS_SNAPSHOT_PATH = "genesis/00000000000000000000.lxs"
 AVAILABILITY_LOG_PATH = "checkpoints/da-bodies.log"
 CHECKPOINT_NAME = re.compile(r"^checkpoints/([0-9]{20})\.lxs$")
-PATH_PART = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
+PATH_PART = re.compile(r"^(?!\.\.?$)[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$")
 MAX_SEGMENTS = 4096
 MAX_DIRECTORIES = 1024
 MAX_SEGMENT_BYTES = 1 << 30
@@ -84,6 +84,9 @@ LNI_FIXED_BYTES = 22
 LNI_MAX_FRAME_BYTES = 64 << 20
 LNI_NODE_INFO_REQUEST = 1
 LNI_NODE_INFO_RESPONSE = 2
+LNI_SUBMIT_REQUEST = 3
+LNI_SUBMIT_RESPONSE = 4
+LNI_MAX_ACTIVITY_BYTES = 1 << 20
 LNI_PROOF_BUNDLE_REQUEST = 16
 LNI_PROOF_BUNDLE_RESPONSE = 17
 LNI_ERROR_RESPONSE = 25
@@ -870,7 +873,7 @@ def build_unit(config: RelayConfig, codec: NativeCodec, data_dir: Path, profile:
 
 
 class LniClient:
-    """Minimal local node interface client for node identity and historical proof bundles."""
+    """Minimal local node interface client for node identity, submission and historical proof bundles."""
 
     def __init__(self, path: Path, timeout: float = 15.0):
         self.connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -933,6 +936,17 @@ class LniClient:
                 "checkpoint_id": payload[27:59].hex(), "sequencer_public_key": payload[59:91].hex(),
                 "capabilities": capabilities}
 
+    def submit(self, canonical: bytes, activity_id: str) -> None:
+        identifier = bytes.fromhex(_hex32(activity_id, "activity"))
+        if not 0 < len(canonical) <= LNI_MAX_ACTIVITY_BYTES:
+            raise _refuse("malformed", "canonical activity is empty or oversized")
+        tag, payload, proof = self._call(LNI_SUBMIT_REQUEST, canonical)
+        if tag == LNI_ERROR_RESPONSE and len(payload) == 5:
+            raise _refuse("policy", f"node refused the activity: class {payload[0]} result "
+                                    f"{struct.unpack('>i', payload[1:5])[0]}")
+        if tag != LNI_SUBMIT_RESPONSE or payload != canonical or proof != identifier:
+            raise _refuse("corrupt", "node returned an invalid submission acknowledgement")
+
     def proof_bundle(self, kind: int, activity_id: str) -> tuple[bytes, bytes]:
         if kind not in PROOF_KINDS:
             raise _refuse("malformed", "unsupported proof bundle kind")
@@ -947,13 +961,19 @@ class LniClient:
 
 
 def _lni_main(arguments: Sequence[str]) -> int:
-    if len(arguments) not in (2, 4) or arguments[0] not in ("node-info", "proof"):
-        print("usage: state_archive.py lni node-info SOCKET | lni proof SOCKET KIND ACTIVITY_ID", file=sys.stderr)
+    arity = {"node-info": 2, "submit": 3, "proof": 4}
+    if not arguments or arity.get(arguments[0]) != len(arguments):
+        print("usage: state_archive.py lni node-info SOCKET | lni submit SOCKET ACTIVITY_ID < ACTIVITY"
+              " | lni proof SOCKET KIND ACTIVITY_ID", file=sys.stderr)
         return 2
     client = LniClient(Path(arguments[1]))
     try:
         if arguments[0] == "node-info":
             print(json.dumps(client.info, sort_keys=True))
+            return 0
+        if arguments[0] == "submit":
+            client.submit(sys.stdin.buffer.read(LNI_MAX_ACTIVITY_BYTES + 1), arguments[2])
+            print(json.dumps({"activity_id": arguments[2], "state": "acknowledged"}, sort_keys=True))
             return 0
         if len(arguments) != 4:
             raise _refuse("malformed", "proof requires a kind and an activity identifier")
