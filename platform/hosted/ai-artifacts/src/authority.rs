@@ -5,6 +5,7 @@ use layerx_programs_ai_market::evidence::ArtifactError;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 pub const PURPOSE_INFERENCE: u16 = 1;
 pub const PURPOSE_EVALUATION: u16 = 2;
@@ -14,8 +15,22 @@ pub const PURPOSE_TRAINING: u16 = 8;
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub capacity_bytes: u64,
+    pub listener: Listener,
+    /// Live revocation high-water mark file, kept off the restorable data dir.
+    pub revocation_mark: PathBuf,
     pub tenants: Vec<Tenant>,
     pub publishers: Vec<Publisher>,
+}
+
+/// Plaintext serving exists only when the config names it explicitly.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Listener {
+    Plaintext,
+    Tls {
+        certificate: PathBuf,
+        private_key: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]

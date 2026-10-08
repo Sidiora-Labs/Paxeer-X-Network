@@ -1,14 +1,18 @@
 //! Durable private artifact service (offchain). Bounded HTTP/1.1 routes for
 //! PrepareObject, upload frames, FinalizeObject, ResolveArtifact, content access,
 //! grants, RevokeAccess, RotateAccessEnvelope, TombstoneArtifact, publisher
-//! generation revocation, locator admission and pinned TLS locator import.
+//! generation revocation, locator admission, pinned TLS locator import and
+//! delivery reconciliation, served over TLS unless the config explicitly names
+//! a plaintext listener. Key releases are durable intents before any byte is
+//! sent; tombstoned payloads are purged at their retention deadline; a restore
+//! below the live revocation high-water mark never becomes ready.
 //! Nothing here is a protocol receipt.
 mod authority;
 mod crypto;
 mod resolver;
 mod store;
 
-use authority::{Config, Tenant};
+use authority::{Config, Listener, Tenant};
 use crypto::{FrameContext, KeyProvider, LocalFileKeyProvider};
 use layerx_programs_ai_market::evidence::{
     chunk_count, declaration_root, decode_declaration, decode_envelope, decode_manifest,
@@ -17,22 +21,27 @@ use layerx_programs_ai_market::evidence::{
     MAX_RECORD_BYTES,
 };
 use layerx_programs_ai_market::types::{ChainDomain, MarketId, PolicyDigest, ProgramId};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use store::{
-    Disposition, Grant, KeyRelease, ObjectRecord, ObjectState, Session, SessionState, Store,
+    Delivery, DeliveryState, Disposition, Grant, ObjectRecord, ObjectState, Session, SessionState,
+    Store, Transition, RETENTION_SECS, STAGING_SECS,
 };
 
 const MAX_API_REQUEST: usize = 65_536;
 const MAX_HEAD: usize = 8_192;
-const STAGING_SECS: u64 = 86_400;
 const MAX_LEASE_SECS: u64 = 365 * 86_400;
+const DELIVERY_DEADLINE: Duration = Duration::from_secs(10);
+const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
 const WRAPPED_KEY_BYTES: usize = 24 + 32 + 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 const JSON: &str = "application/json";
@@ -220,6 +229,7 @@ struct FinalizeReq {
 
 #[derive(Deserialize)]
 struct AccessReq {
+    request_id: Option<String>,
     root: String,
     task: Option<String>,
     purpose: String,
@@ -257,6 +267,11 @@ struct PublisherRevokeReq {
     request_id: String,
     principal: String,
     generation: u64,
+}
+
+#[derive(Deserialize)]
+struct DeliveryReq {
+    request_id: String,
 }
 
 #[derive(Deserialize)]
@@ -311,7 +326,21 @@ impl Service {
         (status, value)
     }
 
-    fn route(&self, req: &Request) -> Reply {
+    /// Every route but a key release answers without a delivery intent.
+    fn route(&self, req: &Request) -> (Reply, Option<String>) {
+        if req.method != "POST" || req.path != "/v1/resolve" {
+            return (self.serve(req), None);
+        }
+        match self.config.authenticate(req.token.as_deref()) {
+            Ok(tenant) => {
+                let (result, delivery) = self.resolve(tenant, &req.body);
+                (json_reply(result), delivery)
+            }
+            Err(e) => (json_reply(reply(Err(e))), None),
+        }
+    }
+
+    fn serve(&self, req: &Request) -> Reply {
         let tenant = match self.config.authenticate(req.token.as_deref()) {
             Ok(t) => t,
             Err(e) => return json_reply(reply(Err(e))),
@@ -381,8 +410,8 @@ impl Service {
                 |r| &r.request_id,
                 |s, r| self.revoke_publisher(s, tenant, r),
             ),
-            "/v1/resolve" => return json_reply(self.resolve(tenant, body)),
             "/v1/content" => return self.content(tenant, body),
+            "/v1/deliveries" => self.delivery_status(tenant, body),
             "/v1/locators/check" => reply(parse::<LocatorReq>(body).and_then(|r| {
                 let admitted =
                     resolver::admit(&r.uri, &tenant.locator_hosts, resolver::system_dns)?;
@@ -415,29 +444,6 @@ impl Service {
         self.idempotent(tenant, route, body, &rid, |store| op(store, parsed))
     }
 
-    fn release_quota(store: &mut Store, tenant: &str, bytes: u64) {
-        if let Some(used) = store.state.quota_used.get_mut(tenant) {
-            *used = used.saturating_sub(bytes);
-        }
-    }
-
-    /// Terminal staging dispositions release their quota reservation exactly once.
-    fn expire_staging(store: &mut Store, at: u64) {
-        let expired: Vec<(String, String, u64)> = store
-            .state
-            .sessions
-            .iter()
-            .filter(|(_, s)| s.state == SessionState::Staging && at >= s.created_at + STAGING_SECS)
-            .map(|(id, s)| (id.clone(), s.tenant.clone(), s.byte_length))
-            .collect();
-        for (id, tenant, bytes) in expired {
-            if let Some(s) = store.state.sessions.get_mut(&id) {
-                s.state = SessionState::Expired;
-            }
-            Self::release_quota(store, &tenant, bytes);
-        }
-    }
-
     fn prepare(&self, store: &mut Store, tenant: &Tenant, r: PrepareReq) -> Op {
         let kind = ArtifactKind::decode(r.kind)?;
         let privacy = Privacy::decode(r.privacy)?;
@@ -461,7 +467,7 @@ impl Service {
             rid.as_bytes(),
         ]));
         let at = now();
-        Self::expire_staging(store, at);
+        store.expire_staging(at);
         let used = store.state.quota_used.get(&tenant.id).copied().unwrap_or(0);
         if used.saturating_add(r.byte_length) > tenant.quota_bytes {
             return Err(ArtifactError::QuotaExceeded);
@@ -627,7 +633,7 @@ impl Service {
                     if let Some(s) = store.state.sessions.get_mut(&session_id) {
                         s.state = SessionState::Quarantined;
                     }
-                    Self::release_quota(store, &tenant.id, session.byte_length);
+                    store.release_quota(&tenant.id, session.byte_length);
                     store.event(&format!("quarantine session={session_id}"))?;
                     return Err(error);
                 }
@@ -652,7 +658,7 @@ impl Service {
                 };
                 s.root = same.then(|| root.clone());
             }
-            Self::release_quota(store, &tenant.id, session.byte_length);
+            store.release_quota(&tenant.id, session.byte_length);
             if same {
                 return Ok(Self::receipt(&root, &existing));
             }
@@ -662,6 +668,7 @@ impl Service {
         let wrapped_key = object_key
             .map(|k| self.kms.wrap(&key_aad(&root, 1), &k).map(hex::encode))
             .transpose()?;
+        let published_at = now();
         let record = ObjectRecord {
             tenant: tenant.id.clone(),
             session: session_id.clone(),
@@ -679,8 +686,13 @@ impl Service {
             generation: verified.generation.get(),
             wrapped_key,
             access_generation: 1,
-            published_at: now(),
+            published_at,
             tombstone_reason: None,
+            retention_until: None,
+            history: vec![Transition {
+                state: ObjectState::Publishing,
+                at: published_at,
+            }],
         };
         store.state.objects.insert(root.clone(), record);
         store.persist()?;
@@ -693,7 +705,7 @@ impl Service {
             .objects
             .get_mut(&root)
             .ok_or(ArtifactError::StorageFailure)?;
-        record.state = ObjectState::Available;
+        record.transition(ObjectState::Available, published_at);
         let receipt = Self::receipt(&root, record);
         if let Some(s) = store.state.sessions.get_mut(&session_id) {
             s.state = SessionState::Published;
@@ -781,6 +793,7 @@ impl Service {
         grant.revoked = true;
         grant.revocation_sequence = r.sequence;
         grant.revocation_digest = Some(digest);
+        store.state.revocation_mark += 1;
         store.event(&format!("revoke grant={grant_id} sequence={}", r.sequence))?;
         Ok(json!({ "grant_id": grant_id, "sequence": r.sequence, "revoked": true }))
     }
@@ -801,6 +814,7 @@ impl Service {
             self.kms.wrap(&key_aad(&root, generation), &key)?,
         ));
         object.access_generation = generation;
+        store.state.revocation_mark += 1;
         store.event(&format!("rotate root={root} generation={generation}"))?;
         Ok(json!({ "root": root, "access_generation": generation }))
     }
@@ -812,13 +826,26 @@ impl Service {
             .ok_or(ArtifactError::Malformed)?;
         let root = hex::encode(unhex::<32>(&r.root)?);
         let object = Self::owned(store, tenant, &root)?;
-        if object.state != ObjectState::Available {
+        if !matches!(
+            object.state,
+            ObjectState::Available | ObjectState::Quarantined
+        ) {
             return Err(ArtifactError::Tombstoned);
         }
-        object.state = ObjectState::Tombstoned;
+        let at = now();
+        let retention_until = at + RETENTION_SECS;
+        object.transition(ObjectState::Tombstoned, at);
         object.tombstone_reason = Some(reason);
+        object.retention_until = Some(retention_until);
+        store.state.revocation_mark += 1;
         store.event(&format!("tombstone root={root} reason={reason}"))?;
-        Ok(json!({ "root": root, "state": "TOMBSTONED", "reason": reason }))
+        Ok(json!({
+            "root": root,
+            "state": "TOMBSTONED",
+            "reason": reason,
+            "tombstoned_at": at,
+            "retention_until": retention_until,
+        }))
     }
 
     fn revoke_publisher(&self, store: &mut Store, tenant: &Tenant, r: PublisherRevokeReq) -> Op {
@@ -828,11 +855,13 @@ impl Service {
         }) {
             return Err(ArtifactError::Unauthorized);
         }
-        store
-            .state
-            .publisher_revocations
-            .entry(authority::publisher_key(&principal, r.generation))
-            .or_insert_with(now);
+        let key = authority::publisher_key(&principal, r.generation);
+        if let std::collections::btree_map::Entry::Vacant(entry) =
+            store.state.publisher_revocations.entry(key)
+        {
+            entry.insert(now());
+            store.state.revocation_mark += 1;
+        }
         store.event(&format!("publisher-revoke generation={}", r.generation))?;
         Ok(json!({ "principal": principal, "generation": r.generation, "revoked": true }))
     }
@@ -851,15 +880,20 @@ impl Service {
             .get(&root)
             .cloned()
             .ok_or(bare(ArtifactError::ContentUnavailable))?;
-        let attribution = json!({ "attribution": {
-            "publisher": object.publisher,
-            "generation": object.generation,
-            "signature_status": "VALID",
-        }});
+        let attribution = json!({
+            "object_state": object.state.name(),
+            "attribution": {
+                "publisher": object.publisher,
+                "generation": object.generation,
+                "signature_status": "VALID",
+            },
+        });
         let fail = |e| (e, attribution.clone());
         match object.state {
             ObjectState::Available => {}
-            ObjectState::Tombstoned => return Err(fail(ArtifactError::Tombstoned)),
+            ObjectState::Tombstoned | ObjectState::Purged => {
+                return Err(fail(ArtifactError::Tombstoned))
+            }
             ObjectState::Quarantined => return Err(fail(ArtifactError::IntegrityConflict)),
             ObjectState::Publishing => return Err(fail(ArtifactError::ContentUnavailable)),
         }
@@ -906,21 +940,24 @@ impl Service {
         Ok((root, object, Some(grant_id)))
     }
 
-    fn resolve(&self, tenant: &Tenant, body: &[u8]) -> (u16, Value) {
+    /// A key release returns its delivery identity; the caller acknowledges
+    /// it only after the response is written within the delivery deadline.
+    fn resolve(&self, tenant: &Tenant, body: &[u8]) -> ((u16, Value), Option<String>) {
         let r: AccessReq = match parse(body) {
             Ok(v) => v,
-            Err(e) => return reply(Err(e)),
+            Err(e) => return (reply(Err(e)), None),
         };
         let mut store = self.lock();
         let observed_at = now();
+        let refused = |e, extra| {
+            let mut body = error_body(e, extra);
+            body["status"] = json!(access_status(e));
+            body["observed_at"] = json!(observed_at);
+            ((http_status(e), body), None)
+        };
         let (root, object, grant) = match Self::authorize(&store, tenant, &r) {
             Ok(v) => v,
-            Err((e, extra)) => {
-                let mut body = error_body(e, extra);
-                body["status"] = json!(access_status(e));
-                body["observed_at"] = json!(observed_at);
-                return (http_status(e), body);
-            }
+            Err((e, extra)) => return refused(e, extra),
         };
         let mut value = json!({
             "status": if grant.is_some() { "AVAILABLE_AUTHORIZED" } else { "AVAILABLE_PUBLIC" },
@@ -939,26 +976,79 @@ impl Service {
             "chunk_count": object.chunk_count,
             "observed_at": observed_at,
         });
-        if let (Some(grant_id), Some(wrapped)) = (grant, object.wrapped_key.as_deref()) {
-            let key = match unhex_vec(wrapped, WRAPPED_KEY_BYTES).and_then(|w| {
-                self.kms
-                    .unwrap(&key_aad(&root, object.access_generation), &w)
-            }) {
-                Ok(k) => k,
-                Err(e) => return reply(Err(e)),
-            };
-            store.state.key_releases.push(KeyRelease {
-                grant: grant_id,
-                root: root.clone(),
-                generation: object.access_generation,
-                at: observed_at,
-            });
-            if store.persist().is_err() {
-                let _ = store.reload();
-                return reply(Err(ArtifactError::StorageFailure));
+        let (Some(grant_id), Some(wrapped)) = (grant, object.wrapped_key.as_deref()) else {
+            return ((200, value), None);
+        };
+        let rid = match r.request_id.as_deref().map(request_id) {
+            Some(Ok(rid)) => rid,
+            Some(Err(e)) => return (reply(Err(e)), None),
+            None => return (reply(Err(ArtifactError::Malformed)), None),
+        };
+        let key = match unhex_vec(wrapped, WRAPPED_KEY_BYTES).and_then(|w| {
+            self.kms
+                .unwrap(&key_aad(&root, object.access_generation), &w)
+        }) {
+            Ok(k) => k,
+            Err(e) => return (reply(Err(e)), None),
+        };
+        let id = format!("{}:{rid}", tenant.id);
+        let intent = Delivery {
+            digest: store::delivery_digest(
+                &root,
+                &grant_id,
+                r.task.as_deref().unwrap_or_default(),
+                &r.purpose,
+            ),
+            root,
+            grant: grant_id,
+            generation: object.access_generation,
+            attempts: 0,
+            state: DeliveryState::Pending,
+            updated_at: observed_at,
+        };
+        let reconciles = match store.begin_delivery(&id, intent) {
+            Ok(prior) => prior,
+            Err(e) => {
+                if e == ArtifactError::StorageFailure {
+                    let _ = store.reload();
+                }
+                return refused(e, json!({ "request_id": rid }));
             }
-            value["object_key"] = json!(hex::encode(key));
-            value["access_generation"] = json!(object.access_generation);
+        };
+        let attempt = store.state.deliveries.get(&id).map_or(0, |d| d.attempts);
+        value["object_key"] = json!(hex::encode(key));
+        value["access_generation"] = json!(object.access_generation);
+        value["delivery"] = json!({
+            "request_id": rid,
+            "attempt": attempt,
+            "reconciles": reconciles.map(DeliveryState::name),
+        });
+        ((200, value), Some(id))
+    }
+
+    /// Delivery reconciliation view: an intent whose write exceeded its
+    /// deadline or was interrupted reports UnknownDelivery until a retry with
+    /// the same request identity is acknowledged.
+    fn delivery_status(&self, tenant: &Tenant, body: &[u8]) -> (u16, Value) {
+        let rid = match parse::<DeliveryReq>(body).and_then(|r| request_id(&r.request_id)) {
+            Ok(rid) => rid,
+            Err(e) => return reply(Err(e)),
+        };
+        let store = self.lock();
+        let Some(delivery) = store.state.deliveries.get(&format!("{}:{rid}", tenant.id)) else {
+            return reply(Err(ArtifactError::ContentUnavailable));
+        };
+        let value = json!({
+            "request_id": rid,
+            "status": delivery.state.name(),
+            "root": delivery.root,
+            "access_generation": delivery.generation,
+            "attempts": delivery.attempts,
+            "observed_at": delivery.updated_at,
+        });
+        if delivery.state == DeliveryState::Unknown {
+            let e = ArtifactError::UnknownDelivery;
+            return (http_status(e), error_body(e, value));
         }
         (200, value)
     }
@@ -985,7 +1075,7 @@ impl Service {
             Ok(_) => {
                 // Durable bytes of an acknowledged root are absent or damaged.
                 if let Some(o) = store.state.objects.get_mut(&root) {
-                    o.state = ObjectState::Quarantined;
+                    o.transition(ObjectState::Quarantined, now());
                 }
                 let durable = store
                     .persist()
@@ -1123,8 +1213,9 @@ impl Service {
 }
 
 /// Restart recovery: a publication intent completes only when every durable
-/// chunk re-verifies; otherwise the staging disposition is durably failed.
-fn reconcile(store: &mut Store) -> Result<(), ArtifactError> {
+/// chunk re-verifies, otherwise the staging disposition is durably failed;
+/// unacknowledged deliveries become unknown; due purges run.
+fn reconcile(store: &mut Store, at: u64) -> Result<(), ArtifactError> {
     let pending: Vec<String> = store
         .state
         .objects
@@ -1141,7 +1232,7 @@ fn reconcile(store: &mut Store) -> Result<(), ArtifactError> {
             decode_manifest(&bytes).and_then(|m| store.verify_content(&record.session, &m));
         if verified.is_ok() {
             if let Some(o) = store.state.objects.get_mut(&root) {
-                o.state = ObjectState::Available;
+                o.transition(ObjectState::Available, at);
             }
             if let Some(s) = store.state.sessions.get_mut(&record.session) {
                 s.state = SessionState::Published;
@@ -1152,19 +1243,39 @@ fn reconcile(store: &mut Store) -> Result<(), ArtifactError> {
             if let Some(s) = store.state.sessions.get_mut(&record.session) {
                 s.state = SessionState::Failed;
             }
-            Service::release_quota(store, &record.tenant, record.byte_length);
+            store.release_quota(&record.tenant, record.byte_length);
         }
         store.event(&format!("reconcile root={root} ok={}", verified.is_ok()))?;
     }
-    Service::expire_staging(store, now());
-    store.persist()
+    let unknown = store.interrupted_deliveries(at);
+    if unknown > 0 {
+        store.event(&format!("reconcile unknown-deliveries={unknown}"))?;
+    }
+    store.expire_staging(at);
+    store.persist()?;
+    store.purge_due(at).map(|_| ())
+}
+
+/// Periodic pass on the service clock: staging expiry and retention purge.
+fn maintain(service: &Service) {
+    let mut store = service.lock();
+    let at = now();
+    let durable = if store.expire_staging(at) > 0 {
+        store.persist()
+    } else {
+        Ok(())
+    };
+    if durable.and_then(|()| store.purge_due(at)).is_err() {
+        eprintln!("maintenance pass failed; retrying next interval");
+        let _ = store.reload();
+    }
 }
 
 fn json_reply((status, value): (u16, Value)) -> Reply {
     (status, value.to_string().into_bytes(), JSON)
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<Request, ArtifactError> {
+fn read_request(stream: &mut impl Read) -> Result<Request, ArtifactError> {
     let mut reader = BufReader::new(stream);
     let lines = read_head(&mut reader)?;
     let mut first = lines.first().ok_or(ArtifactError::Malformed)?.split(' ');
@@ -1199,9 +1310,55 @@ fn read_request(stream: &mut TcpStream) -> Result<Request, ArtifactError> {
     })
 }
 
-fn handle(service: &Service, mut stream: TcpStream) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
-    let (label, (status, body, ctype)) = match read_request(&mut stream) {
+/// Server TLS stream that ends every response with close_notify. Nothing is
+/// written on a connection whose handshake never completed.
+struct Tls(StreamOwned<ServerConnection, TcpStream>);
+
+impl Read for Tls {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl Write for Tls {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.0.conn.is_handshaking() {
+            return Err(std::io::Error::other("tls handshake incomplete"));
+        }
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl Drop for Tls {
+    fn drop(&mut self) {
+        if !self.0.conn.is_handshaking() {
+            self.0.conn.send_close_notify();
+            let _ = self.0.flush();
+        }
+    }
+}
+
+fn tls_config(certificate: &Path, private_key: &Path) -> Result<Arc<ServerConfig>, ArtifactError> {
+    let chain = CertificateDer::pem_file_iter(certificate)
+        .and_then(|certs| certs.collect::<Result<Vec<_>, _>>())
+        .map_err(|_| ArtifactError::Malformed)?;
+    let key = PrivateKeyDer::from_pem_file(private_key).map_err(|_| ArtifactError::Malformed)?;
+    let config =
+        ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|_| ArtifactError::Malformed)?
+            .with_no_client_auth()
+            .with_single_cert(chain, key)
+            .map_err(|_| ArtifactError::Malformed)?;
+    Ok(Arc::new(config))
+}
+
+fn handle<S: Read + Write + Send + 'static>(service: &Service, mut stream: S) {
+    let (label, ((status, body, ctype), delivery)) = match read_request(&mut stream) {
         Ok(req) => {
             let label = format!(
                 "{} {}",
@@ -1210,17 +1367,31 @@ fn handle(service: &Service, mut stream: TcpStream) {
             );
             (label, service.route(&req))
         }
-        Err(e) => ("-".to_string(), json_reply(reply(Err(e)))),
+        Err(e) => ("-".to_string(), (json_reply(reply(Err(e))), None)),
     };
     eprintln!("{label} {status}");
-    let head = format!(
+    let mut response = format!(
         "HTTP/1.1 {status} {}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         if status == 200 { "OK" } else { "Refused" },
         body.len()
-    );
-    let _ = stream
-        .write_all(head.as_bytes())
-        .and_then(|()| stream.write_all(&body));
+    )
+    .into_bytes();
+    response.extend_from_slice(&body);
+    let Some(id) = delivery else {
+        let _ = stream.write_all(&response).and_then(|()| stream.flush());
+        return;
+    };
+    let delivered = store::deliver(stream, response, DELIVERY_DEADLINE);
+    let mut store = service.lock();
+    if store
+        .settle_delivery(&id, delivered.is_some(), now())
+        .is_err()
+    {
+        eprintln!("delivery acknowledgement not durable; it reconciles as unknown");
+        let _ = store.reload();
+    }
+    drop(store);
+    drop(delivered);
 }
 
 fn die(what: &str, e: ArtifactError) -> ! {
@@ -1244,8 +1415,24 @@ fn main() {
         .unwrap_or_else(|e| die("config", e));
     let kms = LocalFileKeyProvider::load(&PathBuf::from(key_file))
         .unwrap_or_else(|e| die("key provider", e));
-    let mut store = Store::open(&PathBuf::from(dir)).unwrap_or_else(|e| die("store", e));
-    reconcile(&mut store).unwrap_or_else(|e| die("reconcile", e));
+    let mut store = Store::open(&PathBuf::from(dir), &config.revocation_mark)
+        .unwrap_or_else(|e| die("store", e));
+    if !store.restore_ready() {
+        eprintln!(
+            "startup refused: restore not ready: revocation mark {} below live mark {}",
+            store.state.revocation_mark,
+            store.live_mark()
+        );
+        std::process::exit(3);
+    }
+    reconcile(&mut store, now()).unwrap_or_else(|e| die("reconcile", e));
+    let tls = match &config.listener {
+        Listener::Plaintext => None,
+        Listener::Tls {
+            certificate,
+            private_key,
+        } => Some(tls_config(certificate, private_key).unwrap_or_else(|e| die("tls", e))),
+    };
     let listener =
         TcpListener::bind(&listen).unwrap_or_else(|_| die("listen", ArtifactError::StorageFailure));
     let local = listener
@@ -1258,8 +1445,28 @@ fn main() {
         kms: Box::new(kms),
         store: Mutex::new(store),
     });
+    let maintenance = Arc::clone(&service);
+    std::thread::spawn(move || loop {
+        std::thread::sleep(MAINTENANCE_INTERVAL);
+        maintain(&maintenance);
+    });
     for stream in listener.incoming().flatten() {
+        if stream
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .and_then(|()| stream.set_write_timeout(Some(IO_TIMEOUT)))
+            .is_err()
+        {
+            continue;
+        }
         let service = Arc::clone(&service);
-        std::thread::spawn(move || handle(&service, stream));
+        let tls = tls.clone();
+        std::thread::spawn(move || match tls {
+            None => handle(&service, stream),
+            Some(config) => {
+                if let Ok(conn) = ServerConnection::new(config) {
+                    handle(&service, Tls(StreamOwned::new(conn, stream)));
+                }
+            }
+        });
     }
 }
