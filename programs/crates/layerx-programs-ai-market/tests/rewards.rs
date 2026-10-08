@@ -71,14 +71,20 @@ fn amounts(a: &Allocation) -> CodecResult<Vec<(WorkerId, Amount)>> {
 fn ledger() -> CodecResult<RewardLedger> {
     RewardLedger::new(AssetId::new([5; 32])?, reserve_account()?, recipient(99)?)
 }
-fn dictionary(workers: &[u8]) -> CodecResult<RecipientDictionary> {
-    let mut d = RecipientDictionary::new();
-    for (slot, n) in d.slots.iter_mut().zip(workers) {
-        *slot = Some(RecipientSlot {
-            worker: wid(*n)?,
-            recipient: recipient(*n)?,
-            references: 1,
-        });
+/// Dictionary section bytes with `workers` in slots 0.. and one reference each.
+fn dictionary(workers: &[u8]) -> CodecResult<Vec<u8>> {
+    let mut d = vec![0xAA; DICTIONARY_BYTES];
+    RecipientDictionary::init_empty(&mut d)?;
+    for (index, n) in (0u16..).zip(workers) {
+        RecipientDictionary::write_slot(
+            &mut d,
+            index,
+            Some(&RecipientSlot {
+                worker: wid(*n)?,
+                recipient: recipient(*n)?,
+                references: 1,
+            }),
+        )?;
     }
     Ok(d)
 }
@@ -164,7 +170,7 @@ fn a01_exact_rounding() -> CodecResult<()> {
     assert_eq!(terminal.tracked_deposits, 101);
     let row = terminal_row(&allocation, root, 900, expiry)?;
     terminal.check_rows(&[row])?;
-    row.check_dictionary(&dictionary(&[1, 2, 3])?)?;
+    row.check_dictionary(&RecipientDictionary::new(&dictionary(&[1, 2, 3])?)?)?;
     let bytes = roundtrip_epoch(&row)?;
     assert_eq!(&bytes[0..8], &7u64.to_be_bytes());
     assert_eq!(bytes[8], 2);
@@ -208,7 +214,8 @@ fn a02_ties() -> CodecResult<()> {
     assert_eq!(allocate(2, &duplicate), Err(NON_CANONICAL));
 
     let row = terminal_row(&allocation, root, 900, 4996)?;
-    let dict = dictionary(&[1, 2, 3])?;
+    let dict_bytes = dictionary(&[1, 2, 3])?;
+    let dict = RecipientDictionary::new(&dict_bytes)?;
     assert_eq!(
         row.check_claim(&dict, wid(3)?, recipient(3)?, 0, 1000),
         Err(F06_NOTHING_TO_CLAIM)
@@ -321,7 +328,13 @@ fn a04_empty_zero() -> CodecResult<()> {
     terminal.check_rows(&[row])?;
     assert_eq!(roundtrip_epoch(&row)?.len(), EPOCH_HEADER_BYTES);
     assert_eq!(
-        row.check_claim(&dictionary(&[1, 2, 3])?, wid(1)?, recipient(1)?, 0, 901),
+        row.check_claim(
+            &RecipientDictionary::new(&dictionary(&[1, 2, 3])?)?,
+            wid(1)?,
+            recipient(1)?,
+            0,
+            901
+        ),
         Err(F06_UNKNOWN_WORKER_ENTITLEMENT)
     );
     Ok(())
@@ -439,7 +452,8 @@ fn ledger_encoding() -> CodecResult<()> {
 }
 
 fn dictionary_encoding() -> CodecResult<()> {
-    let dict = dictionary(&[1, 2])?;
+    let dict_bytes = dictionary(&[1, 2])?;
+    let dict = RecipientDictionary::new(&dict_bytes)?;
     let mut out = vec![0u8; DICTIONARY_BYTES];
     assert_eq!(
         encode_dictionary(&dict, reserve_account()?, &mut out)?,
@@ -468,8 +482,9 @@ fn dictionary_encoding() -> CodecResult<()> {
         decode_dictionary(&bad, reserve_account()?),
         Err(NON_CANONICAL)
     );
-    let mut dup = dict;
-    dup.slots[5] = dict.slots[0];
+    let mut dup_bytes = dict_bytes.clone();
+    dup_bytes.copy_within(..SLOT_BYTES, 5 * SLOT_BYTES);
+    let dup = RecipientDictionary::new(&dup_bytes)?;
     assert_eq!(
         encode_dictionary(&dup, reserve_account()?, &mut out),
         Err(NON_CANONICAL)
@@ -526,7 +541,13 @@ fn epoch_encoding() -> CodecResult<()> {
         Err(NON_CANONICAL)
     );
     assert_eq!(
-        row.check_claim(&dictionary(&[1, 2, 3])?, wid(1)?, recipient(1)?, 0, 10),
+        row.check_claim(
+            &RecipientDictionary::new(&dictionary(&[1, 2, 3])?)?,
+            wid(1)?,
+            recipient(1)?,
+            0,
+            10
+        ),
         Err(F06_CLAIM_NOT_READY)
     );
     Ok(())
@@ -548,6 +569,102 @@ fn reward_math_and_encoding() {
 // AI.F06-A06/A07/A10/A11/A13/A14/A16/A19 (with A02/A04/A15 refusals) over the
 // complete RewardState transitions: Fund, ReserveEpoch, TerminalizeRewards,
 // DeclinePendingEpoch, Claim, ExpireEpochClaims, RefundFree and PruneEpoch.
+/// Owned bytes of one committed reward state section. Each method runs the
+/// real borrowed-view transition into a fresh section buffer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct State(Vec<u8>);
+type Step = CodecResult<(State, RewardEffect)>;
+impl State {
+    fn new(ledger: &RewardLedger) -> CodecResult<Self> {
+        let mut bytes = vec![0xAA; REWARD_STATE_BYTES];
+        RewardState::init(ledger, &mut bytes)?;
+        Ok(Self(bytes))
+    }
+    fn view(&self) -> CodecResult<RewardState<'_>> {
+        decode_reward_state(&self.0)
+    }
+    fn apply(
+        &self,
+        transition: impl for<'b> FnOnce(
+            &RewardState<'_>,
+            &'b mut [u8],
+        ) -> CodecResult<(RewardState<'b>, RewardEffect)>,
+    ) -> Step {
+        let mut next = vec![0u8; REWARD_STATE_BYTES];
+        let effect = transition(&self.view()?, &mut next)?.1;
+        Ok((Self(next), effect))
+    }
+    fn ledger(&self) -> CodecResult<RewardLedger> {
+        self.view()?.ledger()
+    }
+    fn row(&self, epoch: u64) -> CodecResult<RewardEpoch> {
+        self.view()?.row(epoch)
+    }
+    fn rows(&self) -> CodecResult<usize> {
+        Ok(self.view()?.rows().used())
+    }
+    fn occupied(&self) -> CodecResult<usize> {
+        Ok(self.view()?.dictionary().occupied())
+    }
+    fn slot(&self, index: u16) -> CodecResult<RecipientSlot> {
+        self.view()?.dictionary().slot(index)
+    }
+    fn last_refund(&self) -> CodecResult<Option<LastRefund>> {
+        self.view()?.last_refund()
+    }
+    fn fund(
+        &self,
+        authority: &FundingAuthority,
+        phase: FundingPhase,
+        payload: &FundRequest,
+        replay: &mut FundReplay<'_>,
+    ) -> Step {
+        self.apply(|s, next| s.fund(authority, phase, payload, replay, next))
+    }
+    fn reserve_epoch(
+        &self,
+        epoch: u64,
+        budget: Amount,
+        roster_digest: RosterDigest,
+        roster: &[WorkerRosterEntry],
+        opening_height: u64,
+    ) -> Step {
+        self.apply(|s, next| {
+            s.reserve_epoch(epoch, budget, roster_digest, roster, opening_height, next)
+        })
+    }
+    fn terminalize(
+        &self,
+        binding: &FrozenBinding,
+        aggregation: Digest32,
+        allocation: &Allocation,
+        roster: &[WorkerRosterEntry],
+        height: u64,
+    ) -> Step {
+        self.apply(|s, next| s.terminalize(binding, aggregation, allocation, roster, height, next))
+    }
+    fn decline_pending_epoch(&self, epoch: u64) -> Step {
+        self.apply(|s, next| s.decline_pending_epoch(epoch, next))
+    }
+    fn claim(&self, epoch: u64, request: &ClaimRequest, height: u64) -> Step {
+        self.apply(|s, next| s.claim(epoch, request, height, next))
+    }
+    fn expire_epoch_claims(&self, epoch: u64, height: u64) -> Step {
+        self.apply(|s, next| s.expire_epoch_claims(epoch, height, next))
+    }
+    fn refund_free(
+        &self,
+        phase: FundingPhase,
+        request: &RefundRequest,
+        request_digest: RequestDigest,
+        result: ResultDigest,
+    ) -> Step {
+        self.apply(|s, next| s.refund_free(phase, request, request_digest, result, next))
+    }
+    fn prune_epoch(&self, epoch: u64) -> Step {
+        self.apply(|s, next| s.prune_epoch(epoch, next))
+    }
+}
 fn owner() -> CodecResult<PrincipalId> {
     PrincipalId::new([60; 32])
 }
@@ -637,12 +754,12 @@ fn consented(amount: Amount) -> CodecResult<FundRequest> {
 }
 /// Owner funds through the real Fund transition with a fresh role sequence.
 fn owner_fund(
-    state: &RewardState,
+    state: &State,
     table: &mut ReplayTable,
     revision: &mut u64,
     sequence: u64,
     amount: Amount,
-) -> CodecResult<RewardState> {
+) -> CodecResult<State> {
     let authority = FundingAuthority {
         owner: owner()?,
         treasury: Presence::Absent,
@@ -670,11 +787,11 @@ fn owner_fund(
     );
     Ok(next)
 }
-fn funded_state(amount: Amount) -> CodecResult<RewardState> {
+fn funded_state(amount: Amount) -> CodecResult<State> {
     let mut table = replay_table(false)?;
     let mut revision = 1;
     owner_fund(
-        &RewardState::new(ledger()?)?,
+        &State::new(&ledger()?)?,
         &mut table,
         &mut revision,
         1,
@@ -692,7 +809,7 @@ fn a01_outputs() -> CodecResult<[WorkerAggregate; 3]> {
     ])
 }
 /// Reserve epoch 7 for B=101 and terminalize the A01 result at `height`.
-fn a01_terminal(funded: Amount, height: u64) -> CodecResult<(RewardState, Digest32, Digest32)> {
+fn a01_terminal(funded: Amount, height: u64) -> CodecResult<(State, Digest32, Digest32)> {
     let roster = a01_roster()?;
     let outputs = a01_outputs()?;
     let state = funded_state(funded)?;
@@ -717,16 +834,16 @@ fn a01_terminal(funded: Amount, height: u64) -> CodecResult<(RewardState, Digest
     )?;
     Ok((terminal, aggregation.root(), root))
 }
-fn counters(state: &RewardState) -> [Amount; 6] {
-    let l = state.ledger;
-    [
+fn counters(state: &State) -> CodecResult<[Amount; 6]> {
+    let l = state.ledger()?;
+    Ok([
         l.tracked_deposits,
         l.total_claimed,
         l.tracked_refunds,
         l.free,
         l.reserved,
         l.liability,
-    ]
+    ])
 }
 fn claim_of(n: u8, amount: Amount) -> CodecResult<ClaimRequest> {
     Ok(ClaimRequest {
@@ -742,11 +859,7 @@ fn refund_of(expected: Amount, amount: Amount) -> CodecResult<RefundRequest> {
         recipient: refund_to()?,
     })
 }
-fn refund(
-    state: &RewardState,
-    expected: Amount,
-    amount: Amount,
-) -> CodecResult<(RewardState, RewardEffect)> {
+fn refund(state: &State, expected: Amount, amount: Amount) -> Step {
     let mut bytes = [0u8; REFUND_PAYLOAD_BYTES];
     let request = refund_of(expected, amount)?;
     request.encode(&mut bytes)?;
@@ -762,11 +875,11 @@ fn refund(
 
 fn a06_conservation_lifecycle() -> CodecResult<()> {
     let state = funded_state(120)?;
-    assert_eq!(counters(&state), [120, 0, 0, 120, 0, 0]);
+    assert_eq!(counters(&state)?, [120, 0, 0, 120, 0, 0]);
     let (reserved, _) = state.reserve_epoch(7, 101, binding()?.roster, &a01_roster()?, 0)?;
-    assert_eq!(counters(&reserved), [120, 0, 0, 19, 101, 0]);
-    assert_eq!(reserved.ledger.recipient_count, 3);
-    let row = *reserved.row(7)?;
+    assert_eq!(counters(&reserved)?, [120, 0, 0, 19, 101, 0]);
+    assert_eq!(reserved.ledger()?.recipient_count, 3);
+    let row = reserved.row(7)?;
     assert_eq!(row.status, EpochStatus::Reserved);
     assert_eq!(
         row.entries().iter().map(|e| e.slot).collect::<Vec<_>>(),
@@ -774,8 +887,8 @@ fn a06_conservation_lifecycle() -> CodecResult<()> {
     );
 
     let (terminal, aggregation, root) = a01_terminal(120, 900)?;
-    assert_eq!(counters(&terminal), [120, 0, 0, 19, 0, 101]);
-    let row = *terminal.row(7)?;
+    assert_eq!(counters(&terminal)?, [120, 0, 0, 19, 0, 101]);
+    let row = terminal.row(7)?;
     assert_eq!(
         (
             row.status,
@@ -803,7 +916,7 @@ fn a06_conservation_lifecycle() -> CodecResult<()> {
             amount: 58
         }
     );
-    assert_eq!(counters(&paid), [120, 58, 0, 19, 0, 43]);
+    assert_eq!(counters(&paid)?, [120, 58, 0, 19, 0, 43]);
     assert_eq!(paid.row(7)?.paid_sum, 58);
     let (again, effect) = paid.claim(7, &claim_of(1, 58)?, 1001)?;
     assert_eq!(
@@ -814,8 +927,8 @@ fn a06_conservation_lifecycle() -> CodecResult<()> {
 
     let (expired, effect) = paid.expire_epoch_claims(7, 4996)?;
     assert_eq!(effect, RewardEffect::Released(43));
-    assert_eq!(counters(&expired), [120, 58, 0, 62, 0, 0]);
-    let row = *expired.row(7)?;
+    assert_eq!(counters(&expired)?, [120, 58, 0, 62, 0, 0]);
+    let row = expired.row(7)?;
     assert_eq!((row.status, row.expired_sum), (EpochStatus::Expired, 43));
     assert_eq!(
         row.entries()
@@ -840,8 +953,8 @@ fn a06_conservation_lifecycle() -> CodecResult<()> {
             amount: 62
         }
     );
-    assert_eq!(counters(&closed), [120, 58, 62, 0, 0, 0]);
-    let l = closed.ledger;
+    assert_eq!(counters(&closed)?, [120, 58, 62, 0, 0, 0]);
+    let l = closed.ledger()?;
     assert_eq!(l.tracked_deposits, l.total_claimed + l.tracked_refunds);
     Ok(())
 }
@@ -856,9 +969,9 @@ fn a07_insufficient_free() -> CodecResult<()> {
         state.reserve_epoch(7, 0, binding()?.roster, &a01_roster()?, 0),
         Err(F06_INVALID_AMOUNT)
     );
-    assert_eq!(counters(&state), [10, 0, 0, 10, 0, 0]);
-    assert_eq!(state.rows().count(), 0);
-    assert_eq!(state.dictionary.occupied(), 0);
+    assert_eq!(counters(&state)?, [10, 0, 0, 10, 0, 0]);
+    assert_eq!(state.rows()?, 0);
+    assert_eq!(state.occupied()?, 0);
     Ok(())
 }
 
@@ -952,7 +1065,7 @@ fn a10_rotation_and_authority() -> CodecResult<()> {
 fn a11_expiry_edge() -> CodecResult<()> {
     let (terminal, _, _) = a01_terminal(120, 900)?;
     let (paid, _) = terminal.claim(7, &claim_of(2, 29)?, 4995)?;
-    assert_eq!(paid.ledger.liability, 72);
+    assert_eq!(paid.ledger()?.liability, 72);
     assert_eq!(
         paid.claim(7, &claim_of(3, 14)?, 4996),
         Err(F06_CLAIM_EXPIRED)
@@ -960,14 +1073,14 @@ fn a11_expiry_edge() -> CodecResult<()> {
     assert_eq!(paid.expire_epoch_claims(7, 4995), Err(WRONG_PHASE));
     let (expired, effect) = paid.expire_epoch_claims(7, 4996)?;
     assert_eq!(effect, RewardEffect::Released(72));
-    assert_eq!(counters(&expired), [120, 29, 0, 91, 0, 0]);
+    assert_eq!(counters(&expired)?, [120, 29, 0, 91, 0, 0]);
     assert_eq!(
         expired.claim(7, &claim_of(1, 58)?, 4000),
         Err(F06_CLAIM_EXPIRED)
     );
     let (twice, effect) = expired.expire_epoch_claims(7, 4997)?;
     assert!(matches!(effect, RewardEffect::AlreadyApplied(_)));
-    assert_eq!(counters(&twice), counters(&expired));
+    assert_eq!(counters(&twice)?, counters(&expired)?);
     Ok(())
 }
 
@@ -987,7 +1100,7 @@ fn a13_late_settlement_and_close() -> CodecResult<()> {
     );
     assert_eq!(refund(&reserved, 0, 20), Err(INSUFFICIENT_FREE));
     let (closing, _) = refund(&reserved, 0, 19)?;
-    assert_eq!(counters(&closing), [120, 0, 19, 0, 101, 0]);
+    assert_eq!(counters(&closing)?, [120, 0, 19, 0, 101, 0]);
     assert_eq!(
         reserved.refund_free(
             FundingPhase::Accepting,
@@ -1030,7 +1143,7 @@ fn a13_late_settlement_and_close() -> CodecResult<()> {
     );
     let (late, _) =
         closing.terminalize(&binding()?, aggregation.root(), &allocation, &roster, 5000)?;
-    assert_eq!(counters(&late), [120, 0, 19, 0, 0, 101]);
+    assert_eq!(counters(&late)?, [120, 0, 19, 0, 0, 101]);
     assert_eq!(late.row(7)?.expiry_height, 9096);
     assert_eq!(
         late.terminalize(&binding()?, aggregation.root(), &allocation, &roster, 5001),
@@ -1043,11 +1156,11 @@ fn a13_late_settlement_and_close() -> CodecResult<()> {
 /// Fund-free epoch runner: reserve `epoch` for one positive unit per worker
 /// and terminalize it at `height`.
 fn run_epoch(
-    state: &RewardState,
+    state: &State,
     epoch: u64,
     roster: &[WorkerRosterEntry],
     height: u64,
-) -> CodecResult<RewardState> {
+) -> CodecResult<State> {
     let budget = Amount::try_from(roster.len()).map_err(|_| ARITHMETIC)?;
     let binding = epoch_binding(epoch)?;
     let (reserved, _) = state.reserve_epoch(epoch, budget, binding.roster, roster, height)?;
@@ -1070,17 +1183,17 @@ fn a14_retention_and_dictionary() -> CodecResult<()> {
         }
         state = run_epoch(&state, u64::from(e) + 1, &roster, u64::from(e) * 200)?;
     }
-    assert_eq!(state.dictionary.occupied(), 256);
-    assert_eq!(state.ledger.recipient_count, 256);
+    assert_eq!(state.occupied()?, 256);
+    assert_eq!(state.ledger()?.recipient_count, 256);
     let fresh = [wide_entry(300)?];
     assert_eq!(
         state.reserve_epoch(9, 1, binding()?.roster, &fresh, 2000),
         Err(CAPACITY)
     );
-    assert_eq!(counters(&state), [10_000, 0, 0, 9_744, 0, 256]);
+    assert_eq!(counters(&state)?, [10_000, 0, 0, 9_744, 0, 256]);
     let reused = [wide_entry(5)?];
     let (reserved, _) = state.reserve_epoch(9, 1, binding()?.roster, &reused, 2000)?;
-    assert_eq!(reserved.dictionary.slot(5)?.references, 2);
+    assert_eq!(reserved.slot(5)?.references, 2);
     assert_eq!(reserved.row(9)?.entries()[0].slot, 5);
 
     let single = [roster_entry(1)?];
@@ -1088,8 +1201,8 @@ fn a14_retention_and_dictionary() -> CodecResult<()> {
     for epoch in 1..=32u64 {
         ring = run_epoch(&ring, epoch, &single, epoch * 200)?;
     }
-    assert_eq!(ring.ledger.retained_epochs, 32);
-    assert_eq!(ring.dictionary.slot(0)?.references, 32);
+    assert_eq!(ring.ledger()?.retained_epochs, 32);
+    assert_eq!(ring.slot(0)?.references, 32);
     assert_eq!(
         ring.reserve_epoch(33, 1, binding()?.roster, &single, 10_000),
         Err(RETENTION_FULL)
@@ -1101,23 +1214,23 @@ fn a14_retention_and_dictionary() -> CodecResult<()> {
     let oldest = paid.row(1)?.allocation;
     let (opened, effect) = paid.reserve_epoch(33, 1, binding()?.roster, &single, 10_000)?;
     assert_eq!(effect, RewardEffect::Pruned(oldest));
-    assert_eq!(opened.ledger.retained_epochs, 31);
-    assert_eq!(opened.rows().count(), 32);
+    assert_eq!(opened.ledger()?.retained_epochs, 31);
+    assert_eq!(opened.rows()?, 32);
     assert_eq!(opened.claim(1, &claim_of(1, 1)?, 1000), Err(NOT_FOUND));
-    assert_eq!(opened.dictionary.slot(0)?.references, 32);
+    assert_eq!(opened.slot(0)?.references, 32);
 
     let (claimed, _) = paid.claim(2, &claim_of(1, 1)?, 1000)?;
     let (pruned, effect) = claimed.prune_epoch(1)?;
     assert_eq!(effect, RewardEffect::Pruned(oldest));
-    assert_eq!(counters(&pruned), counters(&claimed));
-    assert_eq!(pruned.ledger.retained_epochs, 31);
+    assert_eq!(counters(&pruned)?, counters(&claimed)?);
+    assert_eq!(pruned.ledger()?.retained_epochs, 31);
     let (pruned, _) = pruned.prune_epoch(2)?;
-    assert_eq!(pruned.dictionary.slot(0)?.references, 30);
+    assert_eq!(pruned.slot(0)?.references, 30);
     Ok(())
 }
 
 fn a16_consent_refusals() -> CodecResult<()> {
-    let base = RewardState::new(ledger()?)?;
+    let base = State::new(&ledger()?)?;
     let authority = FundingAuthority {
         owner: owner()?,
         treasury: Presence::Present(treasury()?),
@@ -1197,7 +1310,7 @@ fn a16_consent_refusals() -> CodecResult<()> {
 }
 
 fn a16_funding_consent() -> CodecResult<()> {
-    let base = RewardState::new(ledger()?)?;
+    let base = State::new(&ledger()?)?;
     let authority = FundingAuthority {
         owner: owner()?,
         treasury: Presence::Present(treasury()?),
@@ -1226,7 +1339,7 @@ fn a16_funding_consent() -> CodecResult<()> {
             amount: 5
         }
     );
-    assert_eq!(counters(&funded), [5, 0, 0, 5, 0, 0]);
+    assert_eq!(counters(&funded)?, [5, 0, 0, 5, 0, 0]);
     assert_eq!(revision, 2);
     let (replayed, effect) = funded.fund(
         &authority,
@@ -1267,7 +1380,7 @@ fn a16_funding_consent() -> CodecResult<()> {
 }
 
 fn a16_principal_scope(
-    funded: &RewardState,
+    funded: &State,
     table: &mut ReplayTable,
     revision: &mut u64,
     payload: &FundRequest,
@@ -1314,11 +1427,11 @@ fn a16_principal_scope(
         Err(UNAUTHORIZED)
     );
     let owner_funded = owner_fund(funded, table, revision, 1, 7)?;
-    assert_eq!(counters(&owner_funded), [12, 0, 0, 12, 0, 0]);
+    assert_eq!(counters(&owner_funded)?, [12, 0, 0, 12, 0, 0]);
     assert_eq!(*revision, 3);
 
     let full = owner_fund(
-        &RewardState::new(ledger()?)?,
+        &State::new(&ledger()?)?,
         &mut replay_table(false)?,
         &mut 1,
         1,
@@ -1361,7 +1474,7 @@ fn fund_payload_codecs() -> CodecResult<()> {
 fn a19_refund_cursor() -> CodecResult<()> {
     let (terminal, _, _) = a01_terminal(163, 900)?;
     let (state, _) = terminal.claim(7, &claim_of(1, 58)?, 1000)?;
-    assert_eq!(counters(&state), [163, 58, 0, 62, 0, 43]);
+    assert_eq!(counters(&state)?, [163, 58, 0, 62, 0, 43]);
     let wrong = RefundRequest {
         recipient: recipient(1)?,
         ..refund_of(0, 20)?
@@ -1385,8 +1498,8 @@ fn a19_refund_cursor() -> CodecResult<()> {
             amount: 20
         }
     );
-    assert_eq!(counters(&first), [163, 58, 20, 42, 0, 43]);
-    let retained = first.last_refund;
+    assert_eq!(counters(&first)?, [163, 58, 20, 42, 0, 43]);
+    let retained = first.last_refund()?;
     let (repeat, effect) = refund(&first, 0, 20)?;
     assert!(matches!(effect, RewardEffect::RepeatedRefund(_)));
     assert_eq!(repeat, first);
@@ -1400,24 +1513,24 @@ fn a19_refund_cursor() -> CodecResult<()> {
             amount: 42
         }
     );
-    assert_eq!(counters(&second), [163, 58, 62, 0, 0, 43]);
-    assert_ne!(second.last_refund, retained);
+    assert_eq!(counters(&second)?, [163, 58, 62, 0, 0, 43]);
+    assert_ne!(second.last_refund()?, retained);
 
     let (expired, _) = second.expire_epoch_claims(7, 4996)?;
-    assert_eq!(counters(&expired), [163, 58, 62, 43, 0, 0]);
+    assert_eq!(counters(&expired)?, [163, 58, 62, 43, 0, 0]);
     assert_eq!(refund(&expired, 0, 20), Err(STALE_CURSOR));
     let (old, effect) = refund(&expired, 20, 42)?;
     assert!(matches!(effect, RewardEffect::RepeatedRefund(_)));
     assert_eq!(old, expired);
     let (last, _) = refund(&expired, 62, 43)?;
-    assert_eq!(counters(&last), [163, 58, 105, 0, 0, 0]);
+    assert_eq!(counters(&last)?, [163, 58, 105, 0, 0, 0]);
 
     let mut record = [0u8; LAST_REFUND_BYTES + 1];
     assert_eq!(
-        encode_last_refund(last.last_refund.as_ref(), &mut record)?,
+        encode_last_refund(last.last_refund()?.as_ref(), &mut record)?,
         LAST_REFUND_BYTES + 1
     );
-    assert_eq!(decode_last_refund(&record)?, last.last_refund);
+    assert_eq!(decode_last_refund(&record)?, last.last_refund()?);
     assert_eq!(
         encode_last_refund(None, &mut record)?,
         LAST_REFUND_BYTES + 1
@@ -1468,14 +1581,14 @@ fn a04_no_eligible_release() -> CodecResult<()> {
     let aggregation = EpochAggregation::structural(binding()?, digest(9)?, &ties, &none)?;
     let (released, _) =
         reserved.terminalize(&binding()?, aggregation.root(), &allocation, &ties, 900)?;
-    assert_eq!(counters(&released), [77, 0, 0, 77, 0, 0]);
-    let row = *released.row(7)?;
+    assert_eq!(counters(&released)?, [77, 0, 0, 77, 0, 0]);
+    let row = released.row(7)?;
     assert_eq!(
         (row.outcome, row.entry_count, row.expiry_height),
         (RewardOutcome::NoEligibleScore, 0, 0)
     );
-    assert_eq!(released.dictionary.occupied(), 0);
-    assert_eq!(released.ledger.recipient_count, 0);
+    assert_eq!(released.occupied()?, 0);
+    assert_eq!(released.ledger()?.recipient_count, 0);
     assert_eq!(released.expire_epoch_claims(7, 5000), Err(WRONG_PHASE));
     assert_eq!(
         released.claim(7, &claim_of(1, 1)?, 1000),
@@ -1483,7 +1596,7 @@ fn a04_no_eligible_release() -> CodecResult<()> {
     );
     let (pruned, effect) = released.prune_epoch(7)?;
     assert_eq!(effect, RewardEffect::Pruned(row.allocation));
-    assert_eq!(pruned.rows().count(), 0);
+    assert_eq!(pruned.rows()?, 0);
     Ok(())
 }
 
@@ -1527,7 +1640,7 @@ fn a15_state_refusals() -> CodecResult<()> {
         ),
         Err(ARITHMETIC)
     );
-    assert_eq!(counters(&reserved), [120, 0, 0, 19, 101, 0]);
+    assert_eq!(counters(&reserved)?, [120, 0, 0, 19, 101, 0]);
     let (terminal, _) = reserved.terminalize(
         &binding()?,
         aggregation.root(),
@@ -1536,23 +1649,31 @@ fn a15_state_refusals() -> CodecResult<()> {
         900,
     )?;
     let mut forged = terminal.clone();
-    forged.ledger.liability = 100;
-    forged.ledger.free = 20;
-    forged.ledger.validate()?;
+    let mut ledger = terminal.ledger()?;
+    ledger.liability = 100;
+    ledger.free = 20;
+    encode_ledger(&ledger, &mut forged.0[..LEDGER_BYTES])?;
     assert_eq!(
         forged.claim(7, &claim_of(1, 58)?, 1000),
         Err(F06_LEDGER_INVARIANT_VIOLATION)
     );
     let mut miscounted = terminal.clone();
-    miscounted.ledger.recipient_count = 2;
+    let mut ledger = terminal.ledger()?;
+    ledger.recipient_count = 2;
+    encode_ledger(&ledger, &mut miscounted.0[..LEDGER_BYTES])?;
     assert_eq!(
         miscounted.claim(7, &claim_of(1, 58)?, 1000),
         Err(F06_LEDGER_INVARIANT_VIOLATION)
     );
-    let mut dangling = terminal;
-    if let Some(slot) = dangling.dictionary.slots[0].as_mut() {
-        slot.references = 2;
-    }
+    let mut dangling = terminal.clone();
+    RecipientDictionary::write_slot(
+        &mut dangling.0[LEDGER_BYTES..LEDGER_BYTES + DICTIONARY_BYTES],
+        0,
+        Some(&RecipientSlot {
+            references: 2,
+            ..terminal.slot(0)?
+        }),
+    )?;
     assert_eq!(
         dangling.claim(7, &claim_of(1, 58)?, 1000),
         Err(F06_LEDGER_INVARIANT_VIOLATION)
@@ -1560,32 +1681,82 @@ fn a15_state_refusals() -> CodecResult<()> {
     Ok(())
 }
 
-/// Every scenario keeps several complete fixed-capacity reward states alive at
-/// once, so the body runs on a thread with an explicit stack size.
+/// The whole state lives in one 43261-byte section written in place: ledger,
+/// 256 dictionary slots, 33 fixed 782-byte rows and the refund record.
+fn state_layout() -> CodecResult<()> {
+    assert_eq!(EPOCH_ROWS_BYTES, 25_806);
+    assert_eq!(REWARD_STATE_BYTES, 43_261);
+    let rows_at = LEDGER_BYTES + DICTIONARY_BYTES;
+    let refund_at = rows_at + EPOCH_ROWS_BYTES;
+    let empty = State::new(&ledger()?)?;
+    let mut header = [0u8; LEDGER_BYTES];
+    encode_ledger(&ledger()?, &mut header)?;
+    assert_eq!(&empty.0[..LEDGER_BYTES], &header);
+    assert!(empty.0[LEDGER_BYTES..].iter().all(|b| *b == 0));
+    assert_eq!(empty.view()?.bytes(), &empty.0[..]);
+    assert_eq!(decode_reward_state(&empty.0[1..]), Err(NON_CANONICAL));
+    assert_eq!(
+        RewardState::init(&ledger()?, &mut [0u8; 16]),
+        Err(NON_CANONICAL)
+    );
+
+    let (reserved, _) =
+        funded_state(120)?.reserve_epoch(7, 101, binding()?.roster, &a01_roster()?, 0)?;
+    let row = RewardEpoch::reserved(7, 101, binding()?.roster, &[0, 1, 2])?;
+    let encoded = roundtrip_epoch(&row)?;
+    assert_eq!(&reserved.0[rows_at..rows_at + encoded.len()], &encoded[..]);
+    assert!(reserved.0[rows_at + encoded.len()..refund_at]
+        .iter()
+        .all(|b| *b == 0));
+    let mut dict = [0u8; SLOT_BYTES];
+    dict[0] = 1;
+    dict[1..33].copy_from_slice(wid(1)?.as_bytes());
+    dict[33..65].copy_from_slice(recipient(1)?.as_bytes());
+    dict[65..67].copy_from_slice(&1u16.to_be_bytes());
+    assert_eq!(&reserved.0[LEDGER_BYTES..LEDGER_BYTES + SLOT_BYTES], &dict);
+    let rows = EpochRows::new(&reserved.0[rows_at..refund_at])?;
+    assert_eq!(
+        (rows.used(), rows.get(0)?, rows.get(1)?),
+        (1, Some(row), None)
+    );
+    assert_eq!(rows.get(MAX_EPOCH_ROWS), Err(NOT_FOUND));
+    assert_eq!(
+        EpochRows::new(&reserved.0[rows_at..refund_at - 1]),
+        Err(NON_CANONICAL)
+    );
+
+    let mut padded = reserved.clone();
+    padded.0[rows_at + encoded.len()] = 1;
+    assert_eq!(padded.view(), Err(NON_CANONICAL));
+    let mut gap = reserved.clone();
+    gap.0.copy_within(
+        rows_at..rows_at + EPOCH_MAX_BYTES,
+        rows_at + EPOCH_MAX_BYTES,
+    );
+    gap.0[rows_at..rows_at + EPOCH_MAX_BYTES].fill(0);
+    assert_eq!(gap.view(), Err(F06_LEDGER_INVARIANT_VIOLATION));
+    let mut short = vec![0u8; REWARD_STATE_BYTES - 1];
+    assert_eq!(
+        reserved.view()?.decline_pending_epoch(8, &mut short),
+        Err(NON_CANONICAL)
+    );
+    Ok(())
+}
+
 #[test]
 fn reward_state_transitions() {
-    let scenarios = std::thread::Builder::new()
-        .stack_size(64 << 20)
-        .spawn(|| {
-            [
-                a06_conservation_lifecycle(),
-                a07_insufficient_free(),
-                a10_rotation_and_authority(),
-                a11_expiry_edge(),
-                a13_late_settlement_and_close(),
-                a14_retention_and_dictionary(),
-                a16_consent_refusals(),
-                a16_funding_consent(),
-                fund_payload_codecs(),
-                a19_refund_cursor(),
-                a02_zero_entitlement(),
-                a04_no_eligible_release(),
-                a15_state_refusals(),
-            ]
-        })
-        .map(std::thread::JoinHandle::join);
-    assert!(
-        matches!(&scenarios, Ok(Ok(results)) if results.iter().all(Result::is_ok)),
-        "{scenarios:?}"
-    );
+    assert_eq!(state_layout(), Ok(()));
+    assert_eq!(a06_conservation_lifecycle(), Ok(()));
+    assert_eq!(a07_insufficient_free(), Ok(()));
+    assert_eq!(a10_rotation_and_authority(), Ok(()));
+    assert_eq!(a11_expiry_edge(), Ok(()));
+    assert_eq!(a13_late_settlement_and_close(), Ok(()));
+    assert_eq!(a14_retention_and_dictionary(), Ok(()));
+    assert_eq!(a16_consent_refusals(), Ok(()));
+    assert_eq!(a16_funding_consent(), Ok(()));
+    assert_eq!(fund_payload_codecs(), Ok(()));
+    assert_eq!(a19_refund_cursor(), Ok(()));
+    assert_eq!(a02_zero_entitlement(), Ok(()));
+    assert_eq!(a04_no_eligible_release(), Ok(()));
+    assert_eq!(a15_state_refusals(), Ok(()));
 }

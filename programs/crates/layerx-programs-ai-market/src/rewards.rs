@@ -257,11 +257,11 @@ impl RewardLedger {
     /// # Errors
     /// `CAPACITY`, `ARITHMETIC`, any row validation error, or `F06_LEDGER_INVARIANT_VIOLATION` when the counters disagree with the rows.
     pub fn check_rows(&self, epochs: &[RewardEpoch]) -> CodecResult<()> {
-        self.check_row_iter(epochs.iter())
+        self.check_row_iter(epochs.iter().copied().map(Ok))
     }
-    fn check_row_iter<'a, I>(&self, epochs: I) -> CodecResult<()>
+    fn check_row_iter<I>(&self, epochs: I) -> CodecResult<()>
     where
-        I: Iterator<Item = &'a RewardEpoch> + Clone,
+        I: Iterator<Item = CodecResult<RewardEpoch>> + Clone,
     {
         self.validate()?;
         let total = epochs.clone().count();
@@ -273,6 +273,7 @@ impl RewardLedger {
         let mut reserved = 0u128;
         let mut liability = 0u128;
         for epoch in epochs {
+            let epoch = epoch?;
             if previous.is_some_and(|p| p >= epoch.epoch) {
                 return Err(F06_LEDGER_INVARIANT_VIOLATION);
             }
@@ -361,46 +362,134 @@ pub struct RecipientSlot {
     pub recipient: AccountId,
     pub references: u16,
 }
-/// Fixed 256-slot dictionary; an unused slot is entirely zero on the wire.
+/// Borrowed view over the fixed 256-slot dictionary bytes. Slot `i` occupies
+/// bytes `[67 * i, 67 * (i + 1))`; an unused slot is entirely zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RecipientDictionary {
-    pub slots: [Option<RecipientSlot>; MAX_PAYOUT_IDENTITIES],
+pub struct RecipientDictionary<'a> {
+    bytes: &'a [u8],
 }
-impl RecipientDictionary {
-    pub const EMPTY: Self = Self {
-        slots: [None; MAX_PAYOUT_IDENTITIES],
-    };
+impl<'a> RecipientDictionary<'a> {
+    /// Writes the empty layout (every slot unused) in place.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` when `out` is not exactly 17152 bytes.
+    pub fn init_empty(out: &mut [u8]) -> CodecResult<()> {
+        if out.len() != DICTIONARY_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        out.fill(0);
+        Ok(())
+    }
+    /// Writes one slot in place: `occupied:u8 || worker32 || recipient32 ||
+    /// references:u16`, or 67 zero bytes for an unused slot.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` when `out` is not exactly 17152 bytes or the index is past 255.
+    pub fn write_slot(out: &mut [u8], index: u16, slot: Option<&RecipientSlot>) -> CodecResult<()> {
+        if out.len() != DICTIONARY_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        let target = out
+            .chunks_exact_mut(SLOT_BYTES)
+            .nth(usize::from(index))
+            .ok_or(NON_CANONICAL)?;
+        target.fill(0);
+        if let Some(s) = slot {
+            let mut w = Writer::new(target);
+            w.u8(1)?;
+            w.put(s.worker.as_bytes())?;
+            w.put(s.recipient.as_bytes())?;
+            w.u16(s.references)?;
+        }
+        Ok(())
+    }
+    /// Structural view; slot contents are checked by `slot`, `get` and `validate`.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` when `bytes` is not exactly 17152 bytes.
+    pub fn new(bytes: &'a [u8]) -> CodecResult<Self> {
+        if bytes.len() != DICTIONARY_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        Ok(Self { bytes })
+    }
     #[must_use]
-    pub const fn new() -> Self {
-        Self::EMPTY
+    pub fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+    fn raw(&self) -> impl Iterator<Item = (u16, &'a [u8])> + 'a {
+        (0u16..).zip(self.bytes.chunks_exact(SLOT_BYTES))
     }
     /// # Errors
-    /// `NON_CANONICAL` for an index past 255, `F06_LEDGER_INVARIANT_VIOLATION` for an unused slot.
+    /// `NON_CANONICAL` for an index past 255 or a malformed slot.
+    pub fn get(&self, index: u16) -> CodecResult<Option<RecipientSlot>> {
+        let bytes = self
+            .bytes
+            .chunks_exact(SLOT_BYTES)
+            .nth(usize::from(index))
+            .ok_or(NON_CANONICAL)?;
+        let mut r = Reader::new(bytes);
+        let slot = if r.boolean()? {
+            Some(RecipientSlot {
+                worker: WorkerId::new(r.fixed()?)?,
+                recipient: AccountId::new(r.fixed()?)?,
+                references: r.u16()?,
+            })
+        } else {
+            r.reserved(SLOT_BYTES - 1)?;
+            None
+        };
+        r.finish()?;
+        Ok(slot)
+    }
+    /// # Errors
+    /// `NON_CANONICAL` for an index past 255 or a malformed slot, `F06_LEDGER_INVARIANT_VIOLATION` for an unused slot.
     pub fn slot(&self, index: u16) -> CodecResult<RecipientSlot> {
-        self.slots
-            .get(usize::from(index))
-            .ok_or(NON_CANONICAL)?
-            .ok_or(F06_LEDGER_INVARIANT_VIOLATION)
+        self.get(index)?.ok_or(F06_LEDGER_INVARIANT_VIOLATION)
     }
     #[must_use]
     pub fn occupied(&self) -> usize {
-        self.slots.iter().filter(|s| s.is_some()).count()
+        self.raw().filter(|(_, s)| s[0] == 1).count()
+    }
+    /// Index of the occupied slot holding exactly this pair.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` for a malformed slot.
+    pub fn find(&self, worker: WorkerId, recipient: AccountId) -> CodecResult<Option<u16>> {
+        for (index, _) in self.raw() {
+            if self
+                .get(index)?
+                .is_some_and(|s| s.worker == worker && s.recipient == recipient)
+            {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
+    }
+    /// Lowest unused slot index.
+    #[must_use]
+    pub fn first_free(&self) -> Option<u16> {
+        self.raw()
+            .find(|(_, s)| s.iter().all(|b| *b == 0))
+            .map(|(index, _)| index)
     }
     /// # Errors
-    /// `ACCOUNT_BINDING` for a reserve-account recipient, `NON_CANONICAL` for a bad reference count or a duplicate pair.
+    /// `NON_CANONICAL` for a malformed slot, a bad reference count or a duplicate pair, `ACCOUNT_BINDING` for a reserve-account recipient.
     pub fn validate(&self, reserve: AccountId) -> CodecResult<()> {
-        for (i, slot) in self.slots.iter().enumerate() {
-            let Some(slot) = slot else { continue };
+        for (index, bytes) in self.raw() {
+            let Some(slot) = self.get(index)? else {
+                continue;
+            };
             if slot.recipient == reserve {
                 return Err(ACCOUNT_BINDING);
             }
             if slot.references == 0 || slot.references > MAX_SLOT_REFERENCES {
                 return Err(NON_CANONICAL);
             }
-            if self.slots[i + 1..]
-                .iter()
-                .flatten()
-                .any(|o| o.worker == slot.worker && o.recipient == slot.recipient)
+            if self
+                .raw()
+                .skip(usize::from(index) + 1)
+                .any(|(_, other)| other[0] == 1 && other[1..65] == bytes[1..65])
             {
                 return Err(NON_CANONICAL);
             }
@@ -408,53 +497,24 @@ impl RecipientDictionary {
         Ok(())
     }
 }
-impl Default for RecipientDictionary {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 /// # Errors
 /// Any dictionary validation error, or `CAPACITY` when `out` is too short.
 pub fn encode_dictionary(
-    v: &RecipientDictionary,
+    v: &RecipientDictionary<'_>,
     reserve: AccountId,
     out: &mut [u8],
 ) -> CodecResult<usize> {
     v.validate(reserve)?;
     let mut w = Writer::new(out);
-    for slot in &v.slots {
-        match slot {
-            Some(s) => {
-                w.u8(1)?;
-                w.put(s.worker.as_bytes())?;
-                w.put(s.recipient.as_bytes())?;
-                w.u16(s.references)?;
-            }
-            None => w.put(&[0; SLOT_BYTES])?,
-        }
-    }
+    w.put(v.bytes)?;
     Ok(w.len())
 }
+/// Borrowed, fully validated view over the dictionary bytes.
+///
 /// # Errors
 /// `NON_CANONICAL` for malformed bytes, or any dictionary validation error.
-pub fn decode_dictionary(bytes: &[u8], reserve: AccountId) -> CodecResult<RecipientDictionary> {
-    if bytes.len() != DICTIONARY_BYTES {
-        return Err(NON_CANONICAL);
-    }
-    let mut r = Reader::new(bytes);
-    let mut v = RecipientDictionary::new();
-    for slot in &mut v.slots {
-        if r.boolean()? {
-            *slot = Some(RecipientSlot {
-                worker: WorkerId::new(r.fixed()?)?,
-                recipient: AccountId::new(r.fixed()?)?,
-                references: r.u16()?,
-            });
-        } else {
-            r.reserved(SLOT_BYTES - 1)?;
-        }
-    }
-    r.finish()?;
+pub fn decode_dictionary(bytes: &[u8], reserve: AccountId) -> CodecResult<RecipientDictionary<'_>> {
+    let v = RecipientDictionary::new(bytes)?;
     v.validate(reserve)?;
     Ok(v)
 }
@@ -638,7 +698,7 @@ impl RewardEpoch {
     ///
     /// # Errors
     /// Any row validation error, a dictionary slot error, or `F06_LEDGER_INVARIANT_VIOLATION` for unordered workers.
-    pub fn check_dictionary(&self, dictionary: &RecipientDictionary) -> CodecResult<()> {
+    pub fn check_dictionary(&self, dictionary: &RecipientDictionary<'_>) -> CodecResult<()> {
         self.validate()?;
         let mut previous: Option<WorkerId> = None;
         for entry in self.entries() {
@@ -656,7 +716,7 @@ impl RewardEpoch {
     /// `F06_CLAIM_NOT_READY`, `F06_CLAIM_EXPIRED`, `F06_WRONG_CLAIM_RECIPIENT`, `F06_WRONG_CLAIM_AMOUNT`, `F06_NOTHING_TO_CLAIM`, `F06_UNKNOWN_WORKER_ENTITLEMENT`, or a row/dictionary validation error.
     pub fn check_claim(
         &self,
-        dictionary: &RecipientDictionary,
+        dictionary: &RecipientDictionary<'_>,
         worker: WorkerId,
         recipient: AccountId,
         amount: Amount,
@@ -1047,152 +1107,210 @@ pub enum RewardEffect {
     RepeatedRefund(ResultDigest),
 }
 
-/// Complete F06 reward state: ledger header, frozen recipient dictionary,
-/// ascending retained epoch rows and the refund cursor record.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RewardState {
-    pub ledger: RewardLedger,
-    pub dictionary: RecipientDictionary,
-    pub epochs: [Option<RewardEpoch>; MAX_EPOCH_ROWS],
-    pub last_refund: Option<LastRefund>,
+pub const EPOCH_ROWS_BYTES: usize = MAX_EPOCH_ROWS * EPOCH_MAX_BYTES;
+pub const LAST_REFUND_RECORD_BYTES: usize = 1 + LAST_REFUND_BYTES;
+/// `ledger || dictionary || 33 epoch rows || last-refund record`: 43261 bytes,
+/// inside F06's narrowed 49152-byte share of the joint F05/F06 section.
+pub const REWARD_STATE_BYTES: usize =
+    LEDGER_BYTES + DICTIONARY_BYTES + EPOCH_ROWS_BYTES + LAST_REFUND_RECORD_BYTES;
+const DICTIONARY_AT: usize = LEDGER_BYTES;
+const ROWS_AT: usize = DICTIONARY_AT + DICTIONARY_BYTES;
+const LAST_REFUND_AT: usize = ROWS_AT + EPOCH_ROWS_BYTES;
+
+fn unused(bytes: &[u8]) -> bool {
+    bytes.iter().all(|b| *b == 0)
 }
-impl RewardState {
-    const NO_ROWS: [Option<RewardEpoch>; MAX_EPOCH_ROWS] = [None; MAX_EPOCH_ROWS];
-    /// # Errors
-    /// Any state invariant error.
-    pub fn new(ledger: RewardLedger) -> CodecResult<Self> {
-        let state = Self {
-            ledger,
-            dictionary: RecipientDictionary::new(),
-            epochs: Self::NO_ROWS,
-            last_refund: None,
-        };
-        state.check()?;
-        Ok(state)
-    }
-    pub fn rows(&self) -> impl Iterator<Item = &RewardEpoch> + Clone {
-        self.epochs.iter().flatten()
-    }
-    /// # Errors
-    /// `NOT_FOUND` for an unknown or pruned epoch.
-    pub fn row(&self, epoch: u64) -> CodecResult<&RewardEpoch> {
-        self.rows().find(|r| r.epoch == epoch).ok_or(NOT_FOUND)
-    }
-    fn row_index(&self, epoch: u64) -> CodecResult<usize> {
-        self.epochs
-            .iter()
-            .position(|r| r.is_some_and(|r| r.epoch == epoch))
-            .ok_or(NOT_FOUND)
-    }
-    fn completed(&self) -> usize {
-        self.rows()
-            .filter(|r| r.status != EpochStatus::Reserved)
-            .count()
-    }
-    /// Full invariant: compact ascending rows, ledger counters equal to the
-    /// rows, every entry naming an occupied slot, and each slot reference
-    /// count equal to the retained entries that name it.
+
+/// Borrowed view over the fixed 33-row epoch region. Row `i` occupies bytes
+/// `[782 * i, 782 * (i + 1))`: an unused row is entirely zero, a used row is
+/// its canonical `RewardEpochV1` encoding followed by zero padding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EpochRows<'a> {
+    bytes: &'a [u8],
+}
+impl<'a> EpochRows<'a> {
+    /// Writes the empty layout (every row unused) in place.
     ///
     /// # Errors
-    /// `F06_LEDGER_INVARIANT_VIOLATION` when rows, counters, dictionary references or the refund record disagree, or any ledger, row or dictionary validation error.
-    pub fn check(&self) -> CodecResult<()> {
-        let rows = self.rows().count();
-        if self.epochs[rows..].iter().any(Option::is_some) {
-            return Err(F06_LEDGER_INVARIANT_VIOLATION);
+    /// `NON_CANONICAL` when `out` is not exactly 25806 bytes.
+    pub fn init_empty(out: &mut [u8]) -> CodecResult<()> {
+        if out.len() != EPOCH_ROWS_BYTES {
+            return Err(NON_CANONICAL);
         }
-        self.ledger.check_row_iter(self.rows())?;
-        self.dictionary.validate(self.ledger.account)?;
-        if self.dictionary.occupied() != usize::from(self.ledger.recipient_count) {
-            return Err(F06_LEDGER_INVARIANT_VIOLATION);
+        out.fill(0);
+        Ok(())
+    }
+    fn write(out: &mut [u8], index: usize, row: Option<&RewardEpoch>) -> CodecResult<()> {
+        if out.len() != EPOCH_ROWS_BYTES {
+            return Err(NON_CANONICAL);
         }
-        let mut references = [0u16; MAX_PAYOUT_IDENTITIES];
-        for row in self.rows() {
-            row.check_dictionary(&self.dictionary)?;
-            for entry in row.entries() {
-                let count = &mut references[usize::from(entry.slot)];
-                *count = count.checked_add(1).ok_or(ARITHMETIC)?;
-            }
-        }
-        for (slot, count) in self.dictionary.slots.iter().zip(references) {
-            if slot.map_or(0, |s| s.references) != count {
-                return Err(F06_LEDGER_INVARIANT_VIOLATION);
-            }
-        }
-        if let Some(last) = self.last_refund {
-            let end = last
-                .prior_refunded
-                .checked_add(last.amount)
-                .ok_or(ARITHMETIC)?;
-            if last.amount == 0 || end > self.ledger.tracked_refunds {
-                return Err(F06_LEDGER_INVARIANT_VIOLATION);
-            }
+        let target = out
+            .chunks_exact_mut(EPOCH_MAX_BYTES)
+            .nth(index)
+            .ok_or(CAPACITY)?;
+        target.fill(0);
+        if let Some(row) = row {
+            encode_epoch(row, target)?;
         }
         Ok(())
     }
-    fn commit(self, effect: RewardEffect) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        Ok((self, effect))
+    /// Structural view; row contents are checked by `get`.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` when `bytes` is not exactly 25806 bytes.
+    pub fn new(bytes: &'a [u8]) -> CodecResult<Self> {
+        if bytes.len() != EPOCH_ROWS_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        Ok(Self { bytes })
     }
-    fn release(&mut self, slot: u16) -> CodecResult<()> {
-        let entry = self
-            .dictionary
-            .slots
-            .get_mut(usize::from(slot))
-            .ok_or(NON_CANONICAL)?;
-        let mut current = entry.ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
-        current.references = current
+    /// Number of leading used rows.
+    #[must_use]
+    pub fn used(&self) -> usize {
+        self.bytes
+            .chunks_exact(EPOCH_MAX_BYTES)
+            .take_while(|row| !unused(row))
+            .count()
+    }
+    /// # Errors
+    /// `NOT_FOUND` for an index past 32, `CAPACITY` or `NON_CANONICAL` for a malformed row, or any row validation error.
+    pub fn get(&self, index: usize) -> CodecResult<Option<RewardEpoch>> {
+        let row = self
+            .bytes
+            .chunks_exact(EPOCH_MAX_BYTES)
+            .nth(index)
+            .ok_or(NOT_FOUND)?;
+        if unused(row) {
+            return Ok(None);
+        }
+        let count = usize::from(u16::from_be_bytes([
+            row[EPOCH_HEADER_BYTES - 2],
+            row[EPOCH_HEADER_BYTES - 1],
+        ]));
+        if count > MAX_WORKERS {
+            return Err(CAPACITY);
+        }
+        let end = EPOCH_HEADER_BYTES + count * ENTRY_BYTES;
+        if !unused(&row[end..]) {
+            return Err(NON_CANONICAL);
+        }
+        decode_epoch(&row[..end]).map(Some)
+    }
+    /// Decoded used rows in ascending storage order.
+    pub fn records(&self) -> impl Iterator<Item = CodecResult<RewardEpoch>> + Clone + 'a {
+        let rows = *self;
+        (0..MAX_EPOCH_ROWS).map_while(move |index| rows.get(index).transpose())
+    }
+}
+
+/// Borrowed, fully validated view over one complete F06 reward state:
+/// ledger header, frozen recipient dictionary, ascending retained epoch rows
+/// and the refund cursor record. Transitions never touch these bytes; each
+/// writes the whole next state into a caller buffer of the same size.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RewardState<'a> {
+    bytes: &'a [u8],
+}
+/// Borrowed, fully validated reward state view.
+///
+/// # Errors
+/// `NON_CANONICAL` when `bytes` is not exactly 43261 bytes, or any state invariant error.
+pub fn decode_reward_state(bytes: &[u8]) -> CodecResult<RewardState<'_>> {
+    if bytes.len() != REWARD_STATE_BYTES {
+        return Err(NON_CANONICAL);
+    }
+    let state = RewardState { bytes };
+    state.check()?;
+    Ok(state)
+}
+
+/// Next-state buffer of one transition: a copy of the committed bytes and the
+/// working ledger, re-validated as a whole before it is returned.
+struct Draft<'b> {
+    ledger: RewardLedger,
+    bytes: &'b mut [u8],
+}
+impl<'b> Draft<'b> {
+    fn start(current: &RewardState<'_>, next: &'b mut [u8]) -> CodecResult<Self> {
+        if next.len() != REWARD_STATE_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        next.copy_from_slice(current.bytes);
+        Ok(Self {
+            ledger: current.ledger()?,
+            bytes: next,
+        })
+    }
+    fn dictionary(&self) -> RecipientDictionary<'_> {
+        RecipientDictionary {
+            bytes: &self.bytes[DICTIONARY_AT..ROWS_AT],
+        }
+    }
+    fn rows(&self) -> EpochRows<'_> {
+        EpochRows {
+            bytes: &self.bytes[ROWS_AT..LAST_REFUND_AT],
+        }
+    }
+    fn set_slot(&mut self, index: u16, slot: Option<&RecipientSlot>) -> CodecResult<()> {
+        RecipientDictionary::write_slot(&mut self.bytes[DICTIONARY_AT..ROWS_AT], index, slot)
+    }
+    fn set_row(&mut self, index: usize, row: Option<&RewardEpoch>) -> CodecResult<()> {
+        EpochRows::write(&mut self.bytes[ROWS_AT..LAST_REFUND_AT], index, row)
+    }
+    fn commit(self, effect: RewardEffect) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        let Self { ledger, bytes } = self;
+        encode_ledger(&ledger, &mut bytes[..DICTIONARY_AT])?;
+        Ok((decode_reward_state(bytes)?, effect))
+    }
+    fn release(&mut self, index: u16) -> CodecResult<()> {
+        let mut slot = self.dictionary().slot(index)?;
+        slot.references = slot
             .references
             .checked_sub(1)
             .ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
-        if current.references == 0 {
-            *entry = None;
+        if slot.references == 0 {
+            self.set_slot(index, None)?;
             self.ledger.recipient_count = self
                 .ledger
                 .recipient_count
                 .checked_sub(1)
                 .ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
+            Ok(())
         } else {
-            *entry = Some(current);
+            self.set_slot(index, Some(&slot))
         }
-        Ok(())
     }
     fn admit(&mut self, worker: WorkerId, recipient: AccountId) -> CodecResult<u16> {
         if recipient == self.ledger.account {
             return Err(ACCOUNT_BINDING);
         }
-        if let Some(i) = self
-            .dictionary
-            .slots
-            .iter()
-            .position(|s| s.is_some_and(|s| s.worker == worker && s.recipient == recipient))
-        {
-            let slot = self.dictionary.slots[i].as_mut().ok_or(NON_CANONICAL)?;
+        if let Some(index) = self.dictionary().find(worker, recipient)? {
+            let mut slot = self.dictionary().slot(index)?;
             if slot.references >= MAX_SLOT_REFERENCES {
                 return Err(CAPACITY);
             }
             slot.references += 1;
-            return u16::try_from(i).map_err(|_| ARITHMETIC);
+            self.set_slot(index, Some(&slot))?;
+            return Ok(index);
         }
-        let i = self
-            .dictionary
-            .slots
-            .iter()
-            .position(Option::is_none)
-            .ok_or(CAPACITY)?;
-        self.dictionary.slots[i] = Some(RecipientSlot {
-            worker,
-            recipient,
-            references: 1,
-        });
+        let index = self.dictionary().first_free().ok_or(CAPACITY)?;
+        self.set_slot(
+            index,
+            Some(&RecipientSlot {
+                worker,
+                recipient,
+                references: 1,
+            }),
+        )?;
         self.ledger.recipient_count = self
             .ledger
             .recipient_count
             .checked_add(1)
             .ok_or(ARITHMETIC)?;
-        u16::try_from(i).map_err(|_| ARITHMETIC)
+        Ok(index)
     }
     fn remove_oldest(&mut self) -> CodecResult<Presence<Digest32>> {
-        let oldest = self.epochs[0].ok_or(NOT_FOUND)?;
+        let oldest = self.rows().get(0)?.ok_or(NOT_FOUND)?;
         let prunable = match oldest.status {
             EpochStatus::Reserved => false,
             EpochStatus::Expired => true,
@@ -1204,14 +1322,138 @@ impl RewardState {
         for entry in oldest.entries() {
             self.release(entry.slot)?;
         }
-        self.epochs.copy_within(1.., 0);
-        self.epochs[MAX_EPOCH_ROWS - 1] = None;
+        self.bytes[ROWS_AT..LAST_REFUND_AT].copy_within(EPOCH_MAX_BYTES.., 0);
+        self.set_row(MAX_EPOCH_ROWS - 1, None)?;
         self.ledger.retained_epochs = self
             .ledger
             .retained_epochs
             .checked_sub(1)
             .ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
         Ok(oldest.allocation)
+    }
+}
+
+impl<'a> RewardState<'a> {
+    /// Writes the initial state in place: the given ledger, an empty
+    /// dictionary, no epoch rows and an absent refund record.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` when `out` is not exactly 43261 bytes, or any state invariant error.
+    pub fn init<'b>(ledger: &RewardLedger, out: &'b mut [u8]) -> CodecResult<RewardState<'b>> {
+        if out.len() != REWARD_STATE_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        encode_ledger(ledger, &mut out[..DICTIONARY_AT])?;
+        RecipientDictionary::init_empty(&mut out[DICTIONARY_AT..ROWS_AT])?;
+        EpochRows::init_empty(&mut out[ROWS_AT..LAST_REFUND_AT])?;
+        encode_last_refund(None, &mut out[LAST_REFUND_AT..])?;
+        decode_reward_state(out)
+    }
+    #[must_use]
+    pub fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+    /// # Errors
+    /// Any ledger decoding error.
+    pub fn ledger(&self) -> CodecResult<RewardLedger> {
+        decode_ledger(&self.bytes[..DICTIONARY_AT])
+    }
+    #[must_use]
+    pub fn dictionary(&self) -> RecipientDictionary<'a> {
+        RecipientDictionary {
+            bytes: &self.bytes[DICTIONARY_AT..ROWS_AT],
+        }
+    }
+    #[must_use]
+    pub fn rows(&self) -> EpochRows<'a> {
+        EpochRows {
+            bytes: &self.bytes[ROWS_AT..LAST_REFUND_AT],
+        }
+    }
+    /// # Errors
+    /// Any refund record decoding error.
+    pub fn last_refund(&self) -> CodecResult<Option<LastRefund>> {
+        decode_last_refund(&self.bytes[LAST_REFUND_AT..])
+    }
+    fn locate(&self, epoch: u64) -> CodecResult<(usize, RewardEpoch)> {
+        for (index, row) in self.rows().records().enumerate() {
+            let row = row?;
+            if row.epoch == epoch {
+                return Ok((index, row));
+            }
+        }
+        Err(NOT_FOUND)
+    }
+    /// # Errors
+    /// `NOT_FOUND` for an unknown or pruned epoch.
+    pub fn row(&self, epoch: u64) -> CodecResult<RewardEpoch> {
+        Ok(self.locate(epoch)?.1)
+    }
+    /// Full invariant: compact ascending rows, ledger counters equal to the
+    /// rows, every entry naming an occupied slot, and each slot reference
+    /// count equal to the retained entries that name it.
+    fn check(&self) -> CodecResult<()> {
+        let ledger = self.ledger()?;
+        let rows = self.rows();
+        if !rows
+            .bytes
+            .chunks_exact(EPOCH_MAX_BYTES)
+            .skip(rows.used())
+            .all(unused)
+        {
+            return Err(F06_LEDGER_INVARIANT_VIOLATION);
+        }
+        ledger.check_row_iter(rows.records())?;
+        let dictionary = self.dictionary();
+        dictionary.validate(ledger.account)?;
+        if dictionary.occupied() != usize::from(ledger.recipient_count) {
+            return Err(F06_LEDGER_INVARIANT_VIOLATION);
+        }
+        let mut references = [0u16; MAX_PAYOUT_IDENTITIES];
+        for row in rows.records() {
+            let row = row?;
+            row.check_dictionary(&dictionary)?;
+            for entry in row.entries() {
+                let count = &mut references[usize::from(entry.slot)];
+                *count = count.checked_add(1).ok_or(ARITHMETIC)?;
+            }
+        }
+        for (index, count) in (0u16..).zip(references) {
+            if dictionary.get(index)?.map_or(0, |s| s.references) != count {
+                return Err(F06_LEDGER_INVARIANT_VIOLATION);
+            }
+        }
+        if let Some(last) = self.last_refund()? {
+            let end = last
+                .prior_refunded
+                .checked_add(last.amount)
+                .ok_or(ARITHMETIC)?;
+            if end > ledger.tracked_refunds {
+                return Err(F06_LEDGER_INVARIANT_VIOLATION);
+            }
+        }
+        Ok(())
+    }
+    /// Accepted repeat: the next state is a byte copy of this one.
+    fn keep<'b>(
+        &self,
+        next: &'b mut [u8],
+        effect: RewardEffect,
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        if next.len() != REWARD_STATE_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        next.copy_from_slice(self.bytes);
+        Ok((RewardState { bytes: next }, effect))
+    }
+    fn completed(&self) -> CodecResult<usize> {
+        let mut completed = 0;
+        for row in self.rows().records() {
+            if row?.status != EpochStatus::Reserved {
+                completed += 1;
+            }
+        }
+        Ok(completed)
     }
 
     /// Fund (0x0601): authenticated owner/treasury, policy 1, explicit
@@ -1222,49 +1464,48 @@ impl RewardState {
     /// # Errors
     /// `UNAUTHORIZED`, `F06_FUNDING_POLICY_MISMATCH`,
     /// `F06_CONTRIBUTION_CONSENT_REQUIRED`, `F06_REFUND_RECIPIENT_MISMATCH`,
-    /// `WRONG_PHASE`, `F06_INVALID_AMOUNT`, `ARITHMETIC` and the common replay
-    /// refusals; on any error neither the state nor the replay table changes.
-    pub fn fund(
+    /// `WRONG_PHASE`, `F06_INVALID_AMOUNT`, `ARITHMETIC`, `NON_CANONICAL` for a
+    /// wrong-sized `next`, and the common replay refusals; on any error
+    /// neither this state nor the replay table changes.
+    pub fn fund<'b>(
         &self,
         authority: &FundingAuthority,
         phase: FundingPhase,
         payload: &FundRequest,
         replay: &mut FundReplay<'_>,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
         authority.check(replay.request)?;
+        let ledger = self.ledger()?;
         if payload.policy_version != FUNDING_POLICY_VERSION {
             return Err(F06_FUNDING_POLICY_MISMATCH);
         }
         if !payload.consent {
             return Err(F06_CONTRIBUTION_CONSENT_REQUIRED);
         }
-        if payload.refund_recipient != self.ledger.refund_recipient {
+        if payload.refund_recipient != ledger.refund_recipient {
             return Err(F06_REFUND_RECIPIENT_MISMATCH);
         }
         if let ReplayDecision::AlreadyApplied(last) =
             replay.table.check(replay.request, replay.height)?
         {
-            return Ok((self.clone(), RewardEffect::ReplayedFund(last.result_digest)));
+            return self.keep(next, RewardEffect::ReplayedFund(last.result_digest));
         }
         if phase != FundingPhase::Accepting {
             return Err(WRONG_PHASE);
         }
-        let mut next = self.clone();
-        next.ledger = self.ledger.deposit(payload.amount)?;
-        next.check()?;
+        let mut draft = Draft::start(self, next)?;
+        draft.ledger = ledger.deposit(payload.amount)?;
         let mut table = replay.table.clone();
         let mut revision = *replay.revision;
         table.record_success(replay.request, replay.height, &mut revision, replay.result)?;
+        let committed = draft.commit(RewardEffect::Deposit {
+            principal: replay.request.principal,
+            amount: payload.amount,
+        })?;
         *replay.table = table;
         *replay.revision = revision;
-        Ok((
-            next,
-            RewardEffect::Deposit {
-                principal: replay.request.principal,
-                amount: payload.amount,
-            },
-        ))
+        Ok(committed)
     }
 
     /// `ReserveEpoch`: internal to `OpenEpoch`. Prunes the oldest completed row
@@ -1273,17 +1514,18 @@ impl RewardState {
     /// ascending), then moves budget from F to R in one row.
     ///
     /// # Errors
-    /// `F06_EPOCH_ALREADY_RESERVED`, `WRONG_ROSTER`, `WRONG_PHASE` for a non-increasing epoch, `ARITHMETIC` when the eventual expiry height overflows, `INSUFFICIENT_FREE`, `F06_INVALID_AMOUNT`, `RETENTION_FULL` when the oldest completed row still holds liability, `ACCOUNT_BINDING`, `CAPACITY` when the dictionary is full, or any state invariant error.
-    pub fn reserve_epoch(
+    /// `F06_EPOCH_ALREADY_RESERVED`, `WRONG_ROSTER`, `WRONG_PHASE` for a non-increasing epoch, `ARITHMETIC` when the eventual expiry height overflows, `INSUFFICIENT_FREE`, `F06_INVALID_AMOUNT`, `RETENTION_FULL` when the oldest completed row still holds liability, `ACCOUNT_BINDING`, `CAPACITY` when the dictionary is full, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn reserve_epoch<'b>(
         &self,
         epoch: u64,
         budget: Amount,
         roster_digest: RosterDigest,
         roster: &[WorkerRosterEntry],
         opening_height: u64,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        if self.ledger.active_reserve {
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        let ledger = self.ledger()?;
+        if ledger.active_reserve {
             return Err(F06_EPOCH_ALREADY_RESERVED);
         }
         if roster.is_empty() || roster.len() > MAX_WORKERS {
@@ -1292,7 +1534,13 @@ impl RewardState {
         if roster.windows(2).any(|p| p[0].worker >= p[1].worker) {
             return Err(WRONG_ROSTER);
         }
-        if self.rows().last().is_some_and(|r| r.epoch >= epoch) {
+        if self
+            .rows()
+            .records()
+            .last()
+            .transpose()?
+            .is_some_and(|r| r.epoch >= epoch)
+        {
             return Err(WRONG_PHASE);
         }
         claim_expiry(
@@ -1300,13 +1548,14 @@ impl RewardState {
                 .checked_add(EPOCH_SPAN_HEIGHTS)
                 .ok_or(ARITHMETIC)?,
         )?;
-        if budget > self.ledger.free {
+        if budget > ledger.free {
             return Err(INSUFFICIENT_FREE);
         }
-        let mut next = self.clone();
         let mut effect = RewardEffect::NoTransfer;
-        if next.completed() >= MAX_RETAINED_EPOCHS {
-            effect = RewardEffect::Pruned(next.remove_oldest().map_err(|e| {
+        let pruning = self.completed()? >= MAX_RETAINED_EPOCHS;
+        let mut draft = Draft::start(self, next)?;
+        if pruning {
+            effect = RewardEffect::Pruned(draft.remove_oldest().map_err(|e| {
                 if e == WRONG_PHASE {
                     RETENTION_FULL
                 } else {
@@ -1316,17 +1565,13 @@ impl RewardState {
         }
         let mut slots = [0u16; MAX_WORKERS];
         for (slot, entry) in slots.iter_mut().zip(roster) {
-            *slot = next.admit(entry.worker, entry.recipient)?;
+            *slot = draft.admit(entry.worker, entry.recipient)?;
         }
-        next.ledger = next.ledger.reserve(budget)?;
-        let index = next.rows().count();
-        next.epochs[index] = Some(RewardEpoch::reserved(
-            epoch,
-            budget,
-            roster_digest,
-            &slots[..roster.len()],
-        )?);
-        next.commit(effect)
+        draft.ledger = draft.ledger.reserve(budget)?;
+        let index = draft.rows().used();
+        let row = RewardEpoch::reserved(epoch, budget, roster_digest, &slots[..roster.len()])?;
+        draft.set_row(index, Some(&row))?;
+        draft.commit(effect)
     }
 
     /// `TerminalizeRewards`: internal to `FinalizeAggregation`, bound to the
@@ -1334,26 +1579,26 @@ impl RewardState {
     /// from R to C; `NO_ELIGIBLE_SCORE` releases B to F and the slot references.
     ///
     /// # Errors
-    /// `NOT_FOUND`, `F06_EPOCH_TERMINAL`, `WRONG_ROSTER`, `F06_AGGREGATION_MISMATCH`, `ARITHMETIC` on height overflow with R preserved, `RETENTION_FULL`, or any state invariant error.
-    pub fn terminalize(
+    /// `NOT_FOUND`, `F06_EPOCH_TERMINAL`, `WRONG_ROSTER`, `F06_AGGREGATION_MISMATCH`, `ARITHMETIC` on height overflow with R preserved, `RETENTION_FULL`, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn terminalize<'b>(
         &self,
         binding: &FrozenBinding,
         aggregation: Digest32,
         allocation: &Allocation,
         roster: &[WorkerRosterEntry],
         height: u64,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        let index = self.row_index(binding.epoch)?;
-        let row = self.epochs[index].ok_or(NOT_FOUND)?;
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        let (index, row) = self.locate(binding.epoch)?;
         if row.status != EpochStatus::Reserved {
             return Err(F06_EPOCH_TERMINAL);
         }
         if binding.roster != row.roster || roster.len() != row.entries().len() {
             return Err(WRONG_ROSTER);
         }
+        let dictionary = self.dictionary();
         for (entry, member) in row.entries().iter().zip(roster) {
-            let slot = self.dictionary.slot(entry.slot)?;
+            let slot = dictionary.slot(entry.slot)?;
             if slot.worker != member.worker || slot.recipient != member.recipient {
                 return Err(WRONG_ROSTER);
             }
@@ -1361,12 +1606,12 @@ impl RewardState {
         if allocation.budget() != row.budget {
             return Err(F06_AGGREGATION_MISMATCH);
         }
+        let ledger = self.ledger()?;
         let outcome = allocation.outcome();
-        let digest =
-            allocation_digest(binding, aggregation, self.ledger.asset, allocation, roster)?;
-        let mut next = self.clone();
-        let (ledger, expiry) = self.ledger.terminalize(row.budget, outcome, height)?;
-        next.ledger = ledger;
+        let digest = allocation_digest(binding, aggregation, ledger.asset, allocation, roster)?;
+        let (terminal_ledger, expiry) = ledger.terminalize(row.budget, outcome, height)?;
+        let mut draft = Draft::start(self, next)?;
+        draft.ledger = terminal_ledger;
         let mut terminal = row;
         terminal.status = EpochStatus::Terminal;
         terminal.outcome = outcome;
@@ -1379,14 +1624,9 @@ impl RewardState {
                 if allocation.len() != row.entries().len() {
                     return Err(F06_AGGREGATION_MISMATCH);
                 }
-                for (i, entry) in terminal
-                    .entries
-                    .iter_mut()
-                    .take(allocation.len())
-                    .enumerate()
-                {
+                for (i, (entry, member)) in terminal.entries.iter_mut().zip(roster).enumerate() {
                     let (worker, amount) = allocation.entitlement(i)?;
-                    if worker != roster[i].worker {
+                    if worker != member.worker {
                         return Err(F06_AGGREGATION_MISMATCH);
                     }
                     entry.entitlement = amount;
@@ -1394,73 +1634,75 @@ impl RewardState {
             }
             RewardOutcome::NoEligibleScore => {
                 for entry in row.entries() {
-                    next.release(entry.slot)?;
+                    draft.release(entry.slot)?;
                 }
                 terminal.entry_count = 0;
                 terminal.entries = [RewardEntry::EMPTY; MAX_WORKERS];
             }
             RewardOutcome::Undecided => return Err(F06_AGGREGATION_MISMATCH),
         }
-        next.epochs[index] = Some(terminal);
-        next.commit(RewardEffect::NoTransfer)
+        draft.set_row(index, Some(&terminal))?;
+        draft.commit(RewardEffect::NoTransfer)
     }
 
     /// `DeclinePendingEpoch`: only an epoch that never opened may be declined;
     /// it spends nothing and an opened epoch can never be cancelled.
     ///
     /// # Errors
-    /// `WRONG_PHASE` once the epoch has opened, or any state invariant error.
-    pub fn decline_pending_epoch(&self, epoch: u64) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        if self.rows().any(|r| r.epoch >= epoch) {
-            return Err(WRONG_PHASE);
+    /// `WRONG_PHASE` once the epoch has opened, `NON_CANONICAL` for a wrong-sized `next`, or any row decoding error.
+    pub fn decline_pending_epoch<'b>(
+        &self,
+        epoch: u64,
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        for row in self.rows().records() {
+            if row?.epoch >= epoch {
+                return Err(WRONG_PHASE);
+            }
         }
-        Ok((self.clone(), RewardEffect::NoTransfer))
+        self.keep(next, RewardEffect::NoTransfer)
     }
 
     /// Claim (0x0602): exact fixed recipient and amount; pays at most once.
     ///
     /// # Errors
-    /// `NOT_FOUND` for an unknown or pruned epoch, the claim refusals of `RewardEpoch::check_claim`, `ARITHMETIC`, or any state invariant error.
-    pub fn claim(
+    /// `NOT_FOUND` for an unknown or pruned epoch, the claim refusals of `RewardEpoch::check_claim`, `ARITHMETIC`, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn claim<'b>(
         &self,
         epoch: u64,
         request: &ClaimRequest,
         height: u64,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        let index = self.row_index(epoch)?;
-        let row = self.epochs[index].ok_or(NOT_FOUND)?;
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        let (index, row) = self.locate(epoch)?;
         match row.check_claim(
-            &self.dictionary,
+            &self.dictionary(),
             request.worker,
             request.recipient,
             request.amount,
             height,
         )? {
-            ClaimDecision::AlreadyApplied(id) => {
-                Ok((self.clone(), RewardEffect::AlreadyApplied(id)))
-            }
+            ClaimDecision::AlreadyApplied(id) => self.keep(next, RewardEffect::AlreadyApplied(id)),
             ClaimDecision::Payable {
                 index: entry,
                 amount,
             } => {
-                let mut next = self.clone();
+                let mut draft = Draft::start(self, next)?;
                 let mut paid = row;
                 paid.entries[entry].disposition = Disposition::Claimed;
                 paid.paid_sum = row.paid_sum.checked_add(amount).ok_or(ARITHMETIC)?;
-                next.epochs[index] = Some(paid);
-                next.ledger.liability = self
+                draft.set_row(index, Some(&paid))?;
+                draft.ledger.liability = draft
                     .ledger
                     .liability
                     .checked_sub(amount)
                     .ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
-                next.ledger.total_claimed = self
+                draft.ledger.total_claimed = draft
                     .ledger
                     .total_claimed
                     .checked_add(amount)
                     .ok_or(ARITHMETIC)?;
-                next.commit(RewardEffect::Payout {
+                draft.commit(RewardEffect::Payout {
                     recipient: request.recipient,
                     amount,
                 })
@@ -1472,15 +1714,14 @@ impl RewardState {
     /// becomes EXPIRED and exactly their sum moves from C to F.
     ///
     /// # Errors
-    /// `NOT_FOUND`, `WRONG_PHASE` for a row that is not allocated or not yet at expiry, `ARITHMETIC`, or any state invariant error.
-    pub fn expire_epoch_claims(
+    /// `NOT_FOUND`, `WRONG_PHASE` for a row that is not allocated or not yet at expiry, `ARITHMETIC`, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn expire_epoch_claims<'b>(
         &self,
         epoch: u64,
         height: u64,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        let index = self.row_index(epoch)?;
-        let row = self.epochs[index].ok_or(NOT_FOUND)?;
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        let (index, row) = self.locate(epoch)?;
         if row.outcome != RewardOutcome::Allocated {
             return Err(WRONG_PHASE);
         }
@@ -1488,7 +1729,7 @@ impl RewardState {
             let Presence::Present(digest) = row.allocation else {
                 return Err(F06_LEDGER_INVARIANT_VIOLATION);
             };
-            return Ok((self.clone(), RewardEffect::AlreadyApplied(digest)));
+            return self.keep(next, RewardEffect::AlreadyApplied(digest));
         }
         if height < row.expiry_height {
             return Err(WRONG_PHASE);
@@ -1506,66 +1747,66 @@ impl RewardState {
             }
         }
         expired.expired_sum = released;
-        let mut next = self.clone();
-        next.epochs[index] = Some(expired);
-        next.ledger.liability = self
+        let mut draft = Draft::start(self, next)?;
+        draft.set_row(index, Some(&expired))?;
+        draft.ledger.liability = draft
             .ledger
             .liability
             .checked_sub(released)
             .ok_or(F06_LEDGER_INVARIANT_VIOLATION)?;
-        next.ledger.free = self.ledger.free.checked_add(released).ok_or(ARITHMETIC)?;
-        next.commit(RewardEffect::Released(released))
+        draft.ledger.free = draft.ledger.free.checked_add(released).ok_or(ARITHMETIC)?;
+        draft.commit(RewardEffect::Released(released))
     }
 
     /// `RefundFree` (0x0604): permissionless while closing, monotonic X cursor,
     /// fixed recipient, never touching R or C.
     ///
     /// # Errors
-    /// `WRONG_PHASE` outside closing, `F06_REFUND_RECIPIENT_MISMATCH`, `STALE_CURSOR`, `F06_INVALID_AMOUNT`, `INSUFFICIENT_FREE`, `ARITHMETIC`, or any state invariant error.
-    pub fn refund_free(
+    /// `WRONG_PHASE` outside closing, `F06_REFUND_RECIPIENT_MISMATCH`, `STALE_CURSOR`, `F06_INVALID_AMOUNT`, `INSUFFICIENT_FREE`, `ARITHMETIC`, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn refund_free<'b>(
         &self,
         phase: FundingPhase,
         request: &RefundRequest,
         request_digest: RequestDigest,
         result: ResultDigest,
-    ) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
         if phase != FundingPhase::Closing {
             return Err(WRONG_PHASE);
         }
-        if request.recipient != self.ledger.refund_recipient {
+        let ledger = self.ledger()?;
+        if request.recipient != ledger.refund_recipient {
             return Err(F06_REFUND_RECIPIENT_MISMATCH);
         }
-        if let Some(last) = self.last_refund {
+        if let Some(last) = self.last_refund()? {
             if last.prior_refunded == request.expected_refunded && last.amount == request.amount {
-                return Ok((self.clone(), RewardEffect::RepeatedRefund(last.result)));
+                return self.keep(next, RewardEffect::RepeatedRefund(last.result));
             }
         }
-        if request.expected_refunded != self.ledger.tracked_refunds {
+        if request.expected_refunded != ledger.tracked_refunds {
             return Err(STALE_CURSOR);
         }
         if request.amount == 0 {
             return Err(F06_INVALID_AMOUNT);
         }
-        let mut next = self.clone();
-        next.ledger.free = self
-            .ledger
+        let mut draft = Draft::start(self, next)?;
+        draft.ledger.free = ledger
             .free
             .checked_sub(request.amount)
             .ok_or(INSUFFICIENT_FREE)?;
-        next.ledger.tracked_refunds = self
-            .ledger
+        draft.ledger.tracked_refunds = ledger
             .tracked_refunds
             .checked_add(request.amount)
             .ok_or(ARITHMETIC)?;
-        next.last_refund = Some(LastRefund {
+        let record = LastRefund {
             prior_refunded: request.expected_refunded,
             amount: request.amount,
             request: request_digest,
             result,
-        });
-        next.commit(RewardEffect::Payout {
-            recipient: self.ledger.refund_recipient,
+        };
+        encode_last_refund(Some(&record), &mut draft.bytes[LAST_REFUND_AT..])?;
+        draft.commit(RewardEffect::Payout {
+            recipient: ledger.refund_recipient,
             amount: request.amount,
         })
     }
@@ -1574,14 +1815,17 @@ impl RewardState {
     /// liability; releases its dictionary references, no counter change.
     ///
     /// # Errors
-    /// `NOT_FOUND`, `WRONG_PHASE` for a younger row, a reserved row or a row with unpaid liability, or any state invariant error.
-    pub fn prune_epoch(&self, epoch: u64) -> CodecResult<(Self, RewardEffect)> {
-        self.check()?;
-        if self.row_index(epoch)? != 0 {
+    /// `NOT_FOUND`, `WRONG_PHASE` for a younger row, a reserved row or a row with unpaid liability, `NON_CANONICAL` for a wrong-sized `next`, or any state invariant error.
+    pub fn prune_epoch<'b>(
+        &self,
+        epoch: u64,
+        next: &'b mut [u8],
+    ) -> CodecResult<(RewardState<'b>, RewardEffect)> {
+        if self.locate(epoch)?.0 != 0 {
             return Err(WRONG_PHASE);
         }
-        let mut next = self.clone();
-        let digest = next.remove_oldest()?;
-        next.commit(RewardEffect::Pruned(digest))
+        let mut draft = Draft::start(self, next)?;
+        let digest = draft.remove_oldest()?;
+        draft.commit(RewardEffect::Pruned(digest))
     }
 }
