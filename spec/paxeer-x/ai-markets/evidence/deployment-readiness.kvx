@@ -1,0 +1,108 @@
+[meta]
+task_id = "ai.P-DEPLOYMENT"
+selector = "deployment-admission"
+acceptance_case = "AI.DEPLOYMENT-A01"
+requirement = "AI.OPERATIONS"
+contract_version = 1
+readiness = "BLOCKED"
+qualification = "UNRUN"
+validator = "tools/paxeer-x/ai_evidence.py"
+verify_cmd = "python3 tools/paxeer-x/ai_evidence.py --selector deployment-admission"
+rule = "Every fact below is either established from a verifiable source or BLOCKED with the authority that must supply it; no domain, genesis, ABI, authority, receipt, balance or proof value is invented."
+
+[workspace]
+source = "ai.P-WORKSPACE admission and approval records, consumed through PAXAI_ADMISSION_RECORD and PAXAI_APPROVAL_RECORD"
+decision_id = "px26-fm1-workspace-2026-10-08-01"
+approved_by = "px26-leader-delegated-px26-fm1"
+pinned_base_revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd"
+pinned_branch = "px26/fm1/ai-workspace"
+admission_sha256 = "9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509"
+deployment_selector_reference = "absent"
+status = "BLOCKED"
+needs = "The workspace authority issues a re-pinned admission on the current candidate whose other_selector_records carries the deployment-admission selector record path and SHA-256; the pinned base and branch no longer match the candidate checkout HEAD."
+
+[selector_record]
+schema = "paxai.selector-admission.v1"
+required_status = "APPROVED"
+required_namespace = "one-program-shared-key"
+required_finality_policy = "verified-authoritative-finality"
+native_caps = "committed_blobs 512, committed_bytes 67108864, staged_new_blobs 4, blob_bytes 1048576, module_kv 512, staged_writes 64"
+status = "BLOCKED"
+needs = "An APPROVED private selector record under the workspace evidence directory referencing sixteen PASS evidence records; none of the sixteen exists."
+
+[fact.domain]
+source = "spec/paxeer-x/ai-markets/contracts/core.kvx#contract.C02::paragraph_009"
+established = "chain_domain32 is an immutable installer decision tied to the actual chain genesis/config; no approved value exists."
+status = "BLOCKED"
+needs = "Authorized installer: approved chain_domain32 and the genesis_sha256 it binds, as a signed decision record."
+
+[fact.genesis]
+source = "spec/paxeer-x/ai-markets/contracts/integration-map.kvx#integration.I03::paragraph_001"
+established = "Kernel genesis is not yet produced for the current deployment; the archive genesis SHA-256 is still an open owner value."
+status = "BLOCKED"
+needs = "Chain configuration owner: final genesis bytes SHA-256 and config SHA-256 bound to the approved chain_domain32."
+
+[fact.source]
+established = "AI market crate source exists (ai.T-C01 done); no candidate revision is admitted for deployment."
+status = "BLOCKED"
+needs = "Main integrator: one immutable candidate revision and tree SHA-256 equal to the workspace-pinned base."
+
+[fact.artifact]
+established = "No built executable artifact exists; ai.T-C02 (guest artifact and native host boundary) is pending and an rlib-only build is not artifact evidence."
+status = "BLOCKED"
+needs = "FM-CORE via ai.T-C02: pinned Wasm artifact SHA-256 and manifest SHA-256 built from the candidate revision."
+
+[fact.abi]
+source = "programs/sdk/rust/src/abi.rs"
+established = "The SDK declares ABI_VERSION = ABI_V4_VERSION and the v2 extension surface; application schema version is 1 and does not select the host ABI."
+status = "BLOCKED"
+needs = "Program host runtime owner: the actual admitted deployed host ABI (at least 2) and a matching artifact ABI."
+
+[fact.runtime]
+status = "BLOCKED"
+needs = "Program host runtime owner: admitted runtime version with context v2, hash, signature and shared-storage availability on the deployed host."
+
+[fact.fees]
+status = "BLOCKED"
+needs = "Fee schedule authority: admitted fee schedule version and SHA-256 with verified metering."
+
+[fact.account_registration]
+source = "spec/paxeer-x/ai-markets/contracts/integration-map.kvx#integration.I01::paragraph_005"
+status = "BLOCKED"
+needs = "Native Program-account registration authority: executing program ID, rewards account derived with seed paxai/rewards/v1, asset, and the registration receipt SHA-256."
+
+[fact.immutable_asset]
+status = "BLOCKED"
+needs = "Asset authority: the immutable asset identifier for funding and payout."
+
+[fact.capabilities]
+status = "BLOCKED"
+needs = "Program host runtime owner: effective native grants SHA-256 covering shared read, shared write, emit event and program spend."
+
+[fact.authenticated_height]
+source = "spec/paxeer-x/ai-markets/contracts/integration-map.kvx#integration.I03::paragraph_003"
+status = "BLOCKED"
+needs = "Native runtime qualification producer: authenticated Context batch height observed on the deployed host through context selector 5."
+
+[fact.finality]
+status = "BLOCKED"
+needs = "Finality verifier and trust-root owner: finalized height, state root, verifier config SHA-256, trust roots SHA-256 and verification receipt SHA-256 on the approved chain domain."
+
+[fact.proof]
+status = "BLOCKED"
+needs = "Proof service owner: balance proof SHA-256 and verification receipt against the finalized state root."
+
+[fact.balance]
+source = "spec/paxeer-x/ai-markets/contracts/core.kvx#contract.C06::paragraph_002"
+status = "BLOCKED"
+needs = "Funded account authority: real owner and rewards account references, asset and authenticated balance amount proven at the finalized state root, with the approved funding budget."
+
+[fact.capacity]
+source = "spec/paxeer-x/ai-markets/contracts/integration-map.kvx#integration.I06"
+established = "ai.P-STORAGE-PROFILE and ai.T-C04 are pending; no committed-root-bound capacity observation exists."
+status = "BLOCKED"
+needs = "FM-STORAGE: committed-root capacity observation with at least 64 free blobs and a serialized reservation of at least 4 blobs within the native caps."
+
+[fact.native_round_trip]
+status = "BLOCKED"
+needs = "Native runtime qualification producer: real host-path context/hash/signature/shared-storage/funding/payout round trip with rollback, funding principal, payout owner and spend ceiling verified on the candidate artifact."
