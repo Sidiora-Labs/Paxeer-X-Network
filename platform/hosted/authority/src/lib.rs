@@ -15,6 +15,7 @@ use layerx_wire::receipt::{decode, decode_merkle_proof, encode_unsigned};
 use serde::Deserialize;
 
 mod native_state;
+pub mod ai_storage_admission;
 
 /// Lower-case hexadecimal helpers shared by the service and its tests.
 /// Refusal of hexadecimal text that is not well formed.

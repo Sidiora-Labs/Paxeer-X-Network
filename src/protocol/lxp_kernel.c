@@ -680,6 +680,7 @@ static lxp_result kernel_snapshot_finish(
     snapshot->kernel.observe_commit = NULL;
     snapshot->kernel.observe_maintenance = NULL;
     snapshot->kernel.commit_observer_context = NULL;
+    snapshot->kernel.capacity = NULL;
     snapshot->kernel.publication_poisoned = false;
     snapshot->kernel.poisoned_sequence = 0U;
     (void)memset(snapshot->kernel.poisoned_activity_id, 0, 32U);
@@ -7911,4 +7912,807 @@ lxp_byte_span lxp_kernel_prepared_batch_admission_prestate(
     if (batch == NULL || batch->simulation || receipt_index >= batch->count ||
         batch->admission_prestates == NULL) return (lxp_byte_span){NULL, 0U};
     return batch->admission_prestates[receipt_index];
+}
+
+static const uint8_t capacity_request_domain[] =
+    "LayerX/storage-capacity-request/v1";
+static const uint8_t capacity_ledger_magic[8] =
+    {'L', 'X', 'C', 'A', 'P', 'L', 'G', '1'};
+
+static void capacity_put_u16(uint8_t *bytes, uint16_t value)
+{
+    bytes[0] = (uint8_t)(value >> 8U);
+    bytes[1] = (uint8_t)value;
+}
+
+static void capacity_put_u32(uint8_t *bytes, uint32_t value)
+{
+    capacity_put_u16(bytes, (uint16_t)(value >> 16U));
+    capacity_put_u16(bytes + 2U, (uint16_t)value);
+}
+
+static void capacity_put_u64(uint8_t *bytes, uint64_t value)
+{
+    capacity_put_u32(bytes, (uint32_t)(value >> 32U));
+    capacity_put_u32(bytes + 4U, (uint32_t)value);
+}
+
+static uint16_t capacity_get_u16(const uint8_t *bytes)
+{
+    return (uint16_t)(((uint16_t)bytes[0] << 8U) | bytes[1]);
+}
+
+static uint32_t capacity_get_u32(const uint8_t *bytes)
+{
+    return ((uint32_t)capacity_get_u16(bytes) << 16U) |
+        capacity_get_u16(bytes + 2U);
+}
+
+static uint64_t capacity_get_u64(const uint8_t *bytes)
+{
+    return ((uint64_t)capacity_get_u32(bytes) << 32U) |
+        capacity_get_u32(bytes + 4U);
+}
+
+static void capacity_limit(lxp_capacity_demand *limit)
+{
+    limit->blobs = LXP_KERNEL_MAX_BLOBS;
+    limit->bytes = LXP_KERNEL_MAX_BLOB_TOTAL_BYTES;
+    limit->kv = LXP_KERNEL_MAX_MODULE_KV;
+}
+
+static bool capacity_demand_within(const lxp_capacity_demand *demand,
+                                   const lxp_capacity_demand *limit)
+{
+    return demand->blobs <= limit->blobs && demand->bytes <= limit->bytes &&
+        demand->kv <= limit->kv;
+}
+
+static bool capacity_demand_zero(const lxp_capacity_demand *demand)
+{
+    return demand->blobs == 0U && demand->bytes == 0U && demand->kv == 0U;
+}
+
+static bool capacity_demand_equal(const lxp_capacity_demand *left,
+                                  const lxp_capacity_demand *right)
+{
+    return left->blobs == right->blobs && left->bytes == right->bytes &&
+        left->kv == right->kv;
+}
+
+static size_t capacity_demand_encode(const lxp_capacity_demand *demand,
+                                     uint8_t *bytes)
+{
+    capacity_put_u32(bytes, demand->blobs);
+    capacity_put_u64(bytes + 4U, demand->bytes);
+    capacity_put_u32(bytes + 12U, demand->kv);
+    return LXP_CAPACITY_DEMAND_BYTES;
+}
+
+static size_t capacity_demand_decode(const uint8_t *bytes,
+                                     lxp_capacity_demand *demand)
+{
+    demand->blobs = capacity_get_u32(bytes);
+    demand->bytes = capacity_get_u64(bytes + 4U);
+    demand->kv = capacity_get_u32(bytes + 12U);
+    return LXP_CAPACITY_DEMAND_BYTES;
+}
+
+lxp_result lxp_capacity_profile_validate(const lxp_capacity_profile *profile)
+{
+    lxp_capacity_demand limit;
+    capacity_limit(&limit);
+    if (profile == NULL) return LXP_ERR_NON_CANONICAL;
+    if (profile->version == 0U || lxp_ct_is_zero(profile->digest, 32U) ||
+        profile->maximum_work_lifetime == 0U ||
+        profile->floor.blobs == 0U || profile->floor.bytes == 0U ||
+        profile->floor.kv == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    return capacity_demand_within(&profile->floor, &limit) ?
+        LXP_OK : LXP_ERR_PARAMETER_BOUNDS;
+}
+
+lxp_result lxp_capacity_ledger_install(lxp_capacity_ledger *ledger,
+                                       const lxp_capacity_profile *profile)
+{
+    lxp_result status;
+    if (ledger == NULL) return LXP_ERR_NON_CANONICAL;
+    status = lxp_capacity_profile_validate(profile);
+    if (status != LXP_OK) return status;
+    if (ledger->profile.version == 0U) {
+        (void)memset(ledger, 0, sizeof(*ledger));
+        ledger->profile = *profile;
+        ledger->next_request_id = 1U;
+        return LXP_OK;
+    }
+    if (profile->version == ledger->profile.version)
+        return lxp_ct_memcmp(profile->digest, ledger->profile.digest, 32U) == 0 &&
+            capacity_demand_equal(&profile->floor, &ledger->profile.floor) &&
+            profile->maximum_work_lifetime ==
+                ledger->profile.maximum_work_lifetime ?
+            LXP_OK : LXP_ERR_CONTEXT_MISMATCH;
+    if (profile->version < ledger->profile.version)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    ledger->profile = *profile;
+    return LXP_OK;
+}
+
+static bool capacity_entry_active(const lxp_capacity_reservation *entry,
+                                  uint64_t next_sequence)
+{
+    return entry->state == LXP_CAPACITY_RESERVED &&
+        (entry->kind == LXP_CAPACITY_OBLIGATION ||
+         entry->expires_sequence > next_sequence);
+}
+
+static uint64_t capacity_saturating_sub(uint64_t left, uint64_t right)
+{
+    return left > right ? left - right : 0U;
+}
+
+static uint64_t capacity_max(uint64_t left, uint64_t right)
+{
+    return left > right ? left : right;
+}
+
+typedef struct capacity_tally {
+    uint64_t limit[3];
+    uint64_t committed[3];
+    uint64_t floor[3];
+    uint64_t obligations[3];
+    uint64_t work[3];
+    uint32_t active;
+} capacity_tally;
+
+static void capacity_demand_vector(const lxp_capacity_demand *demand,
+                                   uint64_t vector[3])
+{
+    vector[0] = demand->blobs;
+    vector[1] = demand->bytes;
+    vector[2] = demand->kv;
+}
+
+static lxp_result capacity_head(const lxp_kernel *kernel,
+                                const lxp_capacity_ledger *ledger)
+{
+    if (kernel == NULL || ledger == NULL || kernel->state == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    if (ledger->profile.version == 0U) return LXP_ERR_MODULE_DISABLED;
+    if ((kernel->journal != NULL && kernel->journal->open) ||
+        kernel->publication_poisoned || kernel->batch_publication_pending)
+        return LXP_ERR_PROJECTION_STALE;
+    return LXP_OK;
+}
+
+static void capacity_tally_take(const lxp_kernel *kernel,
+                                const lxp_capacity_ledger *ledger,
+                                uint64_t excluded_request_id,
+                                capacity_tally *tally)
+{
+    lxp_capacity_demand limit;
+    uint64_t next_sequence = kernel->state->next_sequence;
+    size_t index;
+    size_t axis;
+    (void)memset(tally, 0, sizeof(*tally));
+    capacity_limit(&limit);
+    capacity_demand_vector(&limit, tally->limit);
+    tally->committed[0] = kernel->blob_count;
+    tally->committed[1] = kernel->blob_total_bytes;
+    tally->committed[2] = kernel->module_kv_count;
+    capacity_demand_vector(&ledger->profile.floor, tally->floor);
+    for (index = 0U; index < ledger->count; ++index) {
+        const lxp_capacity_reservation *entry = &ledger->entries[index];
+        uint64_t demand[3];
+        uint64_t *sum;
+        if (!capacity_entry_active(entry, next_sequence) ||
+            entry->request_id == excluded_request_id)
+            continue;
+        capacity_demand_vector(&entry->demand, demand);
+        sum = entry->kind == LXP_CAPACITY_OBLIGATION ?
+            tally->obligations : tally->work;
+        for (axis = 0U; axis < 3U; ++axis) sum[axis] += demand[axis];
+        ++tally->active;
+    }
+}
+
+static uint64_t capacity_available_axis(const capacity_tally *tally,
+                                        size_t axis)
+{
+    uint64_t reserve = capacity_max(tally->floor[axis],
+                                    tally->obligations[axis]);
+    uint64_t used = tally->committed[axis] + reserve + tally->work[axis];
+    return capacity_saturating_sub(tally->limit[axis], used);
+}
+
+lxp_result lxp_kernel_capacity_observe(const lxp_kernel *kernel,
+                                       const lxp_capacity_ledger *ledger,
+                                       lxp_capacity_observation *observation)
+{
+    capacity_tally tally;
+    lxp_result status;
+    if (observation == NULL) return LXP_ERR_NON_CANONICAL;
+    status = capacity_head(kernel, ledger);
+    if (status != LXP_OK) return status;
+    capacity_tally_take(kernel, ledger, 0U, &tally);
+    (void)memset(observation, 0, sizeof(*observation));
+    observation->profile_version = ledger->profile.version;
+    (void)memcpy(observation->profile_digest, ledger->profile.digest, 32U);
+    observation->next_sequence = kernel->state->next_sequence;
+    (void)memcpy(observation->state_root, kernel->current_state_root, 32U);
+    capacity_limit(&observation->limit);
+    observation->committed = (lxp_capacity_demand){
+        (uint32_t)tally.committed[0], tally.committed[1],
+        (uint32_t)tally.committed[2]};
+    observation->floor = ledger->profile.floor;
+    observation->obligations = (lxp_capacity_demand){
+        (uint32_t)tally.obligations[0], tally.obligations[1],
+        (uint32_t)tally.obligations[2]};
+    observation->work = (lxp_capacity_demand){
+        (uint32_t)tally.work[0], tally.work[1], (uint32_t)tally.work[2]};
+    observation->available = (lxp_capacity_demand){
+        (uint32_t)capacity_available_axis(&tally, 0U),
+        capacity_available_axis(&tally, 1U),
+        (uint32_t)capacity_available_axis(&tally, 2U)};
+    observation->active_reservations = tally.active;
+    observation->next_request_id = ledger->next_request_id;
+    return LXP_OK;
+}
+
+static size_t capacity_find(const lxp_capacity_ledger *ledger,
+                            uint64_t request_id)
+{
+    size_t index;
+    for (index = 0U; index < ledger->count; ++index)
+        if (ledger->entries[index].request_id == request_id) return index;
+    return ledger->count;
+}
+
+static lxp_result capacity_receipt(const lxp_kernel *kernel,
+                                   const lxp_capacity_reservation *entry,
+                                   bool *present, lxp_receipt *receipt,
+                                   uint8_t digest[32])
+{
+    const uint8_t *bytes = NULL;
+    size_t length = 0U;
+    lxp_result status = lxp_idempotency_canonical_lookup(
+        kernel->state, entry->actor_did, entry->actor_did_length,
+        entry->idempotency_key, &bytes, &length);
+    *present = false;
+    if (status == LXP_OK) return LXP_OK;
+    if (status != LXP_ERR_IDEMPOTENT_REPLAY) return status;
+    if (receipt == NULL) {
+        *present = true;
+        return LXP_OK;
+    }
+    status = lxp_receipt_decode(bytes, length, true, receipt);
+    if (status == LXP_OK &&
+        lxp_ct_memcmp(receipt->activity_id, entry->activity_id, 32U) != 0)
+        status = LXP_ERR_LOG_CORRUPT;
+    if (status == LXP_OK) status = lxp_hash_sha256(bytes, length, digest);
+    if (status == LXP_OK) *present = true;
+    return status;
+}
+
+static lxp_result capacity_request_validate(
+    const lxp_capacity_profile *profile, const lxp_capacity_request *request)
+{
+    lxp_capacity_demand limit;
+    size_t index;
+    capacity_limit(&limit);
+    if ((request->kind != LXP_CAPACITY_WORK &&
+         request->kind != LXP_CAPACITY_OBLIGATION) ||
+        lxp_ct_is_zero(request->request_digest, 32U) ||
+        lxp_ct_is_zero(request->activity_id, 32U) ||
+        request->actor_did_length == 0U ||
+        request->actor_did_length > sizeof(request->actor_did) ||
+        capacity_demand_zero(&request->demand) ||
+        lxp_ct_is_zero(request->expected_root, 32U) ||
+        request->expected_sequence == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    for (index = request->actor_did_length;
+         index < sizeof(request->actor_did); ++index)
+        if (request->actor_did[index] != 0U) return LXP_ERR_NON_CANONICAL;
+    if (request->kind == LXP_CAPACITY_WORK &&
+        (request->supersedes != 0U || request->lifetime == 0U))
+        return LXP_ERR_NON_CANONICAL;
+    if (request->kind == LXP_CAPACITY_OBLIGATION && request->lifetime != 0U)
+        return LXP_ERR_NON_CANONICAL;
+    if (request->kind == LXP_CAPACITY_WORK &&
+        request->lifetime > profile->maximum_work_lifetime)
+        return LXP_ERR_PARAMETER_BOUNDS;
+    return capacity_demand_within(&request->demand, &limit) ?
+        LXP_OK : LXP_ERR_ARENA_EXHAUSTED;
+}
+
+static void capacity_expire(lxp_capacity_ledger *ledger,
+                            uint64_t next_sequence)
+{
+    size_t index;
+    for (index = 0U; index < ledger->count; ++index) {
+        lxp_capacity_reservation *entry = &ledger->entries[index];
+        if (entry->state == LXP_CAPACITY_RESERVED &&
+            entry->kind == LXP_CAPACITY_WORK &&
+            entry->expires_sequence <= next_sequence)
+            entry->state = LXP_CAPACITY_EXPIRED;
+    }
+}
+
+static bool capacity_admits(const capacity_tally *tally,
+                            const lxp_capacity_request *request)
+{
+    uint64_t demand[3];
+    size_t axis;
+    capacity_demand_vector(&request->demand, demand);
+    for (axis = 0U; axis < 3U; ++axis) {
+        uint64_t used;
+        if (demand[axis] == 0U) continue;
+        if (request->kind == LXP_CAPACITY_WORK)
+            used = tally->committed[axis] +
+                capacity_max(tally->floor[axis], tally->obligations[axis]) +
+                tally->work[axis] + demand[axis];
+        else
+            used = tally->committed[axis] +
+                capacity_max(tally->floor[axis],
+                             tally->obligations[axis] + demand[axis]) +
+                tally->work[axis];
+        if (used > tally->limit[axis]) return false;
+    }
+    return true;
+}
+
+static lxp_result capacity_slot(lxp_capacity_ledger *ledger,
+                                uint64_t next_sequence)
+{
+    size_t index;
+    if (ledger->count < LXP_CAPACITY_MAX_RESERVATIONS) return LXP_OK;
+    for (index = 0U; index < ledger->count; ++index) {
+        const lxp_capacity_reservation *entry = &ledger->entries[index];
+        if (entry->state != LXP_CAPACITY_RESERVED &&
+            entry->bound_sequence < next_sequence) {
+            size_t tail = ledger->count - index - 1U;
+            if (tail != 0U)
+                (void)memmove(&ledger->entries[index],
+                              &ledger->entries[index + 1U],
+                              tail * sizeof(ledger->entries[0]));
+            --ledger->count;
+            (void)memset(&ledger->entries[ledger->count], 0,
+                         sizeof(ledger->entries[0]));
+            return LXP_OK;
+        }
+    }
+    return LXP_ERR_LENGTH_LIMIT;
+}
+
+lxp_result lxp_kernel_capacity_reserve(const lxp_kernel *kernel,
+                                       lxp_capacity_ledger *ledger,
+                                       const lxp_capacity_request *request,
+                                       lxp_capacity_reservation *reservation,
+                                       bool *replayed)
+{
+    capacity_tally tally;
+    lxp_capacity_reservation *entry;
+    size_t predecessor = 0U;
+    size_t index;
+    uint64_t next_sequence;
+    bool committed = false;
+    lxp_result status;
+    if (request == NULL || reservation == NULL || replayed == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    *replayed = false;
+    if (kernel == NULL || ledger == NULL || kernel->state == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    if (ledger->profile.version == 0U) return LXP_ERR_MODULE_DISABLED;
+    status = capacity_request_validate(&ledger->profile, request);
+    if (status != LXP_OK) return status;
+    for (index = 0U; index < ledger->count; ++index)
+        if (lxp_ct_memcmp(ledger->entries[index].request_digest,
+                          request->request_digest, 32U) == 0) {
+            *reservation = ledger->entries[index];
+            *replayed = true;
+            return LXP_OK;
+        }
+    status = capacity_head(kernel, ledger);
+    if (status != LXP_OK) return status;
+    next_sequence = kernel->state->next_sequence;
+    if (request->expected_sequence != next_sequence ||
+        lxp_ct_memcmp(request->expected_root, kernel->current_state_root,
+                      32U) != 0)
+        return LXP_ERR_PROJECTION_STALE;
+    if (request->kind == LXP_CAPACITY_WORK &&
+        request->lifetime > UINT64_MAX - next_sequence)
+        return LXP_ERR_OVERFLOW;
+    if (ledger->next_request_id == 0U ||
+        ledger->next_request_id == UINT64_MAX)
+        return LXP_ERR_SEQUENCE_EXHAUSTED;
+    capacity_expire(ledger, next_sequence);
+    for (index = 0U; index < ledger->count; ++index) {
+        const lxp_capacity_reservation *other = &ledger->entries[index];
+        if (other->state != LXP_CAPACITY_RESERVED) continue;
+        if (lxp_ct_memcmp(other->activity_id, request->activity_id, 32U) == 0 ||
+            (other->actor_did_length == request->actor_did_length &&
+             memcmp(other->actor_did, request->actor_did,
+                    request->actor_did_length) == 0 &&
+             lxp_ct_memcmp(other->idempotency_key, request->idempotency_key,
+                           32U) == 0))
+            return LXP_ERR_DUPLICATE_ENTRY;
+    }
+    {
+        lxp_capacity_reservation probe;
+        (void)memset(&probe, 0, sizeof(probe));
+        probe.actor_did_length = request->actor_did_length;
+        (void)memcpy(probe.actor_did, request->actor_did,
+                     sizeof(probe.actor_did));
+        (void)memcpy(probe.idempotency_key, request->idempotency_key, 32U);
+        (void)memcpy(probe.activity_id, request->activity_id, 32U);
+        status = capacity_receipt(kernel, &probe, &committed, NULL, NULL);
+    }
+    if (status != LXP_OK) return status;
+    if (committed) return LXP_ERR_IDEMPOTENT_REPLAY;
+    if (request->supersedes != 0U) {
+        const lxp_capacity_reservation *prior;
+        predecessor = capacity_find(ledger, request->supersedes);
+        if (predecessor == ledger->count) return LXP_ERR_UNKNOWN_FIELD;
+        prior = &ledger->entries[predecessor];
+        if (prior->kind != LXP_CAPACITY_OBLIGATION ||
+            prior->state != LXP_CAPACITY_RESERVED ||
+            prior->outcome_sequence == 0U || prior->outcome_result == LXP_OK ||
+            !capacity_demand_equal(&prior->demand, &request->demand))
+            return LXP_ERR_CONDITION_UNMET;
+    }
+    capacity_tally_take(kernel, ledger, request->supersedes, &tally);
+    if (!capacity_admits(&tally, request)) return LXP_ERR_ARENA_EXHAUSTED;
+    status = capacity_slot(ledger, next_sequence);
+    if (status != LXP_OK) return status;
+    if (request->supersedes != 0U) {
+        predecessor = capacity_find(ledger, request->supersedes);
+        if (predecessor == ledger->count) return LXP_FATAL_INVARIANT;
+        ledger->entries[predecessor].state = LXP_CAPACITY_SUPERSEDED;
+    }
+    entry = &ledger->entries[ledger->count++];
+    (void)memset(entry, 0, sizeof(*entry));
+    entry->request_id = ledger->next_request_id++;
+    entry->kind = request->kind;
+    entry->state = LXP_CAPACITY_RESERVED;
+    (void)memcpy(entry->request_digest, request->request_digest, 32U);
+    (void)memcpy(entry->activity_id, request->activity_id, 32U);
+    (void)memcpy(entry->idempotency_key, request->idempotency_key, 32U);
+    entry->actor_did_length = request->actor_did_length;
+    (void)memcpy(entry->actor_did, request->actor_did,
+                 sizeof(entry->actor_did));
+    entry->demand = request->demand;
+    entry->bound_sequence = next_sequence;
+    (void)memcpy(entry->bound_root, kernel->current_state_root, 32U);
+    entry->expires_sequence = request->kind == LXP_CAPACITY_WORK ?
+        next_sequence + request->lifetime : 0U;
+    entry->supersedes = request->supersedes;
+    *reservation = *entry;
+    return LXP_OK;
+}
+
+lxp_result lxp_kernel_capacity_reconcile(const lxp_kernel *kernel,
+                                         lxp_capacity_ledger *ledger,
+                                         uint64_t request_id,
+                                         lxp_capacity_reservation *reservation)
+{
+    lxp_capacity_reservation *entry;
+    lxp_receipt *receipt;
+    uint8_t digest[32];
+    bool present = false;
+    size_t index;
+    lxp_result status;
+    if (reservation == NULL || request_id == 0U) return LXP_ERR_NON_CANONICAL;
+    status = capacity_head(kernel, ledger);
+    if (status != LXP_OK) return status;
+    index = capacity_find(ledger, request_id);
+    if (index == ledger->count) return LXP_ERR_UNKNOWN_FIELD;
+    entry = &ledger->entries[index];
+    if (entry->state != LXP_CAPACITY_RESERVED) {
+        *reservation = *entry;
+        return LXP_OK;
+    }
+    receipt = (lxp_receipt *)malloc(sizeof(*receipt));
+    if (receipt == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    status = capacity_receipt(kernel, entry, &present, receipt, digest);
+    if (status == LXP_OK && present) {
+        entry->outcome_sequence = receipt->global_sequence;
+        entry->outcome_result = receipt->result_code;
+        (void)memcpy(entry->outcome_receipt_digest, digest, 32U);
+        if (entry->kind == LXP_CAPACITY_WORK ||
+            receipt->result_code == LXP_OK)
+            entry->state = LXP_CAPACITY_RECONCILED;
+    } else if (status == LXP_OK && entry->kind == LXP_CAPACITY_WORK &&
+               entry->expires_sequence <= kernel->state->next_sequence) {
+        entry->state = LXP_CAPACITY_EXPIRED;
+    }
+    free(receipt);
+    if (status == LXP_OK) *reservation = *entry;
+    return status;
+}
+
+lxp_result lxp_kernel_capacity_cancel(const lxp_kernel *kernel,
+                                      lxp_capacity_ledger *ledger,
+                                      uint64_t request_id,
+                                      lxp_capacity_reservation *reservation)
+{
+    lxp_capacity_reservation *entry;
+    bool committed = false;
+    size_t index;
+    lxp_result status;
+    if (reservation == NULL || request_id == 0U) return LXP_ERR_NON_CANONICAL;
+    status = capacity_head(kernel, ledger);
+    if (status != LXP_OK) return status;
+    index = capacity_find(ledger, request_id);
+    if (index == ledger->count) return LXP_ERR_UNKNOWN_FIELD;
+    entry = &ledger->entries[index];
+    if (entry->state == LXP_CAPACITY_CANCELLED) {
+        *reservation = *entry;
+        return LXP_OK;
+    }
+    if (entry->state != LXP_CAPACITY_RESERVED) return LXP_ERR_CONDITION_UNMET;
+    if (entry->kind != LXP_CAPACITY_WORK) return LXP_ERR_AUTH_SCOPE;
+    status = capacity_receipt(kernel, entry, &committed, NULL, NULL);
+    if (status != LXP_OK) return status;
+    if (committed) return LXP_ERR_IDEMPOTENT_REPLAY;
+    entry->state = LXP_CAPACITY_CANCELLED;
+    *reservation = *entry;
+    return LXP_OK;
+}
+
+void lxp_capacity_profile_encode(const lxp_capacity_profile *profile,
+                                 uint8_t bytes[LXP_CAPACITY_PROFILE_BYTES])
+{
+    size_t cursor = 0U;
+    capacity_put_u16(bytes + cursor, LXP_CAPACITY_FORMAT_VERSION); cursor += 2U;
+    capacity_put_u16(bytes + cursor, profile->version); cursor += 2U;
+    (void)memcpy(bytes + cursor, profile->digest, 32U); cursor += 32U;
+    cursor += capacity_demand_encode(&profile->floor, bytes + cursor);
+    capacity_put_u64(bytes + cursor, profile->maximum_work_lifetime);
+}
+
+lxp_result lxp_capacity_profile_decode(
+    const uint8_t bytes[LXP_CAPACITY_PROFILE_BYTES],
+    lxp_capacity_profile *profile)
+{
+    size_t cursor = 0U;
+    if (bytes == NULL || profile == NULL) return LXP_ERR_NON_CANONICAL;
+    if (capacity_get_u16(bytes) != LXP_CAPACITY_FORMAT_VERSION)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    (void)memset(profile, 0, sizeof(*profile));
+    profile->version = capacity_get_u16(bytes + cursor); cursor += 2U;
+    (void)memcpy(profile->digest, bytes + cursor, 32U); cursor += 32U;
+    cursor += capacity_demand_decode(bytes + cursor, &profile->floor);
+    profile->maximum_work_lifetime = capacity_get_u64(bytes + cursor);
+    return lxp_capacity_profile_validate(profile);
+}
+
+lxp_result lxp_capacity_request_decode(
+    const uint8_t bytes[LXP_CAPACITY_REQUEST_BYTES],
+    lxp_capacity_request *request)
+{
+    lxp_hash_context hash;
+    size_t cursor = 0U;
+    lxp_result status;
+    if (bytes == NULL || request == NULL) return LXP_ERR_NON_CANONICAL;
+    if (capacity_get_u16(bytes) != LXP_CAPACITY_FORMAT_VERSION)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    (void)memset(request, 0, sizeof(*request));
+    request->kind = bytes[cursor++];
+    (void)memcpy(request->activity_id, bytes + cursor, 32U); cursor += 32U;
+    (void)memcpy(request->idempotency_key, bytes + cursor, 32U); cursor += 32U;
+    request->actor_did_length = capacity_get_u16(bytes + cursor); cursor += 2U;
+    (void)memcpy(request->actor_did, bytes + cursor, sizeof(request->actor_did));
+    cursor += sizeof(request->actor_did);
+    cursor += capacity_demand_decode(bytes + cursor, &request->demand);
+    request->expected_sequence = capacity_get_u64(bytes + cursor); cursor += 8U;
+    (void)memcpy(request->expected_root, bytes + cursor, 32U); cursor += 32U;
+    request->lifetime = capacity_get_u64(bytes + cursor); cursor += 8U;
+    request->supersedes = capacity_get_u64(bytes + cursor); cursor += 8U;
+    if (cursor != LXP_CAPACITY_REQUEST_BYTES) return LXP_FATAL_INVARIANT;
+    lxp_hash_init(&hash);
+    status = lxp_hash_update(&hash, capacity_request_domain,
+                             sizeof(capacity_request_domain) - 1U);
+    if (status == LXP_OK)
+        status = lxp_hash_update(&hash, bytes, LXP_CAPACITY_REQUEST_BYTES);
+    if (status == LXP_OK) status = lxp_hash_final(&hash, request->request_digest);
+    return status;
+}
+
+void lxp_capacity_reservation_encode(
+    const lxp_capacity_reservation *reservation,
+    uint8_t bytes[LXP_CAPACITY_RECORD_BYTES])
+{
+    size_t cursor = 0U;
+    capacity_put_u64(bytes + cursor, reservation->request_id); cursor += 8U;
+    bytes[cursor++] = reservation->kind;
+    bytes[cursor++] = reservation->state;
+    (void)memcpy(bytes + cursor, reservation->request_digest, 32U); cursor += 32U;
+    (void)memcpy(bytes + cursor, reservation->activity_id, 32U); cursor += 32U;
+    (void)memcpy(bytes + cursor, reservation->idempotency_key, 32U); cursor += 32U;
+    capacity_put_u16(bytes + cursor, reservation->actor_did_length); cursor += 2U;
+    (void)memcpy(bytes + cursor, reservation->actor_did,
+                 sizeof(reservation->actor_did));
+    cursor += sizeof(reservation->actor_did);
+    cursor += capacity_demand_encode(&reservation->demand, bytes + cursor);
+    capacity_put_u64(bytes + cursor, reservation->bound_sequence); cursor += 8U;
+    (void)memcpy(bytes + cursor, reservation->bound_root, 32U); cursor += 32U;
+    capacity_put_u64(bytes + cursor, reservation->expires_sequence); cursor += 8U;
+    capacity_put_u64(bytes + cursor, reservation->supersedes); cursor += 8U;
+    capacity_put_u64(bytes + cursor, reservation->outcome_sequence); cursor += 8U;
+    capacity_put_u32(bytes + cursor, (uint32_t)reservation->outcome_result);
+    cursor += 4U;
+    (void)memcpy(bytes + cursor, reservation->outcome_receipt_digest, 32U);
+}
+
+static lxp_result capacity_reservation_decode(
+    const uint8_t *bytes, uint64_t next_request_id,
+    lxp_capacity_reservation *reservation)
+{
+    size_t cursor = 0U;
+    size_t index;
+    (void)memset(reservation, 0, sizeof(*reservation));
+    reservation->request_id = capacity_get_u64(bytes + cursor); cursor += 8U;
+    reservation->kind = bytes[cursor++];
+    reservation->state = bytes[cursor++];
+    (void)memcpy(reservation->request_digest, bytes + cursor, 32U); cursor += 32U;
+    (void)memcpy(reservation->activity_id, bytes + cursor, 32U); cursor += 32U;
+    (void)memcpy(reservation->idempotency_key, bytes + cursor, 32U); cursor += 32U;
+    reservation->actor_did_length = capacity_get_u16(bytes + cursor); cursor += 2U;
+    (void)memcpy(reservation->actor_did, bytes + cursor,
+                 sizeof(reservation->actor_did));
+    cursor += sizeof(reservation->actor_did);
+    cursor += capacity_demand_decode(bytes + cursor, &reservation->demand);
+    reservation->bound_sequence = capacity_get_u64(bytes + cursor); cursor += 8U;
+    (void)memcpy(reservation->bound_root, bytes + cursor, 32U); cursor += 32U;
+    reservation->expires_sequence = capacity_get_u64(bytes + cursor); cursor += 8U;
+    reservation->supersedes = capacity_get_u64(bytes + cursor); cursor += 8U;
+    reservation->outcome_sequence = capacity_get_u64(bytes + cursor); cursor += 8U;
+    reservation->outcome_result = (lxp_result)capacity_get_u32(bytes + cursor);
+    cursor += 4U;
+    (void)memcpy(reservation->outcome_receipt_digest, bytes + cursor, 32U);
+    if (reservation->request_id == 0U ||
+        reservation->request_id >= next_request_id ||
+        (reservation->kind != LXP_CAPACITY_WORK &&
+         reservation->kind != LXP_CAPACITY_OBLIGATION) ||
+        reservation->state < LXP_CAPACITY_RESERVED ||
+        reservation->state > LXP_CAPACITY_SUPERSEDED ||
+        lxp_ct_is_zero(reservation->request_digest, 32U) ||
+        lxp_ct_is_zero(reservation->activity_id, 32U) ||
+        reservation->actor_did_length == 0U ||
+        reservation->actor_did_length > sizeof(reservation->actor_did) ||
+        capacity_demand_zero(&reservation->demand) ||
+        reservation->bound_sequence == 0U ||
+        (reservation->kind == LXP_CAPACITY_WORK) !=
+            (reservation->expires_sequence > reservation->bound_sequence) ||
+        (reservation->kind == LXP_CAPACITY_WORK &&
+         reservation->supersedes != 0U) ||
+        reservation->supersedes >= reservation->request_id ||
+        (reservation->state == LXP_CAPACITY_SUPERSEDED &&
+         reservation->kind != LXP_CAPACITY_OBLIGATION) ||
+        (reservation->outcome_sequence == 0U) !=
+            lxp_ct_is_zero(reservation->outcome_receipt_digest, 32U) ||
+        (reservation->outcome_sequence == 0U &&
+         reservation->outcome_result != LXP_OK) ||
+        (reservation->state == LXP_CAPACITY_RECONCILED &&
+         reservation->outcome_sequence == 0U))
+        return LXP_ERR_LOG_CORRUPT;
+    for (index = reservation->actor_did_length;
+         index < sizeof(reservation->actor_did); ++index)
+        if (reservation->actor_did[index] != 0U) return LXP_ERR_LOG_CORRUPT;
+    return LXP_OK;
+}
+
+void lxp_capacity_observation_encode(
+    const lxp_capacity_observation *observation,
+    uint8_t bytes[LXP_CAPACITY_OBSERVATION_BYTES])
+{
+    size_t cursor = 0U;
+    capacity_put_u16(bytes + cursor, LXP_CAPACITY_FORMAT_VERSION); cursor += 2U;
+    capacity_put_u16(bytes + cursor, observation->profile_version); cursor += 2U;
+    (void)memcpy(bytes + cursor, observation->profile_digest, 32U); cursor += 32U;
+    capacity_put_u64(bytes + cursor, observation->next_sequence); cursor += 8U;
+    (void)memcpy(bytes + cursor, observation->state_root, 32U); cursor += 32U;
+    cursor += capacity_demand_encode(&observation->limit, bytes + cursor);
+    cursor += capacity_demand_encode(&observation->committed, bytes + cursor);
+    cursor += capacity_demand_encode(&observation->floor, bytes + cursor);
+    cursor += capacity_demand_encode(&observation->obligations, bytes + cursor);
+    cursor += capacity_demand_encode(&observation->work, bytes + cursor);
+    cursor += capacity_demand_encode(&observation->available, bytes + cursor);
+    capacity_put_u32(bytes + cursor, observation->active_reservations);
+    cursor += 4U;
+    capacity_put_u64(bytes + cursor, observation->next_request_id);
+}
+
+lxp_result lxp_capacity_ledger_encode(const lxp_capacity_ledger *ledger,
+                                      uint8_t *bytes, size_t capacity,
+                                      size_t *length)
+{
+    size_t cursor = 0U;
+    size_t index;
+    size_t total;
+    if (ledger == NULL || bytes == NULL || length == NULL ||
+        ledger->profile.version == 0U ||
+        ledger->count > LXP_CAPACITY_MAX_RESERVATIONS)
+        return LXP_ERR_NON_CANONICAL;
+    total = 8U + 2U + LXP_CAPACITY_PROFILE_BYTES + 8U + 2U +
+        ledger->count * LXP_CAPACITY_RECORD_BYTES + 32U;
+    if (capacity < total) return LXP_ERR_LENGTH_LIMIT;
+    (void)memcpy(bytes, capacity_ledger_magic, 8U); cursor += 8U;
+    capacity_put_u16(bytes + cursor, LXP_CAPACITY_FORMAT_VERSION); cursor += 2U;
+    lxp_capacity_profile_encode(&ledger->profile, bytes + cursor);
+    cursor += LXP_CAPACITY_PROFILE_BYTES;
+    capacity_put_u64(bytes + cursor, ledger->next_request_id); cursor += 8U;
+    capacity_put_u16(bytes + cursor, (uint16_t)ledger->count); cursor += 2U;
+    for (index = 0U; index < ledger->count; ++index) {
+        lxp_capacity_reservation_encode(&ledger->entries[index], bytes + cursor);
+        cursor += LXP_CAPACITY_RECORD_BYTES;
+    }
+    if (lxp_hash_sha256(bytes, cursor, bytes + cursor) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
+    *length = cursor + 32U;
+    return LXP_OK;
+}
+
+lxp_result lxp_capacity_ledger_decode(const uint8_t *bytes, size_t length,
+                                      lxp_capacity_ledger *ledger)
+{
+    uint8_t digest[32];
+    size_t cursor = 0U;
+    size_t count;
+    size_t index;
+    size_t other;
+    lxp_result status;
+    if (bytes == NULL || ledger == NULL) return LXP_ERR_NON_CANONICAL;
+    (void)memset(ledger, 0, sizeof(*ledger));
+    if (length < 8U + 2U + LXP_CAPACITY_PROFILE_BYTES + 8U + 2U + 32U)
+        return LXP_ERR_LOG_TRUNCATED;
+    if (memcmp(bytes, capacity_ledger_magic, 8U) != 0)
+        return LXP_ERR_LOG_CORRUPT;
+    cursor += 8U;
+    if (capacity_get_u16(bytes + cursor) != LXP_CAPACITY_FORMAT_VERSION)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    count = capacity_get_u16(bytes + cursor + LXP_CAPACITY_PROFILE_BYTES + 8U);
+    if (count > LXP_CAPACITY_MAX_RESERVATIONS ||
+        length != 8U + 2U + LXP_CAPACITY_PROFILE_BYTES + 8U + 2U +
+            count * LXP_CAPACITY_RECORD_BYTES + 32U)
+        return LXP_ERR_LOG_CORRUPT;
+    if (lxp_hash_sha256(bytes, length - 32U, digest) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
+    if (lxp_ct_memcmp(digest, bytes + length - 32U, 32U) != 0)
+        return LXP_ERR_LOG_CORRUPT;
+    status = lxp_capacity_profile_decode(bytes + cursor, &ledger->profile);
+    if (status != LXP_OK) {
+        (void)memset(ledger, 0, sizeof(*ledger));
+        return LXP_ERR_LOG_CORRUPT;
+    }
+    cursor += LXP_CAPACITY_PROFILE_BYTES;
+    ledger->next_request_id = capacity_get_u64(bytes + cursor); cursor += 10U;
+    status = ledger->next_request_id == 0U ? LXP_ERR_LOG_CORRUPT : LXP_OK;
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        lxp_capacity_reservation *entry = &ledger->entries[index];
+        status = capacity_reservation_decode(bytes + cursor,
+                                             ledger->next_request_id, entry);
+        cursor += LXP_CAPACITY_RECORD_BYTES;
+        if (status == LXP_OK && index != 0U &&
+            entry->request_id <= ledger->entries[index - 1U].request_id)
+            status = LXP_ERR_LOG_CORRUPT;
+        for (other = 0U; status == LXP_OK && other < index; ++other) {
+            const lxp_capacity_reservation *prior = &ledger->entries[other];
+            if (lxp_ct_memcmp(prior->request_digest, entry->request_digest,
+                              32U) == 0 ||
+                (prior->state == LXP_CAPACITY_RESERVED &&
+                 entry->state == LXP_CAPACITY_RESERVED &&
+                 lxp_ct_memcmp(prior->activity_id, entry->activity_id,
+                               32U) == 0))
+                status = LXP_ERR_LOG_CORRUPT;
+        }
+    }
+    if (status != LXP_OK) {
+        (void)memset(ledger, 0, sizeof(*ledger));
+        return status;
+    }
+    ledger->count = count;
+    return LXP_OK;
 }

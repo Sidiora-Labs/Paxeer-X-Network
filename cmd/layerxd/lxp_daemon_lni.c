@@ -96,6 +96,18 @@ enum {
     LNI_ARBITER_PRESTATE_RESPONSE = 47,
     LNI_ARBITER_ADMISSION_PRESTATE_REQUEST = 48,
     LNI_ARBITER_ADMISSION_PRESTATE_RESPONSE = 49,
+    LNI_CAPACITY_OBSERVE_REQUEST = 50,
+    LNI_CAPACITY_OBSERVE_RESPONSE = 51,
+    LNI_CAPACITY_RESERVE_REQUEST = 52,
+    LNI_CAPACITY_RESERVE_RESPONSE = 53,
+    LNI_CAPACITY_RECONCILE_REQUEST = 54,
+    LNI_CAPACITY_RECONCILE_RESPONSE = 55,
+    LNI_CAPACITY_CANCEL_REQUEST = 56,
+    LNI_CAPACITY_CANCEL_RESPONSE = 57,
+    LNI_CAPACITY_INSTALL_REQUEST = 58,
+    LNI_CAPACITY_INSTALL_RESPONSE = 59,
+    LNI_CAPACITY_ID_REQUEST_BYTES = 2 + 8,
+    LNI_CAPACITY_PROOF_BYTES = 32 + 64,
     LNI_ENVELOPE_FIXED_BYTES = 22,
     LNI_NODE_INFO_FIXED_BYTES = 93,
     LNI_PREPARATION_STATE_MAX_BYTES = 4096,
@@ -122,6 +134,12 @@ static const char LNI_ADMISSION_JOURNAL_TEMP_NAME[] =
     ".layerxd-lni-admission.tmp";
 static const uint32_t LNI_ADMISSION_JOURNAL_MAGIC = UINT32_C(0x4c58414a);
 static const uint32_t LNI_ADMISSION_RECORD_MAGIC = UINT32_C(0x4c584152);
+static const char LNI_CAPACITY_LEDGER_NAME[] =
+    ".layerxd-lni-capacity.ledger";
+static const char LNI_CAPACITY_LEDGER_TEMP_NAME[] =
+    ".layerxd-lni-capacity.tmp";
+static const uint8_t LNI_CAPACITY_RESPONSE_DOMAIN[] =
+    "LayerX/storage-capacity-response/v1";
 static const char LNI_SEQUENCER_PRIVATE_KEY_ENVIRONMENT[] =
     "LAYERX_NODE_SEQUENCER_PRIVATE_KEY";
 static const uint8_t LNI_SIMULATION_BOUNDARY_DOMAIN[] =
@@ -4051,6 +4069,305 @@ static lxp_result send_program_head_attest(
     return status;
 }
 
+static lxp_result capacity_ledger_persist(lxp_daemon_lni_server *server,
+                                          const uint8_t *bytes, size_t length,
+                                          bool *renamed)
+{
+    struct stat metadata;
+    int descriptor;
+    lxp_result status;
+    *renamed = false;
+    descriptor = openat(server->admission_parent_descriptor,
+                        LNI_CAPACITY_LEDGER_TEMP_NAME,
+                        O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+                        0600);
+    if (descriptor < 0) return LXP_ERR_IO;
+    status = file_write_exact(descriptor, bytes, length, 0U);
+    if (status == LXP_OK && fdatasync(descriptor) != 0) status = LXP_ERR_IO;
+    if (status == LXP_OK &&
+        (fstat(descriptor, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+         metadata.st_nlink != 1 || metadata.st_uid != geteuid() ||
+         (metadata.st_mode & 0777U) != 0600U ||
+         metadata.st_size != (off_t)length))
+        status = LXP_ERR_AUTH_SCOPE;
+    if (close(descriptor) != 0 && status == LXP_OK) status = LXP_ERR_IO;
+    if (status == LXP_OK &&
+        renameat(server->admission_parent_descriptor,
+                 LNI_CAPACITY_LEDGER_TEMP_NAME,
+                 server->admission_parent_descriptor,
+                 LNI_CAPACITY_LEDGER_NAME) != 0)
+        status = LXP_ERR_IO;
+    if (status == LXP_OK) {
+        *renamed = true;
+        if (fsync(server->admission_parent_descriptor) != 0)
+            status = LXP_FATAL_INVARIANT;
+    }
+    return status;
+}
+
+static lxp_result capacity_ledger_load(lxp_daemon_lni_server *server)
+{
+    struct stat metadata;
+    lxp_capacity_ledger *ledger = NULL;
+    uint8_t *bytes = NULL;
+    int descriptor = openat(server->admission_parent_descriptor,
+                            LNI_CAPACITY_LEDGER_NAME,
+                            O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    lxp_result status;
+    if (descriptor < 0) return errno == ENOENT ? LXP_OK : LXP_ERR_IO;
+    status = fstat(descriptor, &metadata) != 0 ? LXP_ERR_IO : LXP_OK;
+    if (status == LXP_OK &&
+        (!S_ISREG(metadata.st_mode) || metadata.st_nlink != 1 ||
+         metadata.st_uid != geteuid() || (metadata.st_mode & 0777U) != 0600U))
+        status = LXP_ERR_AUTH_SCOPE;
+    if (status == LXP_OK &&
+        (metadata.st_size <= 0 ||
+         (uint64_t)metadata.st_size > LXP_CAPACITY_LEDGER_MAX_BYTES))
+        status = LXP_ERR_LOG_CORRUPT;
+    if (status == LXP_OK) {
+        bytes = (uint8_t *)malloc((size_t)metadata.st_size);
+        ledger = (lxp_capacity_ledger *)calloc(1U, sizeof(*ledger));
+        if (bytes == NULL || ledger == NULL) status = LXP_ERR_IO;
+    }
+    if (status == LXP_OK)
+        status = file_read_exact(descriptor, bytes, (size_t)metadata.st_size,
+                                 0U);
+    if (close(descriptor) != 0 && status == LXP_OK) status = LXP_ERR_IO;
+    if (status == LXP_OK)
+        status = lxp_capacity_ledger_decode(bytes, (size_t)metadata.st_size,
+                                            ledger);
+    free(bytes);
+    if (status == LXP_OK) status = lni_read_lock(server->owner);
+    else {
+        free(ledger);
+        return status;
+    }
+    if (status != LXP_OK) {
+        free(ledger);
+        return status;
+    }
+    if (server->owner->kernel == NULL ||
+        server->owner->kernel->capacity != NULL)
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    else {
+        server->owner->kernel->capacity = ledger;
+        ledger = NULL;
+    }
+    free(ledger);
+    return lni_read_unlock(server->owner, status);
+}
+
+static lxp_result capacity_ledger_release(lxp_daemon_lni_server *server)
+{
+    lxp_result status = lni_read_lock(server->owner);
+    if (status != LXP_OK) return status;
+    if (server->owner->kernel != NULL) {
+        free(server->owner->kernel->capacity);
+        server->owner->kernel->capacity = NULL;
+    }
+    return lni_read_unlock(server->owner, status);
+}
+
+static lxp_result capacity_sign(const lxp_daemon_lni_server *server,
+                                uint16_t tag, const uint8_t *payload,
+                                size_t payload_length,
+                                uint8_t proof[LNI_CAPACITY_PROOF_BYTES])
+{
+    uint8_t prefix[6];
+    uint8_t digest[32];
+    size_t signature_length = 64U;
+    lxp_hash_context hash;
+    EVP_PKEY *key;
+    EVP_MD_CTX *context;
+    bool signed_ok;
+    lxp_result status = sequencer_public_key_derive(
+        server->sequencer_private_key, proof);
+    if (status != LXP_OK) return status;
+    store_u32(prefix, server->owner->network_id);
+    store_u16(prefix + 4U, tag);
+    lxp_hash_init(&hash);
+    status = lxp_hash_update(&hash, LNI_CAPACITY_RESPONSE_DOMAIN,
+                             sizeof(LNI_CAPACITY_RESPONSE_DOMAIN) - 1U);
+    if (status == LXP_OK)
+        status = lxp_hash_update(&hash, prefix, sizeof(prefix));
+    if (status == LXP_OK)
+        status = lxp_hash_update(&hash, payload, payload_length);
+    if (status == LXP_OK) status = lxp_hash_final(&hash, digest);
+    if (status != LXP_OK) return status;
+    key = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
+                                       server->sequencer_private_key, 32U);
+    context = key == NULL ? NULL : EVP_MD_CTX_new();
+    signed_ok = context != NULL &&
+        EVP_DigestSignInit(context, NULL, NULL, NULL, key) == 1 &&
+        EVP_DigestSign(context, proof + 32U, &signature_length, digest,
+                       sizeof(digest)) == 1 &&
+        signature_length == 64U;
+    EVP_MD_CTX_free(context);
+    EVP_PKEY_free(key);
+    status = signed_ok ? lxp_ed25519_verify_raw(proof, proof + 32U, digest,
+                                                sizeof(digest)) :
+        LXP_ERR_BAD_SIGNATURE;
+    lxp_secure_zero(digest, sizeof(digest));
+    return status;
+}
+
+static lxp_result capacity_commit(lxp_daemon_lni_server *server,
+                                  lxp_capacity_ledger *candidate)
+{
+    lxp_kernel *kernel = server->owner->kernel;
+    uint8_t *encoded = (uint8_t *)malloc(2U * LXP_CAPACITY_LEDGER_MAX_BYTES);
+    size_t candidate_length = 0U;
+    size_t live_length = 0U;
+    bool renamed = false;
+    lxp_result status = encoded == NULL ? LXP_ERR_IO : LXP_OK;
+    if (status == LXP_OK)
+        status = lxp_capacity_ledger_encode(candidate, encoded,
+                                            LXP_CAPACITY_LEDGER_MAX_BYTES,
+                                            &candidate_length);
+    if (status == LXP_OK && kernel->capacity != NULL)
+        status = lxp_capacity_ledger_encode(
+            kernel->capacity, encoded + LXP_CAPACITY_LEDGER_MAX_BYTES,
+            LXP_CAPACITY_LEDGER_MAX_BYTES, &live_length);
+    if (status == LXP_OK && kernel->capacity != NULL &&
+        live_length == candidate_length &&
+        memcmp(encoded, encoded + LXP_CAPACITY_LEDGER_MAX_BYTES,
+               live_length) == 0) {
+        free(encoded);
+        free(candidate);
+        return LXP_OK;
+    }
+    if (status == LXP_OK)
+        status = capacity_ledger_persist(server, encoded, candidate_length,
+                                         &renamed);
+    if (renamed) {
+        if (kernel->capacity == NULL) {
+            kernel->capacity = candidate;
+            candidate = NULL;
+        } else {
+            *kernel->capacity = *candidate;
+        }
+    }
+    free(encoded);
+    free(candidate);
+    return status;
+}
+
+static lxp_result capacity_execute(lxp_daemon_lni_server *server,
+                                   const lni_envelope *request,
+                                   uint8_t *payload, size_t *length)
+{
+    lxp_daemon_protocol_owner *owner = server->owner;
+    lxp_capacity_ledger *candidate = NULL;
+    lxp_capacity_reservation reservation;
+    lxp_capacity_observation observation;
+    lxp_capacity_profile profile;
+    lxp_capacity_request reservation_request;
+    lxp_kernel *kernel;
+    bool replayed = false;
+    lxp_result status = lni_read_lock(owner);
+    if (status != LXP_OK) return status;
+    kernel = owner->kernel;
+    if (kernel == NULL ||
+        (kernel->capacity == NULL &&
+         request->tag != LNI_CAPACITY_INSTALL_REQUEST))
+        return lni_read_unlock(owner, LXP_ERR_MODULE_DISABLED);
+    if (request->tag == LNI_CAPACITY_OBSERVE_REQUEST) {
+        status = lxp_kernel_capacity_observe(kernel, kernel->capacity,
+                                             &observation);
+        if (status == LXP_OK) {
+            lxp_capacity_observation_encode(&observation, payload);
+            *length = LXP_CAPACITY_OBSERVATION_BYTES;
+        }
+        return lni_read_unlock(owner, status);
+    }
+    candidate = (lxp_capacity_ledger *)calloc(1U, sizeof(*candidate));
+    if (candidate == NULL) return lni_read_unlock(owner, LXP_ERR_IO);
+    if (kernel->capacity != NULL) *candidate = *kernel->capacity;
+    if (request->tag == LNI_CAPACITY_INSTALL_REQUEST) {
+        status = lxp_capacity_profile_decode(request->payload, &profile);
+        if (status == LXP_OK)
+            status = lxp_capacity_ledger_install(candidate, &profile);
+        if (status == LXP_OK) {
+            lxp_capacity_profile_encode(&candidate->profile, payload);
+            *length = LXP_CAPACITY_PROFILE_BYTES;
+        }
+    } else if (request->tag == LNI_CAPACITY_RESERVE_REQUEST) {
+        status = lxp_capacity_request_decode(request->payload,
+                                             &reservation_request);
+        if (status == LXP_OK)
+            status = lxp_kernel_capacity_reserve(
+                kernel, candidate, &reservation_request, &reservation,
+                &replayed);
+        if (status == LXP_OK) {
+            payload[0] = replayed ? 1U : 0U;
+            lxp_capacity_reservation_encode(&reservation, payload + 1U);
+            *length = 1U + LXP_CAPACITY_RECORD_BYTES;
+        }
+    } else {
+        uint64_t request_id = load_u64(request->payload + 2U);
+        status = request->tag == LNI_CAPACITY_RECONCILE_REQUEST ?
+            lxp_kernel_capacity_reconcile(kernel, candidate, request_id,
+                                          &reservation) :
+            lxp_kernel_capacity_cancel(kernel, candidate, request_id,
+                                       &reservation);
+        if (status == LXP_OK) {
+            lxp_capacity_reservation_encode(&reservation, payload);
+            *length = LXP_CAPACITY_RECORD_BYTES;
+        }
+    }
+    if (status == LXP_OK) status = capacity_commit(server, candidate);
+    else free(candidate);
+    return lni_read_unlock(owner, status);
+}
+
+static lxp_result send_capacity(lxp_daemon_lni_server *server, int descriptor,
+                                const lni_envelope *request, int64_t deadline)
+{
+    uint8_t payload[1U + LXP_CAPACITY_RECORD_BYTES];
+    uint8_t proof[LNI_CAPACITY_PROOF_BYTES];
+    size_t expected;
+    size_t length = 0U;
+    lxp_result status;
+    if (request->minor < LNI_VERSION_MINOR)
+        return send_refusal(descriptor, server->frame_bytes,
+                            request->correlation_id, 3U,
+                            LXP_ERR_VERSION_UNSUPPORTED, deadline);
+    expected = request->tag == LNI_CAPACITY_OBSERVE_REQUEST ? 2U :
+        request->tag == LNI_CAPACITY_INSTALL_REQUEST ?
+            LXP_CAPACITY_PROFILE_BYTES :
+        request->tag == LNI_CAPACITY_RESERVE_REQUEST ?
+            LXP_CAPACITY_REQUEST_BYTES : LNI_CAPACITY_ID_REQUEST_BYTES;
+    if (request->correlation_id == 0U || request->proof_length != 0U ||
+        request->payload_length != expected ||
+        load_u16(request->payload) != LXP_CAPACITY_FORMAT_VERSION)
+        return send_refusal(descriptor, server->frame_bytes,
+                            request->correlation_id, 1U,
+                            LXP_ERR_MALFORMED_ENVELOPE, deadline);
+    if (!simulation_available(server))
+        return send_refusal(descriptor, server->frame_bytes,
+                            request->correlation_id, 3U,
+                            LXP_ERR_MODULE_DISABLED, deadline);
+    status = capacity_execute(server, request, payload, &length);
+    if (status == LXP_OK)
+        status = capacity_sign(server, (uint16_t)(request->tag + 1U), payload,
+                               length, proof);
+    if (status == LXP_OK)
+        return send_envelope(descriptor, server->frame_bytes,
+                             (uint16_t)(request->tag + 1U),
+                             request->correlation_id, payload, length, proof,
+                             sizeof(proof), deadline);
+    if (status == LXP_ERR_IO || status == LXP_FATAL_INVARIANT)
+        return send_refusal(descriptor, server->frame_bytes,
+                            request->correlation_id, 4U,
+                            LXP_ERR_MODULE_DISABLED, deadline);
+    return send_refusal(descriptor, server->frame_bytes,
+                        request->correlation_id,
+                        status == LXP_ERR_NON_CANONICAL ||
+                                status == LXP_ERR_VERSION_UNSUPPORTED ?
+                            1U : 4U,
+                        status, deadline);
+}
+
 static lxp_result evidence_refusal(
     lxp_daemon_lni_server *server, int descriptor,
     uint64_t correlation_id, lxp_result status, int64_t deadline)
@@ -5014,6 +5331,12 @@ static lxp_result serve_connection_inner(lxp_daemon_lni_server *server,
         } else if (request.tag == LNI_PROGRAM_HEAD_ATTEST_REQUEST) {
             status = send_program_head_attest(
                 server, descriptor, &request, deadline);
+        } else if (request.tag == LNI_CAPACITY_OBSERVE_REQUEST ||
+                   request.tag == LNI_CAPACITY_RESERVE_REQUEST ||
+                   request.tag == LNI_CAPACITY_RECONCILE_REQUEST ||
+                   request.tag == LNI_CAPACITY_CANCEL_REQUEST ||
+                   request.tag == LNI_CAPACITY_INSTALL_REQUEST) {
+            status = send_capacity(server, descriptor, &request, deadline);
         } else {
             status = send_refusal(descriptor, server->frame_bytes,
                                   request.correlation_id, 3U,
@@ -5274,7 +5597,10 @@ lxp_result lxp_daemon_lni_serve(
     }
     status = admission_journal_recover(server);
     if (status != LXP_OK) goto fail_created;
+    status = capacity_ledger_load(server);
+    if (status != LXP_OK) goto fail_created;
     if (pthread_create(&server->thread, NULL, server_run, server) != 0) {
+        (void)capacity_ledger_release(server);
         status = LXP_ERR_IO;
         goto fail_created;
     }
@@ -5333,6 +5659,10 @@ lxp_result lxp_daemon_lni_stop(lxp_daemon_lni_server *server)
         LXP_OK : LXP_ERR_IO;
     if (pthread_join(server->thread, NULL) != 0 && status == LXP_OK)
         status = LXP_ERR_IO;
+    {
+        lxp_result release_status = capacity_ledger_release(server);
+        if (status == LXP_OK) status = release_status;
+    }
     if (pthread_mutex_lock(&server->daemon->mutex) != 0) {
         if (status == LXP_OK) status = LXP_ERR_IO;
     } else {

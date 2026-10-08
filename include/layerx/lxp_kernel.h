@@ -270,6 +270,7 @@ typedef struct lxp_kernel {
     uint32_t pending_batch_publication_index;
     void *module_runtime[LXP_MODULE_RESERVED_COUNT + 1U];
     uint8_t current_state_root[32];
+    struct lxp_capacity_ledger *capacity;
 } lxp_kernel;
 #define lxp_kernel lxp_kernel
 
@@ -718,5 +719,140 @@ lxp_result lxp_kernel_prepare_terminal_rejection_with_admission_prestate(
     size_t maximum_bytes, lxp_kernel_prepared_batch **batch_out);
 lxp_byte_span lxp_kernel_prepared_batch_admission_prestate(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+
+enum {
+    LXP_CAPACITY_FORMAT_VERSION = 1,
+    LXP_CAPACITY_MAX_RESERVATIONS = 64,
+    LXP_CAPACITY_DEMAND_BYTES = 4 + 8 + 4,
+    LXP_CAPACITY_PROFILE_BYTES = 2 + 2 + 32 + LXP_CAPACITY_DEMAND_BYTES + 8,
+    LXP_CAPACITY_REQUEST_BYTES = 2 + 1 + 32 + 32 + 2 + 255 +
+        LXP_CAPACITY_DEMAND_BYTES + 8 + 32 + 8 + 8,
+    LXP_CAPACITY_RECORD_BYTES = 8 + 1 + 1 + 32 + 32 + 32 + 2 + 255 +
+        LXP_CAPACITY_DEMAND_BYTES + 8 + 32 + 8 + 8 + 8 + 4 + 32,
+    LXP_CAPACITY_OBSERVATION_BYTES = 2 + 2 + 32 + 8 + 32 +
+        6 * LXP_CAPACITY_DEMAND_BYTES + 4 + 8,
+    LXP_CAPACITY_LEDGER_MAX_BYTES = 8 + 2 + LXP_CAPACITY_PROFILE_BYTES + 8 +
+        2 + LXP_CAPACITY_MAX_RESERVATIONS * LXP_CAPACITY_RECORD_BYTES + 32
+};
+
+typedef enum lxp_capacity_kind {
+    LXP_CAPACITY_WORK = 1,
+    LXP_CAPACITY_OBLIGATION = 2
+} lxp_capacity_kind;
+
+typedef enum lxp_capacity_state {
+    LXP_CAPACITY_RESERVED = 1,
+    LXP_CAPACITY_RECONCILED = 2,
+    LXP_CAPACITY_CANCELLED = 3,
+    LXP_CAPACITY_EXPIRED = 4,
+    LXP_CAPACITY_SUPERSEDED = 5
+} lxp_capacity_state;
+
+typedef struct lxp_capacity_demand {
+    uint32_t blobs;
+    uint64_t bytes;
+    uint32_t kv;
+} lxp_capacity_demand;
+
+typedef struct lxp_capacity_profile {
+    uint16_t version;
+    uint8_t digest[32];
+    lxp_capacity_demand floor;
+    uint64_t maximum_work_lifetime;
+} lxp_capacity_profile;
+
+typedef struct lxp_capacity_request {
+    uint8_t kind;
+    uint8_t request_digest[32];
+    uint8_t activity_id[32];
+    uint8_t idempotency_key[32];
+    uint16_t actor_did_length;
+    uint8_t actor_did[255];
+    lxp_capacity_demand demand;
+    uint64_t expected_sequence;
+    uint8_t expected_root[32];
+    uint64_t lifetime;
+    uint64_t supersedes;
+} lxp_capacity_request;
+
+typedef struct lxp_capacity_reservation {
+    uint64_t request_id;
+    uint8_t kind;
+    uint8_t state;
+    uint8_t request_digest[32];
+    uint8_t activity_id[32];
+    uint8_t idempotency_key[32];
+    uint16_t actor_did_length;
+    uint8_t actor_did[255];
+    lxp_capacity_demand demand;
+    uint64_t bound_sequence;
+    uint8_t bound_root[32];
+    uint64_t expires_sequence;
+    uint64_t supersedes;
+    uint64_t outcome_sequence;
+    lxp_result outcome_result;
+    uint8_t outcome_receipt_digest[32];
+} lxp_capacity_reservation;
+
+typedef struct lxp_capacity_ledger {
+    lxp_capacity_profile profile;
+    lxp_capacity_reservation entries[LXP_CAPACITY_MAX_RESERVATIONS];
+    size_t count;
+    uint64_t next_request_id;
+} lxp_capacity_ledger;
+
+typedef struct lxp_capacity_observation {
+    uint16_t profile_version;
+    uint8_t profile_digest[32];
+    uint64_t next_sequence;
+    uint8_t state_root[32];
+    lxp_capacity_demand limit;
+    lxp_capacity_demand committed;
+    lxp_capacity_demand floor;
+    lxp_capacity_demand obligations;
+    lxp_capacity_demand work;
+    lxp_capacity_demand available;
+    uint32_t active_reservations;
+    uint64_t next_request_id;
+} lxp_capacity_observation;
+
+lxp_result lxp_capacity_profile_validate(const lxp_capacity_profile *profile);
+lxp_result lxp_capacity_ledger_install(lxp_capacity_ledger *ledger,
+                                       const lxp_capacity_profile *profile);
+lxp_result lxp_kernel_capacity_observe(const lxp_kernel *kernel,
+                                       const lxp_capacity_ledger *ledger,
+                                       lxp_capacity_observation *observation);
+lxp_result lxp_kernel_capacity_reserve(const lxp_kernel *kernel,
+                                       lxp_capacity_ledger *ledger,
+                                       const lxp_capacity_request *request,
+                                       lxp_capacity_reservation *reservation,
+                                       bool *replayed);
+lxp_result lxp_kernel_capacity_reconcile(const lxp_kernel *kernel,
+                                         lxp_capacity_ledger *ledger,
+                                         uint64_t request_id,
+                                         lxp_capacity_reservation *reservation);
+lxp_result lxp_kernel_capacity_cancel(const lxp_kernel *kernel,
+                                      lxp_capacity_ledger *ledger,
+                                      uint64_t request_id,
+                                      lxp_capacity_reservation *reservation);
+void lxp_capacity_profile_encode(const lxp_capacity_profile *profile,
+                                 uint8_t bytes[LXP_CAPACITY_PROFILE_BYTES]);
+lxp_result lxp_capacity_profile_decode(
+    const uint8_t bytes[LXP_CAPACITY_PROFILE_BYTES],
+    lxp_capacity_profile *profile);
+lxp_result lxp_capacity_request_decode(
+    const uint8_t bytes[LXP_CAPACITY_REQUEST_BYTES],
+    lxp_capacity_request *request);
+void lxp_capacity_reservation_encode(
+    const lxp_capacity_reservation *reservation,
+    uint8_t bytes[LXP_CAPACITY_RECORD_BYTES]);
+void lxp_capacity_observation_encode(
+    const lxp_capacity_observation *observation,
+    uint8_t bytes[LXP_CAPACITY_OBSERVATION_BYTES]);
+lxp_result lxp_capacity_ledger_encode(const lxp_capacity_ledger *ledger,
+                                      uint8_t *bytes, size_t capacity,
+                                      size_t *length);
+lxp_result lxp_capacity_ledger_decode(const uint8_t *bytes, size_t length,
+                                      lxp_capacity_ledger *ledger);
 
 #endif
