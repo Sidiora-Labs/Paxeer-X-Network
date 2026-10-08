@@ -737,3 +737,407 @@ fn aggregation_codec_contract() {
         Err(CAPACITY)
     );
 }
+
+struct IntegerEpoch {
+    outputs: Vec<WorkerAggregate>,
+    total: u64,
+    display: Vec<Presence<u32>>,
+    input: Digest32,
+    root: Digest32,
+}
+fn integer_epoch(
+    workers: &[WorkerRosterEntry],
+    evaluators: &[EvaluatorRosterEntry],
+    cells: &[Vec<ScoreEntry>],
+    seal: u64,
+) -> IntegerEpoch {
+    let r = roster(workers, evaluators);
+    let b = binding(&r);
+    let reports: Vec<_> = evaluators
+        .iter()
+        .zip(cells)
+        .filter(|(_, c)| !c.is_empty())
+        .map(|(e, c)| report(b, *e, c))
+        .collect();
+    let view = AggregationInputView::structural(b, r, &reports).unwrap();
+    let epoch = aggregation::aggregate_epoch(&view).unwrap();
+    assert_eq!(epoch.len(), workers.len());
+    let outputs: Vec<_> = (0..epoch.len()).map(|i| epoch.output(i).unwrap()).collect();
+    assert!(epoch.output(workers.len()).is_err());
+    assert_eq!(
+        aggregation::total_weight(&outputs).unwrap(),
+        epoch.total_weight()
+    );
+    for (w, o) in workers.iter().zip(&outputs) {
+        assert_eq!(aggregation::aggregate_worker(&view, *w).unwrap(), *o);
+        assert_eq!(o.support(), view.support(w.worker).unwrap());
+    }
+    let display = (0..epoch.len())
+        .map(|i| epoch.display_share_ppm(i).unwrap())
+        .collect();
+    let input = input_digest(b, seal, &commitments(&reports)).unwrap();
+    let root = EpochAggregation::structural(b, input, workers, &outputs)
+        .unwrap()
+        .root();
+    IntegerEpoch {
+        outputs,
+        total: epoch.total_weight(),
+        display,
+        input,
+        root,
+    }
+}
+/// One worker; `None` is a missing evaluator report, never a zero vote.
+fn single(scores: &[Option<u32>]) -> IntegerEpoch {
+    let workers = [worker(1)];
+    let evaluators: Vec<_> = (1..=u8::try_from(scores.len()).unwrap())
+        .map(evaluator)
+        .collect();
+    let cells: Vec<Vec<ScoreEntry>> = scores
+        .iter()
+        .map(|s| {
+            s.map(|v| vec![cell(workers[0].worker, v)])
+                .unwrap_or_default()
+        })
+        .collect();
+    integer_epoch(&workers, &evaluators, &cells, 96)
+}
+fn scores(values: &[u32]) -> Vec<Score> {
+    values.iter().map(|v| Score::new(*v).unwrap()).collect()
+}
+fn permutations(values: &[u32]) -> Vec<Vec<u32>> {
+    if values.len() <= 1 {
+        return vec![values.to_vec()];
+    }
+    let mut all = Vec::new();
+    for i in 0..values.len() {
+        let mut rest = values.to_vec();
+        let head = rest.remove(i);
+        for mut tail in permutations(&rest) {
+            tail.insert(0, head);
+            all.push(tail);
+        }
+    }
+    all
+}
+fn wire(v: WorkerAggregate) -> [u8; 50] {
+    let mut bytes = [0; 50];
+    assert_eq!(encode_worker_aggregate(v, &mut bytes).unwrap(), 50);
+    bytes
+}
+
+#[test]
+fn aggregation_integer_contract() {
+    let zero = Score::new(0).unwrap();
+
+    // A01: support 3, positive, score equals raw weight; no transfer type exists.
+    let a01 = single(&[Some(210000), Some(620000), Some(970000)]);
+    let v = a01.outputs[0];
+    assert_eq!(v.support(), 3);
+    assert_eq!(v.status(), QualityStatus::ScoredPositive);
+    assert_eq!(v.score().get(), 620000);
+    assert_eq!(v.weight(), 620000);
+    assert_eq!(v.quality(), Presence::Present(Score::new(620000).unwrap()));
+    assert_eq!(a01.total, 620000);
+    assert_eq!(a01.display, vec![Presence::Present(1_000_000)]);
+
+    // A02: even count selects the lower central value, never the average.
+    let a02 = single(&[Some(10000), Some(20000), Some(900000), Some(990000)]);
+    assert_eq!(a02.outputs[0].support(), 4);
+    assert_eq!(a02.outputs[0].score().get(), 20000);
+    assert_ne!(a02.outputs[0].score().get(), 460000);
+    assert_eq!(a02.outputs[0].weight(), 20000);
+    for p in permutations(&[10000, 20000, 900000, 990000]) {
+        let m = aggregation::lower_median(&scores(&p)).unwrap();
+        assert_eq!(m.support, 4);
+        assert_eq!(m.selected, Presence::Present(Score::new(20000).unwrap()));
+    }
+
+    // A03: measured zero with quorum versus absent quality without quorum.
+    let measured = single(&[Some(0), Some(0), Some(1000000)]).outputs[0];
+    assert_eq!(measured.support(), 3);
+    assert_eq!(measured.status(), QualityStatus::ScoredZero);
+    assert_eq!(measured.weight(), 0);
+    assert_eq!(measured.quality(), Presence::Present(zero));
+    let absent = single(&[Some(0), Some(1000000), None, None, None, None, None, None]);
+    let absent_v = absent.outputs[0];
+    assert_eq!(absent_v.support(), 2);
+    assert_eq!(absent_v.status(), QualityStatus::InsufficientQuorum);
+    assert_eq!(absent_v.weight(), 0);
+    assert_eq!(absent_v.quality(), Presence::Absent);
+    assert_ne!(absent_v.quality(), measured.quality());
+    assert_ne!(absent_v.status(), measured.status());
+    assert_eq!(absent.total, 0);
+    assert_eq!(absent.display, vec![Presence::Absent]);
+    assert_eq!(
+        aggregation::lower_median(&scores(&[0, 1000000])).unwrap(),
+        aggregation::Median {
+            support: 2,
+            selected: Presence::Absent,
+            comparisons: 1,
+        }
+    );
+    assert_eq!(
+        aggregation::lower_median(&[]).unwrap().selected,
+        Presence::Absent
+    );
+
+    // A04: five missing evaluators add no observations.
+    let a04 = single(&[
+        Some(0),
+        None,
+        Some(300000),
+        None,
+        None,
+        Some(700000),
+        None,
+        None,
+    ])
+    .outputs[0];
+    assert_eq!(a04.support(), 3);
+    assert_eq!(a04.score().get(), 300000);
+    assert_eq!(a04.status(), QualityStatus::ScoredPositive);
+
+    // A05: arrival permutations of one canonical admitted set give identical
+    // output bytes and roots; a different seal height changes only the roots.
+    let a05 = single(&[Some(111111), Some(111111), Some(999999)]);
+    assert_eq!(a05.outputs[0].score().get(), 111111);
+    {
+        let workers = [worker(1)];
+        let evaluators = [evaluator(1), evaluator(2), evaluator(3)];
+        let r = roster(&workers, &evaluators);
+        let b = binding(&r);
+        let cells = [
+            [cell(workers[0].worker, 111111)],
+            [cell(workers[0].worker, 111111)],
+            [cell(workers[0].worker, 999999)],
+        ];
+        let canonical: Vec<_> = evaluators
+            .iter()
+            .zip(&cells)
+            .map(|(e, c)| report(b, *e, c))
+            .collect();
+        for order in permutations(&[0, 1, 2]) {
+            let arrival: Vec<_> = order.iter().map(|&i| canonical[i as usize]).collect();
+            let mut rows = commitments(&arrival);
+            canonicalize_arrivals(&mut rows).unwrap();
+            let sealed: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    *arrival
+                        .iter()
+                        .find(|r| r.binding.evaluator == row.evaluator)
+                        .unwrap()
+                })
+                .collect();
+            let view = AggregationInputView::structural(b, r, &sealed).unwrap();
+            let epoch = aggregation::aggregate_epoch(&view).unwrap();
+            let out = [epoch.output(0).unwrap()];
+            assert_eq!(wire(out[0]), wire(a05.outputs[0]));
+            let input = input_digest(b, 96, &rows).unwrap();
+            assert_eq!(input, a05.input);
+            let root = EpochAggregation::structural(b, input, &workers, &out)
+                .unwrap()
+                .root();
+            assert_eq!(root, a05.root);
+        }
+    }
+    for p in permutations(&[111111, 111111, 999999]) {
+        let m = aggregation::lower_median(&scores(&p)).unwrap();
+        assert_eq!(m.selected, Presence::Present(Score::new(111111).unwrap()));
+        let by_value = single(&[Some(p[0]), Some(p[1]), Some(p[2])]).outputs[0];
+        assert_eq!(wire(by_value), wire(a05.outputs[0]));
+    }
+    let later = {
+        let workers = [worker(1)];
+        let evaluators = [evaluator(1), evaluator(2), evaluator(3)];
+        let cells: Vec<_> = [111111, 111111, 999999]
+            .iter()
+            .map(|v| vec![cell(workers[0].worker, *v)])
+            .collect();
+        integer_epoch(&workers, &evaluators, &cells, 97)
+    };
+    assert_eq!(wire(later.outputs[0]), wire(a05.outputs[0]));
+    assert_ne!(later.input, a05.input);
+    assert_ne!(later.root, a05.root);
+
+    // A06: canonical ascending ID32 worker order, W and floor display ppm.
+    let ids: Vec<_> = (1u8..=3)
+        .map(|n| {
+            let mut id = [0u8; 32];
+            id[31] = n;
+            WorkerRosterEntry {
+                worker: WorkerId::new(id).unwrap(),
+                ..worker(n)
+            }
+        })
+        .collect();
+    let evaluators = [evaluator(1), evaluator(2), evaluator(3)];
+    let row: Vec<_> = ids
+        .iter()
+        .zip([250000, 500000, 250000])
+        .map(|(w, s)| cell(w.worker, s))
+        .collect();
+    let a06 = integer_epoch(&ids, &evaluators, &[row.clone(), row.clone(), row], 96);
+    let order: Vec<_> = a06.outputs.iter().map(|o| o.worker().bytes()[31]).collect();
+    assert_eq!(order, vec![1, 2, 3]);
+    assert_eq!(a06.total, 1_000_000);
+    assert_eq!(
+        a06.display,
+        vec![
+            Presence::Present(250000),
+            Presence::Present(500000),
+            Presence::Present(250000)
+        ]
+    );
+
+    // A07: display truncation is dust only; raw weights remain authoritative.
+    let three: Vec<_> = (1..=3).map(worker).collect();
+    let ones: Vec<_> = three.iter().map(|w| cell(w.worker, 1)).collect();
+    let a07 = integer_epoch(&three, &evaluators, &[ones.clone(), ones.clone(), ones], 96);
+    assert!(a07.outputs.iter().all(|o| o.weight() == 1));
+    assert_eq!(a07.total, 3);
+    assert_eq!(a07.display, vec![Presence::Present(333333); 3]);
+    let shown: u32 = a07
+        .display
+        .iter()
+        .map(|d| match d {
+            Presence::Present(v) => *v,
+            Presence::Absent => 0,
+        })
+        .sum();
+    assert_eq!(shown, 999999);
+    assert_eq!(
+        aggregation::display_share_ppm(1, 3).unwrap(),
+        Presence::Present(333333)
+    );
+    assert_eq!(aggregation::display_share_ppm(2, 1), Err(ARITHMETIC));
+    assert_eq!(
+        aggregation::display_share_ppm(1, 32_000_001),
+        Err(ARITHMETIC)
+    );
+
+    // A08: 32 workers x 8 evaluators, 256 cells, four bounded chunks of eight.
+    let max_workers: Vec<_> = (1..=32).map(worker).collect();
+    let max_evaluators: Vec<_> = (1..=8).map(evaluator).collect();
+    let full: Vec<_> = max_workers
+        .iter()
+        .map(|w| cell(w.worker, 1000000))
+        .collect();
+    let cells = vec![full; 8];
+    assert_eq!(cells.iter().map(Vec::len).sum::<usize>(), 256);
+    let a08 = integer_epoch(&max_workers, &max_evaluators, &cells, 96);
+    assert_eq!(a08.total, 32_000_000);
+    assert!(a08.outputs.iter().all(|o| o.support() == 8
+        && o.weight() == 1_000_000
+        && o.status() == QualityStatus::ScoredPositive));
+    assert_eq!(a08.display, vec![Presence::Present(31250); 32]);
+    assert_eq!(
+        integer_epoch(&max_workers, &max_evaluators, &cells, 96).root,
+        a08.root
+    );
+    {
+        let r = roster(&max_workers, &max_evaluators);
+        let b = binding(&r);
+        let reports: Vec<_> = max_evaluators
+            .iter()
+            .zip(&cells)
+            .map(|(e, c)| report(b, *e, c))
+            .collect();
+        let view = AggregationInputView::structural(b, r, &reports).unwrap();
+        let mut cursor = 0u16;
+        let mut sum = 0u64;
+        let mut calls = 0;
+        loop {
+            let chunk = aggregation::aggregate_chunk(&view, cursor, sum).unwrap();
+            if chunk.is_empty() {
+                assert_eq!(chunk.cursor(), 32);
+                break;
+            }
+            assert_eq!(chunk.len(), aggregation::WORKERS_PER_CHUNK);
+            for i in 0..chunk.len() {
+                assert_eq!(
+                    chunk.output(i).unwrap(),
+                    a08.outputs[usize::from(cursor) + i]
+                );
+            }
+            assert!(chunk.output(chunk.len()).is_err());
+            cursor = chunk.cursor();
+            sum = chunk.running_weight();
+            calls += 1;
+        }
+        assert_eq!(calls, 4);
+        assert_eq!(sum, 32_000_000);
+        assert_eq!(
+            aggregation::aggregate_chunk(&view, 33, 0).unwrap_err(),
+            STALE_CURSOR
+        );
+        assert_eq!(
+            aggregation::aggregate_chunk(&view, 24, 24_000_001).unwrap_err(),
+            ARITHMETIC
+        );
+    }
+    assert_eq!(
+        aggregation::add_weight(u64::MAX, a08.outputs[0]),
+        Err(ARITHMETIC)
+    );
+    assert_eq!(
+        aggregation::add_weight(31_000_000, a08.outputs[0]).unwrap(),
+        32_000_000
+    );
+    assert_eq!(
+        aggregation::add_weight(31_000_001, a08.outputs[0]),
+        Err(ARITHMETIC)
+    );
+    assert_eq!(
+        aggregation::display_share_ppm(1_000_000, 32_000_000).unwrap(),
+        Presence::Present(31250)
+    );
+    let worst = aggregation::lower_median(&scores(&[8, 7, 6, 5, 4, 3, 2, 1])).unwrap();
+    assert_eq!(worst.comparisons, aggregation::MAX_COMPARISONS_PER_WORKER);
+    assert_eq!(worst.selected, Presence::Present(Score::new(4).unwrap()));
+    assert_eq!(
+        aggregation::lower_median(&scores(&[1; 9])).unwrap_err(),
+        CAPACITY
+    );
+    let mut too_many = a08.outputs.clone();
+    too_many.push(a08.outputs[0]);
+    assert_eq!(aggregation::total_weight(&too_many), Err(CAPACITY));
+
+    // A09: no workers or no admitted reports -> W0, no fallback shares.
+    let empty = integer_epoch(&[], &max_evaluators, &[], 96);
+    assert!(empty.outputs.is_empty());
+    assert_eq!(empty.total, 0);
+    let silent = integer_epoch(&three, &max_evaluators, &[], 96);
+    assert_eq!(silent.total, 0);
+    assert!(silent.outputs.iter().all(|o| o.support() == 0
+        && o.status() == QualityStatus::InsufficientQuorum
+        && o.weight() == 0
+        && o.quality() == Presence::Absent));
+    assert_eq!(silent.display, vec![Presence::Absent; 3]);
+    assert_eq!(
+        aggregation::display_share_ppm(0, 0).unwrap(),
+        Presence::Absent
+    );
+    let zeros: Vec<_> = three.iter().map(|w| cell(w.worker, 0)).collect();
+    let zero_epoch = integer_epoch(
+        &three,
+        &evaluators,
+        &[zeros.clone(), zeros.clone(), zeros],
+        96,
+    );
+    assert_eq!(zero_epoch.total, 0);
+    assert!(zero_epoch
+        .outputs
+        .iter()
+        .all(|o| o.status() == QualityStatus::ScoredZero && o.weight() == 0));
+    assert_eq!(zero_epoch.display, vec![Presence::Absent; 3]);
+
+    // A17: two low colluding reports among four select zero. This demonstrates
+    // the specified lower-median vulnerability, not quality or collusion detection.
+    let a17 = single(&[Some(0), Some(0), Some(900000), Some(1000000)]).outputs[0];
+    assert_eq!(a17.support(), 4);
+    assert_eq!(a17.score().get(), 0);
+    assert_eq!(a17.status(), QualityStatus::ScoredZero);
+    assert_eq!(a17.weight(), 0);
+}
