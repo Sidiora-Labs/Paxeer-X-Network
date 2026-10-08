@@ -4916,3 +4916,7 @@ text = "Resolve the configured repository identity from existing verified projec
 [gotcha.1052]
 date = "2026-10-08"
 text = "Codify work-open may time out before producing a packet. Record that tool outcome separately, retain complete source as unqualified, and never report formatting, a build or behavior verification that did not execute."
+
+[gotcha.1053]
+date = "2026-10-08"
+text = "Large active KVX specifications expose quadratic parser entry lookup. A local indexed parser candidate passed ordered semantic parity and focused checks; use its explicit path for new task commands while retaining all graph and verification checks. Existing installed tools and already-passed gates remain unchanged."

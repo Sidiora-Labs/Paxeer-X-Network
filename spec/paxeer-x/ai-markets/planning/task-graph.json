@@ -949,11 +949,10 @@
     {
       "id": "ai.F04-T01",
       "requires": [
-        "ai.T-C01",
-        "ai.F03-T01"
+        "ai.T-C01"
       ],
       "wave": 18,
-      "status": "pending",
+      "status": "implemented",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
       "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]",
@@ -981,21 +980,27 @@
         "AI.F04-CODEC-C10"
       ],
       "admission_contract": {
-        "scope": "Implement exact bounded canonical commitment/report binding and operation framing against common/F03 types: pure preimages, SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. Runtime SDK cryptography, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with their original assertions intact.",
+        "scope": "Implement exact bounded canonical commitment/report binding and operation framing against actual passed C01 common types and codecs: pure preimages, independent SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. The completed pure source imports no F03 evaluator implementation, F01 policy/registry or STATE producer. Compile the actual SDK hash helpers on wasm through the unchanged build command. Runtime SDK cryptography and real F03 signed/evidence admission, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with all original assertions intact.",
         "exact_paths": [
           "programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs",
-          "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"
+          "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs"
         ],
         "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
         "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical",
-        "entry_condition": "All existing requires tasks have exact passed evidence on compatible inputs; the exact owned paths and actual common/F03 types and codecs are admitted. This focused task qualifies pure canonical framing, checked bounds and mathematical SHA256 vectors. Runtime SDK cryptography, authenticated host admission, live state/replay/windows, OS-CSPRNG persistence and finality remain mandatory unchanged downstream integration obligations and stay UNRUN until their actual evidence exists.",
+        "entry_condition": "ai.T-C01 has exact PASSED evidence on compatible common source. The exact finished FM7 pure commitment.rs/f04_canonical.rs candidate uses actual common codec/types/errors/MAX_WORKERS and existing sha2, with wasm-only calls to the real already-declared layerx-program-sdk. It imports no F03-T01 owned source; F03 completion is not a prerequisite for this pure codec task. Root/FM1 exclusively serializes the exact inline commit_reveal::{commitment} export while retaining all existing F03/core/state/policy/registry/host exports. Actual passed common constructors and SDK HashInput/hash signatures must remain compatible; any missing actual API blocks qualification. Mathematical vectors and wasm compilation establish no native SDK execution, cryptographic report admission, authority, time, live membership, state, finality or business-handler qualification. All original F04-A01..A12 and their mandatory later real gates remain unchanged UNRUN.",
         "max_builds": 1,
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
-        "gate_kind": "planned",
+        "gate_kind": "executable",
         "qualification": "UNRUN",
-        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs.",
+        "serial_integration_owner": "FM-CORE root/FM1; pure source author owns only original commitment.rs and f04_canonical.rs",
+        "serial_integration_paths": [
+          "programs/crates/layerx-programs-ai-market/src/lib.rs"
+        ],
+        "serial_integration_obligations": "Root has separately dispatched FM1 to wire only pub mod commit_reveal { pub mod commitment; } in the actual shared lib.rs, preserving current F03 and all other exports. No flat commit_reveal.rs business handler, constructor-transition producer, MarketState facade, F05 adapter or optional module is admitted for T01. Existing SDK and sha2 dependencies suffice; no new manifest/dependency edit is requested by this admission. FM1 owns the added shared path and is its sole writer."
       },
       "feature": "F04",
       "local_wave": 4,
@@ -1010,7 +1015,9 @@
         "AI.F04-CODEC-C08",
         "AI.F04-CODEC-C09",
         "AI.F04-CODEC-C10"
-      ]
+      ],
+      "qualification": "UNRUN",
+      "evidence": "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
     },
     {
       "id": "ai.F07-T01",

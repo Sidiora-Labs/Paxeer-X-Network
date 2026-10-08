@@ -574,3 +574,23 @@ full_case_05_id = "AI.F03-A05"
 full_case_05_scenario_verbatim = "change only chain_domain from55 to56 while retaining signature. WRONG_DOMAIN; same refusal applies to another Program/market domain."
 full_case_05_mandatory_task = "ai.F03-T04"
 
+
+[integration.I12-CODEC-F04-SOURCE-CLOSURE]
+codec_task = "ai.F04-T01"
+requires = ["ai.T-C01"]
+removed_pure_codec_dependency = "ai.F03-T01"
+dependency_proof = "Finished actual pure product imports crate::{codec, errors::*, types::*, MAX_WORKERS}; tests import common codec/types/errors plus pure commitment and existing sha2. F03-named report, evaluator binding and error values are declared by passed C01. No evaluator model/codec/state/registry/policy/admission/roster implementation is imported. wasm-only helpers consume actual SDK hash API already declared in current manifest."
+codec_acceptance_unchanged = ["AI.F04-CODEC-C01", "AI.F04-CODEC-C02", "AI.F04-CODEC-C03", "AI.F04-CODEC-C04", "AI.F04-CODEC-C05", "AI.F04-CODEC-C06", "AI.F04-CODEC-C07", "AI.F04-CODEC-C08", "AI.F04-CODEC-C09", "AI.F04-CODEC-C10"]
+original_full_acceptance_unchanged = ["AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A07", "AI.F04-A08", "AI.F04-A09", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12"]
+mandatory_full_allocation_unchanged = "integration.I09-CODEC-F04; retain every exact clause, original assertion, mandatory owner and real gate. F04-T02/F05-T03/F03-T04/F04-T03/F01-T03-EPOCH/RELEASE-CANDIDATE remain mandatory exactly as already admitted."
+native_F03_dependency_retained = "F04-T02 retains actual F03-T03 dependency and every authenticated signed/evidence admission obligation; this pure T01 separation supplies no admission token."
+serial_integration_owner = "FM-CORE root/FM1"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs"]
+serial_integration_obligations = "Root has separately dispatched FM1 to wire only pub mod commit_reveal { pub mod commitment; } in the actual shared lib.rs, preserving current F03 and all other exports. No flat commit_reveal.rs business handler, constructor-transition producer, MarketState facade, F05 adapter or optional module is admitted for T01. Existing SDK and sha2 dependencies suffice; no new manifest/dependency edit is requested by this admission. FM1 owns the added shared path and is its sole writer."
+actual_test_functions = ["exact_binding_and_all_nine_mismatches", "section12_exact_preimages_and_independent_sha256", "strict_rows_empty_and_explicit_zero", "exact_operation_signature_salt_and_digest_framing", "maximum_byte_and_membership_work_bounds", "version_evidence_empty_payload_and_alternate_salt_refusals"]
+build_cmd_unchanged = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+single_verify_cmd_unchanged = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical"
+qualification = "UNRUN"
+gate_kind = "planned"
+acceptance_boundary = "SDK SHA256 helpers compile only on wasm. Native test SHA256 vectors use real sha2 independently and do not replace runtime SDK execution. Signature64 is framing only; no native hash/verifier surrogate, live membership/phase/replay/finality proof, generated approval or duplicate producer is admitted."
+

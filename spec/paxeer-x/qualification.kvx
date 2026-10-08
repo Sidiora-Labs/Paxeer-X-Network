@@ -688,3 +688,10 @@ command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 observed = "Thirteen tests passed, none failed or ignored; crate build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. Full native evaluator cases remain UNRUN."
+
+[qualification.ai-commitment-codec-20261008-01]
+revision = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
+observed = "Six tests passed, none failed or ignored; Wasm build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. Full native report-admission cases remain UNRUN."

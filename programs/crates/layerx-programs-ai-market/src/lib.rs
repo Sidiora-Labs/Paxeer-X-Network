@@ -3,6 +3,9 @@
 #![no_std]
 
 pub mod codec;
+pub mod commit_reveal {
+    pub mod commitment;
+}
 pub mod dispatch;
 pub mod errors;
 pub mod evaluators {

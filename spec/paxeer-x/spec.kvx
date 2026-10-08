@@ -35365,12 +35365,12 @@ worker_role_id = "W-STORAGE-RETIREMENT"
 
 [task.ai.F04-T01]
 title = "Implement canonical report commitments"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 18
-requires = ["ai.T-C01", "ai.F03-T01"]
+requires = ["ai.T-C01"]
 reqs = ["AI.F04-R03", "AI.F04-R04", "AI.F04-R08", "AI.F04-R10", "AI.F04-R11", "AI.CORE"]
-do_1 = "Implement exact bounded canonical commitment/report binding and operation framing against common/F03 types: pure preimages, SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. Runtime SDK cryptography, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with their original assertions intact."
+do_1 = "Implement exact bounded canonical commitment/report binding and operation framing against actual passed C01 common types and codecs: pure preimages, independent SHA256 mathematical vectors, exact tuple equality, salt/score/length/order/membership refusals, explicit-zero preservation and bounded signature framing. The completed pure source imports no F03 evaluator implementation, F01 policy/registry or STATE producer. Compile the actual SDK hash helpers on wasm through the unchanged build command. Runtime SDK cryptography and real F03 signed/evidence admission, authenticated host admission, live state/replay/windows and finality remain mandatory downstream integration obligations with all original assertions intact."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -35378,11 +35378,11 @@ manager = "FM-F04"
 worker_role = "commitment and recovery specialist"
 worker = "W-F04-T01"
 deliverables = ["Implement exact domain-separated report/salt commitment, strict canonical report fields, nonzero 32-byte external salt and bounded signature/hash work; reject empty reports while retaining explicit zero votes.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All existing requires tasks have exact passed evidence on compatible inputs; the exact owned paths and actual common/F03 types and codecs are admitted. This focused task qualifies pure canonical framing, checked bounds and mathematical SHA256 vectors. Runtime SDK cryptography, authenticated host admission, live state/replay/windows, OS-CSPRNG persistence and finality remain mandatory unchanged downstream integration obligations and stay UNRUN until their actual evidence exists."
-touches = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"]
+entry_condition = "ai.T-C01 has exact PASSED evidence on compatible common source. The exact finished FM7 pure commitment.rs/f04_canonical.rs candidate uses actual common codec/types/errors/MAX_WORKERS and existing sha2, with wasm-only calls to the real already-declared layerx-program-sdk. It imports no F03-T01 owned source; F03 completion is not a prerequisite for this pure codec task. Root/FM1 exclusively serializes the exact inline commit_reveal::{commitment} export while retaining all existing F03/core/state/policy/registry/host exports. Actual passed common constructors and SDK HashInput/hash signatures must remain compatible; any missing actual API blocks qualification. Mathematical vectors and wasm compilation establish no native SDK execution, cryptographic report admission, authority, time, live membership, state, finality or business-handler qualification. All original F04-A01..A12 and their mandatory later real gates remain unchanged UNRUN."
+touches = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical"
-gate_kind = "planned"
+gate_kind = "executable"
 qualification = "UNRUN"
 max_builds = 1
 max_verify_runs = 1
@@ -35391,8 +35391,12 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 4
 acceptance_cases = ["AI.F04-CODEC-C01", "AI.F04-CODEC-C02", "AI.F04-CODEC-C03", "AI.F04-CODEC-C04", "AI.F04-CODEC-C05", "AI.F04-CODEC-C06", "AI.F04-CODEC-C07", "AI.F04-CODEC-C08", "AI.F04-CODEC-C09", "AI.F04-CODEC-C10"]
-paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"]
+paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F04-COMMITMENT"
+serial_integration_owner = "FM-CORE root/FM1; pure source author owns only original commitment.rs and f04_canonical.rs"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs"]
+serial_integration_obligations = "Root has separately dispatched FM1 to wire only pub mod commit_reveal { pub mod commitment; } in the actual shared lib.rs, preserving current F03 and all other exports. No flat commit_reveal.rs business handler, constructor-transition producer, MarketState facade, F05 adapter or optional module is admitted for T01. Existing SDK and sha2 dependencies suffice; no new manifest/dependency edit is requested by this admission. FM1 owns the added shared path and is its sole writer."
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [task.ai.F07-T01]
 title = "Implement bounded reputation and terminal helper"
@@ -44145,6 +44149,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Exact typed binding tuple"
 reqs = ["AI.F04-R03", "AI.CORE"]
 derived_from = ["AI.F04-A04"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C02]
 feature = "F04"
@@ -44155,6 +44160,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Strict report rows and absent versus zero"
 reqs = ["AI.F04-R03", "AI.F04-R08", "AI.CORE"]
 derived_from = ["AI.F04-A03", "AI.F04-A07"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C03]
 feature = "F04"
@@ -44165,6 +44171,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Report SHA256 mathematical binding"
 reqs = ["AI.F04-R03", "AI.F04-R08"]
 derived_from = ["AI.F04-A03", "AI.F04-A10"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C04]
 feature = "F04"
@@ -44175,6 +44182,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Attestation framing and signature bounds"
 reqs = ["AI.F04-R03", "AI.F04-R08"]
 derived_from = ["AI.F04-A04", "AI.F04-A05"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C05]
 feature = "F04"
@@ -44185,6 +44193,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Exact commitment preimage and digest"
 reqs = ["AI.F04-R03", "AI.F04-R04", "AI.F04-R08"]
 derived_from = ["AI.F04-A03", "AI.F04-A04", "AI.F04-A05"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C06]
 feature = "F04"
@@ -44195,6 +44204,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Salt framing and refusal"
 reqs = ["AI.F04-R04", "AI.F04-R03"]
 derived_from = ["AI.F04-A05"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C07]
 feature = "F04"
@@ -44205,6 +44215,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Full binding mismatch coverage"
 reqs = ["AI.F04-R03", "AI.CORE"]
 derived_from = ["AI.F04-A04"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C08]
 feature = "F04"
@@ -44215,6 +44226,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Operation framing and canonical refusals"
 reqs = ["AI.F04-R03", "AI.F04-R08", "AI.F04-R11", "AI.CORE"]
 derived_from = ["AI.F04-A03", "AI.F04-A05", "AI.F04-A10"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C09]
 feature = "F04"
@@ -44225,6 +44237,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "Maximum byte and work bounds"
 reqs = ["AI.F04-R08", "AI.F04-R11"]
 derived_from = ["AI.F04-A10"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C10]
 feature = "F04"
@@ -44235,6 +44248,7 @@ kind = "pure_codec_and_mathematical_hash"
 title = "No business state or authority surrogate"
 reqs = ["AI.F04-R10", "AI.F04-R11", "AI.CORE"]
 derived_from = ["AI.F04-A03", "AI.F04-A07", "AI.F04-A10"]
+evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33ad9a231a63a8c6fc12f5a58ba8a43f74b9069826fc1b6 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm7/codec-qualification-01.log"
 
 [acceptance.AI.F09-A26]
 feature = "F09"
