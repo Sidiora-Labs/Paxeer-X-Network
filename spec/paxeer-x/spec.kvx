@@ -35365,7 +35365,7 @@ worker_role_id = "W-STORAGE-ARCHIVE"
 
 [task.ai.T-S02]
 title = "Implement deterministic authenticated Programs retirement"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-S01"]
@@ -35559,7 +35559,7 @@ worker_role_id = "W-F10-QUERIES"
 
 [task.ai.T-S03]
 title = "Reserve authenticated native headroom and reconcile keeper"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-S02"]

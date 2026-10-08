@@ -5112,3 +5112,11 @@ text = "Replay must bind each activity with the batch prefix (batch_id plus acti
 [gotcha.1102]
 area = "fleet"
 text = "If cd and export sit inside a backgrounded command chain, make runs in the leader repo's working directory; always cd to the worktree explicitly in the same foreground command."
+
+[gotcha.1103]
+area = "programs-module"
+text = "agent/crates/layerx-types/build.rs reads every `LX_PROGRAMS_* = 0x...` line in include/layerx/programs.h as a module-9 activity ordinal and requires the *ABI_VERSION constants to ascend to SANDBOX_DESTROY = 4; non-activity constants there need another prefix (LXP_PROGRAMS_), and a new activity cannot raise the ABI without updating build.rs."
+
+[gotcha.1104]
+area = "programs-module"
+text = "A module ctx stages at most LXP_KERNEL_MAX_STAGED_BLOBS (4) blobs per activity and lxp_programs_storage_stage_final stages value blobs plus the manifest, so seed one namespace per ctx; it never deletes the previous manifest or value blobs, so superseded blobs stay live until retired. lxp_programs_replay_capture_stage needs ctx->call_admission.present with matching fee/metering versions, activity_id equal to the capture id and global_sequence equal to capture->sequence."

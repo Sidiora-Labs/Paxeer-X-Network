@@ -821,3 +821,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.T-S01-REPLAY-verify-1.log"
 observed = "All ten state-archive scenarios pass on a real paxd chain after the daemon replay fix, which is also ai.T-S01's full verify_cmd."
 assumption = "ai.T-S01 stays at implemented only because ai.P-STORAGE-PROFILE and ai.P-DEPLOYMENT are unapproved; no rerun is needed when they pass, this evidence stands."
+
+[qualification.ai-t-s02-activation-20261008-01]
+revision = "3c6b645db"
+command = "make test-paxai-blob-lifecycle"
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S02-verify-1.log"
+observed = "Retirement (ordinal 11) passes 58 checks but exists only in programs_module_registration_v4_storage_retirement at ABI 4, which genesis and the daemon do not activate; no genesis or governance path installs or rotates the retirement profile; the cutoff is authenticated by the 2-of-2 archive certificate without a finalized-header check; only the single-cell PAXAI namespace is retirable."
+assumption = "Held at implemented: profile values await ai.P-STORAGE-PROFILE; ABI activation, profile installation, SDK ABI mirror and the finality check belong to ai.T-S03/ai.T-S04/ai.T-C03 and are recorded there, not reworked here."
