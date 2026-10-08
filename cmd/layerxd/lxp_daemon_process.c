@@ -1323,12 +1323,99 @@ static lxp_result persist_prepared_batch_checkpoint(
     return status;
 }
 
+static lxp_result replay_batch_binding(
+    lxp_daemon_process *process, const lxp_batch_header *published,
+    const uint8_t *canonical_activity, size_t activity_length,
+    uint64_t global_sequence, uint64_t batch_number,
+    lxp_kernel_execution *execution)
+{
+    lxp_byte_span offered = {canonical_activity, activity_length};
+    lxp_batch_body body;
+    lxp_byte_span expected_header, actual_header;
+    lxp_byte_span *activities = NULL;
+    lxp_kernel_execution *bindings = NULL;
+    lxp_batch_roots roots;
+    uint8_t batch_id[32];
+    size_t count = 0U, index;
+    size_t mark = lxp_arena_mark(&process->execution_arena);
+    lxp_result status;
+    if (published == NULL) {
+        status = lxp_daemon_batch_bind_prefix(
+            &offered, 1U, process->kernel.current_state_root,
+            global_sequence, batch_number, &process->execution_arena,
+            execution, &roots, batch_id);
+        if (lxp_arena_reset(&process->execution_arena, mark) != LXP_OK)
+            return LXP_FATAL_INVARIANT;
+        return status;
+    }
+    status = process->availability_log_open &&
+            published->batch_number == batch_number &&
+            global_sequence >= published->first_sequence &&
+            global_sequence <= published->last_sequence ?
+        LXP_OK : LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status == LXP_OK)
+        status = lxp_da_log_read_body(&process->availability_log, batch_number,
+                                      &process->execution_arena, &body);
+    if (status == LXP_OK)
+        status = lxp_batch_header_encode(published, &process->execution_arena,
+                                         &expected_header);
+    if (status == LXP_OK)
+        status = lxp_batch_header_encode(&body.header, &process->execution_arena,
+                                         &actual_header);
+    if (status == LXP_OK &&
+        (actual_header.length != expected_header.length ||
+         lxp_ct_memcmp(actual_header.bytes, expected_header.bytes,
+                       actual_header.length) != 0))
+        status = LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status == LXP_OK)
+        status = lxp_replay_section_decode(&body.activities,
+                                           &process->execution_arena,
+                                           &activities, &count);
+    index = (size_t)(global_sequence - published->first_sequence);
+    if (status == LXP_OK &&
+        (index >= count ||
+         (uint64_t)count +
+                 (lxp_kernel_uses_batch_maintenance(
+                      &process->kernel, process->protocol_version) ?
+                      1U : 0U) !=
+             published->last_sequence - published->first_sequence + 1U ||
+         activities[index].length != activity_length ||
+         lxp_ct_memcmp(activities[index].bytes, canonical_activity,
+                       activity_length) != 0))
+        status = LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status == LXP_OK)
+        status = lxp_arena_alloc(&process->execution_arena,
+                                 count * sizeof(*bindings),
+                                 _Alignof(lxp_kernel_execution),
+                                 (void **)&bindings);
+    if (status == LXP_OK) {
+        (void)memset(bindings, 0, count * sizeof(*bindings));
+        status = lxp_daemon_batch_bind_prefix(
+            activities, count, published->previous_state_root,
+            published->first_sequence, batch_number,
+            &process->execution_arena, bindings, &roots, batch_id);
+    }
+    if (status == LXP_OK &&
+        lxp_ct_memcmp(roots.activity_merkle_root,
+                      published->activity_merkle_root, 32U) != 0)
+        status = LXP_ERR_ROOT_MISMATCH;
+    if (status == LXP_OK) {
+        (void)memcpy(execution->batch_id, bindings[index].batch_id, 32U);
+        (void)memcpy(execution->activity_root, bindings[index].activity_root,
+                     32U);
+    }
+    if (lxp_arena_reset(&process->execution_arena, mark) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
+    return status;
+}
+
 static lxp_result replay_execute_activity(
     lxp_daemon_process *process, uint64_t global_sequence,
     const uint8_t *canonical_activity, size_t activity_length,
     const uint8_t *canonical_receipt, size_t receipt_length,
     const lxp_receipt *expected, uint64_t timestamp,
-    uint64_t batch_number, lxp_activity *activity, lxp_receipt *receipt)
+    uint64_t batch_number, const lxp_batch_header *published,
+    lxp_activity *activity, lxp_receipt *receipt)
 {
     lxp_identity *identity;
     uint8_t principal_id[32];
@@ -1353,6 +1440,12 @@ static lxp_result replay_execute_activity(
         global_sequence != process->state.next_sequence ||
         expected->global_sequence != global_sequence)
         return LXP_ERR_SEQUENCE_GAP;
+    status = occupancy_parameters(process,
+        expected->program_outcome.present ?
+            expected->program_outcome.fee_schedule_version : 0U,
+        &process->programs.fee_schedule,
+        process->programs.occupancy_asset_id);
+    if (status != LXP_OK) return status;
     if ((expected->module_id != LXP_MODULE_PROGRAMS &&
          expected->module_id != LXP_MODULE_ASSET &&
          expected->module_id != LXP_MODULE_GOVERNANCE &&
@@ -1360,8 +1453,10 @@ static lxp_result replay_execute_activity(
          !(process->custody_credit_enabled && expected->module_id == LXP_MODULE_BRIDGE)) ||
         expected->module_version == 0U ||
         expected->parameter_version != process->parameter_version ||
-        process->programs.fee_schedule.version !=
-            expected->parameter_version)
+        process->programs.fee_schedule.version == 0U ||
+        (expected->program_outcome.present &&
+         process->programs.fee_schedule.version !=
+             expected->program_outcome.fee_schedule_version))
         return LXP_ERR_VERSION_UNSUPPORTED;
     status = process_batch_authorization(process, batch_number, &authorization, &trusted_epoch);
     if (status != LXP_OK) return status;
@@ -1490,9 +1585,14 @@ static lxp_result replay_execute_activity(
     (void)memcpy(authority.principal, principal_id, 32U);
     lxp_daemon_live_allowance(&grant, &authority, &allowance);
     (void)memset(&execution, 0, sizeof(execution));
-    status = lxp_batch_identity_activity(
-        process->kernel.current_state_root, activity_id, global_sequence,
-        batch_number, execution.batch_id);
+    if (lxp_protocol_version_uses_occupancy(process->protocol_version))
+        status = replay_batch_binding(process, published, canonical_activity,
+                                      activity_length, global_sequence,
+                                      batch_number, &execution);
+    else
+        status = lxp_batch_identity_activity(
+            process->kernel.current_state_root, activity_id, global_sequence,
+            batch_number, execution.batch_id);
     if (status != LXP_OK) return status;
     execution.network_id = process->network_id;
     execution.batch_number = batch_number;
@@ -1505,8 +1605,7 @@ static lxp_result replay_execute_activity(
         expected->program_outcome.present ?
             expected->program_outcome.metering_schedule_version : 0U;
     execution.recorded_fee_schedule_version =
-        expected->program_outcome.present ?
-            expected->program_outcome.fee_schedule_version : 0U;
+        process->programs.fee_schedule.version;
     execution.parameter_version = expected->parameter_version;
     execution.signature_valid = true;
     execution.identities = &process->identities;
@@ -1519,15 +1618,6 @@ static lxp_result replay_execute_activity(
     execution.replay_receipt = expected;
         execution.replay_public_key = authorization.public_key;
     execution.verified_receipts = &process->verified_receipts;
-    {
-        lx_programs_fee_schedule schedule;
-        uint8_t asset_id[32];
-        status = occupancy_parameters(process, execution.recorded_fee_schedule_version,
-            &schedule, asset_id);
-        if (status != LXP_OK) return status;
-        execution.recorded_fee_schedule_version = schedule.version;
-        (void)memcpy(process->programs.occupancy_asset_id, asset_id, 32U);
-    }
     (void)memset(receipt, 0, sizeof(*receipt));
     status = lxp_kernel_execute_activity(&process->kernel, activity,
                                          &execution, receipt);
@@ -1828,7 +1918,8 @@ static lxp_result replay_canonical_group(
         status = replay_execute_activity(
             process, expected.global_sequence, canonical_activity,
             activity_length, canonical_receipt, receipt_length,
-            &expected, expected.timestamp, batch_number, &activity,
+            &expected, expected.timestamp, batch_number,
+            authority_exists ? &existing_header : NULL, &activity,
             &replayed);
     if (status == LXP_OK && !process->kernel.handover.pending)
         status = persist_state_checkpoint(process,
