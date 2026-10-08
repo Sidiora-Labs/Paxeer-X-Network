@@ -17,6 +17,7 @@ pub mod evaluators {
 }
 pub mod host_adapter;
 pub mod policy;
+pub mod queries;
 pub mod registry;
 pub mod registry_ops;
 pub mod reputation;
