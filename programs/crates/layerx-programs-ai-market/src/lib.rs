@@ -10,6 +10,7 @@ pub mod commit_reveal {
     pub mod commitment;
 }
 pub mod dispatch;
+pub mod epoch;
 pub mod errors;
 pub mod evidence;
 pub mod evaluators {
