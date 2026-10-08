@@ -36276,7 +36276,7 @@ worker_role_id = "W-F10-HEALTH"
 
 [task.ai.F04-T02]
 title = "Implement atomic commit and reveal windows"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 27
 requires = ["ai.F04-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]

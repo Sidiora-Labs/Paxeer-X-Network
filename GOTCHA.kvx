@@ -5154,3 +5154,8 @@ text = "tools/paxeer-x/ai_evidence.py with no PAXAI_ADMISSION_RECORD/PAXAI_APPRO
 area = "ai-market"
 text = "The F03 challenge-identity preimage is 233 bytes (chain, program, market, epoch, evaluator, report, category, evidence, requester), not 265; count field widths from the spec instead of reusing remembered totals. evaluators::authority::apply does not re-bind the F01 header state_revision, so tests must re-encode with Parts::load(..).encode() or the next committed() read fails NON_CANONICAL. F03 report admission (evaluators::admission::admit_report) is reachable only through the F04 RevealScore path and the ChallengeAssessment selector routes to evaluators::admission::apply_challenge; the 228-byte RevealScore event is returned in a caller buffer because large_enum_variant is denied."
 
+
+[gotcha.1113]
+area = "ai-market"
+text = "F04 commit/reveal: SealEvidence consumes evaluator sequence 1, so the first CommitScore is role sequence 2 and RevealScore 3; a commit expiry equal to the window end makes an out-of-window retry fail EXPIRED before the WRONG_PHASE check, so test the two refusals with separate expiries; a suspended market refuses new commits with F08_MARKET_PAUSED but still admits reveals of existing commits; after key rotation the next-epoch commit must bind the new key_version (old version KEY_MISMATCH, old epoch binding WRONG_EPOCH); RevealScore payload_min 364 refuses an empty report at the envelope as NON_CANONICAL, F04_NO_SCORES is only reachable through the direct decoders; the largest CurrentReports section is 12994 bytes against the 24568-byte cap, so the cap-overflow path is unreachable from valid input."
+

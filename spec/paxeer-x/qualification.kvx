@@ -869,3 +869,11 @@ exit_code = 1
 log = "private ops log wt/logs/ai.T-C04-verify-1.log"
 observed = "storage-readiness.kvx consumes the T-S01/T-S02/T-S03 evidence (exit 0 each, caps equal to the validator CAPS, dependency edges recorded incomplete); the validator refused at stage=authority reason=git-head because the workspace admission pins base ce269bfe with empty other_selector_records and no storage profile approval or selector record exists."
 assumption = "Held at implemented until ai.P-STORAGE-PROFILE and ai.P-DEPLOYMENT are approved and the workspace admission is re-pinned on one candidate revision covering all three producers; the prepare re-check and NODE_INFO capability remain with ai.T-S04."
+
+[qualification.ai-f04-t02-windows-20261009-01]
+revision = "55c4dade4"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows"
+exit_code = 0
+log = "private ops log wt/logs/ai.F04-T02-verify-1.log"
+observed = "Fourteen window cases pass; evaluator replay slots are bound as a test fixture because no F08 producer binds ActorSlot::evaluator(i) yet, and the F05 aggregate-sealed signal to RevokeEvaluator is the AuthorityContext stand-in until ai.F05-T03 lands."
+assumption = "Fixture bindings are replaced by the real F08 and F05 producers in ai.F05-T03 and the F08 roster tasks without changing F04 behaviour."
