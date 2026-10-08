@@ -1,0 +1,101 @@
+[meta]
+title = "PAXAI NATIVE STORAGE PREREQUISITE EVIDENCE — READINESS CONSUMPTION"
+task = "ai.T-C04"
+requirement = "AI.CORE"
+requirements = ["AI.CORE", "AI.STORAGE"]
+acceptance_case = "AI.CORE-A04"
+selector = "storage-prerequisite-evidence"
+validator = "tools/paxeer-x/ai_evidence.py"
+verify_cmd = "python3 tools/paxeer-x/ai_evidence.py --selector storage-prerequisite-evidence"
+status = "BLOCKED"
+readiness = "BLOCKED"
+qualification = "UNRUN"
+producer_rerun = false
+scope = "Consumes recorded producer evidence for ai.T-S01, ai.T-S02 and ai.T-S03 from git history and spec/paxeer-x/qualification.kvx; no producer build or gate was rerun. Records only facts established from source; no profile, approval or selector decision is invented. This record grants no activation, deployment or publication authority."
+
+[evidence.ai.T-S01]
+task = "ai.T-S01"
+gate_run_by = "ai.T-S01-REPLAY"
+spec_status = "implemented"
+revision = "c8bad8e762be1d49d1d4a3feb5c20ae39062bff2"
+landed_revision = "62099ef03d9cf5df971c738635ab8a2f73d2c328"
+patch_identity = "c8bad8e76 and 62099ef03 carry the same stable patch-id"
+command = "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd"
+command_matches_validator = true
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S01-REPLAY-verify-1.log"
+log_sha256 = "1b6ded8885feff096b507de581facd03179f5019a19bd947d9ae9de458b3c32c"
+cases = "11 passed, 0 failed (log summary line; the qualification entry calls them all ten state-archive scenarios)"
+code_revision = "f420200b4794fc73d277820fe8b3d098219919bf"
+code_landed_revision = "348274ad9d8c653422fa6b6d9966e4b16b655511"
+code_prior_result = "exit 1 at f420200b4, six of ten scenarios, native replay -101; private ops log wt/logs/ai.T-S01-verify-6.log"
+qualification_consumed = ["ai-t-s01-replay-version-20261008-01", "ai-t-s01-full-gate-20261008-01"]
+profile_sha256 = "absent"
+
+[evidence.ai.T-S02]
+task = "ai.T-S02"
+spec_status = "implemented"
+revision = "3c6b645db07ffa1a35caa7e7a348897990d5c181"
+landed_revision = "3dac191475c947350e272f5413c099afd9dbab79"
+patch_identity = "3c6b645db and 3dac19147 carry the same stable patch-id"
+command = "make test-paxai-blob-lifecycle"
+command_matches_validator = true
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S02-verify-1.log"
+log_sha256 = "67a1abb796200bc74e912ea54f69b1bba8bcb148393e45e3c1163d3e4b45528d"
+cases = "58 BLOB_LIFECYCLE_CASE lines with expected results, closing BLOB_LIFECYCLE_PASS"
+qualification_consumed = ["ai-t-s02-activation-20261008-01"]
+recorded_limits = "Retirement ordinal 11 exists only in the ABI 4 storage-retirement registration that genesis and the daemon do not activate; no genesis or governance path installs or rotates the retirement profile."
+profile_sha256 = "absent"
+
+[evidence.ai.T-S03]
+task = "ai.T-S03"
+spec_status = "implemented"
+revision = "0652584e8b3847377484a68d4918701ac3883021"
+landed_revision = "f886459c184b3abd2e334f2bccb9f8925d0ce2ad"
+patch_identity = "0652584e8 and f886459c1 carry the same stable patch-id"
+command = "make test-paxai-blob-admission"
+command_matches_validator = true
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S03-verify-3.log"
+log_sha256 = "d3da29ae13dd49ff4e73e5bce2699f76bebc3e9b3714aa21508c75edf54fb0a5"
+cases = "10 BLOB_ADMISSION_CASE lines, closing PASSED 10"
+qualification_consumed = ["ai-t-s03-authority-clippy-20261009-01", "ai-t-s03-prepare-recheck-20261009-01"]
+recorded_limits = "Prepare-time re-check of commits against open reservations is not wired and NODE_INFO advertises no capacity capability; the profile digest in the log is a test parameter, not an approved profile."
+profile_sha256 = "absent"
+
+[fact.caps]
+source = "include/layerx/lxp_kernel.h"
+validator_source = "tools/paxeer-x/ai_evidence.py CAPS"
+committed_blobs = 512
+committed_bytes = 67108864
+staged_new_blobs = 4
+blob_bytes = 1048576
+module_kv = 512
+staged_writes = 64
+native_names = "LXP_KERNEL_MAX_BLOBS, LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, LXP_KERNEL_MAX_STAGED_BLOBS, LXP_KERNEL_MAX_BLOB_BYTES, LXP_KERNEL_MAX_MODULE_KV, LXP_MODULE_MAX_STAGED_WRITES"
+matches_validator_caps = true
+unchanged_across = ["c8bad8e76", "3c6b645db", "0652584e8", "6df89b970"]
+
+[dependency_coverage]
+source = "spec/paxeer-x/spec.kvx requires lists"
+edges = ["ai.P-STORAGE-PROFILE -> ai.T-S01", "ai.P-DEPLOYMENT -> ai.T-S01", "ai.T-S01 -> ai.T-S01-REPLAY", "ai.T-S01 -> ai.T-S02", "ai.T-S02 -> ai.T-S03", "ai.T-S03 -> ai.T-C04"]
+task_status = ["ai.P-STORAGE-PROFILE pending, validator refused, qualification UNRUN", "ai.P-DEPLOYMENT pending, validator refused, qualification UNRUN", "ai.T-S01 implemented, full verify_cmd exit 0 recorded through ai.T-S01-REPLAY", "ai.T-S01-REPLAY done", "ai.T-S02 implemented, verify_cmd exit 0", "ai.T-S03 implemented, verify_cmd exit 0", "ai.T-C04 in_progress"]
+note = "ai.T-S02 requires ai.T-S01 directly, not ai.T-S01-REPLAY; ai.T-S01 still requires two unapproved P tasks."
+complete = false
+
+[blocked]
+status = "BLOCKED"
+verify_command = "python3 tools/paxeer-x/ai_evidence.py --selector storage-prerequisite-evidence"
+verify_authority_env = "PAXAI_ADMISSION_RECORD and PAXAI_APPROVAL_RECORD set to the ai.P-WORKSPACE admission and approval records"
+verify_exit_code = 1
+verify_log = "private ops log wt/logs/ai.T-C04-verify-1.log"
+verify_result = "REFUSE evidence validation failed stage=authority reason=git-head"
+verify_meaning = "The workspace admission's pinned checkout HEAD no longer equals its base revision, so the validator stops before reading any selector record; no storage-prerequisite-evidence or storage-profile-admission selector record exists for it to read."
+workspace_authority = "The validator reads PAXAI_ADMISSION_RECORD and PAXAI_APPROVAL_RECORD; the ai.P-WORKSPACE admission pins base ce269bfe23c1db984a8ae62ce13aa36c238ce2fd on branch px26/fm1/ai-workspace and its other_selector_records is empty."
+needs_admission = "A re-pinned workspace admission on the current candidate whose other_selector_records carries both storage-prerequisite-evidence and storage-profile-admission entries (path and SHA-256 inside the private evidence directory)."
+needs_selector_record = "An APPROVED paxai.selector-admission.v1 record for storage-prerequisite-evidence with task_id ai.T-C04, the workspace decision_id and approved_by, base_revision equal to the admission base, contract_version 1, native_caps equal to [fact.caps], namespace one-program-shared-key, finality_policy verified-authoritative-finality, and evidence entries for exactly ai.T-S01, ai.T-S02 and ai.T-S03."
+needs_evidence_records = "One PASS paxai.selector-evidence.v1 record per producer with kind and task_id equal to the producer id, observed_at_unix not before the admission issuance, exit_code 0, a log copied into the private evidence directory at owner-only permissions pinned by SHA-256, and facts task_id, revision, command, exit_code, profile_sha256, native_caps and producer_rerun false with an attachment for profile_sha256."
+needs_single_revision = "The validator binds every producer revision to the one admission base_revision; the producers ran at three different revisions (c8bad8e76, 3c6b645db, 0652584e8), none equal to the current base, so the admission must pin one candidate revision that the recorded producer evidence covers."
+needs_profile = "One approved storage profile digest shared by all three producers and equal to the SHA-256 of the storage-profile-admission selector record, which must itself validate with its thirteen evidence items; ai.P-STORAGE-PROFILE has no approval, so no profile digest exists."
+needs_private_logs = "Producer logs are currently group and world readable in a shared log directory; the validator requires owner-only files under the private evidence directory."
