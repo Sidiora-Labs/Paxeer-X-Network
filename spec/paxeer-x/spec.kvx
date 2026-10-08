@@ -24675,7 +24675,7 @@ escalation = "Refer missing native architecture, archive trust, deployed resourc
 evidence = "revision, command, exit code, log path"
 
 [integration.ai-markets]
-implementation_tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-CLOSE", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04", "ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04", "ai.F04-T01", "ai.F04-T02", "ai.F04-T03", "ai.F05-T01", "ai.F05-T02", "ai.F05-T03", "ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04", "ai.F07-T01", "ai.F07-T02", "ai.F07-T03", "ai.F08-T01", "ai.F08-T02", "ai.F08-T03", "ai.F09-T01", "ai.F09-T02", "ai.F09-T03", "ai.F09-T04", "ai.F10-T01", "ai.F10-T02", "ai.F10-T02-FULL", "ai.F10-T03", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.INTEG-IDENTITY-SECTION", "ai.P-DEPLOYMENT", "ai.P-REAL-SERVICES", "ai.P-STORAGE-PROFILE", "ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04", "ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.T-S04"]
+implementation_tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-CLOSE", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04", "ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04", "ai.F04-T01", "ai.F04-T02", "ai.F04-T03", "ai.F05-T01", "ai.F05-T02", "ai.F05-T03", "ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04", "ai.F07-T01", "ai.F07-T02", "ai.F07-T03", "ai.F08-T01", "ai.F08-T02", "ai.F08-T03", "ai.F09-T01", "ai.F09-T02", "ai.F09-T03", "ai.F09-T04", "ai.F10-T01", "ai.F10-T02", "ai.F10-T02-FULL", "ai.F10-T03", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.INTEG-IDENTITY-SECTION", "ai.T-S01-REPLAY", "ai.P-DEPLOYMENT", "ai.P-REAL-SERVICES", "ai.P-STORAGE-PROFILE", "ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04", "ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.T-S04"]
 implementation_terminals = ["ai.F01-T03-CLOSE", "ai.F01-T04-SERVICE", "ai.F02-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F09-T04", "ai.F10-T02-FULL", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07"]
 candidate_tasks = ["60.1", "113.5"]
 deployment_tasks = ["60.2", "60.4", "60.5", "60.6", "113.11", "113.12", "113.16"]
@@ -35113,7 +35113,7 @@ integration_obligations = "The unchanged complete AI.F01-A01/A02/A03/A09/A16/A19
 
 [task.ai.T-S01]
 title = "Archive exact native state and restore historical proofs"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 16
 requires = ["ai.P-STORAGE-PROFILE", "ai.P-DEPLOYMENT"]
@@ -35331,6 +35331,37 @@ local_wave = 3
 acceptance_cases = ["AI.CORE-A03"]
 paths = ["programs/crates/layerx-programs-ai-market/src/value_adapter.rs", "programs/crates/layerx-programs-ai-market/tests/value_boundary.rs"]
 worker_role_id = "W-CORE-VALUE"
+
+[task.ai.T-S01-REPLAY]
+title = "Replay canonical history from an older checkpoint after restore"
+status = "pending"
+mode = "BUILD"
+wave = 17
+requires = ["ai.T-S01"]
+reqs = ["AI.STORAGE"]
+do_1 = "The state archive restore_replay scenario restores a unit, removes only the latest checkpoint pair so checkpoint 2 is current, and starts layerxd, which must replay sequences 3-4 (batch 2, a Programs deploy) from the canonical log. Startup fails in replay_canonical_after_snapshot with LXP_ERR_VERSION_UNSUPPORTED (-101) from one of the replay version gates. Root-cause it with real daemon state (instrument locally, never commit instrumentation), fix the daemon or replica code so replay from an older checkpoint reproduces the exact same root, node info and proofs as the clean-shutdown node, and keep every version gate semantics for genuinely unsupported versions."
+do_2 = "Extend tests/relay-archive/state_archive_lifecycle.py only if a scenario assertion is missing for the fixed path; the remaining scenarios restore_tampered, continue_history and outage must pass unchanged in the same run."
+do_3 = "Honor named shared writers: FM-STORAGE owns native files; cmd/layerxd/lxp_daemon_process.c is admitted for this task only within the replay path. Preserve unrelated owner changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
+manager = "FM-STORAGE"
+worker_role = "native replay and archive specialist"
+worker = "W-T-S01-REPLAY"
+deliverables = ["layerxd replays the canonical log from an older checkpoint for Programs batches with exact root, node info and proofs.", "Complete owned paths and runnable focused gate: python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd with all ten scenarios passing", "Exact revision, command, exit code and private log path."]
+entry_condition = "ai.T-S01 landed at implemented with six of ten scenarios passing and the restore_replay failure recorded."
+touches = ["cmd/layerxd/lxp_daemon_process.c", "src/replica/lxp_replay_checkpoint.c", "src/replica/lxp_history.c", "src/state/lxp_snapshot.c", "tests/relay-archive/state_archive_lifecycle.py"]
+build_cmd = "make layerxd"
+verify_cmd = "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified after two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+local_wave = 3
+acceptance_cases = ["AI.STORAGE-A01"]
+paths = ["cmd/layerxd/lxp_daemon_process.c", "src/replica/lxp_replay_checkpoint.c", "src/replica/lxp_history.c", "src/state/lxp_snapshot.c", "tests/relay-archive/state_archive_lifecycle.py"]
+worker_role_id = "W-STORAGE-ARCHIVE"
 
 [task.ai.T-S02]
 title = "Implement deterministic authenticated Programs retirement"
@@ -36497,7 +36528,7 @@ title = "Qualify real continuous storage and funded recovery"
 status = "pending"
 mode = "BUILD"
 wave = 33
-requires = ["ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.F06-T03", "ai.F02-T03"]
+requires = ["ai.T-S01", "ai.T-S01-REPLAY", "ai.T-S02", "ai.T-S03", "ai.F06-T03", "ai.F02-T03"]
 reqs = ["AI.STORAGE"]
 do_1 = "Create one focused real native continuity harness for >512 distinct authoritative app mutations across checkpoints/repeated cleanup, actual namespace/replay overhead, crashes around archive/native commits, independent replica replay and original historical proof retrieval; settle funded epoch and pay exactly one fixed-recipient claim after restart while recording peak unchanged512/64MiB/4/512 capacities."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."

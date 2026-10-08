@@ -797,3 +797,11 @@ exit_code = 1
 log = "private ops log wt/logs/ai.T-S01-verify-3.log"
 observed = "layerx-archive-codec submit uses LNI minor 7 and the daemon replies minor 8 (-105); tests/relay-archive/e2e.py sets a settlement environment bootstrap.sh refuses; forward.py has an unused Sequence import."
 assumption = "Pre-existing, outside T-S01 scope; the codec minor bump belongs to a later storage task and e2e.py to T-S04."
+
+[qualification.ai-t-s01-replay-version-20261008-01]
+revision = "f420200b4"
+command = "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd"
+exit_code = 1
+log = "private ops log wt/logs/ai.T-S01-verify-6.log"
+observed = "Six of ten scenarios pass on a real paxd chain; restore_replay fails because layerxd replay_canonical_after_snapshot returns LXP_ERR_VERSION_UNSUPPORTED (-101) replaying a Programs deploy batch from checkpoint 2."
+assumption = "Daemon defect outside T-S01 paths; fixed by the new task ai.T-S01-REPLAY, after which this gate reruns once. T-S01 is held at implemented until the P approvals pass."

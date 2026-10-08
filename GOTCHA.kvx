@@ -5076,3 +5076,7 @@ text = "make paxeer-build needs /usr/local/go/bin on PATH and writes ROOT/build/
 [gotcha.1093]
 area = "layerx-archive-codec"
 text = "cmd/layerx-archive-codec submit speaks LNI minor 7 while the daemon answers minor 8, so the codec refuses with LXP_ERR_MALFORMED_ENVELOPE (-105); validate with `layerx-archive-codec activity` and submit through the Python LniClient at minor 8."
+
+[gotcha.1094]
+area = "layerxd"
+text = "A clean shutdown always leaves the latest checkpoint at the head, so a restore test never exercises canonical replay unless it deletes the newest checkpoint pair first; replay from an older checkpoint had no coverage and fails with -101 for a Programs deploy batch. gdb is not installed on the build box."
