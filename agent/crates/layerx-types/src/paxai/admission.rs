@@ -1,7 +1,7 @@
 //! PAXAI F08 admission values shared with the interaction layer. Membership is
 //! permission to participate only; it is not proof of AI work, quality or uniqueness.
 
-/// Native F08 operation selectors; RolloverRoster is internal to OpenEpoch.
+/// Native F08 operation selectors; `RolloverRoster` is internal to `OpenEpoch`.
 pub const APPROVE_ADMISSION: u16 = 0x0801;
 pub const REVOKE_ADMISSION_APPROVAL: u16 = 0x0802;
 pub const ADMIT_WORKER: u16 = 0x0803;
@@ -41,12 +41,64 @@ pub enum ExitReason {
     Voluntary = 1,
     Retire = 2,
 }
+impl TryFrom<u8> for ExitReason {
+    type Error = u8;
+    fn try_from(value: u8) -> Result<Self, u8> {
+        match value {
+            1 => Ok(Self::Voluntary),
+            2 => Ok(Self::Retire),
+            other => Err(other),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RemovalReason {
     Security = 1,
     Terms = 2,
     OperatorDecision = 3,
+}
+impl TryFrom<u8> for RemovalReason {
+    type Error = u8;
+    fn try_from(value: u8) -> Result<Self, u8> {
+        match value {
+            1 => Ok(Self::Security),
+            2 => Ok(Self::Terms),
+            3 => Ok(Self::OperatorDecision),
+            other => Err(other),
+        }
+    }
+}
+
+/// Who staged a pending exit; only owner-requested exits can be cancelled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExitCause {
+    Voluntary = 1,
+    Retire = 2,
+    Inactivity = 3,
+    Security = 4,
+    Terms = 5,
+    OperatorDecision = 6,
+}
+impl TryFrom<u8> for ExitCause {
+    type Error = u8;
+    fn try_from(value: u8) -> Result<Self, u8> {
+        match value {
+            1 => Ok(Self::Voluntary),
+            2 => Ok(Self::Retire),
+            3 => Ok(Self::Inactivity),
+            4 => Ok(Self::Security),
+            5 => Ok(Self::Terms),
+            6 => Ok(Self::OperatorDecision),
+            other => Err(other),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PendingExit {
+    pub epoch: u64,
+    pub cause: ExitCause,
 }
 
 /// Fixed v1 policy; constants are never caller-supplied.
@@ -86,7 +138,7 @@ pub struct AdmissionMeta {
     pub last_heartbeat_epoch: Option<u64>,
     pub last_heartbeat_height: Option<u64>,
     pub immunity_until_epoch: u64,
-    pub pending_exit_epoch: Option<u64>,
+    pub pending_exit: Option<PendingExit>,
     pub membership_generation: u64,
     pub complete_missed_opened_epochs: u8,
     pub membership_flags: u8,
