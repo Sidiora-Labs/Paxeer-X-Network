@@ -5020,3 +5020,7 @@ text = "A rustls StreamOwned write on a connection whose handshake failed calls 
 [gotcha.1079]
 area = "tooling"
 text = "When filtering clippy output for owned files match the relative --> src/ and --> tests/ paths; absolute-path filters miss them."
+
+[gotcha.1080]
+area = "programs/ai-market"
+text = "An unframed fixed-row region can use all-zero as the unused marker only because a valid reward row always carries a non-zero budget; any new row type needs its own non-zero sentinel field or explicit framing."

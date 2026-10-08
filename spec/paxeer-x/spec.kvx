@@ -35811,7 +35811,7 @@ worker_role_id = "W-F02-TRANSPORT"
 
 [task.ai.F06-T02]
 title = "Implement complete pure reward transitions"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 21
 requires = ["ai.F06-T01", "ai.F01-T01", "ai.F02-T01", "ai.F05-T02"]
@@ -35904,7 +35904,7 @@ worker_role_id = "W-F10-PYTHON"
 
 [task.ai.F08-T02]
 title = "Implement complete pure roster rollover"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 22
 requires = ["ai.F08-T01", "ai.F06-T02"]
