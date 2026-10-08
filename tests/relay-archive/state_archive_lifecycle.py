@@ -477,6 +477,11 @@ class Scenario:
     def admission_refusals(self):
         manifest, blobs = self.history
         both = self.clients("archive-a", "archive-b")
+        proof = segment_index(manifest, lambda segment: segment["kind"] == "metadata_proof", "proof")[-1]
+        for segment, blob in zip(manifest["segments"], blobs):
+            if segment["index"] != proof:
+                both[0].put_segment(blob, segment["sha256"])
+        expect_refusal("missing", lambda: both[0].admit(manifest), "archive admitting a missing segment")
         second = segment_index(manifest, lambda segment: segment["kind"] == "batch" and segment["first"] == 2,
                                "second batch")[0]
         damaged = bytearray(blobs[second])
@@ -489,11 +494,6 @@ class Scenario:
         gap, _gap_blobs = reinventory(manifest, blobs, {first: None})
         expect_refusal("missing", lambda: both[0].admit(gap), "archive admitting a batch gap")
         expect_refusal("missing", lambda: archive.validate_manifest(gap), "batch gap inventory")
-        proof = segment_index(manifest, lambda segment: segment["kind"] == "metadata_proof", "proof")[-1]
-        for segment, blob in zip(manifest["segments"], blobs):
-            if segment["index"] != proof:
-                both[0].put_segment(blob, segment["sha256"])
-        expect_refusal("missing", lambda: both[0].admit(manifest), "archive admitting a missing segment")
         wrong = reinventory(manifest, blobs, {})[0]
         wrong["head"] = dict(wrong["head"], receipt_state_root="00" * 32)
         expect_refusal("conflict", lambda: archive.issue_certificate(wrong, blobs, both, self.enrolled),
