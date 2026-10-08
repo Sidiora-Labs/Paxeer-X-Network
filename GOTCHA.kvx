@@ -5064,3 +5064,15 @@ text = "F01 CreateMarket yields lifecycle REGISTERED (1); roster rollover and ad
 [gotcha.1090]
 area = "programs/ai-market"
 text = "F02 AcceptEnrollment sets effective_epoch = clock+1 even before the first epoch opens, which clashes with F08 bootstrap epoch 0; rollover applies the F02 effective epoch only to a changed key version, never to the first install."
+
+[gotcha.1091]
+area = "relay-archive"
+text = "Content-addressed archive segments persist after a refused admit, so a missing-segment refusal test must run before any earlier step uploads that unit's segments."
+
+[gotcha.1092]
+area = "layerxd"
+text = "make paxeer-build needs /usr/local/go/bin on PATH and writes ROOT/build/paxd regardless of BUILD_DIR; /usr/local/bin/paxd may be an old build without the layerxanchor module. The daemon keeps its LNI admission journal as the dot file checkpoints/.layerxd-lni-admission.log, part of native state."
+
+[gotcha.1093]
+area = "layerx-archive-codec"
+text = "cmd/layerx-archive-codec submit speaks LNI minor 7 while the daemon answers minor 8, so the codec refuses with LXP_ERR_MALFORMED_ENVELOPE (-105); validate with `layerx-archive-codec activity` and submit through the Python LniClient at minor 8."

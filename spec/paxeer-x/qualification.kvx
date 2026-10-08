@@ -789,3 +789,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F08-T02-verify-1.log"
 observed = "Rollover is pure and leaves undone what needs a common OpenEpoch composer: revision bump, replay record, RosterOpened event, F01 activate_pending_policy, F06 reserve_epoch, F03 authority::open_epoch, a worker payout recipient in F02, a fixed section-3 layout for F05/F06 and an F05 terminal record; header.state_revision drifts from SharedState.revision after non-F01 operations."
 assumption = "ai.F01-T03-EPOCH owns the composer and must resolve each item or record it; F02 recipient binding and the section-3 layout are decided there before F05-T03/F06-T03."
+
+[qualification.ai-t-s01-codec-lni-minor-20261008-01]
+revision = "18797cafd"
+command = "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd"
+exit_code = 1
+log = "private ops log wt/logs/ai.T-S01-verify-3.log"
+observed = "layerx-archive-codec submit uses LNI minor 7 and the daemon replies minor 8 (-105); tests/relay-archive/e2e.py sets a settlement environment bootstrap.sh refuses; forward.py has an unused Sequence import."
+assumption = "Pre-existing, outside T-S01 scope; the codec minor bump belongs to a later storage task and e2e.py to T-S04."
