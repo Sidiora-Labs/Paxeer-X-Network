@@ -604,3 +604,24 @@ exit_code = 1
 log_path = "/root/lx-ops/paxeer-ai-kvx-work/baseline-parser-conflict.log"
 observed = "Initial baseline parsing encountered duplicate title in repeated req.109; new AI document and integrated dependency checks subsequently passed independently."
 assumption = "Retain the existing requirement blocks; complete-file parser qualification remains blocked until their owner resolves the duplicate."
+
+[finding.ai-workspace-20261008-cycle1]
+revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd+admission-sha256:d85efca4156b01ebd8447b1ac1c4dd51914cae7fa511457bfbc4b746ac060a6b"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission"
+exit_code = 1
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/workspace-qualification-01.log"
+observation_and_assumption = "Observed generic evidence refusal with no reason label; assumed task-local validation or approved-record binding failure, pending bounded isolated repair."
+
+[finding.ai-workspace-20261008-cycle2]
+revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd+admission-sha256:9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/workspace-qualification-02.log"
+observation_and_assumption = "Workspace evidence and focused refusal suite passed; this result establishes workspace admission only."
+
+[finding.ai-workspace-codify-advisory-20261008]
+revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd+admission-sha256:9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509"
+command = "CG_AGENT=px26-fm1 cg guard tools/paxeer-x/ai_evidence.py tools/paxeer-x/tests/ai_evidence_test.py"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/codify-guard-scoped.log"
+observation_and_assumption = "Advisory Python standard-library/name-resolution findings remain; assumed graph limitations, not behavior failures, and not investigated beyond this task."

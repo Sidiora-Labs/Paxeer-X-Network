@@ -10,7 +10,7 @@
         "0.2"
       ],
       "wave": 14,
-      "status": "pending",
+      "status": "done",
       "task_kind": "prerequisite",
       "spec": "spec/paxeer-x/spec.kvx",
       "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]",
@@ -36,14 +36,20 @@
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
-        "gate_kind": "planned",
-        "qualification": "UNRUN",
+        "gate_kind": "executed",
+        "qualification": "PASSED",
         "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
       },
       "local_wave": 0,
       "acceptance_cases": [
         "AI.WORKSPACE-A01"
-      ]
+      ],
+      "qualification_evidence": {
+        "revision": "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd+admission-sha256:9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509",
+        "command": "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission",
+        "exit_code": 0,
+        "log_path": "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/workspace-qualification-02.log"
+      }
     },
     {
       "id": "ai.P-DEPLOYMENT",

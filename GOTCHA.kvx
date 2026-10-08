@@ -4808,3 +4808,43 @@ area = "spec"
 symptom = "An existing canonical requirement section is repeated with duplicate title and acceptance keys, blocking complete-file KVX parsing."
 cause = "Separate planning additions reused a requirement identifier."
 do = "Keep new requirement identifiers namespaced; record the pre-existing duplicate and validate added sections and dependencies separately without claiming a complete-file pass."
+
+[gotcha.1026]
+date = "2026-10-08"
+text = "The default shell PATH omits the installed Rust tools; use /root/.cargo/bin explicitly for the admitted rustc/cargo 1.91.1 toolchain."
+
+[gotcha.1027]
+date = "2026-10-08"
+text = "Codex CLI granular profiles treat exact regular-file write roots as directories and fail with ENOTDIR. Keep project files read-only to the writer and materialize only declared files from an exclusive private output directory."
+
+[gotcha.1028]
+date = "2026-10-08"
+text = "A deny-by-default CLI profile must grant the exact installed CLI binary read/execute access because its Linux sandbox helper re-executes that binary."
+
+[gotcha.1029]
+date = "2026-10-08"
+text = "The auxiliary isolation probe exited 1 because self process metadata, nested user namespace creation and synthetic-directory writes remained possible. Preserve that result; a separate real runtime probe exited 0 for approved access and excluded host read/patch denial. These are distinct results."
+
+[gotcha.1030]
+date = "2026-10-08"
+text = "Private operational evidence contains large copied source trees and one-line metadata. Inventory filenames at bounded depth before selecting operational reports; a broad recursive text scan produced truncated output and was stopped."
+
+[gotcha.1031]
+date = "2026-10-08"
+text = "No cortex_guard executable or callable tool was available in this session. Do not report it as run; retain the explicit owner-authorized action scope and use available Codify scope checks without claiming equivalence."
+
+[gotcha.1032]
+date = "2026-10-08"
+text = "rg was unavailable inside the minimal author sandbox (exit 127); the writer used grep on the same approved input. Host rg availability does not imply child sandbox availability."
+
+[gotcha.1033]
+date = "2026-10-08"
+text = "A fresh-worktree full Codify initialization remained CPU-bound after more than eleven minutes. The coordinator stopped only its own initialization process and requested sync of the two declared Python files; no task build or behavior gate was rerun for indexing."
+
+[gotcha.1034]
+date = "2026-10-08"
+text = "Workspace qualification first refused without a reason label because the runtime producer recorded UNRUN_UNCHANGED and the validator expected UNRUN. The bounded repair bound the exact producer status and added safe refusal/testcase diagnostics without changing the failed infrastructure result."
+
+[gotcha.1035]
+date = "2026-10-08"
+text = "Codify advisory review without the named agent selected an older task and snapshot; use an explicit task packet and CG_AGENT for scoped ownership. Scoped guard still reported Python standard-library/name-resolution warnings; the canonical behavior gate and Codify graph-touch checks passed without force."

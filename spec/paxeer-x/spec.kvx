@@ -24431,7 +24431,7 @@ qualification = "UNRUN"
 [acceptance.AI.WORKSPACE-A01]
 title = "WORKSPACE-A01"
 criteria = "Approved workspace revision, contract identity, toolchain and dependency versions, allowed tools/access, exclusive paths and protected evidence references are complete; missing/contradictory controls refuse admission without claiming implementation readiness."
-qualification = "UNRUN"
+qualification = "PASSED"
 
 [acceptance.AI.DEPLOYMENT-A01]
 title = "DEPLOYMENT-A01"
@@ -34846,7 +34846,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.ai.P-WORKSPACE]
 title = "Admit workspace, toolchain and access controls"
-status = "pending"
+status = "done"
 mode = "QUALIFY"
 wave = 14
 requires = ["0.2"]
@@ -34863,8 +34863,8 @@ entry_condition = "An approved checkout, versioned contract and toolchain decisi
 touches = ["tools/paxeer-x/ai_evidence.py", "tools/paxeer-x/tests/ai_evidence_test.py"]
 build_cmd = "NONE"
 verify_cmd = "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission"
-gate_kind = "planned"
-qualification = "UNRUN"
+gate_kind = "executed"
+qualification = "PASSED"
 max_builds = 0
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -34874,6 +34874,10 @@ local_wave = 0
 acceptance_cases = ["AI.WORKSPACE-A01"]
 paths = ["tools/paxeer-x/ai_evidence.py", "tools/paxeer-x/tests/ai_evidence_test.py"]
 worker_role_id = "W-CORE-WORKSPACE"
+qualification_revision = "ce269bfe23c1db984a8ae62ce13aa36c238ce2fd+admission-sha256:9046a105a2234e8c54615fcec468e7ca86b523ddf4a9b9f7322122f076f38509"
+qualification_command = "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission"
+qualification_exit_code = 0
+qualification_log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm1/workspace-qualification-02.log"
 
 [task.ai.P-DEPLOYMENT]
 title = "Bind deployment and authenticated integration prerequisites"
