@@ -4972,3 +4972,7 @@ text = "The programs workspace clippy lints are deny (all/pedantic/unwrap_used) 
 [gotcha.1067]
 area = "tooling"
 text = "In a crate whose lib.rs is the only file under src/, a sed run from src/ against both ../src/lib.rs and lib.rs edits the same file twice and duplicates the module line."
+
+[gotcha.1068]
+area = "programs/ai-market"
+text = "A reward ledger header in shared state keeps record count consistent with rows only when terminalization increments retained_epochs; the prune path must decrement it or check_rows refuses."

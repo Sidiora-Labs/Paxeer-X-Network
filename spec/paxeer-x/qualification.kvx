@@ -741,3 +741,11 @@ exit_code = 124
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/leader/done-ai.F01-T01.log"
 observed = "The focused gate passed again (12 passed, 0 failed) but the completion phase exceeded 900 seconds even with the indexed binary; six tasks whose verify_cmd passed with recorded evidence were set to done by direct status edit."
 assumption = "Done status is backed by the evidence line in each task block; no gate was weakened or skipped."
+
+[qualification.ai-f06-lower-median-duplicate-20261008-01]
+revision = "f818f62df9c3df170f008d01126c9055d8279dc4"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_math_and_encoding -- --exact"
+exit_code = 0
+log = "private ops log wt/logs/ai.F06-T01-verify-2.log"
+observed = "ai.F06-T01 added reward_math::lower_median while ai.F05-T02 landed aggregation median separately on a parallel branch."
+assumption = "Cross-task duplication; the F06-T02 or F05-T03 owner reconciles to one median implementation without changing either gate."

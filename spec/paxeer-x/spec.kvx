@@ -35241,7 +35241,7 @@ evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd7
 
 [task.ai.F06-T01]
 title = "Define exact reward arithmetic and encodings"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-C01", "ai.T-C02-STATE"]
@@ -35811,7 +35811,7 @@ worker_role_id = "W-F02-TRANSPORT"
 
 [task.ai.F06-T02]
 title = "Implement complete pure reward transitions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 21
 requires = ["ai.F06-T01", "ai.F01-T01", "ai.F02-T01", "ai.F05-T02"]
