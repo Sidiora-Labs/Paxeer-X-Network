@@ -1,13 +1,19 @@
 //! F10 read-only selectors, exact snapshot binding and bounded off-chain page framing.
 //! Selectors read one captured common state value; they never write, emit, pay or stage blobs.
-//! Host ProgramRead facts and finality evidence are inputs; nothing here establishes them.
+//! Host `ProgramRead` facts and finality evidence are inputs; nothing here establishes them.
 use crate::{
-    codec::{self, ChunkRequest, ChunkResponse, ReadHeader, Writer},
+    codec::{self, ChunkResponse, ReadHeader, Reader, RosterView, Writer},
     dispatch,
-    errors::*,
+    errors::{
+        ApplicationError, CodecResult, ARITHMETIC, CAPACITY, CONFLICT, NON_CANONICAL, NOT_FOUND,
+        WRONG_DOMAIN, WRONG_MARKET, WRONG_PROGRAM,
+    },
     registry_ops::PolicySection,
-    state::{self, Section},
-    types::*,
+    state::{self, Section, SharedState},
+    types::{
+        AssetId, ChainDomain, Digest32, MarketId, MetadataDigest, PolicyDigest, Presence,
+        PrincipalId, ProgramId, RequestDigest, RosterDigest, StateDigest, Version,
+    },
     workers::{WorkerState, WorkerTable},
     MAX_CHUNK_BYTES, MAX_STATE_BYTES, SCHEMA_VERSION,
 };
@@ -20,10 +26,15 @@ pub const PAGE_MAX_BYTES: usize = 65_536;
 pub const DEFAULT_LIMIT: u8 = 16;
 pub const CURSOR_MAX_BYTES: usize = 1_024;
 pub const CURSOR_LIFETIME_MS: u64 = 900_000;
-const CURSOR_PAYLOAD_BYTES: usize = 144;
-pub const CURSOR_TOKEN_BYTES: usize = 2 * (CURSOR_PAYLOAD_BYTES + 32);
-pub const BINDING_MAX_BYTES: usize =
-    2 + 32 * 3 + 16 + 32 * 2 + 8 + 32 + 9 + 8 + 32 + 33 + 32 + 33 + 1 + 8 + 8;
+/// schema:u16, visibility32, market32, snapshot32, filter-hash32 precede the ordinal.
+const CURSOR_ORDINAL_OFFSET: usize = 2 + 4 * 32;
+const CURSOR_PAYLOAD_BYTES: usize = CURSOR_ORDINAL_OFFSET + 2 + 8 + 4;
+const CURSOR_TAG_BYTES: usize = 32;
+pub const CURSOR_TOKEN_BYTES: usize = 2 * (CURSOR_PAYLOAD_BYTES + CURSOR_TAG_BYTES);
+/// Content-identity prefix through `roster_digest` with epoch and roster present.
+const BINDING_PREFIX_MAX_BYTES: usize = 2 + 3 * 32 + 8 + 8 + 32 + 32 + 8 + 32 + 9 + 8 + 32 + 33;
+pub const BINDING_MAX_BYTES: usize = BINDING_PREFIX_MAX_BYTES + 32 + 33 + 1 + 8 + 8;
+const HEX: &[u8; 16] = b"0123456789abcdef";
 
 /// Off-chain view failures keep their own names, separate from on-chain application codes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,28 +55,31 @@ impl From<ApplicationError> for QueryError {
 }
 pub type QueryResult<T> = Result<T, QueryError>;
 
-fn policy_section(state_bytes: &[u8]) -> CodecResult<PolicySection<'_>> {
-    let frame = codec::decode_state(state_bytes)?;
-    if frame.sections[Section::PolicyLifecycle.index()].is_empty() {
+fn policy_of<'s>(shared: &'s SharedState<'_>) -> CodecResult<PolicySection<'s>> {
+    let bytes = shared.section(Section::PolicyLifecycle)?;
+    if bytes.is_empty() {
         return Err(NOT_FOUND);
     }
-    PolicySection::decode(frame.sections[Section::PolicyLifecycle.index()])
+    PolicySection::decode(bytes)
 }
 
-/// READ_HEADER over the exact captured state. Epoch/roster stay absent until a frozen-roster
-/// producer records them in state; absence is never reported as epoch 0.
+/// `READ_HEADER` over the exact captured state. Epoch and roster stay absent until a
+/// frozen-roster producer records them in state; absence is never reported as epoch 0.
+///
+/// # Errors
+/// Refuses a noncanonical state, an uncreated market (`NOT_FOUND`) and a chain or program
+/// other than the market's own (`WRONG_DOMAIN`, `WRONG_PROGRAM`).
 pub fn read_header(
     state_bytes: &[u8],
     chain: ChainDomain,
     program: ProgramId,
 ) -> CodecResult<ReadHeader> {
     let shared = state::decode_shared_state(state_bytes)?;
-    let section = policy_section(state_bytes)?;
-    let h = section.header;
-    if h.deployment_chain_domain != chain {
+    let header = policy_of(&shared)?.header;
+    if header.deployment_chain_domain != chain {
         return Err(WRONG_DOMAIN);
     }
-    if h.program_id != program {
+    if header.program_id != program {
         return Err(WRONG_PROGRAM);
     }
     Ok(ReadHeader {
@@ -74,19 +88,28 @@ pub fn read_header(
         total_bytes: u32::try_from(state_bytes.len()).map_err(|_| ARITHMETIC)?,
         chain,
         program,
-        market: h.market_id,
+        market: header.market_id,
         epoch: Presence::Absent,
-        config: Version::new(h.active_config_version)?,
+        config: Version::new(header.active_config_version)?,
         roster: Presence::Absent,
     })
 }
 
+/// Digest of the market's current policy in the captured state.
+///
+/// # Errors
+/// Refuses a noncanonical state or an uncreated market (`NOT_FOUND`).
 pub fn policy_digest(state_bytes: &[u8]) -> CodecResult<PolicyDigest> {
-    policy_section(state_bytes)?.current.digest()
+    let shared = state::decode_shared_state(state_bytes)?;
+    policy_of(&shared)?.current.digest()
 }
 
-/// READ_STATE_CHUNK: exact 46-byte payload, pinned revision/digest after discovery, chunk never
-/// crosses the state end. Returns the encoded chunk response body length written to `out`.
+/// `READ_STATE_CHUNK`: exact 46-byte payload, pinned revision/digest after discovery, and a
+/// chunk that never crosses the state end. Writes the encoded chunk response body to `out`.
+///
+/// # Errors
+/// `NON_CANONICAL` for a malformed payload or an offset outside the state, `CONFLICT` for a
+/// pin that no longer matches the captured state, `CAPACITY` for an oversized state or `out`.
 pub fn read_state_chunk(state_bytes: &[u8], payload: &[u8], out: &mut [u8]) -> CodecResult<usize> {
     dispatch::READ_STATE_CHUNK.validate_payload_length(payload.len())?;
     let request = codec::decode_chunk_request(payload)?;
@@ -97,24 +120,28 @@ pub fn read_state_chunk(state_bytes: &[u8], payload: &[u8], out: &mut [u8]) -> C
     {
         return Err(CONFLICT);
     }
-    let total = state_bytes.len();
     let offset = usize::try_from(request.offset).map_err(|_| ARITHMETIC)?;
-    if offset >= total {
-        return Err(NON_CANONICAL);
-    }
-    let end = offset + usize::from(request.requested).min(total - offset);
+    let remaining = state_bytes
+        .len()
+        .checked_sub(offset)
+        .filter(|n| *n > 0)
+        .ok_or(NON_CANONICAL)?;
+    let end = offset + usize::from(request.requested).min(remaining);
     let response = ChunkResponse {
         revision: shared.revision,
         digest,
-        total_bytes: u32::try_from(total).map_err(|_| ARITHMETIC)?,
+        total_bytes: u32::try_from(state_bytes.len()).map_err(|_| ARITHMETIC)?,
         offset: request.offset,
-        bytes: &state_bytes[offset..end],
+        bytes: state_bytes.get(offset..end).ok_or(NON_CANONICAL)?,
     };
     codec::check_chunk_response(&request, &response)?;
     codec::encode_chunk_response(&response, out)
 }
 
-/// Wraps a read body in the common application result (<=16384 bytes).
+/// Wraps a read body in the common application result (at most 16384 bytes).
+///
+/// # Errors
+/// `CAPACITY` when the body or `out` exceeds the common result bounds.
 pub fn frame_read_result(
     request: RequestDigest,
     revision: u64,
@@ -126,7 +153,7 @@ pub fn frame_read_result(
     codec::encode_result(&result, out)
 }
 
-/// Outer ProgramRead facts returned with each chunk by the host read interface.
+/// Outer `ProgramRead` facts returned with each chunk by the host read interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReadProof {
     pub chain: ChainDomain,
@@ -148,11 +175,12 @@ pub struct CaptureFacts {
 }
 
 /// Whole-capture reassembly into a caller buffer. Any head change, gap or short nonfinal
-/// chunk fails the whole capture; retry restarts from a new root.
+/// chunk fails the whole capture permanently; a retry restarts from one new root.
 pub struct StateCapture<'a> {
     buffer: &'a mut [u8],
     facts: Option<CaptureFacts>,
     next_offset: usize,
+    failed: bool,
 }
 impl<'a> StateCapture<'a> {
     pub fn new(buffer: &'a mut [u8]) -> Self {
@@ -160,53 +188,75 @@ impl<'a> StateCapture<'a> {
             buffer,
             facts: None,
             next_offset: 0,
+            failed: false,
         }
     }
+    /// Accepts the next chunk in offset order.
+    ///
+    /// # Errors
+    /// `SnapshotConflict` when root, revision, digest or size differ from the first chunk,
+    /// `IntegrityFailure` for a gap, reordering, short nonfinal chunk or an earlier failure,
+    /// `CAPACITY` when the declared state exceeds the caller buffer.
     pub fn accept(&mut self, proof: &ReadProof, body: &[u8]) -> QueryResult<()> {
+        if self.failed {
+            return Err(QueryError::IntegrityFailure);
+        }
+        let outcome = self.append(proof, body);
+        self.failed = outcome.is_err();
+        outcome
+    }
+    fn append(&mut self, proof: &ReadProof, body: &[u8]) -> QueryResult<()> {
         let chunk = codec::decode_chunk_response(body)?;
         let total = usize::try_from(chunk.total_bytes).map_err(|_| ARITHMETIC)?;
-        match &mut self.facts {
-            None => {
-                if total > self.buffer.len() {
-                    return Err(CAPACITY.into());
-                }
-                self.facts = Some(CaptureFacts {
-                    proof: *proof,
-                    revision: chunk.revision,
-                    digest: chunk.digest,
-                    total_bytes: chunk.total_bytes,
-                    chunks: 0,
-                });
-            }
-            Some(f) => {
+        let facts = match self.facts {
+            None if total > self.buffer.len() => return Err(CAPACITY.into()),
+            None => CaptureFacts {
+                proof: *proof,
+                revision: chunk.revision,
+                digest: chunk.digest,
+                total_bytes: chunk.total_bytes,
+                chunks: 0,
+            },
+            Some(f)
                 if f.proof != *proof
                     || f.revision != chunk.revision
                     || f.digest != chunk.digest
-                    || f.total_bytes != chunk.total_bytes
-                {
-                    return Err(QueryError::SnapshotConflict);
-                }
+                    || f.total_bytes != chunk.total_bytes =>
+            {
+                return Err(QueryError::SnapshotConflict)
             }
-        }
+            Some(f) => f,
+        };
         let offset = usize::try_from(chunk.offset).map_err(|_| ARITHMETIC)?;
         let end = offset + chunk.bytes.len();
         if offset != self.next_offset || (chunk.bytes.len() != MAX_CHUNK_BYTES && end != total) {
             return Err(QueryError::IntegrityFailure);
         }
-        self.buffer[offset..end].copy_from_slice(chunk.bytes);
+        self.buffer
+            .get_mut(offset..end)
+            .ok_or(CAPACITY)?
+            .copy_from_slice(chunk.bytes);
         self.next_offset = end;
-        if let Some(f) = &mut self.facts {
-            f.chunks += 1;
-        }
+        self.facts = Some(CaptureFacts {
+            chunks: facts.chunks + 1,
+            ..facts
+        });
         Ok(())
     }
+    /// Completes the capture and verifies the reconstructed bytes against the state digest.
+    ///
+    /// # Errors
+    /// `IntegrityFailure` for a failed, empty or incomplete capture or a digest mismatch.
     pub fn finish(self) -> QueryResult<(&'a [u8], CaptureFacts)> {
-        let facts = self.facts.ok_or(QueryError::IntegrityFailure)?;
+        let facts = self
+            .facts
+            .filter(|_| !self.failed)
+            .ok_or(QueryError::IntegrityFailure)?;
         let total = usize::try_from(facts.total_bytes).map_err(|_| ARITHMETIC)?;
         if self.next_offset != total || facts.chunks != total.div_ceil(MAX_CHUNK_BYTES) {
             return Err(QueryError::IntegrityFailure);
         }
-        let bytes = &self.buffer[..total];
+        let bytes = self.buffer.get(..total).ok_or(CAPACITY)?;
         if codec::state_digest(bytes)? != facts.digest {
             return Err(QueryError::IntegrityFailure);
         }
@@ -223,6 +273,7 @@ pub struct FinalityEvidence {
     pub rank: u8,
 }
 
+/// `SnapshotBindingV1` in canonical field order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SnapshotBinding {
     pub chain: ChainDomain,
@@ -245,6 +296,10 @@ pub struct SnapshotBinding {
 }
 
 /// Binds a verified capture to its header and the finality evidence for the SAME root.
+///
+/// # Errors
+/// `BindingMismatch` when the evidence names another root or the state differs from the
+/// capture, `NON_CANONICAL` for a rank above 4, and header refusals of [`read_header`].
 pub fn bind_snapshot(
     state_bytes: &[u8],
     facts: &CaptureFacts,
@@ -252,10 +307,10 @@ pub fn bind_snapshot(
     publication_time_ms: u64,
 ) -> QueryResult<SnapshotBinding> {
     let header = read_header(state_bytes, facts.proof.chain, facts.proof.program)?;
-    if header.revision != facts.revision || header.digest != facts.digest {
-        return Err(QueryError::BindingMismatch);
-    }
-    if finality.native_state_root != facts.proof.native_state_root {
+    if header.revision != facts.revision
+        || header.digest != facts.digest
+        || finality.native_state_root != facts.proof.native_state_root
+    {
         return Err(QueryError::BindingMismatch);
     }
     if finality.rank > FINALIZED_RANK {
@@ -299,6 +354,10 @@ impl SnapshotBinding {
         w.put(self.policy.as_bytes())?;
         w.presence(&self.roster, |w, r| w.put(r.as_bytes()))
     }
+    /// Canonical binding bytes; returns the encoded length.
+    ///
+    /// # Errors
+    /// `NON_CANONICAL` for revision 0 or a rank above 4, `CAPACITY` for a short `out`.
     pub fn encode(&self, out: &mut [u8]) -> CodecResult<usize> {
         if self.revision == 0 || self.rank > FINALIZED_RANK {
             return Err(NON_CANONICAL);
@@ -312,15 +371,21 @@ impl SnapshotBinding {
         w.put(&[0; 8])?;
         Ok(w.len())
     }
-    /// Content identity excludes checkpoint/settlement evidence, rank and publication time.
+    /// Content identity; excludes checkpoint/settlement evidence, rank and publication time.
+    ///
+    /// # Errors
+    /// Propagates prefix encoding failures.
     pub fn snapshot_id(&self) -> CodecResult<Digest32> {
-        let mut b = [0u8; BINDING_MAX_BYTES];
-        let mut w = Writer::new(&mut b);
+        let mut prefix = [0u8; BINDING_PREFIX_MAX_BYTES];
+        let mut w = Writer::new(&mut prefix);
         self.write_prefix(&mut w)?;
         let n = w.len();
-        codec::domain_hash("PAXAI/view/v1", &b[..n])
+        codec::domain_hash("PAXAI/view/v1", prefix.get(..n).ok_or(CAPACITY)?)
     }
     /// Finalized endpoints and webhook publication require actual rank-4 evidence.
+    ///
+    /// # Errors
+    /// `FinalityUnavailable` below rank 4.
     pub fn require_finalized(&self) -> QueryResult<()> {
         if self.rank == FINALIZED_RANK {
             Ok(())
@@ -342,12 +407,15 @@ pub enum Availability {
 
 /// F01..F10 order. Only the F01 policy/header and F02 worker declarations are projected here;
 /// F06 rewards are not enabled and other producers have not yet produced view content.
+///
+/// # Errors
+/// Refuses a noncanonical state, policy section or worker table.
 pub fn feature_availability(state_bytes: &[u8]) -> CodecResult<[Availability; 10]> {
     let shared = state::decode_shared_state(state_bytes)?;
     let mut out = [Availability::NotYetProduced; 10];
-    out[0] = match policy_section(state_bytes) {
+    out[0] = match policy_of(&shared) {
         Ok(_) => Availability::Available,
-        Err(NOT_FOUND) => Availability::ContentUnavailable,
+        Err(NOT_FOUND) => Availability::NotYetProduced,
         Err(e) => return Err(e),
     };
     WorkerTable::decode(shared.section(Section::IdentityRoster)?)?;
@@ -383,6 +451,8 @@ pub struct ScoreField {
     ppm: Presence<u32>,
 }
 impl ScoreField {
+    /// # Errors
+    /// `NON_CANONICAL` above 1000000 ppm.
     pub fn present(epoch: u64, ppm: u32) -> CodecResult<Self> {
         if ppm > 1_000_000 {
             return Err(NON_CANONICAL);
@@ -393,6 +463,8 @@ impl ScoreField {
             ppm: Presence::Present(ppm),
         })
     }
+    /// # Errors
+    /// `NON_CANONICAL` for the present status, which must carry a number.
     pub fn absent(epoch: Presence<u64>, status: ScoreStatus) -> CodecResult<Self> {
         if status == ScoreStatus::Present {
             return Err(NON_CANONICAL);
@@ -403,18 +475,21 @@ impl ScoreField {
             ppm: Presence::Absent,
         })
     }
+    #[must_use]
     pub const fn status(&self) -> ScoreStatus {
         self.status
     }
+    #[must_use]
     pub const fn ppm(&self) -> Presence<u32> {
         self.ppm
     }
+    #[must_use]
     pub const fn epoch(&self) -> Presence<u64> {
         self.epoch
     }
 }
 
-/// F06-backed entitlement. Only an F06 producer may supply Available values.
+/// F06-backed entitlement. Only an F06 producer may supply available values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardField {
     status: Availability,
@@ -423,6 +498,8 @@ pub struct RewardField {
     claimed: Presence<u128>,
 }
 impl RewardField {
+    /// # Errors
+    /// `NON_CANONICAL` when claimed exceeds earned.
     pub fn entitlement(asset: AssetId, earned: u128, claimed: u128) -> CodecResult<Self> {
         if claimed > earned {
             return Err(NON_CANONICAL);
@@ -434,6 +511,8 @@ impl RewardField {
             claimed: Presence::Present(claimed),
         })
     }
+    /// # Errors
+    /// `NON_CANONICAL` for the available status, which must carry values.
     pub fn unavailable(status: Availability) -> CodecResult<Self> {
         if status == Availability::Available {
             return Err(NON_CANONICAL);
@@ -445,12 +524,19 @@ impl RewardField {
             claimed: Presence::Absent,
         })
     }
+    #[must_use]
     pub const fn status(&self) -> Availability {
         self.status
     }
+    #[must_use]
+    pub const fn asset(&self) -> Presence<AssetId> {
+        self.asset
+    }
+    #[must_use]
     pub const fn earned(&self) -> Presence<u128> {
         self.earned
     }
+    #[must_use]
     pub const fn claimed(&self) -> Presence<u128> {
         self.claimed
     }
@@ -461,6 +547,7 @@ pub const ELIGIBLE_NEW_WORK: u8 = 2;
 /// Evaluator rows come from the frozen roster; no current evaluator record exists in state.
 pub const IDENTITY_STATE_UNAVAILABLE: u8 = 0;
 
+/// One participant row. For evaluators, `generation` is the frozen grant version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ParticipantRow {
     pub kind: ParticipantKind,
@@ -478,9 +565,9 @@ pub struct ParticipantRow {
     pub history_status: Availability,
     pub history: Presence<Digest32>,
 }
-pub const ROW_MAX_BYTES: usize =
-    1 + 32 + 32 + 8 + 1 + 1 + 9 + 1 + 33 + 8 + 9 + 1 + 5 + 1 + 33 + 17 + 17 + 1 + 33;
 impl ParticipantRow {
+    /// # Errors
+    /// `CAPACITY` when the writer is full.
     pub fn encode(&self, w: &mut Writer<'_>) -> CodecResult<()> {
         w.u8(self.kind as u8)?;
         w.put(&self.id)?;
@@ -507,32 +594,49 @@ impl ParticipantRow {
     }
 }
 
-/// Worker rows from the F02 current table in the captured state, ascending WorkerId.
-/// Scores and rewards stay explicitly unproduced/not-enabled until their producers exist.
-pub fn worker_rows(
+fn frozen_worker_generation(
+    frozen: Option<&RosterView<'_>>,
+    id: [u8; 32],
+) -> CodecResult<Presence<u64>> {
+    if let Some(view) = frozen {
+        for i in 0..view.worker_count() {
+            let entry = view.worker(i)?;
+            if entry.worker.bytes() == id {
+                return Ok(Presence::Present(entry.generation.get()));
+            }
+        }
+    }
+    Ok(Presence::Absent)
+}
+
+/// Canonical participant rows: F02 current workers in ascending `WorkerId`, then frozen-roster
+/// evaluators in ascending `EvaluatorId`. Scores and rewards stay explicitly not produced /
+/// not enabled until their producers exist.
+///
+/// # Errors
+/// `WRONG_MARKET` for a roster of another market, `CAPACITY` when `out` is too small, and
+/// refusals of a noncanonical state, policy section or worker table.
+pub fn participant_rows(
     state_bytes: &[u8],
-    frozen: Option<&codec::RosterView<'_>>,
+    frozen: Option<&RosterView<'_>>,
     out: &mut [ParticipantRow],
 ) -> CodecResult<usize> {
     let shared = state::decode_shared_state(state_bytes)?;
-    let table = WorkerTable::decode(shared.section(Section::IdentityRoster)?)?;
-    if out.len() < table.len() {
-        return Err(CAPACITY);
+    let market = policy_of(&shared)?.header.market_id;
+    if frozen.is_some_and(|view| view.market != market) {
+        return Err(WRONG_MARKET);
     }
-    for (slot, r) in out.iter_mut().zip(table.iter()) {
-        let mut frozen_generation = Presence::Absent;
-        if let Some(view) = frozen {
-            for i in 0..view.worker_count() {
-                let entry = view.worker(i)?;
-                if entry.worker == r.worker {
-                    frozen_generation = Presence::Present(entry.generation.get());
-                }
-            }
-        }
+    let table = WorkerTable::decode(shared.section(Section::IdentityRoster)?)?;
+    let evaluators = frozen.map_or(0, RosterView::evaluator_count);
+    let total = table.len() + evaluators;
+    let slots = out.get_mut(..total).ok_or(CAPACITY)?;
+    let (worker_slots, evaluator_slots) = slots.split_at_mut(table.len());
+    for (slot, r) in worker_slots.iter_mut().zip(table.iter()) {
+        let frozen_generation = frozen_worker_generation(frozen, r.worker.bytes())?;
         let eligibility = match r.state {
             WorkerState::Available => ELIGIBLE_SERVING | ELIGIBLE_NEW_WORK,
             WorkerState::Enrolled | WorkerState::Draining => ELIGIBLE_SERVING,
-            _ => 0,
+            WorkerState::Revoked | WorkerState::Retired | WorkerState::PendingOwner => 0,
         };
         *slot = ParticipantRow {
             kind: ParticipantKind::Worker,
@@ -551,38 +655,28 @@ pub fn worker_rows(
             history: Presence::Absent,
         };
     }
-    Ok(table.len())
-}
-
-/// Evaluator rows from an exact frozen roster, ascending EvaluatorId.
-pub fn evaluator_rows(
-    frozen: &codec::RosterView<'_>,
-    out: &mut [ParticipantRow],
-) -> CodecResult<usize> {
-    let n = frozen.evaluator_count();
-    if out.len() < n {
-        return Err(CAPACITY);
+    if let Some(view) = frozen {
+        for (i, slot) in evaluator_slots.iter_mut().enumerate() {
+            let e = view.evaluator(i)?;
+            *slot = ParticipantRow {
+                kind: ParticipantKind::Evaluator,
+                id: e.evaluator.bytes(),
+                owner: e.owner,
+                generation: e.grant.get(),
+                identity_state: IDENTITY_STATE_UNAVAILABLE,
+                frozen_member: true,
+                frozen_generation: Presence::Present(e.grant.get()),
+                eligibility: 0,
+                metadata: Presence::Absent,
+                metadata_revision: 0,
+                score: ScoreField::absent(Presence::Absent, ScoreStatus::Unsupported)?,
+                reward: RewardField::unavailable(Availability::NotEnabled)?,
+                history_status: Availability::NotYetProduced,
+                history: Presence::Absent,
+            };
+        }
     }
-    for (i, slot) in out.iter_mut().enumerate().take(n) {
-        let e = frozen.evaluator(i)?;
-        *slot = ParticipantRow {
-            kind: ParticipantKind::Evaluator,
-            id: e.evaluator.bytes(),
-            owner: e.owner,
-            generation: e.grant.get(),
-            identity_state: IDENTITY_STATE_UNAVAILABLE,
-            frozen_member: true,
-            frozen_generation: Presence::Present(e.grant.get()),
-            eligibility: 0,
-            metadata: Presence::Absent,
-            metadata_revision: 0,
-            score: ScoreField::absent(Presence::Absent, ScoreStatus::Unsupported)?,
-            reward: RewardField::unavailable(Availability::NotEnabled)?,
-            history_status: Availability::NotYetProduced,
-            history: Presence::Absent,
-        };
-    }
-    Ok(n)
+    Ok(total)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -593,6 +687,8 @@ pub enum KindFilter {
     Evaluator = 2,
 }
 impl KindFilter {
+    /// # Errors
+    /// `NON_CANONICAL` for an unknown filter.
     pub fn from_u8(value: u8) -> CodecResult<Self> {
         Ok(match value {
             0 => Self::All,
@@ -612,13 +708,12 @@ impl KindFilter {
 }
 
 /// Exactly 64 lower-case hexadecimal characters.
+///
+/// # Errors
+/// `NON_CANONICAL` for any other length or character.
 pub fn parse_hex32(text: &str) -> CodecResult<[u8; 32]> {
-    let b = text.as_bytes();
-    if b.len() != 64 {
-        return Err(NON_CANONICAL);
-    }
     let mut out = [0u8; 32];
-    hex_decode(b, &mut out)?;
+    hex_decode(text.as_bytes(), &mut out)?;
     Ok(out)
 }
 fn nibble(c: u8) -> CodecResult<u8> {
@@ -633,17 +728,20 @@ fn hex_decode(text: &[u8], out: &mut [u8]) -> CodecResult<()> {
         return Err(NON_CANONICAL);
     }
     for (o, pair) in out.iter_mut().zip(text.chunks_exact(2)) {
-        *o = nibble(pair[0])? << 4 | nibble(pair[1])?;
+        *o = (nibble(pair[0])? << 4) | nibble(pair[1])?;
     }
     Ok(())
 }
 
 /// Canonical decimal limit, default 16, range 1..=32.
+///
+/// # Errors
+/// `NON_CANONICAL` for a noncanonical decimal or a value outside 1..=32.
 pub fn parse_limit(text: Option<&str>) -> CodecResult<u8> {
-    let limit = match text {
-        None => return Ok(DEFAULT_LIMIT),
-        Some(t) => codec::decimal_u64(t)?,
+    let Some(text) = text else {
+        return Ok(DEFAULT_LIMIT);
     };
+    let limit = codec::decimal_u64(text)?;
     if limit == 0 || limit > PAGE_MAX_ROWS as u64 {
         return Err(NON_CANONICAL);
     }
@@ -656,6 +754,7 @@ pub struct CursorKey<'k> {
     pub secret: &'k [u8; 32],
     pub generation: u32,
 }
+/// Visibility scope, snapshot and exact normalized filters a cursor is bound to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CursorScope {
     pub visibility: Digest32,
@@ -664,18 +763,12 @@ pub struct CursorScope {
     pub filter: KindFilter,
     pub active_only: bool,
 }
-fn filter_hash(scope: &CursorScope) -> CodecResult<Digest32> {
-    codec::domain_hash(
-        "PAXAI/view-filter/v1",
-        &[scope.filter as u8, u8::from(scope.active_only)],
-    )
-}
 fn hmac(secret: &[u8; 32], payload: &[u8]) -> [u8; 32] {
     let mut ipad = [0x36u8; 64];
     let mut opad = [0x5cu8; 64];
-    for (i, k) in secret.iter().enumerate() {
-        ipad[i] ^= k;
-        opad[i] ^= k;
+    for ((i, o), k) in ipad.iter_mut().zip(opad.iter_mut()).zip(secret) {
+        *i ^= k;
+        *o ^= k;
     }
     let inner: [u8; 32] = Sha256::new()
         .chain_update(ipad)
@@ -694,20 +787,27 @@ fn cursor_payload(
     next_ordinal: u16,
     expiry_ms: u64,
 ) -> CodecResult<[u8; CURSOR_PAYLOAD_BYTES]> {
+    let filter = codec::domain_hash(
+        "PAXAI/view-filter/v1",
+        &[scope.filter as u8, u8::from(scope.active_only)],
+    )?;
     let mut p = [0u8; CURSOR_PAYLOAD_BYTES];
     let mut w = Writer::new(&mut p);
     w.u16(SCHEMA_VERSION)?;
     w.put(scope.visibility.as_bytes())?;
     w.put(scope.market.as_bytes())?;
     w.put(scope.snapshot.as_bytes())?;
-    w.put(filter_hash(scope)?.as_bytes())?;
+    w.put(filter.as_bytes())?;
     w.u16(next_ordinal)?;
     w.u64(expiry_ms)?;
     w.u32(key.generation)?;
     Ok(p)
 }
 
-/// Issues an opaque lower-case hex token: payload || HMAC-SHA256(secret, payload).
+/// Issues an opaque lower-case hex token: payload followed by HMAC-SHA256(secret, payload).
+///
+/// # Errors
+/// `ARITHMETIC` when the expiry overflows.
 pub fn issue_cursor<'o>(
     key: &CursorKey<'_>,
     scope: &CursorScope,
@@ -718,15 +818,19 @@ pub fn issue_cursor<'o>(
     let expiry = now_ms.checked_add(CURSOR_LIFETIME_MS).ok_or(ARITHMETIC)?;
     let payload = cursor_payload(key, scope, next_ordinal, expiry)?;
     let tag = hmac(key.secret, &payload);
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    for (i, b) in payload.iter().chain(tag.iter()).enumerate() {
-        out[2 * i] = HEX[usize::from(b >> 4)];
-        out[2 * i + 1] = HEX[usize::from(b & 15)];
+    for (pair, b) in out.chunks_exact_mut(2).zip(payload.iter().chain(&tag)) {
+        pair[0] = HEX[usize::from(b >> 4)];
+        pair[1] = HEX[usize::from(b & 15)];
     }
     core::str::from_utf8(out).map_err(|_| NON_CANONICAL)
 }
 
-/// Authenticates a cursor before any row work; returns the next ordinal.
+/// Authenticates a cursor before any row work and returns its next ordinal.
+///
+/// # Errors
+/// `NON_CANONICAL` for a token that is not exactly one canonical cursor encoding,
+/// `CursorMismatch` for a bad tag, another scope/key generation or an ordinal outside the
+/// rows, `CursorExpired` at or after its expiry.
 pub fn open_cursor(
     key: &CursorKey<'_>,
     scope: &CursorScope,
@@ -734,40 +838,36 @@ pub fn open_cursor(
     now_ms: u64,
     total_rows: usize,
 ) -> QueryResult<u16> {
-    if token.len() > CURSOR_MAX_BYTES || token.len() != CURSOR_TOKEN_BYTES {
-        return Err(NON_CANONICAL.into());
-    }
-    let mut raw = [0u8; CURSOR_PAYLOAD_BYTES + 32];
+    let mut raw = [0u8; CURSOR_PAYLOAD_BYTES + CURSOR_TAG_BYTES];
     hex_decode(token.as_bytes(), &mut raw)?;
     let (payload, tag) = raw.split_at(CURSOR_PAYLOAD_BYTES);
     let expected = hmac(key.secret, payload);
     if expected.iter().zip(tag).fold(0u8, |a, (x, y)| a | (x ^ y)) != 0 {
         return Err(QueryError::CursorMismatch);
     }
-    let mut r = codec::Reader::new(payload);
-    let next = {
-        let schema = r.u16()?;
-        let rest: [u8; 128] = r.fixed()?;
-        let next = r.u16()?;
-        let expiry = r.u64()?;
-        let generation = r.u32()?;
-        r.finish()?;
-        let mine = cursor_payload(key, scope, next, expiry)?;
-        if schema != SCHEMA_VERSION || generation != key.generation || rest[..] != mine[2..130] {
-            return Err(QueryError::CursorMismatch);
-        }
-        if expiry <= now_ms {
-            return Err(QueryError::CursorExpired);
-        }
-        next
-    };
+    let mut r = Reader::new(payload);
+    r.take(CURSOR_ORDINAL_OFFSET)?;
+    let next = r.u16()?;
+    let expiry = r.u64()?;
+    r.u32()?;
+    r.finish()?;
+    if payload[..] != cursor_payload(key, scope, next, expiry)?[..] {
+        return Err(QueryError::CursorMismatch);
+    }
+    if expiry <= now_ms {
+        return Err(QueryError::CursorExpired);
+    }
     if next == 0 || usize::from(next) >= total_rows {
         return Err(QueryError::CursorMismatch);
     }
     Ok(next)
 }
 
-/// Rows must be in kind-then-ID order. Returns rows written and the next ordinal, if any.
+/// Selects one page from rows in kind-then-ID order. Returns rows written and the next
+/// ordinal when more rows remain.
+///
+/// # Errors
+/// `NON_CANONICAL` for a limit outside 1..=32 or rows not strictly in kind-then-ID order.
 pub fn select_page(
     rows: &[ParticipantRow],
     filter: KindFilter,
@@ -785,21 +885,32 @@ pub fn select_page(
     {
         return Err(NON_CANONICAL);
     }
-    let mut ordinal = 0usize;
-    let mut n = 0usize;
-    for row in rows.iter().filter(|r| filter.admits(r, active_only)) {
-        if ordinal >= usize::from(start) {
-            if n == usize::from(limit) {
-                return Ok((n, Some(u16::try_from(ordinal).map_err(|_| ARITHMETIC)?)));
-            }
-            out[n] = *row;
-            n += 1;
-        }
-        ordinal += 1;
+    let mut written = 0usize;
+    let admitted = rows
+        .iter()
+        .filter(|r| filter.admits(r, active_only))
+        .enumerate()
+        .skip(usize::from(start));
+    for (ordinal, row) in admitted {
+        let Some(slot) = out
+            .get_mut(written)
+            .filter(|_| written < usize::from(limit))
+        else {
+            return Ok((
+                written,
+                Some(u16::try_from(ordinal).map_err(|_| ARITHMETIC)?),
+            ));
+        };
+        *slot = *row;
+        written += 1;
     }
-    Ok((n, None))
+    Ok((written, None))
 }
 
+/// Off-chain page bound.
+///
+/// # Errors
+/// `ResponseTooLarge` above 65536 bytes.
 pub fn bound_response(length: usize) -> QueryResult<usize> {
     if length > PAGE_MAX_BYTES {
         Err(QueryError::ResponseTooLarge)
@@ -809,6 +920,10 @@ pub fn bound_response(length: usize) -> QueryResult<usize> {
 }
 
 /// Page frame: schema, snapshot id, row count, rows, optional cursor token.
+///
+/// # Errors
+/// `ResponseTooLarge` above 32 rows, a cursor above 1024 bytes or a frame above 65536 bytes;
+/// `CAPACITY` for a short `out`.
 pub fn encode_page(
     snapshot: Digest32,
     rows: &[ParticipantRow],
@@ -818,8 +933,7 @@ pub fn encode_page(
     if rows.len() > PAGE_MAX_ROWS || cursor.is_some_and(|c| c.len() > CURSOR_MAX_BYTES) {
         return Err(QueryError::ResponseTooLarge);
     }
-    let cap = out.len().min(PAGE_MAX_BYTES);
-    let mut w = Writer::new(&mut out[..cap]);
+    let mut w = Writer::new(out);
     w.u16(SCHEMA_VERSION)?;
     w.put(snapshot.as_bytes())?;
     w.u8(u8::try_from(rows.len()).map_err(|_| ARITHMETIC)?)?;
