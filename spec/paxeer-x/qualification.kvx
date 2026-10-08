@@ -773,3 +773,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.LINT-AI-MARKET-build-1.log (verify 121 passed: -verify-1.log; wasm: -wasm-1.log)"
 observed = "Crate lint debt cleared, 1536 findings to zero with byte layouts, encodings and error order unchanged; 30 dead_code warnings remain in programs/sdk/rust bindgen files outside the crate."
 assumption = "Closes ai-market-clippy-debt-20261008-01; the SDK warnings belong to the SDK owner."
+
+[qualification.ai-identity-section-sharing-20261008-01]
+revision = "82d3199d12b22203d4d753c1e0efc942a911b219"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority"
+exit_code = 0
+log = "private ops log wt/logs/ai.F03-T02-verify-1.log"
+observed = "F03 stores its evaluator region after the F02 worker table in the IdentityRoster section, but workers.rs and queries.rs decode that section strictly as a WorkerTable and F02 apply would drop the suffix."
+assumption = "Cross-task contradiction owned by FM-CORE; fixed by an integration task that routes both decoders through authority::split_identity_section and preserves the suffix, with the four affected gates rerun once."

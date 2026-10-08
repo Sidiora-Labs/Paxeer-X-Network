@@ -35559,7 +35559,7 @@ worker_role_id = "W-STORAGE-CAPACITY"
 
 [task.ai.F03-T02]
 title = "Implement evaluator grant authority"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 19
 requires = ["ai.F03-T01", "ai.F01-T02", "ai.F08-T01"]

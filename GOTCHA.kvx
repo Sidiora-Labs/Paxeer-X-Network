@@ -5036,3 +5036,19 @@ text = "When a test helper's error type is the same as the refusal under test, ?
 [gotcha.1083]
 area = "tooling"
 text = "clippy --fix can leave doc backticks malformed around parenthesised expressions, and a blanket text replace of helper() with helper()? also hits test names ending in that word; review every mechanical edit."
+
+[gotcha.1084]
+area = "programs/ai-market"
+text = "F02 WorkerTable::decode consumes the whole IdentityRoster section strictly; any feature sharing that section (F03 evaluator region follows the worker table) must split the worker prefix by its count byte via authority::split_identity_section and keep the suffix when rewriting."
+
+[gotcha.1085]
+area = "programs/ai-market"
+text = "ChallengeAssessment (0x0304) is ObjectLocal and not in registry_before_epoch, so a test envelope for it needs sequence 0 and a present roster or encode_envelope refuses it."
+
+[gotcha.1086]
+area = "layerxd"
+text = "layerxd --serve needs a live Paxeer JSON-RPC at startup: the finality authority bind calls eth_chainId and fails with -904 if nothing answers; an unused-port RPC only works for bootstrap. Tests start a real paxd via tests/daemon/paxeer_x_runtime_fixture.py."
+
+[gotcha.1087]
+area = "layerxd"
+text = "sequencer.env must not carry LAYERX_NODE_SEQUENCER_PRIVATE_KEY; launch through platform/hosted/node/sequencer-env.sh layerx_sequencer_environment. bootstrap.sh requires SETTLEMENT_CONTRACT and CHECKPOINT_REGISTRY at the anchor precompile 0x...1014."
