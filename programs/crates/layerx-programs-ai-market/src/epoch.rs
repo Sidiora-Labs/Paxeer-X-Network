@@ -33,8 +33,9 @@
 //! - `OPEN_EPOCH` has no specified payload; it must be empty. The envelope binds the epoch
 //!   being opened, its frozen config and the roster digest the opening freezes (an absent
 //!   roster is only representable for epoch 0).
-//! - F07 segment rollover at opening and the F01 task region reset belong to later tasks;
-//!   both sections are carried unchanged.
+//! - The F01 task region is reset through `tasks::region_after_open`: a sealed or empty set
+//!   yields the empty region, a nonempty unsealed set refuses the opening with `WRONG_PHASE`.
+//! - F07 segment rollover at opening belongs to F07-T02; that section is carried unchanged.
 use crate::{
     admission::{AdmissionMeta, AdmissionTable, Participant},
     codec::{

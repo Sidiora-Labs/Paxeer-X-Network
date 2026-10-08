@@ -5120,3 +5120,11 @@ text = "agent/crates/layerx-types/build.rs reads every `LX_PROGRAMS_* = 0x...` l
 [gotcha.1104]
 area = "programs-module"
 text = "A module ctx stages at most LXP_KERNEL_MAX_STAGED_BLOBS (4) blobs per activity and lxp_programs_storage_stage_final stages value blobs plus the manifest, so seed one namespace per ctx; it never deletes the previous manifest or value blobs, so superseded blobs stay live until retired. lxp_programs_replay_capture_stage needs ctx->call_admission.present with matching fee/metering versions, activity_id equal to the capture id and global_sequence equal to capture->sequence."
+
+[gotcha.1105]
+area = "programs/ai-market"
+text = "F08 allows only 4 successful enrollments per epoch and the counter resets only at an opening, so the first opening can freeze at most 1 worker beside the 3 required evaluators; enroll further workers inside an opened epoch."
+
+[gotcha.1106]
+area = "programs/ai-market"
+text = "workers::apply (F02) bumps the shared revision but not the F01 header state_revision, so F01 transitions refuse its raw output NON_CANONICAL until the header is rebound; the router (T-C02) must keep the two in step. In a sealed task region the seal sits between the presence byte and the records, so hashing region[3..] is only right for an unsealed region. clippy struct_field_names rejects a test struct field named after its struct."

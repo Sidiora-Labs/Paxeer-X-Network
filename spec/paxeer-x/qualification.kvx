@@ -829,3 +829,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.T-S02-verify-1.log"
 observed = "Retirement (ordinal 11) passes 58 checks but exists only in programs_module_registration_v4_storage_retirement at ABI 4, which genesis and the daemon do not activate; no genesis or governance path installs or rotates the retirement profile; the cutoff is authenticated by the 2-of-2 archive certificate without a finalized-header check; only the single-cell PAXAI namespace is retirable."
 assumption = "Held at implemented: profile values await ai.P-STORAGE-PROFILE; ABI activation, profile installation, SDK ABI mirror and the finality check belong to ai.T-S03/ai.T-S04/ai.T-C03 and are recorded there, not reworked here."
+
+[qualification.ai-f01-t04-frozen-worker-attributes-20261008-01]
+revision = "17ef6b8a9"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_state_boundary --test market_epoch_open"
+exit_code = 0
+log = "private ops log wt/logs/ai.F01-T04-verify-5.log"
+observed = "F01 stores no per-epoch frozen worker metadata or keys; task admission recomputes the roster digest from the F06 epoch row, live F02 attributes and the F03 snapshot, so a mid-epoch F02 metadata publish or key rotation by a rostered worker makes admission refuse WRONG_ROSTER until the next opening; the F08 REVOKED admission path has no producer-driven test."
+assumption = "F02-T02 (worker lifecycle) decides whether rostered attributes freeze per epoch; F09-T02 calls tasks::sealed_task_set for the SealEvidence hooks; T-C02 routes tasks::apply."
