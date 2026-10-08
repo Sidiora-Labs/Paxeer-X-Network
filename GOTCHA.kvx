@@ -5144,3 +5144,8 @@ text = "The LNI socket parent directory must be mode 0750 with the peer gid; mkd
 [gotcha.1110]
 area = "platform"
 text = "Clippy on a standalone hosted crate does not lint its path dependencies; lint authority changes with `cargo clippy -p layerx-platform-authority --lib` from platform/. Test stdout is block-buffered when piped while stderr is not, so a FAIL line can precede the CASE lines that ran first in make logs."
+
+[gotcha.1111]
+area = "evidence"
+text = "tools/paxeer-x/ai_evidence.py with no PAXAI_ADMISSION_RECORD/PAXAI_APPROVAL_RECORD set refuses at stage=authority reason=path-string before reading anything; with the workspace authority records set it refuses at reason=git-head because the pinned base no longer equals HEAD. The storage-prerequisite-evidence selector binds every producer revision to the single admission base_revision, so producers qualified at different revisions can never be consumed together without re-pinning one candidate. Lane-branch producer revisions are re-committed on landing; match them with git patch-id --stable, not merge-base."
+

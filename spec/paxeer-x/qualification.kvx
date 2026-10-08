@@ -861,3 +861,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.T-S03-verify-3.log"
 observed = "Ten admission cases pass on the real kernel, LNI server and keeper binary, but prepare-time re-check of commits against open reservations is not wired (native prepare_commit refusal stays authoritative), NODE_INFO advertises no capacity capability, and profile values (floor 64 blobs / 8388608 bytes / 16 kv, work lifetime 8) are parameters pending ai.P-STORAGE-PROFILE."
 assumption = "Held at implemented; the prepare re-check and the NODE_INFO capability belong to ai.T-C04 / ai.T-S04 and are recorded there."
+
+[qualification.ai-t-c04-storage-readiness-20261009-01]
+revision = "f54430806"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector storage-prerequisite-evidence"
+exit_code = 1
+log = "private ops log wt/logs/ai.T-C04-verify-1.log"
+observed = "storage-readiness.kvx consumes the T-S01/T-S02/T-S03 evidence (exit 0 each, caps equal to the validator CAPS, dependency edges recorded incomplete); the validator refused at stage=authority reason=git-head because the workspace admission pins base ce269bfe with empty other_selector_records and no storage profile approval or selector record exists."
+assumption = "Held at implemented until ai.P-STORAGE-PROFILE and ai.P-DEPLOYMENT are approved and the workspace admission is re-pinned on one candidate revision covering all three producers; the prepare re-check and NODE_INFO capability remain with ai.T-S04."
