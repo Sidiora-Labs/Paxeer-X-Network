@@ -35144,7 +35144,7 @@ worker_role_id = "W-STORAGE-ARCHIVE"
 
 [task.ai.F01-T02]
 title = "Implement authenticated market administration"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.F01-T01", "ai.T-C02-STATE"]

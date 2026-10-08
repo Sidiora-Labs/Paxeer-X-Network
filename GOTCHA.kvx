@@ -4952,3 +4952,11 @@ text = "The Codify server spawns spec trace workers that can spin at full CPU fo
 [gotcha.1062]
 date = "2026-10-08"
 text = "A process kill by command-line pattern also matches the shell that issued it and ends the current tool call. Match on a bracketed character class or kill by process id."
+
+[gotcha.1063]
+area = "programs/ai-market"
+text = "SharedState::section() ties the returned slice to the &self borrow, not to the state data; to get a section slice that outlives the decoded SharedState use codec::decode_state(bytes).sections[i] or the public feature_sections array."
+
+[gotcha.1064]
+area = "programs/ai-market"
+text = "ReplayTable::record_success refuses revision 0, so a creating operation must build the initial replay records with the common replay codec to reach revision 1."
