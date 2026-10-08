@@ -5088,3 +5088,15 @@ text = "When several features share one state section, the writer's scratch must
 [gotcha.1096]
 area = "programs/ai-market"
 text = "A full worker table plus a real F03 region (13825 bytes) never reaches the IdentityRoster cap (24568), so a capacity-refusal test needs opaque padding bytes, which only works because F02 copies the region without decoding it. too_many_lines (deny) also hits integration test functions: split long walks with a step helper."
+
+[gotcha.1097]
+area = "programs/ai-market"
+text = "dispatch.rs is a selector metadata table, not a router: no crate-level execute entry point exists yet, each feature exposes its own apply with its own signature. The host-facing dispatcher is T-C02's deliverable; do not add partial per-feature routers."
+
+[gotcha.1098]
+area = "programs/ai-market"
+text = "Test worlds must keep header.state_revision equal to SharedState.revision after every edit (registry_ops::apply and OpenEpoch refuse NON_CANONICAL otherwise); F06 fund bumps the revision itself through FundReplay, so never add a second increment. Before the first open the F08 required effective epoch is 0 and approvals expire at origin+64, so staff markets early."
+
+[gotcha.1099]
+area = "programs/ai-market"
+text = "F08 approve/admit refuse evaluator-owner conflicts up front, so conflict states for A04 must be built with a direct AdmissionTable::insert of a staged meta plus an F03 grant, modelling restored committed state. clippy --all-targets prints nothing for clean integration test targets."

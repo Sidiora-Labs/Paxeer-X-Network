@@ -35997,7 +35997,7 @@ worker_role_id = "W-CORE-INTEG"
 
 [task.ai.F01-T03-EPOCH]
 title = "Open epochs with complete frozen snapshots"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 23
 requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02", "ai.INTEG-IDENTITY-SECTION"]

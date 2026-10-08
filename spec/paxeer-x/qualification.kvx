@@ -805,3 +805,11 @@ exit_code = 1
 log = "private ops log wt/logs/ai.T-S01-verify-6.log"
 observed = "Six of ten scenarios pass on a real paxd chain; restore_replay fails because layerxd replay_canonical_after_snapshot returns LXP_ERR_VERSION_UNSUPPORTED (-101) replaying a Programs deploy batch from checkpoint 2."
 assumption = "Daemon defect outside T-S01 paths; fixed by the new task ai.T-S01-REPLAY, after which this gate reruns once. T-S01 is held at implemented until the P approvals pass."
+
+[qualification.ai-f01-t03-epoch-dispatcher-20261008-01]
+revision = "be8e83ad1"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_epoch_open"
+exit_code = 0
+log = "private ops log wt/logs/ai.F01-T03-EPOCH-verify-1.log"
+observed = "OpenEpoch and AdvanceActivation are complete behind epoch::open_epoch / epoch::advance_activation, but no selector router exists to call them; dispatch.rs holds only the operation table. Composition still leaves F07 segment rollover and the F01 task-region reset to their owners, and uses the owner principal as frozen recipient until F02 binds a payout recipient."
+assumption = "ai.T-C02 (owns dispatch.rs and the host boundary) adds the execute entry point with a scratch constant covering OPEN_SCRATCH_BYTES/ADVANCE_SCRATCH_BYTES and routes every selector; F07-T02 and F01-T04 compose their parts; F02-T02 adds the recipient."
