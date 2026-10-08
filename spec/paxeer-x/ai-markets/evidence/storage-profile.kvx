@@ -1,0 +1,117 @@
+[meta]
+title = "PAXAI NATIVE STORAGE LIFECYCLE PROFILE — ADMISSION EVIDENCE"
+task = "ai.P-STORAGE-PROFILE"
+requirement = "AI.STORAGE"
+acceptance_case = "AI.PROFILE-A01"
+contract = "../contracts/storage-lifecycle.kvx"
+selector = "storage-profile-admission"
+validator = "tools/paxeer-x/ai_evidence.py"
+status = "BLOCKED"
+profile_approval = "UNASSIGNED"
+continuous_operation = "BLOCKED"
+admitted_operating_profile = "FINITE_CAPACITY_ONLY"
+qualification = "UNRUN"
+scope = "Records only facts established from source; owner-assigned decisions are absent and are not invented. This record grants no activation, deployment or publication authority."
+
+[profile.finite_capacity]
+release_manifest_flag = "NO_CONTINUOUS_OPERATION"
+rule = "Until a versioned maintenance profile is approved and qualified, only bounded finite-capacity operation is admitted (storage-lifecycle S03): observed native counts/bytes at a committed sequence/root, measured call overhead, an absolute mutation budget below remaining headroom, and reserve for already admitted terminal/claim/exit obligations."
+new_funded_epochs = "refused unless obligation reserve is demonstrated at a committed root"
+background_deletion = "forbidden"
+cap_changes = "forbidden"
+
+[fact.native_bounds]
+source = "include/layerx/lxp_kernel.h"
+committed_blobs = 512
+committed_bytes = 67108864
+blob_bytes = 1048576
+staged_new_blobs = 4
+module_kv = 512
+staged_writes = 64
+matches_validator_caps = true
+
+[fact.module]
+source = "include/layerx/lxp_module.h; include/layerx/programs.h; src/modules/programs/registration.c"
+module_id = 9
+registered_module_versions = [1, 2, 3, 4]
+highest_assigned_ordinal = 10
+highest_assigned_activity = "LX_PROGRAMS_SANDBOX_DESTROY = 0x0009000A (module version 4)"
+next_unused_ordinal = 11
+next_unused_module_version = 5
+assignment = "UNASSIGNED; ordinal 11 / version 5 are the contract candidate only (storage-lifecycle S04), not an approved allocation"
+
+[fact.archive]
+source = "platform/relay_archive; deploy/rollout.kvx"
+relay_archive_modules = ["store.py", "protocol.py", "runtime.py", "forward.py", "peers.py"]
+state_archive_adapter = "absent (platform/relay_archive/state_archive.py is proposed under ai.T-S01, not present)"
+certificate_protocol_implemented = false
+rollout_entries = ["service.relay-archive-a", "service.relay-archive-b"]
+independent_operators_established = false
+finding = "Two replica service entries share one image and one deployment target; they do not establish two separately administered archive operators, enrolled Ed25519 key generations or per-operator retention commitments."
+
+[candidate.contract_values]
+source = "contracts/storage-lifecycle.kvx S05, S09, S10"
+status = "PROPOSED_NOT_APPROVED"
+max_blob_deletions_per_activity = 3
+max_replay_kv_retirements_per_activity = 3
+reserved_staged_blob_slot = 1
+max_request_bytes = 32768
+reserve_blobs = 64
+reserve_bytes = 8388608
+reserve_kv = 16
+certificate = "2-of-2 Ed25519 archive availability signatures, separate from consensus and custody keys"
+archive_retention = "indefinite"
+monetary_transfer = "none"
+
+[decision.version]
+status = "BLOCKED"
+needed = "Approved maintenance profile version, Programs module version and profile digest."
+
+[decision.ordinal]
+status = "BLOCKED"
+needed = "Approved activity ordinal under module 9 with registry digest."
+
+[decision.activation]
+status = "BLOCKED"
+needed = "Activation batch and chain domain with a finality receipt; historical replay compatibility receipt."
+
+[decision.controller]
+status = "BLOCKED"
+needed = "Controller authority digest, key generation, rotation and revocation policy digests."
+
+[decision.archive_generations]
+status = "BLOCKED"
+needed = "Two independent archive operator identities, their key generations and distinct key digests."
+
+[decision.reference_registry]
+status = "BLOCKED"
+needed = "Closed supported-reference parser set (41/73-byte heads, manifests, artifacts, replay records, prepared transitions) with registry digest."
+
+[decision.hot_horizon]
+status = "BLOCKED"
+needed = "Owner-assigned native hot horizon in batches with measured blob/byte/KV occupancy fitting the unchanged caps together with the reserve."
+
+[decision.indefinite_retention]
+status = "BLOCKED"
+needed = "Approval of indefinite archive retention with provisioned growth plan and a historical proof retrieval receipt."
+
+[decision.certificate]
+status = "BLOCKED"
+needed = "Approved certificate protocol and manifest digest with two persistence receipts, verified root and continuity (requires ai.T-S01)."
+
+[decision.work]
+status = "BLOCKED"
+needed = "Approved cleanup candidate, scan and deletion bounds with verified root transition and paired replay retirement."
+
+[decision.fees]
+status = "BLOCKED"
+needed = "Versioned native work/price schedule for maintenance metering."
+
+[decision.reserve]
+status = "BLOCKED"
+needed = "Approved serialized obligation reserve (blobs/bytes/KV) covering pending obligations."
+
+[gate]
+verify_cmd = "python3 tools/paxeer-x/ai_evidence.py --selector storage-profile-admission"
+admission_reference = "workspace admission other_selector_records has no storage-profile-admission entry"
+expected = "REFUSE until an approved selector record with all thirteen evidence items exists"
