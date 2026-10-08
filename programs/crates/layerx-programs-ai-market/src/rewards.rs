@@ -71,7 +71,7 @@ impl Disposition {
     }
 }
 
-fn checked_sum(values: impl Iterator<Item = Amount>) -> CodecResult<Amount> {
+fn checked_sum(mut values: impl Iterator<Item = Amount>) -> CodecResult<Amount> {
     values.try_fold(0u128, |acc, v| acc.checked_add(v).ok_or(ARITHMETIC))
 }
 fn digest_bytes(value: Presence<Digest32>) -> [u8; 32] {
