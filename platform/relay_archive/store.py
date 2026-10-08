@@ -9,13 +9,14 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 try:
     from .protocol import (
         IntegrityError,
         ProtocolError,
         RelayConfig,
+        StateArchiveRefusal,
         SyncState,
         U64_MAX,
         canonical_json_bytes,
@@ -28,6 +29,7 @@ except ImportError:
         IntegrityError,
         ProtocolError,
         RelayConfig,
+        StateArchiveRefusal,
         SyncState,
         U64_MAX,
         canonical_json_bytes,
@@ -1044,3 +1046,187 @@ class ArchiveStore:
             raise
         finally:
             connection.close()
+
+
+STATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS state_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS state_units (
+    network_id INTEGER NOT NULL,
+    global_sequence INTEGER NOT NULL,
+    manifest_digest TEXT NOT NULL UNIQUE,
+    manifest BLOB NOT NULL,
+    signature TEXT NOT NULL,
+    recorded_ms INTEGER NOT NULL,
+    PRIMARY KEY (network_id, global_sequence)
+) WITHOUT ROWID;
+"""
+
+
+class StateInventoryStore:
+    """Durable immutable state-archive inventory: content-addressed segments plus unit records."""
+
+    def __init__(self, root: Path, pins: Mapping[str, str]):
+        self.root = root
+        self.segments = root / "segments"
+        for directory in (root, self.segments):
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(directory, 0o700)
+        self.path = root / "inventory.sqlite3"
+        self._lock = threading.Lock()
+        connection = self._connect()
+        try:
+            mode = connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() != "wal":
+                raise IntegrityError("state inventory database did not enter WAL mode")
+            if int(connection.execute("PRAGMA user_version").fetchone()[0]) not in (0, 1):
+                raise IntegrityError("state inventory schema version is unsupported")
+            connection.executescript(STATE_SCHEMA)
+            connection.execute("PRAGMA user_version=1")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for key, value in sorted(pins.items()):
+                    row = connection.execute(
+                        "SELECT value FROM state_meta WHERE key=?", (key,)
+                    ).fetchone()
+                    if row is None:
+                        connection.execute("INSERT INTO state_meta(key,value) VALUES(?,?)", (key, value))
+                    elif row[0] != value:
+                        raise IntegrityError(f"state inventory {key} conflicts with configured identity")
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+        finally:
+            connection.close()
+        os.chmod(self.path, 0o600)
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(
+            self.path, timeout=5.0, isolation_level=None, check_same_thread=False
+        )
+        connection.execute("PRAGMA busy_timeout=5000")
+        connection.execute("PRAGMA synchronous=FULL")
+        return connection
+
+    def _segment_path(self, digest: str) -> Path:
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            raise StateArchiveRefusal("malformed", "segment digest must be 32-byte lowercase hexadecimal")
+        return self.segments / digest
+
+    def _sync_directory(self) -> None:
+        descriptor = os.open(self.segments, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def put_segment(self, digest: str, data: bytes) -> bool:
+        """Persist verified bytes; returns True when a missing or damaged copy was (re)written."""
+        path = self._segment_path(digest)
+        if sha256_hex(data) != digest:
+            raise StateArchiveRefusal("corrupt", "uploaded segment bytes do not match their digest")
+        with self._lock:
+            if path.is_file() and sha256_hex(path.read_bytes()) == digest:
+                return False
+            temporary = path.with_name(digest + ".tmp")
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                view = memoryview(data)
+                while view:
+                    view = view[os.write(descriptor, view):]
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.chmod(temporary, 0o400)
+            os.replace(temporary, path)
+            self._sync_directory()
+            return True
+
+    def segment(self, digest: str, length: int | None = None) -> bytes:
+        path = self._segment_path(digest)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError as error:
+            raise StateArchiveRefusal("missing", f"segment {digest} is not retained") from error
+        if sha256_hex(data) != digest or (length is not None and len(data) != length):
+            raise StateArchiveRefusal("corrupt", f"retained segment {digest} is corrupt or truncated")
+        return data
+
+    def unit(self, network_id: int, global_sequence: int) -> tuple[str, str] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT manifest_digest, signature FROM state_units WHERE network_id=? AND global_sequence=?",
+                (network_id, global_sequence),
+            ).fetchone()
+        finally:
+            connection.close()
+        return None if row is None else (row[0], row[1])
+
+    def manifest(self, digest: str) -> bytes:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT manifest FROM state_units WHERE manifest_digest=?", (digest,)
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise StateArchiveRefusal("missing", "archive unit is not retained")
+        manifest = bytes(row[0])
+        if sha256_hex(manifest) != digest:
+            raise StateArchiveRefusal("corrupt", "retained archive unit manifest is corrupt")
+        return manifest
+
+    def units(self) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT network_id, global_sequence, manifest_digest FROM state_units "
+                "ORDER BY network_id, global_sequence"
+            ).fetchall()
+        finally:
+            connection.close()
+        return [
+            {"network_id": row[0], "global_sequence": row[1], "manifest_digest": row[2]} for row in rows
+        ]
+
+    def record_unit(
+        self, network_id: int, global_sequence: int, digest: str, manifest: bytes, signature: str
+    ) -> str:
+        """Record one immutable unit; an exact repeat returns the original signature."""
+        if sha256_hex(manifest) != digest:
+            raise IntegrityError("unit manifest digest mismatch")
+        with self._lock:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    row = connection.execute(
+                        "SELECT manifest_digest, signature FROM state_units "
+                        "WHERE network_id=? AND global_sequence=?",
+                        (network_id, global_sequence),
+                    ).fetchone()
+                    if row is not None and row[0] != digest:
+                        raise StateArchiveRefusal(
+                            "conflict", "a different manifest already holds this immutable unit identity"
+                        )
+                    if row is None:
+                        connection.execute(
+                            "INSERT INTO state_units VALUES (?,?,?,?,?,?)",
+                            (network_id, global_sequence, digest, manifest, signature,
+                             int(time.time() * 1000)),
+                        )
+                        result = signature
+                    else:
+                        result = row[1]
+                    connection.execute("COMMIT")
+                except BaseException:
+                    connection.execute("ROLLBACK")
+                    raise
+            finally:
+                connection.close()
+            return result

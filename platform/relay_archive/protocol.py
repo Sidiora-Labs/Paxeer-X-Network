@@ -23,6 +23,8 @@ SYNC_MODES = ("remote", "local")
 DEFAULT_FRESHNESS_BUDGET_SECONDS = 30.0
 MAX_FRESHNESS_BUDGET_SECONDS = 86_400.0
 RAILWAY_PRIVATE_NETWORK = ipaddress.ip_network("fd12::/16")
+STATE_ARCHIVE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+STATE_ARCHIVE_RETENTION = ("indefinite",)
 
 
 class RelayArchiveError(Exception):
@@ -43,6 +45,16 @@ class IntegrityError(RelayArchiveError):
 
 class CodecError(RelayArchiveError):
     pass
+
+
+class StateArchiveRefusal(RelayArchiveError):
+    CODES = ("malformed", "missing", "corrupt", "conflict", "unavailable", "policy")
+
+    def __init__(self, code: str, message: str):
+        if code not in self.CODES:
+            raise ValueError(f"unknown state archive refusal code {code!r}")
+        super().__init__(f"{code}: {message}")
+        self.code = code
 
 
 class MissingBatch(CodecError):
@@ -66,6 +78,14 @@ class Endpoint:
         default = 443 if self.scheme == "https" else 80
         authority = host if self.port == default else f"{host}:{self.port}"
         return f"{self.scheme}://{authority}"
+
+
+@dataclass(frozen=True)
+class StateArchiveSettings:
+    archive_id: str
+    key_generation: int
+    retention: str
+    profile_digest: str
 
 
 @dataclass(frozen=True)
@@ -108,6 +128,7 @@ class RelayConfig:
     sync_mode: str
     sync_mode_configured: bool
     freshness_budget_seconds: float
+    state_archive: StateArchiveSettings | None = None
 
     @property
     def listen_is_loopback(self) -> bool:
@@ -527,6 +548,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         "peer_discovery",
         "sync_mode",
         "freshness_budget_seconds",
+        "state_archive",
     }
     unknown = sorted(set(document) - allowed)
     if unknown:
@@ -729,6 +751,34 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         sync_mode=sync_mode,
         sync_mode_configured=sync_mode_value is not None,
         freshness_budget_seconds=freshness_budget,
+        state_archive=_state_archive_settings(document.get("state_archive")),
+    )
+
+
+def _state_archive_settings(value: Any) -> StateArchiveSettings | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError("state_archive must be an object")
+    expected = {"archive_id", "key_generation", "retention", "profile_digest"}
+    if set(value) != expected:
+        raise ConfigError("state_archive must contain exactly " + ", ".join(sorted(expected)))
+    archive_id = value["archive_id"]
+    if not isinstance(archive_id, str) or STATE_ARCHIVE_ID.fullmatch(archive_id) is None:
+        raise ConfigError("state_archive.archive_id must be 1 to 63 lowercase letters, digits or hyphens")
+    if value["retention"] not in STATE_ARCHIVE_RETENTION:
+        raise ConfigError("state_archive.retention must be an approved retention commitment")
+    try:
+        profile_digest = require_hex32(value["profile_digest"], "state_archive.profile_digest")
+    except ProtocolError as error:
+        raise ConfigError(str(error)) from error
+    return StateArchiveSettings(
+        archive_id=archive_id,
+        key_generation=_strict_int(
+            value["key_generation"], "state_archive.key_generation", 1, (1 << 32) - 1
+        ),
+        retention=value["retention"],
+        profile_digest=profile_digest,
     )
 
 

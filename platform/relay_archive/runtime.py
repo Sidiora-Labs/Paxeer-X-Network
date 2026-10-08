@@ -40,16 +40,15 @@ if __package__ in (None, ""):
         SyncAttempt,
         SyncOutcome,
         SyncState,
-        U64_MAX,
         canonical_json_bytes,
         load_config,
-        parse_endpoint,
         read_file_bounded,
         require_decimal,
         require_hex32,
         sha256_hex,
     )
-    from store import ArchiveStore, SubmissionSlot
+    from state_archive import StateArchive
+    from store import ArchiveStore
 else:
     from .forward import ForwardResult, SafeHTTPClient, SubmissionForwarder, TransportError
     from .protocol import (
@@ -70,16 +69,15 @@ else:
         SyncAttempt,
         SyncOutcome,
         SyncState,
-        U64_MAX,
         canonical_json_bytes,
         load_config,
-        parse_endpoint,
         read_file_bounded,
         require_decimal,
         require_hex32,
         sha256_hex,
     )
-    from .store import ArchiveStore, SubmissionSlot
+    from .state_archive import StateArchive
+    from .store import ArchiveStore
 
 
 class _BoundedServer(socketserver.ThreadingMixIn, HTTPServer):
@@ -1328,7 +1326,19 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _arguments(sys.argv[1:] if argv is None else argv)
     runtime: RelayArchive | None = None
     try:
+        def stop(_signum: int, _frame: Any) -> None:
+            raise KeyboardInterrupt
+
         config = load_config(arguments.config)
+        if config.state_archive is not None:
+            if arguments.once:
+                print("layerx-relay-archive: a state archive has no one-shot synchronization", file=sys.stderr)
+                return 2
+            archive = StateArchive(config)
+            signal.signal(signal.SIGINT, stop)
+            signal.signal(signal.SIGTERM, stop)
+            archive.serve()
+            return 0
         runtime = RelayArchive(config)
         runtime.bootstrap()
         attempt = runtime.synchronize()
@@ -1340,10 +1350,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             return 0
-
-        def stop(_signum: int, _frame: Any) -> None:
-            raise KeyboardInterrupt
-
         signal.signal(signal.SIGINT, stop)
         signal.signal(signal.SIGTERM, stop)
         runtime.serve()
