@@ -1,7 +1,49 @@
 //! F09 offchain artifact manifest, publisher envelope, declaration, reproduction,
 //! chunk-proof and evidence-manifest codecs with domain-separated SHA256 roots.
-//! Pure codecs: no publication, grant admission, availability, protocol state or
-//! finality is established by any value here.
+//! The codecs are pure: no publication, grant admission, availability or finality is
+//! established by any of their values.
+//!
+//! `SealEvidence` ([`apply`]) is the only F09 protocol mutation. Its bounded seals live in the
+//! F09 seal region at the start of the shared control feature bytes ([`SealRegion`]); any later
+//! feature bytes belong to other control producers and are carried unchanged. Readings chosen
+//! where producers are silent:
+//! - The payload names no evaluator. The envelope actor is the evaluator owner; a native call
+//!   selects the owner's only frozen evaluator, a delegate call the frozen evaluator whose key
+//!   it presents.
+//! - The evaluator application sequence is the replay slot `ActorSlot::evaluator(i)` bound to
+//!   the evaluator owner; no producer binds those slots yet.
+//! - Seals of an earlier epoch read as absent; the next seal of a later opened epoch replaces
+//!   them, so no opening has to clear the region (an opening requires its predecessor
+//!   terminal).
+//! - `EvidenceSealed` carries the 185-byte seal record as its suffix; its result digest is the
+//!   result digest of that record.
+//! - A mode, task policy or rubric other than the frozen policy's, or a task-set digest other
+//!   than the sealed one, refuses `EVIDENCE_BINDING`.
+use crate::{
+    admission::{AdmissionTable, Participant},
+    codec::{self as wire, EventCommon, ReportBody, ValidatedEnvelope},
+    dispatch,
+    errors::{
+        CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT, EVIDENCE_BINDING, EXPIRED,
+        F03_GRANT_VERSION_CONFLICT, F03_KEY_VERSION_CONFLICT, F03_NO_GRANT,
+        F09_EVIDENCE_SEAL_CONFLICT, KEY_MISMATCH, NON_CANONICAL, NOT_FOUND, REVOKED, UNAUTHORIZED,
+        UNKNOWN_OPERATION, WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE, WRONG_ROSTER,
+    },
+    evaluators::{
+        authority::{evaluator_region, FrozenEvaluator},
+        model::{GrantStatus, RegisteredEvidence},
+    },
+    registry::check_f01_capacity,
+    registry_ops::{CallContext, PolicySection},
+    rewards::{decode_reward_state, REWARD_STATE_BYTES},
+    state::{
+        decode_shared_state, encode_shared_state, ActorSlot, HeightWindow, ReplayDecision,
+        ReplayRequest, RetainedResult, Section, SharedState,
+    },
+    tasks,
+    types::{Authentication, EvaluatorId, FrozenBinding, Presence, ResultDigest},
+    MAX_EVALUATORS,
+};
 use crate::{
     codec::{domain_hash, Reader, Writer},
     commit_reveal::commitment::{decode_binding, encode_binding, BINDING_BYTES},
@@ -1530,4 +1572,798 @@ pub fn evidence_root(encoded: &[u8], policy: &EvidencePolicy) -> ArtifactResult<
     Ok(EvidenceRoot::new(
         domain_hash(EVIDENCE_DOMAIN, encoded)?.bytes(),
     )?)
+}
+
+/// Canonical `SealEvidence` payload length.
+pub const SEAL_PAYLOAD_BYTES: usize = 131;
+/// One compact seal record before enclosing framing.
+pub const SEAL_RECORD_BYTES: usize = 185;
+const SEAL_REGION_HEADER_BYTES: usize = 9;
+/// The F09 seal region at its bound: epoch, count and eight seals.
+pub const SEAL_REGION_MAX_BYTES: usize =
+    SEAL_REGION_HEADER_BYTES + MAX_EVALUATORS * SEAL_RECORD_BYTES;
+const POLICY_CAP: usize = Section::PolicyLifecycle.payload_cap();
+const CONTROL_CAP: usize = Section::Control.payload_cap();
+/// Caller scratch for [`apply`]: the next F01 section, the next control feature bytes and the
+/// control encoding.
+pub const SEAL_SCRATCH_BYTES: usize = POLICY_CAP + 2 * CONTROL_CAP;
+const COMMIT_OPENS: u64 = 64;
+const COMMIT_CLOSES: u64 = 80;
+
+/// One evaluator's committed evidence claim for the opened epoch. A seal asserts an
+/// authorized claim, never verified AI quality or availability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EvidenceSeal {
+    pub evaluator: EvaluatorId,
+    pub grant: Version,
+    pub key_version: Version,
+    pub root: EvidenceRoot,
+    pub task_policy: PolicyDigest,
+    pub task_set: Digest32,
+    pub rubric: RubricDigest,
+    pub mode: AssessmentMode,
+    pub height: u64,
+}
+impl EvidenceSeal {
+    /// The canonical 185-byte record.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the record does not fill exactly 185 bytes.
+    pub fn encode(&self) -> CodecResult<[u8; SEAL_RECORD_BYTES]> {
+        let mut out = [0; SEAL_RECORD_BYTES];
+        let mut w = Writer::new(&mut out);
+        w.put(self.evaluator.as_bytes())?;
+        w.u64(self.grant.get())?;
+        w.u64(self.key_version.get())?;
+        w.put(self.root.as_bytes())?;
+        w.put(self.task_policy.as_bytes())?;
+        w.put(self.task_set.as_bytes())?;
+        w.put(self.rubric.as_bytes())?;
+        w.u8(self.mode as u8)?;
+        w.u64(self.height)?;
+        if w.len() != SEAL_RECORD_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        Ok(out)
+    }
+    /// Strictly decodes one record.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a wrong length, zero identity, version or root, or an
+    /// unknown mode.
+    pub fn decode(input: &[u8]) -> CodecResult<Self> {
+        let mut r = Reader::new(input);
+        let seal = Self {
+            evaluator: EvaluatorId::new(r.fixed()?)?,
+            grant: Version::new(r.u64()?)?,
+            key_version: Version::new(r.u64()?)?,
+            root: EvidenceRoot::new(r.fixed()?)?,
+            task_policy: PolicyDigest::new(r.fixed()?)?,
+            task_set: Digest32::new(r.fixed()?)?,
+            rubric: RubricDigest::new(r.fixed()?)?,
+            mode: AssessmentMode::decode(r.u8()?).map_err(|_| NON_CANONICAL)?,
+            height: r.u64()?,
+        };
+        r.finish()?;
+        Ok(seal)
+    }
+    /// Equal claims: every field except the sealing height.
+    #[must_use]
+    pub fn same_claim(&self, other: &Self) -> bool {
+        Self {
+            height: other.height,
+            ..*self
+        } == *other
+    }
+    /// The compact registration F03/F04 report admission compares against.
+    #[must_use]
+    pub const fn registered(&self, frozen: FrozenBinding) -> RegisteredEvidence {
+        RegisteredEvidence {
+            binding: EvaluatorBinding {
+                frozen,
+                evaluator: self.evaluator,
+                grant: self.grant,
+                key_version: self.key_version,
+            },
+            root: self.root,
+            rubric: self.rubric,
+        }
+    }
+}
+
+/// The F09 seal region at the start of the control feature bytes: `epoch:u64 || count:u8 ||
+/// count seal records` in strictly ascending evaluator order, then the bytes of other control
+/// producers. Empty feature bytes hold no seal; an empty region exists only before other bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SealRegion<'a> {
+    pub epoch: u64,
+    records: &'a [u8],
+    rest: &'a [u8],
+}
+impl<'a> SealRegion<'a> {
+    /// Strictly decodes the region prefix of `feature_bytes`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a truncated, oversized, unordered or duplicate region, an
+    /// invalid record, or an empty region with nothing after it.
+    pub fn decode(feature_bytes: &'a [u8]) -> CodecResult<Self> {
+        if feature_bytes.is_empty() {
+            return Ok(Self {
+                epoch: 0,
+                records: &[],
+                rest: &[],
+            });
+        }
+        let mut r = Reader::new(feature_bytes);
+        let epoch = r.u64()?;
+        let count = usize::from(r.u8()?);
+        if count > MAX_EVALUATORS {
+            return Err(NON_CANONICAL);
+        }
+        let records = r.take(count * SEAL_RECORD_BYTES)?;
+        let rest = feature_bytes.get(r.offset()..).ok_or(NON_CANONICAL)?;
+        if count == 0 && rest.is_empty() {
+            return Err(NON_CANONICAL);
+        }
+        let mut previous = None;
+        for record in records.chunks_exact(SEAL_RECORD_BYTES) {
+            let evaluator = EvidenceSeal::decode(record)?.evaluator;
+            if previous.is_some_and(|p| p >= evaluator) {
+                return Err(NON_CANONICAL);
+            }
+            previous = Some(evaluator);
+        }
+        Ok(Self {
+            epoch,
+            records,
+            rest,
+        })
+    }
+    const fn of(&self, epoch: u64) -> &'a [u8] {
+        if self.epoch == epoch {
+            self.records
+        } else {
+            &[]
+        }
+    }
+    /// Seals of `epoch`; seals of any other epoch read as absent.
+    pub fn seals(&self, epoch: u64) -> impl Iterator<Item = CodecResult<EvidenceSeal>> + 'a {
+        self.of(epoch)
+            .chunks_exact(SEAL_RECORD_BYTES)
+            .map(EvidenceSeal::decode)
+    }
+    /// The seal of `evaluator` in `epoch`.
+    ///
+    /// # Errors
+    /// Propagates record decoding refusals.
+    pub fn get(&self, epoch: u64, evaluator: EvaluatorId) -> CodecResult<Option<EvidenceSeal>> {
+        for seal in self.seals(epoch) {
+            let seal = seal?;
+            if seal.evaluator == evaluator {
+                return Ok(Some(seal));
+            }
+        }
+        Ok(None)
+    }
+    /// Bytes of other control producers after the region.
+    #[must_use]
+    pub const fn rest(&self) -> &'a [u8] {
+        self.rest
+    }
+    /// Writes the region of `epoch` with `seal` inserted, then the unchanged trailing bytes.
+    fn write_with(&self, epoch: u64, seal: &EvidenceSeal, out: &mut [u8]) -> CodecResult<usize> {
+        let current = self.of(epoch);
+        let count = current.len() / SEAL_RECORD_BYTES;
+        if count >= MAX_EVALUATORS {
+            return Err(CAPACITY);
+        }
+        let mut at = current.len();
+        for (index, record) in current.chunks_exact(SEAL_RECORD_BYTES).enumerate() {
+            if EvidenceSeal::decode(record)?.evaluator > seal.evaluator {
+                at = index * SEAL_RECORD_BYTES;
+                break;
+            }
+        }
+        let mut w = Writer::new(out);
+        w.u64(epoch)?;
+        w.u8(u8::try_from(count + 1).map_err(|_| ARITHMETIC)?)?;
+        w.put(&current[..at])?;
+        w.put(&seal.encode()?)?;
+        w.put(&current[at..])?;
+        w.put(self.rest)?;
+        Ok(w.len())
+    }
+}
+
+/// Committed F01 section whose header revision equals the shared revision.
+fn committed<'a>(state: &SharedState<'a>) -> CodecResult<PolicySection<'a>> {
+    let section = PolicySection::decode(state.feature_sections[Section::PolicyLifecycle.index()])?;
+    if section.header.state_revision != state.revision {
+        return Err(NON_CANONICAL);
+    }
+    Ok(section)
+}
+
+/// The frozen context of the opened epoch: F08 epoch presence, F01 config and F06 roster.
+fn frozen_binding(
+    state: &SharedState<'_>,
+    section: &PolicySection<'_>,
+) -> CodecResult<FrozenBinding> {
+    let admission =
+        AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?;
+    let epoch = admission.current_epoch().ok_or(WRONG_EPOCH)?;
+    let rewards = state.feature_sections[Section::SettlementClaims.index()];
+    let rewards = decode_reward_state(rewards.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)?;
+    let row = match rewards.row(epoch) {
+        Err(NOT_FOUND) => return Err(WRONG_EPOCH),
+        row => row?,
+    };
+    let header = &section.header;
+    Ok(FrozenBinding {
+        chain: header.deployment_chain_domain,
+        program: header.program_id,
+        market: header.market_id,
+        epoch,
+        config: Version::new(header.active_config_version)?,
+        roster: row.roster,
+    })
+}
+
+/// The sealed evidence registration of `evaluator` in the opened `epoch`, read from committed
+/// state exactly as F03/F04 report admission must supply `ReportContext::evidence`. An absent
+/// seal refuses there (`F03_EVIDENCE_NOT_SEALED`); a seal never authorizes a report alone.
+///
+/// # Errors
+/// Returns `WRONG_EPOCH` when `epoch` is not the opened epoch; `NON_CANONICAL` for an
+/// inconsistent state or seal region.
+pub fn sealed_evidence(
+    state: &SharedState<'_>,
+    epoch: u64,
+    evaluator: EvaluatorId,
+) -> CodecResult<Presence<RegisteredEvidence>> {
+    let frozen = frozen_binding(state, &committed(state)?)?;
+    if frozen.epoch != epoch {
+        return Err(WRONG_EPOCH);
+    }
+    let region = SealRegion::decode(state.control.feature_bytes)?;
+    if region.epoch > epoch && !region.records.is_empty() {
+        return Err(NON_CANONICAL);
+    }
+    Ok(match region.get(epoch, evaluator)? {
+        Some(seal) => Presence::Present(seal.registered(frozen)),
+        None => Presence::Absent,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Outcome {
+    /// One revision increment and one role sequence were composed into `next` and the
+    /// `EvidenceSealed` event into `event`.
+    Applied {
+        seal: EvidenceSeal,
+        revision: u64,
+        result: ResultDigest,
+        state_len: usize,
+        event_len: usize,
+    },
+    /// A new request repeating the stored claim; nothing was written.
+    AlreadyApplied { seal: EvidenceSeal },
+    /// Exact retry of a request already applied under the evaluator sequence.
+    Retained(RetainedResult),
+}
+
+struct SealPayload {
+    root: EvidenceRoot,
+    task_policy: PolicyDigest,
+    task_set: Digest32,
+    rubric: RubricDigest,
+    mode: AssessmentMode,
+}
+impl SealPayload {
+    fn parse(payload: &[u8]) -> CodecResult<Self> {
+        if payload.len() != SEAL_PAYLOAD_BYTES {
+            return Err(NON_CANONICAL);
+        }
+        let mut r = Reader::new(payload);
+        if r.u16()? != VERSION {
+            return Err(BAD_VERSION);
+        }
+        let value = Self {
+            root: EvidenceRoot::new(r.fixed()?)?,
+            task_policy: PolicyDigest::new(r.fixed()?)?,
+            task_set: Digest32::new(r.fixed()?)?,
+            rubric: RubricDigest::new(r.fixed()?)?,
+            mode: AssessmentMode::decode(r.u8()?).map_err(|_| NON_CANONICAL)?,
+        };
+        r.finish()?;
+        Ok(value)
+    }
+}
+
+struct Opened<'a> {
+    state: SharedState<'a>,
+    section: PolicySection<'a>,
+    frozen: FrozenBinding,
+    region: SealRegion<'a>,
+}
+fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
+    let state = decode_shared_state(current)?;
+    let section = committed(&state)?;
+    let frozen = frozen_binding(&state, &section)?;
+    let region = SealRegion::decode(state.control.feature_bytes)?;
+    if region.epoch > frozen.epoch && !region.records.is_empty() {
+        return Err(NON_CANONICAL);
+    }
+    Ok(Opened {
+        state,
+        section,
+        frozen,
+        region,
+    })
+}
+
+struct Call<'c> {
+    ctx: &'c CallContext,
+    envelope: &'c ValidatedEnvelope<'c>,
+    opened: &'c Opened<'c>,
+}
+impl Call<'_> {
+    /// Domain, expiry, market and the exact frozen epoch, config and roster.
+    fn check_binding(&self) -> CodecResult<()> {
+        let e = &self.envelope.envelope;
+        let frozen = &self.opened.frozen;
+        let market = wire::derive_market(self.ctx.chain, self.ctx.program)?;
+        e.check_domain(self.ctx.chain, self.ctx.program, market)?;
+        e.check_expiry(self.ctx.height)?;
+        if frozen.market != market {
+            return Err(WRONG_MARKET);
+        }
+        if e.epoch != frozen.epoch {
+            return Err(WRONG_EPOCH);
+        }
+        if e.config != frozen.config.get() {
+            return Err(WRONG_CONFIG);
+        }
+        if e.roster != Presence::Present(frozen.roster) {
+            return Err(WRONG_ROSTER);
+        }
+        Ok(())
+    }
+    /// The frozen evaluator the envelope authenticates as, natively by its owner or by its
+    /// frozen delegate key.
+    fn authenticate(&self) -> CodecResult<FrozenEvaluator> {
+        let e = &self.envelope.envelope;
+        let identity = self.opened.state.feature_sections[Section::IdentityRoster.index()];
+        let region = evaluator_region(identity)?;
+        let snapshot = region.snapshot().ok_or(F03_NO_GRANT)?;
+        if snapshot.epoch != self.opened.frozen.epoch {
+            return Err(NON_CANONICAL);
+        }
+        let mut owned = snapshot.entries().filter(|f| f.entry.owner == e.actor);
+        let frozen = match e.authentication {
+            Authentication::Native => {
+                wire::compare_native_principal(e, self.ctx.principal)?;
+                let first = owned.next().copied().ok_or(UNAUTHORIZED)?;
+                if owned.next().is_some() {
+                    return Err(UNAUTHORIZED);
+                }
+                first
+            }
+            Authentication::Delegate { key, signature } => {
+                let frozen = owned
+                    .find(|f| f.entry.public_key == key)
+                    .copied()
+                    .ok_or(KEY_MISMATCH)?;
+                let digest = Digest32::new(self.envelope.request_digest()?.bytes())?;
+                verify_digest(key, signature, digest.bytes()).map_err(|error| match error {
+                    VerificationError::Application(a) => a,
+                    #[cfg(target_arch = "wasm32")]
+                    VerificationError::Host(_) => crate::errors::HOST_CAPABILITY,
+                })?;
+                frozen
+            }
+        };
+        let evaluator = frozen.entry.evaluator;
+        let live = region.get(evaluator).ok_or(NON_CANONICAL)?;
+        if live.grant.status == GrantStatus::Revoked || region.excluded(evaluator) {
+            return Err(REVOKED);
+        }
+        if live.grant.status == GrantStatus::Expired
+            || self.opened.frozen.epoch >= frozen.expiry_epoch_exclusive
+        {
+            return Err(EXPIRED);
+        }
+        if live.grant.status != GrantStatus::Active {
+            return Err(F03_NO_GRANT);
+        }
+        if live.grant.grant_version != frozen.entry.grant {
+            return Err(F03_GRANT_VERSION_CONFLICT);
+        }
+        if live.grant.key_version != frozen.entry.key_version {
+            return Err(F03_KEY_VERSION_CONFLICT);
+        }
+        if live.grant.signing_key != frozen.entry.public_key {
+            return Err(KEY_MISMATCH);
+        }
+        self.check_admission(&frozen)?;
+        Ok(frozen)
+    }
+    /// F08 membership of the frozen evaluator remains admitted under its owner.
+    fn check_admission(&self, frozen: &FrozenEvaluator) -> CodecResult<()> {
+        let admission = AdmissionTable::decode(
+            self.opened.state.feature_sections[Section::ReputationAdmission.index()],
+        )?;
+        match admission.get(Participant::Evaluator(frozen.entry.evaluator)) {
+            Some(meta) if meta.revoked() => Err(REVOKED),
+            Some(meta) if meta.admitted() && meta.owner == frozen.entry.owner => Ok(()),
+            _ => Err(UNAUTHORIZED),
+        }
+    }
+    /// Role replay request under the evaluator slot bound to the evaluator owner.
+    fn request(&self, owner: PrincipalId) -> CodecResult<ReplayRequest> {
+        let replay = &self.opened.state.control.replay;
+        for index in 0..MAX_EVALUATORS {
+            let slot = ActorSlot::evaluator(index)?;
+            if let Some(actor) = replay.actor(slot).filter(|a| a.principal == owner) {
+                return ReplayRequest::from_envelope(slot, actor.authority_version, self.envelope);
+            }
+        }
+        Err(NOT_FOUND)
+    }
+    /// The claim of `payload` against the frozen policy and the explicit F01 task-set seal.
+    fn claim(&self, frozen: &FrozenEvaluator, payload: &SealPayload) -> CodecResult<EvidenceSeal> {
+        let policy = &self.opened.section.current;
+        let rubric = policy.commitments.rubric;
+        if payload.mode as u8 != policy.assessment_mode
+            || payload.task_policy != policy.digest()?
+            || payload.rubric != rubric
+            || frozen.entry.rubric != rubric
+        {
+            return Err(EVIDENCE_BINDING);
+        }
+        let sealed = tasks::sealed_task_set(&self.opened.state, self.opened.frozen.epoch)?;
+        if payload.task_set != sealed {
+            return Err(EVIDENCE_BINDING);
+        }
+        Ok(EvidenceSeal {
+            evaluator: frozen.entry.evaluator,
+            grant: frozen.entry.grant,
+            key_version: frozen.entry.key_version,
+            root: payload.root,
+            task_policy: payload.task_policy,
+            task_set: payload.task_set,
+            rubric: payload.rubric,
+            mode: payload.mode,
+            height: self.ctx.height,
+        })
+    }
+}
+
+/// Commits `seal` at the next revision and evaluator sequence and emits `EvidenceSealed`.
+fn commit(
+    call: &Call<'_>,
+    seal: &EvidenceSeal,
+    request: &ReplayRequest,
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Outcome> {
+    let opened = call.opened;
+    let (policy, rest) = scratch.split_at_mut_checked(POLICY_CAP).ok_or(CAPACITY)?;
+    let (features, control) = rest.split_at_mut_checked(CONTROL_CAP).ok_or(CAPACITY)?;
+    let record = seal.encode()?;
+    let result = wire::result_digest(&record)?;
+    let revision = opened.state.revision.checked_add(1).ok_or(ARITHMETIC)?;
+    let mut section = opened.section;
+    section.header.state_revision = revision;
+    let policy_len = section.encode(policy)?;
+    let features_len = opened
+        .region
+        .write_with(opened.frozen.epoch, seal, features)?;
+    let policy = policy.get(..policy_len).ok_or(CAPACITY)?;
+    let mut candidate = opened
+        .state
+        .replace_section(Section::PolicyLifecycle, policy)?;
+    candidate.control.feature_bytes = features.get(..features_len).ok_or(CAPACITY)?;
+    if candidate.record_success(request, call.ctx.height, result)? != ReplayDecision::Apply
+        || candidate.revision != revision
+    {
+        return Err(NON_CANONICAL);
+    }
+    check_f01_capacity(policy_len, candidate.encoded_len()?)?;
+    let state_len = encode_shared_state(&candidate, next, control)?;
+    let frozen = &opened.frozen;
+    let event_len = wire::encode_event_frame(
+        dispatch::SealEvidence,
+        &EventCommon {
+            market: frozen.market,
+            epoch: frozen.epoch,
+            config: frozen.config,
+            revision,
+            request: call.envelope.request_digest()?,
+            result,
+        },
+        &record,
+        event,
+    )?;
+    Ok(Outcome::Applied {
+        seal: *seal,
+        revision,
+        result,
+        state_len,
+        event_len,
+    })
+}
+
+/// Applies one `SealEvidence` (0x0901) request to the committed `current` state, writing the
+/// whole next state into `next` (at least `MAX_STATE_BYTES`) and its `EvidenceSealed` event
+/// into `event`; `scratch` holds at least [`SEAL_SCRATCH_BYTES`]. Dispatch arm:
+/// `dispatch::SealEvidence => evidence::apply(&ctx, &envelope, current, next, scratch, event)`.
+/// It must be admitted before the evaluator's `CommitScore`.
+///
+/// # Errors
+/// `UNKNOWN_OPERATION`; `NON_CANONICAL` for a malformed payload, zero root or digest, or an
+/// inconsistent committed state; `BAD_VERSION`; envelope principal, domain and expiry
+/// refusals; `WRONG_MARKET`; `WRONG_EPOCH` (also with no opened epoch), `WRONG_CONFIG` and
+/// `WRONG_ROSTER` for a binding other than the opened epoch's; `F03_NO_GRANT`,
+/// `UNAUTHORIZED`, `KEY_MISMATCH`, `BAD_SIGNATURE`, `REVOKED`, `EXPIRED`,
+/// `F03_GRANT_VERSION_CONFLICT` and `F03_KEY_VERSION_CONFLICT` for evaluator authority;
+/// `NOT_FOUND` without a bound evaluator slot; common replay refusals; `WRONG_PHASE` outside
+/// `[T+64, T+80)`; `EVIDENCE_BINDING` for a mode, task policy, rubric or task set other than
+/// the frozen ones; `F09_EVIDENCE_TASK_SET_UNSEALED` before the explicit F01 task-set seal;
+/// `F09_EVIDENCE_SEAL_CONFLICT` for a different claim of an already sealed evaluator;
+/// `CAPACITY` and `F01_CAPACITY_UNAVAILABLE`. On any error `current` is unchanged and the
+/// outputs must be discarded.
+pub fn apply(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Outcome> {
+    if envelope.envelope.operation != dispatch::SealEvidence {
+        return Err(UNKNOWN_OPERATION);
+    }
+    let opened = opened(current)?;
+    let payload = SealPayload::parse(envelope.envelope.payload)?;
+    let call = Call {
+        ctx,
+        envelope,
+        opened: &opened,
+    };
+    call.check_binding()?;
+    let frozen = call.authenticate()?;
+    let request = call.request(frozen.entry.owner)?;
+    let replay = &opened.state.control.replay;
+    if let ReplayDecision::AlreadyApplied(retained) = replay.check(&request, ctx.height)? {
+        return Ok(Outcome::Retained(retained));
+    }
+    let origin = opened.section.header.origin_height;
+    HeightWindow::epoch(origin, opened.frozen.epoch, COMMIT_OPENS, COMMIT_CLOSES)?
+        .check(ctx.height)?;
+    let seal = call.claim(&frozen, &payload)?;
+    if let Some(stored) = opened.region.get(opened.frozen.epoch, seal.evaluator)? {
+        return if stored.same_claim(&seal) {
+            Ok(Outcome::AlreadyApplied { seal: stored })
+        } else {
+            Err(F09_EVIDENCE_SEAL_CONFLICT)
+        };
+    }
+    commit(&call, &seal, &request, next, scratch, event)
+}
+
+/// R10 transition of one owning record's root field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootBind {
+    /// The owning operation stores this root with its record.
+    Bound(Digest32),
+    /// The record already holds exactly this root; nothing changes.
+    AlreadyBound(Digest32),
+}
+
+/// R10 immutable root binding inside an owning F01/F02/F03 operation, after that operation's
+/// own authority and phase checks. `stored` is the record's current root and `frozen` whether
+/// the record has frozen. The request carries only the root, never a locator or object bytes.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero mandatory root; `CONFLICT` when a different root is
+/// already bound (a later upload never overwrites it); `WRONG_PHASE` when an unbound record
+/// has already frozen.
+pub fn bind_root(stored: Option<Digest32>, frozen: bool, root: [u8; 32]) -> CodecResult<RootBind> {
+    let root = Digest32::new(root)?;
+    match stored {
+        Some(bound) if bound == root => Ok(RootBind::AlreadyBound(root)),
+        Some(_) => Err(CONFLICT),
+        None if frozen => Err(WRONG_PHASE),
+        None => Ok(RootBind::Bound(root)),
+    }
+}
+
+/// Offchain admission of the manifest behind a root an owning operation binds: exact context,
+/// subject and kind, and the exact manifest root.
+///
+/// # Errors
+/// Propagates `decode_manifest` refusals; returns `InvalidContext` for another network,
+/// program, market, policy, epoch or subject; `UnsupportedKind` for another field kind;
+/// `RootMismatch` when the manifest root differs from `root`.
+pub fn check_root_binding(
+    manifest: &[u8],
+    context: &ArtifactContext,
+    subject: SubjectContext,
+    kind: ArtifactKind,
+    root: [u8; 32],
+) -> ArtifactResult<ArtifactManifestRoot> {
+    let decoded = decode_manifest(manifest)?;
+    check_manifest_context(&decoded, context, subject)?;
+    if decoded.kind != kind {
+        return Err(ArtifactError::UnsupportedKind);
+    }
+    let bound = manifest_root(manifest)?;
+    if bound.bytes() != root {
+        return Err(ArtifactError::RootMismatch);
+    }
+    Ok(bound)
+}
+
+/// One verifier conclusion; never collapsed into a single verified flag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Conclusion {
+    Holds,
+    Fails(ArtifactError),
+    /// The supplied proof cannot establish this property.
+    Unproven,
+}
+impl Conclusion {
+    fn of(result: ArtifactResult<()>) -> Self {
+        result.map_or_else(Self::Fails, |()| Self::Holds)
+    }
+}
+
+/// R19 conclusion vector of one minimal evidence proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Conclusions {
+    pub binding: Conclusion,
+    pub signatures: Conclusion,
+    pub integrity: Conclusion,
+    pub availability: Conclusion,
+    pub rights: Conclusion,
+    pub reproduction: Conclusion,
+    pub quality: Conclusion,
+}
+
+/// One F02 task/result record of a minimal proof: the task's worker binding and its roots.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProvenTask {
+    pub task: TaskId,
+    pub worker: WorkerId,
+    pub generation: Version,
+    pub model_root: [u8; 32],
+    pub request_root: [u8; 32],
+    pub result_root: [u8; 32],
+}
+
+/// R19 minimal proof. `seal` and `binding` come from the authenticated finality reference;
+/// `report` is the admitted F03 report; `manifest` the exact evidence bytes; `tasks` the F02
+/// task/result records; `publishers` the publisher envelopes the tasks require.
+#[derive(Clone, Copy, Debug)]
+pub struct EvidenceProof<'a> {
+    pub seal: EvidenceSeal,
+    pub binding: EvaluatorBinding,
+    pub policy: EvidencePolicy,
+    pub report: &'a ReportBody<'a>,
+    pub manifest: &'a [u8],
+    pub tasks: &'a [ProvenTask],
+    pub publishers: &'a [&'a [u8]],
+}
+
+fn proof_integrity(proof: &EvidenceProof<'_>) -> ArtifactResult<()> {
+    let root = evidence_root(proof.manifest, &proof.policy)?;
+    if root == proof.seal.root && root == proof.report.evidence {
+        Ok(())
+    } else {
+        Err(ArtifactError::RootMismatch)
+    }
+}
+
+fn proof_context(proof: &EvidenceProof<'_>, manifest: &EvidenceManifest<'_>) -> ArtifactResult<()> {
+    let seal = &proof.seal;
+    let claimed = EvaluatorBinding {
+        frozen: proof.binding.frozen,
+        evaluator: seal.evaluator,
+        grant: seal.grant,
+        key_version: seal.key_version,
+    };
+    if manifest.binding != proof.binding
+        || proof.report.binding != proof.binding
+        || claimed != proof.binding
+        || manifest.task_policy != seal.task_policy
+        || manifest.task_set != seal.task_set
+        || manifest.rubric != seal.rubric
+        || manifest.mode != seal.mode
+    {
+        return Err(ArtifactError::InvalidContext);
+    }
+    Ok(())
+}
+
+/// Report score pairs equal the manifest worker groups and every manifest task matches its F02
+/// record exactly; the F02 records name no other task.
+fn proof_records(proof: &EvidenceProof<'_>, manifest: &EvidenceManifest<'_>) -> ArtifactResult<()> {
+    let mut scores = proof.report.scores.entries();
+    let mut tasks = 0usize;
+    for group in &manifest.groups {
+        let group = group?;
+        let score = scores.next().ok_or(ArtifactError::InvalidContext)??;
+        if score.worker != group.worker || score.score != group.score {
+            return Err(ArtifactError::InvalidContext);
+        }
+        for entry in &group.tasks {
+            let entry = entry?;
+            let record = proof
+                .tasks
+                .iter()
+                .find(|t| t.task == entry.task)
+                .ok_or(ArtifactError::InvalidContext)?;
+            if record.worker != group.worker
+                || record.generation != group.generation
+                || record.model_root != group.model_root
+                || record.request_root != entry.request_root
+                || record.result_root != entry.result_root
+            {
+                return Err(ArtifactError::InvalidContext);
+            }
+            tasks += 1;
+        }
+    }
+    if scores.next().is_some() || tasks != proof.tasks.len() {
+        return Err(ArtifactError::InvalidContext);
+    }
+    Ok(())
+}
+
+fn proof_binding(proof: &EvidenceProof<'_>) -> ArtifactResult<()> {
+    let manifest = decode_evidence_manifest(proof.manifest, &proof.policy)?;
+    proof_context(proof, &manifest)?;
+    proof_records(proof, &manifest)
+}
+
+/// Every publisher envelope verifies and attributes a root one proven task binds.
+fn proof_signatures(proof: &EvidenceProof<'_>) -> Conclusion {
+    if proof.publishers.is_empty() {
+        return Conclusion::Unproven;
+    }
+    Conclusion::of(proof.publishers.iter().try_for_each(|bytes| {
+        let verified =
+            verify_publisher(&decode_envelope(bytes)?).map_err(|failure| match failure {
+                VerificationFailure::Artifact(error) => error,
+                VerificationFailure::Host(_) => ArtifactError::SignatureInvalid,
+            })?;
+        let root = verified.root.bytes();
+        if proof
+            .tasks
+            .iter()
+            .any(|t| [t.model_root, t.request_root, t.result_root].contains(&root))
+        {
+            Ok(())
+        } else {
+            Err(ArtifactError::InvalidContext)
+        }
+    }))
+}
+
+/// Verifies a minimal evidence proof into its R19 conclusion vector. Availability, rights,
+/// reproduction and quality stay `Unproven`: no root, seal or chunk proof establishes complete
+/// availability, benchmark coverage or AI quality; an accepted seal is an authorized claim.
+#[must_use]
+pub fn verify_evidence_proof(proof: &EvidenceProof<'_>) -> Conclusions {
+    Conclusions {
+        binding: Conclusion::of(proof_binding(proof)),
+        signatures: proof_signatures(proof),
+        integrity: Conclusion::of(proof_integrity(proof)),
+        availability: Conclusion::Unproven,
+        rights: Conclusion::Unproven,
+        reproduction: Conclusion::Unproven,
+        quality: Conclusion::Unproven,
+    }
 }
