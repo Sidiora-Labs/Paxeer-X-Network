@@ -35904,7 +35904,7 @@ worker_role_id = "W-F10-PYTHON"
 
 [task.ai.F08-T02]
 title = "Implement complete pure roster rollover"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 22
 requires = ["ai.F08-T01", "ai.F06-T02"]

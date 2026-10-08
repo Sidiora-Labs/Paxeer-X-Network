@@ -781,3 +781,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F03-T02-verify-1.log"
 observed = "F03 stores its evaluator region after the F02 worker table in the IdentityRoster section, but workers.rs and queries.rs decode that section strictly as a WorkerTable and F02 apply would drop the suffix."
 assumption = "Cross-task contradiction owned by FM-CORE; fixed by an integration task that routes both decoders through authority::split_identity_section and preserves the suffix, with the four affected gates rerun once."
+
+[qualification.ai-f08-t02-open-epoch-composer-20261008-01]
+revision = "b0b538a25"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test roster_transition"
+exit_code = 0
+log = "private ops log wt/logs/ai.F08-T02-verify-1.log"
+observed = "Rollover is pure and leaves undone what needs a common OpenEpoch composer: revision bump, replay record, RosterOpened event, F01 activate_pending_policy, F06 reserve_epoch, F03 authority::open_epoch, a worker payout recipient in F02, a fixed section-3 layout for F05/F06 and an F05 terminal record; header.state_revision drifts from SharedState.revision after non-F01 operations."
+assumption = "ai.F01-T03-EPOCH owns the composer and must resolve each item or record it; F02 recipient binding and the section-3 layout are decided there before F05-T03/F06-T03."

@@ -5052,3 +5052,15 @@ text = "layerxd --serve needs a live Paxeer JSON-RPC at startup: the finality au
 [gotcha.1087]
 area = "layerxd"
 text = "sequencer.env must not carry LAYERX_NODE_SEQUENCER_PRIVATE_KEY; launch through platform/hosted/node/sequencer-env.sh layerx_sequencer_environment. bootstrap.sh requires SETTLEMENT_CONTRACT and CHECKPOINT_REGISTRY at the anchor precompile 0x...1014."
+
+[gotcha.1088]
+area = "programs/ai-market"
+text = "clippy too_many_lines (pedantic, deny) applies to library functions too: keep public composers under 100 lines by splitting the gates into helpers; wildcard_imports is denied, so test files need explicit imports."
+
+[gotcha.1089]
+area = "programs/ai-market"
+text = "F01 CreateMarket yields lifecycle REGISTERED (1); roster rollover and admission must treat lifecycle 1 as live. PrincipalId's tuple field is private; build it with PrincipalId::new."
+
+[gotcha.1090]
+area = "programs/ai-market"
+text = "F02 AcceptEnrollment sets effective_epoch = clock+1 even before the first epoch opens, which clashes with F08 bootstrap epoch 0; rollover applies the F02 effective epoch only to a changed key version, never to the first install."
