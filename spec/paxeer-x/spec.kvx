@@ -24675,7 +24675,7 @@ escalation = "Refer missing native architecture, archive trust, deployed resourc
 evidence = "revision, command, exit code, log path"
 
 [integration.ai-markets]
-implementation_tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-CLOSE", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04", "ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04", "ai.F04-T01", "ai.F04-T02", "ai.F04-T03", "ai.F05-T01", "ai.F05-T02", "ai.F05-T03", "ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04", "ai.F07-T01", "ai.F07-T02", "ai.F07-T03", "ai.F08-T01", "ai.F08-T02", "ai.F08-T03", "ai.F09-T01", "ai.F09-T02", "ai.F09-T03", "ai.F09-T04", "ai.F10-T01", "ai.F10-T02", "ai.F10-T02-FULL", "ai.F10-T03", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.P-DEPLOYMENT", "ai.P-REAL-SERVICES", "ai.P-STORAGE-PROFILE", "ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04", "ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.T-S04"]
+implementation_tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-CLOSE", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04", "ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04", "ai.F04-T01", "ai.F04-T02", "ai.F04-T03", "ai.F05-T01", "ai.F05-T02", "ai.F05-T03", "ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04", "ai.F07-T01", "ai.F07-T02", "ai.F07-T03", "ai.F08-T01", "ai.F08-T02", "ai.F08-T03", "ai.F09-T01", "ai.F09-T02", "ai.F09-T03", "ai.F09-T04", "ai.F10-T01", "ai.F10-T02", "ai.F10-T02-FULL", "ai.F10-T03", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.INTEG-IDENTITY-SECTION", "ai.P-DEPLOYMENT", "ai.P-REAL-SERVICES", "ai.P-STORAGE-PROFILE", "ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04", "ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.T-S04"]
 implementation_terminals = ["ai.F01-T03-CLOSE", "ai.F01-T04-SERVICE", "ai.F02-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F09-T04", "ai.F10-T02-FULL", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07"]
 candidate_tasks = ["60.1", "113.5"]
 deployment_tasks = ["60.2", "60.4", "60.5", "60.6", "113.11", "113.12", "113.16"]
@@ -35933,12 +35933,43 @@ acceptance_cases = ["AI.F08-A01", "AI.F08-A02", "AI.F08-A05", "AI.F08-A06", "AI.
 paths = ["programs/crates/layerx-programs-ai-market/src/roster.rs", "programs/crates/layerx-programs-ai-market/tests/roster_transition.rs"]
 worker_role_id = "W-F08-ROLLOVER"
 
+[task.ai.INTEG-IDENTITY-SECTION]
+title = "Route every IdentityRoster reader through the shared section split"
+status = "pending"
+mode = "BUILD"
+wave = 23
+requires = ["ai.F02-T01", "ai.F03-T02", "ai.F10-T01"]
+reqs = ["AI.F02-R001", "AI.F03-R03", "AI.F10-R006", "AI.CORE"]
+do_1 = "Since ai.F03-T02 the IdentityRoster section is the F02 worker table prefix followed by the F03 evaluator region. workers.rs and queries.rs still decode the whole section as a WorkerTable and workers::apply rewrites only the table, dropping the region. Decode the prefix through evaluators::authority::split_identity_section at every reader, and on every rewrite emit the encoded worker table followed by the untouched region bytes within Section::IdentityRoster.payload_cap(); CAPACITY on overflow, no behaviour change otherwise."
+do_2 = "Add tests/identity_section_sharing.rs proving: a state whose section carries a non-empty evaluator region decodes through workers and queries, every F02 transition preserves the region byte-for-byte, and a worker table that would push the region past the cap is refused without mutation."
+do_3 = "Honor named shared writers: FM-CORE owns this integration; evaluators/authority.rs, roster.rs and epoch.rs are not touched. Preserve unrelated owner changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
+manager = "FM-CORE"
+worker_role = "Programs state integration specialist"
+worker = "W-INTEG-IDENTITY-SECTION"
+deliverables = ["workers.rs and queries.rs read the worker prefix via split_identity_section and every rewrite preserves the evaluator region.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test identity_section_sharing --test workers_lifecycle --test view_binding --test f03_evaluator_authority", "Exact revision, command, exit code and private log path."]
+entry_condition = "ai.F02-T01, ai.F03-T02 and ai.F10-T01 landed on main with passed evidence."
+touches = ["programs/crates/layerx-programs-ai-market/src/workers.rs", "programs/crates/layerx-programs-ai-market/src/queries.rs", "programs/crates/layerx-programs-ai-market/tests/identity_section_sharing.rs"]
+build_cmd = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test identity_section_sharing --test workers_lifecycle --test view_binding --test f03_evaluator_authority"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified after two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+local_wave = 9
+acceptance_cases = ["AI.F02-A01", "AI.F03-A02", "AI.F10-A02"]
+paths = ["programs/crates/layerx-programs-ai-market/src/workers.rs", "programs/crates/layerx-programs-ai-market/src/queries.rs", "programs/crates/layerx-programs-ai-market/tests/identity_section_sharing.rs"]
+worker_role_id = "W-CORE-INTEG"
+
 [task.ai.F01-T03-EPOCH]
 title = "Open epochs with complete frozen snapshots"
 status = "pending"
 mode = "BUILD"
 wave = 23
-requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02"]
+requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02", "ai.INTEG-IDENTITY-SECTION"]
 reqs = ["AI.F01-R015", "AI.F01-R020", "AI.F01-R027", "AI.F01-R028", "AI.F01-R029", "AI.F01-R030", "AI.F01-R036", "AI.F01-R037", "AI.CORE"]
 do_1 = "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers. A10 overflow witness uses actual checked OpenEpoch arithmetic and refuses T+128 overflow without mutation. Its recorded producer result can be consumed by T02; do not rerun its gate or write another F01 implementation."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
