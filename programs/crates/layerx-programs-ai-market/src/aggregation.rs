@@ -1,7 +1,15 @@
 //! F05 schema-1 integer aggregation over already validated bounded views.
 //! Unweighted lower median, fixed quorum three, absent votes excluded, checked
 //! raw weight sums and display-only ppm ratios. No transfer or entitlement here.
-use crate::{aggregation_codec::*, errors::*, types::*};
+use crate::{
+    aggregation_codec::{
+        AggregationInputView, QualityStatus, WorkerAggregate, WorkerVotes, MAX_TOTAL_WEIGHT,
+    },
+    errors::{
+        CodecResult, ARITHMETIC, CAPACITY, F05_REPORT_INVARIANT, NON_CANONICAL, STALE_CURSOR,
+    },
+    types::{EvaluatorId, Presence, Score, WorkerRosterEntry},
+};
 
 pub const QUORUM: usize = 3;
 pub const MAX_VOTES: usize = 8;
@@ -20,6 +28,10 @@ pub struct Median {
 
 /// Sorts a bounded copy and selects a[floor((n-1)/2)] when n >= quorum.
 /// Fewer than three votes yield absent quality, never a measured zero.
+///
+/// # Errors
+/// Returns `CAPACITY` for more than `MAX_VOTES` scores and `ARITHMETIC` when the comparison
+/// count overflows or exceeds `MAX_COMPARISONS_PER_WORKER`.
 pub fn lower_median(scores: &[Score]) -> CodecResult<Median> {
     if scores.len() > MAX_VOTES {
         return Err(CAPACITY);
@@ -58,6 +70,11 @@ pub fn lower_median(scores: &[Score]) -> CodecResult<Median> {
 }
 
 /// Votes must be the canonical projection in ascending distinct evaluator identity.
+///
+/// # Errors
+/// Returns `CAPACITY` for more than `MAX_VOTES` votes, `NON_CANONICAL` for a missing vote slot
+/// or an invalid output and `F05_REPORT_INVARIANT` when evaluators are not strictly ascending;
+/// propagates `lower_median` refusals.
 pub fn aggregate_votes(votes: &WorkerVotes) -> CodecResult<WorkerAggregate> {
     if votes.len() > MAX_VOTES {
         return Err(CAPACITY);
@@ -88,6 +105,11 @@ pub fn aggregate_votes(votes: &WorkerVotes) -> CodecResult<WorkerAggregate> {
     )
 }
 
+/// Aggregates one frozen roster worker from the structural view.
+///
+/// # Errors
+/// Propagates `worker_votes` (`F05_REPORT_INVARIANT`, `CAPACITY`, score-cell decode) and
+/// `aggregate_votes` refusals.
 pub fn aggregate_worker(
     view: &AggregationInputView<'_>,
     worker: WorkerRosterEntry,
@@ -96,6 +118,9 @@ pub fn aggregate_worker(
 }
 
 /// Checked raw weight sum; exceeding the 32-worker maximum is an invariant failure.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when the sum overflows or exceeds `MAX_TOTAL_WEIGHT`.
 pub fn add_weight(running: u64, output: WorkerAggregate) -> CodecResult<u64> {
     let sum = running
         .checked_add(u64::from(output.weight()))
@@ -106,6 +131,11 @@ pub fn add_weight(running: u64, output: WorkerAggregate) -> CodecResult<u64> {
     Ok(sum)
 }
 
+/// Checked sum of every output weight.
+///
+/// # Errors
+/// Returns `CAPACITY` for more than `MAX_WORKERS` outputs and `ARITHMETIC` when the sum
+/// overflows or exceeds `MAX_TOTAL_WEIGHT`.
 pub fn total_weight(outputs: &[WorkerAggregate]) -> CodecResult<u64> {
     if outputs.len() > MAX_WORKERS {
         return Err(CAPACITY);
@@ -113,8 +143,12 @@ pub fn total_weight(outputs: &[WorkerAggregate]) -> CodecResult<u64> {
     outputs.iter().try_fold(0, |sum, v| add_weight(sum, *v))
 }
 
-/// floor(1_000_000 * weight / total) for client display only. W = 0 has no
+/// `floor(1_000_000 * weight / total)` for client display only. W = 0 has no
 /// positive proportions and returns Absent: no equal or fallback share exists.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when `total` exceeds `MAX_TOTAL_WEIGHT` or `weight` exceeds `total` or
+/// 1,000,000.
 pub fn display_share_ppm(weight: u32, total: u64) -> CodecResult<Presence<u32>> {
     if total > MAX_TOTAL_WEIGHT || u64::from(weight) > total || weight > 1_000_000 {
         return Err(ARITHMETIC);
@@ -131,7 +165,7 @@ pub fn display_share_ppm(weight: u32, total: u64) -> CodecResult<Presence<u32>> 
     ))
 }
 
-/// One bounded resumable step: exactly min(8, worker_count - cursor) frozen
+/// One bounded resumable step: exactly min(8, `worker_count` - cursor) frozen
 /// workers in canonical order, extending the checked running sum.
 #[derive(Clone, Debug)]
 pub struct Chunk {
@@ -141,18 +175,26 @@ pub struct Chunk {
     running_weight: u64,
 }
 impl Chunk {
+    #[must_use]
     pub fn len(&self) -> usize {
         self.count
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.count == 0
     }
+    #[must_use]
     pub fn cursor(&self) -> u16 {
         self.cursor
     }
+    #[must_use]
     pub fn running_weight(&self) -> u64 {
         self.running_weight
     }
+    /// Output at `index`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when `index` is outside the recorded outputs.
     pub fn output(&self, index: usize) -> CodecResult<WorkerAggregate> {
         self.outputs
             .get(index)
@@ -163,6 +205,12 @@ impl Chunk {
     }
 }
 
+/// Aggregates the next chunk of frozen workers starting at `cursor`.
+///
+/// # Errors
+/// Returns `CAPACITY` for more than `MAX_WORKERS` workers, `NON_CANONICAL` for an unordered
+/// roster and `STALE_CURSOR` when `cursor` is past the roster end; propagates
+/// `aggregate_worker` and `add_weight` refusals.
 pub fn aggregate_chunk(
     view: &AggregationInputView<'_>,
     cursor: u16,
@@ -203,15 +251,22 @@ pub struct EpochWeights {
     total: u64,
 }
 impl EpochWeights {
+    #[must_use]
     pub fn len(&self) -> usize {
         self.count
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.count == 0
     }
+    #[must_use]
     pub fn total_weight(&self) -> u64 {
         self.total
     }
+    /// Output at `index`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when `index` is outside the recorded outputs.
     pub fn output(&self, index: usize) -> CodecResult<WorkerAggregate> {
         self.outputs
             .get(index)
@@ -220,11 +275,20 @@ impl EpochWeights {
             .filter(|_| index < self.count)
             .ok_or(NON_CANONICAL)
     }
+    /// Display-only share of the output at `index`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when `index` is out of range; propagates `display_share_ppm`
+    /// refusals.
     pub fn display_share_ppm(&self, index: usize) -> CodecResult<Presence<u32>> {
         display_share_ppm(self.output(index)?.weight(), self.total)
     }
 }
 
+/// Aggregates every frozen worker chunk by chunk into one epoch result.
+///
+/// # Errors
+/// Propagates `aggregate_chunk` refusals.
 pub fn aggregate_epoch(view: &AggregationInputView<'_>) -> CodecResult<EpochWeights> {
     let mut outputs = [None; MAX_WORKERS];
     let mut cursor = 0u16;

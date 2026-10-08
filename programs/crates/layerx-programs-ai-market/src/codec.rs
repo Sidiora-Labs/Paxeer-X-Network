@@ -2,9 +2,20 @@
 //! Caller-provided output buffers are transport scratch, never authoritative state.
 use crate::{
     dispatch::{CallBoundary, Operation, SequencePolicy},
-    errors::*,
-    types::*,
-    *,
+    errors::{
+        ApplicationError, CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT, EXPIRED,
+        F03_NO_SCORES, NON_CANONICAL, UNAUTHORIZED, UNKNOWN_OPERATION, WRONG_CONFIG, WRONG_DOMAIN,
+        WRONG_EPOCH, WRONG_MARKET, WRONG_PROGRAM, WRONG_ROSTER,
+    },
+    types::{
+        AccountId, AttestationDigest, Authentication, ChainDomain, CommitmentDigest, Digest32,
+        EvaluatorBinding, EvaluatorId, EvaluatorRosterEntry, EvidenceRoot, FrozenBinding, MarketId,
+        MetadataDigest, Presence, PrincipalId, ProgramId, PublicKey32, ReportDigest, RequestDigest,
+        RequestId, ResultDigest, RosterDigest, RubricDigest, Salt32, Score, ScoreEntry,
+        Signature64, StateDigest, TaskId, Version, WorkerId, WorkerRosterEntry,
+    },
+    MAX_CHUNK_BYTES, MAX_ENVELOPE_BYTES, MAX_EVENT_BYTES, MAX_PAYLOAD_BYTES, MAX_RESULT_BYTES,
+    MAX_RESULT_PAYLOAD_BYTES, MAX_STATE_BYTES, MAX_WORKERS, SCHEMA_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -25,39 +36,74 @@ pub struct Reader<'a> {
     offset: usize,
 }
 impl<'a> Reader<'a> {
+    #[must_use]
     pub const fn new(input: &'a [u8]) -> Self {
         Self { input, offset: 0 }
     }
+    #[must_use]
     pub const fn offset(&self) -> usize {
         self.offset
     }
+    #[must_use]
     pub fn remaining(&self) -> usize {
         self.input.len() - self.offset
     }
+    /// Consumes exactly `length` bytes.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when the end offset overflows; `NON_CANONICAL` when fewer than `length` bytes remain.
     pub fn take(&mut self, length: usize) -> CodecResult<&'a [u8]> {
         let end = self.offset.checked_add(length).ok_or(ARITHMETIC)?;
         let bytes = self.input.get(self.offset..end).ok_or(NON_CANONICAL)?;
         self.offset = end;
         Ok(bytes)
     }
+    /// Consumes a fixed `N`-byte array.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn fixed<const N: usize>(&mut self) -> CodecResult<[u8; N]> {
         self.take(N)?.try_into().map_err(|_| NON_CANONICAL)
     }
+    /// Reads one byte.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn u8(&mut self) -> CodecResult<u8> {
         Ok(self.fixed::<1>()?[0])
     }
+    /// Reads a big-endian `u16`.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn u16(&mut self) -> CodecResult<u16> {
         Ok(u16::from_be_bytes(self.fixed()?))
     }
+    /// Reads a big-endian `u32`.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn u32(&mut self) -> CodecResult<u32> {
         Ok(u32::from_be_bytes(self.fixed()?))
     }
+    /// Reads a big-endian `u64`.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn u64(&mut self) -> CodecResult<u64> {
         Ok(u64::from_be_bytes(self.fixed()?))
     }
+    /// Reads a big-endian `u128`.
+    ///
+    /// # Errors
+    /// Propagates `take`'s `ARITHMETIC`/`NON_CANONICAL` refusals.
     pub fn u128(&mut self) -> CodecResult<u128> {
         Ok(u128::from_be_bytes(self.fixed()?))
     }
+    /// Reads a canonical boolean byte.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the byte is neither 0 nor 1; propagates `take`'s refusals.
     pub fn boolean(&mut self) -> CodecResult<bool> {
         match self.u8()? {
             0 => Ok(false),
@@ -65,6 +111,10 @@ impl<'a> Reader<'a> {
             _ => Err(NON_CANONICAL),
         }
     }
+    /// Reads a presence flag, then the value with `decode` when present.
+    ///
+    /// # Errors
+    /// Propagates the flag's `boolean` refusals and any refusal from `decode`.
     pub fn presence<T>(
         &mut self,
         decode: impl FnOnce(&mut Self) -> CodecResult<T>,
@@ -75,6 +125,10 @@ impl<'a> Reader<'a> {
             Ok(Presence::Absent)
         }
     }
+    /// Consumes `length` reserved bytes that must be zero.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when any reserved byte is nonzero; propagates `take`'s refusals.
     pub fn reserved(&mut self, length: usize) -> CodecResult<()> {
         if self.take(length)?.iter().any(|b| *b != 0) {
             Err(NON_CANONICAL)
@@ -82,6 +136,10 @@ impl<'a> Reader<'a> {
             Ok(())
         }
     }
+    /// Reads a `u32` length-prefixed byte string of at most `cap` bytes.
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` when the length exceeds `cap`; `ARITHMETIC` when it does not fit `usize`; propagates `take`'s refusals.
     pub fn bytes(&mut self, cap: usize) -> CodecResult<&'a [u8]> {
         let length = usize::try_from(self.u32()?).map_err(|_| ARITHMETIC)?;
         if length > cap {
@@ -89,6 +147,10 @@ impl<'a> Reader<'a> {
         }
         self.take(length)
     }
+    /// Reads a `u16` count, then `count * element_bytes` bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the count is below `minimum`; `CAPACITY` when above `maximum`; `ARITHMETIC` when the byte length overflows; propagates `take`'s refusals.
     pub fn vector_bytes(
         &mut self,
         minimum: usize,
@@ -104,6 +166,10 @@ impl<'a> Reader<'a> {
         }
         self.take(count.checked_mul(element_bytes).ok_or(ARITHMETIC)?)
     }
+    /// Requires that all input was consumed.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when unread input remains.
     pub fn finish(self) -> CodecResult<()> {
         if self.offset == self.input.len() {
             Ok(())
@@ -121,12 +187,18 @@ impl<'a> Writer<'a> {
     pub fn new(output: &'a mut [u8]) -> Self {
         Self { output, offset: 0 }
     }
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.offset
     }
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.offset == 0
     }
+    /// Appends `bytes`.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when the end offset overflows; `CAPACITY` when the output buffer is too small.
     pub fn put(&mut self, bytes: &[u8]) -> CodecResult<()> {
         let end = self.offset.checked_add(bytes.len()).ok_or(ARITHMETIC)?;
         self.output
@@ -136,24 +208,52 @@ impl<'a> Writer<'a> {
         self.offset = end;
         Ok(())
     }
+    /// Writes one byte.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn u8(&mut self, value: u8) -> CodecResult<()> {
         self.put(&[value])
     }
+    /// Writes a big-endian `u16`.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn u16(&mut self, value: u16) -> CodecResult<()> {
         self.put(&value.to_be_bytes())
     }
+    /// Writes a big-endian `u32`.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn u32(&mut self, value: u32) -> CodecResult<()> {
         self.put(&value.to_be_bytes())
     }
+    /// Writes a big-endian `u64`.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn u64(&mut self, value: u64) -> CodecResult<()> {
         self.put(&value.to_be_bytes())
     }
+    /// Writes a big-endian `u128`.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn u128(&mut self, value: u128) -> CodecResult<()> {
         self.put(&value.to_be_bytes())
     }
+    /// Writes a canonical boolean byte.
+    ///
+    /// # Errors
+    /// Propagates `put`'s `ARITHMETIC`/`CAPACITY` refusals.
     pub fn boolean(&mut self, value: bool) -> CodecResult<()> {
         self.u8(u8::from(value))
     }
+    /// Writes a presence flag, then the value with `encode` when present.
+    ///
+    /// # Errors
+    /// Propagates `put`'s refusals and any refusal from `encode`.
     pub fn presence<T>(
         &mut self,
         value: &Presence<T>,
@@ -167,6 +267,10 @@ impl<'a> Writer<'a> {
             }
         }
     }
+    /// Writes a `u32` length-prefixed byte string of at most `cap` bytes.
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` when `bytes` exceeds `cap` or the output is too small; `ARITHMETIC` when the length does not fit `u32` or the offset overflows.
     pub fn bytes(&mut self, bytes: &[u8], cap: usize) -> CodecResult<()> {
         if bytes.len() > cap {
             return Err(CAPACITY);
@@ -183,12 +287,16 @@ fn output_size(output: &[u8], size: usize, cap: usize) -> CodecResult<()> {
     }
 }
 fn schema(r: &mut Reader<'_>) -> CodecResult<()> {
-    if r.u16()? != SCHEMA_VERSION {
-        Err(BAD_VERSION)
-    } else {
+    if r.u16()? == SCHEMA_VERSION {
         Ok(())
+    } else {
+        Err(BAD_VERSION)
     }
 }
+/// Parses canonical unsigned decimal text.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for empty, over-39-digit, leading-zero or non-digit text; `ARITHMETIC` when the value overflows `u128`.
 pub fn decimal_u128(text: &str) -> CodecResult<u128> {
     let b = text.as_bytes();
     if b.is_empty() || b.len() > 39 || (b.len() > 1 && b[0] == b'0') {
@@ -206,6 +314,10 @@ pub fn decimal_u128(text: &str) -> CodecResult<u128> {
     }
     Ok(value)
 }
+/// Parses canonical unsigned decimal text into a `u64`.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for text over 20 bytes or rejected by `decimal_u128`; `ARITHMETIC` when the value overflows.
 pub fn decimal_u64(text: &str) -> CodecResult<u64> {
     if text.len() > 20 {
         return Err(NON_CANONICAL);
@@ -214,6 +326,9 @@ pub fn decimal_u64(text: &str) -> CodecResult<u64> {
 }
 
 /// Exact H(D,B). Domain must be nonempty ASCII without an embedded NUL.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the domain is empty, non-ASCII or contains NUL, or the digest is all zero.
 pub fn domain_hash(domain: &str, bytes: &[u8]) -> CodecResult<Digest32> {
     if domain.is_empty() || !domain.is_ascii() || domain.as_bytes().contains(&0) {
         return Err(NON_CANONICAL);
@@ -233,9 +348,17 @@ fn hash_parts(domain: &str, parts: &[&[u8]]) -> CodecResult<Digest32> {
     }
     Digest32::new(h.finalize().into())
 }
+/// Derives the market identity from chain and program.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the derived digest is all zero.
 pub fn derive_market(chain: ChainDomain, program: ProgramId) -> CodecResult<MarketId> {
     MarketId::new(hash_parts("PAXAI/market/v1", &[chain.as_bytes(), program.as_bytes()])?.bytes())
 }
+/// Derives a worker identity.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the derived digest is all zero.
 pub fn derive_worker(
     market: MarketId,
     owner: PrincipalId,
@@ -249,6 +372,10 @@ pub fn derive_worker(
         .bytes(),
     )
 }
+/// Derives an evaluator identity.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the derived digest is all zero.
 pub fn derive_evaluator(
     market: MarketId,
     owner: PrincipalId,
@@ -262,6 +389,10 @@ pub fn derive_evaluator(
         .bytes(),
     )
 }
+/// Derives a task identity.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the derived digest is all zero.
 pub fn derive_task(
     market: MarketId,
     epoch: u64,
@@ -282,6 +413,9 @@ pub fn derive_task(
     )
 }
 /// State owner calls this before inserting a derived identity. No retry nonce is invented.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when `candidate` is all zero; `CONFLICT` when it already exists.
 pub fn refuse_identity_collision(candidate: &[u8; 32], existing: &[[u8; 32]]) -> CodecResult<()> {
     if *candidate == [0; 32] {
         return Err(NON_CANONICAL);
@@ -315,9 +449,14 @@ pub struct ValidatedEnvelope<'a> {
     unsigned: &'a [u8],
 }
 impl<'a> ValidatedEnvelope<'a> {
+    #[must_use]
     pub const fn unsigned_bytes(&self) -> &'a [u8] {
         self.unsigned
     }
+    /// Request digest over the unsigned envelope bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the digest is all zero.
     pub fn request_digest(&self) -> CodecResult<RequestDigest> {
         RequestDigest::new(domain_hash("PAXAI/request/v1", self.unsigned)?.bytes())
     }
@@ -331,6 +470,10 @@ fn read_optional_roster(r: &mut Reader<'_>) -> CodecResult<Presence<RosterDigest
     }
 }
 impl Envelope<'_> {
+    /// Validates envelope structure and the fixed payloads it owns.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a bad payload length, zero expiry, or sequence, read-boundary or config violations; `UNAUTHORIZED` for a delegate on a non-delegable operation; `WRONG_ROSTER` for a missing roster outside pre-epoch registry calls; propagates chunk-request, score payload and binding refusals.
     pub fn validate(&self) -> CodecResult<()> {
         let m = self.operation.metadata();
         self.operation.validate_payload_length(self.payload.len())?;
@@ -379,6 +522,9 @@ impl Envelope<'_> {
         Ok(())
     }
     /// Pure comparison. `height` is not represented as authenticated Context.
+    ///
+    /// # Errors
+    /// Returns `EXPIRED` when `expiry` is zero or `height` has reached it.
     pub fn check_expiry(&self, height: u64) -> CodecResult<()> {
         if self.expiry == 0 || height >= self.expiry {
             Err(EXPIRED)
@@ -387,6 +533,9 @@ impl Envelope<'_> {
         }
     }
     /// Pure binding comparison; the host adapter must obtain authoritative values.
+    ///
+    /// # Errors
+    /// Returns `WRONG_DOMAIN`, `WRONG_PROGRAM` or `WRONG_MARKET` for the first mismatch, in that order.
     pub fn check_domain(
         &self,
         chain: ChainDomain,
@@ -407,6 +556,10 @@ impl Envelope<'_> {
 fn registry_before_epoch(selector: u16) -> bool {
     matches!(selector,0x0101..=0x010b|0x0111|0x0201..=0x0207|0x0209..=0x020a|0x0301..=0x0303|0x0601|0x0604|0x0801..=0x0804|0x0a01..=0x0a02)
 }
+/// Decodes and validates a request envelope.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input or payload exceeds its cap; `NON_CANONICAL` for a bad magic, zero identity, unknown authentication kind, short or trailing input; `BAD_VERSION` for a wrong schema; `UNKNOWN_OPERATION` for an unknown selector; propagates `Envelope::validate` refusals.
 pub fn decode_envelope(input: &[u8]) -> CodecResult<ValidatedEnvelope<'_>> {
     if input.len() > MAX_ENVELOPE_BYTES {
         return Err(CAPACITY);
@@ -456,6 +609,10 @@ pub fn decode_envelope(input: &[u8]) -> CodecResult<ValidatedEnvelope<'_>> {
     envelope.validate()?;
     Ok(ValidatedEnvelope { envelope, unsigned })
 }
+/// Encodes a validated envelope into `output`.
+///
+/// # Errors
+/// Propagates `Envelope::validate` refusals; returns `ARITHMETIC` on size overflow; `CAPACITY` when the size exceeds `MAX_ENVELOPE_BYTES` or `output` is too small.
 pub fn encode_envelope(value: &Envelope<'_>, output: &mut [u8]) -> CodecResult<usize> {
     value.validate()?;
     let size = ENVELOPE_PREFIX_BYTES
@@ -531,6 +688,10 @@ fn read_evaluator_binding(r: &mut Reader<'_>) -> CodecResult<EvaluatorBinding> {
     })
 }
 impl EvaluatorBinding {
+    /// Checks the envelope against this frozen binding.
+    ///
+    /// # Errors
+    /// Propagates `check_domain` refusals; returns `WRONG_EPOCH`, `WRONG_CONFIG` or `WRONG_ROSTER` for the first mismatch, in that order.
     pub fn matches_envelope(&self, e: &Envelope<'_>) -> CodecResult<()> {
         e.check_domain(self.frozen.chain, self.frozen.program, self.frozen.market)?;
         if e.epoch != self.frozen.epoch {
@@ -551,15 +712,21 @@ pub enum ScoreVector<'a> {
     Encoded(&'a [u8]),
 }
 impl ScoreVector<'_> {
+    #[must_use]
     pub fn len(&self) -> usize {
         match self {
             Self::Typed(v) => v.len(),
             Self::Encoded(v) => v.len() / 36,
         }
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// Validates a nonempty, bounded, strictly worker-ordered score vector.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a ragged encoding, zero worker or unordered workers; `F03_NO_SCORES` when empty; `CAPACITY` above `MAX_WORKERS`; `F03_SCORE_RANGE` for an out-of-range score.
     pub fn validate(&self) -> CodecResult<()> {
         if let Self::Encoded(v) = self {
             if v.len() % 36 != 0 {
@@ -582,6 +749,7 @@ impl ScoreVector<'_> {
         }
         Ok(())
     }
+    #[must_use]
     pub fn entries(&self) -> ScoreEntries<'_> {
         ScoreEntries {
             vector: *self,
@@ -622,6 +790,10 @@ pub struct ReportBody<'a> {
     pub evidence: EvidenceRoot,
     pub scores: ScoreVector<'a>,
 }
+/// Encodes a score report into `output`.
+///
+/// # Errors
+/// Propagates `ScoreVector::validate` refusals; returns `CAPACITY` when `output` is too small.
 pub fn encode_report(report: &ReportBody<'_>, output: &mut [u8]) -> CodecResult<usize> {
     report.scores.validate()?;
     let size = REPORT_FIXED_BYTES + 36 * report.scores.len();
@@ -638,6 +810,10 @@ pub fn encode_report(report: &ReportBody<'_>, output: &mut [u8]) -> CodecResult<
     }
     Ok(w.len())
 }
+/// Decodes and validates a score report.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input exceeds `REPORT_MAX_BYTES` or the count exceeds `MAX_WORKERS`; `BAD_VERSION` for a wrong schema; `F03_NO_SCORES` for a zero count; `NON_CANONICAL` for a zero identity, digest or version, short or trailing input; propagates `ScoreVector::validate` refusals.
 pub fn decode_report(input: &[u8]) -> CodecResult<ReportBody<'_>> {
     if input.len() > REPORT_MAX_BYTES {
         return Err(CAPACITY);
@@ -662,14 +838,26 @@ pub fn decode_report(input: &[u8]) -> CodecResult<ReportBody<'_>> {
         scores,
     })
 }
+/// Digest of the canonical report encoding.
+///
+/// # Errors
+/// Propagates `encode_report` refusals; returns `NON_CANONICAL` when the digest is all zero.
 pub fn report_digest(report: &ReportBody<'_>) -> CodecResult<ReportDigest> {
     let mut bytes = [0; REPORT_MAX_BYTES];
     let n = encode_report(report, &mut bytes)?;
     ReportDigest::new(domain_hash("PAXAI/score-report/v1", &bytes[..n])?.bytes())
 }
+/// Attestation digest over a report digest.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the digest is all zero.
 pub fn attestation_digest(report: ReportDigest) -> CodecResult<AttestationDigest> {
     AttestationDigest::new(domain_hash("PAXAI/score-attestation/v1", report.as_bytes())?.bytes())
 }
+/// Encodes the 256-byte commitment preimage.
+///
+/// # Errors
+/// Returns `CAPACITY` when `output` is shorter than 256 bytes.
 pub fn encode_commitment_preimage(
     binding: &EvaluatorBinding,
     report: ReportDigest,
@@ -683,6 +871,10 @@ pub fn encode_commitment_preimage(
     w.put(&salt.bytes())?;
     Ok(w.len())
 }
+/// Commitment digest over the binding, report digest and salt.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the digest is all zero.
 pub fn commitment_digest(
     binding: &EvaluatorBinding,
     report: ReportDigest,
@@ -697,6 +889,10 @@ pub struct CommitScorePayload {
     pub binding: EvaluatorBinding,
     pub commitment: CommitmentDigest,
 }
+/// Encodes a commit-score payload.
+///
+/// # Errors
+/// Returns `CAPACITY` when `out` is shorter than 224 bytes.
 pub fn encode_commit_score(v: &CommitScorePayload, out: &mut [u8]) -> CodecResult<usize> {
     output_size(out, 224, 224)?;
     let mut w = Writer::new(out);
@@ -704,6 +900,10 @@ pub fn encode_commit_score(v: &CommitScorePayload, out: &mut [u8]) -> CodecResul
     w.put(v.commitment.as_bytes())?;
     Ok(w.len())
 }
+/// Decodes a commit-score payload.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero identity, digest or version, short or trailing input.
 pub fn decode_commit_score(input: &[u8]) -> CodecResult<CommitScorePayload> {
     let mut r = Reader::new(input);
     let binding = read_evaluator_binding(&mut r)?;
@@ -720,6 +920,10 @@ pub struct RevealScorePayload<'a> {
     pub signature: Signature64,
     pub salt: Salt32,
 }
+/// Decodes a reveal-score payload.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input exceeds 1480 bytes or the report exceeds `REPORT_MAX_BYTES`; `F04_SALT_INVALID` for a zero salt; `NON_CANONICAL` for short or trailing input; propagates `decode_report` refusals.
 pub fn decode_reveal_score(input: &[u8]) -> CodecResult<RevealScorePayload<'_>> {
     if input.len() > 1480 {
         return Err(CAPACITY);
@@ -735,6 +939,10 @@ pub fn decode_reveal_score(input: &[u8]) -> CodecResult<RevealScorePayload<'_>> 
         salt,
     })
 }
+/// Encodes a reveal-score payload.
+///
+/// # Errors
+/// Propagates `ScoreVector::validate` and `encode_report` refusals; returns `CAPACITY` when `out` is too small.
 pub fn encode_reveal_score(v: &RevealScorePayload<'_>, out: &mut [u8]) -> CodecResult<usize> {
     v.report.scores.validate()?;
     let size = 4 + REPORT_FIXED_BYTES + v.report.scores.len() * 36 + 96;
@@ -748,6 +956,10 @@ pub fn encode_reveal_score(v: &RevealScorePayload<'_>, out: &mut [u8]) -> CodecR
     Ok(w.len())
 }
 
+/// Encodes one worker roster entry.
+///
+/// # Errors
+/// Returns `CAPACITY` when `out` is shorter than 176 bytes.
 pub fn encode_worker_roster(v: &WorkerRosterEntry, out: &mut [u8]) -> CodecResult<usize> {
     output_size(out, 176, 176)?;
     let mut w = Writer::new(out);
@@ -774,12 +986,20 @@ fn read_worker_roster(r: &mut Reader<'_>) -> CodecResult<WorkerRosterEntry> {
         metadata: MetadataDigest::new(r.fixed()?)?,
     })
 }
+/// Decodes one worker roster entry.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero identity, version or digest, short or trailing input.
 pub fn decode_worker_roster(input: &[u8]) -> CodecResult<WorkerRosterEntry> {
     let mut r = Reader::new(input);
     let v = read_worker_roster(&mut r)?;
     r.finish()?;
     Ok(v)
 }
+/// Encodes one evaluator roster entry.
+///
+/// # Errors
+/// Returns `CAPACITY` when `out` is shorter than 144 bytes.
 pub fn encode_evaluator_roster(v: &EvaluatorRosterEntry, out: &mut [u8]) -> CodecResult<usize> {
     output_size(out, 144, 144)?;
     let mut w = Writer::new(out);
@@ -804,6 +1024,10 @@ fn read_evaluator_roster(r: &mut Reader<'_>) -> CodecResult<EvaluatorRosterEntry
         rubric: RubricDigest::new(r.fixed()?)?,
     })
 }
+/// Decodes one evaluator roster entry.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero identity, version or digest, short or trailing input.
 pub fn decode_evaluator_roster(input: &[u8]) -> CodecResult<EvaluatorRosterEntry> {
     let mut r = Reader::new(input);
     let v = read_evaluator_roster(&mut r)?;
@@ -819,6 +1043,10 @@ pub struct Roster<'a> {
     pub evaluators: &'a [EvaluatorRosterEntry],
 }
 impl Roster<'_> {
+    /// Validates roster bounds and strict ordering.
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` above 32 workers or 8 evaluators; `NON_CANONICAL` for unordered or duplicate entries.
     pub fn validate(&self) -> CodecResult<()> {
         if self.workers.len() > 32 || self.evaluators.len() > 8 {
             return Err(CAPACITY);
@@ -835,6 +1063,10 @@ impl Roster<'_> {
     }
 }
 pub const ROSTER_MAX_BYTES: usize = 54 + 32 * 176 + 8 * 144;
+/// Encodes a roster into `out`.
+///
+/// # Errors
+/// Propagates `Roster::validate` refusals; returns `CAPACITY` when `out` is too small.
 pub fn encode_roster(v: &Roster<'_>, out: &mut [u8]) -> CodecResult<usize> {
     v.validate()?;
     let n = 54 + v.workers.len() * 176 + v.evaluators.len() * 144;
@@ -864,26 +1096,44 @@ pub struct RosterView<'a> {
     canonical: &'a [u8],
 }
 impl RosterView<'_> {
+    #[must_use]
     pub fn worker_count(&self) -> usize {
         self.workers.len() / 176
     }
+    #[must_use]
     pub fn evaluator_count(&self) -> usize {
         self.evaluators.len() / 144
     }
+    /// Decodes the worker entry at `index`.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when the offset overflows; `NON_CANONICAL` when `index` is out of range; propagates `decode_worker_roster` refusals.
     pub fn worker(&self, index: usize) -> CodecResult<WorkerRosterEntry> {
         let start = index.checked_mul(176).ok_or(ARITHMETIC)?;
         let end = start.checked_add(176).ok_or(ARITHMETIC)?;
         decode_worker_roster(self.workers.get(start..end).ok_or(NON_CANONICAL)?)
     }
+    /// Decodes the evaluator entry at `index`.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when the offset overflows; `NON_CANONICAL` when `index` is out of range; propagates `decode_evaluator_roster` refusals.
     pub fn evaluator(&self, index: usize) -> CodecResult<EvaluatorRosterEntry> {
         let start = index.checked_mul(144).ok_or(ARITHMETIC)?;
         let end = start.checked_add(144).ok_or(ARITHMETIC)?;
         decode_evaluator_roster(self.evaluators.get(start..end).ok_or(NON_CANONICAL)?)
     }
+    /// Roster digest over the canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the digest is all zero.
     pub fn digest(&self) -> CodecResult<RosterDigest> {
         RosterDigest::new(domain_hash("PAXAI/roster/v1", self.canonical)?.bytes())
     }
 }
+/// Decodes and validates a roster.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input exceeds `ROSTER_MAX_BYTES` or a count exceeds its cap; `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero identity or version, malformed or unordered entries, short or trailing input.
 pub fn decode_roster(input: &[u8]) -> CodecResult<RosterView<'_>> {
     if input.len() > ROSTER_MAX_BYTES {
         return Err(CAPACITY);
@@ -922,6 +1172,10 @@ pub fn decode_roster(input: &[u8]) -> CodecResult<RosterView<'_>> {
     }
     Ok(v)
 }
+/// Roster digest over the canonical encoding.
+///
+/// # Errors
+/// Propagates `encode_roster` refusals; returns `NON_CANONICAL` when the digest is all zero.
 pub fn roster_digest(v: &Roster<'_>) -> CodecResult<RosterDigest> {
     let mut b = [0; ROSTER_MAX_BYTES];
     let n = encode_roster(v, &mut b)?;
@@ -944,6 +1198,10 @@ pub struct ApplicationResult<'a> {
     pub digest: ResultDigest,
     pub payload: &'a [u8],
 }
+/// Result digest over a success payload.
+///
+/// # Errors
+/// Returns `CAPACITY` when `payload` exceeds `MAX_RESULT_PAYLOAD_BYTES`; `NON_CANONICAL` when the digest is all zero.
 pub fn result_digest(payload: &[u8]) -> CodecResult<ResultDigest> {
     if payload.len() > MAX_RESULT_PAYLOAD_BYTES {
         return Err(CAPACITY);
@@ -956,6 +1214,10 @@ fn request_bytes(request: Presence<RequestDigest>) -> [u8; 32] {
         Presence::Present(d) => d.bytes(),
     }
 }
+/// Result digest for an error outcome.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the digest is all zero.
 pub fn error_digest(
     error: ApplicationError,
     request: Presence<RequestDigest>,
@@ -969,6 +1231,10 @@ pub fn error_digest(
     )
 }
 impl<'a> ApplicationResult<'a> {
+    /// Builds a success result.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when `status` is `Error`; propagates `result_digest` refusals.
     pub fn success(
         status: ResultStatus,
         request: RequestDigest,
@@ -987,6 +1253,10 @@ impl<'a> ApplicationResult<'a> {
             payload,
         })
     }
+    /// Builds an error result, hiding the revision when required.
+    ///
+    /// # Errors
+    /// Propagates `error_digest` refusals.
     pub fn failure(
         error: ApplicationError,
         request: Presence<RequestDigest>,
@@ -1006,6 +1276,10 @@ impl<'a> ApplicationResult<'a> {
             payload: &[],
         })
     }
+    /// Validates status, error, revision, payload and digest consistency.
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` when the payload exceeds its cap; `NON_CANONICAL` for a status/error mismatch, error payload, unhidden revision, absent success request or digest mismatch; propagates digest refusals.
     pub fn validate(&self) -> CodecResult<()> {
         if self.payload.len() > MAX_RESULT_PAYLOAD_BYTES {
             return Err(CAPACITY);
@@ -1028,13 +1302,17 @@ impl<'a> ApplicationResult<'a> {
             }
             _ => return Err(NON_CANONICAL),
         };
-        if expected != self.digest {
-            Err(NON_CANONICAL)
-        } else {
+        if expected == self.digest {
             Ok(())
+        } else {
+            Err(NON_CANONICAL)
         }
     }
 }
+/// Encodes a validated result into `out`.
+///
+/// # Errors
+/// Propagates `ApplicationResult::validate` refusals; returns `CAPACITY` when `out` is too small.
 pub fn encode_result(v: &ApplicationResult<'_>, out: &mut [u8]) -> CodecResult<usize> {
     v.validate()?;
     output_size(out, 82 + v.payload.len(), MAX_RESULT_BYTES)?;
@@ -1048,6 +1326,10 @@ pub fn encode_result(v: &ApplicationResult<'_>, out: &mut [u8]) -> CodecResult<u
     w.bytes(v.payload, MAX_RESULT_PAYLOAD_BYTES)?;
     Ok(w.len())
 }
+/// Decodes and validates a result.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input or payload exceeds its cap; `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for an unknown status or error code, zero digest, short or trailing input; propagates `ApplicationResult::validate` refusals.
 pub fn decode_result(input: &[u8]) -> CodecResult<ApplicationResult<'_>> {
     if input.len() > MAX_RESULT_BYTES {
         return Err(CAPACITY);
@@ -1117,12 +1399,20 @@ fn read_event_common(r: &mut Reader<'_>) -> CodecResult<EventCommon> {
         result: ResultDigest::new(r.fixed()?)?,
     })
 }
+/// Encodes the common event header.
+///
+/// # Errors
+/// Returns `CAPACITY` when `out` is shorter than 122 bytes.
 pub fn encode_event_common(v: &EventCommon, out: &mut [u8]) -> CodecResult<usize> {
     output_size(out, 122, 122)?;
     let mut w = Writer::new(out);
     write_event_common(&mut w, v)?;
     Ok(w.len())
 }
+/// Decodes the common event header.
+///
+/// # Errors
+/// Returns `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero identity, version or digest, short or trailing input.
 pub fn decode_event_common(input: &[u8]) -> CodecResult<EventCommon> {
     let mut r = Reader::new(input);
     let v = read_event_common(&mut r)?;
@@ -1145,6 +1435,10 @@ pub struct RevealScoreEvent {
     pub vector_count: u16,
     pub admitted_height: u64,
 }
+/// Encodes a commit-accepted event.
+///
+/// # Errors
+/// Returns `CAPACITY` when `out` is shorter than 194 bytes.
 pub fn encode_commit_event(v: &CommitAccepted, out: &mut [u8]) -> CodecResult<usize> {
     output_size(out, 194, MAX_EVENT_BYTES)?;
     let mut w = Writer::new(out);
@@ -1154,6 +1448,10 @@ pub fn encode_commit_event(v: &CommitAccepted, out: &mut [u8]) -> CodecResult<us
     w.u64(v.accepted_height)?;
     Ok(w.len())
 }
+/// Decodes a commit-accepted event.
+///
+/// # Errors
+/// Returns `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero identity, version or digest, short or trailing input.
 pub fn decode_commit_event(input: &[u8]) -> CodecResult<CommitAccepted> {
     let mut r = Reader::new(input);
     let common = read_event_common(&mut r)?;
@@ -1168,6 +1466,10 @@ pub fn decode_commit_event(input: &[u8]) -> CodecResult<CommitAccepted> {
         accepted_height,
     })
 }
+/// Encodes a reveal-score event.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when `vector_count` is outside 1..=32; `CAPACITY` when `out` is shorter than 228 bytes.
 pub fn encode_reveal_event(v: &RevealScoreEvent, out: &mut [u8]) -> CodecResult<usize> {
     if !(1..=32).contains(&v.vector_count) {
         return Err(NON_CANONICAL);
@@ -1182,6 +1484,10 @@ pub fn encode_reveal_event(v: &RevealScoreEvent, out: &mut [u8]) -> CodecResult<
     w.u64(v.admitted_height)?;
     Ok(w.len())
 }
+/// Decodes a reveal-score event.
+///
+/// # Errors
+/// Returns `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero identity, version or digest, a vector count outside 1..=32, short or trailing input.
 pub fn decode_reveal_event(input: &[u8]) -> CodecResult<RevealScoreEvent> {
     let mut r = Reader::new(input);
     let common = read_event_common(&mut r)?;
@@ -1203,6 +1509,10 @@ pub fn decode_reveal_event(input: &[u8]) -> CodecResult<RevealScoreEvent> {
         admitted_height,
     })
 }
+/// Encodes the event topic for `operation`.
+///
+/// # Errors
+/// Returns `CAPACITY` when the topic exceeds 64 bytes or `out` is too small.
 pub fn event_topic(operation: Operation, out: &mut [u8]) -> CodecResult<usize> {
     let name = operation.metadata().name.as_bytes();
     let n = 9 + name.len();
@@ -1213,6 +1523,9 @@ pub fn event_topic(operation: Operation, out: &mut [u8]) -> CodecResult<usize> {
     Ok(w.len())
 }
 /// Validate the common frame before a feature owner decodes its exact suffix.
+///
+/// # Errors
+/// Returns `CAPACITY` for an oversized or non-ASCII topic or oversized body; `NON_CANONICAL` for a missing topic prefix; `UNKNOWN_OPERATION` when no mutation matches; propagates common, commit and reveal event decode refusals.
 pub fn decode_event_frame<'a>(
     topic: &[u8],
     body: &'a [u8],
@@ -1240,6 +1553,10 @@ pub fn decode_event_frame<'a>(
     }
     Ok((operation, common, suffix))
 }
+/// Encodes an event frame and validates fixed common-owned suffixes.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a non-mutation operation or a wrong fixed suffix length; `ARITHMETIC` on size overflow; `CAPACITY` when the size exceeds `MAX_EVENT_BYTES` or `out` is too small; propagates commit and reveal event decode refusals.
 pub fn encode_event_frame(
     operation: Operation,
     common: &EventCommon,
@@ -1289,10 +1606,9 @@ pub struct ReadHeader {
 }
 impl ReadHeader {
     fn validate(&self) -> CodecResult<()> {
-        if self.revision == 0
-            || self.total_bytes < STATE_FRAMING_BYTES as u32
-            || self.total_bytes > MAX_STATE_BYTES as u32
-        {
+        let framing = u32::try_from(STATE_FRAMING_BYTES).map_err(|_| ARITHMETIC)?;
+        let max_state = u32::try_from(MAX_STATE_BYTES).map_err(|_| ARITHMETIC)?;
+        if self.revision == 0 || self.total_bytes < framing || self.total_bytes > max_state {
             return Err(NON_CANONICAL);
         }
         if matches!(self.epoch, Presence::Absent) && self.roster != Presence::Absent
@@ -1303,6 +1619,10 @@ impl ReadHeader {
         Ok(())
     }
 }
+/// Encodes a read header into `out`.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero revision, out-of-range `total_bytes` or epoch/roster presence mismatch; `CAPACITY` when `out` is too small.
 pub fn encode_read_header(v: &ReadHeader, out: &mut [u8]) -> CodecResult<usize> {
     v.validate()?;
     let n =
@@ -1329,6 +1649,10 @@ pub fn encode_read_header(v: &ReadHeader, out: &mut [u8]) -> CodecResult<usize> 
     w.presence(&v.roster, |w, d| w.put(d.as_bytes()))?;
     Ok(w.len())
 }
+/// Decodes and validates a read header.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input exceeds 192 bytes; `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero digest, identity or version, bad presence flag, short or trailing input, or a failed header check.
 pub fn decode_read_header(input: &[u8]) -> CodecResult<ReadHeader> {
     if input.len() > 192 {
         return Err(CAPACITY);
@@ -1367,18 +1691,27 @@ pub struct ChunkRequest {
     pub requested: u16,
 }
 impl ChunkRequest {
+    /// Validates chunk request pinning, size and alignment.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when revision and digest presence disagree, `requested` is zero or above `MAX_CHUNK_BYTES`, or `offset` is unaligned or beyond `MAX_STATE_BYTES`.
     pub fn validate(&self) -> CodecResult<()> {
+        let max_state = u32::try_from(MAX_STATE_BYTES).map_err(|_| ARITHMETIC)?;
         if (self.revision == 0) != (self.digest == Presence::Absent)
             || self.requested == 0
             || usize::from(self.requested) > MAX_CHUNK_BYTES
-            || self.offset % 8192 != 0
-            || self.offset >= MAX_STATE_BYTES as u32
+            || !self.offset.is_multiple_of(8192)
+            || self.offset >= max_state
         {
             return Err(NON_CANONICAL);
         }
         Ok(())
     }
 }
+/// Encodes a validated chunk request.
+///
+/// # Errors
+/// Propagates `ChunkRequest::validate` refusals; returns `CAPACITY` when `out` is shorter than 46 bytes.
 pub fn encode_chunk_request(v: &ChunkRequest, out: &mut [u8]) -> CodecResult<usize> {
     v.validate()?;
     output_size(out, 46, 46)?;
@@ -1392,6 +1725,10 @@ pub fn encode_chunk_request(v: &ChunkRequest, out: &mut [u8]) -> CodecResult<usi
     w.u16(v.requested)?;
     Ok(w.len())
 }
+/// Decodes and validates a chunk request.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for short or trailing input; propagates `ChunkRequest::validate` refusals.
 pub fn decode_chunk_request(input: &[u8]) -> CodecResult<ChunkRequest> {
     let mut r = Reader::new(input);
     let revision = r.u64()?;
@@ -1422,11 +1759,17 @@ pub struct ChunkResponse<'a> {
     pub bytes: &'a [u8],
 }
 impl ChunkResponse<'_> {
+    /// Validates chunk response bounds and alignment.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a zero revision, out-of-range `total_bytes`, unaligned or out-of-range offset, empty or oversized bytes, or a chunk ending past `total_bytes`.
     pub fn validate(&self) -> CodecResult<()> {
+        let framing = u32::try_from(STATE_FRAMING_BYTES).map_err(|_| ARITHMETIC)?;
+        let max_state = u32::try_from(MAX_STATE_BYTES).map_err(|_| ARITHMETIC)?;
         if self.revision == 0
-            || self.total_bytes < STATE_FRAMING_BYTES as u32
-            || self.total_bytes > MAX_STATE_BYTES as u32
-            || self.offset % 8192 != 0
+            || self.total_bytes < framing
+            || self.total_bytes > max_state
+            || !self.offset.is_multiple_of(8192)
             || self.offset >= self.total_bytes
             || self.bytes.is_empty()
             || self.bytes.len() > 8192
@@ -1444,6 +1787,10 @@ impl ChunkResponse<'_> {
         }
     }
 }
+/// Encodes a validated chunk response.
+///
+/// # Errors
+/// Propagates `ChunkResponse::validate` refusals; returns `CAPACITY` when `out` is too small.
 pub fn encode_chunk_response(v: &ChunkResponse<'_>, out: &mut [u8]) -> CodecResult<usize> {
     v.validate()?;
     output_size(out, 52 + v.bytes.len(), 8244)?;
@@ -1457,6 +1804,10 @@ pub fn encode_chunk_response(v: &ChunkResponse<'_>, out: &mut [u8]) -> CodecResu
     w.put(v.bytes)?;
     Ok(w.len())
 }
+/// Decodes and validates a chunk response.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input exceeds 8244 bytes or the chunk exceeds 8192 bytes; `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a zero digest, short or trailing input; propagates `ChunkResponse::validate` refusals.
 pub fn decode_chunk_response(input: &[u8]) -> CodecResult<ChunkResponse<'_>> {
     if input.len() > 8244 {
         return Err(CAPACITY);
@@ -1484,6 +1835,9 @@ pub fn decode_chunk_response(input: &[u8]) -> CodecResult<ChunkResponse<'_>> {
     Ok(v)
 }
 /// Consistency of this inner response only. Outer native-root/finality proof remains mandatory.
+///
+/// # Errors
+/// Propagates both `validate` refusals; returns `CONFLICT` when a pinned revision or digest differs; `NON_CANONICAL` for an offset mismatch or wrong byte count.
 pub fn check_chunk_response(
     request: &ChunkRequest,
     response: &ChunkResponse<'_>,
@@ -1506,7 +1860,7 @@ pub fn check_chunk_response(
 }
 
 /// ORIGINAL IMPLEMENTATION DECISION: global PAXAS1/schema/revision then exactly six
-/// ordered section frames (index:u16, reserved:u16=0, bytes_length:u32, bytes).
+/// ordered section frames (index:u16, reserved:u16=0, `bytes_length:u32`, bytes).
 /// No padding. Global16 charged to control, section headers8 to their own caps.
 /// This validates framing only; section owners must validate complete feature semantics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1515,6 +1869,10 @@ pub struct StateFrame<'a> {
     pub sections: [&'a [u8]; 6],
 }
 impl StateFrame<'_> {
+    /// Encoded size, enforcing per-section and total caps.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a zero revision; `CAPACITY` when a section exceeds its cap or the total exceeds `MAX_STATE_BYTES`.
     pub fn encoded_len(&self) -> CodecResult<usize> {
         if self.revision == 0 {
             return Err(NON_CANONICAL);
@@ -1540,6 +1898,10 @@ impl StateFrame<'_> {
         }
     }
 }
+/// Encodes a state frame into `out`.
+///
+/// # Errors
+/// Propagates `StateFrame::encoded_len` refusals; returns `CAPACITY` when `out` is too small.
 pub fn encode_state(v: &StateFrame<'_>, out: &mut [u8]) -> CodecResult<usize> {
     let n = v.encoded_len()?;
     output_size(out, n, MAX_STATE_BYTES)?;
@@ -1557,6 +1919,10 @@ pub fn encode_state(v: &StateFrame<'_>, out: &mut [u8]) -> CodecResult<usize> {
     }
     Ok(w.len())
 }
+/// Decodes and validates a state frame.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input or a section exceeds its cap; `BAD_VERSION` for a wrong schema; `NON_CANONICAL` for a bad magic, wrong section index, nonzero reserved bytes, short or trailing input; propagates `StateFrame::encoded_len` refusals.
 pub fn decode_state(input: &[u8]) -> CodecResult<StateFrame<'_>> {
     if input.len() > MAX_STATE_BYTES {
         return Err(CAPACITY);
@@ -1580,12 +1946,19 @@ pub fn decode_state(input: &[u8]) -> CodecResult<StateFrame<'_>> {
     v.encoded_len()?;
     Ok(v)
 }
+/// Digest of a valid state frame.
+///
+/// # Errors
+/// Propagates `decode_state` refusals; returns `NON_CANONICAL` when the digest is all zero.
 pub fn state_digest(input: &[u8]) -> CodecResult<StateDigest> {
     decode_state(input)?;
     StateDigest::new(domain_hash("PAXAI/view-state/v1", input)?.bytes())
 }
 
 /// Pure direct-call predicate; only a real host adapter can supply Context facts.
+///
+/// # Errors
+/// Returns `UNAUTHORIZED` when an immediate caller program is present.
 pub fn compare_direct_call(immediate_caller: Presence<ProgramId>) -> CodecResult<()> {
     if immediate_caller == Presence::Absent {
         Ok(())
@@ -1594,6 +1967,9 @@ pub fn compare_direct_call(immediate_caller: Presence<ProgramId>) -> CodecResult
     }
 }
 /// Pure principal equality for kind0. Does not turn an ID into authenticated authority.
+///
+/// # Errors
+/// Returns `UNAUTHORIZED` when authentication is not native or the actor differs.
 pub fn compare_native_principal(
     envelope: &Envelope<'_>,
     invoking_principal: PrincipalId,
@@ -1605,9 +1981,11 @@ pub fn compare_native_principal(
     }
 }
 /// Exact bytes for ordinary Ed25519 signing, without ph/EIP/JSON transformation.
+#[must_use]
 pub const fn request_signing_message(digest: RequestDigest) -> [u8; 32] {
     digest.bytes()
 }
+#[must_use]
 pub const fn report_signing_message(digest: AttestationDigest) -> [u8; 32] {
     digest.bytes()
 }

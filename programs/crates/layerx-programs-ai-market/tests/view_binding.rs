@@ -81,13 +81,13 @@ fn policy() -> Checked<TaskPolicyV1> {
         1,
         1,
         PolicyCommitments {
-            model_artifact_digest: digest(1)?,
-            dataset_artifact_digest: [2; 32],
-            benchmark_suite_digest: digest(3)?,
-            rubric_digest: RubricDigest::new([4; 32])?,
-            task_schema_digest: digest(5)?,
-            result_schema_digest: digest(6)?,
-            service_terms_digest: digest(7)?,
+            model_artifact: digest(1)?,
+            dataset_artifact: [2; 32],
+            benchmark_suite: digest(3)?,
+            rubric: RubricDigest::new([4; 32])?,
+            task_schema: digest(5)?,
+            result_schema: digest(6)?,
+            service_terms: digest(7)?,
         },
         100,
         1,
@@ -184,7 +184,7 @@ fn market_with_workers(count: u8) -> Checked<Vec<u8>> {
         } else {
             WorkerState::Retired
         };
-        table.insert(worker(slot, status)?)?;
+        table.insert(&worker(slot, status)?)?;
     }
     let mut section = vec![0; WORKER_TABLE_MAX_BYTES];
     let n = if count == 0 {

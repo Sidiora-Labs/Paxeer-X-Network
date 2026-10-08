@@ -6,6 +6,10 @@ macro_rules! id32 {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $name([u8; 32]);
         impl $name {
+            /// Builds the identity from its 32 bytes.
+            ///
+            /// # Errors
+            /// Returns `NON_CANONICAL` when the bytes are all zero.
             pub fn new(bytes: [u8; 32]) -> CodecResult<Self> {
                 if bytes == [0; 32] { Err(NON_CANONICAL) } else { Ok(Self(bytes)) }
             }
@@ -29,6 +33,10 @@ id32!(
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Digest32([u8; 32]);
 impl Digest32 {
+    /// Builds the digest from its 32 bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the bytes are all zero.
     pub fn new(bytes: [u8; 32]) -> CodecResult<Self> {
         if bytes == [0; 32] {
             Err(NON_CANONICAL)
@@ -36,9 +44,11 @@ impl Digest32 {
             Ok(Self(bytes))
         }
     }
+    #[must_use]
     pub const fn bytes(self) -> [u8; 32] {
         self.0
     }
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -48,6 +58,10 @@ macro_rules! digest {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
         pub struct $name(Digest32);
         impl $name {
+            /// Builds the typed digest from its 32 bytes.
+            ///
+            /// # Errors
+            /// Returns `NON_CANONICAL` when the bytes are all zero.
             pub fn new(bytes: [u8; 32]) -> CodecResult<Self> { Ok(Self(Digest32::new(bytes)?)) }
             pub const fn bytes(self) -> [u8; 32] { self.0.bytes() }
             pub const fn as_bytes(&self) -> &[u8; 32] { self.0.as_bytes() }
@@ -81,6 +95,10 @@ pub struct Signature64(pub [u8; 64]);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Salt32([u8; 32]);
 impl Salt32 {
+    /// Builds the salt from its 32 bytes.
+    ///
+    /// # Errors
+    /// Returns `F04_SALT_INVALID` when the bytes are all zero.
     pub fn new(bytes: [u8; 32]) -> CodecResult<Self> {
         if bytes == [0; 32] {
             Err(crate::errors::F04_SALT_INVALID)
@@ -88,6 +106,7 @@ impl Salt32 {
             Ok(Self(bytes))
         }
     }
+    #[must_use]
     pub const fn bytes(self) -> [u8; 32] {
         self.0
     }
@@ -95,6 +114,10 @@ impl Salt32 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Version(u64);
 impl Version {
+    /// Builds a version from its value.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the value is zero.
     pub fn new(value: u64) -> CodecResult<Self> {
         if value == 0 {
             Err(NON_CANONICAL)
@@ -102,9 +125,14 @@ impl Version {
             Ok(Self(value))
         }
     }
+    #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
+    /// Returns the following version.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when the value is `u64::MAX`.
     pub fn next(self) -> CodecResult<Self> {
         Self::new(self.0.checked_add(1).ok_or(ARITHMETIC)?)
     }
@@ -112,6 +140,10 @@ impl Version {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Score(u32);
 impl Score {
+    /// Builds a score from its value.
+    ///
+    /// # Errors
+    /// Returns `F03_SCORE_RANGE` when the value exceeds 1,000,000.
     pub fn new(value: u32) -> CodecResult<Self> {
         if value > 1_000_000 {
             Err(F03_SCORE_RANGE)
@@ -119,6 +151,7 @@ impl Score {
             Ok(Self(value))
         }
     }
+    #[must_use]
     pub const fn get(self) -> u32 {
         self.0
     }
@@ -177,10 +210,10 @@ pub enum Authentication {
 /// Replay assessment only; this does not authenticate callers or commit state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoleReplay {
-    pub last_sequence: u64,
-    pub last_request: Presence<RequestId>,
-    pub last_digest: Presence<RequestDigest>,
-    pub last_result: Presence<ResultDigest>,
+    pub sequence: u64,
+    pub request: Presence<RequestId>,
+    pub digest: Presence<RequestDigest>,
+    pub result: Presence<ResultDigest>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplayDecision {
@@ -188,6 +221,10 @@ pub enum ReplayDecision {
     AlreadyApplied(ResultDigest),
 }
 impl RoleReplay {
+    /// Classifies a role request against the recorded replay slot.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the stored slot is malformed; `SEQUENCE_CONSUMED` when the sequence is zero or already passed; `REPLAY_CONFLICT` when the current sequence is reused for a different request or digest; `ARITHMETIC` when the stored sequence cannot advance; `SEQUENCE_GAP` when the sequence skips ahead.
     pub fn assess(
         &self,
         sequence: u64,
@@ -195,15 +232,15 @@ impl RoleReplay {
         digest: RequestDigest,
     ) -> CodecResult<ReplayDecision> {
         use crate::errors::{REPLAY_CONFLICT, SEQUENCE_CONSUMED, SEQUENCE_GAP};
-        if self.last_sequence == 0 {
-            if self.last_request != Presence::Absent
-                || self.last_digest != Presence::Absent
-                || self.last_result != Presence::Absent
+        if self.sequence == 0 {
+            if self.request != Presence::Absent
+                || self.digest != Presence::Absent
+                || self.result != Presence::Absent
             {
                 return Err(NON_CANONICAL);
             }
         } else if !matches!(
-            (self.last_request, self.last_digest, self.last_result),
+            (self.request, self.digest, self.result),
             (
                 Presence::Present(_),
                 Presence::Present(_),
@@ -212,20 +249,20 @@ impl RoleReplay {
         ) {
             return Err(NON_CANONICAL);
         }
-        if sequence == 0 || sequence < self.last_sequence {
+        if sequence == 0 || sequence < self.sequence {
             return Err(SEQUENCE_CONSUMED);
         }
-        if sequence == self.last_sequence {
-            if self.last_request == Presence::Present(request)
-                && self.last_digest == Presence::Present(digest)
+        if sequence == self.sequence {
+            if self.request == Presence::Present(request)
+                && self.digest == Presence::Present(digest)
             {
-                if let Presence::Present(result) = self.last_result {
+                if let Presence::Present(result) = self.result {
                     return Ok(ReplayDecision::AlreadyApplied(result));
                 }
             }
             return Err(REPLAY_CONFLICT);
         }
-        if sequence != self.last_sequence.checked_add(1).ok_or(ARITHMETIC)? {
+        if sequence != self.sequence.checked_add(1).ok_or(ARITHMETIC)? {
             return Err(SEQUENCE_GAP);
         }
         Ok(ReplayDecision::New)
@@ -250,6 +287,10 @@ pub enum EpochPhase {
     After,
 }
 impl EpochWindows {
+    /// Computes the windows of `epoch` counted from `origin`.
+    ///
+    /// # Errors
+    /// Returns `ARITHMETIC` when any window bound overflows `u64`.
     pub fn new(origin: u64, epoch: u64) -> CodecResult<Self> {
         let start = origin
             .checked_add(epoch.checked_mul(128).ok_or(ARITHMETIC)?)
@@ -262,6 +303,7 @@ impl EpochWindows {
             end: start.checked_add(128).ok_or(ARITHMETIC)?,
         })
     }
+    #[must_use]
     pub const fn phase(self, height: u64) -> EpochPhase {
         if height < self.start {
             EpochPhase::Before

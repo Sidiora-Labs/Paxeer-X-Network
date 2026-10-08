@@ -16,7 +16,7 @@ use layerx_programs_ai_market::{
         F08_RETENTION_BLOCKED, F08_STALE_STATE, F08_WRONG_GENERATION, NON_CANONICAL, NOT_FOUND,
         ROLE_CONFLICT, WRONG_DOMAIN, WRONG_EPOCH, WRONG_PHASE,
     },
-    evaluators::model::{EvaluatorGrant, GrantStatus},
+    evaluators::model::{EvaluatorGrant, GrantStatus, GrantTerms},
     registry::{derive_rewards_account, MarketHeader},
     roster,
     state::{self, ActorSlot, Control, ReplayTable, Section, SharedState},
@@ -752,12 +752,14 @@ fn pending_evaluator(
         market.market_id,
         owner,
         nonce,
-        rubric,
-        Version::new(1)?,
-        Version::new(1)?,
-        signing_key,
-        0,
-        32,
+        GrantTerms {
+            rubric,
+            grant_version: Version::new(1)?,
+            key_version: Version::new(1)?,
+            signing_key,
+            effective_epoch: 0,
+            expiry_epoch_exclusive: 32,
+        },
     )?;
     let mut table = AdmissionTable::new();
     let mut tm = terms(Participant::Evaluator(grant.evaluator), owner, 0, 60)?;

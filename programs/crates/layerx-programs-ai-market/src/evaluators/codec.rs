@@ -1,11 +1,24 @@
 //! Allocation-free evaluator codecs and pure cryptographic statement checks.
 //! No state, event emission, grant activation, salt or public admission bypass.
-use super::model::*;
+use super::model::{
+    nonzero_key, ConsentContext, EvaluatorAdmissionConsentV1, EvaluatorGrant, GrantStatus,
+    ReportContext, SignedEvaluatorConsent, SignedReport, VerificationError, CONSENT_BYTES,
+    GRANT_BYTES, SIGNED_CONSENT_BYTES, SIGNED_REPORT_MAX_BYTES,
+};
 pub use crate::codec::{decode_reveal_event, encode_reveal_event, RevealScoreEvent};
 use crate::{
     codec::{self as common, Reader, ReportBody, ScoreVector, Writer},
-    errors::*,
-    types::*,
+    errors::{
+        CodecResult, ARITHMETIC, BAD_SIGNATURE, BAD_VERSION, CAPACITY, EVIDENCE_BINDING, EXPIRED,
+        F03_EVIDENCE_NOT_SEALED, F03_EVIDENCE_ROOT_MISMATCH, F03_GRANT_VERSION_CONFLICT,
+        F03_KEY_VERSION_CONFLICT, F03_NONCANONICAL_VECTOR, F03_NO_GRANT, F03_NO_SCORES,
+        F03_UNKNOWN_WORKER, F08_BAD_CONSENT, KEY_MISMATCH, NON_CANONICAL, REVOKED, ROLE_CONFLICT,
+        WRONG_CONFIG, WRONG_DOMAIN, WRONG_EPOCH, WRONG_ROSTER,
+    },
+    types::{
+        ChainDomain, Digest32, EvaluatorBinding, EvaluatorId, MarketId, Presence, PrincipalId,
+        ProgramId, PublicKey32, ReportDigest, RequestId, RubricDigest, Signature64, Version,
+    },
 };
 
 fn room(out: &[u8], size: usize) -> CodecResult<()> {
@@ -16,12 +29,16 @@ fn room(out: &[u8], size: usize) -> CodecResult<()> {
     }
 }
 fn schema(r: &mut Reader<'_>) -> CodecResult<()> {
-    if r.u16()? != crate::SCHEMA_VERSION {
-        Err(BAD_VERSION)
-    } else {
+    if r.u16()? == crate::SCHEMA_VERSION {
         Ok(())
+    } else {
+        Err(BAD_VERSION)
     }
 }
+/// Encodes an evaluator grant into `out`.
+///
+/// # Errors
+/// Propagates `EvaluatorGrant::validate` refusals; returns `CAPACITY` when `out` is shorter than `GRANT_BYTES`.
 pub fn encode_grant(value: &EvaluatorGrant, out: &mut [u8]) -> CodecResult<usize> {
     value.validate()?;
     room(out, GRANT_BYTES)?;
@@ -37,6 +54,10 @@ pub fn encode_grant(value: &EvaluatorGrant, out: &mut [u8]) -> CodecResult<usize
     w.u8(value.status as u8)?;
     Ok(w.len())
 }
+/// Decodes and validates an evaluator grant.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not exactly `GRANT_BYTES`, for a zero identity, digest or version, or an unknown status; propagates `EvaluatorGrant::validate` refusals.
 pub fn decode_grant(input: &[u8]) -> CodecResult<EvaluatorGrant> {
     if input.len() != GRANT_BYTES {
         return Err(NON_CANONICAL);
@@ -82,10 +103,18 @@ fn validate_scores(scores: &ScoreVector<'_>) -> CodecResult<()> {
     }
     Ok(())
 }
+/// Encodes a report body after the F03 vector checks.
+///
+/// # Errors
+/// Returns `F03_NO_SCORES` for an empty vector; `F03_NONCANONICAL_VECTOR` for unsorted or duplicate workers; `NON_CANONICAL` for a malformed or oversized vector; propagates `encode_report` refusals.
 pub fn encode_report_body(value: &ReportBody<'_>, out: &mut [u8]) -> CodecResult<usize> {
     validate_scores(&value.scores)?;
     common::encode_report(value, out)
 }
+/// Decodes a report body, narrowing vector errors to F03 codes.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for an out-of-bounds or mismatched length, a count above `MAX_WORKERS` or a malformed vector; `BAD_VERSION` for a wrong schema; `F03_NO_SCORES` for a zero count; `F03_NONCANONICAL_VECTOR` for unsorted workers; propagates `decode_report` refusals.
 pub fn decode_report_body(input: &[u8]) -> CodecResult<ReportBody<'_>> {
     // Validate prefix/types through the common codec, and vector through F03.
     // The preflight is bounded and uses only checked lengths before any slice.
@@ -114,6 +143,10 @@ pub fn decode_report_body(input: &[u8]) -> CodecResult<ReportBody<'_>> {
     validate_scores(&scores)?;
     common::decode_report(input)
 }
+/// Encodes a signed report: body, then the 64-byte signature.
+///
+/// # Errors
+/// Returns the `encode_report_body` vector refusals; `ARITHMETIC` when the size overflows; `CAPACITY` when `out` is too small.
 pub fn encode_signed_report(value: &SignedReport<'_>, out: &mut [u8]) -> CodecResult<usize> {
     validate_scores(&value.body.scores)?;
     let n = common::REPORT_FIXED_BYTES
@@ -125,6 +158,10 @@ pub fn encode_signed_report(value: &SignedReport<'_>, out: &mut [u8]) -> CodecRe
     out[body_len..n].copy_from_slice(&value.signature.0);
     Ok(n)
 }
+/// Decodes a signed report: body, then the 64-byte signature.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the length is outside the signed-report bounds; propagates `decode_report_body` refusals.
 pub fn decode_signed_report(input: &[u8]) -> CodecResult<SignedReport<'_>> {
     if input.len() < common::REPORT_FIXED_BYTES + 64 || input.len() > SIGNED_REPORT_MAX_BYTES {
         return Err(NON_CANONICAL);
@@ -136,7 +173,10 @@ pub fn decode_signed_report(input: &[u8]) -> CodecResult<SignedReport<'_>> {
 }
 
 /// Domain comparisons precede expensive crypto. All report deployment domain
-/// mismatches use WRONG_DOMAIN per F03 A05 (including program and market).
+/// mismatches use `WRONG_DOMAIN` per F03 A05 (including program and market).
+///
+/// # Errors
+/// Returns `WRONG_DOMAIN`, `WRONG_EPOCH`, `WRONG_CONFIG`, `WRONG_ROSTER`, `F03_NO_GRANT`, `F03_GRANT_VERSION_CONFLICT` or `F03_KEY_VERSION_CONFLICT` for the first mismatched field, in that order.
 pub fn check_binding(actual: &EvaluatorBinding, expected: &EvaluatorBinding) -> CodecResult<()> {
     let a = actual.frozen;
     let e = expected.frozen;
@@ -163,6 +203,10 @@ pub fn check_binding(actual: &EvaluatorBinding, expected: &EvaluatorBinding) -> 
     }
     Ok(())
 }
+/// Checks a report body against the frozen grant, roster and evidence facts.
+///
+/// # Errors
+/// Returns, in order: vector, `check_binding` and grant `validate` refusals; `F03_NO_GRANT`, `F03_GRANT_VERSION_CONFLICT`, `REVOKED`, `EXPIRED` or `F03_KEY_VERSION_CONFLICT` for grant state; `KEY_MISMATCH`; `ROLE_CONFLICT`; `WRONG_CONFIG` for the rubric; `CAPACITY` for too many workers; `NON_CANONICAL` for a zero worker key; `WRONG_ROSTER` for an unsorted roster; `F03_EVIDENCE_NOT_SEALED`; `EVIDENCE_BINDING`; `F03_EVIDENCE_ROOT_MISMATCH`; `F03_UNKNOWN_WORKER`.
 pub fn check_report_context(body: &ReportBody<'_>, context: &ReportContext<'_>) -> CodecResult<()> {
     validate_scores(&body.scores)?;
     check_binding(&body.binding, &context.binding)?;
@@ -243,7 +287,10 @@ pub fn check_report_context(body: &ReportBody<'_>, context: &ReportContext<'_>) 
 }
 
 /// Ordinary Ed25519 over exactly 32 bytes; native is real dalek, wasm is the
-/// actual SDK import. Host metering/capability failures are never BAD_SIGNATURE.
+/// actual SDK import. Host metering/capability failures are never `BAD_SIGNATURE`.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for a zero key; `BAD_SIGNATURE` for an invalid key or signature; on wasm, `Host` for any other host refusal.
 pub fn verify_digest(
     key: PublicKey32,
     signature: Signature64,
@@ -268,6 +315,10 @@ pub fn verify_digest(
             .map_err(|_| VerificationError::Application(BAD_SIGNATURE))
     }
 }
+/// Checks the report context, then verifies the frozen key's signature over the attestation digest.
+///
+/// # Errors
+/// Propagates `check_report_context`, `report_digest`, `attestation_digest` and `verify_digest` refusals.
 pub fn verify_signed_report(
     value: &SignedReport<'_>,
     context: &ReportContext<'_>,
@@ -283,6 +334,10 @@ pub fn verify_signed_report(
     Ok(digest)
 }
 
+/// Encodes an admission consent into `out`.
+///
+/// # Errors
+/// Propagates `EvaluatorAdmissionConsentV1::validate` refusals; returns `CAPACITY` when `out` is shorter than `CONSENT_BYTES`.
 pub fn encode_consent(value: &EvaluatorAdmissionConsentV1, out: &mut [u8]) -> CodecResult<usize> {
     value.validate()?;
     room(out, CONSENT_BYTES)?;
@@ -305,6 +360,10 @@ pub fn encode_consent(value: &EvaluatorAdmissionConsentV1, out: &mut [u8]) -> Co
     w.u64(value.expiry_height)?;
     Ok(w.len())
 }
+/// Decodes and validates an admission consent.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not exactly `CONSENT_BYTES` or for a zero identity, digest or version; `BAD_VERSION` for a wrong schema; propagates `EvaluatorAdmissionConsentV1::validate` refusals.
 pub fn decode_consent(input: &[u8]) -> CodecResult<EvaluatorAdmissionConsentV1> {
     if input.len() != CONSENT_BYTES {
         return Err(NON_CANONICAL);
@@ -332,11 +391,19 @@ pub fn decode_consent(input: &[u8]) -> CodecResult<EvaluatorAdmissionConsentV1> 
     value.validate()?;
     Ok(value)
 }
+/// Domain-separated digest of the canonical consent encoding.
+///
+/// # Errors
+/// Propagates `encode_consent` refusals; returns `NON_CANONICAL` when the digest is all zero.
 pub fn consent_digest(value: &EvaluatorAdmissionConsentV1) -> CodecResult<Digest32> {
     let mut bytes = [0; CONSENT_BYTES];
     encode_consent(value, &mut bytes)?;
     common::domain_hash("PAXAI/evaluator-admission-consent/v1", &bytes)
 }
+/// Encodes a signed consent: consent, then the 64-byte signature.
+///
+/// # Errors
+/// Propagates `EvaluatorAdmissionConsentV1::validate` refusals; returns `CAPACITY` when `out` is shorter than `SIGNED_CONSENT_BYTES`.
 pub fn encode_signed_consent(value: &SignedEvaluatorConsent, out: &mut [u8]) -> CodecResult<usize> {
     value.consent.validate()?;
     room(out, SIGNED_CONSENT_BYTES)?;
@@ -344,6 +411,10 @@ pub fn encode_signed_consent(value: &SignedEvaluatorConsent, out: &mut [u8]) -> 
     out[CONSENT_BYTES..SIGNED_CONSENT_BYTES].copy_from_slice(&value.signature.0);
     Ok(SIGNED_CONSENT_BYTES)
 }
+/// Decodes a signed consent: consent, then the 64-byte signature.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not exactly `SIGNED_CONSENT_BYTES`; propagates `decode_consent` refusals.
 pub fn decode_signed_consent(input: &[u8]) -> CodecResult<SignedEvaluatorConsent> {
     if input.len() != SIGNED_CONSENT_BYTES {
         return Err(NON_CANONICAL);
@@ -357,6 +428,10 @@ pub fn decode_signed_consent(input: &[u8]) -> CodecResult<SignedEvaluatorConsent
         ),
     })
 }
+/// Checks a consent against the expected statement and the pending nomination.
+///
+/// # Errors
+/// Propagates `validate` refusals; returns `WRONG_DOMAIN`, `WRONG_CONFIG`, `REVOKED`, `EXPIRED` for an expired status or height, or `F08_BAD_CONSENT` for a non-pending nomination or any statement mismatch.
 pub fn check_consent_context(
     value: &EvaluatorAdmissionConsentV1,
     context: &ConsentContext,
@@ -402,6 +477,9 @@ pub fn check_consent_context(
 }
 /// Delegate proof of possession only. F08 kind0 owner acceptance, registered
 /// permit authority and atomic membership/replay updates remain F08's duties.
+///
+/// # Errors
+/// Propagates `check_consent_context`, `consent_digest` and `verify_digest` refusals.
 pub fn verify_signed_consent(
     value: &SignedEvaluatorConsent,
     context: &ConsentContext,

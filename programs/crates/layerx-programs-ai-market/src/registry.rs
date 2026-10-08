@@ -1,11 +1,18 @@
 use crate::{
     codec::{derive_market, Reader, Writer},
-    errors::*,
+    errors::{
+        CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, F01_ACCOUNT_BINDING_MISSING,
+        F01_CAPACITY_UNAVAILABLE, F01_PRINCIPAL_MISMATCH, F01_VERSION_MISMATCH,
+        F01_WRONG_LIFECYCLE, NON_CANONICAL, WRONG_MARKET,
+    },
     policy::{
         validate_policy_records, PendingPolicy, PolicyHistoryHeader, TaskPolicyV1,
         PENDING_POLICY_BYTES, POLICY_HISTORY_HEADER_BYTES, TASK_POLICY_BYTES,
     },
-    types::*,
+    types::{
+        AccountId, AssetId, ChainDomain, Digest32, EpochPhase, EpochWindows, MarketId,
+        MetadataDigest, Presence, PrincipalId, ProgramId,
+    },
 };
 use layerx_program_sdk::payments::PreparedProgramAccount;
 
@@ -44,6 +51,9 @@ pub struct MarketHeader {
 }
 
 /// This derives a binding only; it does not register an account or prove custody.
+///
+/// # Errors
+/// Returns `F01_ACCOUNT_BINDING_MISSING` when the SDK refuses the program, asset, or derived account.
 pub fn derive_rewards_account(program: ProgramId, asset: AssetId) -> CodecResult<AccountId> {
     let program = layerx_program_sdk::ProgramId::new(program.bytes())
         .map_err(|_| F01_ACCOUNT_BINDING_MISSING)?;
@@ -55,6 +65,10 @@ pub fn derive_rewards_account(program: ProgramId, asset: AssetId) -> CodecResult
 }
 
 impl MarketHeader {
+    /// Checks the header's version, lifecycle, canonical fields, and derived bindings.
+    ///
+    /// # Errors
+    /// Returns `BAD_VERSION` when `format_version` is not 1; `F01_WRONG_LIFECYCLE` when the lifecycle is outside 1..=5; `NON_CANONICAL` when reserved, revision, version, activation, or close fields are inconsistent; `F01_PRINCIPAL_MISMATCH` when the treasury equals the owner; `WRONG_MARKET` when the market id is not derived from chain and program; `F01_ACCOUNT_BINDING_MISSING` when the rewards account is not the derived binding.
     pub fn validate(&self) -> CodecResult<()> {
         if self.format_version != 1 {
             return Err(BAD_VERSION);
@@ -86,12 +100,17 @@ impl MarketHeader {
         }
         Ok(())
     }
+    #[must_use]
     pub const fn encoded_len(&self) -> usize {
         match self.treasury_principal {
             Presence::Absent => MARKET_HEADER_ABSENT_BYTES,
             Presence::Present(_) => MARKET_HEADER_PRESENT_BYTES,
         }
     }
+    /// Writes the canonical header bytes into `output`.
+    ///
+    /// # Errors
+    /// Propagates `validate` refusals; returns `CAPACITY` when `output` is shorter than `encoded_len`.
     pub fn encode(&self, output: &mut [u8]) -> CodecResult<usize> {
         self.validate()?;
         if output.len() < self.encoded_len() {
@@ -125,6 +144,10 @@ impl MarketHeader {
         w.put(&self.reserved)?;
         Ok(w.len())
     }
+    /// Reads a header from its exact canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the input is short, has trailing bytes, holds a zero identity or digest, or a flag byte is not 0 or 1; propagates `validate` refusals.
     pub fn decode(input: &[u8]) -> CodecResult<Self> {
         let mut r = Reader::new(input);
         let value = Self {
@@ -167,12 +190,20 @@ pub struct OperatorGrant {
     pub reserved: [u8; 8],
 }
 impl OperatorGrant {
+    /// Checks the grant's permissions, sequence, and reserved bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when permissions are outside 1..=3, the sequence is zero, or reserved bytes are set.
     pub fn validate(&self) -> CodecResult<()> {
         if !(1..=3).contains(&self.permissions) || self.sequence == 0 || self.reserved != [0; 8] {
             return Err(NON_CANONICAL);
         }
         Ok(())
     }
+    /// Writes the canonical grant bytes into `output`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the grant is invalid; `CAPACITY` when `output` is shorter than `OPERATOR_GRANT_BYTES`.
     pub fn encode(&self, output: &mut [u8]) -> CodecResult<usize> {
         self.validate()?;
         if output.len() < OPERATOR_GRANT_BYTES {
@@ -186,6 +217,10 @@ impl OperatorGrant {
         w.put(&self.reserved)?;
         Ok(w.len())
     }
+    /// Reads a grant from its exact canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the input is short, has trailing bytes, holds a zero principal or a bad flag byte, or fails `validate`.
     pub fn decode(input: &[u8]) -> CodecResult<Self> {
         let mut r = Reader::new(input);
         let value = Self {
@@ -208,6 +243,10 @@ pub struct MarketClock {
     pub windows: EpochWindows,
     pub phase: EpochPhase,
 }
+/// Locates `height` in the market's epoch schedule.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when `height` precedes `origin_height` or a window bound overflows.
 pub fn market_clock(origin_height: u64, height: u64) -> CodecResult<MarketClock> {
     let elapsed = height.checked_sub(origin_height).ok_or(ARITHMETIC)?;
     let epoch = elapsed / 128;
@@ -232,6 +271,10 @@ pub struct F01Worksheet {
 fn capacity_add(a: usize, b: usize) -> CodecResult<usize> {
     a.checked_add(b).ok_or(F01_CAPACITY_UNAVAILABLE)
 }
+/// Checks the charged F01 section size against the section and state caps.
+///
+/// # Errors
+/// Returns `F01_CAPACITY_UNAVAILABLE` when the charged size overflows or exceeds `F01_SECTION_CAP`, or `total_state_bytes` exceeds `MAX_STATE_BYTES` or is below the charged size.
 pub fn check_f01_capacity(section_bytes: usize, total_state_bytes: usize) -> CodecResult<()> {
     let charged = capacity_add(section_bytes, COMMON_SECTION_HEADER_BYTES)?;
     if charged > F01_SECTION_CAP
@@ -262,7 +305,10 @@ fn worksheet(non_task_bytes: usize, task_count: usize) -> CodecResult<F01Workshe
     })
 }
 
-/// Design bound only. TaskBinding serialization and whole-state admission belong to T04/core.
+/// Design bound only. `TaskBinding` serialization and whole-state admission belong to T04/core.
+///
+/// # Errors
+/// Returns `F01_CAPACITY_UNAVAILABLE` when the design worksheet overflows or exceeds the section cap.
 pub fn maximum_f01_worksheet() -> CodecResult<F01Worksheet> {
     let mut n = MARKET_HEADER_PRESENT_BYTES;
     for bytes in [
@@ -297,6 +343,10 @@ pub struct F01NonTaskLayout<'a> {
     pub task_set_root: Presence<Digest32>,
 }
 impl F01NonTaskLayout<'_> {
+    /// Measures the encoded non-task records and adds the task worksheet.
+    ///
+    /// # Errors
+    /// Propagates `validate_policy_records` and record `encode` refusals; returns `F01_VERSION_MISMATCH` when the header's active version differs from `current`; `F01_CAPACITY_UNAVAILABLE` when the task count or section size exceeds its cap.
     pub fn measured_worksheet(&self) -> CodecResult<F01Worksheet> {
         validate_policy_records(
             self.current,

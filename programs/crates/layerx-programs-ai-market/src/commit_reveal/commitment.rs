@@ -1,4 +1,18 @@
-use crate::{codec, errors::*, types::*, MAX_WORKERS};
+#[cfg(target_arch = "wasm32")]
+use crate::types::AttestationDigest;
+use crate::{
+    codec,
+    errors::{
+        ApplicationError, CodecResult, ARITHMETIC, CAPACITY, F03_NO_SCORES, F03_UNKNOWN_WORKER,
+        F04_COMMIT_MISMATCH, F04_NO_SCORES, KEY_MISMATCH, NON_CANONICAL, UNAUTHORIZED,
+        WRONG_CONFIG, WRONG_DOMAIN, WRONG_EPOCH, WRONG_MARKET, WRONG_PROGRAM, WRONG_ROSTER,
+    },
+    types::{
+        ChainDomain, CommitmentDigest, EvaluatorBinding, EvaluatorId, FrozenBinding, MarketId,
+        ProgramId, ReportDigest, RosterDigest, Salt32, Signature64, Version, WorkerId,
+    },
+    MAX_WORKERS,
+};
 
 pub const BINDING_BYTES: usize = 192;
 pub const COMMIT_SCORE_BYTES: usize = 224;
@@ -18,6 +32,10 @@ fn report_error(error: ApplicationError) -> ApplicationError {
     }
 }
 
+/// Encodes the 192-byte evaluator binding.
+///
+/// # Errors
+/// Propagates `Writer` `ARITHMETIC`/`CAPACITY` refusals (unreachable for the fixed buffer).
 pub fn encode_binding(binding: &EvaluatorBinding) -> CodecResult<[u8; BINDING_BYTES]> {
     let mut bytes = [0; BINDING_BYTES];
     let mut w = codec::Writer::new(&mut bytes);
@@ -33,6 +51,10 @@ pub fn encode_binding(binding: &EvaluatorBinding) -> CodecResult<[u8; BINDING_BY
     Ok(bytes)
 }
 
+/// Decodes the 192-byte evaluator binding.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not exactly `BINDING_BYTES` or for a zero identity, digest or version.
 pub fn decode_binding(bytes: &[u8]) -> CodecResult<EvaluatorBinding> {
     if bytes.len() != BINDING_BYTES {
         return Err(NON_CANONICAL);
@@ -55,6 +77,10 @@ pub fn decode_binding(bytes: &[u8]) -> CodecResult<EvaluatorBinding> {
     Ok(binding)
 }
 
+/// Compares a binding with the expected one, field by field.
+///
+/// # Errors
+/// Returns `WRONG_DOMAIN`, `WRONG_PROGRAM`, `WRONG_MARKET`, `WRONG_EPOCH`, `WRONG_CONFIG`, `WRONG_ROSTER`, `UNAUTHORIZED` (evaluator or grant) or `KEY_MISMATCH` for the first mismatched field, in that order.
 pub fn check_binding(actual: &EvaluatorBinding, expected: &EvaluatorBinding) -> CodecResult<()> {
     let a = &actual.frozen;
     let e = &expected.frozen;
@@ -79,14 +105,26 @@ pub fn check_binding(actual: &EvaluatorBinding, expected: &EvaluatorBinding) -> 
     }
 }
 
+/// Decodes a 32-byte salt.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not 32 bytes; `F04_SALT_INVALID` for a zero salt.
 pub fn decode_salt(bytes: &[u8]) -> CodecResult<Salt32> {
     Salt32::new(bytes.try_into().map_err(|_| NON_CANONICAL)?)
 }
 
+/// Decodes a 64-byte signature.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not 64 bytes.
 pub fn decode_signature(bytes: &[u8]) -> CodecResult<Signature64> {
     Ok(Signature64(bytes.try_into().map_err(|_| NON_CANONICAL)?))
 }
 
+/// Decodes a report and checks its binding and worker set.
+///
+/// # Errors
+/// Propagates `decode_report` refusals (`F03_NO_SCORES` mapped to `F04_NO_SCORES`) and `check_binding` refusals; returns `CAPACITY` for more than `MAX_WORKERS` workers; `NON_CANONICAL` for an unsorted worker list; `F03_UNKNOWN_WORKER` for a score outside it.
 pub fn validate_report<'a>(
     body: &'a [u8],
     expected: &EvaluatorBinding,
@@ -108,6 +146,10 @@ pub fn validate_report<'a>(
     Ok(report)
 }
 
+/// Writes the report-digest preimage (domain, then body) into `output`.
+///
+/// # Errors
+/// Propagates `decode_report` refusals (`F03_NO_SCORES` mapped to `F04_NO_SCORES`); returns `ARITHMETIC` on length overflow; `CAPACITY` when the preimage exceeds `REPORT_PREIMAGE_MAX_BYTES` or `output`.
 pub fn report_preimage(body: &[u8], output: &mut [u8]) -> CodecResult<usize> {
     codec::decode_report(body).map_err(report_error)?;
     let length = REPORT_DOMAIN
@@ -122,6 +164,7 @@ pub fn report_preimage(body: &[u8], output: &mut [u8]) -> CodecResult<usize> {
     Ok(length)
 }
 
+#[must_use]
 pub fn attestation_preimage(report: ReportDigest) -> [u8; ATTESTATION_PREIMAGE_BYTES] {
     let mut bytes = [0; ATTESTATION_PREIMAGE_BYTES];
     bytes[..27].copy_from_slice(ATTESTATION_DOMAIN);
@@ -129,6 +172,10 @@ pub fn attestation_preimage(report: ReportDigest) -> [u8; ATTESTATION_PREIMAGE_B
     bytes
 }
 
+/// Builds the commitment preimage: domain, then binding, report digest and salt.
+///
+/// # Errors
+/// Propagates `codec::encode_commitment_preimage`'s `CAPACITY` refusal (unreachable for the fixed buffer).
 pub fn commitment_preimage(
     binding: &EvaluatorBinding,
     report: ReportDigest,
@@ -140,6 +187,10 @@ pub fn commitment_preimage(
     Ok(bytes)
 }
 
+/// Compares a revealed commitment with the stored one.
+///
+/// # Errors
+/// Returns `F04_COMMIT_MISMATCH` when they differ.
 pub fn check_commitment(actual: CommitmentDigest, expected: CommitmentDigest) -> CodecResult<()> {
     if actual == expected {
         Ok(())
@@ -148,6 +199,10 @@ pub fn check_commitment(actual: CommitmentDigest, expected: CommitmentDigest) ->
     }
 }
 
+/// Encodes the 224-byte commit-score payload.
+///
+/// # Errors
+/// Propagates `codec::encode_commit_score`'s `CAPACITY` refusal (unreachable for the fixed buffer).
 pub fn encode_commit_score(
     binding: EvaluatorBinding,
     commitment: CommitmentDigest,
@@ -163,6 +218,10 @@ pub fn encode_commit_score(
     Ok(bytes)
 }
 
+/// Decodes the 224-byte commit-score payload.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is not exactly `COMMIT_SCORE_BYTES`; propagates `codec::decode_commit_score` refusals.
 pub fn decode_commit_score(bytes: &[u8]) -> CodecResult<codec::CommitScorePayload> {
     if bytes.len() != COMMIT_SCORE_BYTES {
         return Err(NON_CANONICAL);
@@ -170,6 +229,10 @@ pub fn decode_commit_score(bytes: &[u8]) -> CodecResult<codec::CommitScorePayloa
     codec::decode_commit_score(bytes)
 }
 
+/// Encodes a reveal-score payload from raw body, signature and salt.
+///
+/// # Errors
+/// Propagates `decode_report`, `decode_signature`, `decode_salt` and `codec::encode_reveal_score` refusals, with `F03_NO_SCORES` mapped to `F04_NO_SCORES`.
 pub fn encode_reveal_score(
     body: &[u8],
     signature: &[u8],
@@ -190,6 +253,10 @@ pub fn encode_reveal_score(
     .map_err(report_error)
 }
 
+/// Decodes a reveal-score payload.
+///
+/// # Errors
+/// Propagates `codec::decode_reveal_score` refusals, with `F03_NO_SCORES` mapped to `F04_NO_SCORES`.
 pub fn decode_reveal_score(bytes: &[u8]) -> CodecResult<codec::RevealScorePayload<'_>> {
     codec::decode_reveal_score(bytes).map_err(report_error)
 }

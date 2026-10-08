@@ -2,9 +2,12 @@
 //! point, saturation, random ties or traversal-order ties; every step is checked.
 use crate::{
     aggregation_codec::{EpochAggregation, WorkerAggregate, MAX_TOTAL_WEIGHT},
-    errors::*,
+    errors::{
+        CodecResult, ARITHMETIC, CAPACITY, F06_AGGREGATION_MISMATCH, F06_INVALID_AMOUNT,
+        F06_LEDGER_INVARIANT_VIOLATION, F06_UNKNOWN_WORKER_ENTITLEMENT, NON_CANONICAL,
+    },
     rewards::RewardOutcome,
-    types::*,
+    types::{Amount, Presence, Score, WorkerId},
     MAX_EVALUATORS, MAX_WORKERS,
 };
 
@@ -13,6 +16,9 @@ pub const CLAIM_EXPIRY_HEIGHTS: u64 = 4096;
 
 /// Lower median of one worker's accepted scores: rank floor((n-1)/2) of the
 /// ascending order. Fewer than quorum accepted observations is no score at all.
+///
+/// # Errors
+/// Returns `CAPACITY` when more than `MAX_EVALUATORS` scores are given.
 pub fn lower_median(scores: &[Score]) -> CodecResult<Presence<Score>> {
     if scores.len() > MAX_EVALUATORS {
         return Err(CAPACITY);
@@ -31,21 +37,32 @@ pub fn lower_median(scores: &[Score]) -> CodecResult<Presence<Score>> {
     )?))
 }
 
+/// Low 64-bit limb of `x`; the masked value always fits, so the error is unreachable.
+fn low_limb(x: u128) -> CodecResult<u64> {
+    u64::try_from(x & u128::from(u64::MAX)).map_err(|_| ARITHMETIC)
+}
+
 /// Exact (floor(b*s/t), (b*s) mod t). The product is held as three 64-bit limbs
 /// (below 2^192, inside the required 256-bit domain) and divided limb by limb.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when `t` is zero or the quotient exceeds 128 bits.
 pub fn mul_div_rem(b: u128, s: u64, t: u64) -> CodecResult<(u128, u64)> {
     if t == 0 {
         return Err(ARITHMETIC);
     }
     let s = u128::from(s);
-    let lo = u128::from(b as u64) * s;
+    let lo = u128::from(low_limb(b)?) * s;
     let hi = (b >> 64) * s;
-    let mid = (lo >> 64) + u128::from(hi as u64);
+    let mid = (lo >> 64) + u128::from(low_limb(hi)?);
     let top = u64::try_from((hi >> 64) + (mid >> 64)).map_err(|_| ARITHMETIC)?;
     let t = u128::from(t);
     let mut rem = 0u128;
     let mut quotient = [0u64; 3];
-    for (q, limb) in quotient.iter_mut().zip([top, mid as u64, lo as u64]) {
+    for (q, limb) in quotient
+        .iter_mut()
+        .zip([top, low_limb(mid)?, low_limb(lo)?])
+    {
         let current = (rem << 64) | u128::from(limb);
         *q = u64::try_from(current / t).map_err(|_| ARITHMETIC)?;
         rem = current % t;
@@ -60,7 +77,7 @@ pub fn mul_div_rem(b: u128, s: u64, t: u64) -> CodecResult<(u128, u64)> {
     ))
 }
 
-/// Exact epoch entitlements in ascending WorkerId order. A NO_ELIGIBLE_SCORE
+/// Exact epoch entitlements in ascending `WorkerId` order. A `NO_ELIGIBLE_SCORE`
 /// result carries no entries and releases the whole budget.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Allocation {
@@ -71,12 +88,15 @@ pub struct Allocation {
     amounts: [Amount; MAX_WORKERS],
 }
 impl Allocation {
+    #[must_use]
     pub const fn budget(&self) -> Amount {
         self.budget
     }
+    #[must_use]
     pub const fn total_weight(&self) -> u64 {
         self.total_weight
     }
+    #[must_use]
     pub const fn outcome(&self) -> RewardOutcome {
         if self.total_weight == 0 {
             RewardOutcome::NoEligibleScore
@@ -84,12 +104,18 @@ impl Allocation {
             RewardOutcome::Allocated
         }
     }
+    #[must_use]
     pub const fn len(&self) -> usize {
         self.count
     }
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.count == 0
     }
+    /// Entitlement at `index` in ascending `WorkerId` order.
+    ///
+    /// # Errors
+    /// Returns `F06_UNKNOWN_WORKER_ENTITLEMENT` when `index` is out of range; `F06_LEDGER_INVARIANT_VIOLATION` when the slot holds no worker.
     pub fn entitlement(&self, index: usize) -> CodecResult<(WorkerId, Amount)> {
         if index >= self.count {
             return Err(F06_UNKNOWN_WORKER_ENTITLEMENT);
@@ -100,7 +126,10 @@ impl Allocation {
 }
 
 /// Largest-remainder allocation of budget B over positive F05 raw weights.
-/// Input order is irrelevant: rows are canonicalized by WorkerId first.
+/// Input order is irrelevant: rows are canonicalized by `WorkerId` first.
+///
+/// # Errors
+/// Returns `F06_INVALID_AMOUNT` when the budget is zero; `CAPACITY` when there are more than `MAX_WORKERS` rows; `NON_CANONICAL` on a duplicate worker; `ARITHMETIC` when a sum overflows or the total exceeds `MAX_TOTAL_WEIGHT`; `F06_LEDGER_INVARIANT_VIOLATION` when the remainder distribution does not conserve the budget.
 pub fn allocate(budget: Amount, outputs: &[WorkerAggregate]) -> CodecResult<Allocation> {
     if budget == 0 {
         return Err(F06_INVALID_AMOUNT);
@@ -182,6 +211,9 @@ pub fn allocate(budget: Amount, outputs: &[WorkerAggregate]) -> CodecResult<Allo
 
 /// Allocation over the immutable F05 output commitment; its recorded total
 /// weight must agree with the recomputed sum.
+///
+/// # Errors
+/// Propagates `allocate`'s refusals; returns `F06_AGGREGATION_MISMATCH` when the recorded total weight differs from the recomputed one.
 pub fn allocate_aggregation(
     budget: Amount,
     aggregation: &EpochAggregation<'_>,
@@ -194,6 +226,9 @@ pub fn allocate_aggregation(
 }
 
 /// Claim window end; overflow refuses rather than saturating.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when the sum overflows.
 pub fn claim_expiry(terminal_height: u64) -> CodecResult<u64> {
     terminal_height
         .checked_add(CLAIM_EXPIRY_HEIGHTS)
@@ -201,6 +236,9 @@ pub fn claim_expiry(terminal_height: u64) -> CodecResult<u64> {
 }
 
 /// D = P + X + F + R + C, every intermediate sum checked.
+///
+/// # Errors
+/// Returns `ARITHMETIC` when the sum overflows.
 pub fn conservation_holds(
     deposits: Amount,
     claimed: Amount,

@@ -1,6 +1,34 @@
 //! Independent canonical bytes/hash fixtures constructed with Python hashlib.
 //! No product execution produced expectations; no authority/balance/finality mocks.
+use core::num::TryFromIntError;
 use layerx_programs_ai_market::{codec::*, dispatch::*, errors::*, *};
+
+enum Failure {
+    Application(ApplicationError),
+    Conversion(TryFromIntError),
+    Unexpected(&'static str),
+}
+impl core::fmt::Debug for Failure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Application(error) => write!(f, "application refusal {error:?}"),
+            Self::Conversion(error) => write!(f, "integer conversion {error:?}"),
+            Self::Unexpected(what) => write!(f, "unexpected {what}"),
+        }
+    }
+}
+impl From<ApplicationError> for Failure {
+    fn from(error: ApplicationError) -> Self {
+        Self::Application(error)
+    }
+}
+impl From<TryFromIntError> for Failure {
+    fn from(error: TryFromIntError) -> Self {
+        Self::Conversion(error)
+    }
+}
+type Checked<T = ()> = Result<T, Failure>;
+
 fn hex(text: &str) -> Vec<u8> {
     assert_eq!(text.len() % 2, 0);
     text.as_bytes()
@@ -17,39 +45,41 @@ fn hex(text: &str) -> Vec<u8> {
         })
         .collect()
 }
-fn fixed32(text: &str) -> [u8; 32] {
-    hex(text).try_into().unwrap()
+fn fixed32(text: &str) -> Checked<[u8; 32]> {
+    hex(text)
+        .try_into()
+        .map_err(|_| Failure::Unexpected("fixture is not 32 bytes"))
 }
-fn binding() -> EvaluatorBinding {
-    EvaluatorBinding {
+fn binding() -> Checked<EvaluatorBinding> {
+    Ok(EvaluatorBinding {
         frozen: FrozenBinding {
-            chain: ChainDomain::new([1; 32]).unwrap(),
-            program: ProgramId::new([2; 32]).unwrap(),
-            market: MarketId::new([3; 32]).unwrap(),
+            chain: ChainDomain::new([1; 32])?,
+            program: ProgramId::new([2; 32])?,
+            market: MarketId::new([3; 32])?,
             epoch: 0,
-            config: Version::new(1).unwrap(),
-            roster: RosterDigest::new([4; 32]).unwrap(),
+            config: Version::new(1)?,
+            roster: RosterDigest::new([4; 32])?,
         },
-        evaluator: EvaluatorId::new([5; 32]).unwrap(),
-        grant: Version::new(1).unwrap(),
-        key_version: Version::new(1).unwrap(),
-    }
+        evaluator: EvaluatorId::new([5; 32])?,
+        grant: Version::new(1)?,
+        key_version: Version::new(1)?,
+    })
 }
-fn score(id: u8, value: u32) -> ScoreEntry {
-    ScoreEntry {
-        worker: WorkerId::new([id; 32]).unwrap(),
-        score: Score::new(value).unwrap(),
-    }
+fn score(id: u8, value: u32) -> Checked<ScoreEntry> {
+    Ok(ScoreEntry {
+        worker: WorkerId::new([id; 32])?,
+        score: Score::new(value)?,
+    })
 }
-fn common() -> EventCommon {
-    EventCommon {
-        market: MarketId::new([3; 32]).unwrap(),
+fn common() -> Checked<EventCommon> {
+    Ok(EventCommon {
+        market: MarketId::new([3; 32])?,
         epoch: 0,
-        config: Version::new(1).unwrap(),
+        config: Version::new(1)?,
         revision: 9,
-        request: RequestDigest::new([8; 32]).unwrap(),
-        result: ResultDigest::new([9; 32]).unwrap(),
-    }
+        request: RequestDigest::new([8; 32])?,
+        result: ResultDigest::new([9; 32])?,
+    })
 }
 const NATIVE_BYTES:&str="50415841493100010a0101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030308080808080808080808080808080808080808080808080808080808080808080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006409090909090909090909090909090909090909090909090909090909090909090000000000";
 const SIGNED_BYTES:&str="5041584149310001020201010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030308080808080808080808080808080808080808080808080808080808080808080000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000006409090909090909090909090909090909090909090909090909090909090909090000004011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111010a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
@@ -308,7 +338,7 @@ const EXPECTED_ALIASES: &[(&str, &str, u16)] = &[
 ];
 
 #[test]
-fn primitives_versions_ordering_and_decimal_boundaries() {
+fn primitives_versions_ordering_and_decimal_boundaries() -> Checked {
     assert!(PrincipalId::new([0; 32]).is_err());
     assert!(ProgramId::new([0; 32]).is_err());
     assert!(MarketId::new([0; 32]).is_err());
@@ -320,10 +350,10 @@ fn primitives_versions_ordering_and_decimal_boundaries() {
     assert!(TaskId::new([0; 32]).is_err());
     assert!(Digest32::new([0; 32]).is_err());
     assert!(Version::new(0).is_err());
-    assert_eq!(Version::new(u64::MAX).unwrap().next(), Err(ARITHMETIC));
-    assert!(WorkerId::new([1; 32]).unwrap() < WorkerId::new([2; 32]).unwrap());
-    assert_eq!(Score::new(0).unwrap().get(), 0);
-    assert_eq!(Score::new(1_000_000).unwrap().get(), 1_000_000);
+    assert_eq!(Version::new(u64::MAX)?.next(), Err(ARITHMETIC));
+    assert!(WorkerId::new([1; 32])? < WorkerId::new([2; 32])?);
+    assert_eq!(Score::new(0)?.get(), 0);
+    assert_eq!(Score::new(1_000_000)?.get(), 1_000_000);
     assert_eq!(Score::new(1_000_001), Err(F03_SCORE_RANGE));
     assert_eq!(decimal_u64("18446744073709551615"), Ok(u64::MAX));
     assert_eq!(decimal_u64("18446744073709551616"), Err(ARITHMETIC));
@@ -341,28 +371,28 @@ fn primitives_versions_ordering_and_decimal_boundaries() {
     }
     let mut bytes = [0; 31];
     let mut w = Writer::new(&mut bytes);
-    w.u8(1).unwrap();
-    w.u16(0x0203).unwrap();
-    w.u32(0x04050607).unwrap();
-    w.u64(0x08090a0b0c0d0e0f).unwrap();
-    w.u128(0x101112131415161718191a1b1c1d1e1f).unwrap();
+    w.u8(1)?;
+    w.u16(0x0203)?;
+    w.u32(0x0405_0607)?;
+    w.u64(0x0809_0a0b_0c0d_0e0f)?;
+    w.u128(0x1011_1213_1415_1617_1819_1a1b_1c1d_1e1f)?;
     assert_eq!(
         bytes.to_vec(),
         hex("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
     );
     let mut r = Reader::new(&bytes);
-    assert_eq!(r.u8().unwrap(), 1);
-    assert_eq!(r.u16().unwrap(), 0x0203);
-    assert_eq!(r.u32().unwrap(), 0x04050607);
-    assert_eq!(r.u64().unwrap(), 0x08090a0b0c0d0e0f);
-    assert_eq!(r.u128().unwrap(), 0x101112131415161718191a1b1c1d1e1f);
-    r.finish().unwrap();
+    assert_eq!(r.u8()?, 1);
+    assert_eq!(r.u16()?, 0x0203);
+    assert_eq!(r.u32()?, 0x0405_0607);
+    assert_eq!(r.u64()?, 0x0809_0a0b_0c0d_0e0f);
+    assert_eq!(r.u128()?, 0x1011_1213_1415_1617_1819_1a1b_1c1d_1e1f);
+    r.finish()?;
     assert!(Reader::new(&[2]).boolean().is_err());
     assert!(Reader::new(&[2]).presence(Reader::u64).is_err());
     assert!(Reader::new(&[0, 1]).reserved(2).is_err());
     assert!(Reader::new(&[0]).finish().is_err());
     let mut r = Reader::new(&[0]);
-    r.take(1).unwrap();
+    r.take(1)?;
     assert_eq!(r.take(usize::MAX), Err(ARITHMETIC));
     assert_eq!(Reader::new(&[255, 255, 255, 255]).bytes(16), Err(CAPACITY));
     assert_eq!(
@@ -374,17 +404,18 @@ fn primitives_versions_ordering_and_decimal_boundaries() {
         Err(ARITHMETIC)
     );
     assert_eq!(Salt32::new([0; 32]), Err(F04_SALT_INVALID));
+    Ok(())
 }
 
 #[test]
-fn all_fifty_five_selectors_and_entire_error_freeze() {
+fn all_fifty_five_selectors_and_entire_error_freeze() -> Checked {
     assert_eq!(EXPECTED_OPERATIONS.len(), 55);
     assert_eq!(OPERATIONS.len(), 55);
     for &(code, name) in EXPECTED_OPERATIONS {
-        let op = Operation::decode(code).unwrap();
+        let op = Operation::decode(code)?;
         assert_eq!(op.selector(), code);
         assert_eq!(op.metadata().name, name);
-        assert_eq!(op.metadata().feature, u8::try_from(code >> 8).unwrap());
+        assert_eq!(op.metadata().feature, u8::try_from(code >> 8)?);
     }
     for code in [
         0, 1, 255, 0x0100, 0x0112, 0x0208, 0x0281, 0x0305, 0x0704, 0x0902, 0x0a03, 0xffff,
@@ -394,11 +425,11 @@ fn all_fifty_five_selectors_and_entire_error_freeze() {
     assert_eq!(APPLICATION_ERRORS.len(), EXPECTED_ERRORS.len());
     assert_eq!(APPLICATION_ALIASES.len(), EXPECTED_ALIASES.len());
     for &(feature, name, code) in EXPECTED_ERRORS {
-        assert_eq!(ApplicationError::from_code(code).unwrap().code(), code);
-        assert_eq!(ApplicationError::named(feature, name).unwrap().code(), code);
+        assert_eq!(ApplicationError::from_code(code)?.code(), code);
+        assert_eq!(ApplicationError::named(feature, name)?.code(), code);
     }
     for &(feature, name, code) in EXPECTED_ALIASES {
-        assert_eq!(ApplicationError::named(feature, name).unwrap().code(), code);
+        assert_eq!(ApplicationError::named(feature, name)?.code(), code);
     }
     for (i, a) in APPLICATION_ERRORS.iter().enumerate() {
         assert!(APPLICATION_ERRORS[i + 1..].iter().all(|b| b.code != a.code));
@@ -420,10 +451,7 @@ fn all_fifty_five_selectors_and_entire_error_freeze() {
         assert!(offchain_error(space, 0).is_err());
         assert!(offchain_error(space, u16::MAX).is_err());
         for (i, name) in table.iter().enumerate() {
-            assert_eq!(
-                offchain_error(space, u16::try_from(i + 1).unwrap()),
-                Ok(*name)
-            );
+            assert_eq!(offchain_error(space, u16::try_from(i + 1)?), Ok(*name));
         }
     }
     assert_eq!(
@@ -446,25 +474,26 @@ fn all_fifty_five_selectors_and_entire_error_freeze() {
         offchain_error(OffchainSpace::ViewQuery, 1),
         Ok("CursorExpired")
     );
+    Ok(())
 }
 
 #[test]
-fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() {
+fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() -> Checked {
     let bytes = hex(NATIVE_BYTES);
     assert_eq!(bytes.len(), 239);
-    let v = decode_envelope(&bytes).unwrap();
+    let v = decode_envelope(&bytes)?;
     assert_eq!(v.unsigned_bytes().len(), 238);
-    assert_eq!(v.request_digest().unwrap().bytes(), fixed32(NATIVE_DIGEST));
+    assert_eq!(v.request_digest()?.bytes(), fixed32(NATIVE_DIGEST)?);
     assert_eq!(v.envelope.authentication, Authentication::Native);
     let mut out = [0; 512];
-    assert_eq!(encode_envelope(&v.envelope, &mut out).unwrap(), 239);
+    assert_eq!(encode_envelope(&v.envelope, &mut out)?, 239);
     assert_eq!(&out[..239], bytes.as_slice());
     assert_eq!(v.envelope.check_expiry(99), Ok(()));
     assert_eq!(v.envelope.check_expiry(100), Err(EXPIRED));
     assert_eq!(v.envelope.check_expiry(101), Err(EXPIRED));
     assert_eq!(
-        request_signing_message(v.request_digest().unwrap()),
-        fixed32(NATIVE_DIGEST)
+        request_signing_message(v.request_digest()?),
+        fixed32(NATIVE_DIGEST)?
     );
     for n in 0..bytes.len() {
         assert!(decode_envelope(&bytes[..n]).is_err());
@@ -488,13 +517,13 @@ fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() {
     assert!(decode_envelope(&bad).is_err());
     let signed = hex(SIGNED_BYTES);
     assert_eq!(signed.len(), 399);
-    let s = decode_envelope(&signed).unwrap();
+    let s = decode_envelope(&signed)?;
     assert_eq!(s.unsigned_bytes().len(), 302);
-    assert_eq!(s.request_digest().unwrap().bytes(), fixed32(SIGNED_DIGEST));
+    assert_eq!(s.request_digest()?.bytes(), fixed32(SIGNED_DIGEST)?);
     assert_eq!(signed[302], 1);
     assert_eq!(&signed[303..335], &[10; 32]);
     assert_eq!(&signed[335..399], &[11; 64]);
-    assert_eq!(encode_envelope(&s.envelope, &mut out).unwrap(), 399);
+    assert_eq!(encode_envelope(&s.envelope, &mut out)?, 399);
     assert_eq!(&out[..399], signed.as_slice());
     for n in 302..399 {
         assert!(decode_envelope(&signed[..n]).is_err());
@@ -502,14 +531,14 @@ fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() {
     let mut changed = signed.clone();
     changed[398] ^= 1;
     assert_eq!(
-        decode_envelope(&changed).unwrap().request_digest().unwrap(),
-        s.request_digest().unwrap()
+        decode_envelope(&changed)?.request_digest()?,
+        s.request_digest()?
     );
     let mut changed = signed.clone();
     changed[301] ^= 1;
     assert_ne!(
-        decode_envelope(&changed).unwrap().request_digest().unwrap(),
-        s.request_digest().unwrap()
+        decode_envelope(&changed)?.request_digest()?,
+        s.request_digest()?
     );
     let mut no_sequence = s.envelope;
     no_sequence.sequence = 0;
@@ -518,19 +547,19 @@ fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() {
     read_delegate.authentication = s.envelope.authentication;
     assert!(read_delegate.validate().is_err());
     assert_eq!(
-        compare_direct_call(Presence::Present(ProgramId::new([2; 32]).unwrap())),
+        compare_direct_call(Presence::Present(ProgramId::new([2; 32])?)),
         Err(UNAUTHORIZED)
     );
     assert_eq!(compare_direct_call(Presence::Absent), Ok(()));
     assert_eq!(
-        compare_native_principal(&v.envelope, PrincipalId::new([1; 32]).unwrap()),
+        compare_native_principal(&v.envelope, PrincipalId::new([1; 32])?),
         Err(UNAUTHORIZED)
     );
     assert_eq!(
         v.envelope.check_domain(
-            ChainDomain::new([2; 32]).unwrap(),
-            ProgramId::new([2; 32]).unwrap(),
-            MarketId::new([3; 32]).unwrap()
+            ChainDomain::new([2; 32])?,
+            ProgramId::new([2; 32])?,
+            MarketId::new([3; 32])?
         ),
         Err(WRONG_DOMAIN)
     );
@@ -539,40 +568,46 @@ fn envelope_fixed_native_delegate_offsets_hashes_and_refusals() {
     let mut e = s.envelope;
     e.payload = &huge;
     assert!(e.validate().is_err());
+    Ok(())
 }
 
 #[test]
-fn independent_report_attestation_commitment_vectors_and_set_refusals() {
-    let scores = [score(7, 42)];
+fn independent_report_attestation_commitment_vectors_and_set_refusals() -> Checked {
+    let scores = [score(7, 42)?];
     let report = ReportBody {
-        binding: binding(),
-        evidence: EvidenceRoot::new([6; 32]).unwrap(),
+        binding: binding()?,
+        evidence: EvidenceRoot::new([6; 32])?,
         scores: ScoreVector::Typed(&scores),
     };
     let mut out = [0; 1381];
-    let n = encode_report(&report, &mut out).unwrap();
+    let n = encode_report(&report, &mut out)?;
     assert_eq!(n, 264);
     assert_eq!(&out[..n], hex(REPORT_BYTES).as_slice());
-    let digest = report_digest(&report).unwrap();
-    assert_eq!(digest.bytes(), fixed32(REPORT_DIGEST));
-    let attestation = attestation_digest(digest).unwrap();
-    assert_eq!(attestation.bytes(), fixed32(ATTESTATION_DIGEST));
+    let digest = report_digest(&report)?;
+    assert_eq!(digest.bytes(), fixed32(REPORT_DIGEST)?);
+    let attestation = attestation_digest(digest)?;
+    assert_eq!(attestation.bytes(), fixed32(ATTESTATION_DIGEST)?);
     assert_eq!(
         report_signing_message(attestation),
-        fixed32(ATTESTATION_DIGEST)
+        fixed32(ATTESTATION_DIGEST)?
     );
     assert_eq!(
-        commitment_digest(&binding(), digest, Salt32::new([15; 32]).unwrap())
-            .unwrap()
-            .bytes(),
-        fixed32(COMMITMENT_DIGEST)
+        commitment_digest(&binding()?, digest, Salt32::new([15; 32])?)?.bytes(),
+        fixed32(COMMITMENT_DIGEST)?
     );
     assert_ne!(digest.bytes(), attestation.bytes());
-    assert_ne!(digest.bytes(), fixed32(COMMITMENT_DIGEST));
+    assert_ne!(digest.bytes(), fixed32(COMMITMENT_DIGEST)?);
     let input = hex(REPORT_BYTES);
-    let decoded = decode_report(&input).unwrap();
-    assert_eq!(decoded.binding, binding());
-    assert_eq!(decoded.scores.entries().next().unwrap().unwrap(), scores[0]);
+    let decoded = decode_report(&input)?;
+    assert_eq!(decoded.binding, binding()?);
+    assert_eq!(
+        decoded
+            .scores
+            .entries()
+            .next()
+            .ok_or(Failure::Unexpected("decoded report has no score entry"))??,
+        scores[0]
+    );
     for n in 0..input.len() {
         assert!(decode_report(&input[..n]).is_err());
     }
@@ -581,16 +616,16 @@ fn independent_report_attestation_commitment_vectors_and_set_refusals() {
     assert!(decode_report(&trailing).is_err());
     let mut empty = input[..228].to_vec();
     empty[226..228].copy_from_slice(&0_u16.to_be_bytes());
-    assert_eq!(decode_report(&empty).unwrap_err(), F03_NO_SCORES);
+    assert_eq!(decode_report(&empty).err(), Some(F03_NO_SCORES));
     let mut too_many = input.clone();
     too_many[226..228].copy_from_slice(&33_u16.to_be_bytes());
     assert!(decode_report(&too_many).is_err());
     let mut bad = input.clone();
     bad[260..264].copy_from_slice(&1_000_001_u32.to_be_bytes());
-    assert_eq!(decode_report(&bad).unwrap_err(), F03_SCORE_RANGE);
+    assert_eq!(decode_report(&bad).err(), Some(F03_SCORE_RANGE));
     for values in [
-        vec![score(7, 0), score(7, 1)],
-        vec![score(8, 1), score(7, 1)],
+        vec![score(7, 0)?, score(7, 1)?],
+        vec![score(8, 1)?, score(7, 1)?],
     ] {
         let v = ReportBody {
             scores: ScoreVector::Typed(&values),
@@ -599,70 +634,68 @@ fn independent_report_attestation_commitment_vectors_and_set_refusals() {
         assert!(encode_report(&v, &mut out).is_err());
     }
     assert_eq!(ScoreVector::Typed(&[]).validate(), Err(F03_NO_SCORES));
-    assert!(ScoreVector::Typed(&vec![score(7, 0); 33])
+    assert!(ScoreVector::Typed(&vec![score(7, 0)?; 33])
         .validate()
         .is_err());
-    let many: Vec<_> = (1..=32).map(|i| score(i, 0)).collect();
+    let many: Vec<_> = (1..=32).map(|i| score(i, 0)).collect::<Checked<_>>()?;
     let v = ReportBody {
         scores: ScoreVector::Typed(&many),
         ..report
     };
-    assert_eq!(encode_report(&v, &mut out).unwrap(), 1380);
-    decode_report(&out[..1380]).unwrap();
+    assert_eq!(encode_report(&v, &mut out)?, 1380);
+    decode_report(&out[..1380])?;
     let c = CommitScorePayload {
-        binding: binding(),
-        commitment: CommitmentDigest::new(fixed32(COMMITMENT_DIGEST)).unwrap(),
+        binding: binding()?,
+        commitment: CommitmentDigest::new(fixed32(COMMITMENT_DIGEST)?)?,
     };
     let mut bytes = [0; 224];
-    assert_eq!(encode_commit_score(&c, &mut bytes).unwrap(), 224);
+    assert_eq!(encode_commit_score(&c, &mut bytes)?, 224);
     assert_eq!(&bytes[..192], &input[2..194]);
-    assert_eq!(decode_commit_score(&bytes).unwrap(), c);
+    assert_eq!(decode_commit_score(&bytes)?, c);
     let reveal = RevealScorePayload {
         report,
         signature: Signature64([11; 64]),
-        salt: Salt32::new([15; 32]).unwrap(),
+        salt: Salt32::new([15; 32])?,
     };
     let mut bytes = [0; 1480];
-    assert_eq!(encode_reveal_score(&reveal, &mut bytes).unwrap(), 364);
+    assert_eq!(encode_reveal_score(&reveal, &mut bytes)?, 364);
     assert_eq!(&bytes[..4], &264_u32.to_be_bytes());
     assert_eq!(&bytes[4..268], input.as_slice());
-    decode_reveal_score(&bytes[..364]).unwrap();
+    decode_reveal_score(&bytes[..364])?;
     bytes[332..364].fill(0);
     assert_eq!(
-        decode_reveal_score(&bytes[..364]).unwrap_err(),
-        F04_SALT_INVALID
+        decode_reveal_score(&bytes[..364]).err(),
+        Some(F04_SALT_INVALID)
     );
+    Ok(())
 }
 
 #[test]
-fn independent_id_derivation_and_cross_domain_separation() {
-    let chain = ChainDomain::new([1; 32]).unwrap();
-    let program = ProgramId::new([2; 32]).unwrap();
-    let market = MarketId::new([3; 32]).unwrap();
-    let owner = PrincipalId::new([8; 32]).unwrap();
+fn independent_id_derivation_and_cross_domain_separation() -> Checked {
+    let chain = ChainDomain::new([1; 32])?;
+    let program = ProgramId::new([2; 32])?;
+    let market = MarketId::new([3; 32])?;
+    let owner = PrincipalId::new([8; 32])?;
+    assert_eq!(derive_market(chain, program)?.bytes(), fixed32(MARKET_ID)?);
     assert_eq!(
-        derive_market(chain, program).unwrap().bytes(),
-        fixed32(MARKET_ID)
+        derive_worker(market, owner, [15; 32])?.bytes(),
+        fixed32(WORKER_ID)?
     );
     assert_eq!(
-        derive_worker(market, owner, [15; 32]).unwrap().bytes(),
-        fixed32(WORKER_ID)
+        derive_evaluator(market, owner, [15; 32])?.bytes(),
+        fixed32(EVALUATOR_ID)?
     );
     assert_eq!(
-        derive_evaluator(market, owner, [15; 32]).unwrap().bytes(),
-        fixed32(EVALUATOR_ID)
+        derive_task(market, 0, owner, [15; 32])?.bytes(),
+        fixed32(TASK_ID)?
     );
     assert_eq!(
-        derive_task(market, 0, owner, [15; 32]).unwrap().bytes(),
-        fixed32(TASK_ID)
+        domain_hash("PAXAI/result/v1", &[])?.bytes(),
+        fixed32(EMPTY_RESULT_DIGEST)?
     );
     assert_eq!(
-        domain_hash("PAXAI/result/v1", &[]).unwrap().bytes(),
-        fixed32(EMPTY_RESULT_DIGEST)
-    );
-    assert_eq!(
-        domain_hash("PAXAI/request/v1", &[]).unwrap().bytes(),
-        fixed32(EMPTY_REQUEST_DIGEST)
+        domain_hash("PAXAI/request/v1", &[])?.bytes(),
+        fixed32(EMPTY_REQUEST_DIGEST)?
     );
     assert_ne!(EMPTY_RESULT_DIGEST, EMPTY_REQUEST_DIGEST);
     for domain in ["", "non\0ascii", "é"] {
@@ -674,54 +707,52 @@ fn independent_id_derivation_and_cross_domain_separation() {
     );
     assert!(refuse_identity_collision(&[0; 32], &[]).is_err());
     assert_eq!(refuse_identity_collision(&[1; 32], &[[2; 32]]), Ok(()));
+    Ok(())
 }
 
 #[test]
-fn exact_roster_entries_preimage_hash_and_order() {
+fn exact_roster_entries_preimage_hash_and_order() -> Checked {
     let worker = WorkerRosterEntry {
-        worker: WorkerId::new([7; 32]).unwrap(),
-        owner: PrincipalId::new([8; 32]).unwrap(),
-        recipient: AccountId::new([9; 32]).unwrap(),
-        generation: Version::new(1).unwrap(),
-        key_version: Version::new(1).unwrap(),
+        worker: WorkerId::new([7; 32])?,
+        owner: PrincipalId::new([8; 32])?,
+        recipient: AccountId::new([9; 32])?,
+        generation: Version::new(1)?,
+        key_version: Version::new(1)?,
         public_key: PublicKey32([10; 32]),
-        metadata: MetadataDigest::new([11; 32]).unwrap(),
+        metadata: MetadataDigest::new([11; 32])?,
     };
     let evaluator = EvaluatorRosterEntry {
-        evaluator: EvaluatorId::new([5; 32]).unwrap(),
-        owner: PrincipalId::new([12; 32]).unwrap(),
-        grant: Version::new(1).unwrap(),
-        key_version: Version::new(1).unwrap(),
+        evaluator: EvaluatorId::new([5; 32])?,
+        owner: PrincipalId::new([12; 32])?,
+        grant: Version::new(1)?,
+        key_version: Version::new(1)?,
         public_key: PublicKey32([13; 32]),
-        rubric: RubricDigest::new([14; 32]).unwrap(),
+        rubric: RubricDigest::new([14; 32])?,
     };
     let mut wb = [0; 176];
-    assert_eq!(encode_worker_roster(&worker, &mut wb).unwrap(), 176);
+    assert_eq!(encode_worker_roster(&worker, &mut wb)?, 176);
     assert_eq!(wb.to_vec(), hex(WORKER_BYTES));
     let mut eb = [0; 144];
-    assert_eq!(encode_evaluator_roster(&evaluator, &mut eb).unwrap(), 144);
+    assert_eq!(encode_evaluator_roster(&evaluator, &mut eb)?, 144);
     assert_eq!(eb.to_vec(), hex(EVALUATOR_BYTES));
     let workers = [worker];
     let evaluators = [evaluator];
     let roster = Roster {
-        market: MarketId::new([3; 32]).unwrap(),
+        market: MarketId::new([3; 32])?,
         epoch: 0,
-        config: Version::new(1).unwrap(),
+        config: Version::new(1)?,
         workers: &workers,
         evaluators: &evaluators,
     };
     let mut out = [0; ROSTER_MAX_BYTES];
-    assert_eq!(encode_roster(&roster, &mut out).unwrap(), 374);
+    assert_eq!(encode_roster(&roster, &mut out)?, 374);
     assert_eq!(&out[..374], hex(ROSTER_BYTES).as_slice());
-    assert_eq!(
-        roster_digest(&roster).unwrap().bytes(),
-        fixed32(ROSTER_DIGEST)
-    );
+    assert_eq!(roster_digest(&roster)?.bytes(), fixed32(ROSTER_DIGEST)?);
     let input = hex(ROSTER_BYTES);
-    let view = decode_roster(&input).unwrap();
-    assert_eq!(view.worker(0).unwrap(), worker);
-    assert_eq!(view.evaluator(0).unwrap(), evaluator);
-    assert_eq!(view.digest().unwrap().bytes(), fixed32(ROSTER_DIGEST));
+    let view = decode_roster(&input)?;
+    assert_eq!(view.worker(0)?, worker);
+    assert_eq!(view.evaluator(0)?, evaluator);
+    assert_eq!(view.digest()?.bytes(), fixed32(ROSTER_DIGEST)?);
     assert!(view.worker(usize::MAX).is_err());
     assert!(view.evaluator(1).is_err());
     let duplicate = [worker, worker];
@@ -732,7 +763,7 @@ fn exact_roster_entries_preimage_hash_and_order() {
     .validate()
     .is_err());
     let mut other = worker;
-    other.worker = WorkerId::new([6; 32]).unwrap();
+    other.worker = WorkerId::new([6; 32])?;
     let descending = [worker, other];
     assert!(Roster {
         workers: &descending,
@@ -756,30 +787,26 @@ fn exact_roster_entries_preimage_hash_and_order() {
     let mut bad = input.clone();
     bad.push(0);
     assert!(decode_roster(&bad).is_err());
+    Ok(())
 }
 
 #[test]
-fn exact_result_header_status_known_error_empty_failure_and_digest() {
+fn exact_result_header_status_known_error_empty_failure_and_digest() -> Checked {
     let payload = [0xaa, 0xbb];
-    let result = ApplicationResult::success(
-        ResultStatus::Ok,
-        RequestDigest::new([8; 32]).unwrap(),
-        9,
-        &payload,
-    )
-    .unwrap();
-    let mut out = [0; 16385];
-    assert_eq!(encode_result(&result, &mut out).unwrap(), 84);
+    let result =
+        ApplicationResult::success(ResultStatus::Ok, RequestDigest::new([8; 32])?, 9, &payload)?;
+    let mut out = vec![0; 16385];
+    assert_eq!(encode_result(&result, &mut out)?, 84);
     assert_eq!(&out[..84], hex(SUCCESS_BYTES).as_slice());
     assert_eq!(&out[78..82], &2_u32.to_be_bytes());
-    let error = ApplicationResult::failure(UNKNOWN_OPERATION, Presence::Absent, 99).unwrap();
+    let error = ApplicationResult::failure(UNKNOWN_OPERATION, Presence::Absent, 99)?;
     assert_eq!(error.revision, 0);
-    assert_eq!(encode_result(&error, &mut out).unwrap(), 82);
+    assert_eq!(encode_result(&error, &mut out)?, 82);
     assert_eq!(&out[..82], hex(ERROR_BYTES).as_slice());
     let input = hex(ERROR_BYTES);
-    decode_result(&input).unwrap();
+    decode_result(&input)?;
     let success = hex(SUCCESS_BYTES);
-    decode_result(&success).unwrap();
+    decode_result(&success)?;
     for n in 0..success.len() {
         assert!(decode_result(&success[..n]).is_err());
     }
@@ -803,81 +830,69 @@ fn exact_result_header_status_known_error_empty_failure_and_digest() {
     assert!(decode_result(&bad).is_err());
     let already = ApplicationResult::success(
         ResultStatus::AlreadyApplied,
-        RequestDigest::new([8; 32]).unwrap(),
+        RequestDigest::new([8; 32])?,
         9,
         &payload,
-    )
-    .unwrap();
+    )?;
     assert_eq!(already.digest, result.digest);
     assert_eq!(already.revision, result.revision);
-    assert_eq!(encode_result(&already, &mut out).unwrap(), 84);
+    assert_eq!(encode_result(&already, &mut out)?, 84);
     assert_eq!(&out[2..6], &[0, 1, 0, 0]);
     let unauthorized = ApplicationResult::failure(
         UNAUTHORIZED,
-        Presence::Present(RequestDigest::new([8; 32]).unwrap()),
+        Presence::Present(RequestDigest::new([8; 32])?),
         9,
-    )
-    .unwrap();
+    )?;
     assert_eq!(unauthorized.revision, 0);
-    let visible = ApplicationResult::failure(
-        CONFLICT,
-        Presence::Present(RequestDigest::new([8; 32]).unwrap()),
-        9,
-    )
-    .unwrap();
+    let visible =
+        ApplicationResult::failure(CONFLICT, Presence::Present(RequestDigest::new([8; 32])?), 9)?;
     assert_eq!(visible.revision, 9);
     let maximum = vec![1; 16302];
-    let r = ApplicationResult::success(
-        ResultStatus::Ok,
-        RequestDigest::new([8; 32]).unwrap(),
-        9,
-        &maximum,
-    )
-    .unwrap();
-    assert_eq!(encode_result(&r, &mut out).unwrap(), 16384);
+    let r =
+        ApplicationResult::success(ResultStatus::Ok, RequestDigest::new([8; 32])?, 9, &maximum)?;
+    assert_eq!(encode_result(&r, &mut out)?, 16384);
     assert!(ApplicationResult::success(
         ResultStatus::Ok,
-        RequestDigest::new([8; 32]).unwrap(),
+        RequestDigest::new([8; 32])?,
         9,
         &vec![1; 16303]
     )
     .is_err());
+    Ok(())
 }
 
 #[test]
-fn exact_common_commit_reveal_events_and_bounds() {
+fn exact_common_commit_reveal_events_and_bounds() -> Checked {
     let mut out = [0; 2049];
-    assert_eq!(encode_event_common(&common(), &mut out).unwrap(), 122);
+    assert_eq!(encode_event_common(&common()?, &mut out)?, 122);
     assert_eq!(&out[..122], hex(COMMON_EVENT_BYTES).as_slice());
     let commit = CommitAccepted {
-        common: common(),
-        evaluator: EvaluatorId::new([5; 32]).unwrap(),
-        commitment: CommitmentDigest::new([10; 32]).unwrap(),
+        common: common()?,
+        evaluator: EvaluatorId::new([5; 32])?,
+        commitment: CommitmentDigest::new([10; 32])?,
         accepted_height: 64,
     };
-    assert_eq!(encode_commit_event(&commit, &mut out).unwrap(), 194);
+    assert_eq!(encode_commit_event(&commit, &mut out)?, 194);
     assert_eq!(&out[..194], hex(COMMIT_EVENT_BYTES).as_slice());
     let input = hex(COMMIT_EVENT_BYTES);
-    assert_eq!(decode_commit_event(&input).unwrap(), commit);
+    assert_eq!(decode_commit_event(&input)?, commit);
     let reveal = RevealScoreEvent {
-        common: common(),
-        evaluator: EvaluatorId::new([5; 32]).unwrap(),
-        report: ReportDigest::new([11; 32]).unwrap(),
-        evidence: EvidenceRoot::new([6; 32]).unwrap(),
+        common: common()?,
+        evaluator: EvaluatorId::new([5; 32])?,
+        report: ReportDigest::new([11; 32])?,
+        evidence: EvidenceRoot::new([6; 32])?,
         vector_count: 1,
         admitted_height: 80,
     };
-    assert_eq!(encode_reveal_event(&reveal, &mut out).unwrap(), 228);
+    assert_eq!(encode_reveal_event(&reveal, &mut out)?, 228);
     assert_eq!(&out[..228], hex(REVEAL_EVENT_BYTES).as_slice());
     let input = hex(REVEAL_EVENT_BYTES);
-    assert_eq!(decode_reveal_event(&input).unwrap(), reveal);
+    assert_eq!(decode_reveal_event(&input)?, reveal);
     let mut topic = [0; 64];
-    let n = event_topic(CommitScore, &mut topic).unwrap();
+    let n = event_topic(CommitScore, &mut topic)?;
     assert_eq!(&topic[..n], b"PAXAI/v1/CommitScore");
     assert_eq!(
-        decode_event_frame(&topic[..n], &hex(COMMIT_EVENT_BYTES))
-            .unwrap()
-            .0,
+        decode_event_frame(&topic[..n], &hex(COMMIT_EVENT_BYTES))?.0,
         CommitScore
     );
     let mut bad = input.clone();
@@ -887,34 +902,32 @@ fn exact_common_commit_reveal_events_and_bounds() {
     bad.push(0);
     assert!(decode_reveal_event(&bad).is_err());
     assert!(decode_event_frame(b"PAXAI/v1/UNKNOWN", &input).is_err());
-    assert!(decode_event_frame(&vec![b'A'; 65], &input).is_err());
+    assert!(decode_event_frame(&[b'A'; 65], &input).is_err());
     assert!(decode_event_frame(b"PAXAI/v1/RevealScore", &vec![0; 2049]).is_err());
-    assert!(encode_event_frame(READ_HEADER, &common(), &[], &mut out).is_err());
-    assert!(encode_event_frame(CommitScore, &common(), &[0; 72], &mut out).is_err());
+    assert!(encode_event_frame(READ_HEADER, &common()?, &[], &mut out).is_err());
+    assert!(encode_event_frame(CommitScore, &common()?, &[0; 72], &mut out).is_err());
     let suffix = vec![1; 1926];
     assert_eq!(
-        encode_event_frame(OPEN_EPOCH, &common(), &suffix, &mut out).unwrap(),
+        encode_event_frame(OPEN_EPOCH, &common()?, &suffix, &mut out)?,
         2048
     );
-    assert!(encode_event_frame(OPEN_EPOCH, &common(), &vec![1; 1927], &mut out).is_err());
+    assert!(encode_event_frame(OPEN_EPOCH, &common()?, &vec![1; 1927], &mut out).is_err());
+    Ok(())
 }
 
 #[test]
-fn independent_state_frame_hash_all_section_caps_and_refusals() {
+fn independent_state_frame_hash_all_section_caps_and_refusals() -> Checked {
     let state = StateFrame {
         revision: 1,
         sections: [&[]; 6],
     };
-    let mut out = vec![0; 196609];
-    assert_eq!(state.encoded_len().unwrap(), 64);
-    assert_eq!(encode_state(&state, &mut out).unwrap(), 64);
+    let mut out = vec![0; 196_609];
+    assert_eq!(state.encoded_len()?, 64);
+    assert_eq!(encode_state(&state, &mut out)?, 64);
     assert_eq!(&out[..64], hex(STATE_BYTES).as_slice());
-    assert_eq!(
-        state_digest(&out[..64]).unwrap().bytes(),
-        fixed32(STATE_DIGEST)
-    );
+    assert_eq!(state_digest(&out[..64])?.bytes(), fixed32(STATE_DIGEST)?);
     let input = hex(STATE_BYTES);
-    assert_eq!(decode_state(&input).unwrap(), state);
+    assert_eq!(decode_state(&input)?, state);
     for n in 0..64 {
         assert!(decode_state(&input[..n]).is_err());
     }
@@ -946,9 +959,9 @@ fn independent_state_frame_hash_all_section_caps_and_refusals() {
             &payloads[5],
         ],
     };
-    assert_eq!(full.encoded_len().unwrap(), 196608);
-    assert_eq!(encode_state(&full, &mut out).unwrap(), 196608);
-    assert_eq!(decode_state(&out[..196608]).unwrap(), full);
+    assert_eq!(full.encoded_len()?, 196_608);
+    assert_eq!(encode_state(&full, &mut out)?, 196_608);
+    assert_eq!(decode_state(&out[..196_608])?, full);
     for i in 0..6 {
         let excess = vec![1; maxima[i] + 1];
         let mut sections = [&[][..]; 6];
@@ -958,47 +971,75 @@ fn independent_state_frame_hash_all_section_caps_and_refusals() {
             sections,
         };
         assert_eq!(oversized.encoded_len(), Err(CAPACITY));
-        let mut scratch = vec![0x5a; 196609];
+        let mut scratch = vec![0x5a; 196_609];
         assert_eq!(encode_state(&oversized, &mut scratch), Err(CAPACITY));
         assert!(scratch.iter().all(|&b| b == 0x5a));
         let mut declared = input.clone();
         let start = 16 + i * 8;
         declared[start + 4..start + 8]
-            .copy_from_slice(&u32::try_from(maxima[i] + 1).unwrap().to_be_bytes());
-        assert_eq!(decode_state(&declared).unwrap_err(), CAPACITY);
+            .copy_from_slice(&u32::try_from(maxima[i] + 1)?.to_be_bytes());
+        assert_eq!(decode_state(&declared).err(), Some(CAPACITY));
     }
-    assert_eq!(decode_state(&vec![0; 196609]).unwrap_err(), CAPACITY);
+    assert_eq!(decode_state(&vec![0; 196_609]).err(), Some(CAPACITY));
     let mut short = [0x5a; 63];
     assert_eq!(encode_state(&state, &mut short), Err(CAPACITY));
     assert_eq!(short, [0x5a; 63]);
+    Ok(())
 }
 
 #[test]
-fn read_header_optional_epoch_zero_and_exact_chunk_binding() {
-    let digest = StateDigest::new(fixed32(STATE_DIGEST)).unwrap();
+fn read_header_optional_epoch_zero_and_exact_chunk_binding() -> Checked {
+    let digest = StateDigest::new(fixed32(STATE_DIGEST)?)?;
+    read_header_bindings(digest)?;
+    let request = ChunkRequest {
+        revision: 0,
+        digest: Presence::Absent,
+        offset: 0,
+        requested: 8192,
+    };
+    let mut rb = [0; 46];
+    assert_eq!(encode_chunk_request(&request, &mut rb)?, 46);
+    assert_eq!(&rb[..44], &[0; 44]);
+    assert_eq!(&rb[44..], &[0x20, 0]);
+    assert_eq!(decode_chunk_request(&rb)?, request);
+    let data = hex(STATE_BYTES);
+    let response = ChunkResponse {
+        revision: 1,
+        digest,
+        total_bytes: 64,
+        offset: 0,
+        bytes: &data,
+    };
+    let mut out = vec![0; 8244];
+    let bound = chunk_response_binding(request, response, digest, &data, &mut out)?;
+    chunk_refusals_and_maximum(request, response, bound, digest, &mut out)?;
+    Ok(())
+}
+
+fn read_header_bindings(digest: StateDigest) -> Checked {
     let header = ReadHeader {
         revision: 1,
         digest,
         total_bytes: 64,
-        chain: ChainDomain::new([1; 32]).unwrap(),
-        program: ProgramId::new([2; 32]).unwrap(),
-        market: MarketId::new([3; 32]).unwrap(),
+        chain: ChainDomain::new([1; 32])?,
+        program: ProgramId::new([2; 32])?,
+        market: MarketId::new([3; 32])?,
         epoch: Presence::Absent,
-        config: Version::new(1).unwrap(),
+        config: Version::new(1)?,
         roster: Presence::Absent,
     };
     let mut bytes = [0; 192];
-    assert_eq!(encode_read_header(&header, &mut bytes).unwrap(), 152);
-    assert_eq!(decode_read_header(&bytes[..152]).unwrap(), header);
+    assert_eq!(encode_read_header(&header, &mut bytes)?, 152);
+    assert_eq!(decode_read_header(&bytes[..152])?, header);
     assert_eq!(bytes[142], 0);
     assert_eq!(bytes[151], 0);
     let opened = ReadHeader {
         epoch: Presence::Present(0),
-        roster: Presence::Present(RosterDigest::new([4; 32]).unwrap()),
+        roster: Presence::Present(RosterDigest::new([4; 32])?),
         ..header
     };
-    assert_eq!(encode_read_header(&opened, &mut bytes).unwrap(), 192);
-    assert_eq!(decode_read_header(&bytes).unwrap(), opened);
+    assert_eq!(encode_read_header(&opened, &mut bytes)?, 192);
+    assert_eq!(decode_read_header(&bytes)?, opened);
     assert_eq!(bytes[142], 1);
     assert_eq!(&bytes[143..151], &[0; 8]);
     assert_eq!(bytes[159], 1);
@@ -1026,38 +1067,28 @@ fn read_header_optional_epoch_zero_and_exact_chunk_binding() {
     .is_err());
     assert!(encode_read_header(
         &ReadHeader {
-            total_bytes: 196609,
+            total_bytes: 196_609,
             ..header
         },
         &mut bytes
     )
     .is_err());
-    let request = ChunkRequest {
-        revision: 0,
-        digest: Presence::Absent,
-        offset: 0,
-        requested: 8192,
-    };
-    let mut rb = [0; 46];
-    assert_eq!(encode_chunk_request(&request, &mut rb).unwrap(), 46);
-    assert_eq!(&rb[..44], &[0; 44]);
-    assert_eq!(&rb[44..], &[0x20, 0]);
-    assert_eq!(decode_chunk_request(&rb).unwrap(), request);
-    let data = hex(STATE_BYTES);
-    let response = ChunkResponse {
-        revision: 1,
-        digest,
-        total_bytes: 64,
-        offset: 0,
-        bytes: &data,
-    };
-    let mut out = vec![0; 8244];
-    assert_eq!(encode_chunk_response(&response, &mut out).unwrap(), 116);
+    Ok(())
+}
+
+fn chunk_response_binding(
+    request: ChunkRequest,
+    response: ChunkResponse<'_>,
+    digest: StateDigest,
+    data: &[u8],
+    out: &mut [u8],
+) -> Checked<ChunkRequest> {
+    assert_eq!(encode_chunk_response(&response, out)?, 116);
     assert_eq!(&out[..2], &[0, 1]);
     assert_eq!(&out[42..46], &64_u32.to_be_bytes());
     assert_eq!(&out[50..52], &64_u16.to_be_bytes());
-    assert_eq!(&out[52..116], data.as_slice());
-    assert_eq!(decode_chunk_response(&out[..116]).unwrap(), response);
+    assert_eq!(&out[52..116], data);
+    assert_eq!(decode_chunk_response(&out[..116])?, response);
     assert_eq!(check_chunk_response(&request, &response), Ok(()));
     let bound = ChunkRequest {
         revision: 1,
@@ -1078,13 +1109,23 @@ fn read_header_optional_epoch_zero_and_exact_chunk_binding() {
     assert_eq!(
         check_chunk_response(
             &ChunkRequest {
-                digest: Presence::Present(StateDigest::new([1; 32]).unwrap()),
+                digest: Presence::Present(StateDigest::new([1; 32])?),
                 ..bound
             },
             &response
         ),
         Err(CONFLICT)
     );
+    Ok(bound)
+}
+
+fn chunk_refusals_and_maximum(
+    request: ChunkRequest,
+    response: ChunkResponse<'_>,
+    bound: ChunkRequest,
+    digest: StateDigest,
+    out: &mut [u8],
+) -> Checked {
     for invalid in [
         ChunkRequest {
             revision: 1,
@@ -1099,7 +1140,7 @@ fn read_header_optional_epoch_zero_and_exact_chunk_binding() {
             ..request
         },
         ChunkRequest {
-            offset: 196608,
+            offset: 196_608,
             ..request
         },
         ChunkRequest {
@@ -1147,43 +1188,44 @@ fn read_header_optional_epoch_zero_and_exact_chunk_binding() {
     assert!(decode_chunk_response(&trailing).is_err());
     let page = vec![1; 8192];
     let maximum = ChunkResponse {
-        total_bytes: 196608,
-        offset: 188416,
+        total_bytes: 196_608,
+        offset: 188_416,
         bytes: &page,
         ..response
     };
-    assert_eq!(encode_chunk_response(&maximum, &mut out).unwrap(), 8244);
+    assert_eq!(encode_chunk_response(&maximum, out)?, 8244);
     assert_eq!(
         check_chunk_response(
             &ChunkRequest {
-                offset: 188416,
+                offset: 188_416,
                 ..bound
             },
             &maximum
         ),
         Ok(())
     );
+    Ok(())
 }
 
 #[test]
-fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
-    let request = RequestId::new([1; 32]).unwrap();
-    let digest = RequestDigest::new([2; 32]).unwrap();
-    let result = ResultDigest::new([3; 32]).unwrap();
+fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() -> Checked {
+    let request = RequestId::new([1; 32])?;
+    let digest = RequestDigest::new([2; 32])?;
+    let result = ResultDigest::new([3; 32])?;
     let empty = RoleReplay {
-        last_sequence: 0,
-        last_request: Presence::Absent,
-        last_digest: Presence::Absent,
-        last_result: Presence::Absent,
+        sequence: 0,
+        request: Presence::Absent,
+        digest: Presence::Absent,
+        result: Presence::Absent,
     };
     assert_eq!(empty.assess(1, request, digest), Ok(ReplayDecision::New));
     assert_eq!(empty.assess(0, request, digest), Err(SEQUENCE_CONSUMED));
     assert_eq!(empty.assess(2, request, digest), Err(SEQUENCE_GAP));
     let replay = RoleReplay {
-        last_sequence: 1,
-        last_request: Presence::Present(request),
-        last_digest: Presence::Present(digest),
-        last_result: Presence::Present(result),
+        sequence: 1,
+        request: Presence::Present(request),
+        digest: Presence::Present(digest),
+        result: Presence::Present(result),
     };
     assert_eq!(
         replay.assess(1, request, digest),
@@ -1193,16 +1235,16 @@ fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
     assert_eq!(replay.assess(3, request, digest), Err(SEQUENCE_GAP));
     assert_eq!(replay.assess(0, request, digest), Err(SEQUENCE_CONSUMED));
     assert_eq!(
-        replay.assess(1, RequestId::new([4; 32]).unwrap(), digest),
+        replay.assess(1, RequestId::new([4; 32])?, digest),
         Err(REPLAY_CONFLICT)
     );
     assert_eq!(
-        replay.assess(1, request, RequestDigest::new([4; 32]).unwrap()),
+        replay.assess(1, request, RequestDigest::new([4; 32])?),
         Err(REPLAY_CONFLICT)
     );
     assert_eq!(
         RoleReplay {
-            last_result: Presence::Absent,
+            result: Presence::Absent,
             ..replay
         }
         .assess(2, request, digest),
@@ -1210,14 +1252,14 @@ fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
     );
     assert_eq!(
         RoleReplay {
-            last_request: Presence::Present(request),
+            request: Presence::Present(request),
             ..empty
         }
         .assess(1, request, digest),
         Err(NON_CANONICAL)
     );
     let terminal = RoleReplay {
-        last_sequence: u64::MAX,
+        sequence: u64::MAX,
         ..replay
     };
     assert_eq!(
@@ -1225,7 +1267,7 @@ fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
         Ok(ReplayDecision::AlreadyApplied(result))
     );
     assert_eq!(terminal.assess(1, request, digest), Err(SEQUENCE_CONSUMED));
-    let windows = EpochWindows::new(0, 0).unwrap();
+    let windows = EpochWindows::new(0, 0)?;
     assert_eq!(
         windows,
         EpochWindows {
@@ -1249,19 +1291,17 @@ fn replay_exact_retry_conflicts_gaps_and_checked_epoch_windows() {
     ] {
         assert_eq!(windows.phase(height), phase);
     }
-    assert_eq!(EpochWindows::new(5, 1).unwrap().start, 133);
-    assert_eq!(
-        EpochWindows::new(5, 1).unwrap().phase(132),
-        EpochPhase::Before
-    );
+    assert_eq!(EpochWindows::new(5, 1)?.start, 133);
+    assert_eq!(EpochWindows::new(5, 1)?.phase(132), EpochPhase::Before);
     assert_eq!(EpochWindows::new(0, u64::MAX), Err(ARITHMETIC));
     assert_eq!(EpochWindows::new(u64::MAX, 0), Err(ARITHMETIC));
+    Ok(())
 }
 
 #[test]
-fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
+fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() -> Checked {
     let fixture = hex(NATIVE_BYTES);
-    let base = decode_envelope(&fixture).unwrap().envelope;
+    let base = decode_envelope(&fixture)?.envelope;
     // Exact RefundFree payload: cursor:u128 || amount:u128 || recipient32.
     let mut payload = [0; 64];
     payload[16..32].copy_from_slice(&20_u128.to_be_bytes());
@@ -1276,11 +1316,11 @@ fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
     assert_eq!(refund.roster, Presence::Absent);
     assert_eq!(refund.validate(), Ok(()));
     let mut bytes = [0; 512];
-    let n = encode_envelope(&refund, &mut bytes).unwrap();
+    let n = encode_envelope(&refund, &mut bytes)?;
     assert_eq!(n, ENVELOPE_PREFIX_BYTES + 64 + 1);
     assert_eq!(&bytes[8..10], &0x0604_u16.to_be_bytes());
     assert_eq!(&bytes[154..186], &[0; 32]);
-    let decoded = decode_envelope(&bytes[..n]).unwrap();
+    let decoded = decode_envelope(&bytes[..n])?;
     assert_eq!(decoded.envelope, refund);
     assert_eq!(decoded.envelope.validate(), Ok(()));
     // Admission exposes the envelope for handler checks; it supplies no ledger authority.
@@ -1293,7 +1333,7 @@ fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
     assert_eq!(
         decoded
             .envelope
-            .check_domain(base.chain, base.program, MarketId::new([7; 32]).unwrap()),
+            .check_domain(base.chain, base.program, MarketId::new([7; 32])?),
         Err(WRONG_MARKET)
     );
     assert_eq!(
@@ -1301,16 +1341,13 @@ fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
         Ok(())
     );
     assert_eq!(
-        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32]).unwrap()),
+        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32])?),
         Err(UNAUTHORIZED)
     );
     assert_eq!(decoded.envelope.check_expiry(99), Ok(()));
     assert_eq!(decoded.envelope.check_expiry(100), Err(EXPIRED));
     let mut roundtrip = [0; 512];
-    assert_eq!(
-        encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
-        n
-    );
+    assert_eq!(encode_envelope(&decoded.envelope, &mut roundtrip)?, n);
     assert_eq!(&roundtrip[..n], &bytes[..n]);
 
     let nonzero_epoch = Envelope { epoch: 1, ..refund };
@@ -1321,7 +1358,7 @@ fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
     );
     let mut nonzero_wire = bytes[..n].to_vec();
     nonzero_wire[138..146].copy_from_slice(&1_u64.to_be_bytes());
-    assert_eq!(decode_envelope(&nonzero_wire).unwrap_err(), WRONG_ROSTER);
+    assert_eq!(decode_envelope(&nonzero_wire).err(), Some(WRONG_ROSTER));
 
     // Existing canonical and authentication refusals still apply to the newly admitted selector.
     for invalid in [
@@ -1361,16 +1398,17 @@ fn pre_epoch_refund_market_ledger_envelope_reaches_handler_boundary() {
     delegate_wire.push(1);
     delegate_wire.extend_from_slice(&[10; 32]);
     delegate_wire.extend_from_slice(&[11; 64]);
-    assert_eq!(decode_envelope(&delegate_wire).unwrap_err(), UNAUTHORIZED);
+    assert_eq!(decode_envelope(&delegate_wire).err(), Some(UNAUTHORIZED));
     let mut trailing = bytes[..n].to_vec();
     trailing.push(0);
-    assert_eq!(decode_envelope(&trailing).unwrap_err(), NON_CANONICAL);
+    assert_eq!(decode_envelope(&trailing).err(), Some(NON_CANONICAL));
+    Ok(())
 }
 
 #[test]
-fn epoch_bound_reward_operations_require_roster_even_at_epoch_zero() {
+fn epoch_bound_reward_operations_require_roster_even_at_epoch_zero() -> Checked {
     let fixture = hex(NATIVE_BYTES);
-    let base = decode_envelope(&fixture).unwrap().envelope;
+    let base = decode_envelope(&fixture)?.envelope;
     let claim_payload = [1; 80];
     for (operation, payload) in [
         (CLAIM, &claim_payload[..]),
@@ -1391,22 +1429,23 @@ fn epoch_bound_reward_operations_require_roster_even_at_epoch_zero() {
             assert_eq!(encode_envelope(&absent, &mut bytes), Err(WRONG_ROSTER));
             // Produce real canonical bytes with a roster, then remove only that binding.
             let bound = Envelope {
-                roster: Presence::Present(RosterDigest::new([4; 32]).unwrap()),
+                roster: Presence::Present(RosterDigest::new([4; 32])?),
                 ..absent
             };
             assert_eq!(bound.validate(), Ok(()));
-            let n = encode_envelope(&bound, &mut bytes).unwrap();
-            assert_eq!(decode_envelope(&bytes[..n]).unwrap().envelope, bound);
+            let n = encode_envelope(&bound, &mut bytes)?;
+            assert_eq!(decode_envelope(&bytes[..n])?.envelope, bound);
             bytes[154..186].fill(0);
-            assert_eq!(decode_envelope(&bytes[..n]).unwrap_err(), WRONG_ROSTER);
+            assert_eq!(decode_envelope(&bytes[..n]).err(), Some(WRONG_ROSTER));
         }
     }
+    Ok(())
 }
 
 #[test]
-fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
+fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() -> Checked {
     let fixture = hex(NATIVE_BYTES);
-    let base = decode_envelope(&fixture).unwrap().envelope;
+    let base = decode_envelope(&fixture)?.envelope;
     // The pinned check_open_binding accepts this binding only before any epoch is opened.
     // Codec admission supplies no lifecycle, readiness, or caller authority.
     let first_open = Envelope {
@@ -1420,12 +1459,12 @@ fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
     assert_eq!(first_open.authentication, Authentication::Native);
     assert_eq!(first_open.validate(), Ok(()));
     let mut bytes = [0; 512];
-    let n = encode_envelope(&first_open, &mut bytes).unwrap();
+    let n = encode_envelope(&first_open, &mut bytes)?;
     assert_eq!(n, ENVELOPE_PREFIX_BYTES + 1);
     assert_eq!(&bytes[8..10], &0x0111_u16.to_be_bytes());
     assert_eq!(&bytes[138..146], &0_u64.to_be_bytes());
     assert_eq!(&bytes[154..186], &[0; 32]);
-    let decoded = decode_envelope(&bytes[..n]).unwrap();
+    let decoded = decode_envelope(&bytes[..n])?;
     assert_eq!(decoded.envelope, first_open);
     assert_eq!(decoded.envelope.validate(), Ok(()));
     assert_eq!(
@@ -1437,7 +1476,7 @@ fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
     assert_eq!(
         decoded
             .envelope
-            .check_domain(base.chain, base.program, MarketId::new([7; 32]).unwrap()),
+            .check_domain(base.chain, base.program, MarketId::new([7; 32])?),
         Err(WRONG_MARKET)
     );
     assert_eq!(
@@ -1445,15 +1484,12 @@ fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
         Ok(())
     );
     assert_eq!(
-        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32]).unwrap()),
+        compare_native_principal(&decoded.envelope, PrincipalId::new([7; 32])?),
         Err(UNAUTHORIZED)
     );
     assert_eq!(decoded.envelope.check_expiry(100), Err(EXPIRED));
     let mut roundtrip = [0; 512];
-    assert_eq!(
-        encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
-        n
-    );
+    assert_eq!(encode_envelope(&decoded.envelope, &mut roundtrip)?, n);
     assert_eq!(&roundtrip[..n], &bytes[..n]);
 
     for invalid in [
@@ -1492,20 +1528,21 @@ fn first_open_epoch_zero_absent_roster_envelope_reaches_handler_boundary() {
     delegate_wire.push(1);
     delegate_wire.extend_from_slice(&[10; 32]);
     delegate_wire.extend_from_slice(&[11; 64]);
-    assert_eq!(decode_envelope(&delegate_wire).unwrap_err(), UNAUTHORIZED);
+    assert_eq!(decode_envelope(&delegate_wire).err(), Some(UNAUTHORIZED));
+    Ok(())
 }
 
 #[test]
-fn open_epoch_absent_roster_refuses_nonzero_epochs() {
+fn open_epoch_absent_roster_refuses_nonzero_epochs() -> Checked {
     let fixture = hex(NATIVE_BYTES);
-    let base = decode_envelope(&fixture).unwrap().envelope;
+    let base = decode_envelope(&fixture)?.envelope;
     let first_open = Envelope {
         operation: OPEN_EPOCH,
         config: 1,
         ..base
     };
     let mut bytes = [0; 512];
-    let n = encode_envelope(&first_open, &mut bytes).unwrap();
+    let n = encode_envelope(&first_open, &mut bytes)?;
     for epoch in [1, 2, u64::MAX] {
         let invalid = Envelope {
             epoch,
@@ -1515,15 +1552,16 @@ fn open_epoch_absent_roster_refuses_nonzero_epochs() {
         let mut output = [0; 512];
         assert_eq!(encode_envelope(&invalid, &mut output), Err(WRONG_ROSTER));
         bytes[138..146].copy_from_slice(&epoch.to_be_bytes());
-        assert_eq!(decode_envelope(&bytes[..n]).unwrap_err(), WRONG_ROSTER);
+        assert_eq!(decode_envelope(&bytes[..n]).err(), Some(WRONG_ROSTER));
     }
+    Ok(())
 }
 
 #[test]
-fn open_epoch_present_roster_retains_ordinary_envelope_binding() {
+fn open_epoch_present_roster_retains_ordinary_envelope_binding() -> Checked {
     let fixture = hex(NATIVE_BYTES);
-    let base = decode_envelope(&fixture).unwrap().envelope;
-    let roster = RosterDigest::new([4; 32]).unwrap();
+    let base = decode_envelope(&fixture)?.envelope;
+    let roster = RosterDigest::new([4; 32])?;
     // The handler must compare these fields to the actual current frozen binding.
     for epoch in [0, 1, u64::MAX] {
         let bound = Envelope {
@@ -1535,16 +1573,14 @@ fn open_epoch_present_roster_retains_ordinary_envelope_binding() {
         };
         assert_eq!(bound.validate(), Ok(()));
         let mut bytes = [0; 512];
-        let n = encode_envelope(&bound, &mut bytes).unwrap();
+        let n = encode_envelope(&bound, &mut bytes)?;
         assert_eq!(&bytes[154..186], roster.as_bytes());
-        let decoded = decode_envelope(&bytes[..n]).unwrap();
+        let decoded = decode_envelope(&bytes[..n])?;
         assert_eq!(decoded.envelope, bound);
         assert_eq!(decoded.envelope.validate(), Ok(()));
         let mut roundtrip = [0; 512];
-        assert_eq!(
-            encode_envelope(&decoded.envelope, &mut roundtrip).unwrap(),
-            n
-        );
+        assert_eq!(encode_envelope(&decoded.envelope, &mut roundtrip)?, n);
         assert_eq!(&roundtrip[..n], &bytes[..n]);
     }
+    Ok(())
 }

@@ -5,6 +5,10 @@ use core::fmt;
 pub struct ApplicationError(u16);
 pub type CodecResult<T> = Result<T, ApplicationError>;
 impl ApplicationError {
+    /// Looks up a registered application error code.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the code is not registered.
     pub fn from_code(code: u16) -> CodecResult<Self> {
         if APPLICATION_ERRORS.iter().any(|e| e.code == code) {
             Ok(Self(code))
@@ -12,9 +16,14 @@ impl ApplicationError {
             Err(NON_CANONICAL)
         }
     }
+    #[must_use]
     pub const fn code(self) -> u16 {
         self.0
     }
+    /// Looks up an application error by feature and name, aliases included.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when no entry matches.
     pub fn named(feature: &str, name: &str) -> CodecResult<Self> {
         APPLICATION_ERRORS
             .iter()
@@ -1024,6 +1033,10 @@ pub enum OffchainSpace {
     ViewProjection,
     ViewQuery,
 }
+/// Name of a 1-based offchain error code in `space`.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` for code 0 or a code past the end of the table.
 pub fn offchain_error(space: OffchainSpace, code: u16) -> CodecResult<&'static str> {
     let table = match space {
         OffchainSpace::WorkerService => WORKER_SERVICE_ERRORS,

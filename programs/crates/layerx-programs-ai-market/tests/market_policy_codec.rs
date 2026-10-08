@@ -8,19 +8,43 @@ use layerx_programs_ai_market::{
 };
 use sha2::{Digest, Sha256};
 
-fn commitments() -> PolicyCommitments {
-    PolicyCommitments {
-        model_artifact_digest: Digest32::new([1; 32]).unwrap(),
-        dataset_artifact_digest: [2; 32],
-        benchmark_suite_digest: Digest32::new([3; 32]).unwrap(),
-        rubric_digest: RubricDigest::new([4; 32]).unwrap(),
-        task_schema_digest: Digest32::new([5; 32]).unwrap(),
-        result_schema_digest: Digest32::new([6; 32]).unwrap(),
-        service_terms_digest: Digest32::new([7; 32]).unwrap(),
+enum Failure {
+    Application(ApplicationError),
+    Program(layerx_program_sdk::ProgramError),
+}
+impl core::fmt::Debug for Failure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Application(error) => write!(f, "application refusal {error:?}"),
+            Self::Program(error) => write!(f, "program refusal {error:?}"),
+        }
     }
 }
-fn policy() -> TaskPolicyV1 {
-    TaskPolicyV1::bounded_default(1, 1, commitments(), 100, 1).unwrap()
+impl From<ApplicationError> for Failure {
+    fn from(error: ApplicationError) -> Self {
+        Self::Application(error)
+    }
+}
+impl From<layerx_program_sdk::ProgramError> for Failure {
+    fn from(error: layerx_program_sdk::ProgramError) -> Self {
+        Self::Program(error)
+    }
+}
+type Checked<T = ()> = Result<T, Failure>;
+
+fn commitments() -> Checked<PolicyCommitments> {
+    Ok(PolicyCommitments {
+        model_artifact: Digest32::new([1; 32])?,
+        dataset_artifact: [2; 32],
+        benchmark_suite: Digest32::new([3; 32])?,
+        rubric: RubricDigest::new([4; 32])?,
+        task_schema: Digest32::new([5; 32])?,
+        result_schema: Digest32::new([6; 32])?,
+        service_terms: Digest32::new([7; 32])?,
+    })
+}
+fn policy() -> Checked<TaskPolicyV1> {
+    Ok(TaskPolicyV1::bounded_default(1, 1, commitments()?, 100, 1)?)
 }
 fn policy_bytes() -> [u8; 307] {
     let mut expected = [0; 307];
@@ -41,40 +65,40 @@ fn policy_bytes() -> [u8; 307] {
     expected[288..291].copy_from_slice(&[1, 3, 1]);
     expected
 }
-fn pending(version: u64) -> PendingPolicy {
-    let mut policy = policy();
+fn pending(version: u64) -> Checked<PendingPolicy> {
+    let mut policy = policy()?;
     policy.config_version = version;
-    PendingPolicy {
-        digest: policy.digest().unwrap(),
+    Ok(PendingPolicy {
+        digest: policy.digest()?,
         policy,
         effective_epoch: 2,
-        proposer: PrincipalId::new([8; 32]).unwrap(),
-    }
+        proposer: PrincipalId::new([8; 32])?,
+    })
 }
-fn history(version: u64, disposition: u8) -> PolicyHistoryHeader {
-    let p = pending(version);
-    PolicyHistoryHeader {
+fn history(version: u64, disposition: u8) -> Checked<PolicyHistoryHeader> {
+    let p = pending(version)?;
+    Ok(PolicyHistoryHeader {
         config_version: version,
         digest: p.digest,
         effective_epoch: 2,
         disposition,
-    }
+    })
 }
-fn header(present: bool) -> MarketHeader {
-    let chain = ChainDomain::new([10; 32]).unwrap();
-    let program = ProgramId::new([11; 32]).unwrap();
-    let asset = AssetId::new([13; 32]).unwrap();
-    MarketHeader {
+fn header(present: bool) -> Checked<MarketHeader> {
+    let chain = ChainDomain::new([10; 32])?;
+    let program = ProgramId::new([11; 32])?;
+    let asset = AssetId::new([13; 32])?;
+    Ok(MarketHeader {
         format_version: 1,
-        market_id: derive_market(chain, program).unwrap(),
+        market_id: derive_market(chain, program)?,
         deployment_chain_domain: chain,
         program_id: program,
-        owner_principal: PrincipalId::new([12; 32]).unwrap(),
+        owner_principal: PrincipalId::new([12; 32])?,
         funding_asset: asset,
-        rewards_account: derive_rewards_account(program, asset).unwrap(),
-        refund_recipient_account: AccountId::new([14; 32]).unwrap(),
+        rewards_account: derive_rewards_account(program, asset)?,
+        refund_recipient_account: AccountId::new([14; 32])?,
         treasury_principal: if present {
-            Presence::Present(PrincipalId::new([15; 32]).unwrap())
+            Presence::Present(PrincipalId::new([15; 32])?)
         } else {
             Presence::Absent
         },
@@ -89,19 +113,19 @@ fn header(present: bool) -> MarketHeader {
         close_phase: 0,
         close_cursor: 0,
         suspension_reason_digest: [0; 32],
-        metadata_digest: MetadataDigest::new([16; 32]).unwrap(),
+        metadata_digest: MetadataDigest::new([16; 32])?,
         closing_request_digest: [0; 32],
         reserved: [0; 8],
-    }
+    })
 }
-fn grant() -> OperatorGrant {
-    OperatorGrant {
-        principal: PrincipalId::new([17; 32]).unwrap(),
+fn grant() -> Checked<OperatorGrant> {
+    Ok(OperatorGrant {
+        principal: PrincipalId::new([17; 32])?,
         permissions: 3,
         sequence: 4,
         revoked: false,
         reserved: [0; 8],
-    }
+    })
 }
 fn strict_input<T: core::fmt::Debug>(bytes: &[u8], decode: impl Fn(&[u8]) -> CodecResult<T>) {
     for end in 0..bytes.len() {
@@ -118,7 +142,7 @@ fn strict_input<T: core::fmt::Debug>(bytes: &[u8], decode: impl Fn(&[u8]) -> Cod
         assert_eq!(trailing, original);
     }
 }
-fn short_outputs(size: usize, encode: impl Fn(&mut [u8]) -> CodecResult<usize>) {
+fn short_outputs(size: usize, encode: impl Fn(&mut [u8]) -> CodecResult<usize>) -> Checked {
     for length in 0..size {
         let mut output = vec![0xa5; length];
         let before = output.clone();
@@ -126,13 +150,14 @@ fn short_outputs(size: usize, encode: impl Fn(&mut [u8]) -> CodecResult<usize>) 
         assert_eq!(output, before);
     }
     let mut output = vec![0xa5; size + 1];
-    assert_eq!(encode(&mut output).unwrap(), size);
+    assert_eq!(encode(&mut output)?, size);
     assert_eq!(output[size], 0xa5);
+    Ok(())
 }
 
 #[test]
-fn policy_exact_bytes_offsets_hash_and_modes() {
-    let p = policy();
+fn policy_exact_bytes_offsets_hash_and_modes() -> Checked {
+    let p = policy()?;
     let expected = policy_bytes();
     let mut encoded = [0xa5; 307];
     assert_eq!(p.encode(&mut encoded), Ok(307));
@@ -142,26 +167,27 @@ fn policy_exact_bytes_offsets_hash_and_modes() {
     let mut preimage = b"PAXAI/policy/v1\0".to_vec();
     preimage.extend_from_slice(&expected);
     let reference: [u8; 32] = Sha256::digest(&preimage).into();
-    assert_eq!(p.digest().unwrap().bytes(), reference);
+    assert_eq!(p.digest()?.bytes(), reference);
     assert_eq!(
-        domain_hash("PAXAI/policy/v1", &expected).unwrap().bytes(),
+        domain_hash("PAXAI/policy/v1", &expected)?.bytes(),
         reference
     );
     let mut subjective = p;
     subjective.assessment_mode = SUBJECTIVE;
     let mut bytes = [0; 307];
-    subjective.encode(&mut bytes).unwrap();
+    subjective.encode(&mut bytes)?;
     for index in 0..307 {
         assert_eq!(bytes[index], if index == 9 { 2 } else { expected[index] });
     }
-    assert_ne!(subjective.digest().unwrap().bytes(), reference);
+    assert_ne!(subjective.digest()?.bytes(), reference);
     strict_input(&expected, TaskPolicyV1::decode);
-    short_outputs(307, |out| p.encode(out));
+    short_outputs(307, |out| p.encode(out))?;
+    Ok(())
 }
 
 #[test]
-fn every_policy_numeric_bound_and_refusal_preserves_output() {
-    let p = policy();
+fn every_policy_numeric_bound_and_refusal_preserves_output() -> Checked {
+    let p = policy()?;
     macro_rules! invalid {
         ($field:ident, $values:expr) => {
             for value in $values {
@@ -209,7 +235,7 @@ fn every_policy_numeric_bound_and_refusal_preserves_output() {
     limits.minimum_epoch_funding = u128::MAX;
     assert_eq!(limits.validate(), Ok(()));
     let mut bytes = [0; 307];
-    limits.encode(&mut bytes).unwrap();
+    limits.encode(&mut bytes)?;
     assert_eq!(TaskPolicyV1::decode(&bytes), Ok(limits));
     limits.max_workers = 1;
     limits.max_evaluators = 3;
@@ -231,10 +257,11 @@ fn every_policy_numeric_bound_and_refusal_preserves_output() {
     assert_eq!(next_config_version(u64::MAX - 1), Ok(u64::MAX));
     assert_eq!(next_config_version(u64::MAX), Err(ARITHMETIC));
     assert_eq!(next_config_version(0), Err(NON_CANONICAL));
+    Ok(())
 }
 
 #[test]
-fn all_policy_wire_negatives_required_commitments_and_reserved() {
+fn all_policy_wire_negatives_required_commitments_and_reserved() -> Checked {
     let expected = policy_bytes();
     for offset in [10, 74, 106, 138, 170, 202] {
         let mut bytes = expected;
@@ -298,29 +325,27 @@ fn all_policy_wire_negatives_required_commitments_and_reserved() {
     let mut full_comparison = expected;
     full_comparison[137] ^= 1;
     assert_ne!(
-        TaskPolicyV1::decode(&full_comparison)
-            .unwrap()
-            .digest()
-            .unwrap(),
-        policy().digest().unwrap()
+        TaskPolicyV1::decode(&full_comparison)?.digest()?,
+        policy()?.digest()?
     );
     assert_eq!(
-        TaskPolicyV1::bounded_default(0, 1, commitments(), 100, 1),
+        TaskPolicyV1::bounded_default(0, 1, commitments()?, 100, 1),
         Err(F01_INVALID_POLICY)
     );
     assert_eq!(
-        TaskPolicyV1::bounded_default(1, 1, commitments(), 0, 1),
+        TaskPolicyV1::bounded_default(1, 1, commitments()?, 0, 1),
         Err(F01_INVALID_POLICY)
     );
     assert_eq!(
-        TaskPolicyV1::bounded_default(1, 1, commitments(), 1, 2),
+        TaskPolicyV1::bounded_default(1, 1, commitments()?, 1, 2),
         Err(F01_INVALID_POLICY)
     );
+    Ok(())
 }
 
 #[test]
-fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() {
-    let p = pending(2);
+fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() -> Checked {
+    let p = pending(2)?;
     let mut expected = [0; 379];
     let mut expected_policy = policy_bytes();
     expected_policy[7] = 2;
@@ -333,7 +358,7 @@ fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() {
     assert_eq!(bytes, expected);
     assert_eq!(PendingPolicy::decode(&expected), Ok(p));
     strict_input(&bytes, PendingPolicy::decode);
-    short_outputs(379, |out| p.encode(out));
+    short_outputs(379, |out| p.encode(out))?;
     for index in 307..339 {
         let mut bad = bytes;
         bad[index] ^= 1;
@@ -346,12 +371,12 @@ fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() {
     bad[347..379].fill(0);
     assert_eq!(PendingPolicy::decode(&bad), Err(NON_CANONICAL));
     let mut mismatched = p;
-    mismatched.digest = policy().digest().unwrap();
+    mismatched.digest = policy()?.digest()?;
     let mut untouched = [0xa5; 379];
     assert_eq!(mismatched.encode(&mut untouched), Err(F01_POLICY_MISMATCH));
     assert_eq!(untouched, [0xa5; 379]);
     for disposition in [1, 2] {
-        let h = history(2, disposition);
+        let h = history(2, disposition)?;
         let mut expected = [0; 49];
         expected[7] = 2;
         expected[8..40].copy_from_slice(p.digest.as_bytes());
@@ -362,7 +387,7 @@ fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() {
         assert_eq!(bytes, expected);
         assert_eq!(PolicyHistoryHeader::decode(&bytes), Ok(h));
         strict_input(&bytes, PolicyHistoryHeader::decode);
-        short_outputs(49, |out| h.encode(out));
+        short_outputs(49, |out| h.encode(out))?;
         for disposition in [0, 3, 255] {
             let mut bad = bytes;
             bad[48] = disposition;
@@ -375,14 +400,15 @@ fn pending_and_history_exact_layout_roundtrip_and_all_short_buffers() {
         bad[8..40].fill(0);
         assert_eq!(PolicyHistoryHeader::decode(&bad), Err(NON_CANONICAL));
     }
+    Ok(())
 }
 
 #[test]
-fn history_hash_preimage_order_and_restored_conflicts() {
-    let initial = initial_policy_history_root().unwrap();
+fn history_hash_preimage_order_and_restored_conflicts() -> Checked {
+    let initial = initial_policy_history_root()?;
     let expected: [u8; 32] = Sha256::digest(b"PAXAI/policy-history/v1\0").into();
     assert_eq!(initial.bytes(), expected);
-    let h = history(2, 2);
+    let h = history(2, 2)?;
     let mut preimage = b"PAXAI/policy-history/v1\0".to_vec();
     preimage.extend_from_slice(&expected);
     preimage.push(2);
@@ -390,16 +416,13 @@ fn history_hash_preimage_order_and_restored_conflicts() {
     preimage.extend_from_slice(h.digest.as_bytes());
     preimage.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 2]);
     let reference: [u8; 32] = Sha256::digest(&preimage).into();
+    assert_eq!(fold_policy_history(initial, 1, &[h])?.bytes(), reference);
+    let h3 = history(3, 2)?;
     assert_eq!(
-        fold_policy_history(initial, 1, &[h]).unwrap().bytes(),
-        reference
+        fold_policy_history(initial, 1, &[h, h3])?,
+        fold_policy_history(fold_policy_history(initial, 1, &[h])?, 2, &[h3])?
     );
-    let h3 = history(3, 2);
-    assert_eq!(
-        fold_policy_history(initial, 1, &[h, h3]).unwrap(),
-        fold_policy_history(fold_policy_history(initial, 1, &[h]).unwrap(), 2, &[h3]).unwrap()
-    );
-    for headers in [vec![h, h], vec![h3, h], vec![history(1, 1)]] {
+    for headers in [vec![h, h], vec![h3, h], vec![history(1, 1)?]] {
         assert_eq!(
             fold_policy_history(initial, 1, &headers),
             Err(F01_VERSION_MISMATCH)
@@ -410,12 +433,12 @@ fn history_hash_preimage_order_and_restored_conflicts() {
         fold_policy_history(initial, u64::MAX, &[h]),
         Err(F01_VERSION_MISMATCH)
     );
-    let current = policy();
+    let current = policy()?;
     assert_eq!(
         validate_policy_records(&current, &Presence::Absent, &[], 1),
         Ok(())
     );
-    let p = pending(3);
+    let p = pending(3)?;
     assert_eq!(
         validate_policy_records(&current, &Presence::Present(p), &[h], 3),
         Ok(())
@@ -424,26 +447,26 @@ fn history_hash_preimage_order_and_restored_conflicts() {
         validate_policy_records(&current, &Presence::Absent, &[h], 2),
         Ok(())
     );
-    for headers in [vec![h, h], vec![h3, h], vec![history(2, 1)]] {
+    for headers in [vec![h, h], vec![h3, h], vec![history(2, 1)?]] {
         assert_eq!(
             validate_policy_records(&current, &Presence::Absent, &headers, 3),
             Err(F01_VERSION_MISMATCH)
         );
     }
     assert_eq!(
-        validate_policy_records(&current, &Presence::Present(pending(2)), &[h3], 3),
+        validate_policy_records(&current, &Presence::Present(pending(2)?), &[h3], 3),
         Err(F01_VERSION_MISMATCH)
     );
     assert_eq!(
-        validate_policy_records(&current, &Presence::Present(pending(1)), &[], 1),
+        validate_policy_records(&current, &Presence::Present(pending(1)?), &[], 1),
         Err(F01_VERSION_MISMATCH)
     );
     assert_eq!(
-        validate_policy_records(&current, &Presence::Present(pending(2)), &[h], 2),
+        validate_policy_records(&current, &Presence::Present(pending(2)?), &[h], 2),
         Err(F01_VERSION_MISMATCH)
     );
     assert_eq!(
-        validate_policy_records(&current, &Presence::Present(pending(3)), &[], 4),
+        validate_policy_records(&current, &Presence::Present(pending(3)?), &[], 4),
         Err(F01_VERSION_MISMATCH)
     );
     assert_eq!(
@@ -454,53 +477,49 @@ fn history_hash_preimage_order_and_restored_conflicts() {
         validate_policy_records(&current, &Presence::Absent, &[], 0),
         Err(F01_VERSION_MISMATCH)
     );
-    let five = [history(1, 1), h, h3, history(4, 2), history(5, 2)];
+    let five = [history(1, 1)?, h, h3, history(4, 2)?, history(5, 2)?];
     assert_eq!(
         validate_policy_records(&current, &Presence::Absent, &five, 5),
         Err(F01_CAPACITY_UNAVAILABLE)
     );
-    let mut conflict = history(1, 1);
+    let mut conflict = history(1, 1)?;
     let mut bytes = conflict.digest.bytes();
     bytes[31] ^= 1;
-    conflict.digest = PolicyDigest::new(bytes).unwrap();
+    conflict.digest = PolicyDigest::new(bytes)?;
     assert_eq!(
         validate_policy_records(&current, &Presence::Absent, &[conflict], 1),
         Err(F01_POLICY_MISMATCH)
     );
     assert_eq!(
-        validate_policy_records(&current, &Presence::Absent, &[history(1, 2)], 1),
+        validate_policy_records(&current, &Presence::Absent, &[history(1, 2)?], 1),
         Err(F01_POLICY_MISMATCH)
     );
+    Ok(())
 }
 
 #[test]
-fn market_identity_and_real_sdk_rewards_derivation() {
-    let h = header(false);
+fn market_identity_and_real_sdk_rewards_derivation() -> Checked {
+    let h = header(false)?;
     let mut preimage = b"PAXAI/market/v1\0".to_vec();
     preimage.extend_from_slice(&[10; 32]);
     preimage.extend_from_slice(&[11; 32]);
     let expected: [u8; 32] = Sha256::digest(&preimage).into();
     assert_eq!(h.market_id.bytes(), expected);
-    let other_chain = ChainDomain::new([19; 32]).unwrap();
-    let other_program = ProgramId::new([20; 32]).unwrap();
+    let other_chain = ChainDomain::new([19; 32])?;
+    let other_program = ProgramId::new([20; 32])?;
+    assert_ne!(derive_market(other_chain, h.program_id)?, h.market_id);
     assert_ne!(
-        derive_market(other_chain, h.program_id).unwrap(),
+        derive_market(h.deployment_chain_domain, other_program)?,
         h.market_id
     );
-    assert_ne!(
-        derive_market(h.deployment_chain_domain, other_program).unwrap(),
-        h.market_id
-    );
-    let sdk_program = layerx_program_sdk::ProgramId::new([11; 32]).unwrap();
-    let sdk_asset = layerx_program_sdk::AssetId::new([13; 32]).unwrap();
-    let sdk = PreparedProgramAccount::new(sdk_program, b"paxai/rewards/v1", sdk_asset).unwrap();
+    let sdk_program = layerx_program_sdk::ProgramId::new([11; 32])?;
+    let sdk_asset = layerx_program_sdk::AssetId::new([13; 32])?;
+    let sdk = PreparedProgramAccount::new(sdk_program, b"paxai/rewards/v1", sdk_asset)?;
     assert_eq!(sdk.program(), sdk_program);
     assert_eq!(sdk.asset(), sdk_asset);
     assert_eq!(sdk.seed().bytes(), b"paxai/rewards/v1");
     assert_eq!(
-        derive_rewards_account(h.program_id, h.funding_asset)
-            .unwrap()
-            .bytes(),
+        derive_rewards_account(h.program_id, h.funding_asset)?.bytes(),
         sdk.account().bytes()
     );
     let mut altered = h;
@@ -510,7 +529,7 @@ fn market_identity_and_real_sdk_rewards_derivation() {
     assert_eq!(altered.validate(), Ok(()));
     let mut account_bytes = h.rewards_account.bytes();
     account_bytes[31] ^= 1;
-    altered.rewards_account = AccountId::new(account_bytes).unwrap();
+    altered.rewards_account = AccountId::new(account_bytes)?;
     assert_eq!(altered.validate(), Err(F01_ACCOUNT_BINDING_MISSING));
     let mut output = [0xa5; 416];
     assert_eq!(
@@ -521,7 +540,7 @@ fn market_identity_and_real_sdk_rewards_derivation() {
     altered = h;
     let mut market_bytes = h.market_id.bytes();
     market_bytes[31] ^= 1;
-    altered.market_id = MarketId::new(market_bytes).unwrap();
+    altered.market_id = MarketId::new(market_bytes)?;
     assert_eq!(altered.validate(), Err(WRONG_MARKET));
     altered = h;
     altered.deployment_chain_domain = other_chain;
@@ -529,12 +548,13 @@ fn market_identity_and_real_sdk_rewards_derivation() {
     altered = h;
     altered.program_id = other_program;
     assert_eq!(altered.validate(), Err(WRONG_MARKET));
+    Ok(())
 }
 
 #[test]
-fn full_market_header_exact_bytes_treasury_offsets_and_roundtrip() {
+fn full_market_header_exact_bytes_treasury_offsets_and_roundtrip() -> Checked {
     for present in [false, true] {
-        let h = header(present);
+        let h = header(present)?;
         let size = if present { 416 } else { 384 };
         let shift = if present { 32 } else { 0 };
         let mut expected = vec![0; size];
@@ -562,7 +582,7 @@ fn full_market_header_exact_bytes_treasury_offsets_and_roundtrip() {
         assert_eq!(h.encoded_len(), size);
         assert_eq!(MarketHeader::decode(&expected), Ok(h));
         strict_input(&bytes, MarketHeader::decode);
-        short_outputs(size, |out| h.encode(out));
+        short_outputs(size, |out| h.encode(out))?;
         for lifecycle in 1..=5 {
             let mut full = h;
             full.lifecycle = lifecycle;
@@ -577,7 +597,7 @@ fn full_market_header_exact_bytes_treasury_offsets_and_roundtrip() {
             full.close_cursor = u16::MAX;
             full.suspension_reason_digest = [21; 32];
             full.closing_request_digest = [22; 32];
-            full.encode(&mut bytes).unwrap();
+            full.encode(&mut bytes)?;
             assert_eq!(MarketHeader::decode(&bytes), Ok(full));
             assert_eq!(&bytes[260 + shift..268 + shift], &[255; 8]);
             assert_eq!(bytes[268 + shift], 1);
@@ -588,15 +608,16 @@ fn full_market_header_exact_bytes_treasury_offsets_and_roundtrip() {
             assert_eq!(&bytes[344 + shift..376 + shift], &[22; 32]);
         }
     }
+    Ok(())
 }
 
 #[test]
-fn market_all_presence_bool_enum_reserved_zero_and_schedule_refusals() {
+fn market_all_presence_bool_enum_reserved_zero_and_schedule_refusals() -> Checked {
     for present in [false, true] {
-        let h = header(present);
+        let h = header(present)?;
         let shift = if present { 32 } else { 0 };
         let mut bytes = vec![0; h.encoded_len()];
-        h.encode(&mut bytes).unwrap();
+        h.encode(&mut bytes)?;
         for invalid in 2..=255 {
             let mut bad = bytes.clone();
             bad[226] = invalid;
@@ -650,9 +671,9 @@ fn market_all_presence_bool_enum_reserved_zero_and_schedule_refusals() {
         bad[259 + shift] = 2;
         assert_eq!(MarketHeader::decode(&bad), Err(NON_CANONICAL));
     }
-    let h = header(true);
+    let h = header(true)?;
     let mut bytes = [0; 416];
-    h.encode(&mut bytes).unwrap();
+    h.encode(&mut bytes)?;
     let mut zero = bytes;
     zero[227..259].fill(0);
     assert_eq!(MarketHeader::decode(&zero), Err(NON_CANONICAL));
@@ -671,15 +692,16 @@ fn market_all_presence_bool_enum_reserved_zero_and_schedule_refusals() {
     assert_eq!(invalid.encode(&mut untouched), Err(F01_PRINCIPAL_MISMATCH));
     assert_eq!(untouched, [0xa5; 416]);
     let mut absent = [0; 384];
-    header(false).encode(&mut absent).unwrap();
+    header(false)?.encode(&mut absent)?;
     let mut appended = absent.to_vec();
     appended.extend_from_slice(&[15; 32]);
     assert!(MarketHeader::decode(&appended).is_err());
+    Ok(())
 }
 
 #[test]
-fn operator_exact_layout_roundtrip_and_all_refusals() {
-    let g = grant();
+fn operator_exact_layout_roundtrip_and_all_refusals() -> Checked {
+    let g = grant()?;
     let mut expected = [0; 50];
     expected[..32].copy_from_slice(&[17; 32]);
     expected[32] = 3;
@@ -689,7 +711,7 @@ fn operator_exact_layout_roundtrip_and_all_refusals() {
     assert_eq!(bytes, expected);
     assert_eq!(OperatorGrant::decode(&expected), Ok(g));
     strict_input(&bytes, OperatorGrant::decode);
-    short_outputs(50, |out| g.encode(out));
+    short_outputs(50, |out| g.encode(out))?;
     for permissions in 1..=3 {
         for revoked in [false, true] {
             let full = OperatorGrant {
@@ -698,7 +720,7 @@ fn operator_exact_layout_roundtrip_and_all_refusals() {
                 sequence: u64::MAX,
                 ..g
             };
-            full.encode(&mut bytes).unwrap();
+            full.encode(&mut bytes)?;
             assert_eq!(bytes[32], permissions);
             assert_eq!(&bytes[33..41], &[255; 8]);
             assert_eq!(bytes[41], u8::from(revoked));
@@ -733,13 +755,14 @@ fn operator_exact_layout_roundtrip_and_all_refusals() {
     let mut untouched = [0xa5; 50];
     assert_eq!(invalid.encode(&mut untouched), Err(NON_CANONICAL));
     assert_eq!(untouched, [0xa5; 50]);
+    Ok(())
 }
 
 #[test]
-fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() {
+fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() -> Checked {
     assert_eq!(market_clock(1000, 999), Err(ARITHMETIC));
     assert_eq!(
-        market_clock(0, 0).unwrap().windows,
+        market_clock(0, 0)?.windows,
         EpochWindows {
             start: 0,
             commit: 64,
@@ -761,14 +784,14 @@ fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() {
         (1255, 1, 127, EpochPhase::Settlement),
         (1256, 2, 0, EpochPhase::Work),
     ] {
-        let clock = market_clock(1000, height).unwrap();
+        let clock = market_clock(1000, height)?;
         assert_eq!(
             (clock.epoch, clock.position, clock.phase),
             (epoch, position, phase)
         );
     }
     assert_eq!(
-        EpochWindows::new(1000, 0).unwrap(),
+        EpochWindows::new(1000, 0)?,
         EpochWindows {
             start: 1000,
             commit: 1064,
@@ -777,9 +800,9 @@ fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() {
             end: 1128
         }
     );
-    assert_eq!(EpochWindows::new(1000, 1).unwrap().start, 1128);
-    assert_eq!(EpochWindows::new(1000, 2).unwrap().start, 1256);
-    let window = EpochWindows::new(1000, 0).unwrap();
+    assert_eq!(EpochWindows::new(1000, 1)?.start, 1128);
+    assert_eq!(EpochWindows::new(1000, 2)?.start, 1256);
+    let window = EpochWindows::new(1000, 0)?;
     assert_eq!(window.phase(999), EpochPhase::Before);
     assert_eq!(window.phase(1128), EpochPhase::After);
     assert_eq!(EpochWindows::new(0, u64::MAX), Err(ARITHMETIC));
@@ -801,7 +824,7 @@ fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() {
         assert_eq!(EpochWindows::new(origin, 0), Err(ARITHMETIC));
         assert_eq!(market_clock(origin, origin), Err(ARITHMETIC));
     }
-    let last = market_clock(u64::MAX - 128, u64::MAX - 1).unwrap();
+    let last = market_clock(u64::MAX - 128, u64::MAX - 1)?;
     assert_eq!(last.windows.end, u64::MAX);
     assert_eq!(last.position, 127);
     assert_eq!(last.phase, EpochPhase::Settlement);
@@ -811,31 +834,37 @@ fn clock_all_boundaries_below_origin_and_unrepresentable_endpoints() {
         EpochWindows::new(0, 144_115_188_075_855_871),
         Err(ARITHMETIC)
     );
+    Ok(())
 }
 
 #[test]
-fn exact_maximum_worksheet_measured_owned_records_and_capacity_refusals() {
-    let maximum = maximum_f01_worksheet().unwrap();
+fn exact_maximum_worksheet_measured_owned_records_and_capacity_refusals() -> Checked {
+    let maximum = maximum_f01_worksheet()?;
     assert_eq!(maximum.non_task_bytes, 1423);
     assert_eq!(maximum.task_bytes, 14912);
     assert_eq!(maximum.section_bytes, 16335);
     assert_eq!(maximum.section_headroom, 49);
     assert_eq!(maximum.charged_section_bytes, 16343);
-    let mut h = header(true);
+    let mut h = header(true)?;
     h.active_config_version = 4;
     h.highest_config_version = 5;
-    let mut current = policy();
+    let mut current = policy()?;
     current.config_version = 4;
-    let recent = [history(1, 1), history(2, 2), history(3, 2), history(4, 1)];
+    let recent = [
+        history(1, 1)?,
+        history(2, 2)?,
+        history(3, 2)?,
+        history(4, 1)?,
+    ];
     let layout = F01NonTaskLayout {
         header: &h,
-        operator: Presence::Present(grant()),
+        operator: Presence::Present(grant()?),
         current: &current,
-        pending: Presence::Present(pending(5)),
+        pending: Presence::Present(pending(5)?),
         recent: &recent,
-        history_root: initial_policy_history_root().unwrap(),
+        history_root: initial_policy_history_root()?,
         task_count: 64,
-        task_set_root: Presence::Present(Digest32::new([23; 32]).unwrap()),
+        task_set_root: Presence::Present(Digest32::new([23; 32])?),
     };
     assert_eq!(layout.measured_worksheet(), Ok(maximum));
     let mut too_many = layout;
@@ -843,16 +872,16 @@ fn exact_maximum_worksheet_measured_owned_records_and_capacity_refusals() {
     assert_eq!(too_many.measured_worksheet(), Err(F01_CAPACITY_UNAVAILABLE));
     too_many.task_count = usize::MAX;
     assert_eq!(too_many.measured_worksheet(), Err(F01_CAPACITY_UNAVAILABLE));
-    assert_eq!(check_f01_capacity(16335, 196608), Ok(()));
-    assert_eq!(check_f01_capacity(16376, 196608), Ok(()));
+    assert_eq!(check_f01_capacity(16335, 196_608), Ok(()));
+    assert_eq!(check_f01_capacity(16376, 196_608), Ok(()));
     for size in [16377, 16384, 16385, usize::MAX] {
         assert_eq!(
-            check_f01_capacity(size, 196608),
+            check_f01_capacity(size, 196_608),
             Err(F01_CAPACITY_UNAVAILABLE)
         );
     }
     assert_eq!(
-        check_f01_capacity(16335, 196609),
+        check_f01_capacity(16335, 196_609),
         Err(F01_CAPACITY_UNAVAILABLE)
     );
     assert_eq!(
@@ -863,26 +892,27 @@ fn exact_maximum_worksheet_measured_owned_records_and_capacity_refusals() {
         check_f01_capacity(16335, 16342),
         Err(F01_CAPACITY_UNAVAILABLE)
     );
-    let h = header(false);
-    let p = policy();
+    let h = header(false)?;
+    let p = policy()?;
     let empty = F01NonTaskLayout {
         header: &h,
         operator: Presence::Absent,
         current: &p,
         pending: Presence::Absent,
         recent: &[],
-        history_root: initial_policy_history_root().unwrap(),
+        history_root: initial_policy_history_root()?,
         task_count: 0,
         task_set_root: Presence::Absent,
     };
-    let measured = empty.measured_worksheet().unwrap();
+    let measured = empty.measured_worksheet()?;
     assert_eq!(measured.non_task_bytes, 734);
     assert_eq!(measured.section_bytes, 734);
     assert_eq!(measured.task_bytes, 0);
+    Ok(())
 }
 
 #[test]
-fn exhaustive_policy_history_enums_and_invalid_record_output_is_unchanged() {
+fn exhaustive_policy_history_enums_and_invalid_record_output_is_unchanged() -> Checked {
     let expected = policy_bytes();
     for value in 0..=255 {
         if !(1..=3).contains(&value) {
@@ -894,7 +924,7 @@ fn exhaustive_policy_history_enums_and_invalid_record_output_is_unchanged() {
             let mut bytes = expected;
             bytes[9] = value;
             assert_eq!(TaskPolicyV1::decode(&bytes), Err(F01_INVALID_POLICY));
-            let mut h = history(1, 1);
+            let mut h = history(1, 1)?;
             h.disposition = value;
             let before = h;
             let mut output = [0xa5; 49];
@@ -904,32 +934,33 @@ fn exhaustive_policy_history_enums_and_invalid_record_output_is_unchanged() {
         }
     }
     for index in 0..16 {
-        let mut p = policy();
+        let mut p = policy()?;
         p.reserved[index] = 1;
         let mut output = [0xa5; 307];
         assert_eq!(p.encode(&mut output), Err(F01_INVALID_POLICY));
         assert_eq!(output, [0xa5; 307]);
     }
     for index in 0..8 {
-        let mut h = header(false);
+        let mut h = header(false)?;
         h.reserved[index] = 1;
         let mut output = [0xa5; 416];
         assert_eq!(h.encode(&mut output), Err(NON_CANONICAL));
         assert_eq!(output, [0xa5; 416]);
-        let mut g = grant();
+        let mut g = grant()?;
         g.reserved[index] = 1;
         let mut output = [0xa5; 50];
         assert_eq!(g.encode(&mut output), Err(NON_CANONICAL));
         assert_eq!(output, [0xa5; 50]);
     }
-    let mut p = pending(2);
+    let mut p = pending(2)?;
     p.policy.assessment_mode = 0;
     let mut output = [0xa5; 379];
     assert_eq!(p.encode(&mut output), Err(F01_INVALID_POLICY));
     assert_eq!(output, [0xa5; 379]);
-    let mut h = history(1, 1);
+    let mut h = history(1, 1)?;
     h.config_version = 0;
     let mut output = [0xa5; 49];
     assert_eq!(h.encode(&mut output), Err(NON_CANONICAL));
     assert_eq!(output, [0xa5; 49]);
+    Ok(())
 }

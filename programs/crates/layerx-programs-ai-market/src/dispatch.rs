@@ -25,6 +25,10 @@ pub struct OperationMetadata {
     pub payload_max: usize,
 }
 impl Operation {
+    /// Decodes a selector from the frozen operation table.
+    ///
+    /// # Errors
+    /// Returns `UNKNOWN_OPERATION` when the selector is not in the table.
     pub fn decode(selector: u16) -> CodecResult<Self> {
         OPERATIONS
             .iter()
@@ -32,9 +36,11 @@ impl Operation {
             .map(|m| m.operation)
             .ok_or(UNKNOWN_OPERATION)
     }
+    #[must_use]
     pub const fn selector(self) -> u16 {
         self.0
     }
+    #[must_use]
     pub fn metadata(self) -> &'static OperationMetadata {
         // The private constructor and static table make this branch unreachable.
         for m in OPERATIONS {
@@ -44,6 +50,10 @@ impl Operation {
         }
         unreachable!("Operation is constructed only by the frozen table")
     }
+    /// Checks a payload length against the operation's bounds.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the length is outside the operation's bounds, or is neither 40 nor 48 for `0x0106`/`0x0107`.
     pub fn validate_payload_length(self, length: usize) -> CodecResult<()> {
         let m = self.metadata();
         if matches!(self.0, 0x0106 | 0x0107) && length != 40 && length != 48 {

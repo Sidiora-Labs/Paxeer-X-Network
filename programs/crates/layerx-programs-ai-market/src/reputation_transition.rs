@@ -1,11 +1,33 @@
-use crate::{errors::*, reputation::*, reputation_codec::*, types::*};
+use crate::{
+    errors::{
+        CodecResult, ARITHMETIC, CAPACITY, F07_BINDING_MISMATCH, F07_EPOCH_NOT_SEALED,
+        F07_UNKNOWN_WORKER, NON_CANONICAL, RETENTION_FULL, WRONG_EPOCH,
+    },
+    reputation::{
+        evidence_coverage, missing_quality, next_count, qualified_quality, ClosureReason,
+        CompletedHistory, CompletionIdentity, Observation, ReputationCurrent, ReputationState,
+        SegmentKey, LIMIT,
+    },
+    reputation_codec::{closure_digest, segment_digest, state_root},
+    types::{Digest32, FrozenBinding, Presence, Score, Version, WorkerRosterEntry},
+};
 
+/// Configuration, policy and model a new reputation segment binds to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SegmentBinding {
+    pub config: Version,
+    pub policy: Digest32,
+    pub model: Digest32,
+}
+
+/// Closes `old`'s segment for `reason` and opens the next generation bound to `next`.
+///
+/// # Errors
+/// Propagates `ReputationCurrent::matches_segment`'s `NON_CANONICAL`/`F07_SEGMENT_MISMATCH` refusals; returns `NON_CANONICAL` when `height` is zero or before the last transition; `F07_BINDING_MISMATCH` when the config moves backwards or `reason` disagrees with the binding change; `WRONG_EPOCH` when the last applied epoch is not completed; `ARITHMETIC` when the generation overflows; propagates the digest and validation refusals.
 pub fn reset_segment(
     old: &ReputationCurrent,
     old_key: SegmentKey,
-    new_config: Version,
-    new_policy: Digest32,
-    new_model: Digest32,
+    next: SegmentBinding,
     reason: ClosureReason,
     latest_completed: Presence<u64>,
     height: u64,
@@ -14,6 +36,11 @@ pub fn reset_segment(
     if height == 0 || height < old.last_transition_height {
         return Err(NON_CANONICAL);
     }
+    let SegmentBinding {
+        config: new_config,
+        policy: new_policy,
+        model: new_model,
+    } = next;
     if new_config < old_key.config {
         return Err(F07_BINDING_MISMATCH);
     }
@@ -61,6 +88,10 @@ pub fn reset_segment(
     value.validate()?;
     Ok((key, value))
 }
+/// Rolls `old` over to a new segment when its config, policy or model changed.
+///
+/// # Errors
+/// Propagates `ReputationCurrent::matches_segment`'s and `reset_segment`'s refusals.
 pub fn rollover_segment(
     old: &ReputationCurrent,
     old_key: SegmentKey,
@@ -74,17 +105,19 @@ pub fn rollover_segment(
     if old_key.config == config && old_key.policy == policy && old_key.model == model {
         return Ok(Presence::Absent);
     }
-    let reason = if old_key.model != model {
-        ClosureReason::ModelChanged
-    } else {
+    let reason = if old_key.model == model {
         ClosureReason::PolicyChanged
+    } else {
+        ClosureReason::ModelChanged
     };
     Ok(Presence::Present(reset_segment(
         old,
         old_key,
-        config,
-        policy,
-        model,
+        SegmentBinding {
+            config,
+            policy,
+            model,
+        },
         reason,
         latest_completed,
         height,
@@ -93,17 +126,36 @@ pub fn rollover_segment(
 
 // Internal numerical primitive. The real F05/F06 bridge must select these inputs
 // from authenticated shared producer state; no public score-vector entry exists.
+/// One worker's epoch observation: aggregated median, supporting and eligible evaluators.
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct EpochTally {
+    pub(crate) median: Presence<Score>,
+    pub(crate) support: u8,
+    pub(crate) eligible: u8,
+}
+
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
 pub(crate) fn update_record(
     record: &ReputationCurrent,
     key: SegmentKey,
     frozen: FrozenBinding,
     worker: &WorkerRosterEntry,
-    median: Presence<Score>,
-    support: u8,
-    eligible: u8,
+    tally: EpochTally,
     history_allowed: bool,
     height: u64,
 ) -> CodecResult<ReputationCurrent> {
+    let EpochTally {
+        median,
+        support,
+        eligible,
+    } = tally;
     record.matches_segment(key)?;
     if key.market != frozen.market
         || key.config != frozen.config
@@ -150,10 +202,22 @@ pub(crate) fn update_record(
     Ok(next)
 }
 
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "no_std without alloc: Box is unavailable, and the large Pending draft is the primary path"
+)]
 pub(crate) enum CompletionStart {
     Retained(CompletedHistory),
     Pending(CompletionDraft),
 }
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
 pub(crate) struct CompletionDraft {
     staged: ReputationState,
     original: ReputationState,
@@ -166,6 +230,10 @@ pub(crate) struct CompletionDraft {
     observed: u8,
     covered: u8,
 }
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
 impl CompletionDraft {
     pub(crate) fn begin(
         state: &ReputationState,
@@ -210,7 +278,7 @@ impl CompletionDraft {
         let mut previous = None;
         let mut bounded_roster = [None; LIMIT];
         for (i, worker) in roster.iter().enumerate() {
-            if previous.map_or(false, |id| id >= worker.worker) {
+            if previous.is_some_and(|id| id >= worker.worker) {
                 return Err(NON_CANONICAL);
             }
             let current = state
@@ -260,9 +328,11 @@ impl CompletionDraft {
             key,
             self.frozen,
             worker,
-            median,
-            support,
-            eligible,
+            EpochTally {
+                median,
+                support,
+                eligible,
+            },
             history_allowed,
             self.height,
         )?;
@@ -294,7 +364,7 @@ impl CompletionDraft {
             result: self.result,
             root,
             observed_workers: self.observed,
-            total_workers: self.roster_len as u8,
+            total_workers: u8::try_from(self.roster_len).map_err(|_| CAPACITY)?,
             covered_workers: self.covered,
         };
         // Append's precondition validates committed state, not the staged pending epoch.

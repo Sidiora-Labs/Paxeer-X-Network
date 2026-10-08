@@ -1,11 +1,18 @@
 use crate::{
     codec::{Reader, Writer},
-    errors::*,
-    reputation::*,
-    types::*,
+    errors::{CodecResult, BAD_VERSION, CAPACITY, F07_RESOURCE_LIMIT, NON_CANONICAL},
+    reputation::{
+        ClosureReason, CompletedHistory, HistoryStatus, Observation, ReputationCurrent,
+        ReputationState, SegmentKey, CURRENT_BYTES, HISTORY_BYTES, LIMIT, SECTION_CAP,
+    },
+    types::{Digest32, MarketId, Presence, PrincipalId, Score, Version, WorkerId},
 };
 use sha2::{Digest, Sha256};
 
+/// Encodes one current record.
+///
+/// # Errors
+/// Propagates `ReputationCurrent::validate`'s `NON_CANONICAL` refusal and the writer's `ARITHMETIC`/`CAPACITY` refusals.
 pub fn encode_current(value: &ReputationCurrent) -> CodecResult<[u8; CURRENT_BYTES]> {
     value.validate()?;
     let mut out = [0; CURRENT_BYTES];
@@ -52,6 +59,10 @@ pub fn encode_current(value: &ReputationCurrent) -> CodecResult<[u8; CURRENT_BYT
     w.u16(0)?;
     Ok(out)
 }
+/// Decodes one current record.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is short or trailing, an identity is zero, the status, flags or reserved bytes are not canonical, or the record fails `ReputationCurrent::validate`; `F03_SCORE_RANGE` when a score exceeds the unit; propagates the reader's `ARITHMETIC` refusal.
 pub fn decode_current(input: &[u8]) -> CodecResult<ReputationCurrent> {
     let mut r = Reader::new(input);
     let worker = WorkerId::new(r.fixed()?)?;
@@ -113,6 +124,10 @@ pub fn decode_current(input: &[u8]) -> CodecResult<ReputationCurrent> {
     value.validate()?;
     Ok(value)
 }
+/// Encodes one completion history row.
+///
+/// # Errors
+/// Propagates `CompletedHistory::validate`'s `NON_CANONICAL` refusal and the writer's `ARITHMETIC`/`CAPACITY` refusals.
 pub fn encode_history(value: &CompletedHistory) -> CodecResult<[u8; HISTORY_BYTES]> {
     value.validate()?;
     let mut out = [0; HISTORY_BYTES];
@@ -128,6 +143,10 @@ pub fn encode_history(value: &CompletedHistory) -> CodecResult<[u8; HISTORY_BYTE
     w.u8(0)?;
     Ok(out)
 }
+/// Decodes one completion history row.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the input is short or trailing, the config or a digest is zero, the reserved byte is nonzero, or the row fails `CompletedHistory::validate`; propagates the reader's `ARITHMETIC` refusal.
 pub fn decode_history(input: &[u8]) -> CodecResult<CompletedHistory> {
     let mut r = Reader::new(input);
     let value = CompletedHistory {
@@ -145,6 +164,10 @@ pub fn decode_history(input: &[u8]) -> CodecResult<CompletedHistory> {
     value.validate()?;
     Ok(value)
 }
+/// Segment digest over the market, worker, binding and reset generation.
+///
+/// # Errors
+/// Propagates `Digest32::new`'s `NON_CANONICAL` refusal for an all-zero digest.
 pub fn segment_digest(key: SegmentKey) -> CodecResult<Digest32> {
     let mut h = Sha256::new();
     h.update(b"PAXAI/reputation-segment/v1\0");
@@ -156,6 +179,10 @@ pub fn segment_digest(key: SegmentKey) -> CodecResult<Digest32> {
     h.update(key.reset_generation.get().to_be_bytes());
     Digest32::new(h.finalize().into())
 }
+/// Digest closing `value`'s segment for `reason`.
+///
+/// # Errors
+/// Propagates `ReputationCurrent::validate`'s and `Digest32::new`'s `NON_CANONICAL` refusals.
 pub fn closure_digest(
     market: MarketId,
     value: &ReputationCurrent,
@@ -191,6 +218,10 @@ pub fn closure_digest(
     });
     Digest32::new(h.finalize().into())
 }
+/// Reputation root over `records` at `epoch`.
+///
+/// # Errors
+/// Returns `CAPACITY` when there are more than `LIMIT` records; `NON_CANONICAL` when workers are not strictly ascending; propagates `encode_current`'s and `Digest32::new`'s refusals.
 pub fn reputation_root(
     market: MarketId,
     epoch: u64,
@@ -203,10 +234,14 @@ pub fn reputation_root(
     h.update(b"PAXAI/reputation-root/v1\0");
     h.update(market.as_bytes());
     h.update(epoch.to_be_bytes());
-    h.update((records.len() as u16).to_be_bytes());
+    h.update(
+        u16::try_from(records.len())
+            .map_err(|_| CAPACITY)?
+            .to_be_bytes(),
+    );
     let mut previous = None;
     for record in records {
-        if previous.map_or(false, |w| w >= record.worker) {
+        if previous.is_some_and(|w| w >= record.worker) {
             return Err(NON_CANONICAL);
         }
         h.update(encode_current(record)?);
@@ -214,6 +249,10 @@ pub fn reputation_root(
     }
     Digest32::new(h.finalize().into())
 }
+#[allow(
+    dead_code,
+    reason = "crate-internal F07 primitive: its F05/F06 bridge caller is not in tree; tests/reputation_vectors.rs drives it via #[path]"
+)]
 pub(crate) fn state_root(state: &ReputationState, epoch: u64) -> CodecResult<Digest32> {
     // During staging, records may already refer to the pending completion.
     let mut h = Sha256::new();
@@ -223,7 +262,7 @@ pub(crate) fn state_root(state: &ReputationState, epoch: u64) -> CodecResult<Dig
     h.update(u16::from(state.current_len).to_be_bytes());
     let mut previous = None;
     for record in state.records() {
-        if previous.map_or(false, |w| w >= record.worker) {
+        if previous.is_some_and(|w| w >= record.worker) {
             return Err(NON_CANONICAL);
         }
         h.update(encode_current(record)?);
@@ -233,6 +272,10 @@ pub(crate) fn state_root(state: &ReputationState, epoch: u64) -> CodecResult<Dig
 }
 // F07 section framing: RP07, schema:u16, counts:u8/u8, market32,
 // completed-presence:u8, completed-epoch:u64, fifteen reserved zero bytes.
+/// Encodes the F07 section into `output` and returns the written length.
+///
+/// # Errors
+/// Propagates `ReputationState::encoded_len`'s `CAPACITY`/`NON_CANONICAL`/`F07_RESOURCE_LIMIT` refusals; returns `CAPACITY` when `output` is shorter than the section; propagates the record encoders' and the writer's refusals.
 pub fn encode_section(state: &ReputationState, output: &mut [u8]) -> CodecResult<usize> {
     let size = state.encoded_len()?;
     if output.len() < size {
@@ -263,6 +306,10 @@ pub fn encode_section(state: &ReputationState, output: &mut [u8]) -> CodecResult
     }
     Ok(w.len())
 }
+/// Decodes and validates an F07 section.
+///
+/// # Errors
+/// Returns `F07_RESOURCE_LIMIT` when the input exceeds `SECTION_CAP`; `NON_CANONICAL` on a bad magic, presence, completed epoch, reserved byte or trailing input; `BAD_VERSION` when the schema is not 1; `CAPACITY` when a count exceeds `LIMIT`; propagates the record decoders' and `ReputationState::validate`'s refusals.
 pub fn decode_section(input: &[u8]) -> CodecResult<ReputationState> {
     if input.len() > SECTION_CAP {
         return Err(F07_RESOURCE_LIMIT);

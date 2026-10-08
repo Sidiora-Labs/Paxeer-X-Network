@@ -9,10 +9,10 @@ use std::fmt::Debug;
 fn ok<T, E: Debug>(result: Result<T, E>) -> T {
     result.unwrap_or_else(|error| panic!("unexpected refusal: {error:?}"))
 }
-fn err<T: Debug, E: Debug + PartialEq>(result: Result<T, E>, expected: E) {
+fn err<T: Debug, E: Debug + PartialEq>(result: Result<T, E>, expected: &E) {
     match result {
         Ok(value) => panic!("expected {expected:?}, accepted {value:?}"),
-        Err(error) => assert_eq!(error, expected),
+        Err(error) => assert_eq!(&error, expected),
     }
 }
 fn sha(parts: &[&[u8]]) -> [u8; 32] {
@@ -71,7 +71,7 @@ fn content_of(object: &[u8]) -> [u8; 32] {
     ok(object_content_root(object, &mut scratch))
 }
 fn manifest_for(object: &[u8]) -> Vec<u8> {
-    let n = object.len().div_ceil(CHUNK_BYTES as usize) as u32;
+    let n = ok(u32::try_from(object.len().div_ceil(CHUNK_BYTES as usize)));
     encode(&manifest(object.len() as u64, n, content_of(object)))
 }
 fn signer(seed: u8) -> SigningKey {
@@ -149,7 +149,7 @@ fn a26_codec_known_answer_result_commitment() {
     let root = sha(&[
         b"PAXAI/artifact-manifest/v1\0",
         &ctx_bytes(),
-        &(bytes.len() as u32).to_be_bytes(),
+        &ok(u32::try_from(bytes.len())).to_be_bytes(),
         &bytes,
     ]);
     let unsigned_root = ok(manifest_root(&bytes));
@@ -180,18 +180,18 @@ fn a26_codec_known_answer_result_commitment() {
     wrong_signer.key = PublicKey32(signer(0x74).verifying_key().to_bytes());
     err(
         verify_publisher(&wrong_signer),
-        VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
+        &VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
     );
     let mut wrong_generation = ok(decode_envelope(&first));
     wrong_generation.generation = v(8);
     err(
         verify_publisher(&wrong_generation),
-        VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
+        &VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
     );
     let tampered = mutate(&first, first.len() - 1, first[first.len() - 1] ^ 1);
     err(
         verify_publisher(&ok(decode_envelope(&tampered))),
-        VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
+        &VerificationFailure::Artifact(ArtifactError::SignatureInvalid),
     );
     for error in [
         ArtifactError::Malformed,
@@ -226,7 +226,7 @@ fn a27_codec_corruption_refusal() {
     let mut assembler = ok(ContentAssembler::new(&decoded, &mut scratch));
     assert!(ok(assembler.deliver(0, chunk0)));
     assert!(ok(assembler.deliver(1, &corrupted)));
-    err(assembler.finish(), ArtifactError::RootMismatch);
+    err(assembler.finish(), &ArtifactError::RootMismatch);
 
     let leaf0 = [ok(chunk_leaf(0, chunk0))];
     let proof = |chunk| ChunkProof {
@@ -238,7 +238,7 @@ fn a27_codec_corruption_refusal() {
     ok(verify_chunk_proof(&proof(chunk1), &bytes));
     err(
         verify_chunk_proof(&proof(&corrupted), &bytes),
-        ArtifactError::RootMismatch,
+        &ArtifactError::RootMismatch,
     );
 
     assert_eq!(bytes, original);
@@ -276,27 +276,27 @@ fn a28_codec_empty_and_mandatory_root_rules() {
     encrypted_empty.access_policy_root = [0x99; 32];
     err(
         encode_manifest(&encrypted_empty, &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
 
     err(
         encode_manifest(&manifest(0, 0, [0; 32]), &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         encode_manifest(&manifest(3, 1, [0; 32]), &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         encode_manifest(&manifest(0, 0, [0x12; 32]), &mut out),
-        ArtifactError::RootMismatch,
+        &ArtifactError::RootMismatch,
     );
 
     let mut encrypted = manifest(3, 1, [0x12; 32]);
     encrypted.privacy = Privacy::Encrypted;
     err(
         encode_manifest(&encrypted, &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     encrypted.access_policy_root = [0x99; 32];
     ok(encode_manifest(&encrypted, &mut out));
@@ -309,13 +309,13 @@ fn a28_codec_empty_and_mandatory_root_rules() {
     with_parent.parents = Items::Typed(&zero_model);
     err(
         encode_manifest(&with_parent, &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let mut zero_subject = manifest(3, 1, [0x12; 32]);
     zero_subject.subject = [0; 32];
     err(
         encode_manifest(&zero_subject, &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let mut optional = manifest(3, 1, [0x12; 32]);
     optional.declaration_root = [0; 32];
@@ -340,16 +340,16 @@ fn a29_codec_chunk_boundaries_and_completeness() {
     assert_eq!(tail.len(), 1);
     let mut scratch = vec![[0u8; 32]; 2];
     let mut assembler = ok(ContentAssembler::new(&decoded, &mut scratch));
-    err(assembler.deliver(1, head), ArtifactError::LengthMismatch);
-    err(assembler.deliver(0, tail), ArtifactError::LengthMismatch);
-    err(assembler.deliver(2, tail), ArtifactError::Malformed);
+    err(assembler.deliver(1, head), &ArtifactError::LengthMismatch);
+    err(assembler.deliver(0, tail), &ArtifactError::LengthMismatch);
+    err(assembler.deliver(2, tail), &ArtifactError::Malformed);
     assert!(ok(assembler.deliver(1, tail)));
     assert!(!ok(assembler.deliver(1, tail)));
     err(
         assembler.deliver(1, &[tail[0] ^ 1]),
-        ArtifactError::IntegrityConflict,
+        &ArtifactError::IntegrityConflict,
     );
-    err(assembler.finish(), ArtifactError::MissingChunk);
+    err(assembler.finish(), &ArtifactError::MissingChunk);
 
     let mut scratch = vec![[0u8; 32]; 2];
     let mut assembler = ok(ContentAssembler::new(&decoded, &mut scratch));
@@ -366,11 +366,11 @@ fn a29_codec_chunk_boundaries_and_completeness() {
     let mut assembler = ok(ContentAssembler::new(&full_manifest, &mut scratch));
     ok(assembler.deliver(0, b));
     ok(assembler.deliver(1, a));
-    err(assembler.finish(), ArtifactError::RootMismatch);
+    err(assembler.finish(), &ArtifactError::RootMismatch);
     let mut short: Vec<[u8; 32]> = vec![[0u8; 32]; 1];
     err(
         ContentAssembler::new(&full_manifest, &mut short).map(|_| ()),
-        ArtifactError::CapacityUnavailable,
+        &ArtifactError::CapacityUnavailable,
     );
 }
 
@@ -384,20 +384,58 @@ fn a30_codec_object_and_proof_limits() {
     let mut over = boundary;
     over.byte_length = MAX_OBJECT_BYTES + 1;
     over.chunk_count = MAX_CHUNKS + 1;
-    err(encode_manifest(&over, &mut out), ArtifactError::Malformed);
+    err(encode_manifest(&over, &mut out), &ArtifactError::Malformed);
     let mut over_count = boundary;
     over_count.chunk_count = MAX_CHUNKS + 1;
     err(
         encode_manifest(&over_count, &mut out),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-    err(chunk_count(MAX_OBJECT_BYTES + 1), ArtifactError::Malformed);
-    err(chunk_count(u64::MAX), ArtifactError::Malformed);
+    err(chunk_count(MAX_OBJECT_BYTES + 1), &ArtifactError::Malformed);
+    err(chunk_count(u64::MAX), &ArtifactError::Malformed);
     let mut boundary_bytes = encode(&boundary);
     boundary_bytes[216..224].copy_from_slice(&(MAX_OBJECT_BYTES + 1).to_be_bytes());
     boundary_bytes[228..232].copy_from_slice(&(MAX_CHUNKS + 1).to_be_bytes());
-    err(decode_manifest(&boundary_bytes), ArtifactError::Malformed);
+    err(decode_manifest(&boundary_bytes), &ArtifactError::Malformed);
 
+    let big_bytes = a30_maximum_chunk_proof(&boundary);
+
+    let three: Vec<u8> = (0..(2 * 262_144 + 5) as u32)
+        .map(|i| (i % 241) as u8)
+        .collect();
+    let three_bytes = manifest_for(&three);
+    let three_root = ok(manifest_root(&three_bytes));
+    let leaves: Vec<[u8; 32]> = three
+        .chunks(262_144)
+        .enumerate()
+        .map(|(i, c)| ok(chunk_leaf(ok(u32::try_from(i)), c)))
+        .collect();
+    let left = sha(&[b"PAXAI/artifact-node/v1\0", &leaves[0], &leaves[1]]);
+    let canonical = [leaves[2], left];
+    let odd = ChunkProof {
+        manifest_root: three_root,
+        index: 2,
+        chunk: &three[2 * 262_144..],
+        siblings: Items::Typed(&canonical),
+    };
+    ok(verify_chunk_proof(&odd, &three_bytes));
+    let noncanonical = [leaves[1], left];
+    err(
+        verify_chunk_proof(
+            &ChunkProof {
+                siblings: Items::Typed(&noncanonical),
+                ..odd
+            },
+            &three_bytes,
+        ),
+        &ArtifactError::Malformed,
+    );
+    err(
+        verify_chunk_proof(&odd, &big_bytes),
+        &ArtifactError::RootMismatch,
+    );
+}
+fn a30_maximum_chunk_proof(boundary: &ArtifactManifest<'_>) -> Vec<u8> {
     let last = MAX_CHUNKS - 1;
     let chunk = vec![0x5a; 262_144];
     let siblings: Vec<[u8; 32]> = (0..17u8)
@@ -418,7 +456,7 @@ fn a30_codec_object_and_proof_limits() {
         &MAX_CHUNKS.to_be_bytes(),
         &node,
     ]);
-    let mut big = boundary;
+    let mut big = *boundary;
     big.content_root = content;
     let big_bytes = encode(&big);
     let root = ok(manifest_root(&big_bytes));
@@ -439,7 +477,7 @@ fn a30_codec_object_and_proof_limits() {
     let count_at = PROOF_FIXED_BYTES - 1 + chunk.len();
     eighteen[count_at] = 18;
     eighteen.extend_from_slice(&[0x01; 32]);
-    err(decode_chunk_proof(&eighteen), ArtifactError::Malformed);
+    err(decode_chunk_proof(&eighteen), &ArtifactError::Malformed);
     let mut too_many = siblings.clone();
     too_many.push([0x01; 32]);
     let mut scratch = vec![0; PROOF_FIXED_BYTES + chunk.len() + 18 * 32];
@@ -451,7 +489,7 @@ fn a30_codec_object_and_proof_limits() {
             },
             &mut scratch,
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         verify_chunk_proof(
@@ -461,7 +499,7 @@ fn a30_codec_object_and_proof_limits() {
             },
             &big_bytes,
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         verify_chunk_proof(
@@ -471,7 +509,7 @@ fn a30_codec_object_and_proof_limits() {
             },
             &big_bytes,
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         verify_chunk_proof(
@@ -481,7 +519,7 @@ fn a30_codec_object_and_proof_limits() {
             },
             &big_bytes,
         ),
-        ArtifactError::LengthMismatch,
+        &ArtifactError::LengthMismatch,
     );
     let mut wrong_sibling = siblings.clone();
     wrong_sibling[3][0] ^= 1;
@@ -493,43 +531,9 @@ fn a30_codec_object_and_proof_limits() {
             },
             &big_bytes,
         ),
-        ArtifactError::RootMismatch,
+        &ArtifactError::RootMismatch,
     );
-
-    let three: Vec<u8> = (0..(2 * 262_144 + 5) as u32)
-        .map(|i| (i % 241) as u8)
-        .collect();
-    let three_bytes = manifest_for(&three);
-    let three_root = ok(manifest_root(&three_bytes));
-    let leaves: Vec<[u8; 32]> = three
-        .chunks(262_144)
-        .enumerate()
-        .map(|(i, c)| ok(chunk_leaf(i as u32, c)))
-        .collect();
-    let left = sha(&[b"PAXAI/artifact-node/v1\0", &leaves[0], &leaves[1]]);
-    let canonical = [leaves[2], left];
-    let odd = ChunkProof {
-        manifest_root: three_root,
-        index: 2,
-        chunk: &three[2 * 262_144..],
-        siblings: Items::Typed(&canonical),
-    };
-    ok(verify_chunk_proof(&odd, &three_bytes));
-    let noncanonical = [leaves[1], left];
-    err(
-        verify_chunk_proof(
-            &ChunkProof {
-                siblings: Items::Typed(&noncanonical),
-                ..odd
-            },
-            &three_bytes,
-        ),
-        ArtifactError::Malformed,
-    );
-    err(
-        verify_chunk_proof(&odd, &big_bytes),
-        ArtifactError::RootMismatch,
-    );
+    big_bytes
 }
 
 #[test]
@@ -553,7 +557,7 @@ fn a31_codec_exact_context_binding() {
     ] {
         err(
             check_manifest_context(&signed, &other, bound),
-            ArtifactError::InvalidContext,
+            &ArtifactError::InvalidContext,
         );
     }
     for subject in [
@@ -569,7 +573,7 @@ fn a31_codec_exact_context_binding() {
     ] {
         err(
             check_manifest_context(&signed, &ctx(), subject),
-            ArtifactError::InvalidContext,
+            &ArtifactError::InvalidContext,
         );
     }
 
@@ -586,7 +590,7 @@ fn a31_codec_exact_context_binding() {
     ));
     err(
         check_manifest_context(&model, &ctx(), bound),
-        ArtifactError::InvalidContext,
+        &ArtifactError::InvalidContext,
     );
     let mut out = vec![0; MAX_MANIFEST_BYTES];
     for kind in [
@@ -599,14 +603,14 @@ fn a31_codec_exact_context_binding() {
         wrong_epoch.epoch = 1;
         err(
             encode_manifest(&wrong_epoch, &mut out),
-            ArtifactError::InvalidContext,
+            &ArtifactError::InvalidContext,
         );
         let mut wrong_subject = model;
         wrong_subject.kind = kind;
         wrong_subject.subject = [0x31; 32];
         err(
             encode_manifest(&wrong_subject, &mut out),
-            ArtifactError::InvalidContext,
+            &ArtifactError::InvalidContext,
         );
     }
     for kind in [ArtifactKind::Input, ArtifactKind::ExecutionEvidence] {
@@ -615,7 +619,7 @@ fn a31_codec_exact_context_binding() {
         ok(check_manifest_context(&task_bound, &ctx(), bound));
         err(
             check_manifest_context(&task_bound, &ctx(), SubjectContext::Policy),
-            ArtifactError::InvalidContext,
+            &ArtifactError::InvalidContext,
         );
     }
 }
@@ -743,39 +747,51 @@ fn a32_codec_typed_evidence_commitment() {
         sha(&[
             b"PAXAI/artifact-manifest/v1\0",
             &ctx_bytes(),
-            &(bytes.len() as u32).to_be_bytes(),
+            &ok(u32::try_from(bytes.len())).to_be_bytes(),
             &bytes
         ])
     );
-    err(manifest_root(&bytes), ArtifactError::Malformed);
+    err(manifest_root(&bytes), &ArtifactError::Malformed);
 
-    let base_root = root.bytes();
+    let rubric_policy = a32_field_roots_distinct(root.bytes(), &tasks, &groups);
+
+    a32_group_and_task_shape_refusals(&tasks);
+
+    a32_mode_root_and_status_refusals(&base, &groups, &rubric_policy);
+
+    a32_decode_refusals(&bytes);
+}
+fn a32_field_roots_distinct(
+    base_root: [u8; 32],
+    tasks: &[EvidenceTask],
+    groups: &[WorkerGroup<'_>],
+) -> EvidencePolicy {
     let mut roots = vec![base_root];
     let changed_task = [entry(0x32, TerminalStatus::Success)];
     let g = [group(0x01, &changed_task)];
     roots.push(root_of(&evidence(&g), &policy()));
-    let mut model = group(0x01, &tasks);
+    let mut model = group(0x01, tasks);
     model.model_root = [0xb9; 32];
     roots.push(root_of(&evidence(&[model]), &policy()));
-    let mut task_policy = evidence(&groups);
+    let mut task_policy = evidence(groups);
     task_policy.task_policy = ok(PolicyDigest::new([0x49; 32]));
     roots.push(root_of(&task_policy, &policy()));
-    let mut generation = group(0x01, &tasks);
+    let mut generation = group(0x01, tasks);
     generation.generation = v(6);
     roots.push(root_of(&evidence(&[generation]), &policy()));
-    let mut score = group(0x01, &tasks);
+    let mut score = group(0x01, tasks);
     score.score = ok(Score::new(700_001));
     roots.push(root_of(&evidence(&[score]), &policy()));
     let refused = [entry(0x31, TerminalStatus::Refused)];
     roots.push(root_of(&evidence(&[group(0x01, &refused)]), &policy()));
-    let mut rubric = evidence(&groups);
+    let mut rubric = evidence(groups);
     rubric.rubric = ok(RubricDigest::new([0x89; 32]));
     let rubric_policy = EvidencePolicy {
         rubric: rubric.rubric,
         ..policy()
     };
     roots.push(root_of(&rubric, &rubric_policy));
-    let mut config = evidence(&groups);
+    let mut config = evidence(groups);
     config.binding = binding(3);
     roots.push(root_of(&config, &policy()));
     for (i, a) in roots.iter().enumerate() {
@@ -783,10 +799,12 @@ fn a32_codec_typed_evidence_commitment() {
             assert_ne!(a, b);
         }
     }
-
+    rubric_policy
+}
+fn a32_group_and_task_shape_refusals(tasks: &[EvidenceTask]) {
     err(
         encode_evidence(&evidence(&[]), &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let many_tasks: Vec<EvidenceTask> = (1..=33u8)
         .map(|i| entry(i, TerminalStatus::Success))
@@ -796,34 +814,34 @@ fn a32_codec_typed_evidence_commitment() {
         .collect();
     err(
         encode_evidence(&evidence(&thirty_three), &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     ok(encode_evidence(&evidence(&thirty_three[..32]), &policy()));
     let other = [entry(0x30, TerminalStatus::Success)];
     err(
         encode_evidence(
-            &evidence(&[group(0x02, &other), group(0x01, &tasks)]),
+            &evidence(&[group(0x02, &other), group(0x01, tasks)]),
             &policy(),
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         encode_evidence(
-            &evidence(&[group(0x01, &other), group(0x01, &tasks)]),
+            &evidence(&[group(0x01, &other), group(0x01, tasks)]),
             &policy(),
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         encode_evidence(&evidence(&[group(0x01, &[])]), &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         encode_evidence(
-            &evidence(&[group(0x01, &tasks), group(0x02, &tasks)]),
+            &evidence(&[group(0x01, tasks), group(0x02, tasks)]),
             &policy(),
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let unsorted = [
         entry(0x32, TerminalStatus::Success),
@@ -831,7 +849,7 @@ fn a32_codec_typed_evidence_commitment() {
     ];
     err(
         encode_evidence(&evidence(&[group(0x01, &unsorted)]), &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let sixty_five: Vec<EvidenceTask> = (1..=65u8)
         .map(|i| entry(i, TerminalStatus::Success))
@@ -844,7 +862,7 @@ fn a32_codec_typed_evidence_commitment() {
             ]),
             &policy(),
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     ok(encode_evidence(
         &evidence(&[
@@ -853,22 +871,27 @@ fn a32_codec_typed_evidence_commitment() {
         ]),
         &policy(),
     ));
-
-    let mut subjective = evidence(&groups);
+}
+fn a32_mode_root_and_status_refusals(
+    base: &EvidenceManifest<'_>,
+    groups: &[WorkerGroup<'_>],
+    rubric_policy: &EvidencePolicy,
+) {
+    let mut subjective = evidence(groups);
     subjective.mode = AssessmentMode::Subjective;
     err(
         encode_evidence(&subjective, &policy()),
-        ArtifactError::InvalidContext,
+        &ArtifactError::InvalidContext,
     );
     err(
-        encode_evidence(&base, &rubric_policy),
-        ArtifactError::InvalidContext,
+        encode_evidence(base, rubric_policy),
+        &ArtifactError::InvalidContext,
     );
-    let mut no_dataset = evidence(&groups);
+    let mut no_dataset = evidence(groups);
     no_dataset.dataset_root = [0; 32];
     err(
         encode_evidence(&no_dataset, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     ok(encode_evidence(
         &no_dataset,
@@ -877,11 +900,11 @@ fn a32_codec_typed_evidence_commitment() {
             ..policy()
         },
     ));
-    let mut no_benchmark = evidence(&groups);
+    let mut no_benchmark = evidence(groups);
     no_benchmark.benchmark_root = [0; 32];
     err(
         encode_evidence(&no_benchmark, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
 
     let mut missing = entry(0x31, TerminalStatus::Success);
@@ -892,14 +915,14 @@ fn a32_codec_typed_evidence_commitment() {
     };
     err(
         encode_evidence(&evidence(&[group(0x01, &[missing])]), &permissive),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let mut timeout = entry(0x31, TerminalStatus::Timeout);
     timeout.result_root = [0; 32];
     timeout.execution_root = [0; 32];
     err(
         encode_evidence(&evidence(&[group(0x01, &[timeout])]), &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     ok(encode_evidence(
         &evidence(&[group(0x01, &[timeout])]),
@@ -909,60 +932,61 @@ fn a32_codec_typed_evidence_commitment() {
     no_request.request_root = [0; 32];
     err(
         encode_evidence(&evidence(&[group(0x01, &[no_request])]), &permissive),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-
+}
+fn a32_decode_refusals(bytes: &[u8]) {
     err(
-        decode_evidence_manifest(&mutate(&bytes, 1, 2), &policy()),
-        ArtifactError::UnsupportedVersion,
-    );
-    err(
-        decode_evidence_manifest(&mutate(&bytes, 354, 3), &policy()),
-        ArtifactError::Malformed,
+        decode_evidence_manifest(&mutate(bytes, 1, 2), &policy()),
+        &ArtifactError::UnsupportedVersion,
     );
     err(
-        decode_evidence_manifest(&mutate(&bytes, 629, 6), &policy()),
-        ArtifactError::Malformed,
+        decode_evidence_manifest(&mutate(bytes, 354, 3), &policy()),
+        &ArtifactError::Malformed,
     );
     err(
-        decode_evidence_manifest(&mutate(&bytes, 629, 0), &policy()),
-        ArtifactError::Malformed,
+        decode_evidence_manifest(&mutate(bytes, 629, 6), &policy()),
+        &ArtifactError::Malformed,
     );
-    let mut big_score = bytes.clone();
+    err(
+        decode_evidence_manifest(&mutate(bytes, 629, 0), &policy()),
+        &ArtifactError::Malformed,
+    );
+    let mut big_score = bytes.to_vec();
     big_score[461..465].copy_from_slice(&1_000_001u32.to_be_bytes());
     err(
         decode_evidence_manifest(&big_score, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-    let mut zero_generation = bytes.clone();
+    let mut zero_generation = bytes.to_vec();
     zero_generation[389..397].copy_from_slice(&0u64.to_be_bytes());
     err(
         decode_evidence_manifest(&zero_generation, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-    let mut too_many_workers = bytes.clone();
+    let mut too_many_workers = bytes.to_vec();
     too_many_workers[355..357].copy_from_slice(&33u16.to_be_bytes());
     err(
         decode_evidence_manifest(&too_many_workers, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-    let mut too_many_tasks = bytes.clone();
+    let mut too_many_tasks = bytes.to_vec();
     too_many_tasks[499..501].copy_from_slice(&65u16.to_be_bytes());
     err(
         decode_evidence_manifest(&too_many_tasks, &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
-        decode_evidence_manifest(&appended(&bytes), &policy()),
-        ArtifactError::Malformed,
+        decode_evidence_manifest(&appended(bytes), &policy()),
+        &ArtifactError::Malformed,
     );
     err(
-        decode_evidence_manifest(&mutate(&bytes, bytes.len() - 1, 1), &policy()),
-        ArtifactError::Malformed,
+        decode_evidence_manifest(&mutate(bytes, bytes.len() - 1, 1), &policy()),
+        &ArtifactError::Malformed,
     );
     err(
         decode_evidence_manifest(&vec![0; MAX_EVIDENCE_BYTES + 1], &policy()),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
 }
 
@@ -1017,126 +1041,13 @@ fn a33_codec_strict_versions_declarations_and_wrappers() {
     assert_eq!(got, parents);
     assert_eq!(encode(&decoded), bytes);
 
-    err(
-        decode_manifest(&mutate(&bytes, 0, b'X')),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 9, 2)),
-        ArtifactError::UnsupportedVersion,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 10, 10)),
-        ArtifactError::UnsupportedKind,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 10, 0)),
-        ArtifactError::UnsupportedKind,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 11, 2)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 12, 1)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 226, 0x05)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 266, 11)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 266, 0)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 265, 17)),
-        ArtifactError::Malformed,
-    );
-    err(decode_manifest(&appended(&bytes)), ArtifactError::Malformed);
-    err(
-        decode_manifest(&mutate(&bytes, bytes.len() - 1, 1)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&bytes[..bytes.len() - 1]),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&vec![0; MAX_MANIFEST_BYTES + 1]),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_manifest(&mutate(&bytes, 231, 2)),
-        ArtifactError::LengthMismatch,
-    );
+    a33_manifest_decode_refusals(&bytes);
 
-    let mut out = vec![0; MAX_MANIFEST_BYTES];
-    let unsorted = [parents[1], parents[0]];
-    with_parents.parents = Items::Typed(&unsorted);
-    err(
-        encode_manifest(&with_parents, &mut out),
-        ArtifactError::Malformed,
-    );
-    let duplicate = [parents[0], parents[0]];
-    with_parents.parents = Items::Typed(&duplicate);
-    err(
-        encode_manifest(&with_parents, &mut out),
-        ArtifactError::Malformed,
-    );
-    let seventeen: Vec<ParentRef> = (1..=17u8)
-        .map(|i| ParentRef {
-            purpose: ParentPurpose::ModelShard,
-            root: [i; 32],
-        })
-        .collect();
-    with_parents.parents = Items::Typed(&seventeen);
-    err(
-        encode_manifest(&with_parents, &mut out),
-        ArtifactError::Malformed,
-    );
-    with_parents.parents = Items::Typed(&seventeen[..16]);
-    ok(encode_manifest(&with_parents, &mut out));
+    a33_parent_order_refusals(&with_parents, &parents);
 
     let plain = manifest_for(&object);
     let root = ok(manifest_root(&plain));
-    let digest = publisher_digest(&ctx(), root, v(7));
-    let envelope = envelope_bytes(&plain, 7, &signer(0x73), &digest);
-    assert_eq!(envelope.len(), ENVELOPE_FIXED_BYTES + plain.len());
-    assert_eq!(envelope[..4], (plain.len() as u32).to_be_bytes());
-    let scheme_at = 4 + plain.len();
-    err(
-        decode_envelope(&mutate(&envelope, scheme_at + 1, 2)),
-        ArtifactError::Malformed,
-    );
-    let mut zero_generation = envelope.clone();
-    zero_generation[scheme_at + 2..scheme_at + 10].copy_from_slice(&0u64.to_be_bytes());
-    err(decode_envelope(&zero_generation), ArtifactError::Malformed);
-    let mut zero_key = envelope.clone();
-    zero_key[scheme_at + 10..scheme_at + 42].copy_from_slice(&[0; 32]);
-    err(decode_envelope(&zero_key), ArtifactError::Malformed);
-    err(
-        decode_envelope(&appended(&envelope)),
-        ArtifactError::Malformed,
-    );
-    err(
-        decode_envelope(&envelope[..envelope.len() - 1]),
-        ArtifactError::Malformed,
-    );
-    let mut long = envelope.clone();
-    long[..4].copy_from_slice(&4_097u32.to_be_bytes());
-    err(decode_envelope(&long), ArtifactError::Malformed);
-    let mut shifted = envelope.clone();
-    shifted[..4].copy_from_slice(&(plain.len() as u32 + 1).to_be_bytes());
-    err(decode_envelope(&shifted), ArtifactError::Malformed);
-    err(
-        decode_envelope(&vec![0; MAX_ENVELOPE_BYTES + 1]),
-        ArtifactError::Malformed,
-    );
+    a33_envelope_refusals(&plain, root);
 
     let nfd = "cafe\u{301}";
     let nfc = "caf\u{e9}";
@@ -1157,55 +1068,187 @@ fn a33_codec_strict_versions_declarations_and_wrappers() {
         sha(&[
             b"PAXAI/artifact-declaration/v1\0",
             &ctx_bytes(),
-            &(decl.len() as u32).to_be_bytes(),
+            &ok(u32::try_from(decl.len())).to_be_bytes(),
             &decl
         ])
     );
-    let nfc_only = [document(DocumentRole::License, 0x10, nfc)];
-    let nfd_only = [document(DocumentRole::License, 0x10, nfd)];
+    let composed_only = [document(DocumentRole::License, 0x10, nfc)];
+    let decomposed_only = [document(DocumentRole::License, 0x10, nfd)];
     assert_ne!(
         ok(declaration_root(
             &ctx(),
-            &ok(encode_decl(&declaration(&nfc_only)))
+            &ok(encode_decl(&declaration(&composed_only)))
         )),
         ok(declaration_root(
             &ctx(),
-            &ok(encode_decl(&declaration(&nfd_only)))
+            &ok(encode_decl(&declaration(&decomposed_only)))
         ))
     );
     assert_eq!(rights_status(None), RightsStatus::Undeclared);
     assert_eq!(rights_status(Some(&parsed)), RightsStatus::Documented);
 
-    let mut bad = declaration(&documents);
+    a33_declaration_encode_refusals(&documents);
+
+    a33_declaration_decode_refusals(&decl);
+
+    a33_reproduction_record();
+
+    a33_single_chunk_proof(&object, root, &plain);
+}
+fn a33_manifest_decode_refusals(bytes: &[u8]) {
+    err(
+        decode_manifest(&mutate(bytes, 0, b'X')),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 9, 2)),
+        &ArtifactError::UnsupportedVersion,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 10, 10)),
+        &ArtifactError::UnsupportedKind,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 10, 0)),
+        &ArtifactError::UnsupportedKind,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 11, 2)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 12, 1)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 226, 0x05)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 266, 11)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 266, 0)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 265, 17)),
+        &ArtifactError::Malformed,
+    );
+    err(decode_manifest(&appended(bytes)), &ArtifactError::Malformed);
+    err(
+        decode_manifest(&mutate(bytes, bytes.len() - 1, 1)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&bytes[..bytes.len() - 1]),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&vec![0; MAX_MANIFEST_BYTES + 1]),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_manifest(&mutate(bytes, 231, 2)),
+        &ArtifactError::LengthMismatch,
+    );
+}
+fn a33_parent_order_refusals(base: &ArtifactManifest<'_>, parents: &[ParentRef]) {
+    let mut out = vec![0; MAX_MANIFEST_BYTES];
+    let mut with_parents = *base;
+    let unsorted = [parents[1], parents[0]];
+    with_parents.parents = Items::Typed(&unsorted);
+    err(
+        encode_manifest(&with_parents, &mut out),
+        &ArtifactError::Malformed,
+    );
+    let duplicate = [parents[0], parents[0]];
+    with_parents.parents = Items::Typed(&duplicate);
+    err(
+        encode_manifest(&with_parents, &mut out),
+        &ArtifactError::Malformed,
+    );
+    let seventeen: Vec<ParentRef> = (1..=17u8)
+        .map(|i| ParentRef {
+            purpose: ParentPurpose::ModelShard,
+            root: [i; 32],
+        })
+        .collect();
+    with_parents.parents = Items::Typed(&seventeen);
+    err(
+        encode_manifest(&with_parents, &mut out),
+        &ArtifactError::Malformed,
+    );
+    with_parents.parents = Items::Typed(&seventeen[..16]);
+    ok(encode_manifest(&with_parents, &mut out));
+}
+fn a33_envelope_refusals(plain: &[u8], root: ArtifactManifestRoot) {
+    let digest = publisher_digest(&ctx(), root, v(7));
+    let envelope = envelope_bytes(plain, 7, &signer(0x73), &digest);
+    assert_eq!(envelope.len(), ENVELOPE_FIXED_BYTES + plain.len());
+    assert_eq!(envelope[..4], ok(u32::try_from(plain.len())).to_be_bytes());
+    let scheme_at = 4 + plain.len();
+    err(
+        decode_envelope(&mutate(&envelope, scheme_at + 1, 2)),
+        &ArtifactError::Malformed,
+    );
+    let mut zero_generation = envelope.clone();
+    zero_generation[scheme_at + 2..scheme_at + 10].copy_from_slice(&0u64.to_be_bytes());
+    err(decode_envelope(&zero_generation), &ArtifactError::Malformed);
+    let mut zero_key = envelope.clone();
+    zero_key[scheme_at + 10..scheme_at + 42].copy_from_slice(&[0; 32]);
+    err(decode_envelope(&zero_key), &ArtifactError::Malformed);
+    err(
+        decode_envelope(&appended(&envelope)),
+        &ArtifactError::Malformed,
+    );
+    err(
+        decode_envelope(&envelope[..envelope.len() - 1]),
+        &ArtifactError::Malformed,
+    );
+    let mut long = envelope.clone();
+    long[..4].copy_from_slice(&4_097u32.to_be_bytes());
+    err(decode_envelope(&long), &ArtifactError::Malformed);
+    let mut shifted = envelope.clone();
+    shifted[..4].copy_from_slice(&(ok(u32::try_from(plain.len())) + 1).to_be_bytes());
+    err(decode_envelope(&shifted), &ArtifactError::Malformed);
+    err(
+        decode_envelope(&vec![0; MAX_ENVELOPE_BYTES + 1]),
+        &ArtifactError::Malformed,
+    );
+}
+fn a33_declaration_encode_refusals(documents: &[RightsDocument<'_>]) {
+    let mut bad = declaration(documents);
     bad.purpose_mask = 0b1_0000;
-    err(encode_decl(&bad), ArtifactError::Malformed);
-    let mut bad = declaration(&documents);
+    err(encode_decl(&bad), &ArtifactError::Malformed);
+    let mut bad = declaration(documents);
     bad.restriction_mask = 0b10_0000;
-    err(encode_decl(&bad), ArtifactError::Malformed);
+    err(encode_decl(&bad), &ArtifactError::Malformed);
     let mut bad = declaration(&[]);
-    err(encode_decl(&bad), ArtifactError::Malformed);
+    err(encode_decl(&bad), &ArtifactError::Malformed);
     bad.rights = RightsStatus::Undeclared;
     ok(encode_decl(&bad));
     let swapped = [documents[1], documents[0]];
     err(
         encode_decl(&declaration(&swapped)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let duplicated = [documents[0], documents[0]];
     err(
         encode_decl(&declaration(&duplicated)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let zero_root = [document(DocumentRole::License, 0, "x")];
     err(
         encode_decl(&declaration(&zero_root)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let long_label = "a".repeat(257);
     let too_long = [document(DocumentRole::License, 0x10, &long_label)];
     err(
         encode_decl(&declaration(&too_long)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let max_label = "a".repeat(256);
     let at_max = [document(DocumentRole::License, 0x10, &max_label)];
@@ -1213,41 +1256,43 @@ fn a33_codec_strict_versions_declarations_and_wrappers() {
     let many: Vec<RightsDocument<'_>> = (1..=17u8)
         .map(|i| document(DocumentRole::License, i, "l"))
         .collect();
-    err(encode_decl(&declaration(&many)), ArtifactError::Malformed);
+    err(encode_decl(&declaration(&many)), &ArtifactError::Malformed);
     ok(encode_decl(&declaration(&many[..16])));
-
+}
+fn a33_declaration_decode_refusals(decl: &[u8]) {
     err(
-        decode_declaration(&mutate(&decl, 1, 2)),
-        ArtifactError::UnsupportedVersion,
+        decode_declaration(&mutate(decl, 1, 2)),
+        &ArtifactError::UnsupportedVersion,
     );
     err(
-        decode_declaration(&mutate(&decl, 34, 3)),
-        ArtifactError::Malformed,
+        decode_declaration(&mutate(decl, 34, 3)),
+        &ArtifactError::Malformed,
     );
     err(
-        decode_declaration(&mutate(&decl, 49, 5)),
-        ArtifactError::Malformed,
+        decode_declaration(&mutate(decl, 49, 5)),
+        &ArtifactError::Malformed,
     );
     let first_label = 49 + DOCUMENT_FIXED_BYTES;
     err(
-        decode_declaration(&mutate(&decl, first_label, 0xff)),
-        ArtifactError::Malformed,
+        decode_declaration(&mutate(decl, first_label, 0xff)),
+        &ArtifactError::Malformed,
     );
-    let mut long_len = decl.clone();
+    let mut long_len = decl.to_vec();
     long_len[first_label - 4..first_label].copy_from_slice(&257u32.to_be_bytes());
-    err(decode_declaration(&long_len), ArtifactError::Malformed);
-    let mut count = decl.clone();
+    err(decode_declaration(&long_len), &ArtifactError::Malformed);
+    let mut count = decl.to_vec();
     count[47..49].copy_from_slice(&17u16.to_be_bytes());
-    err(decode_declaration(&count), ArtifactError::Malformed);
+    err(decode_declaration(&count), &ArtifactError::Malformed);
     err(
-        decode_declaration(&appended(&decl)),
-        ArtifactError::Malformed,
+        decode_declaration(&appended(decl)),
+        &ArtifactError::Malformed,
     );
     err(
-        decode_declaration(&mutate(&decl, decl.len() - 1, 1)),
-        ArtifactError::Malformed,
+        decode_declaration(&mutate(decl, decl.len() - 1, 1)),
+        &ArtifactError::Malformed,
     );
-
+}
+fn a33_reproduction_record() {
     let reproduction = Reproduction {
         task: task(0x31),
         request_root: [0xd1; 32],
@@ -1270,42 +1315,43 @@ fn a33_codec_strict_versions_declarations_and_wrappers() {
         sha(&[
             b"PAXAI/artifact-reproduction/v1\0",
             &ctx_bytes(),
-            &(REPRODUCTION_BYTES as u32).to_be_bytes(),
+            &ok(u32::try_from(REPRODUCTION_BYTES)).to_be_bytes(),
             &repro
         ])
     );
     err(
         decode_reproduction(&mutate(&repro, 1, 2)),
-        ArtifactError::UnsupportedVersion,
+        &ArtifactError::UnsupportedVersion,
     );
     err(
         decode_reproduction(&mutate(&repro, 330, 4)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         decode_reproduction(&mutate(&repro, 378, 1)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     err(
         decode_reproduction(&appended(&repro)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let mut zero_model = repro;
     zero_model[66..98].copy_from_slice(&[0; 32]);
-    err(decode_reproduction(&zero_model), ArtifactError::Malformed);
+    err(decode_reproduction(&zero_model), &ArtifactError::Malformed);
     err(
         encode_reproduction(&Reproduction {
             result_root: [0; 32],
             ..reproduction
         }),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-
-    let leaf = [ok(chunk_leaf(0, &object))];
+}
+fn a33_single_chunk_proof(object: &[u8], root: ArtifactManifestRoot, plain: &[u8]) {
+    let leaf = [ok(chunk_leaf(0, object))];
     let proof = ChunkProof {
         manifest_root: root,
         index: 0,
-        chunk: &object,
+        chunk: object,
         siblings: Items::Typed(&[]),
     };
     let mut proof_bytes = vec![0; 64];
@@ -1313,29 +1359,29 @@ fn a33_codec_strict_versions_declarations_and_wrappers() {
     proof_bytes.truncate(n);
     ok(verify_chunk_proof(
         &ok(decode_chunk_proof(&proof_bytes)),
-        &plain,
+        plain,
     ));
     err(
         decode_chunk_proof(&mutate(&proof_bytes, 1, 2)),
-        ArtifactError::UnsupportedVersion,
+        &ArtifactError::UnsupportedVersion,
     );
     err(
         decode_chunk_proof(&appended(&proof_bytes)),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
     let mut oversize = proof_bytes.clone();
     oversize[38..42].copy_from_slice(&262_145u32.to_be_bytes());
-    err(decode_chunk_proof(&oversize), ArtifactError::Malformed);
+    err(decode_chunk_proof(&oversize), &ArtifactError::Malformed);
     err(
         verify_chunk_proof(
             &ChunkProof {
                 siblings: Items::Typed(&leaf),
                 ..proof
             },
-            &plain,
+            plain,
         ),
-        ArtifactError::Malformed,
+        &ArtifactError::Malformed,
     );
-    err(expected_chunk_length(3, 1, 1), ArtifactError::Malformed);
-    err(chunk_leaf(0, &vec![0; 262_145]), ArtifactError::Malformed);
+    err(expected_chunk_length(3, 1, 1), &ArtifactError::Malformed);
+    err(chunk_leaf(0, &vec![0; 262_145]), &ArtifactError::Malformed);
 }

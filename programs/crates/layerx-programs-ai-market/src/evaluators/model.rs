@@ -1,8 +1,15 @@
 //! F03 value representations only: nomination is not accepted F08 membership.
 use crate::{
     codec::{derive_evaluator, ReportBody},
-    errors::*,
-    types::*,
+    errors::{
+        ApplicationError, CodecResult, ARITHMETIC, F03_BAD_ACTIVATION, F08_BAD_CONSENT,
+        NON_CANONICAL,
+    },
+    types::{
+        ChainDomain, Digest32, EvaluatorBinding, EvaluatorId, EvidenceRoot, MarketId, Presence,
+        PrincipalId, ProgramId, PublicKey32, RequestId, RubricDigest, Signature64, Version,
+        WorkerRosterEntry,
+    },
 };
 
 pub const GRANT_BYTES: usize = 161;
@@ -21,6 +28,10 @@ pub enum GrantStatus {
     Expired = 4,
 }
 impl GrantStatus {
+    /// Decodes a grant status byte.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a byte outside `1..=4`.
     pub fn decode(value: u8) -> CodecResult<Self> {
         match value {
             1 => Ok(Self::Pending),
@@ -30,6 +41,17 @@ impl GrantStatus {
             _ => Err(NON_CANONICAL),
         }
     }
+}
+
+/// Owner-chosen terms of one evaluator nomination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GrantTerms {
+    pub rubric: RubricDigest,
+    pub grant_version: Version,
+    pub key_version: Version,
+    pub signing_key: PublicKey32,
+    pub effective_epoch: u64,
+    pub expiry_epoch_exclusive: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +67,10 @@ pub struct EvaluatorGrant {
     pub status: GrantStatus,
 }
 impl EvaluatorGrant {
+    /// Checks the grant's signing key and epoch span.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a zero signing key; `F03_BAD_ACTIVATION` when the span is negative, zero or above `MAX_GRANT_EPOCHS`.
     pub fn validate(&self) -> CodecResult<()> {
         nonzero_key(self.signing_key)?;
         let span = self
@@ -57,37 +83,43 @@ impl EvaluatorGrant {
         Ok(())
     }
     /// Constructs only an Owner nomination, without activating or accepting it.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the derived evaluator is all zero; propagates `validate` refusals.
     pub fn nominate(
         market: MarketId,
         principal: PrincipalId,
         nonce: [u8; 32],
-        rubric: RubricDigest,
-        grant_version: Version,
-        key_version: Version,
-        signing_key: PublicKey32,
-        effective_epoch: u64,
-        expiry_epoch_exclusive: u64,
+        terms: GrantTerms,
     ) -> CodecResult<Self> {
         let value = Self {
             evaluator: derive_evaluator(market, principal, nonce)?,
             principal,
-            rubric,
-            grant_version,
-            key_version,
-            signing_key,
-            effective_epoch,
-            expiry_epoch_exclusive,
+            rubric: terms.rubric,
+            grant_version: terms.grant_version,
+            key_version: terms.key_version,
+            signing_key: terms.signing_key,
+            effective_epoch: terms.effective_epoch,
+            expiry_epoch_exclusive: terms.expiry_epoch_exclusive,
             status: GrantStatus::Pending,
         };
         value.validate()?;
         Ok(value)
     }
 }
+/// Default exclusive expiry epoch, `effective_epoch + MAX_GRANT_EPOCHS`.
+///
+/// # Errors
+/// Returns `ARITHMETIC` on overflow.
 pub fn default_expiry(effective_epoch: u64) -> CodecResult<u64> {
     effective_epoch
         .checked_add(MAX_GRANT_EPOCHS)
         .ok_or(ARITHMETIC)
 }
+/// Rejects the all-zero public key.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the key is all zero.
 pub fn nonzero_key(key: PublicKey32) -> CodecResult<()> {
     if key.0 == [0; 32] {
         Err(NON_CANONICAL)
@@ -143,6 +175,10 @@ pub struct EvaluatorAdmissionConsentV1 {
     pub expiry_height: u64,
 }
 impl EvaluatorAdmissionConsentV1 {
+    /// Checks the consent's delegate key, expiry height and evaluator derivation.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for a zero delegate key, a zero expiry height or a zero derived evaluator; `F08_BAD_CONSENT` when the evaluator does not derive from market, owner and nonce.
     pub fn validate(&self) -> CodecResult<()> {
         nonzero_key(self.delegate_key)?;
         if self.expiry_height == 0 {

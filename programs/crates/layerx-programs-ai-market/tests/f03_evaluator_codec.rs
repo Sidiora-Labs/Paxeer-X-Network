@@ -85,7 +85,7 @@ fn report(scores: &[ScoreEntry]) -> common::ReportBody<'_> {
         scores: common::ScoreVector::Typed(scores),
     }
 }
-fn signed<'a>(body: common::ReportBody<'a>) -> SignedReport<'a> {
+fn signed(body: common::ReportBody<'_>) -> SignedReport<'_> {
     let digest = ok(common::attestation_digest(ok(common::report_digest(&body))));
     SignedReport {
         body,
@@ -439,35 +439,35 @@ fn a05_all_frozen_domain_fields_and_precedence_before_bad_signature() {
     let workers = [worker(11), worker(22)];
     let ctx = context(&workers);
     let statement = signed(report(&entries));
-    let mut changes = Vec::new();
+    let mut mismatches = Vec::new();
     let mut b = binding();
     b.frozen.chain = ok(ChainDomain::new([56; 32]));
-    changes.push((b, WRONG_DOMAIN));
+    mismatches.push((b, WRONG_DOMAIN));
     let mut b = binding();
     b.frozen.program = ok(ProgramId::new([6; 32]));
-    changes.push((b, WRONG_DOMAIN));
+    mismatches.push((b, WRONG_DOMAIN));
     let mut b = binding();
     b.frozen.market = ok(MarketId::new([6; 32]));
-    changes.push((b, WRONG_DOMAIN));
+    mismatches.push((b, WRONG_DOMAIN));
     let mut b = binding();
     b.frozen.epoch = 6;
-    changes.push((b, WRONG_EPOCH));
+    mismatches.push((b, WRONG_EPOCH));
     let mut b = binding();
     b.frozen.config = v(8);
-    changes.push((b, WRONG_CONFIG));
+    mismatches.push((b, WRONG_CONFIG));
     let mut b = binding();
     b.frozen.roster = ok(RosterDigest::new([6; 32]));
-    changes.push((b, WRONG_ROSTER));
+    mismatches.push((b, WRONG_ROSTER));
     let mut b = binding();
     b.evaluator = ok(EvaluatorId::new([6; 32]));
-    changes.push((b, F03_NO_GRANT));
+    mismatches.push((b, F03_NO_GRANT));
     let mut b = binding();
     b.grant = v(11);
-    changes.push((b, F03_GRANT_VERSION_CONFLICT));
+    mismatches.push((b, F03_GRANT_VERSION_CONFLICT));
     let mut b = binding();
     b.key_version = v(11);
-    changes.push((b, F03_KEY_VERSION_CONFLICT));
-    for (binding, expected) in changes {
+    mismatches.push((b, F03_KEY_VERSION_CONFLICT));
+    for (binding, expected) in mismatches {
         let mut changed = statement;
         changed.body.binding = binding;
         assert_eq!(
@@ -505,64 +505,7 @@ fn live_frozen_key_evidence_roster_and_lifecycle_refusals() {
     let workers = [worker(11), worker(22)];
     let ctx = context(&workers);
     let statement = signed(report(&entries));
-    for status in [
-        GrantStatus::Pending,
-        GrantStatus::Revoked,
-        GrantStatus::Expired,
-    ] {
-        let mut changed = ctx;
-        changed.live_grant.status = status;
-        let error = match status {
-            GrantStatus::Revoked => REVOKED,
-            GrantStatus::Expired => EXPIRED,
-            _ => F03_NO_GRANT,
-        };
-        assert_eq!(
-            feature::verify_signed_report(&statement, &changed),
-            Err(application(error))
-        );
-    }
-    let mut changed = ctx;
-    changed.live_grant.expiry_epoch_exclusive = 5;
-    changed.live_grant.effective_epoch = 4;
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(EXPIRED))
-    );
-    let mut changed = ctx;
-    changed.live_grant.effective_epoch = 6;
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(F03_NO_GRANT))
-    );
-    let mut changed = ctx;
-    changed.live_grant.key_version = v(11);
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(F03_KEY_VERSION_CONFLICT))
-    );
-    let mut changed = ctx;
-    changed.live_grant.grant_version = v(11);
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(F03_GRANT_VERSION_CONFLICT))
-    );
-    let other_key = PublicKey32(
-        SigningKey::from_bytes(&[0x42; 32])
-            .verifying_key()
-            .to_bytes(),
-    );
-    let mut changed = ctx;
-    changed.live_grant.signing_key = other_key;
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(KEY_MISMATCH))
-    );
-    changed.frozen_grant.signing_key = other_key;
-    assert_eq!(
-        feature::verify_signed_report(&statement, &changed),
-        Err(application(BAD_SIGNATURE))
-    );
+    live_and_frozen_grant_refusals(&statement, &ctx);
     let mut changed = ctx;
     changed.frozen_grant.signing_key = PublicKey32([0; 32]);
     assert_eq!(
@@ -632,6 +575,66 @@ fn live_frozen_key_evidence_roster_and_lifecycle_refusals() {
             Err(application(EVIDENCE_BINDING))
         );
     }
+}
+fn live_and_frozen_grant_refusals(statement: &SignedReport<'_>, ctx: &ReportContext<'_>) {
+    for status in [
+        GrantStatus::Pending,
+        GrantStatus::Revoked,
+        GrantStatus::Expired,
+    ] {
+        let mut changed = *ctx;
+        changed.live_grant.status = status;
+        let error = match status {
+            GrantStatus::Revoked => REVOKED,
+            GrantStatus::Expired => EXPIRED,
+            _ => F03_NO_GRANT,
+        };
+        assert_eq!(
+            feature::verify_signed_report(statement, &changed),
+            Err(application(error))
+        );
+    }
+    let mut changed = *ctx;
+    changed.live_grant.expiry_epoch_exclusive = 5;
+    changed.live_grant.effective_epoch = 4;
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(EXPIRED))
+    );
+    let mut changed = *ctx;
+    changed.live_grant.effective_epoch = 6;
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(F03_NO_GRANT))
+    );
+    let mut changed = *ctx;
+    changed.live_grant.key_version = v(11);
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(F03_KEY_VERSION_CONFLICT))
+    );
+    let mut changed = *ctx;
+    changed.live_grant.grant_version = v(11);
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(F03_GRANT_VERSION_CONFLICT))
+    );
+    let other_key = PublicKey32(
+        SigningKey::from_bytes(&[0x42; 32])
+            .verifying_key()
+            .to_bytes(),
+    );
+    let mut changed = *ctx;
+    changed.live_grant.signing_key = other_key;
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(KEY_MISMATCH))
+    );
+    changed.frozen_grant.signing_key = other_key;
+    assert_eq!(
+        feature::verify_signed_report(statement, &changed),
+        Err(application(BAD_SIGNATURE))
+    );
 }
 
 #[test]
@@ -760,12 +763,14 @@ fn nomination_derivation_remains_pending_and_purpose_framed() {
         value.market,
         value.owner,
         value.enrollment_nonce,
-        value.rubric,
-        v(9),
-        v(10),
-        key(),
-        5,
-        7,
+        GrantTerms {
+            rubric: value.rubric,
+            grant_version: v(9),
+            key_version: v(10),
+            signing_key: key(),
+            effective_epoch: 5,
+            expiry_epoch_exclusive: 7,
+        },
     ));
     assert_eq!(nominated.status, GrantStatus::Pending);
     assert_eq!(nominated.evaluator, value.evaluator);
@@ -930,8 +935,27 @@ fn consent_mandatory_values_schema_expiry_and_all_permit_fields_bind() {
         feature::check_consent_context(&value, &ctx_changed),
         Err(EXPIRED)
     );
+    consent_permit_field_bindings(&value, &ctx);
+    // Validly encoded alteration still invalidates the original real signature.
+    let digest = ok(feature::consent_digest(&value));
+    let mut changed = value;
+    changed.request = ok(RequestId::new([6; 32]));
+    let ctx_changed = ConsentContext {
+        expected: changed,
+        ..ctx
+    };
+    let statement = SignedEvaluatorConsent {
+        consent: changed,
+        signature: Signature64(signing_key().sign(&digest.bytes()).to_bytes()),
+    };
+    assert_eq!(
+        feature::verify_signed_consent(&statement, &ctx_changed),
+        Err(application(BAD_SIGNATURE))
+    );
+}
+fn consent_permit_field_bindings(value: &EvaluatorAdmissionConsentV1, ctx: &ConsentContext) {
     for field in 0..15 {
-        let mut changed = value;
+        let mut changed = *value;
         match field {
             0 => changed.chain = ok(ChainDomain::new([56; 32])),
             1 => changed.program = ok(ProgramId::new([6; 32])),
@@ -949,7 +973,7 @@ fn consent_mandatory_values_schema_expiry_and_all_permit_fields_bind() {
                     SigningKey::from_bytes(&[0x42; 32])
                         .verifying_key()
                         .to_bytes(),
-                )
+                );
             }
             5 => changed.enrollment_nonce = [15; 32],
             6 => changed.rubric = ok(RubricDigest::new([6; 32])),
@@ -970,7 +994,7 @@ fn consent_mandatory_values_schema_expiry_and_all_permit_fields_bind() {
             F08_BAD_CONSENT
         };
         assert_eq!(
-            feature::check_consent_context(&changed, &ctx),
+            feature::check_consent_context(&changed, ctx),
             Err(expected),
             "field {field}"
         );
@@ -978,7 +1002,7 @@ fn consent_mandatory_values_schema_expiry_and_all_permit_fields_bind() {
         if matches!(field, 4 | 6 | 9 | 10 | 11) {
             let ctx_changed = ConsentContext {
                 expected: changed,
-                ..ctx
+                ..*ctx
             };
             assert_eq!(
                 feature::check_consent_context(&changed, &ctx_changed),
@@ -986,22 +1010,6 @@ fn consent_mandatory_values_schema_expiry_and_all_permit_fields_bind() {
             );
         }
     }
-    // Validly encoded alteration still invalidates the original real signature.
-    let digest = ok(feature::consent_digest(&value));
-    let mut changed = value;
-    changed.request = ok(RequestId::new([6; 32]));
-    let ctx_changed = ConsentContext {
-        expected: changed,
-        ..ctx
-    };
-    let statement = SignedEvaluatorConsent {
-        consent: changed,
-        signature: Signature64(signing_key().sign(&digest.bytes()).to_bytes()),
-    };
-    assert_eq!(
-        feature::verify_signed_consent(&statement, &ctx_changed),
-        Err(application(BAD_SIGNATURE))
-    );
 }
 
 #[test]

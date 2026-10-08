@@ -1,7 +1,10 @@
 use crate::{
     codec::{self, Reader, StateFrame, Writer},
-    errors::*,
-    types::*,
+    errors::{
+        CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT, EXPIRED, NON_CANONICAL,
+        NOT_FOUND, REPLAY_CONFLICT, SEQUENCE_CONSUMED, SEQUENCE_GAP, UNAUTHORIZED, WRONG_PHASE,
+    },
+    types::{PrincipalId, RequestDigest, RequestId, ResultDigest, Version},
     MAX_STATE_BYTES, SCHEMA_VERSION,
 };
 
@@ -20,6 +23,7 @@ pub enum Section {
     Control,
 }
 impl Section {
+    #[must_use]
     pub const fn index(self) -> usize {
         match self {
             Self::PolicyLifecycle => 0,
@@ -30,6 +34,7 @@ impl Section {
             Self::Control => 5,
         }
     }
+    #[must_use]
     pub const fn payload_cap(self) -> usize {
         codec::STATE_SECTION_CAPS[self.index()]
             - codec::STATE_SECTION_HEADER_BYTES
@@ -47,18 +52,30 @@ impl ActorSlot {
     pub const OWNER: Self = Self(0);
     pub const TREASURY: Self = Self(1);
     pub const OPERATOR: Self = Self(2);
+    /// Slot of worker `index` (slots 3..35).
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` when `index` is 32 or more.
     pub fn worker(index: usize) -> CodecResult<Self> {
         if index >= 32 {
             return Err(CAPACITY);
         }
         Ok(Self(3 + u16::try_from(index).map_err(|_| ARITHMETIC)?))
     }
+    /// Slot of evaluator `index` (slots 35..43).
+    ///
+    /// # Errors
+    /// Returns `CAPACITY` when `index` is 8 or more.
     pub fn evaluator(index: usize) -> CodecResult<Self> {
         if index >= 8 {
             return Err(CAPACITY);
         }
         Ok(Self(35 + u16::try_from(index).map_err(|_| ARITHMETIC)?))
     }
+    /// Slot at a raw table index.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when `index` is not below `ACTOR_SLOTS`.
     pub fn from_index(index: u16) -> CodecResult<Self> {
         if usize::from(index) >= ACTOR_SLOTS {
             Err(NON_CANONICAL)
@@ -66,6 +83,7 @@ impl ActorSlot {
             Ok(Self(index))
         }
     }
+    #[must_use]
     pub const fn index(self) -> u16 {
         self.0
     }
@@ -107,14 +125,20 @@ impl Default for ReplayTable {
     }
 }
 impl ReplayTable {
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             actors: [None; ACTOR_SLOTS],
         }
     }
+    #[must_use]
     pub fn actor(&self, slot: ActorSlot) -> Option<ActorReplay> {
         self.actors[usize::from(slot.0)]
     }
+    /// Binds an empty slot to `principal` at `authority_version`.
+    ///
+    /// # Errors
+    /// Returns `CONFLICT` when the slot is already bound.
     pub fn bind(
         &mut self,
         slot: ActorSlot,
@@ -131,6 +155,11 @@ impl ReplayTable {
         });
         Ok(())
     }
+    /// Clears a bound worker or evaluator slot.
+    ///
+    /// # Errors
+    /// Returns `UNAUTHORIZED` when `slot` is the owner, treasury or operator slot; `NOT_FOUND` when
+    /// the slot is unbound.
     pub fn retire(&mut self, slot: ActorSlot) -> CodecResult<()> {
         if slot == ActorSlot::OWNER || slot == ActorSlot::TREASURY || slot == ActorSlot::OPERATOR {
             return Err(UNAUTHORIZED);
@@ -141,6 +170,11 @@ impl ReplayTable {
         self.actors[usize::from(slot.0)] = None;
         Ok(())
     }
+    /// Rebinds the operator slot under a newer grant, dropping its retained result.
+    ///
+    /// # Errors
+    /// Returns `NOT_FOUND` when no operator is bound; `CONFLICT` when `grant` is not newer than the
+    /// current authority version.
     pub fn replace_operator(&mut self, principal: PrincipalId, grant: Version) -> CodecResult<()> {
         let previous = self.actor(ActorSlot::OPERATOR).ok_or(NOT_FOUND)?;
         if grant <= previous.authority_version {
@@ -153,6 +187,11 @@ impl ReplayTable {
         });
         Ok(())
     }
+    /// Encoded byte length of the table.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when a retained result has a zero sequence, applied revision or
+    /// expiry; `ARITHMETIC` when the length overflows.
     pub fn encoded_len(&self) -> CodecResult<usize> {
         let mut n = 2usize;
         for actor in self.actors.iter().flatten() {
@@ -171,6 +210,14 @@ impl ReplayTable {
         }
         Ok(n)
     }
+    /// Classifies `request` against the slot's retained result without mutating.
+    ///
+    /// # Errors
+    /// Propagates `ReplayRequest::validate` refusals (`NON_CANONICAL`, `EXPIRED`); returns
+    /// `NOT_FOUND` when the slot is unbound, `UNAUTHORIZED` when the principal or authority version
+    /// differs, `REPLAY_CONFLICT` when the retained sequence is reused by a different request,
+    /// `SEQUENCE_CONSUMED` when the sequence is behind, `SEQUENCE_GAP` when it skips ahead,
+    /// `ARITHMETIC` when the next sequence overflows.
     pub fn check(&self, request: &ReplayRequest, height: u64) -> CodecResult<ReplayDecision> {
         request.validate(height)?;
         let actor = self.actor(request.slot).ok_or(NOT_FOUND)?;
@@ -200,6 +247,11 @@ impl ReplayTable {
         }
         Ok(ReplayDecision::Apply)
     }
+    /// Checks `request` and, when new, retains `result` at the next revision.
+    ///
+    /// # Errors
+    /// Propagates `check` refusals; returns `NON_CANONICAL` when `revision` is zero or behind the
+    /// retained applied revision, `ARITHMETIC` when the revision overflows.
     pub fn record_success(
         &mut self,
         request: &ReplayRequest,
@@ -250,6 +302,11 @@ pub struct ReplayRequest {
     pub expiry_height: u64,
 }
 impl ReplayRequest {
+    /// Replay request for a role-sequenced validated envelope.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the operation is not role-sequenced or the request digest is
+    /// zero; propagates the request-digest hashing refusals.
     pub fn from_envelope(
         slot: ActorSlot,
         authority_version: Version,
@@ -269,6 +326,11 @@ impl ReplayRequest {
             expiry_height: envelope.envelope.expiry,
         })
     }
+    /// Checks the request is canonical and unexpired at `height`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the sequence or expiry is zero; `EXPIRED` when `height` is at
+    /// or past the expiry.
     pub fn validate(&self, height: u64) -> CodecResult<()> {
         if self.sequence == 0 || self.expiry_height == 0 {
             return Err(NON_CANONICAL);
@@ -291,6 +353,11 @@ pub struct HeightWindow {
     pub end: u64,
 }
 impl HeightWindow {
+    /// Window `[start_offset, end_offset)` inside 128-block `epoch` from `origin`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the offsets are not an ordered window within 128 blocks;
+    /// `ARITHMETIC` when a window height overflows.
     pub fn epoch(origin: u64, epoch: u64, start_offset: u64, end_offset: u64) -> CodecResult<Self> {
         if start_offset >= end_offset || end_offset > 128 {
             return Err(NON_CANONICAL);
@@ -304,6 +371,10 @@ impl HeightWindow {
             end: start.checked_add(end_offset).ok_or(ARITHMETIC)?,
         })
     }
+    /// Checks `height` lies inside the window.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the window is empty; `WRONG_PHASE` when `height` is outside it.
     pub fn check(self, height: u64) -> CodecResult<()> {
         if self.start >= self.end {
             return Err(NON_CANONICAL);
@@ -316,6 +387,11 @@ impl HeightWindow {
     }
 }
 
+/// Encodes the replay table into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `ReplayTable::encoded_len` refusals; returns `CAPACITY` when `out` is shorter than
+/// the encoding.
 pub fn encode_replay(table: &ReplayTable, out: &mut [u8]) -> CodecResult<usize> {
     let n = table.encoded_len()?;
     if out.len() < n {
@@ -379,6 +455,12 @@ fn read_replay(r: &mut Reader<'_>) -> CodecResult<ReplayTable> {
     }
     Ok(table)
 }
+/// Strictly decodes a complete replay table.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input or actor count exceeds the table bound; `NON_CANONICAL` for
+/// out-of-range or unordered slots, zero identities or retained fields, invalid booleans,
+/// truncation or trailing bytes.
 pub fn decode_replay(input: &[u8]) -> CodecResult<ReplayTable> {
     if input.len() > 2 + ACTOR_SLOTS * MAX_ACTOR_RECORD_BYTES {
         return Err(CAPACITY);
@@ -395,6 +477,11 @@ pub struct Control<'a> {
     pub feature_bytes: &'a [u8],
 }
 impl Control<'_> {
+    /// Encoded byte length of the control payload.
+    ///
+    /// # Errors
+    /// Propagates `ReplayTable::encoded_len` refusals; returns `CAPACITY` when the payload exceeds
+    /// the control section cap, `ARITHMETIC` when the length overflows.
     pub fn encoded_len(&self) -> CodecResult<usize> {
         let n = 8usize
             .checked_add(self.replay.encoded_len()?)
@@ -407,6 +494,11 @@ impl Control<'_> {
         }
     }
 }
+/// Encodes the control payload into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `Control::encoded_len` refusals; returns `CAPACITY` when `out` is shorter than the
+/// encoding.
 pub fn encode_control(control: &Control<'_>, out: &mut [u8]) -> CodecResult<usize> {
     let n = control.encoded_len()?;
     if out.len() < n {
@@ -419,6 +511,12 @@ pub fn encode_control(control: &Control<'_>, out: &mut [u8]) -> CodecResult<usiz
     w.bytes(control.feature_bytes, Section::Control.payload_cap())?;
     Ok(n)
 }
+/// Strictly decodes a control payload.
+///
+/// # Errors
+/// Returns `CAPACITY` when the input, actor count or feature bytes exceed their caps; `BAD_VERSION`
+/// for another schema version; `NON_CANONICAL` for nonzero reserved bytes, a malformed replay
+/// table, truncation or trailing bytes.
 pub fn decode_control(input: &[u8]) -> CodecResult<Control<'_>> {
     if input.len() > Section::Control.payload_cap() {
         return Err(CAPACITY);
@@ -446,6 +544,11 @@ pub struct SharedState<'a> {
     pub control: Control<'a>,
 }
 impl SharedState<'_> {
+    /// Records a successful role request; the state is unchanged on any refusal.
+    ///
+    /// # Errors
+    /// Propagates `SharedState::encoded_len` refusals for the current and candidate state and the
+    /// replay table's `check`/`record_success` refusals.
     pub fn record_success(
         &mut self,
         request: &ReplayRequest,
@@ -468,6 +571,12 @@ impl SharedState<'_> {
         *self = candidate;
         Ok(ReplayDecision::Apply)
     }
+    /// Encoded byte length of the full state frame.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the revision is zero or a retained result was applied after it;
+    /// `CAPACITY` when a section or the whole state exceeds its cap; `ARITHMETIC` on overflow;
+    /// propagates `Control::encoded_len` refusals.
     pub fn encoded_len(&self) -> CodecResult<usize> {
         if self.revision == 0 {
             return Err(NON_CANONICAL);
@@ -496,12 +605,21 @@ impl SharedState<'_> {
             Ok(total)
         }
     }
+    /// Bytes of a feature section.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for `Section::Control`, which is not a feature section.
     pub fn section(&self, section: Section) -> CodecResult<&[u8]> {
         self.feature_sections
             .get(section.index())
             .copied()
             .ok_or(NON_CANONICAL)
     }
+    /// Copy of the state with one feature section replaced.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` for `Section::Control`; propagates `SharedState::encoded_len`
+    /// refusals for the result.
     pub fn replace_section<'a>(
         &'a self,
         section: Section,
@@ -520,6 +638,11 @@ impl SharedState<'_> {
         Ok(next)
     }
 }
+/// Encodes the state frame into `out`, using `control_scratch` for the control payload.
+///
+/// # Errors
+/// Propagates `SharedState::encoded_len` refusals; returns `CAPACITY` when `out` or
+/// `control_scratch` is too short; propagates the control and state-frame encoder refusals.
 pub fn encode_shared_state(
     state: &SharedState<'_>,
     out: &mut [u8],
@@ -545,6 +668,10 @@ pub fn encode_shared_state(
         out,
     )
 }
+/// Strictly decodes a state frame and its control payload.
+///
+/// # Errors
+/// Propagates the state-frame and control decoder refusals and `SharedState::encoded_len` refusals.
 pub fn decode_shared_state(input: &[u8]) -> CodecResult<SharedState<'_>> {
     let frame = codec::decode_state(input)?;
     let state = SharedState {

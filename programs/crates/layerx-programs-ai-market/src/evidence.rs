@@ -7,7 +7,10 @@ use crate::{
     commit_reveal::commitment::{decode_binding, encode_binding, BINDING_BYTES},
     errors::{offchain_error, ApplicationError, OffchainSpace},
     evaluators::{codec::verify_digest, model::VerificationError},
-    types::*,
+    types::{
+        ChainDomain, Digest32, EvaluatorBinding, EvidenceRoot, MarketId, PolicyDigest, PrincipalId,
+        ProgramId, PublicKey32, RubricDigest, Score, Signature64, TaskId, Version, WorkerId,
+    },
     MAX_TASKS, MAX_WORKERS,
 };
 use sha2::{Digest, Sha256};
@@ -75,9 +78,11 @@ pub enum ArtifactError {
     StorageFailure,
 }
 impl ArtifactError {
+    #[must_use]
     pub const fn code(self) -> u16 {
         self as u16
     }
+    #[must_use]
     pub fn name(self) -> &'static str {
         offchain_error(OffchainSpace::ArtifactService, self.code()).unwrap_or("Malformed")
     }
@@ -109,6 +114,10 @@ macro_rules! u8_enum {
         #[repr(u8)]
         pub enum $name { $($variant = $value),+ }
         impl $name {
+            /// Decodes the wire discriminant.
+            ///
+            /// # Errors
+            #[doc = concat!("Returns `", stringify!($unknown), "` when `value` is not a defined discriminant.")]
             pub fn decode(value: u8) -> ArtifactResult<Self> {
                 match value {
                     $($value => Ok(Self::$variant),)+
@@ -142,7 +151,15 @@ u8_enum!(TerminalStatus, ArtifactError::Malformed, {
 /// Bounded list in the crate's typed-or-encoded view style. Encoded views are
 /// produced only by strict decoders after full validation.
 pub trait Item<'a>: Copy {
+    /// Reads one item from `r`.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when the bytes are truncated or not a canonical item.
     fn read(r: &mut Reader<'a>) -> ArtifactResult<Self>;
+    /// Writes this item to `w`.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when `w` lacks space or a length does not fit its field.
     fn write(&self, w: &mut Writer<'_>) -> ArtifactResult<()>;
 }
 #[derive(Clone, Copy, Debug)]
@@ -151,15 +168,18 @@ pub enum Items<'a, T> {
     Encoded { count: usize, bytes: &'a [u8] },
 }
 impl<'a, T: Item<'a>> Items<'a, T> {
+    #[must_use]
     pub fn len(&self) -> usize {
         match self {
             Self::Typed(items) => items.len(),
             Self::Encoded { count, .. } => *count,
         }
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    #[must_use]
     pub fn iter(&self) -> ItemIter<'a, T> {
         let bytes: &'a [u8] = match self {
             Self::Typed(_) => &[],
@@ -170,6 +190,13 @@ impl<'a, T: Item<'a>> Items<'a, T> {
             index: 0,
             reader: Reader::new(bytes),
         }
+    }
+}
+impl<'a, T: Item<'a>> IntoIterator for &Items<'a, T> {
+    type Item = ArtifactResult<T>;
+    type IntoIter = ItemIter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 pub struct ItemIter<'a, T> {
@@ -226,7 +253,7 @@ fn length_u32(length: usize) -> ArtifactResult<[u8; 4]> {
         .to_be_bytes())
 }
 
-/// Common context C = chain_domain32||program32||market32||policy32.
+/// Common context C = `chain_domain32||program32||market32||policy32`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ArtifactContext {
     pub chain: ChainDomain,
@@ -235,6 +262,7 @@ pub struct ArtifactContext {
     pub policy: PolicyDigest,
 }
 impl ArtifactContext {
+    #[must_use]
     pub fn bytes(&self) -> [u8; 128] {
         let mut out = [0; 128];
         out[..32].copy_from_slice(self.chain.as_bytes());
@@ -257,9 +285,14 @@ impl ArtifactContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ArtifactManifestRoot(Digest32);
 impl ArtifactManifestRoot {
+    /// Root from nonzero bytes.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when `bytes` are all zero.
     pub fn new(bytes: [u8; 32]) -> ArtifactResult<Self> {
         Ok(Self(Digest32::new(bytes)?))
     }
+    #[must_use]
     pub const fn bytes(self) -> [u8; 32] {
         self.0.bytes()
     }
@@ -313,6 +346,10 @@ impl ArtifactManifest<'_> {
             ArtifactKind::Input | ArtifactKind::Result | ArtifactKind::ExecutionEvidence
         )
     }
+    /// Encoded byte length of the manifest.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when the length overflows.
     pub fn encoded_len(&self) -> ArtifactResult<usize> {
         self.parents
             .len()
@@ -320,6 +357,13 @@ impl ArtifactManifest<'_> {
             .and_then(|n| n.checked_add(MANIFEST_FIXED_BYTES))
             .ok_or(ArtifactError::Malformed)
     }
+    /// Checks the manifest's bounds, roots, parent order and context rules.
+    ///
+    /// # Errors
+    /// Returns `LengthMismatch` when `chunk_count` disagrees with `byte_length`; `RootMismatch`
+    /// when an empty object's content root is not the empty-tree root; `InvalidContext` when a
+    /// policy-scoped kind has a nonzero epoch or a subject other than the policy; `Malformed` for
+    /// every other bound, zero-root or ordering violation.
     pub fn validate(&self) -> ArtifactResult<()> {
         if self.byte_length > MAX_OBJECT_BYTES || self.chunk_count > MAX_CHUNKS {
             return Err(ArtifactError::Malformed);
@@ -343,7 +387,7 @@ impl ArtifactManifest<'_> {
             return Err(ArtifactError::Malformed);
         }
         let mut previous: Option<(u8, [u8; 32])> = None;
-        for parent in self.parents.iter() {
+        for parent in &self.parents {
             let parent = parent?;
             if !matches!(
                 parent.purpose,
@@ -367,6 +411,11 @@ impl ArtifactManifest<'_> {
     }
 }
 
+/// Encodes a validated manifest into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `ArtifactManifest::validate` refusals; returns `Malformed` when the encoding exceeds
+/// `MAX_MANIFEST_BYTES` or `out` is too short.
 pub fn encode_manifest(value: &ArtifactManifest<'_>, out: &mut [u8]) -> ArtifactResult<usize> {
     value.validate()?;
     let size = value.encoded_len()?;
@@ -388,7 +437,7 @@ pub fn encode_manifest(value: &ArtifactManifest<'_>, out: &mut [u8]) -> Artifact
     w.u32(value.chunk_count)?;
     w.put(&value.content_root)?;
     w.u16(u16::try_from(value.parents.len()).map_err(|_| ArtifactError::Malformed)?)?;
-    for parent in value.parents.iter() {
+    for parent in &value.parents {
         parent?.write(&mut w)?;
     }
     w.put(&value.declaration_root)?;
@@ -399,6 +448,12 @@ pub fn encode_manifest(value: &ArtifactManifest<'_>, out: &mut [u8]) -> Artifact
     Ok(w.len())
 }
 
+/// Strictly decodes and validates a manifest.
+///
+/// # Errors
+/// Returns `UnsupportedVersion` for another version; `UnsupportedKind` for an unknown kind;
+/// `Malformed` for size, magic, chunk-size, parent-count, reserved, zero-identity, truncation or
+/// trailing-byte faults; then propagates `ArtifactManifest::validate` refusals.
 pub fn decode_manifest(input: &[u8]) -> ArtifactResult<ArtifactManifest<'_>> {
     if input.len() > MAX_MANIFEST_BYTES || input.len() < MANIFEST_FIXED_BYTES {
         return Err(ArtifactError::Malformed);
@@ -452,6 +507,9 @@ pub fn decode_manifest(input: &[u8]) -> ArtifactResult<ArtifactManifest<'_>> {
 }
 
 /// H(D(manifest)||C||u32(len)||encoded) over strictly decoded canonical bytes.
+///
+/// # Errors
+/// Propagates `decode_manifest` refusals.
 pub fn manifest_root(encoded: &[u8]) -> ArtifactResult<ArtifactManifestRoot> {
     let manifest = decode_manifest(encoded)?;
     ArtifactManifestRoot::new(h(
@@ -471,6 +529,10 @@ pub enum SubjectContext {
     Task { epoch: u64, task: TaskId },
 }
 
+/// Compares a manifest's context, epoch and subject with the expectation.
+///
+/// # Errors
+/// Returns `InvalidContext` when the context differs or the epoch/subject does not match `subject`.
 pub fn check_manifest_context(
     manifest: &ArtifactManifest<'_>,
     expected: &ArtifactContext,
@@ -498,6 +560,7 @@ pub fn check_manifest_context(
     }
 }
 
+#[must_use]
 pub fn publisher_digest(
     context: &ArtifactContext,
     root: ArtifactManifestRoot,
@@ -529,6 +592,11 @@ pub struct VerifiedPublisher {
     pub key: PublicKey32,
 }
 
+/// Encodes a publisher envelope into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `decode_manifest` refusals for the embedded manifest; returns `Malformed` when the
+/// key is zero, the envelope exceeds `MAX_ENVELOPE_BYTES` or `out` is too short.
 pub fn encode_envelope(value: &PublisherEnvelope<'_>, out: &mut [u8]) -> ArtifactResult<usize> {
     decode_manifest(value.manifest)?;
     if value.key.0 == [0; 32] {
@@ -548,6 +616,11 @@ pub fn encode_envelope(value: &PublisherEnvelope<'_>, out: &mut [u8]) -> Artifac
     Ok(w.len())
 }
 
+/// Strictly decodes a publisher envelope.
+///
+/// # Errors
+/// Returns `Malformed` for an oversized envelope or manifest, a non-Ed25519 scheme, a zero
+/// generation or key, truncation or trailing bytes; propagates `decode_manifest` refusals.
 pub fn decode_envelope(input: &[u8]) -> ArtifactResult<PublisherEnvelope<'_>> {
     if input.len() > MAX_ENVELOPE_BYTES {
         return Err(ArtifactError::Malformed);
@@ -579,6 +652,11 @@ pub fn decode_envelope(input: &[u8]) -> ArtifactResult<PublisherEnvelope<'_>> {
 
 /// Ed25519 over the 32-byte publisher digest only; the manifest root ignores
 /// the signature, so distinct valid signatures share one root.
+///
+/// # Errors
+/// Returns `VerificationFailure::Artifact` with the `decode_manifest` refusals or
+/// `SignatureInvalid` when the signature does not verify; `VerificationFailure::Host` when the host
+/// verifier fails (wasm32 only).
 pub fn verify_publisher(
     envelope: &PublisherEnvelope<'_>,
 ) -> Result<VerifiedPublisher, VerificationFailure> {
@@ -637,6 +715,11 @@ pub struct Declaration<'a> {
     pub review_reference_root: [u8; 32],
 }
 impl Declaration<'_> {
+    /// Checks masks, document bounds and strict document order.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for undefined mask bits, too many documents, `Documented` without
+    /// documents, a zero document root, an oversized label or unordered/duplicate documents.
     pub fn validate(&self) -> ArtifactResult<()> {
         if self.purpose_mask & !0x000f != 0 || self.restriction_mask & !0x001f != 0 {
             return Err(ArtifactError::Malformed);
@@ -648,7 +731,7 @@ impl Declaration<'_> {
             return Err(ArtifactError::Malformed);
         }
         let mut previous: Option<RightsDocument<'_>> = None;
-        for document in self.documents.iter() {
+        for document in &self.documents {
             let document = document?;
             nonzero(&document.root)?;
             if document.label.len() > MAX_LABEL_BYTES {
@@ -662,9 +745,13 @@ impl Declaration<'_> {
         }
         Ok(())
     }
+    /// Encoded byte length of the declaration.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when a document fails to decode or the length overflows.
     pub fn encoded_len(&self) -> ArtifactResult<usize> {
         let mut size = DECLARATION_FIXED_BYTES;
-        for document in self.documents.iter() {
+        for document in &self.documents {
             size = size
                 .checked_add(DOCUMENT_FIXED_BYTES + document?.label.len())
                 .ok_or(ArtifactError::Malformed)?;
@@ -673,10 +760,16 @@ impl Declaration<'_> {
     }
 }
 /// A missing declaration stays UNDECLARED; nothing is inferred.
+#[must_use]
 pub fn rights_status(declaration: Option<&Declaration<'_>>) -> RightsStatus {
     declaration.map_or(RightsStatus::Undeclared, |d| d.rights)
 }
 
+/// Encodes a validated declaration into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `Declaration::validate` and `Declaration::encoded_len` refusals; returns `Malformed`
+/// when the encoding exceeds `MAX_RECORD_BYTES` or `out` is too short.
 pub fn encode_declaration(value: &Declaration<'_>, out: &mut [u8]) -> ArtifactResult<usize> {
     value.validate()?;
     let size = value.encoded_len()?;
@@ -691,7 +784,7 @@ pub fn encode_declaration(value: &Declaration<'_>, out: &mut [u8]) -> ArtifactRe
     w.u16(value.restriction_mask)?;
     w.u64(value.valid_until_height)?;
     w.u16(u16::try_from(value.documents.len()).map_err(|_| ArtifactError::Malformed)?)?;
-    for document in value.documents.iter() {
+    for document in &value.documents {
         document?.write(&mut w)?;
     }
     w.put(&value.review_reference_root)?;
@@ -699,6 +792,12 @@ pub fn encode_declaration(value: &Declaration<'_>, out: &mut [u8]) -> ArtifactRe
     Ok(w.len())
 }
 
+/// Strictly decodes and validates a declaration.
+///
+/// # Errors
+/// Returns `UnsupportedVersion` for another version; `Malformed` for size, zero-publisher,
+/// unknown-enum, document-count, reserved, truncation or trailing-byte faults; then propagates
+/// `Declaration::validate` refusals.
 pub fn decode_declaration(input: &[u8]) -> ArtifactResult<Declaration<'_>> {
     if input.len() > MAX_RECORD_BYTES || input.len() < DECLARATION_FIXED_BYTES {
         return Err(ArtifactError::Malformed);
@@ -737,6 +836,10 @@ pub fn decode_declaration(input: &[u8]) -> ArtifactResult<Declaration<'_>> {
     Ok(declaration)
 }
 
+/// Context-bound root of canonical declaration bytes.
+///
+/// # Errors
+/// Propagates `decode_declaration` refusals.
 pub fn declaration_root(context: &ArtifactContext, encoded: &[u8]) -> ArtifactResult<Digest32> {
     decode_declaration(encoded)?;
     Ok(Digest32::new(h(
@@ -763,6 +866,10 @@ pub struct Reproduction {
     pub repeated_result_root: [u8; 32],
 }
 impl Reproduction {
+    /// Checks that the request, model, input and result roots are nonzero.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when any of those roots is zero.
     pub fn validate(&self) -> ArtifactResult<()> {
         nonzero(&self.request_root)?;
         nonzero(&self.model_root)?;
@@ -771,6 +878,10 @@ impl Reproduction {
     }
 }
 
+/// Encodes a validated reproduction record.
+///
+/// # Errors
+/// Propagates `Reproduction::validate` refusals.
 pub fn encode_reproduction(value: &Reproduction) -> ArtifactResult<[u8; REPRODUCTION_BYTES]> {
     value.validate()?;
     let mut out = [0; REPRODUCTION_BYTES];
@@ -797,6 +908,11 @@ pub fn encode_reproduction(value: &Reproduction) -> ArtifactResult<[u8; REPRODUC
     Ok(out)
 }
 
+/// Strictly decodes and validates a reproduction record.
+///
+/// # Errors
+/// Returns `UnsupportedVersion` for another version; `Malformed` for a wrong length, zero task,
+/// unknown status or nonzero reserved bytes; then propagates `Reproduction::validate` refusals.
 pub fn decode_reproduction(input: &[u8]) -> ArtifactResult<Reproduction> {
     if input.len() != REPRODUCTION_BYTES {
         return Err(ArtifactError::Malformed);
@@ -824,6 +940,10 @@ pub fn decode_reproduction(input: &[u8]) -> ArtifactResult<Reproduction> {
     Ok(value)
 }
 
+/// Context-bound root of canonical reproduction bytes.
+///
+/// # Errors
+/// Propagates `decode_reproduction` refusals.
 pub fn reproduction_root(context: &ArtifactContext, encoded: &[u8]) -> ArtifactResult<Digest32> {
     decode_reproduction(encoded)?;
     Ok(Digest32::new(h(
@@ -832,7 +952,10 @@ pub fn reproduction_root(context: &ArtifactContext, encoded: &[u8]) -> ArtifactR
     ))?)
 }
 
-/// n = ceil(byte_length / 262144), refused above 32 GiB / 131072 chunks.
+/// n = `ceil(byte_length / 262144)`, refused above 32 GiB / 131072 chunks.
+///
+/// # Errors
+/// Returns `Malformed` when `byte_length` exceeds `MAX_OBJECT_BYTES`.
 pub fn chunk_count(byte_length: u64) -> ArtifactResult<u32> {
     if byte_length > MAX_OBJECT_BYTES {
         return Err(ArtifactError::Malformed);
@@ -840,6 +963,11 @@ pub fn chunk_count(byte_length: u64) -> ArtifactResult<u32> {
     u32::try_from(byte_length.div_ceil(u64::from(CHUNK_BYTES)))
         .map_err(|_| ArtifactError::Malformed)
 }
+/// Exact length of chunk `index` of an object of `byte_length` in `count` chunks.
+///
+/// # Errors
+/// Returns `Malformed` when `index` is not below `count` or the chunk offset is out of range;
+/// `LengthMismatch` when the final chunk would be empty or longer than `CHUNK_BYTES`.
 pub fn expected_chunk_length(byte_length: u64, count: u32, index: u32) -> ArtifactResult<u32> {
     if index >= count {
         return Err(ArtifactError::Malformed);
@@ -858,6 +986,10 @@ pub fn expected_chunk_length(byte_length: u64, count: u32, index: u32) -> Artifa
     }
     u32::try_from(last).map_err(|_| ArtifactError::Malformed)
 }
+/// Domain-separated leaf hash of chunk `index`.
+///
+/// # Errors
+/// Returns `Malformed` when `chunk` is longer than `CHUNK_BYTES`.
 pub fn chunk_leaf(index: u32, chunk: &[u8]) -> ArtifactResult<[u8; 32]> {
     if chunk.len() > CHUNK_BYTES as usize {
         return Err(ArtifactError::Malformed);
@@ -867,12 +999,15 @@ pub fn chunk_leaf(index: u32, chunk: &[u8]) -> ArtifactResult<[u8; 32]> {
         &[&index.to_be_bytes(), &length_u32(chunk.len())?, chunk],
     ))
 }
+#[must_use]
 pub fn empty_tree_root() -> [u8; 32] {
     h(EMPTY_DOMAIN, &[])
 }
+#[must_use]
 pub fn node_root(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     h(NODE_DOMAIN, &[left, right])
 }
+#[must_use]
 pub fn content_root(byte_length: u64, count: u32, tree_root: &[u8; 32]) -> [u8; 32] {
     h(
         CONTENT_DOMAIN,
@@ -901,6 +1036,7 @@ pub fn tree_root(leaves: &mut [[u8; 32]]) -> [u8; 32] {
     leaves[0]
 }
 /// Number of proof siblings implied by successive ceil(n/2) levels.
+#[must_use]
 pub fn proof_sibling_count(count: u32) -> usize {
     let mut width = count;
     let mut siblings = 0;
@@ -911,6 +1047,10 @@ pub fn proof_sibling_count(count: u32) -> usize {
     siblings
 }
 /// Content root of in-memory object bytes; scratch must hold every leaf.
+///
+/// # Errors
+/// Returns `Malformed` when `object` exceeds `MAX_OBJECT_BYTES`; `CapacityUnavailable` when
+/// `scratch` holds fewer leaves than chunks.
 pub fn object_content_root(object: &[u8], scratch: &mut [[u8; 32]]) -> ArtifactResult<[u8; 32]> {
     let byte_length = u64::try_from(object.len()).map_err(|_| ArtifactError::Malformed)?;
     let count = chunk_count(byte_length)?;
@@ -935,6 +1075,11 @@ pub struct ContentAssembler<'s> {
     leaves: &'s mut [[u8; 32]],
 }
 impl<'s> ContentAssembler<'s> {
+    /// Assembler for a validated manifest, using `scratch` for one leaf per chunk.
+    ///
+    /// # Errors
+    /// Propagates `ArtifactManifest::validate` refusals; returns `CapacityUnavailable` when
+    /// `scratch` holds fewer leaves than chunks.
     pub fn new(
         manifest: &ArtifactManifest<'_>,
         scratch: &'s mut [[u8; 32]],
@@ -952,6 +1097,11 @@ impl<'s> ContentAssembler<'s> {
         })
     }
     /// Returns true only when the chunk adds new coverage.
+    ///
+    /// # Errors
+    /// Propagates `expected_chunk_length` refusals; returns `LengthMismatch` when the chunk length
+    /// differs, `Malformed` when it exceeds `CHUNK_BYTES`, `IntegrityConflict` when a different
+    /// chunk was already delivered at `index`.
     pub fn deliver(&mut self, index: u32, chunk: &[u8]) -> ArtifactResult<bool> {
         let expected = expected_chunk_length(self.byte_length, self.count, index)?;
         if chunk.len() != expected as usize {
@@ -968,8 +1118,13 @@ impl<'s> ContentAssembler<'s> {
             Err(ArtifactError::IntegrityConflict)
         }
     }
+    /// Checks full coverage and the recomputed content root.
+    ///
+    /// # Errors
+    /// Returns `MissingChunk` when any index is undelivered; `RootMismatch` when the recomputed
+    /// content root differs from the manifest.
     pub fn finish(self) -> ArtifactResult<()> {
-        if self.leaves.iter().any(|leaf| *leaf == [0; 32]) {
+        if self.leaves.contains(&[0; 32]) {
             return Err(ArtifactError::MissingChunk);
         }
         let tree = tree_root(self.leaves);
@@ -990,6 +1145,10 @@ pub struct ChunkProof<'a> {
     pub siblings: Items<'a, [u8; 32]>,
 }
 
+/// Encodes a chunk proof into `out`, returning the bytes written.
+///
+/// # Errors
+/// Returns `Malformed` when the chunk or sibling count exceeds its bound or `out` is too short.
 pub fn encode_chunk_proof(value: &ChunkProof<'_>, out: &mut [u8]) -> ArtifactResult<usize> {
     if value.chunk.len() > CHUNK_BYTES as usize || value.siblings.len() > MAX_PROOF_SIBLINGS {
         return Err(ArtifactError::Malformed);
@@ -1005,12 +1164,17 @@ pub fn encode_chunk_proof(value: &ChunkProof<'_>, out: &mut [u8]) -> ArtifactRes
     w.put(&length_u32(value.chunk.len())?)?;
     w.put(value.chunk)?;
     w.u8(u8::try_from(value.siblings.len()).map_err(|_| ArtifactError::Malformed)?)?;
-    for sibling in value.siblings.iter() {
+    for sibling in &value.siblings {
         sibling?.write(&mut w)?;
     }
     Ok(w.len())
 }
 
+/// Strictly decodes a chunk proof.
+///
+/// # Errors
+/// Returns `UnsupportedVersion` for another version; `Malformed` for a zero manifest root, an
+/// oversized chunk or sibling count, truncation or trailing bytes.
 pub fn decode_chunk_proof(input: &[u8]) -> ArtifactResult<ChunkProof<'_>> {
     let mut r = Reader::new(input);
     version(&mut r)?;
@@ -1039,6 +1203,11 @@ pub fn decode_chunk_proof(input: &[u8]) -> ArtifactResult<ChunkProof<'_>> {
 }
 
 /// Verifies against the strictly decoded manifest whose root the proof names.
+///
+/// # Errors
+/// Propagates `decode_manifest` and `expected_chunk_length` refusals; returns `RootMismatch` when
+/// the manifest root or recomputed content root differs, `LengthMismatch` when the chunk length is
+/// wrong, `Malformed` for a wrong sibling count or a self-paired sibling that is not the node.
 pub fn verify_chunk_proof(proof: &ChunkProof<'_>, manifest_bytes: &[u8]) -> ArtifactResult<()> {
     let manifest = decode_manifest(manifest_bytes)?;
     if manifest_root(manifest_bytes)? != proof.manifest_root {
@@ -1055,14 +1224,14 @@ pub fn verify_chunk_proof(proof: &ChunkProof<'_>, manifest_bytes: &[u8]) -> Arti
     let mut node = chunk_leaf(proof.index, proof.chunk)?;
     let mut index = proof.index;
     let mut width = count;
-    for sibling in proof.siblings.iter() {
+    for sibling in &proof.siblings {
         let sibling = sibling?;
         if index + 1 == width && width % 2 == 1 {
             if sibling != node {
                 return Err(ArtifactError::Malformed);
             }
             node = node_root(&node, &node);
-        } else if index % 2 == 0 {
+        } else if index.is_multiple_of(2) {
             node = node_root(&node, &sibling);
         } else {
             node = node_root(&sibling, &node);
@@ -1135,7 +1304,7 @@ impl<'a> Item<'a> for WorkerGroup<'a> {
             count,
             bytes: r.take(count * TASK_ENTRY_BYTES)?,
         };
-        for task in tasks.iter() {
+        for task in &tasks {
             task?;
         }
         Ok(Self {
@@ -1158,7 +1327,7 @@ impl<'a> Item<'a> for WorkerGroup<'a> {
         w.u16(self.reason_code)?;
         w.put(&self.reason_artifact_root)?;
         w.u16(u16::try_from(self.tasks.len()).map_err(|_| ArtifactError::Malformed)?)?;
-        for task in self.tasks.iter() {
+        for task in &self.tasks {
             task?.write(w)?;
         }
         Ok(())
@@ -1187,6 +1356,13 @@ pub struct EvidenceManifest<'a> {
     pub groups: Items<'a, WorkerGroup<'a>>,
 }
 impl EvidenceManifest<'_> {
+    /// Checks the manifest against the frozen evidence policy.
+    ///
+    /// # Errors
+    /// Returns `InvalidContext` when the mode or rubric differs from `policy`; `Malformed` for an
+    /// unadmitted absent dataset/benchmark root, an out-of-range group count, unordered workers,
+    /// zero model/deployment/request roots, empty, unordered or duplicate tasks, or an unadmitted
+    /// missing result.
     pub fn validate(&self, policy: &EvidencePolicy) -> ArtifactResult<()> {
         if self.mode != policy.mode || self.rubric != policy.rubric {
             return Err(ArtifactError::InvalidContext);
@@ -1202,7 +1378,7 @@ impl EvidenceManifest<'_> {
         let mut seen = [[0u8; 32]; MAX_TASKS];
         let mut total = 0usize;
         let mut previous_worker: Option<WorkerId> = None;
-        for group in self.groups.iter() {
+        for group in &self.groups {
             let group = group?;
             if previous_worker.is_some_and(|w| w >= group.worker) {
                 return Err(ArtifactError::Malformed);
@@ -1214,7 +1390,7 @@ impl EvidenceManifest<'_> {
                 return Err(ArtifactError::Malformed);
             }
             let mut previous_task: Option<TaskId> = None;
-            for task in group.tasks.iter() {
+            for task in &group.tasks {
                 let task = task?;
                 if previous_task.is_some_and(|t| t >= task.task) {
                     return Err(ArtifactError::Malformed);
@@ -1236,9 +1412,13 @@ impl EvidenceManifest<'_> {
         }
         Ok(())
     }
+    /// Encoded byte length of the evidence manifest.
+    ///
+    /// # Errors
+    /// Returns `Malformed` when a group fails to decode or the length overflows.
     pub fn encoded_len(&self) -> ArtifactResult<usize> {
         let mut size = EVIDENCE_FIXED_BYTES;
-        for group in self.groups.iter() {
+        for group in &self.groups {
             size = group?
                 .tasks
                 .len()
@@ -1251,6 +1431,12 @@ impl EvidenceManifest<'_> {
     }
 }
 
+/// Encodes a validated evidence manifest into `out`, returning the bytes written.
+///
+/// # Errors
+/// Propagates `EvidenceManifest::validate` and `EvidenceManifest::encoded_len` refusals; returns
+/// `Malformed` when the encoding exceeds `MAX_EVIDENCE_BYTES`, `out` is too short or the binding
+/// fails to encode.
 pub fn encode_evidence_manifest(
     value: &EvidenceManifest<'_>,
     policy: &EvidencePolicy,
@@ -1271,13 +1457,19 @@ pub fn encode_evidence_manifest(
     w.put(&value.benchmark_root)?;
     w.u8(value.mode as u8)?;
     w.u16(u16::try_from(value.groups.len()).map_err(|_| ArtifactError::Malformed)?)?;
-    for group in value.groups.iter() {
+    for group in &value.groups {
         group?.write(&mut w)?;
     }
     w.put(&[0; 16])?;
     Ok(w.len())
 }
 
+/// Strictly decodes and validates an evidence manifest.
+///
+/// # Errors
+/// Returns `UnsupportedVersion` for another version; `Malformed` for size, binding, zero-identity,
+/// unknown-mode, group or task count, reserved, truncation or trailing-byte faults; then propagates
+/// `EvidenceManifest::validate` refusals.
 pub fn decode_evidence_manifest<'a>(
     input: &'a [u8],
     policy: &EvidencePolicy,
@@ -1328,8 +1520,11 @@ pub fn decode_evidence_manifest<'a>(
     Ok(manifest)
 }
 
-/// H(PAXAI/evidence/v1, canonical EvidenceManifestV1 bytes): no artifact
+/// H(PAXAI/evidence/v1, canonical `EvidenceManifestV1` bytes): no artifact
 /// wrapping, context prefix or extra length prefix.
+///
+/// # Errors
+/// Propagates `decode_evidence_manifest` refusals.
 pub fn evidence_root(encoded: &[u8], policy: &EvidencePolicy) -> ArtifactResult<EvidenceRoot> {
     decode_evidence_manifest(encoded, policy)?;
     Ok(EvidenceRoot::new(

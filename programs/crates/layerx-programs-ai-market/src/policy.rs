@@ -1,7 +1,10 @@
 use crate::{
     codec::{domain_hash, Reader, Writer},
-    errors::*,
-    types::*,
+    errors::{
+        CodecResult, CAPACITY, F01_CAPACITY_UNAVAILABLE, F01_INVALID_POLICY, F01_POLICY_MISMATCH,
+        F01_VERSION_MISMATCH, NON_CANONICAL,
+    },
+    types::{Digest32, PolicyDigest, Presence, PrincipalId, RubricDigest, Version},
 };
 
 pub const TASK_POLICY_BYTES: usize = 307;
@@ -13,13 +16,13 @@ pub const SUBJECTIVE: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicyCommitments {
-    pub model_artifact_digest: Digest32,
-    pub dataset_artifact_digest: [u8; 32],
-    pub benchmark_suite_digest: Digest32,
-    pub rubric_digest: RubricDigest,
-    pub task_schema_digest: Digest32,
-    pub result_schema_digest: Digest32,
-    pub service_terms_digest: Digest32,
+    pub model_artifact: Digest32,
+    pub dataset_artifact: [u8; 32],
+    pub benchmark_suite: Digest32,
+    pub rubric: RubricDigest,
+    pub task_schema: Digest32,
+    pub result_schema: Digest32,
+    pub service_terms: Digest32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,6 +49,9 @@ pub struct TaskPolicyV1 {
 
 impl TaskPolicyV1 {
     /// Commitments do not establish the external rubric's dataset declaration or truth.
+    ///
+    /// # Errors
+    /// Returns `F01_INVALID_POLICY` when the supplied fields fail `validate`.
     pub fn bounded_default(
         config_version: u64,
         task_kind: u8,
@@ -77,11 +83,15 @@ impl TaskPolicyV1 {
         Ok(value)
     }
 
+    /// Checks every policy field against its bound.
+    ///
+    /// # Errors
+    /// Returns `F01_INVALID_POLICY` when any field is out of bounds or reserved bytes are set.
     pub fn validate(&self) -> CodecResult<()> {
         if self.config_version == 0
             || !(1..=3).contains(&self.task_kind)
             || !(OBJECTIVE..=SUBJECTIVE).contains(&self.assessment_mode)
-            || (self.task_kind != 1 && self.commitments.dataset_artifact_digest == [0; 32])
+            || (self.task_kind != 1 && self.commitments.dataset_artifact == [0; 32])
             || !(1..=32).contains(&self.max_workers)
             || !(1..=8).contains(&self.max_evaluators)
             || !(1..=64).contains(&self.max_tasks_per_epoch)
@@ -103,6 +113,10 @@ impl TaskPolicyV1 {
         Ok(())
     }
 
+    /// Writes the canonical policy bytes into `output`.
+    ///
+    /// # Errors
+    /// Returns `F01_INVALID_POLICY` when the policy is invalid; `CAPACITY` when `output` is shorter than `TASK_POLICY_BYTES`.
     pub fn encode(&self, output: &mut [u8]) -> CodecResult<usize> {
         self.validate()?;
         if output.len() < TASK_POLICY_BYTES {
@@ -112,13 +126,13 @@ impl TaskPolicyV1 {
         w.u64(self.config_version)?;
         w.u8(self.task_kind)?;
         w.u8(self.assessment_mode)?;
-        w.put(self.commitments.model_artifact_digest.as_bytes())?;
-        w.put(&self.commitments.dataset_artifact_digest)?;
-        w.put(self.commitments.benchmark_suite_digest.as_bytes())?;
-        w.put(self.commitments.rubric_digest.as_bytes())?;
-        w.put(self.commitments.task_schema_digest.as_bytes())?;
-        w.put(self.commitments.result_schema_digest.as_bytes())?;
-        w.put(self.commitments.service_terms_digest.as_bytes())?;
+        w.put(self.commitments.model_artifact.as_bytes())?;
+        w.put(&self.commitments.dataset_artifact)?;
+        w.put(self.commitments.benchmark_suite.as_bytes())?;
+        w.put(self.commitments.rubric.as_bytes())?;
+        w.put(self.commitments.task_schema.as_bytes())?;
+        w.put(self.commitments.result_schema.as_bytes())?;
+        w.put(self.commitments.service_terms.as_bytes())?;
         w.u8(self.max_workers)?;
         w.u8(self.max_evaluators)?;
         w.u16(self.max_tasks_per_epoch)?;
@@ -136,6 +150,10 @@ impl TaskPolicyV1 {
         Ok(w.len())
     }
 
+    /// Reads a policy from its exact canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the input is short or has trailing bytes; `F01_INVALID_POLICY` when a required digest is zero or the policy is invalid.
     pub fn decode(input: &[u8]) -> CodecResult<Self> {
         let mut r = Reader::new(input);
         let value = Self {
@@ -143,14 +161,13 @@ impl TaskPolicyV1 {
             task_kind: r.u8()?,
             assessment_mode: r.u8()?,
             commitments: PolicyCommitments {
-                model_artifact_digest: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
-                dataset_artifact_digest: r.fixed()?,
-                benchmark_suite_digest: Digest32::new(r.fixed()?)
-                    .map_err(|_| F01_INVALID_POLICY)?,
-                rubric_digest: RubricDigest::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
-                task_schema_digest: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
-                result_schema_digest: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
-                service_terms_digest: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                model_artifact: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                dataset_artifact: r.fixed()?,
+                benchmark_suite: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                rubric: RubricDigest::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                task_schema: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                result_schema: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
+                service_terms: Digest32::new(r.fixed()?).map_err(|_| F01_INVALID_POLICY)?,
             },
             max_workers: r.u8()?,
             max_evaluators: r.u8()?,
@@ -172,6 +189,10 @@ impl TaskPolicyV1 {
         Ok(value)
     }
 
+    /// Hashes the canonical policy bytes under the policy domain.
+    ///
+    /// # Errors
+    /// Returns `F01_INVALID_POLICY` when the policy is invalid; `NON_CANONICAL` when the hash is all zero.
     pub fn digest(&self) -> CodecResult<PolicyDigest> {
         let mut bytes = [0; TASK_POLICY_BYTES];
         self.encode(&mut bytes)?;
@@ -179,6 +200,10 @@ impl TaskPolicyV1 {
     }
 }
 
+/// Returns the config version after `highest`.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when `highest` is zero; `ARITHMETIC` when it is `u64::MAX`.
 pub fn next_config_version(highest: u64) -> CodecResult<u64> {
     Ok(Version::new(highest)?.next()?.get())
 }
@@ -191,12 +216,20 @@ pub struct PendingPolicy {
     pub proposer: PrincipalId,
 }
 impl PendingPolicy {
+    /// Checks that the stored digest matches the staged policy.
+    ///
+    /// # Errors
+    /// Returns `F01_POLICY_MISMATCH` when the digest differs; propagates `TaskPolicyV1::digest` refusals.
     pub fn validate(&self) -> CodecResult<()> {
         if self.policy.digest()? != self.digest {
             return Err(F01_POLICY_MISMATCH);
         }
         Ok(())
     }
+    /// Writes the canonical pending-policy bytes into `output`.
+    ///
+    /// # Errors
+    /// Propagates `validate` refusals; returns `CAPACITY` when `output` is shorter than `PENDING_POLICY_BYTES`.
     pub fn encode(&self, output: &mut [u8]) -> CodecResult<usize> {
         self.validate()?;
         if output.len() < PENDING_POLICY_BYTES {
@@ -209,6 +242,10 @@ impl PendingPolicy {
         w.put(self.proposer.as_bytes())?;
         Ok(TASK_POLICY_BYTES + w.len())
     }
+    /// Reads a pending policy from its exact canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the input is short, has trailing bytes, or holds a zero digest or proposer; propagates `TaskPolicyV1::decode` and `validate` refusals.
     pub fn decode(input: &[u8]) -> CodecResult<Self> {
         let mut r = Reader::new(input);
         let value = Self {
@@ -231,12 +268,20 @@ pub struct PolicyHistoryHeader {
     pub disposition: u8,
 }
 impl PolicyHistoryHeader {
+    /// Checks the header's version and disposition.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the version is zero or the disposition is not 1 or 2.
     pub fn validate(&self) -> CodecResult<()> {
         if self.config_version == 0 || !(1..=2).contains(&self.disposition) {
             return Err(NON_CANONICAL);
         }
         Ok(())
     }
+    /// Writes the canonical header bytes into `output`.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the header is invalid; `CAPACITY` when `output` is shorter than `POLICY_HISTORY_HEADER_BYTES`.
     pub fn encode(&self, output: &mut [u8]) -> CodecResult<usize> {
         self.validate()?;
         if output.len() < POLICY_HISTORY_HEADER_BYTES {
@@ -249,6 +294,10 @@ impl PolicyHistoryHeader {
         w.u8(self.disposition)?;
         Ok(w.len())
     }
+    /// Reads a header from its exact canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `NON_CANONICAL` when the input is short, has trailing bytes, holds a zero digest, or fails `validate`.
     pub fn decode(input: &[u8]) -> CodecResult<Self> {
         let mut r = Reader::new(input);
         let value = Self {
@@ -263,11 +312,18 @@ impl PolicyHistoryHeader {
     }
 }
 
+/// Returns the empty policy-history root.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when the hash is all zero.
 pub fn initial_policy_history_root() -> CodecResult<Digest32> {
     domain_hash("PAXAI/policy-history/v1", &[])
 }
 
 /// Pure fold of completed headers, with the prior completed version supplied by the state owner.
+///
+/// # Errors
+/// Returns `NON_CANONICAL` when a header is invalid; `F01_VERSION_MISMATCH` when versions do not strictly increase past `previous_version`.
 pub fn fold_policy_history(
     previous_root: Digest32,
     previous_version: u64,
@@ -294,6 +350,9 @@ pub fn fold_policy_history(
 }
 
 /// Validates restored policy records without staging, activation, cancellation, or compaction.
+///
+/// # Errors
+/// Returns `F01_INVALID_POLICY` when `current` is invalid; `F01_CAPACITY_UNAVAILABLE` when more than `MAX_RECENT_POLICY_HEADERS` headers are given; `F01_VERSION_MISMATCH` when versions are out of order or inconsistent with `highest_config_version`; `F01_POLICY_MISMATCH` when the current version's header disagrees with `current`; `NON_CANONICAL` when a header is invalid; propagates `PendingPolicy::validate` refusals.
 pub fn validate_policy_records(
     current: &TaskPolicyV1,
     pending: &Presence<PendingPolicy>,
