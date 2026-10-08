@@ -35435,7 +35435,7 @@ evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72ab
 
 [task.ai.F08-T01]
 title = "Implement bounded membership and liveness policy"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C02-STATE", "ai.F01-T01", "ai.F02-T01", "ai.F03-T01"]

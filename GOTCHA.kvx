@@ -4992,3 +4992,19 @@ text = "Workspace clippy denies unwrap_used and expect_used with no test allowan
 [gotcha.1072]
 area = "programs/ai-market"
 text = "PrincipalId and RequestId refuse all-zero bytes; test helpers that build ids as [n; 32] must never use n=0."
+
+[gotcha.1073]
+area = "programs/ai-market"
+text = "cargo clippy -p on one programs crate still lints the workspace SDK build script and fails there at deny level; use --no-deps, and while the crate lib still has deny errors add -- --cap-lints warn (or -W overrides) to get the test targets linted at all."
+
+[gotcha.1074]
+area = "programs/ai-market"
+text = "ApplicationError does not implement std::error::Error; tests that use ? must return CodecResult<()>, not Box<dyn Error>."
+
+[gotcha.1075]
+area = "programs/ai-market"
+text = "clippy::large_stack_arrays fires on const items too; fixed-capacity tables in the no_std crate must be initialised in place over the state section bytes and read through borrowed views, never as whole-struct consts or stack copies."
+
+[gotcha.1076]
+area = "platform/hosted"
+text = "A standalone crate under platform/ needs an empty [workspace] table in its Cargo.toml, otherwise cargo attaches it to platform/Cargo.toml and refuses to build because it is not a listed member."
