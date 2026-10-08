@@ -49,6 +49,7 @@ TEST_LIBRARY := $(BUILD_DIR)/liblayerx-testing.a
 
 .PHONY: all build clean reproducible layerxd layerx-genesis-build test \
 	test-harness list-tests \
+	test-paxai-blob-lifecycle \
 	test-result test-protocol test-arena test-sanitizer-smoke \
 	test-sanitizer-suite test-codec test-codec-limits test-codec-version \
 	test-codec-vectors fuzz-codec-smoke test-crypto-hash test-crypto-ed25519 \
@@ -3559,6 +3560,15 @@ $(BUILD_DIR)/tests/programs_winddown: tests/programs/test_winddown.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
+
+$(BUILD_DIR)/tests/lxp_test_blob_lifecycle: tests/programs/test_blob_lifecycle.c \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
+
+test-paxai-blob-lifecycle: $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
+	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
 
 programs-core-test: $(BUILD_DIR)/tests/programs_registration \
 		$(BUILD_DIR)/tests/programs_lifecycle \

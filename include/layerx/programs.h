@@ -176,6 +176,7 @@ enum {
     LX_PROGRAMS_FEE_GOVERNANCE = 0x00090008,
     LX_PROGRAMS_SANDBOX = 0x00090009,
     LX_PROGRAMS_SANDBOX_DESTROY = 0x0009000A,
+    LX_PROGRAMS_STORAGE_RETIREMENT = 0x0009000B,
     LX_PROGRAMS_ABI_VERSION = 1,
     LX_PROGRAMS_ACCOUNT_ABI_VERSION = 2,
     LX_PROGRAMS_SANDBOX_ABI_VERSION = 3,
@@ -474,6 +475,7 @@ const lxp_module_iface *programs_module_registration(void);
 const lxp_module_iface *programs_module_registration_v2(void);
 const lxp_module_iface *programs_module_registration_v3(void);
 const lxp_module_iface *programs_module_registration_v4(void);
+const lxp_module_iface *programs_module_registration_v4_storage_retirement(void);
 const lxp_module_iface *lx_programs_module_iface(void);
 
 lxp_result lxp_programs_lifecycle_decode(lxp_module_ctx *ctx,
@@ -783,6 +785,34 @@ lxp_result lxp_programs_replay_capture_bytes(const lxp_programs_replay_capture *
 lxp_result lxp_programs_replay_capture_stage(lxp_module_ctx *ctx, const lxp_programs_replay_capture *capture, lxp_result settled_result);
 void lxp_programs_replay_record_key(const uint8_t activity_id[32], uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES]);
 lxp_result lxp_programs_replay_record_blob_key(lxp_byte_span record, uint8_t blob_key[32]);
+
+enum {
+    LXP_PROGRAMS_RETIREMENT_PROFILE_VERSION = 1,
+    LXP_PROGRAMS_RETIREMENT_REQUEST_VERSION = 1,
+    LXP_PROGRAMS_RETIREMENT_MAX_CANDIDATES = 3,
+    LXP_PROGRAMS_RETIREMENT_MAX_PAYLOAD_BYTES = 32768,
+    LXP_PROGRAMS_RETIREMENT_HEADER_BYTES = 370,
+    LXP_PROGRAMS_RETIREMENT_CANDIDATE_BYTES = 149,
+    LXP_PROGRAMS_RETIREMENT_CONTROL_BYTES = 251,
+    LXP_PROGRAMS_RETIREMENT_CLASS_MANIFEST = 1,
+    LXP_PROGRAMS_RETIREMENT_CLASS_VALUE = 2,
+    LXP_PROGRAMS_RETIREMENT_CLASS_REPLAY = 3,
+    LXP_PROGRAMS_RETIREMENT_EVENT = 0x090B
+};
+typedef struct lxp_programs_retirement_profile {
+    uint16_t version;
+    uint32_t network_id;
+    uint8_t controller[32];
+    uint8_t archive_keys[2][32];
+    uint8_t paxai_program_id[32];
+    uint64_t hot_horizon;
+} lxp_programs_retirement_profile;
+lxp_result lxp_programs_retirement_profile_digest(
+    const lxp_programs_retirement_profile *profile, uint8_t digest[32]);
+lxp_result lxp_programs_retirement_profile_stage(
+    lxp_module_ctx *ctx, const lxp_programs_retirement_profile *profile);
+lxp_result lxp_programs_retirement_certificate_digest(
+    const uint8_t *payload, size_t length, uint8_t digest[32]);
 
 
 lxp_result lxp_programs_call_decode(lxp_module_ctx *ctx,
