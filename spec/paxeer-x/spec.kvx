@@ -35223,7 +35223,7 @@ entry_condition = "ai.T-C01 has exact PASSED evidence on compatible common sourc
 touches = ["programs/crates/layerx-programs-ai-market/src/evaluators/model.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs", "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec"
-gate_kind = "planned"
+gate_kind = "executable"
 qualification = "UNRUN"
 max_builds = 1
 max_verify_runs = 1
@@ -35237,7 +35237,7 @@ worker_role_id = "W-F03-CODEC"
 serial_integration_owner = "FM-CORE root/FM1; source author retains only the original three exact owned paths"
 serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
 serial_integration_obligations = "Root authorizes FM1 serialized inline lib wiring: pub mod evaluators { pub mod model; pub mod codec; }. Existing actual SDK dependency and sha2 remain unchanged. Admit ed25519-dalek version =2.2.0 with default-features=false under native target dependencies and dev-dependencies for actual strict verification and deterministic signing. The package already exists in programs/Cargo.lock; update only the actual ai-market dependency edge if required by manifest resolution. Shared writer preserves every unrelated export/dependency and owns all three serial paths; no product edit is performed by this metadata proposal."
-evidence = "f15ce94908c29c07c47a819e6cacf1b20f97d0fe+source:fca5c4bee0432facc4132c626699b6a28c95942f22e3cf2b179a12ab8ce352e9 | cg work open --task ai.F03-T01 | 124 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-work-open.log"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [task.ai.F06-T01]
 title = "Define exact reward arithmetic and encodings"
@@ -44317,6 +44317,7 @@ scenario = "Use actual common ReportBody/ScoreVector and F03 encode_report_body/
 derived_from = ["AI.F03-A01", "AI.F03-A02"]
 actual_test_functions = ["a01_a02_explicit_zero_is_a_vote_and_omission_is_absent", "independent_report_attestation_and_real_signature_framing"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C02]
 feature = "F03"
@@ -44327,6 +44328,7 @@ scenario = "Actual encoders/decoders refuse descending or repeated worker IDs wi
 derived_from = ["AI.F03-A03", "AI.F03-A04"]
 actual_test_functions = ["a03_unsorted_duplicate_input_refuses_without_sorting_or_output_writes", "a04_scores_counts_bounds_and_exact_maximum", "report_every_truncation_trailing_length_schema_zero_and_short_output"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C03]
 feature = "F03"
@@ -44337,6 +44339,7 @@ scenario = "Actual check_binding/check_report_context compare every frozen chain
 derived_from = ["AI.F03-A05"]
 actual_test_functions = ["a05_all_frozen_domain_fields_and_precedence_before_bad_signature", "live_frozen_key_evidence_roster_and_lifecycle_refusals"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C04]
 feature = "F03"
@@ -44347,6 +44350,7 @@ scenario = "Independently assembled report bytes and domain-separated SHA256 pre
 derived_from = []
 actual_test_functions = ["independent_report_attestation_and_real_signature_framing"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C05]
 feature = "F03"
@@ -44357,6 +44361,7 @@ scenario = "Actual EvaluatorGrant and encode_grant/decode_grant produce the inde
 derived_from = []
 actual_test_functions = ["grant_exact_bytes_statuses_every_truncation_and_finite_checked_expiry", "nomination_derivation_remains_pending_and_purpose_framed"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C06]
 feature = "F03"
@@ -44367,6 +44372,7 @@ scenario = "Use canonical F03 EvaluatorAdmissionConsentV1/SignedEvaluatorConsent
 derived_from = []
 actual_test_functions = ["consent_exact_bytes_real_pop_and_every_truncation_or_trailing", "consent_mandatory_values_schema_expiry_and_all_permit_fields_bind"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C07]
 feature = "F03"
@@ -44377,6 +44383,7 @@ scenario = "Consume the actual common RevealScoreEvent/encode_reveal_event/decod
 derived_from = []
 actual_test_functions = ["common_reveal_event_exact_228_bytes_and_structural_refusals"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 
 [acceptance.AI.F03-CODEC-C08]
 feature = "F03"
@@ -44387,4 +44394,5 @@ scenario = "Use actual common CORE response/result status framing and frozen num
 derived_from = []
 actual_test_functions = ["core_response_status_and_numeric_application_error_contract"]
 qualification = "UNRUN"
+evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
 

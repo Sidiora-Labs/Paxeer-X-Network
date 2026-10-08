@@ -6,8 +6,8 @@ pub mod codec;
 pub mod dispatch;
 pub mod errors;
 pub mod evaluators {
-    pub mod model;
     pub mod codec;
+    pub mod model;
 }
 pub mod host_adapter;
 pub mod policy;

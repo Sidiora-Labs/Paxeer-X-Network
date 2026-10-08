@@ -689,7 +689,7 @@
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
-        "gate_kind": "planned",
+        "gate_kind": "executable",
         "qualification": "UNRUN",
         "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs.",
         "serial_integration_owner": "FM-CORE root/FM1; source author retains only the original three exact owned paths",
@@ -719,7 +719,7 @@
         "AI.F03-CODEC-C08"
       ],
       "qualification": "UNRUN",
-      "evidence": "f15ce94908c29c07c47a819e6cacf1b20f97d0fe+source:fca5c4bee0432facc4132c626699b6a28c95942f22e3cf2b179a12ab8ce352e9 | cg work open --task ai.F03-T01 | 124 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-work-open.log"
+      "evidence": "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
     },
     {
       "id": "ai.F06-T01",

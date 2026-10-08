@@ -1,5 +1,9 @@
 //! F03 value representations only: nomination is not accepted F08 membership.
-use crate::{codec::{ReportBody, derive_evaluator}, errors::*, types::*};
+use crate::{
+    codec::{derive_evaluator, ReportBody},
+    errors::*,
+    types::*,
+};
 
 pub const GRANT_BYTES: usize = 161;
 pub const CONSENT_BYTES: usize = 362;
@@ -10,12 +14,20 @@ pub const MAX_GRANT_EPOCHS: u64 = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
-pub enum GrantStatus { Pending = 1, Active = 2, Revoked = 3, Expired = 4 }
+pub enum GrantStatus {
+    Pending = 1,
+    Active = 2,
+    Revoked = 3,
+    Expired = 4,
+}
 impl GrantStatus {
     pub fn decode(value: u8) -> CodecResult<Self> {
         match value {
-            1 => Ok(Self::Pending), 2 => Ok(Self::Active),
-            3 => Ok(Self::Revoked), 4 => Ok(Self::Expired), _ => Err(NON_CANONICAL),
+            1 => Ok(Self::Pending),
+            2 => Ok(Self::Active),
+            3 => Ok(Self::Revoked),
+            4 => Ok(Self::Expired),
+            _ => Err(NON_CANONICAL),
         }
     }
 }
@@ -35,32 +47,60 @@ pub struct EvaluatorGrant {
 impl EvaluatorGrant {
     pub fn validate(&self) -> CodecResult<()> {
         nonzero_key(self.signing_key)?;
-        let span = self.expiry_epoch_exclusive.checked_sub(self.effective_epoch)
+        let span = self
+            .expiry_epoch_exclusive
+            .checked_sub(self.effective_epoch)
             .ok_or(F03_BAD_ACTIVATION)?;
-        if span == 0 || span > MAX_GRANT_EPOCHS { return Err(F03_BAD_ACTIVATION); }
+        if span == 0 || span > MAX_GRANT_EPOCHS {
+            return Err(F03_BAD_ACTIVATION);
+        }
         Ok(())
     }
     /// Constructs only an Owner nomination, without activating or accepting it.
-    pub fn nominate(market: MarketId, principal: PrincipalId, nonce: [u8; 32],
-        rubric: RubricDigest, grant_version: Version, key_version: Version,
-        signing_key: PublicKey32, effective_epoch: u64, expiry_epoch_exclusive: u64,
+    pub fn nominate(
+        market: MarketId,
+        principal: PrincipalId,
+        nonce: [u8; 32],
+        rubric: RubricDigest,
+        grant_version: Version,
+        key_version: Version,
+        signing_key: PublicKey32,
+        effective_epoch: u64,
+        expiry_epoch_exclusive: u64,
     ) -> CodecResult<Self> {
-        let value = Self { evaluator: derive_evaluator(market, principal, nonce)?, principal,
-            rubric, grant_version, key_version, signing_key, effective_epoch,
-            expiry_epoch_exclusive, status: GrantStatus::Pending };
+        let value = Self {
+            evaluator: derive_evaluator(market, principal, nonce)?,
+            principal,
+            rubric,
+            grant_version,
+            key_version,
+            signing_key,
+            effective_epoch,
+            expiry_epoch_exclusive,
+            status: GrantStatus::Pending,
+        };
         value.validate()?;
         Ok(value)
     }
 }
 pub fn default_expiry(effective_epoch: u64) -> CodecResult<u64> {
-    effective_epoch.checked_add(MAX_GRANT_EPOCHS).ok_or(ARITHMETIC)
+    effective_epoch
+        .checked_add(MAX_GRANT_EPOCHS)
+        .ok_or(ARITHMETIC)
 }
 pub fn nonzero_key(key: PublicKey32) -> CodecResult<()> {
-    if key.0 == [0; 32] { Err(NON_CANONICAL) } else { Ok(()) }
+    if key.0 == [0; 32] {
+        Err(NON_CANONICAL)
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SignedReport<'a> { pub body: ReportBody<'a>, pub signature: Signature64 }
+pub struct SignedReport<'a> {
+    pub body: ReportBody<'a>,
+    pub signature: Signature64,
+}
 
 /// A compact reference to a sealed F09 registration, not the remote manifest.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,7 +145,9 @@ pub struct EvaluatorAdmissionConsentV1 {
 impl EvaluatorAdmissionConsentV1 {
     pub fn validate(&self) -> CodecResult<()> {
         nonzero_key(self.delegate_key)?;
-        if self.expiry_height == 0 { return Err(NON_CANONICAL); }
+        if self.expiry_height == 0 {
+            return Err(NON_CANONICAL);
+        }
         if derive_evaluator(self.market, self.owner, self.enrollment_nonce)? != self.evaluator {
             return Err(F08_BAD_CONSENT);
         }
@@ -134,5 +176,7 @@ pub enum VerificationError {
     Host(layerx_program_sdk::ProgramError),
 }
 impl From<ApplicationError> for VerificationError {
-    fn from(error: ApplicationError) -> Self { Self::Application(error) }
+    fn from(error: ApplicationError) -> Self {
+        Self::Application(error)
+    }
 }

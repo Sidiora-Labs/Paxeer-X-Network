@@ -681,3 +681,10 @@ command = "cg work open --task ai.F03-T01"
 exit_code = 124
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-work-open.log"
 observed = "Work packet timed out120seconds before formatting, build or behavior verification; complete implementation remains unqualified. All original full native scenarios remain mandatory and UNRUN."
+
+[qualification.ai-evaluator-codec-20261008-02]
+revision = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
+observed = "Thirteen tests passed, none failed or ignored; crate build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. Full native evaluator cases remain UNRUN."
