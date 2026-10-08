@@ -22,6 +22,8 @@ pub mod registry_ops;
 pub mod reputation;
 pub mod reputation_codec;
 pub mod reputation_transition;
+pub mod reward_math;
+pub mod rewards;
 pub mod state;
 pub mod types;
 pub mod workers;
