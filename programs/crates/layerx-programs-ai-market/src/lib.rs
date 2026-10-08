@@ -2,6 +2,7 @@
 //! Programs entrypoint. No codec value establishes host authority or finality.
 #![no_std]
 
+pub mod admission;
 pub mod aggregation;
 pub mod aggregation_codec;
 pub mod codec;
@@ -25,6 +26,7 @@ pub mod reputation_codec;
 pub mod reputation_transition;
 pub mod reward_math;
 pub mod rewards;
+pub mod roster;
 pub mod state;
 pub mod types;
 pub mod workers;
