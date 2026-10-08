@@ -35206,21 +35206,21 @@ worker_role_id = "W-F02-IDENTITY"
 
 [task.ai.F03-T01]
 title = "Encode evaluator grants and signed reports"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 17
-requires = ["ai.T-C01", "ai.F01-T01"]
+requires = ["ai.T-C01"]
 reqs = ["AI.F03-R01", "AI.F03-R02", "AI.F03-R05", "AI.F03-R06", "AI.F03-R07", "AI.F03-R20", "AI.F03-R25", "AI.F03-R26", "AI.F03-R27", "AI.F03-R28", "AI.F03-R35", "AI.F03-R36", "AI.F03-R44", "AI.F03-R45", "AI.CORE"]
-do_1 = "Implement typed evaluator/grant/report codecs with exact compact bounded canonical vector and signature framing; preserve explicit zero versus omitted vote, registered evidence context and stable error representation."
+do_1 = "Qualify completed stateless F03 evaluator grant/report/consent codecs with actual passed C01 types/codecs, strict bounded canonical bytes, independent SHA256 known answers and real native Ed25519 verification. Preserve explicit zero versus omitted vote, exact supplied statement comparisons, refusal precedence, finite checked bounds and canonical shared events/errors. Borrowed contexts and decoded grants establish no runtime authority. Every original full F03-A01..A05 remains mandatory unchanged in ai.F03-T04."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
 manager = "FM-F03"
 worker_role = "evaluator authority specialist"
 worker = "W-F03-T01"
-deliverables = ["Implement typed evaluator/grant/report codecs with exact compact bounded canonical vector and signature framing; preserve explicit zero versus omitted vote, registered evidence context and stable error representation.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
-touches = ["programs/crates/layerx-programs-ai-market/src/evaluators/model.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs", "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs"]
+deliverables = ["Implement typed evaluator/grant/report codecs with exact compact bounded canonical vector and signature framing; preserve explicit zero versus omitted vote, registered evidence context and stable error representation.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success.", "Only new AI.F03-CODEC-C01..C08 may qualify through the unchanged focused f03_evaluator_codec gate; original complete F03-A01..A05 remain UNRUN until ai.F03-T04 genuinely executes each full scenario."]
+entry_condition = "ai.T-C01 has exact PASSED evidence on compatible common source; F01 and STATE qualification are not prerequisites of these stateless source files, which import neither producer. The completed actual FM6 model/codec/test candidate is admitted unchanged by the source integrator except task-scoped qualification repairs. Root/FM1 serially admits evaluators::{model,codec} exports and the exact real native/dev cryptographic dependencies before the existing focused gate. Missing exports/dependencies or API incompatibility blocks qualification; no fake authority, verifier or duplicate common producer is permitted. Full native cases stay UNRUN in ai.F03-T04."
+touches = ["programs/crates/layerx-programs-ai-market/src/evaluators/model.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs", "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
 build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec"
 gate_kind = "planned"
@@ -35231,9 +35231,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 3
-acceptance_cases = ["AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05"]
-paths = ["programs/crates/layerx-programs-ai-market/src/evaluators/model.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs", "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs"]
+acceptance_cases = ["AI.F03-CODEC-C01", "AI.F03-CODEC-C02", "AI.F03-CODEC-C03", "AI.F03-CODEC-C04", "AI.F03-CODEC-C05", "AI.F03-CODEC-C06", "AI.F03-CODEC-C07", "AI.F03-CODEC-C08"]
+paths = ["programs/crates/layerx-programs-ai-market/src/evaluators/model.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs", "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
 worker_role_id = "W-F03-CODEC"
+serial_integration_owner = "FM-CORE root/FM1; source author retains only the original three exact owned paths"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
+serial_integration_obligations = "Root authorizes FM1 serialized inline lib wiring: pub mod evaluators { pub mod model; pub mod codec; }. Existing actual SDK dependency and sha2 remain unchanged. Admit ed25519-dalek version =2.2.0 with default-features=false under native target dependencies and dev-dependencies for actual strict verification and deterministic signing. The package already exists in programs/Cargo.lock; update only the actual ai-market dependency edge if required by manifest resolution. Shared writer preserves every unrelated export/dependency and owns all three serial paths; no product edit is performed by this metadata proposal."
+evidence = "f15ce94908c29c07c47a819e6cacf1b20f97d0fe+source:fca5c4bee0432facc4132c626699b6a28c95942f22e3cf2b179a12ab8ce352e9 | cg work open --task ai.F03-T01 | 124 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-work-open.log"
 
 [task.ai.F06-T01]
 title = "Define exact reward arithmetic and encodings"
@@ -36296,7 +36300,7 @@ mode = "BUILD"
 wave = 29
 requires = ["ai.F03-T03", "ai.F05-T03", "ai.T-C03"]
 reqs = ["AI.F03-R11", "AI.F03-R29", "AI.F03-R30", "AI.F03-R31", "AI.F03-R36", "AI.F03-R37", "AI.F03-R38", "AI.F03-R41", "AI.F03-R42", "AI.CORE"]
-do_1 = "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs. Add mandatory original AI.F04-A12 revocation/seal assertions unchanged: preseal excludes while retaining acceptance history, postseal leaves sealed set unchanged. Actual interpreter/native adapter and F05 seal implementation, already required by this task. Consume T02 admission evidence without rerunning its passed gate."
+do_1 = "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs. Add mandatory original AI.F04-A12 revocation/seal assertions unchanged: preseal excludes while retaining acceptance history, postseal leaves sealed set unchanged. Actual interpreter/native adapter and F05 seal implementation, already required by this task. Consume T02 admission evidence without rerunning its passed gate. Mandatorily execute every unchanged complete AI.F03-A01/A02/A03/A04/A05 scenario through the actual interpreter/native reveal path: authenticated frozen roster/principals/evidence and window; actual accepted unchanged scores and explicit zero; zero F03 asset movement; omitted worker has no vote and the real F05 input mask differs; unsorted/duplicate vectors consume no slot and emit no admission event; score/count refusals preserve actual state; domain changes retain signature and refuse WRONG_DOMAIN. Existing F05 dependency supplies the actual aggregation consumer. Native signatures, slot/event/state rollback and asset observations must be real. Producer codec evidence is a prerequisite, never a substitute for a full scenario; originals remain UNRUN until this gate genuinely covers every assertion."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36316,7 +36320,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 15
-acceptance_cases = ["AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16", "AI.F04-A12"]
+acceptance_cases = ["AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16", "AI.F04-A12", "AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05"]
 paths = ["programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs"]
 worker_role_id = "W-F03-HOST"
 
@@ -44303,4 +44307,84 @@ task = "ai.F09-T01"
 kind = "codec_only"
 title = "Codec strict versions, declarations and wrappers"
 derived_from = "AI.F09-A22"
+
+[acceptance.AI.F03-CODEC-C01]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Canonical sparse reports retain explicit zero"
+scenario = "Use actual common ReportBody/ScoreVector and F03 encode_report_body/decode_report_body and signed-report wrappers. Independently specified exact bytes preserve sorted scores(11,700000),(22,0) and distinguish omission of22 from an explicit zero entry, without sorting, filling or normalization. Report body is228+36*n bytes for1..32 entries; signed report appends exactly64 signature bytes and is328..1444 bytes. This case creates no accepted reveal row, live F05 vote mask or asset movement proof."
+derived_from = ["AI.F03-A01", "AI.F03-A02"]
+actual_test_functions = ["a01_a02_explicit_zero_is_a_vote_and_omission_is_absent", "independent_report_attestation_and_real_signature_framing"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C02]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Strict vector ordering and score/count bounds"
+scenario = "Actual encoders/decoders refuse descending or repeated worker IDs with F03_NONCANONICAL_VECTOR, without repairing input or writing successful output. Scores0 and1000000 and length1 remain valid;1000001 refuses F03_SCORE_RANGE, length0 refuses F03_NO_SCORES and33 or malformed length refuses NON_CANONICAL. Exercise actual32-entry maximum, every truncated prefix, extra trailing bytes, invalid schema, zero mandatory fields and short output buffers. No live slot, state, revision or event rollback is qualified here."
+derived_from = ["AI.F03-A03", "AI.F03-A04"]
+actual_test_functions = ["a03_unsorted_duplicate_input_refuses_without_sorting_or_output_writes", "a04_scores_counts_bounds_and_exact_maximum", "report_every_truncation_trailing_length_schema_zero_and_short_output"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C03]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Exact supplied frozen statement and refusal precedence"
+scenario = "Actual check_binding/check_report_context compare every frozen chain/program/market/epoch/config/roster/evaluator/grant/key field using distinct common types and all32 bytes. A changed chain, Program or market refuses WRONG_DOMAIN before a deliberately bad signature. Exercise other frozen/live-key/lifecycle/worker/evidence/role mismatches and their unchanged typed errors against explicit borrowed ReportContext facts. These supplied facts are codec inputs and establish no membership, owner permission, execution window, grant activation or finality authority."
+derived_from = ["AI.F03-A05"]
+actual_test_functions = ["a05_all_frozen_domain_fields_and_precedence_before_bad_signature", "live_frozen_key_evidence_roster_and_lifecycle_refusals"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C04]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Independent report hashes and real native signatures"
+scenario = "Independently assembled report bytes and domain-separated SHA256 preimages reproduce the production common report digest and attestation digest. Actual native ed25519_dalek VerifyingKey::verify_strict accepts the real signature over exactly32 attestation-digest bytes and refuses altered report/key/signature and wrong-purpose messages. Preserve signature framing and typed cryptographic failures. Native cryptography qualifies neither wasm SDK imports nor host signature capability, metering, authenticated context or native reveal admission."
+derived_from = []
+actual_test_functions = ["independent_report_attestation_and_real_signature_framing"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C05]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Exact finite grant and nomination codecs"
+scenario = "Actual EvaluatorGrant and encode_grant/decode_grant produce the independently specified161-byte canonical grant for Pending/Active/Revoked/Expired status values and refuse every truncation, trailing byte, unknown status and invalid mandatory field. Checked expiry is finite, within the unchanged32-epoch bound, and refuses arithmetic/version overflow. Actual nomination uses common purpose-framed derive_evaluator and returns Pending only; no accepted membership, owner consent, delegated authority or runtime activation is inferred from decoding or nomination."
+derived_from = []
+actual_test_functions = ["grant_exact_bytes_statuses_every_truncation_and_finite_checked_expiry", "nomination_derivation_remains_pending_and_purpose_framed"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C06]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Canonical evaluator consent and real delegate proof of possession"
+scenario = "Use canonical F03 EvaluatorAdmissionConsentV1/SignedEvaluatorConsent without a duplicate schema. Independently specified bytes are exactly362 and426 bytes; actual codecs refuse all truncations/trailing bytes, invalid schema, zero mandatory identifiers/key/digests/versions, invalid expiry and altered permit fields. Actual consent_digest and real native Ed25519 verification bind chain/program/market/evaluator/owner/delegate/enrollment_nonce/rubric/approval/request/grant_version/key_version/effective_epoch/config_version/expiry_height with exact purpose framing. Supplied ConsentContext/nomination facts check equality and executing height; they do not prove registered kind0 owner acceptance, approval provenance or atomic permit/replay consumption."
+derived_from = []
+actual_test_functions = ["consent_exact_bytes_real_pop_and_every_truncation_or_trailing", "consent_mandatory_values_schema_expiry_and_all_permit_fields_bind"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C07]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Shared reveal-event framing"
+scenario = "Consume the actual common RevealScoreEvent/encode_reveal_event/decode_reveal_event exports unchanged. Independently specified exact228-byte event bytes round-trip and every structural refusal remains enforced. An encoded event proves no reveal admission, durable emission, indexer inclusion, sealed eligibility or finality."
+derived_from = []
+actual_test_functions = ["common_reveal_event_exact_228_bytes_and_structural_refusals"]
+qualification = "UNRUN"
+
+[acceptance.AI.F03-CODEC-C08]
+feature = "F03"
+task = "ai.F03-T01"
+kind = "stateless_codec_and_real_native_cryptography"
+title = "Shared result and application-error framing"
+scenario = "Use actual common CORE response/result status framing and frozen numeric ApplicationError codes unchanged. Exercise the real result/error encoders and decoders with bounded refusal behavior; no parallel status table, altered error, successful host call or runtime mutation is introduced."
+derived_from = []
+actual_test_functions = ["core_response_status_and_numeric_application_error_contract"]
+qualification = "UNRUN"
 

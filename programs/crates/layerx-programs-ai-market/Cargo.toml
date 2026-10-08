@@ -13,5 +13,11 @@ crate-type = ["rlib"]
 layerx-program-sdk = { path = "../../sdk/rust" }
 sha2.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ed25519-dalek = { version = "=2.2.0", default-features = false }
+
+[dev-dependencies]
+ed25519-dalek = { version = "=2.2.0", default-features = false }
+
 [lints]
 workspace = true

@@ -542,3 +542,35 @@ clause_023_required_real_assertion = "Actual declaration ingestion preserves exa
 clause_023_producer_owner = "ai.F09-T03"
 clause_023_mandatory_integration_task = "ai.F10-T02-FULL"
 clause_023_qualification = "UNRUN"
+[integration.I11-CODEC-F03]
+codec_task = "ai.F03-T01"
+codec_acceptance = ["AI.F03-CODEC-C01", "AI.F03-CODEC-C02", "AI.F03-CODEC-C03", "AI.F03-CODEC-C04", "AI.F03-CODEC-C05", "AI.F03-CODEC-C06", "AI.F03-CODEC-C07", "AI.F03-CODEC-C08"]
+requires = ["ai.T-C01"]
+removed_codec_only_dependency = "ai.F01-T01"
+dependency_reason = "Completed actual model/codec/test source imports common C01 and real cryptography only, with no F01 registry/policy or STATE import. Removing this source-codec dependency does not remove any original full runtime acceptance."
+original_full_acceptance = ["AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05"]
+mandatory_full_integration_task = "ai.F03-T04"
+mandatory_full_verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host"
+qualification = "UNRUN"
+gate_kind = "planned"
+full_completion_rule = "Every complete original case must run unchanged through the real native gate, including actual F05 mask, assets, slot/state/event nonmutation and authenticated domain/roster/evidence/window assertions. Pure codec/native cryptography evidence cannot pass any full scenario. Missing real authority/producer/resource keeps it UNRUN."
+serial_integration_owner = "FM-CORE root/FM1"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/Cargo.lock"]
+serial_integration_obligations = "Root authorizes FM1 serialized inline lib wiring: pub mod evaluators { pub mod model; pub mod codec; }. Existing actual SDK dependency and sha2 remain unchanged. Admit ed25519-dalek version =2.2.0 with default-features=false under native target dependencies and dev-dependencies for actual strict verification and deterministic signing. The package already exists in programs/Cargo.lock; update only the actual ai-market dependency edge if required by manifest resolution. Shared writer preserves every unrelated export/dependency and owns all three serial paths; no product edit is performed by this metadata proposal."
+report_context_rule = "Borrowed ReportContext/ConsentContext facts are statement inputs, never authority tokens. F04/F08/runtime owners must obtain and validate actual authoritative state and consume permit/replay atomically."
+full_case_01_id = "AI.F03-A01"
+full_case_01_scenario_verbatim = "frozen roster has workers11 and22, evaluator principal33 and distinct market owner, no conflicts; scores(11,700000),(22,0), registered root44 and valid signature. Reveal in its window admits unchanged scores and preserves explicit0; F03 moves zero assets."
+full_case_01_mandatory_task = "ai.F03-T04"
+full_case_02_id = "AI.F03-A02"
+full_case_02_scenario_verbatim = "omit worker22 and submit(11,700000). Worker22 has no vote, not score0; F05 input mask differs from A01."
+full_case_02_mandatory_task = "ai.F03-T04"
+full_case_03_id = "AI.F03-A03"
+full_case_03_scenario_verbatim = "submit(22,5),(11,6), or repeat11. NONCANONICAL_VECTOR; no slot consumed and no admission event."
+full_case_03_mandatory_task = "ai.F03-T04"
+full_case_04_id = "AI.F03-A04"
+full_case_04_scenario_verbatim = "score1000000 succeeds;1000001 returns SCORE_RANGE with no mutation. Scores0 and vector length1 are valid; length0 returns NO_SCORES and33 returns MALFORMED."
+full_case_04_mandatory_task = "ai.F03-T04"
+full_case_05_id = "AI.F03-A05"
+full_case_05_scenario_verbatim = "change only chain_domain from55 to56 while retaining signature. WRONG_DOMAIN; same refusal applies to another Program/market domain."
+full_case_05_mandatory_task = "ai.F03-T04"
+
