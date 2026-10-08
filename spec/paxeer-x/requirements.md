@@ -348,7 +348,7 @@
 1. The full-mode daemon accepts bounded POST /rpc operation/request envelopes and resolves every catalogued operation through the real existing owner/handler for the declared caller surface.
 2. Authorization binds full tenant, agent, session, token and generation credentials; program bearer possession alone does not authorize arbitrary catalogue writes, and malformed/oversized/unknown-operation requests return canonical typed errors.
 3. Responses preserve request_id, value and verification_status with the established error envelope; real reads, program reads, approvals, budgets, capabilities, sessions, subscriptions, exports and submissions have explicit dispatch.
-4. SDK requests routed through https://api-mainnet-beta.paxeer.network reach the same daemon contract while internal mTLS and origin/surface constraints remain enforced; existing direct-node and Programs-only clients retain their explicit distinct contracts.
+4. SDK requests routed through <https://api-mainnet-beta.paxeer.network> reach the same daemon contract while internal mTLS and origin/surface constraints remain enforced; existing direct-node and Programs-only clients retain their explicit distinct contracts.
 5. Durable mutation retries preserve idempotency and Unknown reconciliation across restart. Retired public faucet.claim returns UnavailableCapability; any retained private-network funding surface stays explicitly private.
 
 ## Requirement 127: Publish executable MCP bindings with protected listener and peer admission
@@ -671,7 +671,7 @@
 1. The deployment plan orders shared gateway client identity and registry token/trust/builder material, registry app readiness, router kernel-mode activation, then registry-through-router receipt proof without a dependency cycle.
 2. Router activation retains mandatory registry configuration/readiness and fails with a named missing prerequisite; the registry bootstrap does not require a previously passing router gate.
 3. Existing services, images, retained volumes and credentials are inventoried before deployment actions; each reused or newly supplied prerequisite has an explicit producer and no key material is fabricated or printed.
-4. The public unified interface remains https://api-mainnet-beta.paxeer.network; API1–API16 DNS remains unchanged and app fly.dev names remain internal edge upstreams only.
+4. The public unified interface remains <https://api-mainnet-beta.paxeer.network>; API1–API16 DNS remains unchanged and app fly.dev names remain internal edge upstreams only.
 5. A future staged proof records the selected candidate/image and ordered outcomes, culminating in a real successful signed registry receipt read through the router; failed stages resume without discarding state or weakening checks.
 
 ## Requirement 162: Serve receipt-verified program discovery and value accounts for every supported guest ABI
@@ -3247,7 +3247,7 @@
 
 1. THE HPX publication scripts SHALL derive source paths from hpx and its enclosing Paxeer subsystem, SHALL accept explicit runtime-config and artifact-root overrides, and SHALL contain no dependency on a machine-specific source checkout.
 2. EACH HPX publication SHALL assemble a new immutable release directory containing paxd, every supported architecture-specific libwasmvm runtime, genesis, fullnode and validator configuration, the HPX CLI and lifecycle scripts, chain metadata and a sorted SHA-256 manifest, and SHALL expose it only by atomically changing the current-release pointer after every required input has been copied.
-3. THE public origin https://node.hyperpaxeer.com SHALL terminate a certificate valid for that hostname and SHALL serve the installer, HPX CLI, manifest, chain metadata and node artifacts plus the health, registration, peers, nodes, caller-address and state-sync APIs, while directory listings and undeclared filesystem paths remain unavailable.
+3. THE public origin <https://node.hyperpaxeer.com> SHALL terminate a certificate valid for that hostname and SHALL serve the installer, HPX CLI, manifest, chain metadata and node artifacts plus the health, registration, peers, nodes, caller-address and state-sync APIs, while directory listings and undeclared filesystem paths remain unavailable.
 4. THE registry SHALL run as a restartable unprivileged service bound only to the loopback publication port, SHALL persist its node registry outside the container or process image, SHALL accept only syntactically valid public peer addresses and ports observed at the trusted reverse-proxy boundary, and SHALL rate-limit registration without disclosing deployment secrets.
 5. THE public installer and HPX update path SHALL use node.hyperpaxeer.com as the sole default mirror, SHALL verify every downloaded binary, native library and chain configuration file against the published SHA-256 manifest before installation, and SHALL fail closed on a missing artifact, unsupported architecture or checksum mismatch.
 6. THE registry runtime executables and container image SHALL be produced from hpx/registry by repository automation, SHALL be identified by the source revision used to build them, and production deployment SHALL consume a checksum-bound separately published runtime artifact rather than commit generated executables or native libraries to Git.
@@ -3992,7 +3992,7 @@
 1. bridge/README.md SHALL be the operator runbook: what the bridge is in two sentences, the order of operations from building through deploying, verifying, generating and submitting the proposals to running the checklist, the environment variables each step needs by name, and what the checklist must report before the bridge is opened.
 2. EACH chain SHALL have a page naming the pair in plain words - PAX against ETH on ethereum, base, arbitrum and optimism, against BNB on bnb, POL on polygon, AVAX on avalanche, HYPE on hyperevm and SOL on solana - the chain id, the assets its configuration registers, the environment variables its scripts need, and anything the chain requires that the others do not.
 3. THE hyperevm page SHALL state the big-block requirement for contract deployment and the Solana page SHALL state the Sidiora mint, its asset id and that Solana is Sidiora's foreign home.
-4. NO page SHALL carry a date, a hostname, an IP address, an internal URL, a credential or an agent or branch name, every page SHALL name the product as Paxeer X Network, and the only links SHALL be https://paxeer.app and paths under github.com/Sidiora-Labs/Paxeer-X-Network.
+4. NO page SHALL carry a date, a hostname, an IP address, an internal URL, a credential or an agent or branch name, every page SHALL name the product as Paxeer X Network, and the only links SHALL be <https://paxeer.app> and paths under github.com/Sidiora-Labs/Paxeer-X-Network.
 5. A CHECK script SHALL assert that every link in the bridge documentation is in that allowlist, that every repository path a page names exists, and that no page carries a date, host, IP address or credential pattern.
 
 ## Requirement 1154: Dry Runs Recorded Against Real Local Nodes
@@ -4056,7 +4056,7 @@
 
 ### Acceptance Criteria
 
-1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as https://api-mainnet-beta.paxeer.network everywhere.
+1. WHEN any tracked file outside spec/ is searched for api.paxeer.network THE repository SHALL contain no match; the unified endpoint is written as <https://api-mainnet-beta.paxeer.network> everywhere.
 2. WHEN any tracked file outside spec/ is searched for a layerx.example host, a name of the form label.layerx.example, THE repository SHALL contain no match; the names of [contract_context.108.decision.public_names] replace them. A package identifier or a file name that merely contains the words layerx and example is not a host.
 3. WHEN docs/site/docs/reference/public-rpc.md is read THE sixteen RPC endpoints SHALL be unchanged and the page SHALL link the router URL as the unified interface.
 4. WHEN tools/bringup/docs-names.sh runs THE tracked user, developer and operator docs SHALL name no *.paxeer.network host outside [contract_context.108.decision.public_names], the sixteen RPC names and the signing origin of [contract_context.108.decision] derivation_message, SHALL carry no FAUCET_URL, and SHALL fund accounts through the custody-credit path; the faucet, beta-control and testnet pages SHALL be marked private-network only with no public name.
@@ -4105,7 +4105,7 @@
 
 ## Requirement 1164: Gateway at the router URL
 
-**User Story:** As any client, https://api-mainnet-beta.paxeer.network answers eth_, lx_ and px_ methods from one endpoint with the kernel available.
+**User Story:** As any client, <https://api-mainnet-beta.paxeer.network> answers eth_, lx_ and px_ methods from one endpoint with the kernel available.
 
 ### Acceptance Criteria
 
@@ -4133,9 +4133,9 @@
 1. WHEN the identity provider receives LXIP operation 4 with an assertion THE provider SHALL verify it against the configured JWKS and return the principal and did:layerx identity, and THE provider's serve command SHALL wire the assertion configuration at startup.
 2. WHEN a wallet-facing operation arrives with an Authorization bearer from a listed origin THE human service SHALL admit the assertion through operation 4, keep the passkey cookie path unchanged, and pass the same assertion to admit_assertion for attestor signing.
 3. WHEN LAYERX_HUMAN_ATTESTOR_NODES is set THE components loader SHALL accept an absent LAYERX_HUMAN_KMS group, use the five attestors at protocol 3 with threshold three (unverified: five-vs-four attestors, threshold unresolved), and refuse to start only when neither custody backend is complete.
-4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at api-hull.paxeer.network through the Fly edge, admitting https://paxportwallet.com as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
+4. WHEN the identity, security, movement, components, service and onboarding processes run in the kernel machine under their uids THE service SHALL answer /livez and /readyz ready at api-hull.paxeer.network through the Fly edge, admitting <https://paxportwallet.com> as its web origin and its passkey relying party id paxportwallet.com, and a second service process SHALL serve the event sources over TLS under the internal CA on the private network.
 5. WHEN every HTTP route the wallet SDK calls is compared with the routes the human service serves THE service SHALL serve each one with the schema the SDK expects.
-6. WHEN the wallet PWA at paxportwallet.com on its ruled host carries NEXT_PUBLIC_PAXEER_HUMAN_API=https://api-hull.paxeer.network THE check-live human-session gate of the wallet feature SHALL pass against that name.
+6. WHEN the wallet PWA at paxportwallet.com on its ruled host carries NEXT_PUBLIC_PAXEER_HUMAN_API=<https://api-hull.paxeer.network> THE check-live human-session gate of the wallet feature SHALL pass against that name.
 
 ## Requirement 1167: Agent daemon and MCP live
 
@@ -4313,7 +4313,7 @@
 ### Acceptance Criteria
 
 1. THE repository SHALL carry tools/explorer/test-ratio.sh which, for a git range given as its argument, counts the non-test source files changed under explorer/ and the test files changed or added in the same range, and fails when the test files are fewer than the source files.
-2. THE script SHALL count as a source file an Elixir .ex, a TypeScript or TSX file that is not a test, and a Rust .rs that is not a test module, and SHALL count as a test file an Elixir *_test.exs, a TypeScript *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx or *.pw.tsx, and a Rust file under a tests/ directory or carrying a #[cfg(test)] module; shell, YAML, JSON, environment presets, SVG and Markdown SHALL be counted as neither.
+2. THE script SHALL count as a source file an Elixir .ex, a TypeScript or TSX file that is not a test, and a Rust .rs that is not a test module, and SHALL count as a test file an Elixir *_test.exs, a TypeScript*.test.ts, *.test.tsx,*.spec.ts, *.spec.tsx or*.pw.tsx, and a Rust file under a tests/ directory or carrying a #[cfg(test)] module; shell, YAML, JSON, environment presets, SVG and Markdown SHALL be counted as neither.
 3. THE script SHALL require each counted test file to reference at least one of the changed source files by module name, component name or path, SHALL name in its failure output every source file left without a referencing test, and SHALL exit zero when the range changes no explorer source file.
 4. THE explorer build workflow SHALL run the script on pull requests over the range from the merge base to the head commit, and explorer/README.md SHALL document the rule, the file classifications and how to run the script locally.
 5. THE script SHALL have its own test that builds a throwaway git history covering a satisfied ratio, an unsatisfied ratio, a test that references nothing changed and a range with no explorer source change, and asserts the script's exit code for each.
@@ -4670,7 +4670,7 @@
 
 ### Acceptance Criteria
 
-1. THE SDK SHALL talk to one RPC base, the hosted endpoint, SHALL route eth_ methods to the chain, lx_ methods to the kernel and px_ methods to the joins through that base, and SHALL batch mixed calls in one JSON-RPC batch.
+1. THE SDK SHALL talk to one RPC base, the hosted endpoint, SHALL route eth_methods to the chain, lx_ methods to the kernel and px_ methods to the joins through that base, and SHALL batch mixed calls in one JSON-RPC batch.
 2. THE SDK SHALL resolve the account with px_resolveAccount on sign-in, SHALL read joined balances with px_getBalances and complete them with eth_getBalance and ERC-20 calls for assets outside the custody map, SHALL surface the join limit, and SHALL read history with px_getUnifiedHistory by cursor.
 3. THE SDK SHALL map the explorer's per-transaction status, the human service's journey states and the anchor states to one ladder - instant, sealed, final - with the source of each rung, and the app SHALL show that ladder and nothing else.
 4. THE SDK SHALL plan a value movement with the human service's intent plan operation, SHALL present the legs, domains, fees per leg, total fee and signers, SHALL submit with the plan digest and bindings, and SHALL track progress through the journey operation.
@@ -4731,7 +4731,7 @@
 
 ### Acceptance Criteria
 
-1. THE hosted endpoint under platform/hosted/gateway SHALL start with the kernel backends unconfigured or unreachable, SHALL serve eth_ relay and the px_ joins that depend on chain state alone, SHALL answer kernel-dependent methods with a typed unavailable error naming the backend, and SHALL report per-backend readiness.
+1. THE hosted endpoint under platform/hosted/gateway SHALL start with the kernel backends unconfigured or unreachable, SHALL serve eth_relay and the px_ joins that depend on chain state alone, SHALL answer kernel-dependent methods with a typed unavailable error naming the backend, and SHALL report per-backend readiness.
 2. THE deployment definitions under human/wallet/deploy SHALL describe the endpoint's application with its environment variable names and health check, and the endpoint SHALL be deployed from the repository image with px_resolveAccount and eth_chainId answering against the chain; the record is committed to the qualification log without hosts.
 3. Container source definitions reside in the canonical docker tree with matching ignore files and accurate referrers. Each recipe is checked using the same actual build context its producer supplies, including the verified generated registry builder context; no missing COPY input or existing check is bypassed. Source-layout qualification does not establish live endpoint deployment or API responses under ac_2.
 
@@ -4907,7 +4907,7 @@
 ### Acceptance Criteria
 
 1. docs/site/docs/protocol/xweb.md SHALL follow the shape of docs/site/docs/protocol/sidiora.md and describe the sidecar, the four assets and the price rule, the three routes and GET /content/<digest>, the contract path with the precompile address and the callback, the attestor majority, the kernel path with web_read, and that the chain change arrives through the v6.8 upgrade and a governance proposal.
-2. THE page SHALL be linked from docs/site/mkdocs.yml, SHALL carry no date, hostname, IP address, node count, internal URL or credential, SHALL name the product Paxeer X Network, and SHALL use no link but https://paxeer.app, paths under github.com/Sidiora-Labs/Paxeer-X-Network and relative links inside the site.
+2. THE page SHALL be linked from docs/site/mkdocs.yml, SHALL carry no date, hostname, IP address, node count, internal URL or credential, SHALL name the product Paxeer X Network, and SHALL use no link but <https://paxeer.app>, paths under github.com/Sidiora-Labs/Paxeer-X-Network and relative links inside the site.
 3. THE site SHALL build with mkdocs build --strict.
 
 ## Requirement 1231: A Local Dry Run

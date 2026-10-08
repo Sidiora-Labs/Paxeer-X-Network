@@ -1,0 +1,10 @@
+{
+  "outputStyle": "Jarvis",
+  "permissions": {
+    "allow": [
+      "Bash(git push:*)",
+      "Bash(git -C * push:*)",
+      "Bash(git push origin main)"
+    ]
+  }
+}

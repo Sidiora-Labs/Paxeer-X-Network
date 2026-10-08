@@ -1,0 +1,98 @@
+[meta]
+name = "Paxeer X AI markets"
+version = "1.0.0"
+status = "specified"
+canonical_spec = "../spec.kvx"
+qualification = "UNRUN"
+
+[contracts]
+core = "contracts/core.kvx"
+integration = "contracts/integration-map.kvx"
+storage = "contracts/storage-lifecycle.kvx"
+wire = "contracts/wire.schema.json"
+operations = "contracts/operation-registry.json"
+roles = "roles.kvx"
+planning = "planning/task-graph.json"
+schematics = "schematics/index.kvx"
+acceptance = "acceptance/system-journeys.kvx"
+
+[feature.F01]
+title = "Market and task-policy registry"
+contract = "features/F01-markets.kvx"
+manager = "FM-F01"
+requirements = ["AI.F01-R001", "AI.F01-R002", "AI.F01-R003", "AI.F01-R004", "AI.F01-R005", "AI.F01-R006", "AI.F01-R007", "AI.F01-R008", "AI.F01-R009", "AI.F01-R010", "AI.F01-R011", "AI.F01-R012", "AI.F01-R040", "AI.F01-R013", "AI.F01-R014", "AI.F01-R015", "AI.F01-R016", "AI.F01-R017", "AI.F01-R018", "AI.F01-R019", "AI.F01-R020", "AI.F01-R021", "AI.F01-R022", "AI.F01-R023", "AI.F01-R024", "AI.F01-R025", "AI.F01-R041", "AI.F01-R042", "AI.F01-R043", "AI.F01-R044", "AI.F01-R046", "AI.F01-R026", "AI.F01-R027", "AI.F01-R028", "AI.F01-R029", "AI.F01-R030", "AI.F01-R031", "AI.F01-R032", "AI.F01-R033", "AI.F01-R034", "AI.F01-R035", "AI.F01-R036", "AI.F01-R037", "AI.F01-R038", "AI.F01-R039", "AI.F01-R045"]
+acceptance_cases = ["AI.F01-A01", "AI.F01-A02", "AI.F01-A03", "AI.F01-A04", "AI.F01-A05", "AI.F01-A06", "AI.F01-A07", "AI.F01-A08", "AI.F01-A09", "AI.F01-A10", "AI.F01-A11", "AI.F01-A12", "AI.F01-A13", "AI.F01-A14", "AI.F01-A15", "AI.F01-A16", "AI.F01-A17", "AI.F01-A18", "AI.F01-A19"]
+tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F01-T03-CLOSE"]
+
+[feature.F02]
+title = "Worker identity, capability discovery and external AI execution"
+contract = "features/F02-workers.kvx"
+manager = "FM-F02"
+requirements = ["AI.F02-R001", "AI.F02-R002", "AI.F02-R003", "AI.F02-R004", "AI.F02-R005", "AI.F02-R006", "AI.F02-R007", "AI.F02-R008", "AI.F02-R009", "AI.F02-R010", "AI.F02-R011", "AI.F02-R012", "AI.F02-R013", "AI.F02-R014", "AI.F02-R015", "AI.F02-R016", "AI.F02-R017", "AI.F02-R018", "AI.F02-R019", "AI.F02-R020", "AI.F02-R021", "AI.F02-R022", "AI.F02-R023", "AI.F02-R024", "AI.F02-R025", "AI.F02-R026"]
+acceptance_cases = ["AI.F02-A01", "AI.F02-A02", "AI.F02-A03", "AI.F02-A04", "AI.F02-A05", "AI.F02-A06", "AI.F02-A07", "AI.F02-A08", "AI.F02-A09", "AI.F02-A10", "AI.F02-A11", "AI.F02-A12", "AI.F02-A13", "AI.F02-A14", "AI.F02-A15", "AI.F02-A16", "AI.F02-A17", "AI.F02-A18", "AI.F02-A19"]
+tasks = ["ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04"]
+
+[feature.F03]
+title = "Evaluator authorization and signed assessment admission"
+contract = "features/F03-evaluators.kvx"
+manager = "FM-F03"
+requirements = ["AI.F03-R01", "AI.F03-R02", "AI.F03-R03", "AI.F03-R04", "AI.F03-R05", "AI.F03-R06", "AI.F03-R07", "AI.F03-R08", "AI.F03-R09", "AI.F03-R10", "AI.F03-R11", "AI.F03-R12", "AI.F03-R13", "AI.F03-R14", "AI.F03-R15", "AI.F03-R16", "AI.F03-R17", "AI.F03-R18", "AI.F03-R19", "AI.F03-R20", "AI.F03-R21", "AI.F03-R22", "AI.F03-R23", "AI.F03-R24", "AI.F03-R25", "AI.F03-R26", "AI.F03-R27", "AI.F03-R28", "AI.F03-R29", "AI.F03-R30", "AI.F03-R31", "AI.F03-R32", "AI.F03-R33", "AI.F03-R34", "AI.F03-R35", "AI.F03-R36", "AI.F03-R37", "AI.F03-R38", "AI.F03-R39", "AI.F03-R40", "AI.F03-R41", "AI.F03-R42", "AI.F03-R43", "AI.F03-R44", "AI.F03-R45"]
+acceptance_cases = ["AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05", "AI.F03-A06", "AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A11", "AI.F03-A12", "AI.F03-A13", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16"]
+tasks = ["ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04"]
+
+[feature.F04]
+title = "Score commitment and reveal windows"
+contract = "features/F04-commit-reveal.kvx"
+manager = "FM-F04"
+requirements = ["AI.F04-R01", "AI.F04-R02", "AI.F04-R03", "AI.F04-R04", "AI.F04-R05", "AI.F04-R06", "AI.F04-R07", "AI.F04-R08", "AI.F04-R09", "AI.F04-R10", "AI.F04-R11"]
+acceptance_cases = ["AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A07", "AI.F04-A08", "AI.F04-A09", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12"]
+tasks = ["ai.F04-T01", "ai.F04-T02", "ai.F04-T03"]
+
+[feature.F05]
+title = "Deterministic AI quality aggregation"
+contract = "features/F05-aggregation.kvx"
+manager = "FM-F05"
+requirements = ["AI.F05-R01", "AI.F05-R02", "AI.F05-R03", "AI.F05-R04", "AI.F05-R05", "AI.F05-R06", "AI.F05-R07", "AI.F05-R08", "AI.F05-R09", "AI.F05-R10", "AI.F05-R11", "AI.F05-R12", "AI.F05-R13"]
+acceptance_cases = ["AI.F05-A01", "AI.F05-A02", "AI.F05-A03", "AI.F05-A04", "AI.F05-A05", "AI.F05-A06", "AI.F05-A07", "AI.F05-A08", "AI.F05-A09", "AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A17", "AI.F05-A18"]
+tasks = ["ai.F05-T01", "ai.F05-T02", "ai.F05-T03"]
+
+[feature.F06]
+title = "Conserved, explicitly funded AI reward entitlements and claims"
+contract = "features/F06-rewards.kvx"
+manager = "FM-F06"
+requirements = ["AI.F06-R01", "AI.F06-R02", "AI.F06-R03", "AI.F06-R04", "AI.F06-R05", "AI.F06-R06", "AI.F06-R07", "AI.F06-R08", "AI.F06-R09", "AI.F06-R10", "AI.F06-R11", "AI.F06-R12", "AI.F06-R13", "AI.F06-R14", "AI.F06-R15", "AI.F06-R16", "AI.F06-R17", "AI.F06-R18", "AI.F06-R19", "AI.F06-R20", "AI.F06-R21", "AI.F06-R22", "AI.F06-R23", "AI.F06-R24", "AI.F06-R25", "AI.F06-R26", "AI.F06-R27", "AI.F06-R28", "AI.F06-R29", "AI.F06-R30"]
+acceptance_cases = ["AI.F06-A01", "AI.F06-A02", "AI.F06-A03", "AI.F06-A04", "AI.F06-A05", "AI.F06-A06", "AI.F06-A07", "AI.F06-A08", "AI.F06-A09", "AI.F06-A10", "AI.F06-A11", "AI.F06-A12", "AI.F06-A13", "AI.F06-A14", "AI.F06-A15", "AI.F06-A16", "AI.F06-A17", "AI.F06-A18", "AI.F06-A19"]
+tasks = ["ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04"]
+
+[feature.F07]
+title = "Quality history, continuity and reputation"
+contract = "features/F07-reputation.kvx"
+manager = "FM-F07"
+requirements = ["AI.F07-R001", "AI.F07-R002", "AI.F07-R003", "AI.F07-R004", "AI.F07-R005", "AI.F07-R006", "AI.F07-R007", "AI.F07-R008", "AI.F07-R009", "AI.F07-R010", "AI.F07-R011", "AI.F07-R012", "AI.F07-R013", "AI.F07-R014", "AI.F07-R015", "AI.F07-R016", "AI.F07-R017", "AI.F07-R018", "AI.F07-R019", "AI.F07-R020", "AI.F07-R021", "AI.F07-R022", "AI.F07-R023", "AI.F07-R024", "AI.F07-R025", "AI.F07-R026", "AI.F07-R027", "AI.F07-R028"]
+acceptance_cases = ["AI.F07-A01", "AI.F07-A02", "AI.F07-A03", "AI.F07-A04", "AI.F07-A05", "AI.F07-A06", "AI.F07-A07", "AI.F07-A08", "AI.F07-A09", "AI.F07-A10", "AI.F07-A11", "AI.F07-A12"]
+tasks = ["ai.F07-T01", "ai.F07-T02", "ai.F07-T03"]
+
+[feature.F08]
+title = "Bounded admission, capacity, liveness and replacement"
+contract = "features/F08-admission.kvx"
+manager = "FM-F08"
+requirements = ["AI.F08-R001", "AI.F08-R002", "AI.F08-R003", "AI.F08-R004", "AI.F08-R005", "AI.F08-R006", "AI.F08-R007", "AI.F08-R008", "AI.F08-R009", "AI.F08-R010", "AI.F08-R011", "AI.F08-R012", "AI.F08-R013", "AI.F08-R014", "AI.F08-R015", "AI.F08-R016", "AI.F08-R017", "AI.F08-R018", "AI.F08-R019", "AI.F08-R020", "AI.F08-R021", "AI.F08-R022"]
+acceptance_cases = ["AI.F08-A01", "AI.F08-A02", "AI.F08-A03", "AI.F08-A04", "AI.F08-A05", "AI.F08-A06", "AI.F08-A07", "AI.F08-A08", "AI.F08-A09", "AI.F08-A10", "AI.F08-A11", "AI.F08-A12", "AI.F08-A13", "AI.F08-A14", "AI.F08-A15", "AI.F08-A16", "AI.F08-A17", "AI.F08-A18", "AI.F08-A19"]
+tasks = ["ai.F08-T01", "ai.F08-T02", "ai.F08-T03"]
+
+[feature.F09]
+title = "Artifact/evidence commitments, provenance and privacy"
+contract = "features/F09-artifacts.kvx"
+manager = "FM-F09"
+requirements = ["AI.F09-R01", "AI.F09-R02", "AI.F09-R03", "AI.F09-R04", "AI.F09-R05", "AI.F09-R06", "AI.F09-R07", "AI.F09-R08", "AI.F09-R09", "AI.F09-R10", "AI.F09-R11", "AI.F09-R12", "AI.F09-R13", "AI.F09-R14", "AI.F09-R15", "AI.F09-R16", "AI.F09-R17", "AI.F09-R18", "AI.F09-R19", "AI.F09-R27", "AI.F09-R28", "AI.F09-R20", "AI.F09-R21", "AI.F09-R22", "AI.F09-R23", "AI.F09-R24", "AI.F09-R25", "AI.F09-R26"]
+acceptance_cases = ["AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A07", "AI.F09-A08", "AI.F09-A09", "AI.F09-A10", "AI.F09-A11", "AI.F09-A12", "AI.F09-A13", "AI.F09-A14", "AI.F09-A15", "AI.F09-A16", "AI.F09-A17", "AI.F09-A18", "AI.F09-A19", "AI.F09-A20", "AI.F09-A21", "AI.F09-A22", "AI.F09-A23", "AI.F09-A24", "AI.F09-A25"]
+tasks = ["ai.F09-T01", "ai.F09-T03", "ai.F09-T02", "ai.F09-T04"]
+
+[feature.F10]
+title = "Finalized market snapshots, queries, SDK/client and operator projections"
+contract = "features/F10-views-sdk.kvx"
+manager = "FM-F10"
+requirements = ["AI.F10-R001", "AI.F10-R002", "AI.F10-R003", "AI.F10-R004", "AI.F10-R005", "AI.F10-R006", "AI.F10-R007", "AI.F10-R008", "AI.F10-R009", "AI.F10-R010", "AI.F10-R011", "AI.F10-R012", "AI.F10-R013", "AI.F10-R014", "AI.F10-R015", "AI.F10-R016", "AI.F10-R017", "AI.F10-R018", "AI.F10-R019", "AI.F10-R020", "AI.F10-R021", "AI.F10-R022", "AI.F10-R023", "AI.F10-R024", "AI.F10-R025", "AI.F10-R026", "AI.F10-R027", "AI.F10-R028", "AI.F10-R029", "AI.F10-R030", "AI.F10-R031", "AI.F10-R032", "AI.F10-R033", "AI.F10-R034"]
+acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A07", "AI.F10-A08", "AI.F10-A09", "AI.F10-A10", "AI.F10-A11", "AI.F10-A12", "AI.F10-A13", "AI.F10-A14", "AI.F10-A15"]
+tasks = ["ai.F10-T01", "ai.F10-T02", "ai.F10-T03", "ai.F10-T05", "ai.F10-T04", "ai.F10-T07", "ai.F10-T06", "ai.F10-T02-FULL"]
+

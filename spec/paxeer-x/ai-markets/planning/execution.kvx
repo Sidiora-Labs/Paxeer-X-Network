@@ -1,0 +1,19 @@
+[meta]
+name = "AI market implementation and release execution"
+canonical_spec = "../../spec.kvx"
+status = "pending"
+qualification = "UNRUN"
+
+[admission]
+policy = "Dispatch one complete task contract with exact ownership and satisfied dependencies. Shared-file changes require the named writer. Preserve unrelated changes."
+authority = "Deployment, secrets, publication and production changes require their applicable existing authority. A planned gate is not a result."
+evidence = "revision, command, exit code, log path"
+limits = "Implementation first; one build and one focused verify; at most two scoped repair cycles; 30 minutes; no neighboring repairs or weakened assertions."
+
+[integration]
+terminal_tasks = ["ai.F01-T03-CLOSE", "ai.F01-T04-SERVICE", "ai.F02-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F09-T04", "ai.F10-T02-FULL", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07"]
+candidate_tasks = ["60.1", "113.5"]
+release_task = "ai.RELEASE-CANDIDATE"
+release_dependencies = ["ai.F01-T03-CLOSE", "ai.F02-T04", "ai.F03-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F08-T03", "ai.F09-T04", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.T-S04", "ai.F01-T04-SERVICE", "ai.F10-T02-FULL", "60.8", "113.16"]
+completion = "All declared cases, real-service journeys and candidate-bound evidence must pass; every task is initially pending and UNRUN."
+

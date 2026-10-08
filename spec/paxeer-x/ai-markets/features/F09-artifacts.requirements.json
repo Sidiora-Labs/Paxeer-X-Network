@@ -1,0 +1,565 @@
+{
+  "feature_id": "F09",
+  "title": "Artifact/evidence commitments, provenance and privacy",
+  "schema_version": 1,
+  "status": "SPECIFICATION_ONLY",
+  "implementation": "UNWRITTEN",
+  "qualification": "UNRUN",
+  "dependencies": [
+    "F01",
+    "F02",
+    "F03",
+    "F10"
+  ],
+  "dependency_phases": {
+    "primitives": [
+      "T-C01",
+      "T-C02"
+    ],
+    "bindings": [
+      "F01_TASK_SET_SEAL",
+      "F02_BINDINGS",
+      "F03_REPORT_ADMISSION"
+    ],
+    "service": [
+      "ADMITTED_TENANT_AUTHORITY",
+      "REAL_KMS_CONFIGURATION"
+    ],
+    "retention": [
+      "F02_TERMINAL_PRODUCER",
+      "F10_FINALITY_PRODUCER"
+    ]
+  },
+  "normative_requirements": [
+    {
+      "id": "F09-R01",
+      "title": "A customer, worker and evaluator MUST be able to identify precisely which model, input, benchmark, result and evaluation materials a task refers to without publishing those materials to protocol state",
+      "normative": true,
+      "paragraph": "A customer, worker and evaluator MUST be able to identify precisely which model, input, benchmark, result and evaluation materials a task refers to without publishing those materials to protocol state. A content commitment detects a changed object; a publisher signature identifies a declared publisher under its effective authorization. Neither proves ownership, lawful training, accuracy, actual execution, hardware use, model independence or confidentiality. User-facing statuses MUST keep these distinctions visible."
+    },
+    {
+      "id": "F09-R02",
+      "title": "Existing Paxeer Programs storage is scoped by program/principal or shared namespace in programs/crates/layerx-programs-runtime/src/storage/mod.rs",
+      "normative": true,
+      "paragraph": "Existing Paxeer Programs storage is scoped by program/principal or shared namespace in programs/crates/layerx-programs-runtime/src/storage/mod.rs. Existing deterministic SHA256 and metering are in programs/crates/layerx-programs-runtime/src/crypto/hash.rs. Native storage staging is exposed in src/modules/programs/storage.h and implemented in storage.c. Existing executable artifact storage is src/modules/programs/artifact.h and artifact.c; F09 MUST NOT insert model or dataset objects into that executable catalogue."
+    },
+    {
+      "id": "F09-R03",
+      "title": "Common network/program/market/policy identifiers are fixed 32-byte values with the shared contract's absent-value rule",
+      "normative": true,
+      "paragraph": "Common network/program/market/policy identifiers are fixed 32-byte values with the shared contract's absent-value rule. Unsigned integers use fixed-width big-endian bytes. All lengths count bytes. Canonical forms reject trailing bytes, unknown versions, unknown enum values, duplicate or unsorted lists, invalid UTF-8 in declared text, nonzero reserved bytes and integer overflow. Text is exact UTF-8 bytes; no case folding, whitespace repair or Unicode normalization is performed. Human labels are not identity. Deterministic paths use no floating-point values."
+    },
+    {
+      "id": "F09-R04",
+      "title": "Root32 means SHA256 of the exact domain/context/bytes specified in section 7, never an unspecified content hash",
+      "normative": true,
+      "paragraph": "Root32 means SHA256 of the exact domain/context/bytes specified in section 7, never an unspecified content hash. Mandatory model, input, result and evidence roots MUST NOT be zero; zero is permitted only for explicitly optional declaration/reproduction parents. A zero-length public object is valid and has the defined empty content tree. An encrypted object MUST be nonempty and have nonzero access_policy_root32. The manifest's not_after_height=0 means no protocol-height expiry; service retention still applies. An epoch-independent MODEL/DATASET/BENCHMARK declaration uses epoch=0 and subject_id32=policy32. An INPUT/RESULT/EXECUTION_EVIDENCE record MUST name its actual epoch and F02 task_id32 as subject. Objects are at most 32 GiB including encryption framing, at most 131072 chunks. All limits are checked before allocating or fetching."
+    },
+    {
+      "id": "F09-R05",
+      "title": "PublisherEnvelopeV1 is manifest_length u32, exact manifest bytes, signature_scheme u16=1, authority_generation u64, public_key32 (Ed25519), signature64 (Ed25519)",
+      "normative": true,
+      "paragraph": "PublisherEnvelopeV1 is manifest_length u32, exact manifest bytes, signature_scheme u16=1, authority_generation u64, public_key32 (Ed25519), signature64 (Ed25519). Signature/key lengths are fixed by core C02; this feature grants no new scheme or raw-key authority. Signature verification operates on the 32-byte domain digest, not the complete manifest. Maximum envelope is 8192 bytes. The manifest root identifies the unsigned manifest. The signature authenticates the publisher-domain digest in section 7. A different signature over identical manifest bytes MUST NOT change the manifest root. The service records the verified authorization generation and verification context separately from public content."
+    },
+    {
+      "id": "F09-R06",
+      "title": "DeclarationV1 is offchain only and at most 16384 bytes",
+      "normative": true,
+      "paragraph": "DeclarationV1 is offchain only and at most 16384 bytes. Its fixed prefix is version u16=1; manifest_publisher32; rights_status u8 (UNDECLARED=0, DECLARED=1, DOCUMENTED=2); purpose_mask u16 (bits 0 inference, 1 evaluation, 2 redistribution, 3 training; others zero); restriction_mask u16 (bits 0 attribution, 1 noncommercial, 2 no-derivatives, 3 share-alike, 4 restricted-personal-data; others zero); valid_until_height u64; document_count u16<=16. Each document is role u8 (license=1, consent=2, acquisition=3, restriction=4), document_root32 and label length u32<=256 followed by exact UTF-8 label. Entries sort by role then root then label. Remaining fields are review_reference_root32 and reserved16 zero. This schema records a claim/evidence reference; DOCUMENTED means documents were supplied, not that rights were legally adjudicated. Missing declaration MUST remain UNDECLARED. No inferred permissive grant, automatic conversion of a license expression to permission, or claimed consent to training is allowed. Conflicting restrictions require an explicit refusal of the affected use, not a silently preferred declaration. Private rights documents stay encrypted and access-controlled."
+    },
+    {
+      "id": "F09-R07",
+      "title": "Role | permitted actions | prohibited authority:",
+      "normative": true,
+      "paragraph": "Role | permitted actions | prohibited authority:"
+    },
+    {
+      "id": "F09-R08",
+      "title": "PrepareObject is offchain authenticated ingress with request_id32, expected kind/privacy/context, declared byte length and optional expected content_tree_root32",
+      "normative": true,
+      "paragraph": "PrepareObject is offchain authenticated ingress with request_id32, expected kind/privacy/context, declared byte length and optional expected content_tree_root32. Preconditions: authorized tenant quota, allowed use, not expired, limits admitted, sufficient durable capacity. It creates a durable STAGING session before acknowledgment; upload frames bind session and index. Identical requests return the same session; changed bytes under an existing request ID return IdempotencyConflict. Hash/length mismatch or quota failure publishes no manifest and no chain effect. Zero-length public objects complete without upload frames. Staging is not availability or publication."
+    },
+    {
+      "id": "F09-R09",
+      "title": "FinalizeObject takes session, canonical manifest, publisher envelope and optional grant/declaration references",
+      "normative": true,
+      "paragraph": "FinalizeObject takes session, canonical manifest, publisher envelope and optional grant/declaration references. It verifies complete chunk coverage, exact length/tree root, context, admitted publisher generation, privacy/access policy and immutable declaration references. It atomically publishes the exact root-to-record mapping and durable object retention lease only after files and metadata are fsynced or the configured storage backend provides equivalent durability. Same root/exact record is idempotent; changed content under the root is IntegrityConflict and quarantined. Receipt names root32, exact bytes, signature status, observation time and durability profile. F09 never treats this offchain receipt as a finalized protocol receipt."
+    },
+    {
+      "id": "F09-R10",
+      "title": "BindArtifact is a sub-operation of the owning F01 policy, F02 task/result or F03 evidence admission",
+      "normative": true,
+      "paragraph": "BindArtifact is a sub-operation of the owning F01 policy, F02 task/result or F03 evidence admission. Its request contains existing operation context, field identifier and root32, not a URI or object bytes. Preconditions are the owning feature's authority, phase and immutable-binding checks. It atomically stores that root with the owning record and emits that feature's canonical bounded event. Roots are immutable after the owning record freezes. A publisher cannot overwrite a task's input/result via a later upload. No independent unbounded onchain artifact table or automatic HTTP retrieval is created. Syntax/root admission does not imply fetched availability; any availability eligibility check is an explicit authenticated offchain attestation already allowed by policy."
+    },
+    {
+      "id": "F09-R11",
+      "title": "ResolveArtifact(root32, task_context, purpose) returns a size-bounded manifest envelope and either authenticated object access or typed status after current authority/revocation checks",
+      "normative": true,
+      "paragraph": "ResolveArtifact(root32, task_context, purpose) returns a size-bounded manifest envelope and either authenticated object access or typed status after current authority/revocation checks. Request credentials and locators are never public events. The consumer independently verifies canonical root, envelope signature when attribution is required, complete content integrity and task/model/policy binding before releasing data to the requested use. A signed receipt or matching tree cannot override a denied purpose. Responses distinguish AVAILABLE_PUBLIC, AVAILABLE_AUTHORIZED, ACCESS_DENIED, CONTENT_UNAVAILABLE, EXPIRED, TOMBSTONED, INTEGRITY_FAILED and UNKNOWN_DELIVERY. Timeout yields unknown delivery when transmission may already have occurred; retry reconciles the same request identity. Availability is an observation with timestamp, never immutable truth."
+    },
+    {
+      "id": "F09-R12",
+      "title": "RevokeAccess names task/principal/grant generation and a monotonic revocation sequence; Tenant authority or the grant issuer may revoke only their own grant",
+      "normative": true,
+      "paragraph": "RevokeAccess names task/principal/grant generation and a monotonic revocation sequence; Tenant authority or the grant issuer may revoke only their own grant. Same sequence/payload is idempotent; old or conflicting sequence refuses. Atomic effects are durable deny state, cancellation of not-yet-released keys and acknowledgment; key retrieval already unknown remains recorded for reconciliation. TombstoneArtifact requires owner/authorized retention authority and reason enum EXPIRED=1, OWNER_WITHDRAWN=2, POLICY_RESTRICTED=3, INTEGRITY_FAILURE=4. It removes serving eligibility, preserves minimal root/reason/history, and schedules physical deletion according to section 6. Tombstoning does not rewrite protocol records, automatically slash a worker, refund a task or cancel earned rewards. Those effects require their own owning-feature transitions."
+    },
+    {
+      "id": "F09-R13",
+      "title": "RotateAccessEnvelope creates new encrypted key-wrapping/grant metadata and invalidates the prior generation; it MUST NOT alter the immutable manifest's byte meaning",
+      "normative": true,
+      "paragraph": "RotateAccessEnvelope creates new encrypted key-wrapping/grant metadata and invalidates the prior generation; it MUST NOT alter the immutable manifest's byte meaning. Re-encrypting object bytes creates a new manifest/content root and requires a new policy/task admission where applicable. Offchain locator rotation that retains exact bytes and authorization does not change a manifest root. Operator-supplied URIs are parsed only by the offchain resolver, never a market program. HTTPS only, port 443, no userinfo/fragments/embedded credentials, maximum 2048 UTF-8 bytes, bounded redirects=0 by default. Explicitly supported non-HTTP object-store adapters use configured identities, not arbitrary URIs. Every DNS answer and connection destination must pass public-address and tenant allowlist checks; reject loopback, private, link-local, multicast, metadata endpoints, reserved addresses and DNS rebinding. No file, shell, data, javascript or native transport scheme. Response limits: manifest 4096 bytes, envelope 8192, declaration/reproduction 16384 each, API request 65536; object streaming checks declared total and frame limits. TLS certificate/hostname verification is required. URI failure cannot trigger consensus network access."
+    },
+    {
+      "id": "F09-R14",
+      "title": "Typed failures include Malformed, UnsupportedVersion, UnsupportedKind, InvalidContext, Unauthorized, AuthorityRevoked, PurposeDenied, Expired, QuotaExceeded, CapacityUnavailable, MissingChunk, LengthMismatch, RootMismatch, SignatureInvalid, IdempotencyConflict, IntegrityConflict, Tombstoned, ContentUnavailable, UnsafeLocator, UnknownDelivery and StorageFailure",
+      "normative": true,
+      "paragraph": "Typed failures include Malformed, UnsupportedVersion, UnsupportedKind, InvalidContext, Unauthorized, AuthorityRevoked, PurposeDenied, Expired, QuotaExceeded, CapacityUnavailable, MissingChunk, LengthMismatch, RootMismatch, SignatureInvalid, IdempotencyConflict, IntegrityConflict, Tombstoned, ContentUnavailable, UnsafeLocator, UnknownDelivery and StorageFailure. Each service operation records one durable request disposition before acknowledging. Service failures cause zero protocol effects. Within a Program, an application failure leaves F09-owned roots/state unchanged; parent kernel sequence/fee behavior follows the preserved admitted-failure contract and MUST NOT be misstated as zero fees."
+    },
+    {
+      "id": "F09-R15",
+      "title": "Offchain object state is STAGING -> AVAILABLE -> TOMBSTONED -> PURGED, with QUARANTINED reachable on integrity failure",
+      "normative": true,
+      "paragraph": "Offchain object state is STAGING -> AVAILABLE -> TOMBSTONED -> PURGED, with QUARANTINED reachable on integrity failure. Incomplete staging expires after 24 hours of service UTC time; an accepted object is retained for at least 30 days after verified terminal task finality or longer while a policy-defined dispute/evidence hold is active. UNKNOWN_EXECUTION/UNKNOWN_DELIVERY does not start a terminal-retention timer. Policy artifacts remain available while any referencing policy epoch/task requires them and for 30 days after the final verified terminal reference. A policy MAY require a longer hold, explicitly capped by storage admission; v1 maximum ordinary lease 365 days. Legally required restrictions or deletion requests may force serving denial earlier; the service MUST expose evidence_unavailable and retain only permissible metadata rather than falsely promising perpetual availability."
+    },
+    {
+      "id": "F09-R16",
+      "title": "Tombstones preserve non-sensitive root32, context IDs if already public, reason, effective boundary and version, with tenant-isolated access to any private audit detail",
+      "normative": true,
+      "paragraph": "Tombstones preserve non-sensitive root32, context IDs if already public, reason, effective boundary and version, with tenant-isolated access to any private audit detail. A tombstone cannot promise removal of public chain commitments, external caches or bytes recipients already obtained. Purging deletes object replicas and key envelopes under the configured retention process, then records observed deletion outcome; failure remains TOMBSTONED_PENDING_PURGE with retry/alert. A held record must not be silently evicted to make capacity. Before exhaustion the service refuses new work; root commitments survive independently of object availability. Reinstating availability for a tombstoned root requires an explicit current grant and policy decision, recorded as a new availability event, never deletion of the tombstone history."
+    },
+    {
+      "id": "F09-R17",
+      "title": "Let H be SHA256; || mean exact concatenation; D(s) be ASCII bytes of s followed by one zero byte",
+      "normative": true,
+      "paragraph": "Let H be SHA256; || mean exact concatenation; D(s) be ASCII bytes of s followed by one zero byte. Let C=chain_domain32||program32||market32||policy32. Field network in any offchain adapter is an alias for the exact common chain_domain32, never a separate network identifier. Manifest root is H(D(\"PAXAI/artifact-manifest/v1\")||C||u32(encoded_manifest_length)||encoded_manifest). Publisher signing digest is H(D(\"PAXAI/artifact-publisher/v1\")||C||manifest_root32||authority_generation_u64). Declaration and reproduction roots are H(D(\"PAXAI/artifact-declaration/v1\")||C||u32(length)||canonical_record) and H(D(\"PAXAI/artifact-reproduction/v1\")||C||u32(length)||canonical_record). This redundancy binds context both outside and within manifest deliberately. No implicit JSON serialization enters any root. Zero root values are never substituted for a computed empty-object root."
+    },
+    {
+      "id": "F09-R18",
+      "title": "Object bytes are partitioned into ordered chunks of 262144 bytes, except the last may be shorter",
+      "normative": true,
+      "paragraph": "Object bytes are partitioned into ordered chunks of 262144 bytes, except the last may be shorter. Chunk count n=ceil(byte_length/262144); n=0 only for a zero-length public object. Leaf i is H(D(\"PAXAI/artifact-chunk/v1\")||u32(i)||u32(chunk_length)||chunk_bytes). Empty tree is H(D(\"PAXAI/artifact-empty/v1\")). A level's adjacent pair forms H(D(\"PAXAI/artifact-node/v1\")||left32||right32); an unpaired final node is duplicated as both arguments. Tree construction terminates at one root. Content tree root is H(D(\"PAXAI/artifact-content/v1\")||u64(byte_length)||u32(n)||tree_root32). Thus order, count, lengths and empty state are bound. A one-chunk object has its leaf as tree_root. No rounding other than the explicit ceiling occurs. All intermediate sizes/counts are checked integers; a value exceeding stated bounds refuses, never saturates or wraps."
+    },
+    {
+      "id": "F09-R19",
+      "title": "Minimal evidence proof supplied to an independent reviewer consists of (a) verified finality/context reference from F10, (b) task/request and signed worker result records from F02, (c) exact F03 evidence envelope and its binding root, (d) artifact publisher envelopes required by that task, (e) referenced declaration/reproduction records where policy requires them, and (f) the full bytes or bounded chunk proofs relevant to the declared claim",
+      "normative": true,
+      "paragraph": "Minimal evidence proof supplied to an independent reviewer consists of (a) verified finality/context reference from F10, (b) task/request and signed worker result records from F02, (c) exact F03 evidence envelope and its binding root, (d) artifact publisher envelopes required by that task, (e) referenced declaration/reproduction records where policy requires them, and (f) the full bytes or bounded chunk proofs relevant to the declared claim. F03 owns score-body use of evidence_root32 and signed score bytes; F09 MUST use the exact evidence digest defined below without wrapping or rehashing it as an artifact manifest root. Optional EVALUATION_EVIDENCE manifests can reference an F03 evidence root with parent purpose9, clearly distinguished from content-parent roots by the parent's purpose. Evidence inclusion is not proof of complete benchmark coverage; F03's sample coverage rules control that claim. A verifier MUST return a vector of conclusions (binding, signatures, integrity, availability, declared rights, reproduction, quality) rather than collapsing them into one verified boolean."
+    },
+    {
+      "id": "F09-R27",
+      "title": "EvidenceManifestV1 is an offchain record with the exact field order: schema_version u16=1; chain_domain32; program_id32; market_id32; epoch u64; config_version u64; roster_hash32; evaluator_id32; grant_version u64; key_version u64; task_policy_digest32; task_set_digest32; rubric_digest32; dataset_root32; benchmark_root32; mode u8 (OBJECTIVE=1 or SUBJECTIVE=2); worker_count u16; ordered worker groups; reserved16 zero",
+      "normative": true,
+      "paragraph": "EvidenceManifestV1 is an offchain record with the exact field order: schema_version u16=1; chain_domain32; program_id32; market_id32; epoch u64; config_version u64; roster_hash32; evaluator_id32; grant_version u64; key_version u64; task_policy_digest32; task_set_digest32; rubric_digest32; dataset_root32; benchmark_root32; mode u8 (OBJECTIVE=1 or SUBJECTIVE=2); worker_count u16; ordered worker groups; reserved16 zero. Dataset/benchmark absence is permitted only if frozen policy explicitly admits absence. Worker groups are strictly ascending WorkerId and contain worker_id32, generation u64, model_root32, deployment_root32, score_ppm u32, reason_code u16, reason_artifact_root32 (optional zero), task_count u16 and ordered task entries. Each task entry is task_id32, request_root32, result_root32, execution_evidence_root32, terminal_status u8 (SUCCESS=1, REFUSED=2, TIMEOUT=3, UNKNOWN=4, CANCELLED=5), reproduction_root32 (optional zero). Task entries sort by raw task_id32. There are1..32 worker groups, at most64 task entries across the whole manifest, no duplicate task IDs across groups, and at least one task in every scored worker group. Maximum65536 canonical bytes; refusal occurs before unbounded allocation. Result/execution roots may be zero only for a non-SUCCESS status and only when that policy explicitly permits the resulting assessment. UNKNOWN cannot be presented as successful execution. No URIs, secrets, plaintext inputs/results or free-form evaluator prose enter this manifest. Private explanation materials are separate encrypted roots. All fields are exact bytes; mode must equal the frozen task-policy assessment mode and rubric; it is a trust classification, not an automatic verification level."
+    },
+    {
+      "id": "F09-R28",
+      "title": "SealEvidence is the only independent onchain F09 mutation",
+      "normative": true,
+      "paragraph": "SealEvidence is the only independent onchain F09 mutation. It uses the common envelope, evaluator operational authority (kind0 owner or kind1 admitted evaluator delegate), next evaluator application sequence, exact frozen epoch/config/roster, and payload schema_version u16=1, evidence_root32, task_policy_digest32, task_set_digest32, rubric_digest32, mode u8 (1 or2, equal frozen policy). It is admitted only during that opened epoch's Commit window [T+64,T+80); evaluator grant/key must remain active, task_set must equal the F01 task-set digest explicitly sealed by permissionless SealTaskSet at or after Work close before scoring, and mandatory roots must be nonzero. If F01's task-set is not yet sealed, this operation refuses EVIDENCE_TASK_SET_UNSEALED rather than predicting future admitted tasks. F01 SealTaskSet is allowed at height>=T+64, cannot run early in Work, and late task/result/cancel changes at64+ are forbidden. F09 requires that explicit immutable task-set seal; F09 never freezes another feature's state implicitly. State records one compact seal per evaluator, at most8: evaluator_id32, grant_version u64, key_version u64, evidence_root32, task_policy_digest32, task_set_digest32, rubric_digest32, mode u8 and seal_height u64 (185bytes before enclosing record framing). It stores no complete manifest or task list. Identical semantic repeat returns ALREADY_APPLIED under common replay rules; conflicting root or metadata returns EVIDENCE_SEAL_CONFLICT and cannot replace the seal. Atomic effects are the bounded seal, state_revision/sequence update and one common bounded EvidenceSealed event. Event failure or storage failure commits none of those application effects. SealEvidence must complete before that evaluator's CommitScore; F03/F04 admission requires the exact active evaluator's sealed root, generation bindings and context; arbitrary matching-length bytes without a seal refuse EVIDENCE_BINDING. Seal admission verifies compact context/authority only, not offchain content. A successful seal means committed evidence claim, never verified AI quality or availability. Pre-aggregation revocation excludes the row according to core; seal records cannot revive authority. Current seals are reset only when the epoch is terminal and later epoch opening initializes its own bounded records; authenticated events/history roots retain the historical claim without growing an onchain per-manifest table."
+    },
+    {
+      "id": "F09-R20",
+      "title": "Services persist request identities, signed envelope bytes, revision/generation checks, storage publication intent and deletion/rotation intent before acknowledgment",
+      "normative": true,
+      "paragraph": "Services persist request identities, signed envelope bytes, revision/generation checks, storage publication intent and deletion/rotation intent before acknowledgment. They recover by reconciling durable object bytes and metadata, never treating a file's existence alone as a completed upload. Publish uses compare-and-set root-to-exact-record; concurrent identical publication yields one record, conflicting bytes refuse. Tenant quota reservations are atomic and released only after terminal staging disposition. Minimal request digest tombstones remain for the configured task/replay lifetime; no eviction may enable a second operation under a reused request ID. Backup/restore includes grants/revocation high-water marks and request/tombstone identities; a stale grant store cannot become ready by using newer object files."
+    },
+    {
+      "id": "F09-R21",
+      "title": "Sensitive prompts, personal datasets, plaintext results, raw secrets, object decryption keys, bearer tokens, signed locator URLs, consent identities and private artifact descriptions MUST NOT enter onchain records, public events, metric labels or public snapshots",
+      "normative": true,
+      "paragraph": "Sensitive prompts, personal datasets, plaintext results, raw secrets, object decryption keys, bearer tokens, signed locator URLs, consent identities and private artifact descriptions MUST NOT enter onchain records, public events, metric labels or public snapshots. Public low-entropy hashes can support guessing; for private inputs/results the public manifest root MUST commit randomized authenticated ciphertext bytes and encrypted/private descriptive records, not a direct plaintext digest. Access policy roots contain random opaque identifiers and grant digests, not emails or individual identities. Different ciphertext can represent the same plaintext and MUST NOT be treated as semantic duplication."
+    },
+    {
+      "id": "F09-R22",
+      "title": "V1 encryption profile is authenticated encryption with XChaCha20-Poly1305 through a maintained audited library, a newly generated 256-bit object key and independent uniformly random 24-byte nonce per encrypted frame; frames authenticate network/market/task/kind and frame index as associated data",
+      "normative": true,
+      "paragraph": "V1 encryption profile is authenticated encryption with XChaCha20-Poly1305 through a maintained audited library, a newly generated 256-bit object key and independent uniformly random 24-byte nonce per encrypted frame; Each frame authenticates exact associated data ASCII PAXAI/private-frame/v1 followed by one NUL byte, then chain_domain32||program32||market32||policy32||subject_id32||kind_u8||frame_index_u32BE. The version1 private-object plaintext is u64BE(plaintext_length) followed by exact original bytes, partitioned into ordered encryption frames; empty original plaintext therefore still encrypts an eight-byte length field. Authorized decryption verifies every tag, exact sequential indices, final plaintext length and no trailing bytes before presenting the original object as complete. The artifact manifest byte count covers encoded ciphertext frames, not original plaintext length. A frame is version u16=1, index u32, nonce24, ciphertext_length u32, ciphertext bytes including 16-byte tag. The ordered encoded frame stream is the committed object byte stream; outer storage chunks are independent of encryption frame boundaries. Maximum plaintext per frame 262144 bytes; frame index increments exactly from zero; duplicates/order changes fail authentication/stream validation. Object key envelopes and frame metadata remain offchain. An object key MUST NOT be reused across another object's encryption. Key wrapping, recovery and releases use an approved service KMS and task grants; F09 does not reuse wallet signing keys as encryption keys. This is a proposed privacy profile, not a claim that an existing service already implements it."
+    },
+    {
+      "id": "F09-R23",
+      "title": "Confirmed host limits are 256-byte Programs keys, 1 MiB Programs values and hash inputs; native module KV entries512, staged writes64, blobs512, staged blobs4, per-blob1MiB and total blobs64MiB",
+      "normative": true,
+      "paragraph": "Confirmed host limits are 256-byte Programs keys, 1 MiB Programs values and hash inputs; native module KV entries512, staged writes64, blobs512, staged blobs4, per-blob1MiB and total blobs64MiB. The shared v1 application intentionally uses one compact state value per market at most192KiB and at most two new staged blobs per operation. F09 contributes root fields only inside the F01/F02/F03 records; it MUST add no per-object protocol blob, URI table, historical manifest table or root directory. Its at most8 current-epoch compact evidence seals fit within the shared common/F09/F10control24576-byte section; the shared exact serializer must account for them. Core C07 sets the total196608-byte ceiling and all six normative section bounds; a128KiB substitute bound is not admitted. Market32workers/8evaluators and epoch bounds are inherited, not widened. No artifact upload allocates protocol state. The future implementation must account for every root field in the shared state size proof; admission refuses if aggregate encoded state would exceed192KiB or global host capacity. Artifact availability is not an archive of native state snapshots, historical proofs or replay witnesses. Physical native blob lifecycle remains the separately qualified integration-map prerequisite; pruning these application records does not prove native reclamation. F09 cannot claim512markets fit merely because512blobs exist; code/namespace blobs and other features consume that global pool."
+    },
+    {
+      "id": "F09-R24",
+      "title": "F01 owns frozen task policy and artifact access/rights restrictions; its input_manifest_digest carries the INPUT ArtifactManifest root when that field exists",
+      "normative": true,
+      "paragraph": "F01 owns frozen task policy and artifact access/rights restrictions; its input_manifest_digest carries the INPUT ArtifactManifest root when that field exists. F02 owns task identity, request/result signatures, execution state and actual service adapters. Its model_digest, input_commitment and output_commitment carry MODEL, INPUT and RESULT ArtifactManifest roots respectively in this profile; despite those field names they are not unspecified plaintext hashes. A policy must explicitly choose this F09 profile to avoid mixing root semantics. F03 owns evaluator eligibility, signed scores and evidence_root32. F04 freezes/reveals those admitted score commitments, not encryption keys or raw prompts. F05 consumes only admitted score values and bindings, never fetches objects. F06 observes reward state and does not infer entitlement from an artifact upload. F07 may use authenticated provenance/availability observations only under its declared rules. F08 uses policy availability/expiry restrictions when admitting new tasks. F10 exposes roots/provenance statuses at one verified head with public/private fields separated. No cyclic runtime dependency is introduced: artifact primitives precede task/evidence admission; optional reproduction records follow those records and never change their original roots."
+    },
+    {
+      "id": "F09-R25",
+      "title": "Frozen v1 choices are SHA256 roots; exact binary encoding;262144-byte content chunks;4096-byte manifest;16parents;32GiB object;131072chunks; XChaCha20-Poly1305 proposed private-object profile; zero network fetch in consensus; no artifact registry expansion;30-day terminal retention;24-hour staging lease;365-day maximum ordinary lease; depth4/256manifest traversal",
+      "normative": true,
+      "paragraph": "Frozen v1 choices are SHA256 roots; exact binary encoding;262144-byte content chunks;4096-byte manifest;16parents;32GiB object;131072chunks; XChaCha20-Poly1305 proposed private-object profile; zero network fetch in consensus; no artifact registry expansion;30-day terminal retention;24-hour staging lease;365-day maximum ordinary lease; depth4/256manifest traversal. Market/task-specific artifact/privacy/rights restrictions are immutable in F01 policy and may be stricter. Changing root formats/encryption semantics requires a new explicit profile/version and migration design, never reinterpretation of an old root."
+    },
+    {
+      "id": "F09-R26",
+      "title": "Release prerequisites are real artifact storage and durable quota configuration; admitted tenant/publication authorities; KMS identity and rotation/recovery; complete F02/F03 bindings; finalized F10 observations; a lawful and operationally approved commodity/data access policy; routed service ownership; actual strict-codec, privacy, crash/restart, authority, SSRF, capacity and retention qualification on one candidate",
+      "normative": true,
+      "paragraph": "Release prerequisites are real artifact storage and durable quota configuration; admitted tenant/publication authorities; KMS identity and rotation/recovery; complete F02/F03 bindings; finalized F10 observations; a lawful and operationally approved commodity/data access policy; routed service ownership; actual strict-codec, privacy, crash/restart, authority, SSRF, capacity and retention qualification on one candidate. Deployment qualification is UNRUN. Open operational choice: actual storage/KMS backend and jurisdiction-specific retention/deletion procedure, selected before implementation integration. Lack of those authorities blocks production readiness rather than granting an insecure default. Implementation, build, test, deployment and release qualification remain UNRUN."
+    }
+  ],
+  "normative_requirement_ids": [
+    "F09-R01",
+    "F09-R02",
+    "F09-R03",
+    "F09-R04",
+    "F09-R05",
+    "F09-R06",
+    "F09-R07",
+    "F09-R08",
+    "F09-R09",
+    "F09-R10",
+    "F09-R11",
+    "F09-R12",
+    "F09-R13",
+    "F09-R14",
+    "F09-R15",
+    "F09-R16",
+    "F09-R17",
+    "F09-R18",
+    "F09-R19",
+    "F09-R27",
+    "F09-R28",
+    "F09-R20",
+    "F09-R21",
+    "F09-R22",
+    "F09-R23",
+    "F09-R24",
+    "F09-R25",
+    "F09-R26"
+  ],
+  "acceptance_case_ids": [
+    "F09-A01",
+    "F09-A02",
+    "F09-A03",
+    "F09-A04",
+    "F09-A05",
+    "F09-A06",
+    "F09-A07",
+    "F09-A08",
+    "F09-A09",
+    "F09-A10",
+    "F09-A11",
+    "F09-A12",
+    "F09-A13",
+    "F09-A14",
+    "F09-A15",
+    "F09-A16",
+    "F09-A17",
+    "F09-A18",
+    "F09-A19",
+    "F09-A20",
+    "F09-A21",
+    "F09-A22",
+    "F09-A23",
+    "F09-A24",
+    "F09-A25"
+  ],
+  "tasks": [
+    {
+      "id": "F09-T01",
+      "depends_on": [
+        "T-C01",
+        "T-C02"
+      ],
+      "proposed_paths": [
+        "programs/crates/layerx-programs-ai-market/src/evidence.rs",
+        "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"
+      ],
+      "deliverable": "Strict manifest/evidence codecs, domain commitments and bounded chunk proofs.",
+      "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_contract",
+      "acceptance_case_ids": [
+        "F09-A01",
+        "F09-A02",
+        "F09-A03",
+        "F09-A04",
+        "F09-A05",
+        "F09-A06",
+        "F09-A20",
+        "F09-A22"
+      ],
+      "qualification": "UNRUN",
+      "canonical_task": "ai.F09-T01",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate"
+    },
+    {
+      "id": "F09-T02",
+      "depends_on": [
+        "F09-T01",
+        "F01_TASK_SET_SEAL",
+        "F02_BINDINGS",
+        "F03_REPORT_ADMISSION"
+      ],
+      "proposed_paths": [
+        "programs/crates/layerx-programs-ai-market/src/evidence.rs",
+        "programs/crates/layerx-programs-ai-market/tests/artifact_binding.rs"
+      ],
+      "deliverable": "Compact immutable evidence seal, binding checks and exact state capacity accounting; shared field edits through integration owner only.",
+      "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_binding",
+      "acceptance_case_ids": [
+        "F09-A06",
+        "F09-A18",
+        "F09-A19",
+        "F09-A20",
+        "F09-A21",
+        "F09-A23",
+        "F09-A24",
+        "F09-A25"
+      ],
+      "qualification": "UNRUN",
+      "canonical_task": "ai.F09-T02",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate"
+    },
+    {
+      "id": "F09-T03",
+      "depends_on": [
+        "F09-T01",
+        "ADMITTED_TENANT_AUTHORITY",
+        "REAL_KMS_CONFIGURATION"
+      ],
+      "proposed_paths": [
+        "platform/hosted/ai-artifacts/Cargo.toml",
+        "platform/hosted/ai-artifacts/src/main.rs",
+        "platform/hosted/ai-artifacts/src/store.rs",
+        "platform/hosted/ai-artifacts/src/authority.rs",
+        "platform/hosted/ai-artifacts/src/resolver.rs",
+        "platform/hosted/ai-artifacts/src/crypto.rs",
+        "platform/hosted/ai-artifacts/tests/artifact_service.rs"
+      ],
+      "deliverable": "Real durable offchain publication/retrieval, purpose restrictions, authenticated encryption, authority and SSRF-safe resolver.",
+      "compile_cmd": "cargo build --manifest-path platform/hosted/ai-artifacts/Cargo.toml",
+      "verify_cmd": "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_service",
+      "acceptance_case_ids": [
+        "F09-A07",
+        "F09-A08",
+        "F09-A09",
+        "F09-A10",
+        "F09-A11",
+        "F09-A12",
+        "F09-A13",
+        "F09-A17"
+      ],
+      "qualification": "UNRUN",
+      "canonical_task": "ai.F09-T03",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate"
+    },
+    {
+      "id": "F09-T04",
+      "depends_on": [
+        "F09-T03",
+        "F02_TERMINAL_PRODUCER",
+        "F10_FINALITY_PRODUCER"
+      ],
+      "proposed_paths": [
+        "platform/hosted/ai-artifacts/src/retention.rs",
+        "platform/hosted/ai-artifacts/tests/artifact_recovery.rs"
+      ],
+      "deliverable": "Crash recovery, revocation-safe restore, retention holds, tombstones and pending purge accounting.",
+      "compile_cmd": "cargo build --manifest-path platform/hosted/ai-artifacts/Cargo.toml",
+      "verify_cmd": "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_recovery",
+      "acceptance_case_ids": [
+        "F09-A14",
+        "F09-A15",
+        "F09-A16",
+        "F09-A19",
+        "F09-A21"
+      ],
+      "qualification": "UNRUN",
+      "canonical_task": "ai.F09-T04",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate"
+    }
+  ],
+  "shared_contracts": [
+    "contracts/core.kvx",
+    "contracts/integration-map.kvx"
+  ],
+  "limits": {
+    "state_total_bytes": 196608,
+    "shared_control_section_bytes": 24576,
+    "evidence_seals": 8,
+    "evidence_seal_unframed_bytes": 185,
+    "offchain_evidence_manifest_bytes": 65536,
+    "artifact_manifest_bytes": 4096,
+    "object_bytes": 34359738368,
+    "chunk_bytes": 262144,
+    "maximum_chunks": 131072,
+    "parents": 16,
+    "graph_depth": 4,
+    "graph_visits": 256
+  },
+  "operations": {
+    "onchain": [
+      "SealEvidence"
+    ],
+    "offchain": [
+      "PrepareObject",
+      "FinalizeObject",
+      "ResolveArtifact",
+      "RevokeAccess",
+      "TombstoneArtifact",
+      "RotateAccessEnvelope"
+    ]
+  },
+  "acceptance_cases": [
+    {
+      "id": "F09-A01",
+      "case": "Positive: publish a public RESULT with task_id=0x31 repeated32, one three-byte object 01 02 03, permitted policy and admitted publisher generation7. Exact canonical bytes independently recompute one leaf/tree/content/manifest root; resolve returns equal bytes and task binding true. No protocol money changes.",
+      "qualification": "UNRUN",
+      "paragraph": "Positive: publish a public RESULT with task_id=0x31 repeated32, one three-byte object 01 02 03, permitted policy and admitted publisher generation7. Exact canonical bytes independently recompute one leaf/tree/content/manifest root; resolve returns equal bytes and task binding true. No protocol money changes."
+    },
+    {
+      "id": "F09-A02",
+      "case": "Negative: mutate one chunk byte after successful publication. Resolve returns INTEGRITY_FAILED, quarantines service availability and leaves the immutable protocol root unchanged.",
+      "qualification": "UNRUN",
+      "paragraph": "Negative: mutate one chunk byte after successful publication. Resolve returns INTEGRITY_FAILED, quarantines service availability and leaves the immutable protocol root unchanged."
+    },
+    {
+      "id": "F09-A03",
+      "case": "Boundary: empty public object has chunk_count0 and defined empty tree; an encrypted object with length0 refuses Malformed. Zero mandatory root refuses even when the object is empty.",
+      "qualification": "UNRUN",
+      "paragraph": "Boundary: empty public object has chunk_count0 and defined empty tree; an encrypted object with length0 refuses Malformed. Zero mandatory root refuses even when the object is empty."
+    },
+    {
+      "id": "F09-A04",
+      "case": "Boundary: 262144 bytes produces one leaf; 262145 produces two with final length1. Swapping their indices, repeating final chunk or omitting index0 fails complete verification.",
+      "qualification": "UNRUN",
+      "paragraph": "Boundary: 262144 bytes produces one leaf; 262145 produces two with final length1. Swapping their indices, repeating final chunk or omitting index0 fails complete verification."
+    },
+    {
+      "id": "F09-A05",
+      "case": "Boundary: 32GiB ciphertext with131072chunks is admitted only with quota; 32GiB+1 refuses before upload. A 17-level chunk proof at the last valid index passes with independently derived siblings; an eighteenth sibling refuses.",
+      "qualification": "UNRUN",
+      "paragraph": "Boundary: 32GiB ciphertext with131072chunks is admitted only with quota; 32GiB+1 refuses before upload. A 17-level chunk proof at the last valid index passes with independently derived siblings; an eighteenth sibling refuses."
+    },
+    {
+      "id": "F09-A06",
+      "case": "Negative: valid signed manifest on marketA is submitted against marketB. Root/signature/binding checks refuse InvalidContext, with no F02/F03 state changes.",
+      "qualification": "UNRUN",
+      "paragraph": "Negative: valid signed manifest on marketA is submitted against marketB. Root/signature/binding checks refuse InvalidContext, with no F02/F03 state changes."
+    },
+    {
+      "id": "F09-A07",
+      "case": "Adversarial: publisher supplies two byte-different manifests for one reused request ID. First canonical disposition is retained; second returns IdempotencyConflict even after service restart.",
+      "qualification": "UNRUN",
+      "paragraph": "Adversarial: publisher supplies two byte-different manifests for one reused request ID. First canonical disposition is retained; second returns IdempotencyConflict even after service restart."
+    },
+    {
+      "id": "F09-A08",
+      "case": "Positive/concurrent: two identical FinalizeObject calls race against actual persistent storage. Exactly one root record/quota lease is recorded; both callers reconcile to it without duplicate usage.",
+      "qualification": "UNRUN",
+      "paragraph": "Positive/concurrent: two identical FinalizeObject calls race against actual persistent storage. Exactly one root record/quota lease is recorded; both callers reconcile to it without duplicate usage."
+    },
+    {
+      "id": "F09-A09",
+      "case": "Negative: valid root but expired task grant or revoked generation7 refuses retrieval/key release. Historical signature remains attributable at generation7; no new authority is inferred from it.",
+      "qualification": "UNRUN",
+      "paragraph": "Negative: valid root but expired task grant or revoked generation7 refuses retrieval/key release. Historical signature remains attributable at generation7; no new authority is inferred from it."
+    },
+    {
+      "id": "F09-A10",
+      "case": "Privacy: encrypt the same eight-byte private input twice using distinct keys/nonces. Public roots differ; authorized decryptions yield equal plaintext. Neither plaintext nor keys nor plaintext digest appear in actual protocol/event/snapshot/log payloads.",
+      "qualification": "UNRUN",
+      "paragraph": "Privacy: encrypt the same eight-byte private input twice using distinct keys/nonces. Public roots differ; authorized decryptions yield equal plaintext. Neither plaintext nor keys nor plaintext digest appear in actual protocol/event/snapshot/log payloads."
+    },
+    {
+      "id": "F09-A11",
+      "case": "Adversarial: encrypted frame0 replaced with frame1 or nonce/tag altered. AEAD/stream verification fails; no partial verified result is released.",
+      "qualification": "UNRUN",
+      "paragraph": "Adversarial: encrypted frame0 replaced with frame1 or nonce/tag altered. AEAD/stream verification fails; no partial verified result is released."
+    },
+    {
+      "id": "F09-A12",
+      "case": "Negative: valid provider-declared license purpose mask permits inference only; training retrieval is refused PurposeDenied. DOCUMENTED status never renders as legally cleared ownership.",
+      "qualification": "UNRUN",
+      "paragraph": "Negative: valid provider-declared license purpose mask permits inference only; training retrieval is refused PurposeDenied. DOCUMENTED status never renders as legally cleared ownership."
+    },
+    {
+      "id": "F09-A13",
+      "case": "Adversarial: HTTPS locator resolves to a public address then connects to169.254.169.254 or a loopback IPv6 address; UnsafeLocator before request bytes/credentials are sent. Redirects and file URIs refuse.",
+      "qualification": "UNRUN",
+      "paragraph": "Adversarial: HTTPS locator resolves to a public address then connects to169.254.169.254 or a loopback IPv6 address; UnsafeLocator before request bytes/credentials are sent. Redirects and file URIs refuse."
+    },
+    {
+      "id": "F09-A14",
+      "case": "Recovery: kill the real artifact process after chunk persistence but before root publication acknowledgment; restart reconciles to one completed publication or durable failed staging disposition. It never acknowledges a root whose required bytes are absent.",
+      "qualification": "UNRUN",
+      "paragraph": "Recovery: kill the real artifact process after chunk persistence but before root publication acknowledgment; restart reconciles to one completed publication or durable failed staging disposition. It never acknowledges a root whose required bytes are absent."
+    },
+    {
+      "id": "F09-A15",
+      "case": "Recovery: revocation is durable but an old backup has object files and grantgeneration7. Restore remains non-ready until monotonic revocation state is recovered; revoked data is not served.",
+      "qualification": "UNRUN",
+      "paragraph": "Recovery: revocation is durable but an old backup has object files and grantgeneration7. Restore remains non-ready until monotonic revocation state is recovered; revoked data is not served."
+    },
+    {
+      "id": "F09-A16",
+      "case": "Retention: terminal task finality observed day0; day29 deletion without an allowed overriding restriction refuses; day30 no hold permits tombstone/purge. An unresolved execution on day45 retains evidence or explicitly reports capacity refusal for new work; it is not silently purged.",
+      "qualification": "UNRUN",
+      "paragraph": "Retention: terminal task finality observed day0; day29 deletion without an allowed overriding restriction refuses; day30 no hold permits tombstone/purge. An unresolved execution on day45 retains evidence or explicitly reports capacity refusal for new work; it is not silently purged."
+    },
+    {
+      "id": "F09-A17",
+      "case": "Truth limitation: a correctly signed worker result with matching model/root has a deliberately false factual answer. Integrity and attribution pass, quality remains unestablished until the separate evaluator method runs; no automatic reward admission.",
+      "qualification": "UNRUN",
+      "paragraph": "Truth limitation: a correctly signed worker result with matching model/root has a deliberately false factual answer. Integrity and attribution pass, quality remains unestablished until the separate evaluator method runs; no automatic reward admission."
+    },
+    {
+      "id": "F09-A18",
+      "case": "State capacity: at maximum32workers/8evaluators with admitted epoch records, adding all F09 roots stays within the shared192KiB exact encoding; any attempted overflow returns CapacityUnavailable and preserves prior application state. Host blob exhaustion refuses atomically without a partial root binding.",
+      "qualification": "UNRUN",
+      "paragraph": "State capacity: at maximum32workers/8evaluators with admitted epoch records, adding all F09 roots stays within the shared192KiB exact encoding; any attempted overflow returns CapacityUnavailable and preserves prior application state. Host blob exhaustion refuses atomically without a partial root binding."
+    },
+    {
+      "id": "F09-A19",
+      "case": "Finality: offchain upload succeeds but binding transaction is unknown/orphaned. Projection reports uploaded/unbound or pending, never finalized; rollback preserves needed private evidence until ambiguity is resolved.",
+      "qualification": "UNRUN",
+      "paragraph": "Finality: offchain upload succeeds but binding transaction is unknown/orphaned. Projection reports uploaded/unbound or pending, never finalized; rollback preserves needed private evidence until ambiguity is resolved."
+    },
+    {
+      "id": "F09-A20",
+      "case": "Evidence: independently verify the minimal proof against an authenticated finality reference, actual F02 task/result and exact F03 evidence envelope. Replacing its task/model/policy or evidence_root fails the corresponding binding; a chunk proof alone never passes complete availability or benchmark coverage.",
+      "qualification": "UNRUN",
+      "paragraph": "Evidence: independently verify the minimal proof against an authenticated finality reference, actual F02 task/result and exact F03 evidence envelope. Replacing its task/model/policy or evidence_root fails the corresponding binding; a chunk proof alone never passes complete availability or benchmark coverage."
+    },
+    {
+      "id": "F09-A21",
+      "case": "Lifecycle: tombstone a valid artifact already referenced by a finalized task. Protocol history and F06 economic records remain unchanged; new unauthorized reads refuse; public query reports tombstoned/unavailable without inventing refund/slash.",
+      "qualification": "UNRUN",
+      "paragraph": "Lifecycle: tombstone a valid artifact already referenced by a finalized task. Protocol history and F06 economic records remain unchanged; new unauthorized reads refuse; public query reports tombstoned/unavailable without inventing refund/slash."
+    },
+    {
+      "id": "F09-A22",
+      "case": "Versioning: manifest version2, a nonzero reserved byte, duplicate parent pair, unsorted document list and trailing bytes each refuse without normalization. Two differently normalized Unicode labels remain different exact bytes.",
+      "qualification": "UNRUN",
+      "paragraph": "Versioning: manifest version2, a nonzero reserved byte, duplicate parent pair, unsorted document list and trailing bytes each refuse without normalization. Two differently normalized Unicode labels remain different exact bytes."
+    },
+    {
+      "id": "F09-A23",
+      "case": "Seal boundary: at height79 in an opened epoch with sealed task set and current evaluator key, SealEvidence succeeds once; a distinct root for that evaluator refuses EVIDENCE_SEAL_CONFLICT. Height80 refuses WRONG_PHASE even though report Reveal may separately open. A key revoked before sealing refuses; old root cannot restore authority.",
+      "qualification": "UNRUN",
+      "paragraph": "Seal boundary: at height79 in an opened epoch with sealed task set and current evaluator key, SealEvidence succeeds once; a distinct root for that evaluator refuses EVIDENCE_SEAL_CONFLICT. Height80 refuses WRONG_PHASE even though report Reveal may separately open. A key revoked before sealing refuses; old root cannot restore authority."
+    },
+    {
+      "id": "F09-A24",
+      "case": "Evidence tampering: replace one worker generation, score, status, task ID or model root in EvidenceManifestV1. Its independently computed evidence_root changes; unchanged F03 report root fails external evidence verification. Guest acceptance of a syntactically valid sealed claim MUST still be labeled authorized claim rather than semantic verification.",
+      "qualification": "UNRUN",
+      "paragraph": "Evidence tampering: replace one worker generation, score, status, task ID or model root in EvidenceManifestV1. Its independently computed evidence_root changes; unchanged F03 report root fails external evidence verification. Guest acceptance of a syntactically valid sealed claim MUST still be labeled authorized claim rather than semantic verification."
+    },
+    {
+      "id": "F09-A25",
+      "case": "Unsealed task set: attempt SealEvidence before the F01 task-set binding exists. Refuse EVIDENCE_TASK_SET_UNSEALED with no seal/sequence change. After the explicit F01 task-set seal, exact policy task-set and evaluator context succeed; a post-seal task admission cannot change that task set.",
+      "qualification": "UNRUN",
+      "paragraph": "Unsealed task set: attempt SealEvidence before the F01 task-set binding exists. Refuse EVIDENCE_TASK_SET_UNSEALED with no seal/sequence change. After the explicit F01 task-set seal, exact policy task-set and evaluator context succeed; a post-seal task admission cannot change that task set."
+    }
+  ],
+  "canonical_spec": "../../spec.kvx",
+  "rights_declaration_status": "Rights declarations are claims, not adjudications."
+}

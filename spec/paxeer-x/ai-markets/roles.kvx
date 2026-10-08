@@ -1,0 +1,2305 @@
+[meta]
+name = "Paxeer AI markets roles and task responsibility"
+status = "draft"
+qualification = "UNRUN"
+canonical_spec = "spec/paxeer-x/spec.kvx"
+task_count = 55
+gate_authority = "Every task scope, dependency, exact path, requirement, acceptance case, build and verify command is authoritative only in the canonical task section. This role map adds responsibility and handoff rules; it never substitutes a gate or broadens a task."
+session_scope = "Each implementation task begins in a fresh task session with tool and file access scoped to its assigned Paxeer paths. Reconcile current ownership and owner changes before admitting edits."
+
+[workflow]
+hierarchy = ["MAIN-INTEGRATOR", "FM-F01 through FM-F10", "FM-CORE", "FM-STORAGE", "FM-OPERATIONS", "assigned implementation specialist"]
+main_branch = "{main}"
+feature_branch = "feature/{feature}"
+worker_branch = "wave/{feature}/{wave}"
+admission = "Main integrator admits only an authorized pending task whose canonical requires are done; manager records exact paths, named writer, session, deliverable and acceptance handoff before dispatch. Same-wave tasks may run concurrently only with disjoint effective ownership."
+entry = "Canonical task eligible; manager assigned; approved interfaces and resources present; shared-file writer reservation recorded. All 55 assignments below begin pending and UNRUN."
+implementation = "The assigned specialist writes the entire scoped implementation and specified real-path tests before format, build or verify. No neighboring repair or incomplete producer substitute."
+qualification = "Use only the canonical task build and single verify_cmd, with at most two task-scoped repair cycles and 30-minute cap. Prerequisite/marker tasks consume their canonical control records; they do not add builds or rerun producer gates."
+exit = "Task stays in_progress until its exact acceptance and declared qualification pass. A failed bounded task stops implemented-not-qualified with its blocker; no false completion. Publication follows the repository workflow only within explicit task authorization."
+handoff = "Specialist hands exact changed paths, typed interfaces, immutable revision, acceptance references and revision/command/exit/log evidence to its manager; manager transfers that same record to the integrator and direct dependent managers."
+escalation = "Specialist stops for missing authority, unknown interface, path collision, cross-task contradiction, unrelated failure, required weakening or budget exhaustion. Manager escalates to main integrator; only the actual owner resolves authority/profile/production decisions."
+evidence = "revision, command, exit code, log path"
+no_reverify = "Managers and integrator consume recorded passed results; they do not rerun a specialist gate, add review campaigns or infer runtime/deployment success from a document or build."
+release = "Aggregate, sanitizer, cluster, browser and historical matrices belong only to the canonical release candidate after independent task qualification and explicit release authority."
+
+[role.MAIN-INTEGRATOR]
+title = "Main integrator"
+kind = "development-coordinator"
+parent = "owner"
+owns = ["spec/paxeer-x/spec.kvx", "spec/paxeer-x/qualification.kvx"]
+responsibility = "Maintain canonical task admission, dependency order, exact path reservations, shared writer handoffs and candidate integration. Coordinate all thirteen managers; never expand authorized scope from this role map."
+entry = "User-authorized feature work and current canonical ownership reconciled."
+exit = "Accepted task handoffs integrated with exact evidence, or explicit unresolved blocker retained."
+handoff = "Pass immutable canonical task contracts and producer evidence to managers; collect one result per task without rerunning gates."
+escalation = "Refer native profile, secrets, deployment, production or irreversible authority decisions to the actual owner."
+evidence = "Canonical task acceptance and revision/command/exit/log; qualification remains UNRUN until the actual gate runs."
+
+[role.FM-F01]
+title = "Market policy, task admission and epoch lifecycle manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F01-T01", "ai.F01-T02", "ai.F01-T03-EPOCH", "ai.F01-T04", "ai.F01-T04-SERVICE", "ai.F01-T03-CLOSE"]
+ownership = "Only canonical exact paths of assigned F01 tasks for registry/policy/registry_ops/epoch/closure/tasks modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F01 task to its named specialist, check dependency evidence and referenced AI.F01 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F02]
+title = "Worker identity, transport and durable real execution manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F02-T01", "ai.F02-T02", "ai.F02-T03", "ai.F02-T04"]
+ownership = "Only canonical exact paths of assigned F02 tasks for worker identity types and worker auth/metadata/discovery/jobs/store/runner modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F02 task to its named specialist, check dependency evidence and referenced AI.F02 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F03]
+title = "Evaluator authority and signed assessment admission manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F03-T01", "ai.F03-T02", "ai.F03-T03", "ai.F03-T04"]
+ownership = "Only canonical exact paths of assigned F03 tasks for evaluators model/codec/authority/admission modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F03 task to its named specialist, check dependency evidence and referenced AI.F03 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F04]
+title = "Commitment and reveal windows manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F04-T01", "ai.F04-T02", "ai.F04-T03"]
+ownership = "Only canonical exact paths of assigned F04 tasks for commit_reveal modules and named canonical/window/recovery tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F04 task to its named specialist, check dependency evidence and referenced AI.F04 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F05]
+title = "Deterministic aggregation and terminalization manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F05-T01", "ai.F05-T02", "ai.F05-T03"]
+ownership = "Only canonical exact paths of assigned F05 tasks for aggregation codec/arithmetic/runtime harness and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F05 task to its named specialist, check dependency evidence and referenced AI.F05 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F06]
+title = "Conserved funded rewards and claims manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F06-T01", "ai.F06-T02", "ai.F06-T03", "ai.F06-T04"]
+ownership = "Only canonical exact paths of assigned F06 tasks for reward math/state/native integration and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F06 task to its named specialist, check dependency evidence and referenced AI.F06 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F07]
+title = "Reputation and history continuity manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F07-T01", "ai.F07-T02", "ai.F07-T03"]
+ownership = "Only canonical exact paths of assigned F07 tasks for reputation codec/transition and reputation projection modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F07 task to its named specialist, check dependency evidence and referenced AI.F07 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F08]
+title = "Bounded admission and rollover manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F08-T01", "ai.F08-T02", "ai.F08-T03"]
+ownership = "Only canonical exact paths of assigned F08 tasks for admission/roster/membership modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F08 task to its named specialist, check dependency evidence and referenced AI.F08 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F09]
+title = "Artifacts, evidence and privacy manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F09-T01", "ai.F09-T03", "ai.F09-T02", "ai.F09-T04"]
+ownership = "Only canonical exact paths of assigned F09 tasks for evidence module and ai-artifacts package files and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F09 task to its named specialist, check dependency evidence and referenced AI.F09 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-F10]
+title = "Finalized views and SDK clients manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.F10-T01", "ai.F10-T02", "ai.F10-T03", "ai.F10-T05", "ai.F10-T04", "ai.F10-T07", "ai.F10-T06", "ai.F10-T02-FULL"]
+ownership = "Only canonical exact paths of assigned F10 tasks for queries, AI projections, clients, SDKs, webhook/health modules and named tests. Shared files remain under the named single writer; package/directory names do not grant recursive write permission."
+responsibility = "Allocate each F10 task to its named specialist, check dependency evidence and referenced AI.F10 requirements/acceptance, resolve task interfaces with producer managers and preserve the canonical split scopes."
+entry = "All canonical dependencies complete and exact effective path ownership reserved."
+exit = "Complete scoped deliverable and passing canonical acceptance evidence accepted, or implemented-not-qualified blocker escalated."
+handoff = "Supply task contract, exact paths, producer types and acceptance references; return immutable revision/path/interface/evidence handoff to MAIN-INTEGRATOR and dependent managers."
+escalation = "Stop and escalate path collisions, missing producer/authority, unrelated failures or required weakening; never broaden feature ownership."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-CORE]
+title = "Common application and host integration manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04"]
+ownership = "Canonical T-C* paths, Programs workspace/crate manifests, crate entrypoint and centrally owned common codec/types/state/errors/dispatch/access/capability declarations; exact files bound in canonical tasks."
+responsibility = "Assign named specialists; preserve exact canonical admission and authority decisions; deliver shared producer contracts or actual operational readiness evidence to dependent feature managers."
+entry = "Authorized eligible task, approved exact paths and necessary real authority/resources."
+exit = "Scoped deliverable plus canonical acceptance evidence or explicit blocker."
+handoff = "One immutable task record with actual paths, interface/profile identities, acceptance references and evidence."
+escalation = "Refer missing native architecture, archive trust, deployed resources or production authority to MAIN-INTEGRATOR and actual owner; preserve blocked readiness."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-STORAGE]
+title = "Native storage, archives and capacity manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.P-STORAGE-PROFILE", "ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.T-S04"]
+ownership = "Canonical T-S* exact paths and storage-profile records; native Programs/root/replay/snapshot/LNI/archive/keeper edits serialized by named native file reservation; unresolved service/package/header paths must be fixed before task admission."
+responsibility = "Assign named specialists; preserve exact canonical admission and authority decisions; deliver shared producer contracts or actual operational readiness evidence to dependent feature managers."
+entry = "Authorized eligible task, approved exact paths and necessary real authority/resources."
+exit = "Scoped deliverable plus canonical acceptance evidence or explicit blocker."
+handoff = "One immutable task record with actual paths, interface/profile identities, acceptance references and evidence."
+escalation = "Refer missing native architecture, archive trust, deployed resources or production authority to MAIN-INTEGRATOR and actual owner; preserve blocked readiness."
+evidence = "revision, command, exit code, log path"
+
+[role.FM-OPERATIONS]
+title = "Readiness and release coordination manager"
+kind = "feature-manager"
+parent = "MAIN-INTEGRATOR"
+tasks = ["ai.P-DEPLOYMENT", "ai.P-REAL-SERVICES", "ai.RELEASE-CANDIDATE"]
+ownership = "Canonical P-DEPLOYMENT, P-REAL-SERVICES and RELEASE-CANDIDATE decision/evidence paths only; role assignment grants no infrastructure mutation, secret access or activation authority."
+responsibility = "Assign named specialists; preserve exact canonical admission and authority decisions; deliver shared producer contracts or actual operational readiness evidence to dependent feature managers."
+entry = "Authorized eligible task, approved exact paths and necessary real authority/resources."
+exit = "Scoped deliverable plus canonical acceptance evidence or explicit blocker."
+handoff = "One immutable task record with actual paths, interface/profile identities, acceptance references and evidence."
+escalation = "Refer missing native architecture, archive trust, deployed resources or production authority to MAIN-INTEGRATOR and actual owner; preserve blocked readiness."
+evidence = "revision, command, exit code, log path"
+
+[role.W-CORE-CODEC]
+title = "Core Codec implementation specialist"
+kind = "development-specialist"
+parent = "FM-CORE"
+tasks = ["ai.T-C01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-CORE-HOST]
+title = "Core Host implementation specialist"
+kind = "development-specialist"
+parent = "FM-CORE"
+tasks = ["ai.T-C02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-CORE-INTEGRATION]
+title = "Core Integration implementation specialist"
+kind = "development-specialist"
+parent = "FM-CORE"
+tasks = ["ai.T-C04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-CORE-VALUE]
+title = "Core Value implementation specialist"
+kind = "development-specialist"
+parent = "FM-CORE"
+tasks = ["ai.T-C03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-CORE-WORKSPACE]
+title = "Core Workspace implementation specialist"
+kind = "development-specialist"
+parent = "FM-CORE"
+tasks = ["ai.P-WORKSPACE"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-CLOSURE]
+title = "F01 Closure implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T03-CLOSE"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-EPOCH]
+title = "F01 Epoch implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T03-EPOCH"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-HANDOFF]
+title = "F01 Handoff implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T04-SERVICE"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-LIFECYCLE]
+title = "F01 Lifecycle implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-POLICY]
+title = "F01 Policy implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F01-TASKS]
+title = "F01 Tasks implementation specialist"
+kind = "development-specialist"
+parent = "FM-F01"
+tasks = ["ai.F01-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F02-IDENTITY]
+title = "F02 Identity implementation specialist"
+kind = "development-specialist"
+parent = "FM-F02"
+tasks = ["ai.F02-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F02-JOBS]
+title = "F02 Jobs implementation specialist"
+kind = "development-specialist"
+parent = "FM-F02"
+tasks = ["ai.F02-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F02-TRANSPORT]
+title = "F02 Transport implementation specialist"
+kind = "development-specialist"
+parent = "FM-F02"
+tasks = ["ai.F02-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F02-WORKLOAD]
+title = "F02 Workload implementation specialist"
+kind = "development-specialist"
+parent = "FM-F02"
+tasks = ["ai.F02-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F03-ADMISSION]
+title = "F03 Admission implementation specialist"
+kind = "development-specialist"
+parent = "FM-F03"
+tasks = ["ai.F03-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F03-AUTHORITY]
+title = "F03 Authority implementation specialist"
+kind = "development-specialist"
+parent = "FM-F03"
+tasks = ["ai.F03-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F03-CODEC]
+title = "F03 Codec implementation specialist"
+kind = "development-specialist"
+parent = "FM-F03"
+tasks = ["ai.F03-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F03-HOST]
+title = "F03 Host implementation specialist"
+kind = "development-specialist"
+parent = "FM-F03"
+tasks = ["ai.F03-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F04-COMMITMENT]
+title = "F04 Commitment implementation specialist"
+kind = "development-specialist"
+parent = "FM-F04"
+tasks = ["ai.F04-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F04-RECOVERY]
+title = "F04 Recovery implementation specialist"
+kind = "development-specialist"
+parent = "FM-F04"
+tasks = ["ai.F04-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F04-WINDOWS]
+title = "F04 Windows implementation specialist"
+kind = "development-specialist"
+parent = "FM-F04"
+tasks = ["ai.F04-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F05-ARITHMETIC]
+title = "F05 Arithmetic implementation specialist"
+kind = "development-specialist"
+parent = "FM-F05"
+tasks = ["ai.F05-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F05-CODEC]
+title = "F05 Codec implementation specialist"
+kind = "development-specialist"
+parent = "FM-F05"
+tasks = ["ai.F05-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F05-FINALIZATION]
+title = "F05 Finalization implementation specialist"
+kind = "development-specialist"
+parent = "FM-F05"
+tasks = ["ai.F05-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F06-MATH]
+title = "F06 Math implementation specialist"
+kind = "development-specialist"
+parent = "FM-F06"
+tasks = ["ai.F06-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F06-NATIVE]
+title = "F06 Native implementation specialist"
+kind = "development-specialist"
+parent = "FM-F06"
+tasks = ["ai.F06-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F06-RECOVERY]
+title = "F06 Recovery implementation specialist"
+kind = "development-specialist"
+parent = "FM-F06"
+tasks = ["ai.F06-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F06-STATE]
+title = "F06 State implementation specialist"
+kind = "development-specialist"
+parent = "FM-F06"
+tasks = ["ai.F06-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F07-LIFECYCLE]
+title = "F07 Lifecycle implementation specialist"
+kind = "development-specialist"
+parent = "FM-F07"
+tasks = ["ai.F07-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F07-PROJECTION]
+title = "F07 Projection implementation specialist"
+kind = "development-specialist"
+parent = "FM-F07"
+tasks = ["ai.F07-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F07-TRANSITION]
+title = "F07 Transition implementation specialist"
+kind = "development-specialist"
+parent = "FM-F07"
+tasks = ["ai.F07-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F08-ADMISSION]
+title = "F08 Admission implementation specialist"
+kind = "development-specialist"
+parent = "FM-F08"
+tasks = ["ai.F08-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F08-RECOVERY]
+title = "F08 Recovery implementation specialist"
+kind = "development-specialist"
+parent = "FM-F08"
+tasks = ["ai.F08-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F08-ROLLOVER]
+title = "F08 Rollover implementation specialist"
+kind = "development-specialist"
+parent = "FM-F08"
+tasks = ["ai.F08-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F09-BINDING]
+title = "F09 Binding implementation specialist"
+kind = "development-specialist"
+parent = "FM-F09"
+tasks = ["ai.F09-T02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F09-CODEC]
+title = "F09 Codec implementation specialist"
+kind = "development-specialist"
+parent = "FM-F09"
+tasks = ["ai.F09-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F09-RETENTION]
+title = "F09 Retention implementation specialist"
+kind = "development-specialist"
+parent = "FM-F09"
+tasks = ["ai.F09-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F09-SERVICE]
+title = "F09 Service implementation specialist"
+kind = "development-specialist"
+parent = "FM-F09"
+tasks = ["ai.F09-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-HEALTH]
+title = "F10 Health implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T06"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-PROJECTION]
+title = "F10 Projection implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T02", "ai.F10-T02-FULL"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-PYTHON]
+title = "F10 Python implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T07"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-QUERIES]
+title = "F10 Queries implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-RUST-CLIENT]
+title = "F10 Rust Client implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-TYPESCRIPT]
+title = "F10 Typescript implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-F10-WEBHOOKS]
+title = "F10 Webhooks implementation specialist"
+kind = "development-specialist"
+parent = "FM-F10"
+tasks = ["ai.F10-T05"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-OPERATIONS-READINESS]
+title = "Operations Readiness implementation specialist"
+kind = "development-specialist"
+parent = "FM-OPERATIONS"
+tasks = ["ai.P-DEPLOYMENT"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-OPERATIONS-RELEASE]
+title = "Operations Release implementation specialist"
+kind = "development-specialist"
+parent = "FM-OPERATIONS"
+tasks = ["ai.RELEASE-CANDIDATE"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-OPERATIONS-SERVICES]
+title = "Operations Services implementation specialist"
+kind = "development-specialist"
+parent = "FM-OPERATIONS"
+tasks = ["ai.P-REAL-SERVICES"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-STORAGE-ARCHIVE]
+title = "Storage Archive implementation specialist"
+kind = "development-specialist"
+parent = "FM-STORAGE"
+tasks = ["ai.T-S01"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-STORAGE-CAPACITY]
+title = "Storage Capacity implementation specialist"
+kind = "development-specialist"
+parent = "FM-STORAGE"
+tasks = ["ai.T-S03"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-STORAGE-CONTINUITY]
+title = "Storage Continuity implementation specialist"
+kind = "development-specialist"
+parent = "FM-STORAGE"
+tasks = ["ai.T-S04"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-STORAGE-PROFILE]
+title = "Storage Profile implementation specialist"
+kind = "development-specialist"
+parent = "FM-STORAGE"
+tasks = ["ai.P-STORAGE-PROFILE"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[role.W-STORAGE-RETIREMENT]
+title = "Storage Retirement implementation specialist"
+kind = "development-specialist"
+parent = "FM-STORAGE"
+tasks = ["ai.T-S02"]
+ownership = "Only the admitted task canonical exact paths after exclusions and explicit serialized shared-writer handoffs; no sibling, whole-package or runtime service authority."
+responsibility = "Implement the complete task-specific responsibility and deliverable in its assignment; use real producer code and types and the canonical single gate."
+entry = "Manager supplies fresh task session, exact paths, dependency evidence and accepted task contract."
+exit = "Complete implementation with one bounded canonical qualification result or exact implemented-not-qualified blocker."
+handoff = "Return task ID, revision, changed paths, interface changes, acceptance references and revision/command/exit/log evidence to parent manager."
+escalation = "Stop for ownership conflict, unavailable producer/authority, unrelated failure, required weakening, 30-minute cap or second failed task repair."
+evidence = "revision, command, exit code, log path"
+
+[shared_writer.CORE]
+manager = "FM-CORE"
+default_writer = "W-CORE-INTEGRATION"
+paths = ["programs/Cargo.toml", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
+rule = "Common codec/types/state/errors/dispatch/access/capability exact files are additionally bound by canonical T-C01/T-C02; FM-CORE assigns one active writer for each. Feature specialists submit typed integration requests; a shared writer completes them before the feature gate."
+transfer = "Record exact path, prior/new named writer, canonical task, accepted revision/interface and reservation start/end. No simultaneous writer; no implicit transfer through a role or broad task path. Main integrator resolves conflicts before edits."
+
+[shared_writer.STORAGE]
+manager = "FM-STORAGE"
+default_writer = "W-STORAGE-RETIREMENT"
+paths = ["Makefile", "include/layerx/lxp_kernel.h", "include/layerx/lxp_module.h", "src/protocol/lxp_kernel.c", "src/protocol/lxp_module_ctx.c"]
+rule = "FM-STORAGE reserves every overlapping native/archive/LNI file serially across T-S01..T-S04 and reconciles active repository owners before admission. Root Makefile changes register only the owning focused targets."
+transfer = "Record exact path, prior/new named writer, canonical task, accepted revision/interface and reservation start/end. No simultaneous writer; no implicit transfer through a role or broad task path. Main integrator resolves conflicts before edits."
+
+[shared_writer.SDK]
+manager = "FM-F10"
+default_writer = "W-F10-RUST-CLIENT"
+paths = ["platform/sdk/schema/paxai-v1.kvx", "platform/sdk/generators/src/main.rs"]
+rule = "The F10-T03 writer alone changes central schema/generator files within its canonical scope; other clients consume the accepted generated contract."
+transfer = "Record exact path, prior/new named writer, canonical task, accepted revision/interface and reservation start/end. No simultaneous writer; no implicit transfer through a role or broad task path. Main integrator resolves conflicts before edits."
+
+[shared_writer.PROJECTION]
+manager = "FM-F10"
+default_writer = "W-F10-PROJECTION"
+paths = ["platform/hosted/indexer/src/store.rs", "platform/hosted/indexer/src/layerx.rs", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/public_reads.rs"]
+rule = "F02 transport discovery and all projection consumers submit route/store integration requests to FM-F10. Canonical tasks must explicitly admit each shared path before its serial writer changes it."
+transfer = "Record exact path, prior/new named writer, canonical task, accepted revision/interface and reservation start/end. No simultaneous writer; no implicit transfer through a role or broad task path. Main integrator resolves conflicts before edits."
+
+[shared_writer.EPOCH]
+manager = "FM-F01"
+default_writer = "W-F01-EPOCH"
+paths = ["programs/crates/layerx-programs-ai-market/src/epoch.rs"]
+rule = "F07 lifecycle wiring uses an explicit FM-F01 to FM-F07 serial writer handoff after epoch opening; only the recorded active writer may edit epoch.rs."
+transfer = "Record exact path, prior/new named writer, canonical task, accepted revision/interface and reservation start/end. No simultaneous writer; no implicit transfer through a role or broad task path. Main integrator resolves conflicts before edits."
+
+[handoff.contract]
+required_fields = ["task_id", "manager", "specialist", "canonical_task_ref", "exact_paths", "active_shared_writer", "dependency_evidence", "requirements_ref", "acceptance_ref", "deliverable", "revision", "command", "exit_code", "log_path", "blocker"]
+consumer_rule = "A dependent manager accepts only the complete producer interfaces and authentic recorded evidence named by its canonical requires. A later unavailable producer stays explicit; no substitute implementation or fabricated result."
+failure_rule = "Preserve assertions, bounds, types, tests and authority checks. Record unrelated failure once through the canonical qualification log writer. Escalate cross-task contradictions without rerunning or neighboring repair."
+authority_rule = "Only the canonical task section may change scope, dependencies, paths or gates; MAIN-INTEGRATOR records an approved revision before affected work resumes."
+
+[assignment.ai.P-WORKSPACE]
+task_id = "ai.P-WORKSPACE"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-CORE"
+specialist = "W-CORE-WORKSPACE"
+wave = 14
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]::acceptance_cases"
+acceptance_cases = ["AI.WORKSPACE-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]::verify_cmd"
+responsibility = "Admit a fresh task session with tools and file access scoped to its assigned Paxeer paths; reconcile dependency and ownership records."
+deliverable = "Approved task workspace, exact allowed paths and session handoff record."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-CORE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 0
+worker_role = "workspace admission specialist"
+
+[assignment.ai.P-DEPLOYMENT]
+task_id = "ai.P-DEPLOYMENT"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-OPERATIONS"
+specialist = "W-OPERATIONS-READINESS"
+wave = 15
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]::acceptance_cases"
+acceptance_cases = ["AI.DEPLOYMENT-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]::verify_cmd"
+responsibility = "Obtain approved chain domain, candidate artifact, host ABI, account registration, finality trust and funding decisions from their authorities."
+deliverable = "Bound readiness record with real authority and account evidence; unresolved decisions remain blockers."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-OPERATIONS -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 1
+worker_role = "deployment readiness specialist"
+
+[assignment.ai.P-REAL-SERVICES]
+task_id = "ai.P-REAL-SERVICES"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-OPERATIONS"
+specialist = "W-OPERATIONS-SERVICES"
+wave = 15
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]::acceptance_cases"
+acceptance_cases = ["AI.SERVICES-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]::verify_cmd"
+responsibility = "Bind actual licensed models, datasets, benchmarks, runner, evaluators, tenant authority, KMS and durable storage services."
+deliverable = "Service inventory with immutable artifact identities, rights decisions and available real service prerequisites."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-OPERATIONS -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 1
+worker_role = "AI service readiness specialist"
+
+[assignment.ai.P-STORAGE-PROFILE]
+task_id = "ai.P-STORAGE-PROFILE"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-STORAGE"
+specialist = "W-STORAGE-PROFILE"
+wave = 15
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]::acceptance_cases"
+acceptance_cases = ["AI.PROFILE-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]::verify_cmd"
+responsibility = "Obtain the versioned native maintenance profile, authority, retention, archive keys, activation and reserve decisions."
+deliverable = "Approved storage profile or explicit finite-capacity operating restriction; activation remains separately authorized."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-STORAGE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 1
+worker_role = "native storage profile specialist"
+
+[assignment.ai.T-C01]
+task_id = "ai.T-C01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-CORE"
+specialist = "W-CORE-CODEC"
+wave = 15
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C01]::acceptance_cases"
+acceptance_cases = ["AI.CORE-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C01]::verify_cmd"
+responsibility = "Define the application crate, canonical wire/types, domain hashes, selectors and centrally allocated error tables."
+deliverable = "Bounded common codec and real canonical vectors consumed unchanged by all feature lanes."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-CORE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 1
+worker_role = "Programs protocol codec specialist"
+
+[assignment.ai.F01-T01]
+task_id = "ai.F01-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-POLICY"
+wave = 16
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]::acceptance_cases"
+acceptance_cases = ["AI.F01-A01", "AI.F01-A02", "AI.F01-A03", "AI.F01-A09", "AI.F01-A16", "AI.F01-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]::verify_cmd"
+responsibility = "Implement bounded market policy types, semantic checks, immutable policy digest and checked clock arithmetic."
+deliverable = "Canonical market/policy codec and real arithmetic vectors."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 2
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.T-C02]
+task_id = "ai.T-C02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-CORE"
+specialist = "W-CORE-HOST"
+wave = 16
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C02]::acceptance_cases"
+acceptance_cases = ["AI.CORE-A02"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C02]::verify_cmd"
+responsibility = "Implement single shared-value state and authenticated context, storage, grants and rollback adapters."
+deliverable = "Real host boundary preserving the 192KiB application bound, host limits and atomic refusal."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-CORE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 2
+worker_role = "Programs runtime storage specialist"
+
+[assignment.ai.T-S01]
+task_id = "ai.T-S01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-STORAGE"
+specialist = "W-STORAGE-ARCHIVE"
+wave = 16
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S01]::acceptance_cases"
+acceptance_cases = ["AI.STORAGE-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S01]::verify_cmd"
+responsibility = "Implement complete immutable snapshot/log/witness inventory, two archive certificate issuance, native restore and historical proof retrieval."
+deliverable = "Durable independent archives and exact historical native restore/proof support."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-STORAGE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 2
+worker_role = "native archive and recovery specialist"
+
+[assignment.ai.F01-T02]
+task_id = "ai.F01-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-LIFECYCLE"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]::acceptance_cases"
+acceptance_cases = ["AI.F01-A01", "AI.F01-A03", "AI.F01-A04", "AI.F01-A05", "AI.F01-A06", "AI.F01-A10", "AI.F01-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]::verify_cmd"
+responsibility = "Implement owner/operator operations, revision concurrency and lifecycle invariants over authenticated dispatch."
+deliverable = "Complete registry lifecycle preserving owner authority and immutable market bindings."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.F02-T01]
+task_id = "ai.F02-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F02"
+specialist = "W-F02-IDENTITY"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]::acceptance_cases"
+acceptance_cases = ["AI.F02-A01", "AI.F02-A02", "AI.F02-A03", "AI.F02-A04", "AI.F02-A13", "AI.F02-A16", "AI.F02-A18", "AI.F02-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]::verify_cmd"
+responsibility = "Implement bounded two-party worker enrollment, consent, delegate lifecycle, canonical identity and exact expiry/reserved-selector refusal."
+deliverable = "Authenticated worker identity lifecycle independent of later roster service operation."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F02 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "worker identity and execution specialist"
+
+[assignment.ai.F03-T01]
+task_id = "ai.F03-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F03"
+specialist = "W-F03-CODEC"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]::acceptance_cases"
+acceptance_cases = ["AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]::verify_cmd"
+responsibility = "Implement canonical bounded evaluator identity and signed report model/codec before membership runtime consumes it."
+deliverable = "Stable evaluator/report types and canonical bytes without circular admission dependencies."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F03 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "evaluator authority specialist"
+
+[assignment.ai.F06-T01]
+task_id = "ai.F06-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F06"
+specialist = "W-F06-MATH"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]::acceptance_cases"
+acceptance_cases = ["AI.F06-A01", "AI.F06-A02", "AI.F06-A03", "AI.F06-A04", "AI.F06-A05", "AI.F06-A15"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]::verify_cmd"
+responsibility = "Implement checked reward arithmetic, encoding and conservation primitives over common types."
+deliverable = "Canonical integer reward math with no implicit issuance or fabricated funding."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F06 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "native reward accounting specialist"
+
+[assignment.ai.F09-T01]
+task_id = "ai.F09-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F09"
+specialist = "W-F09-CODEC"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]::acceptance_cases"
+acceptance_cases = ["AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A20", "AI.F09-A22"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]::verify_cmd"
+responsibility = "Implement strict manifest/evidence codecs, domain commitments and bounded chunk proofs."
+deliverable = "Canonical artifact primitives available before tasks and evaluator report admission."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F09 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "artifact security and provenance specialist"
+
+[assignment.ai.T-C03]
+task_id = "ai.T-C03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-CORE"
+specialist = "W-CORE-VALUE"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C03]::acceptance_cases"
+acceptance_cases = ["AI.CORE-A03"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C03]::verify_cmd"
+responsibility = "Integrate actual registered program account, immutable asset, native grants, fees, finality and verified balances."
+deliverable = "Real funding/payout/finality boundary with authority and balance evidence."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-CORE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "native custody integration specialist"
+
+[assignment.ai.T-S02]
+task_id = "ai.T-S02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-STORAGE"
+specialist = "W-STORAGE-RETIREMENT"
+wave = 17
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S02]::acceptance_cases"
+acceptance_cases = ["AI.STORAGE-A02"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S02]::verify_cmd"
+responsibility = "Implement authenticated versioned retirement with complete reference accounting, archive/provenance checks, replay pair retirement and deterministic roots."
+deliverable = "Bounded native cleanup preserving live references, historical proofs, balances and unchanged capacities."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-STORAGE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 3
+worker_role = "native Programs lifecycle specialist"
+
+[assignment.ai.F04-T01]
+task_id = "ai.F04-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F04"
+specialist = "W-F04-COMMITMENT"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]::acceptance_cases"
+acceptance_cases = ["AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A07", "AI.F04-A10"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]::verify_cmd"
+responsibility = "Implement canonical commitment preimages, digest domains, bounded score payloads and exact encoding."
+deliverable = "Canonical commitment vectors shared with evaluator and aggregation consumers."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F04 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "commitment and recovery specialist"
+
+[assignment.ai.F07-T01]
+task_id = "ai.F07-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F07"
+specialist = "W-F07-TRANSITION"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]::acceptance_cases"
+acceptance_cases = ["AI.F07-A01", "AI.F07-A02", "AI.F07-A03", "AI.F07-A04", "AI.F07-A05", "AI.F07-A06", "AI.F07-A10", "AI.F07-A11"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]::verify_cmd"
+responsibility = "Implement bounded reputation codec/integer math and complete pure ApplyCompletedEpoch with exact once-only history identity."
+deliverable = "Real history transition primitive with overflow, coverage, segment and replay behavior available before finalization."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F07 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "reputation history specialist"
+
+[assignment.ai.F08-T01]
+task_id = "ai.F08-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F08"
+specialist = "W-F08-ADMISSION"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]::acceptance_cases"
+acceptance_cases = ["AI.F08-A01", "AI.F08-A02", "AI.F08-A03", "AI.F08-A04", "AI.F08-A05", "AI.F08-A06", "AI.F08-A07", "AI.F08-A08", "AI.F08-A09", "AI.F08-A10", "AI.F08-A11", "AI.F08-A14", "AI.F08-A15", "AI.F08-A17", "AI.F08-A18", "AI.F08-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]::verify_cmd"
+responsibility = "Implement bounded admission, pending/current/frozen roster schemas and generation/liveness policy over real identity types."
+deliverable = "Typed admission/roster lifecycle and exact capacity/eligibility refusal."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F08 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "membership and liveness specialist"
+
+[assignment.ai.F09-T03]
+task_id = "ai.F09-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F09"
+specialist = "W-F09-SERVICE"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]::acceptance_cases"
+acceptance_cases = ["AI.F09-A07", "AI.F09-A08", "AI.F09-A09", "AI.F09-A10", "AI.F09-A11", "AI.F09-A12", "AI.F09-A13", "AI.F09-A17"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]::verify_cmd"
+responsibility = "Implement real durable artifact publication/retrieval, purpose-scoped authority, authenticated encryption and SSRF-safe resolution."
+deliverable = "Tenant/KMS-backed artifact service with strict authority, privacy and resolver refusal."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F09 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "artifact security and provenance specialist"
+
+[assignment.ai.F10-T01]
+task_id = "ai.F10-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-QUERIES"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]::acceptance_cases"
+acceptance_cases = ["AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A13"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]::verify_cmd"
+responsibility = "Implement canonical bounded queries bound to authenticated market/worker state, root and identity."
+deliverable = "Typed view binding and truthful absence/refusal semantics."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.T-S03]
+task_id = "ai.T-S03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-STORAGE"
+specialist = "W-STORAGE-CAPACITY"
+wave = 18
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S03]::acceptance_cases"
+acceptance_cases = ["AI.STORAGE-A03"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S03]::verify_cmd"
+responsibility = "Implement root-bound capacity observation, serialized reservations, obligation reserves and durable keeper receipt reconciliation."
+deliverable = "Authenticated native capacity boundary and persistent keeper admission with safe contention and refusal."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-STORAGE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 4
+worker_role = "native capacity and keeper specialist"
+
+[assignment.ai.F03-T02]
+task_id = "ai.F03-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F03"
+specialist = "W-F03-AUTHORITY"
+wave = 19
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]::acceptance_cases"
+acceptance_cases = ["AI.F03-A06", "AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A13", "AI.F03-A16"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]::verify_cmd"
+responsibility = "Implement evaluator grants, acceptance, rotation and revocation using actual market and admission primitives."
+deliverable = "Live role-authority transitions with frozen epoch and current revocation rules."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F03 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 5
+worker_role = "evaluator authority specialist"
+
+[assignment.ai.F05-T01]
+task_id = "ai.F05-T01"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F05"
+specialist = "W-F05-CODEC"
+wave = 19
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]::acceptance_cases"
+acceptance_cases = ["AI.F05-A05", "AI.F05-A08", "AI.F05-A10", "AI.F05-A11"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]::verify_cmd"
+responsibility = "Implement canonical bounded aggregation records, invariant errors and commitments."
+deliverable = "Aggregation codec contract and bounded canonical records."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F05 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 5
+worker_role = "deterministic aggregation specialist"
+
+[assignment.ai.F10-T02]
+task_id = "ai.F10-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-PROJECTION"
+wave = 19
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]::acceptance_cases"
+acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]::verify_cmd"
+responsibility = "Implement minimal verified finalized market/worker projection and atomic outbox; represent later components as unavailable until produced."
+deliverable = "Real finalized snapshot/client foundation without fabricated producer data."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 5
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.T-C04]
+task_id = "ai.T-C04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-CORE"
+specialist = "W-CORE-INTEGRATION"
+wave = 19
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C04]::acceptance_cases"
+acceptance_cases = ["AI.CORE-A04"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-C04]::verify_cmd"
+responsibility = "Consume T-S01 through T-S03 qualified evidence and bind its approved profile to common application readiness."
+deliverable = "Common storage prerequisite marker referencing existing evidence without a duplicate behavior run."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-CORE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 5
+worker_role = "qualification evidence specialist"
+
+[assignment.ai.F05-T02]
+task_id = "ai.F05-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F05"
+specialist = "W-F05-ARITHMETIC"
+wave = 20
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]::acceptance_cases"
+acceptance_cases = ["AI.F05-A01", "AI.F05-A02", "AI.F05-A03", "AI.F05-A04", "AI.F05-A05", "AI.F05-A06", "AI.F05-A07", "AI.F05-A08", "AI.F05-A09", "AI.F05-A17"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]::verify_cmd"
+responsibility = "Implement exact unweighted lower median, checked raw weights and bounded integer aggregation."
+deliverable = "Real arithmetic vectors preserving quorum and absence-versus-zero semantics."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F05 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 6
+worker_role = "deterministic aggregation specialist"
+
+[assignment.ai.F10-T03]
+task_id = "ai.F10-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-RUST-CLIENT"
+wave = 20
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]::acceptance_cases"
+acceptance_cases = ["AI.F10-A02", "AI.F10-A07", "AI.F10-A08", "AI.F10-A09", "AI.F10-A14"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]::verify_cmd"
+responsibility = "Implement finalized Rust client and exclusively owned central SDK schema/generator integration."
+deliverable = "Typed signed native ProgramCall client preserving domain, root, authority, finality and ambiguity rules."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 6
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.F10-T05]
+task_id = "ai.F10-T05"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-WEBHOOKS"
+wave = 20
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]::acceptance_cases"
+acceptance_cases = ["AI.F10-A05", "AI.F10-A06", "AI.F10-A11", "AI.F10-A12", "AI.F10-A15"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]::verify_cmd"
+responsibility = "Implement finality-bound durable webhook delivery, outbox identity, retries and tenant isolation."
+deliverable = "Exactly identified finalized deliveries with replay/restart and privacy behavior."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 6
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.F02-T02]
+task_id = "ai.F02-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F02"
+specialist = "W-F02-TRANSPORT"
+wave = 21
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]::acceptance_cases"
+acceptance_cases = ["AI.F02-A03", "AI.F02-A06", "AI.F02-A07", "AI.F02-A12", "AI.F02-A13", "AI.F02-A15"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]::verify_cmd"
+responsibility = "Implement signed service transport, TLS pinning, discovery and finalized authority freshness; hand gateway edits to its shared writer."
+deliverable = "Distinct authenticated worker transport and real finalized discovery."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F02 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 7
+worker_role = "worker identity and execution specialist"
+
+[assignment.ai.F06-T02]
+task_id = "ai.F06-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F06"
+specialist = "W-F06-STATE"
+wave = 21
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]::acceptance_cases"
+acceptance_cases = ["AI.F06-A01", "AI.F06-A02", "AI.F06-A03", "AI.F06-A04", "AI.F06-A05", "AI.F06-A06", "AI.F06-A07", "AI.F06-A10", "AI.F06-A11", "AI.F06-A13", "AI.F06-A14", "AI.F06-A15", "AI.F06-A16", "AI.F06-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]::verify_cmd"
+responsibility = "Implement complete pure reward-state transitions, historical claims and permissionless exact-refund cursor before aggregation integration."
+deliverable = "Bounded conserved entitlement/claim/refund primitives preserving fixed recipients."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F06 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 7
+worker_role = "native reward accounting specialist"
+
+[assignment.ai.F10-T04]
+task_id = "ai.F10-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-TYPESCRIPT"
+wave = 21
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]::acceptance_cases"
+acceptance_cases = ["AI.F10-A01", "AI.F10-A03", "AI.F10-A04", "AI.F10-A07", "AI.F10-A08"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]::verify_cmd"
+responsibility = "Implement TypeScript SDK canonical query/transaction types and exact finalized-client contracts."
+deliverable = "Usable TypeScript client with canonical encoding and truthful pending/refused/finalized states."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 7
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.F10-T07]
+task_id = "ai.F10-T07"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-PYTHON"
+wave = 21
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]::acceptance_cases"
+acceptance_cases = ["AI.F10-A01", "AI.F10-A03", "AI.F10-A04", "AI.F10-A07", "AI.F10-A08"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]::verify_cmd"
+responsibility = "Implement Python SDK canonical query/transaction types and finalized-client contracts."
+deliverable = "Usable Python client with canonical encoding and explicit unavailable/ambiguous outcomes."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 7
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.F08-T02]
+task_id = "ai.F08-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F08"
+specialist = "W-F08-ROLLOVER"
+wave = 22
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]::acceptance_cases"
+acceptance_cases = ["AI.F08-A01", "AI.F08-A02", "AI.F08-A05", "AI.F08-A06", "AI.F08-A07", "AI.F08-A10", "AI.F08-A12", "AI.F08-A13", "AI.F08-A15", "AI.F08-A17", "AI.F08-A18", "AI.F08-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]::verify_cmd"
+responsibility = "Implement complete deterministic pure RolloverRoster with grants, flags, generation, bounded removal and preserved claim dictionaries."
+deliverable = "Complete typed rollover helper covering bootstrap, skip, expiry and obligation preservation before OpenEpoch."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F08 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 8
+worker_role = "membership and liveness specialist"
+
+[assignment.ai.F01-T03-EPOCH]
+task_id = "ai.F01-T03-EPOCH"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-EPOCH"
+wave = 23
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]::acceptance_cases"
+acceptance_cases = ["AI.F01-A02", "AI.F01-A03", "AI.F01-A04"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]::verify_cmd"
+responsibility = "Implement OpenEpoch using complete roster/reward primitives, authenticated execution clock and frozen roster/policy/recipient snapshots."
+deliverable = "Complete epoch opening, task-set freeze and lazy skipped-epoch/bootstrap transitions."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 9
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.F01-T04]
+task_id = "ai.F01-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-TASKS"
+wave = 24
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]::acceptance_cases"
+acceptance_cases = ["AI.F01-A12", "AI.F01-A13", "AI.F01-A14", "AI.F01-A16", "AI.F01-A17", "AI.F01-A18"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]::verify_cmd"
+responsibility = "Implement bounded ADMIT/ACCEPT/CANCEL/RESULT/SEAL transitions, delegated authority and immutable task-set commitments."
+deliverable = "Complete onchain task-state boundary using real Programs state and context."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 10
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.F08-T03]
+task_id = "ai.F08-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F08"
+specialist = "W-F08-RECOVERY"
+wave = 24
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]::acceptance_cases"
+acceptance_cases = ["AI.F08-A09", "AI.F08-A10", "AI.F08-A12", "AI.F08-A16", "AI.F08-A17", "AI.F08-A18", "AI.F08-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]::verify_cmd"
+responsibility = "Implement actual worker membership recovery using qualified rollover, finalized clients and real OpenEpoch."
+deliverable = "Service membership reconciliation tied to authentic frozen snapshots and generations."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F08 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 10
+worker_role = "membership and liveness specialist"
+
+[assignment.ai.F02-T03]
+task_id = "ai.F02-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F02"
+specialist = "W-F02-JOBS"
+wave = 25
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]::acceptance_cases"
+acceptance_cases = ["AI.F02-A05", "AI.F02-A08", "AI.F02-A09", "AI.F02-A10", "AI.F02-A11", "AI.F02-A12", "AI.F02-A14", "AI.F02-A15", "AI.F02-A17"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]::verify_cmd"
+responsibility = "Implement durable idempotent jobs that wait for finalized canonical task acceptance, invoke the real runner and reconcile restart."
+deliverable = "Persistent jobs/runner state machine with exact acceptance and recovery identity."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F02 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 11
+worker_role = "worker identity and execution specialist"
+
+[assignment.ai.F09-T02]
+task_id = "ai.F09-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F09"
+specialist = "W-F09-BINDING"
+wave = 25
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]::acceptance_cases"
+acceptance_cases = ["AI.F09-A06", "AI.F09-A18", "AI.F09-A19", "AI.F09-A20", "AI.F09-A21", "AI.F09-A23", "AI.F09-A24", "AI.F09-A25"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]::verify_cmd"
+responsibility = "Implement compact immutable evidence seal, task/report binding and exact state capacity accounting; request common state integration."
+deliverable = "Canonical sealed evidence linked to actual task set, identities and report bytes."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F09 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 11
+worker_role = "artifact security and provenance specialist"
+
+[assignment.ai.F01-T04-SERVICE]
+task_id = "ai.F01-T04-SERVICE"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-HANDOFF"
+wave = 26
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]::acceptance_cases"
+acceptance_cases = ["AI.F01-A13", "AI.F01-A15", "AI.F01-A18"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]::verify_cmd"
+responsibility = "Integrate actual durable worker acknowledgement, finalized task acceptance, runner dispatch/result commit and crash recovery."
+deliverable = "Real chain-to-worker handoff and result reconciliation across service restart."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 12
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.F03-T03]
+task_id = "ai.F03-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F03"
+specialist = "W-F03-ADMISSION"
+wave = 26
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]::acceptance_cases"
+acceptance_cases = ["AI.F03-A01", "AI.F03-A02", "AI.F03-A03", "AI.F03-A04", "AI.F03-A05", "AI.F03-A06", "AI.F03-A11", "AI.F03-A12", "AI.F03-A14", "AI.F03-A16"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]::verify_cmd"
+responsibility = "Implement atomic signed score admission and challenges using actual commitment, membership and sealed-evidence producers."
+deliverable = "Complete report validation/challenge boundary with phase, identity and replay refusal."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F03 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 12
+worker_role = "evaluator authority specialist"
+
+[assignment.ai.F09-T04]
+task_id = "ai.F09-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F09"
+specialist = "W-F09-RETENTION"
+wave = 26
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]::acceptance_cases"
+acceptance_cases = ["AI.F09-A14", "AI.F09-A15", "AI.F09-A16", "AI.F09-A19", "AI.F09-A21"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]::verify_cmd"
+responsibility = "Implement crash recovery, revocation-safe restore, holds, tombstones and pending purge accounting after terminal/finality producers."
+deliverable = "Durable artifact retention/recovery preserving active evidence and deletion obligations."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F09 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 12
+worker_role = "artifact security and provenance specialist"
+
+[assignment.ai.F10-T06]
+task_id = "ai.F10-T06"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-HEALTH"
+wave = 26
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]::acceptance_cases"
+acceptance_cases = ["AI.F10-A10", "AI.F10-A11", "AI.F10-A14"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]::verify_cmd"
+responsibility = "Implement operator health projections from actual finalized chain and durable worker status with privacy restrictions."
+deliverable = "Truthful availability/readiness projections without leaking tenant or service secrets."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 12
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.F04-T02]
+task_id = "ai.F04-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F04"
+specialist = "W-F04-WINDOWS"
+wave = 27
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]::acceptance_cases"
+acceptance_cases = ["AI.F04-A01", "AI.F04-A02", "AI.F04-A03", "AI.F04-A04", "AI.F04-A05", "AI.F04-A06", "AI.F04-A08", "AI.F04-A10", "AI.F04-A11", "AI.F04-A12"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]::verify_cmd"
+responsibility = "Implement commit/reveal windows against authenticated epoch clocks and complete evaluator admission; request core dispatch wiring."
+deliverable = "Immutable commitment/reveal lifecycle with exact boundary, duplicate and refusal behavior."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F04 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 13
+worker_role = "commitment and recovery specialist"
+
+[assignment.ai.F04-T03]
+task_id = "ai.F04-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F04"
+specialist = "W-F04-RECOVERY"
+wave = 28
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]::acceptance_cases"
+acceptance_cases = ["AI.F04-A09", "AI.F04-A12"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]::verify_cmd"
+responsibility = "Integrate real commit/reveal restart and ambiguous submission reconciliation through finalized clients."
+deliverable = "Recovery evidence preserving one commitment/report identity and truthful finality."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F04 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 14
+worker_role = "commitment and recovery specialist"
+
+[assignment.ai.F05-T03]
+task_id = "ai.F05-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F05"
+specialist = "W-F05-FINALIZATION"
+wave = 28
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]::acceptance_cases"
+acceptance_cases = ["AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A18"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]::verify_cmd"
+responsibility = "Compose real guest/native seal/chunk/finalize with complete reward-state and ApplyCompletedEpoch primitives."
+deliverable = "Atomic terminalization, entitlements and history under native resource and rollback constraints."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F05 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 14
+worker_role = "deterministic aggregation specialist"
+
+[assignment.ai.F03-T04]
+task_id = "ai.F03-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F03"
+specialist = "W-F03-HOST"
+wave = 29
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]::acceptance_cases"
+acceptance_cases = ["AI.F03-A07", "AI.F03-A08", "AI.F03-A09", "AI.F03-A10", "AI.F03-A14", "AI.F03-A15", "AI.F03-A16"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]::verify_cmd"
+responsibility = "Integrate evaluator admission through real host ordering, grants, resources and terminal aggregation."
+deliverable = "Native evaluator ordering/resource/rollback evidence with complete producer paths."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F03 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 15
+worker_role = "evaluator authority specialist"
+
+[assignment.ai.F06-T03]
+task_id = "ai.F06-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F06"
+specialist = "W-F06-NATIVE"
+wave = 29
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]::acceptance_cases"
+acceptance_cases = ["AI.F06-A06", "AI.F06-A07", "AI.F06-A08", "AI.F06-A09", "AI.F06-A10", "AI.F06-A12", "AI.F06-A15", "AI.F06-A16", "AI.F06-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]::verify_cmd"
+responsibility = "Integrate actual funded accounts, native grants, settlement and fixed-recipient claims with rollback and verified balances."
+deliverable = "Real monetary conservation, authority and atomic refusal through terminal producers."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F06 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 15
+worker_role = "native reward accounting specialist"
+
+[assignment.ai.F01-T03-CLOSE]
+task_id = "ai.F01-T03-CLOSE"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F01"
+specialist = "W-F01-CLOSURE"
+wave = 30
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]::acceptance_cases"
+acceptance_cases = ["AI.F01-A07", "AI.F01-A08", "AI.F01-A11"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]::verify_cmd"
+responsibility = "Implement winding down, fixed-recipient refunds and one-step closure journal after actual settlement/claim/view producers."
+deliverable = "Obligation-preserving closure with restart and ambiguous-outcome reconciliation."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F01 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 16
+worker_role = "Programs market lifecycle specialist"
+
+[assignment.ai.F02-T04]
+task_id = "ai.F02-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F02"
+specialist = "W-F02-WORKLOAD"
+wave = 30
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]::acceptance_cases"
+acceptance_cases = ["AI.F02-A08", "AI.F02-A11", "AI.F02-A15", "AI.F02-A17", "AI.F02-A19"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]::verify_cmd"
+responsibility = "Exercise actual inference and embedding through pinned permitted artifacts, real evaluators, storage, TLS and finalized gateway."
+deliverable = "Real workload result and evaluator evidence under the declared model/runtime identities."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F02 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 16
+worker_role = "worker identity and execution specialist"
+
+[assignment.ai.F07-T02]
+task_id = "ai.F07-T02"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F07"
+specialist = "W-F07-LIFECYCLE"
+wave = 30
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]::acceptance_cases"
+acceptance_cases = ["AI.F07-A06", "AI.F07-A07", "AI.F07-A08", "AI.F07-A12"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]::verify_cmd"
+responsibility = "Wire qualified history transition into real terminal/rotation/membership lifecycle; request serialized epoch integration."
+deliverable = "Integrated exactly-once terminal history and identity continuity with preserved obligations."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F07 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 16
+worker_role = "reputation history specialist"
+
+[assignment.ai.T-S04]
+task_id = "ai.T-S04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-STORAGE"
+specialist = "W-STORAGE-CONTINUITY"
+wave = 30
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S04]::acceptance_cases"
+acceptance_cases = ["AI.STORAGE-A04"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.T-S04]::verify_cmd"
+responsibility = "Integrate real app mutation/funding/claims with archive, retirement, restart, replica replay and retained proofs beyond 512 distinct mutations."
+deliverable = "Measured continuous-operation evidence under unchanged native blob, byte, staged-entry and KV bounds."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-STORAGE -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 16
+worker_role = "native continuity integration specialist"
+
+[assignment.ai.F06-T04]
+task_id = "ai.F06-T04"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F06"
+specialist = "W-F06-RECOVERY"
+wave = 31
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]::acceptance_cases"
+acceptance_cases = ["AI.F06-A13", "AI.F06-A14", "AI.F06-A17", "AI.F06-A18"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]::verify_cmd"
+responsibility = "Integrate finality, restart, exactly-once claims and economic capacity outcomes after native continuity qualification."
+deliverable = "Economic recovery evidence distinct from the storage continuity scenario."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F06 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 17
+worker_role = "native reward accounting specialist"
+
+[assignment.ai.F07-T03]
+task_id = "ai.F07-T03"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F07"
+specialist = "W-F07-PROJECTION"
+wave = 31
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]::acceptance_cases"
+acceptance_cases = ["AI.F07-A09", "AI.F07-A11"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]::verify_cmd"
+responsibility = "Implement finalized monotonic history projection using qualified shared finality primitives."
+deliverable = "Root-bound reputation/history views with staleness, replay and monotonicity evidence."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F07 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 17
+worker_role = "reputation history specialist"
+
+[assignment.ai.F10-T02-FULL]
+task_id = "ai.F10-T02-FULL"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-F10"
+specialist = "W-F10-PROJECTION"
+wave = 31
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]::acceptance_cases"
+acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]::verify_cmd"
+responsibility = "Integrate complete report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into canonical finalized views."
+deliverable = "Full producer-backed projections after every declared producer dependency is qualified."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-F10 -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 17
+worker_role = "finalized views and SDK specialist"
+
+[assignment.ai.RELEASE-CANDIDATE]
+task_id = "ai.RELEASE-CANDIDATE"
+status = "pending"
+qualification = "UNRUN"
+manager = "FM-OPERATIONS"
+specialist = "W-OPERATIONS-RELEASE"
+wave = 40
+canonical_ref = "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]"
+ownership_ref = "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]::touches"
+requirements_ref = "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]::reqs"
+acceptance_ref = "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]::acceptance_cases"
+acceptance_cases = ["AI.RELEASE-A01"]
+gate_ref = "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]::verify_cmd"
+responsibility = "Assemble identified merged candidate and consume completed task evidence before the separately authorized release matrix."
+deliverable = "Release decision bound to candidate revision, real system journeys, readiness and storage profile evidence."
+entry = "Canonical requires are done; manager reserves exact effective paths and all shared handoffs before dispatch."
+exit = "Complete deliverable accepted against canonical requirements and acceptance; exact declared gate/control evidence recorded."
+handoff = "Assigned specialist -> FM-OPERATIONS -> MAIN-INTEGRATOR and managers of direct canonical dependents; include task/revision/paths/interfaces/acceptance and evidence."
+escalation = "Use workflow.escalation; missing authority or producer stays blocked, never replaced or broadened."
+evidence = "revision, command, exit code, log path"
+local_wave = 18
+worker_role = "integrated release qualification specialist"
+
+[service_role.RUNTIME-WORKER]
+title = "External AI worker service"
+kind = "runtime-service"
+development_owner = "FM-F02"
+qualification = "UNRUN"
+responsibility = "Execute accepted finalized task bindings using its enrolled worker/delegate service identity, signed TLS transport, durable idempotent jobs and real pinned runner."
+authority_boundary = "No developer task claim, repository edit, evaluator grant, finality authority, entitlement creation or arbitrary payout authority."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-EVALUATOR]
+title = "Independent evaluator service"
+kind = "runtime-service"
+development_owner = "FM-F03"
+qualification = "UNRUN"
+responsibility = "Use its separately accepted evaluator grant and signing key to assess actual permitted task/artifact data and submit canonical commitments/reveals or signed reports under live revocation."
+authority_boundary = "Runtime evaluator identity is distinct from developer specialists and worker execution identity; assessment cannot mint rewards or substitute for chain finality."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-ARTIFACT]
+title = "Artifact service"
+kind = "runtime-service"
+development_owner = "FM-F09"
+qualification = "UNRUN"
+responsibility = "Persist purpose-scoped encrypted tenant artifacts, evidence, holds, tombstones and purge/recovery state under real tenant/KMS authority."
+authority_boundary = "Artifact availability or a URL is not chain acceptance, authenticated absence, account proof or authority to alter sealed evidence."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-STORAGE-KEEPER]
+title = "Storage maintenance keeper"
+kind = "runtime-service"
+development_owner = "FM-STORAGE"
+qualification = "UNRUN"
+responsibility = "Observe authenticated root-bound capacity, persist serialized requests/certificates and reconcile native cleanup receipts under the approved storage profile."
+authority_boundary = "No background canonical deletion, cap changes, forged counts, invented guest selector, premature obligation expiry or activation authority."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-ARCHIVE-A]
+title = "Independent archive A"
+kind = "runtime-service"
+development_owner = "FM-STORAGE"
+qualification = "UNRUN"
+responsibility = "Persist and independently restore the exact immutable snapshot/log/witness inventory; sign matching approved archive manifests only after durable validation."
+authority_boundary = "Separate enrolled key and administration from archive B; no certificate before complete local bytes and native root checks."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-ARCHIVE-B]
+title = "Independent archive B"
+kind = "runtime-service"
+development_owner = "FM-STORAGE"
+qualification = "UNRUN"
+responsibility = "Independently persist and restore the same immutable inventory; supply its own enrolled signature under the approved two-of-two profile."
+authority_boundary = "Neither archive operator may replace consensus/finality signatures, rewrite historical roots or unilaterally authorize retirement."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+
+[service_role.RUNTIME-PROJECTION]
+title = "Finalized indexer, gateway and delivery services"
+kind = "runtime-service"
+development_owner = "FM-F10"
+qualification = "UNRUN"
+responsibility = "Project verified root-bound finalized producers, preserve atomic outbox/delivery identity, tenant isolation and truthful unavailable/stale/refused states."
+authority_boundary = "Projection is a consumer of proof/finality authority; cache depth, database absence or webhook delivery never establishes finality or monetary truth."
+entry = "Real service and credentials provisioned under explicit operational authority; prerequisite and applicable producer gates qualified."
+exit = "Durable identity-bound output or explicit unavailable/refused state with restart reconciliation."
+handoff = "Exchange canonical signed/domain-bound records through specified service interfaces; no repository ownership or development role is conveyed."
+escalation = "Report missing resources, revoked authority, stale finality, privacy or recovery failures through operational readiness; close affected admission safely."
+evidence = "Actual identity/artifact/profile/root/receipt and durable service evidence; runtime availability remains distinct from task implementation qualification."
+

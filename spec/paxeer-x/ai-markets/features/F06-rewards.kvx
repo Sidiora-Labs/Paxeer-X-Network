@@ -1,0 +1,736 @@
+[meta]
+id = "F06"
+title = "Conserved, explicitly funded AI reward entitlements and claims"
+schema_version = 1
+status = "SPECIFICATION_ONLY"
+mode = "SPEC"
+implementation = "UNRUN"
+build = "UNRUN"
+test = "UNRUN"
+runtime = "UNRUN"
+deployment = "UNRUN"
+qualification = "UNRUN"
+canonical_spec = "../../spec.kvx"
+task_authority = "Canonical task sections in ../../spec.kvx govern implementation order, ownership and gates."
+
+[contract.00]
+title = "Specification conventions"
+paragraph_1 = "Design version PAXAI v1. Status: SPECIFICATION ONLY; implementation, compilation, behavior qualification, deployment and release gates UNRUN."
+
+[contract.01]
+title = "Purpose, AI relevance and scope"
+paragraph_1 = "F06 pays registered AI workers for the finalized market quality result produced by F05. It converts an explicitly funded, fixed-asset budget into immutable worker entitlements. It separates earning an entitlement from moving funds, so a slow claimant cannot prevent an epoch from finishing. A relayer can submit a claim but cannot choose its recipient or amount. Useful AI inference, training, retrieval or evaluation execution remains external; this ledger verifies the reward contract, not the truth or usefulness of an AI output."
+paragraph_2 = "F06-R01: The only reward authority is the market Program's deterministic state transition under the frozen market policy. No reward mint, inflation schedule, token price, capital stake, owner commission, evaluator commission, token pool, swapping, automatic compounding, portfolio, custody withdrawal or consensus voting change is introduced. V1 assigns the full positive-budget worker reward pool to eligible workers. Fees for external AI services or evaluator labor are separate existing agreements, never an implicit deduction from this budget."
+paragraph_3 = "F06-R02: Funding is an irrevocable contribution by the market owner or the immutable optional treasury principal recorded at F01 creation. The immutable market refund recipient is disclosed in the signed funding request. A contribution does not create individual depositor shares, principal recovery rights or a refundable sponsor position. Attribution of work follows the frozen epoch roster, never the live account balance or live membership at claim time."
+
+[contract.02]
+title = "Existing architecture and proposed additions"
+paragraph_1 = "Paxeer integration paths are programs/sdk/rust/src/payments.rs, programs/sdk/rust/src/transfer.rs, programs/crates/layerx-programs-runtime/src/host/transfer.rs, programs/crates/layerx-programs-runtime/src/abi/mod.rs, programs/crates/layerx-programs-runtime/src/dynamic_spend.rs, src/modules/programs/accounts.c, src/modules/programs/call.c and src/modules/programs/storage.c. PreparedProgramAccount binds a derived account to a Program and seed; registration remains a deployment-authority operation. Program deposits debit the authenticated principal payment account. Program-account payouts require the exact ProgramSpend scope, and native application validates registered Program, seed, asset and source binding. Deployment qualification is UNRUN."
+paragraph_2 = "F06-R03: Use one registered market Program account, immutable asset and seed ASCII 'paxai/rewards/v1', exactly 16 bytes. Derive and register through existing PreparedProgramAccount contracts. The account must have no ordinary operator authority key. No operator holds a whole-reserve private key, assigns ledger balances or fabricates a native spending token. Registration, ABI-version admission, actual source/asset binding and state/transfer atomicity are release prerequisites."
+paragraph_3 = "F06-R04: Preserve existing ledger conservation in src/ledger/lxp_journal.c and src/ledger/lxp_apply.c. Existing budget spending in src/modules/budget/lx_budget_spend.c requires a budget account and recipient account kind; it is not a substitute for this Program-account route. No native module ID, ABI ordinal, proof namespace, account-kind rule, finality rule or global capacity is expanded by this application specification."
+paragraph_4 = "All application reward data types and operations below are proposed additions. Their intended new paths are programs/crates/layerx-programs-ai-market/src/rewards.rs, reward_math.rs and tests/rewards.rs, subject to the common application package contract. The new shared package manifest, types, codec, host adapter and application entrypoint are owned by the common T-C01/T-C02 tasks rather than duplicated here; F01 owns registry behavior."
+
+[contract.03]
+title = "Typed data model and canonical encoding"
+paragraph_1 = "F06-R05: All common PAXAI identifiers, request envelopes, authorization and epoch phase definitions come from contracts/core.kvx. Every integer here is unsigned big-endian and has no padding. Amount is u128 asset base units; a display decimal never enters arithmetic. EpochNumber and execution height are u64. WorkerId, ProgramId, MarketId, AccountId, AssetId, policy digest, roster digest and aggregation digest are 32 bytes. Noncanonical trailing bytes, unknown enum values and nonzero reserved fields are refused."
+paragraph_2 = "The proposed RewardLedgerV1 has immutable asset_id, registered_program_account, fixed_refund_recipient, funding_policy_version:u64 fixed to 1 and the following u128 counters: tracked_deposits D, total_claimed P, tracked_refunds X, Free F, Reserved R and Liability C. It also has recipient dictionary count u16, retained completed epoch count u8, a single active reserve flag u8 and reserved_zero u16. In that stated field order the ledger header is exactly 206 bytes under the shared state container; derived aggregate counters must exactly agree with epoch rows before any mutation commits. All counters start zero. Funding, payment and refunds reject zero amounts. Canonical ledger counter names are tracked_deposits D, total_claimed P, tracked_refunds X, Free F, Reserved R and Liability C; the shorter names are mathematical notation only."
+paragraph_3 = "F06-R06: A recipient dictionary contains at most 256 occupied slots, each 67 bytes: occupied u8, worker_id32, frozen_recipient32 and reference_count u16. A slot is identified by the exact (worker_id, recipient) pair. Slot indexes are encoded u16 big-endian with semantic range 0..255; values 256..65535 are invalid. This matches each 19-byte claim entry and core C10; no u8 wire representation is admitted. An unused slot is entirely zero. Duplicate occupied pairs, zero identifiers and self-payment to the reward reserve are invalid. References count every retained or active epoch that includes the slot, at most 1,056. A slot can be reused only after every reference is removed by pruning; rotation or eviction never rewrites an old epoch's recipient."
+paragraph_4 = "Each RewardEpochV1 header is exactly 174 bytes in this order: epoch_number u64; status u8; outcome u8; reserved_zero u16; terminal_height u64; expiry_height u64; sealed_budget u128; paid_sum u128; expired_sum u128; roster_digest32; aggregation_digest32; allocation_digest32; entry_count u16. The fields occupy offsets 0,8,9,10,12,20,28,44,60,76,108,140,172 respectively. Status is RESERVED=1, TERMINAL=2, EXPIRED=3. Outcome is UNDECIDED=0, ALLOCATED=1 or NO_ELIGIBLE_SCORE=2. A RESERVED row has zero terminal/expiry heights, zero paid/expired sums, zero allocation digest and entry_count equal to frozen worker count; its entries hold frozen dictionary indexes, zero entitlements and UNCLAIMED dispositions until terminalization. Roster digest is frozen at opening. Declined/skipped scheduled epochs have no funded reward row, because they never reserved a budget. V1 exposes no discretionary abort of an opened epoch."
+paragraph_5 = "A terminal ALLOCATED row contains 1..32 entries, each dictionary_slot u16 followed by entitlement u128 and disposition u8, exactly 19 bytes. The slot range is 0..255; a larger encoded value is invalid. Disposition is UNCLAIMED=0, CLAIMED=1 or EXPIRED=2. Entries are ordered by the dictionary entry's worker_id bytes, strictly ascending, and entry_count is the canonical vector count. Zero entitlements remain present for every frozen worker in v1, including ineligible workers, so the result can distinguish absence of payable amount without introducing a missing-identity ambiguity. They never create a transfer and are excluded from sums. Terminal NO_ELIGIBLE_SCORE rows have entry_count=0, all budget released and no liability; aggregation_digest records the genuine terminal producer result. F05's full current WorkerAggregate records, including generation, support and status, remain in F05's current section; historical detailed scores belong in its authenticated archive rather than duplicated in every reward row."
+paragraph_6 = "F06-R07: AllocationDigest is H(PAXAI/reward-allocation/v1, schema_version:u16 || chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_digest32 || aggregation_digest32 || asset_id32 || budget:u128 || entry_count:u16 || ordered entries). Each hashed entry is worker_id32 || fixed_recipient32 || entitlement:u128, exactly 80 bytes. H is the exact NUL-separated SHA-256 construction in core C02. For a zero-allocation outcome, entry_count is zero and budget remains the original reserved B; the root proves that exact result rather than inventing a zero budget. Entitlement identity is H(PAXAI/reward-entitlement/v1, allocation_digest32 || worker_id32). Dictionary indexes and mutable claim disposition do not enter either immutable digest. Any digest mismatch refuses settlement or claim with no economic effect."
+
+[contract.04]
+title = "Roles, authority and revocation"
+paragraph_1 = "Market owner: may contribute under the fixed v1 funding policy and requests graceful market closing; cannot confiscate reserved budgets or earned claims. Treasury principal: F01 CREATE/Header stores treasury_present:u8 and, only when present, immutable treasury_principal32. Default is absent; if present it must differ from owner. That one optional creation-time principal may fund under fixed funding_policy_version=1, with no authority to alter scores or withdraw. V1 has no treasury designation, rotation, replacement or revocation operation. Closing may stop all new funding through lifecycle admission while preserving prior contributions and claims. Worker: earns only through the frozen epoch roster and F05 result. Worker payout authority is frozen at epoch opening; later key rotation, removal, replacement or owner change does not change it. Evaluator: has no reward-spend privilege and earns no F06 entitlement in v1. Keeper/relayer: any authenticated caller may request deterministic settlement, one fixed-recipient claim, expiry or pruning, subject to existing call admission. Registration authority: registers the exact Program account before accepting funding. Refund recipient: immutable ordinary payout account recorded at market creation, independent of later owner identity."
+paragraph_2 = "F06-R08: Each Fund request explicitly names the fixed refund recipient and carries funding_policy_version=1 exactly. The client displays that the contribution is irrevocable and names that recipient before signing. Principal identity comes from authenticated host context, never caller-supplied identity bytes. Replay records for the owner and optional immutable treasury are bounded by the common two-actor contract. If treasury_present=0, no treasury actor can fund and no absent-principal replay record is invented. A proposed replacement principal has no authority; the v1 policy version cannot be advanced to authorize it. Funding payload irrevocable_contribution_consent is a required boolean and must equal true."
+
+[contract.05]
+title = "Complete operation contracts"
+paragraph_1 = "Common rules: every mutating request binds the common chain/Program/market/version domain, operation identity and exact frozen bindings. Permissionless requests use actor_sequence=0 and object-local idempotency; role-bound funding requests use the core role sequence; permissionless refunds use the monotonic tracked_refunds cursor. Success publishes the common operation result and next state digest. The core envelope has no invented expected-revision field; settlement checks its sealed input/cursor, and concurrent claims check the authoritative entry state. Application refusal creates no reserve movement, transfer, claim disposition or successful economic event; existing outer transaction fees/admission sequence follow the existing platform contract and are not refunded or redefined here."
+paragraph_2 = "Fund(amount, fixed_refund_recipient, funding_policy_version, irrevocable_contribution_consent, replay fields): requires the authenticated immutable owner or, only when present, immutable F01 treasury principal, funding_policy_version=1, market accepting funding, correct immutable asset/account/recipient and amount > 0 and explicit consent=true. Request exactly one principal-to-registered-account deposit with an exact Transfer402 ceiling equal to amount. Atomically increase D and F by amount and update the authorized actor's replay record only if the deposit and state commit together. Emit Funded(principal, amount, D, F, refund_recipient). A repeated identical accepted request is a no-transfer replay response; same identity with different material is ReplayConflict. Insufficient principal funds, unauthorized principal, lifecycle-blocked funding, wrong fixed policy version or incorrect destination leaves D and F unchanged."
+paragraph_3 = "ReserveEpoch(epoch, budget, frozen_roster_digest): invoked only as part of F01 opening the next epoch. Requires budget > 0, F >= budget, no other active reserve, sufficient retained-history/dictionary capacity, correct phase and the authenticated frozen F02 recipient roster. Preflight dictionary references for all <=32 frozen workers and a free completed-history slot before accepting work; use an existing identical pair slot or allocate the lowest numbered unused slot while traversing WorkerIds ascending. RESERVED epochs retain their <=32 slot references in their own zero-amount entry vector until the final entitlement amounts exist; this does not modify the common roster hash schema. Atomically F decreases and R increases by budget; create the immutable RESERVED row and reserve dictionary references. Emit RewardBudgetReserved. Reservation cannot be increased, decreased or replaced after work begins. Later funding enters F for future epochs only. An unfunded epoch does not open; it does not accumulate an IOU."
+paragraph_4 = "TerminalizeRewards(epoch, aggregation_digest): only a single atomic transition with the immutable F05 terminal result. For a valid nonempty positive-score result, convert the reserved budget into the exact allocation from section 7: R decreases by B and C increases by B. Set outcome ALLOCATED, terminal height to the authoritative execution height, expiry to terminal+4096 and allocation digest; emit RewardEntitlementsFinalized including B, digests and entry count. No transfers occur at settlement. For the authoritative no-eligible-score outcome, release B from R to F and create a terminal zero-liability row with the explicit outcome and zero-entry allocation digest. Reserved dictionary references that do not become retained entitlement references are released atomically. No fallback owner/evaluator payment is permitted."
+paragraph_5 = "DeclinePendingEpoch(epoch): owner-authorized only before the epoch has opened/reserved. It records the common declined outcome and spends nothing. There is no discretionary cancellation of an opened epoch; graceful close permits that epoch to complete, including deterministic late settlement. Closing cannot select a new score result or change a reserved budget."
+paragraph_6 = "Claim(epoch, worker_id, fixed_recipient, exact_entitlement): permissionless submission; request fields must exactly match the terminal immutable entry. Requires authoritative height strictly less than expiry, positive entitlement and UNCLAIMED disposition. Stage exactly one Program-account payout using pay_from_program_account with ProgramSpend bound to current Program, seed, registered source, immutable asset, fixed recipient and maximum equal to entitlement; require source/recipient access declarations and exact BalanceView sight for the registered source. Atomically set disposition to CLAIMED, increase P and epoch paid_sum, decrease C and transfer the same amount. Emit RewardClaimPaid with entitlement identity, asset, amount and common request/result binding; F10 attaches the actual enclosing finalized native transfer receipt. The guest never predicts its enclosing native receipt digest. The relayer is neither recipient nor debit owner. Wrong recipient/amount refuses; it is not coerced to the stored value. An already claimed entry returns core ALREADY_APPLIED with the immutable entitlement identity and no transfer or economic counter mutation. Zero entries return ZeroEntitlement with no transfer. Claim requests for pruned epochs are UnknownOrPrunedEpoch, never reconstructed from live balances."
+paragraph_7 = "ExpireEpochClaims(epoch): permissionless, requires terminal ALLOCATED and height >= expiry. Determine exactly the sum of unclaimed entitlements; atomically subtract it from C, add it to F, record epoch expired_sum and set EXPIRED. CLAIMED dispositions and original entitlements remain immutable. Emit RewardClaimsExpired with count and released amount. Set every unpaid entry disposition to EXPIRED, including zero-valued entries. A second expiry is a no-effect core ALREADY_APPLIED response. No transfer occurs. At the exact expiry height, expiry takes precedence and claims are refused regardless of transaction ordering."
+paragraph_8 = "RefundFree(expected_refunded_total, amount, fixed_refund_recipient): available only while market is CLOSING/CLOSED and no new epochs or funding are accepted. Submission is permissionless kind0 with actor_sequence=0; the fixed recipient is never caller-selected. Amount > 0, amount <= F and expected_refunded_total == X are required. The monotonic X counter is the object-local refund cursor. Keep one last-refund record containing prior_X:u128, amount:u128, request_digest32 and result_digest32, exactly 96 bytes plus its optional-presence byte. An exact repeat of the last semantic (prior_X, amount) returns ALREADY_APPLIED with its retained result and no transfer; a prior cursor not matching that record or a future cursor returns STALE_CURSOR. A changed relayer cannot reset the refund cursor. No arbitrary-principal replay table is added. Exact ProgramSpend grant and fixed-recipient payout apply. Atomically reduce F, increase X and transfer amount. Existing R and C are never included in the refund even if the same account physically holds them. Emit FreeReserveRefunded. Insufficient physical funds or a transfer refusal preserves F/X and all other claims. Closing may refund current Free while leaving reserved/claimable funds in the registered account; final market destruction requires R=C=F=0 and all terminal records safely retained or expired/pruned."
+paragraph_9 = "PruneEpoch(epoch): removes only the oldest terminal row when history policy permits and no unexpired liability exists. The completed ring has at most 32 records; before a new funded opening when it is full, the oldest completed row may be pruned only if it has no unpaid positive entitlement (all paid, or expiry already processed). Never prune a younger row merely to preserve an older one. Pre-opening slot reservation ensures finalization can append its completed record without evicting a live liability. A zero-liability oldest result is safe to prune at this boundary. Release dictionary references; free slots only at zero references. Emit RewardEpochPruned with allocation digest, preserving the F10 finalized projection. No transfer and no economic-counter change. Operations that would exceed limits fail before accepting new work."
+paragraph_10 = "Fixed on-chain operation selectors are FUND=0x0601, CLAIM=0x0602, EXPIRE_EPOCH_CLAIMS=0x0603, REFUND_FREE=0x0604 and PRUNE_EPOCH=0x0605. ReserveEpoch and TerminalizeRewards are internal transitions owned by the OpenEpoch/FinalizeAggregation selectors. DeclinePendingEpoch is a common/F01 lifecycle operation, not a duplicate F06 opcode."
+paragraph_11 = "Exact proposed payload layouts (the common envelope already binds domain/epoch/config/roster): Fund is amount:u128 || fixed_refund_recipient32 || funding_policy_version:u64 || irrevocable_contribution_consent:u8, exactly 57 bytes; Claim is worker_id32 || fixed_recipient32 || exact_entitlement:u128, exactly 80 bytes; RefundFree is expected_refunded_total:u128 || amount:u128 || fixed_refund_recipient32, exactly 64 bytes; ExpireEpochClaims and PruneEpoch have empty payloads and identify the epoch through the envelope. ReserveEpoch and TerminalizeRewards are internal atomic library transitions of OpenEpoch/FinalizeAggregation, not independently exposed calls that can detach their producer state. DeclinePendingEpoch is a common lifecycle operation with no reward payload. Funding and RefundFree are market-ledger operations: before any epoch has opened their envelope uses epoch=0 and zero roster_hash; afterward their envelope uses the latest opened epoch and its exact frozen config_version/roster_hash. funding_policy_version must equal the immutable value 1 and cannot grant authority independently of F01 owner/optional treasury identity. Claims always bind their own retained epoch, not this latest ledger context. All payloads reject trailing bytes. Events obey the common two-event, 2048-byte limit; allocation lists remain in state/result projections rather than an oversized single event."
+paragraph_12 = "F06-R09 requires Fund; R10 ReserveEpoch; R11 TerminalizeRewards; R12 DeclinePendingEpoch and graceful close; R13 Claim; R14 ExpireEpochClaims; R15 RefundFree; R16 PruneEpoch. Errors are typed: UnauthorizedFundingPrincipal, FundingPolicyMismatch, RefundRecipientMismatch, WrongAsset, AccountNotRegistered, InvalidAmount, ArithmeticOverflow, InsufficientFreeReserve, EpochAlreadyReserved, EpochNotReserved, FrozenRosterMismatch, AggregationMismatch, InvalidPhase, EpochTerminal, ClaimNotReady, ClaimExpired, UnknownWorkerEntitlement, WrongClaimRecipient, WrongClaimAmount, ZeroEntitlement, ReplayConflict, StaleCursor, RecipientDictionaryFull, RetentionFull, ResourceAdmissionRefused, TransferAuthorityRefused, TransferFailed and LedgerInvariantViolation. Common errors use core C12 codes. Exact F06 extensions are 0x0601 FUNDING_POLICY_MISMATCH; 0x0602 REFUND_RECIPIENT_MISMATCH; 0x0603 WRONG_ASSET; 0x0604 INVALID_AMOUNT; 0x0605 EPOCH_ALREADY_RESERVED; 0x0606 EPOCH_NOT_RESERVED; 0x0607 AGGREGATION_MISMATCH; 0x0608 EPOCH_TERMINAL; 0x0609 CLAIM_NOT_READY; 0x060A CLAIM_EXPIRED; 0x060B UNKNOWN_WORKER_ENTITLEMENT; 0x060C WRONG_CLAIM_RECIPIENT; 0x060D WRONG_CLAIM_AMOUNT; 0x060E NOTHING_TO_CLAIM; 0x060F LEDGER_INVARIANT_VIOLATION; 0x0610 CONTRIBUTION_CONSENT_REQUIRED. CamelCase descriptions above are aliases for these uppercase wire names. UnauthorizedFundingPrincipal maps to UNAUTHORIZED 0x0006; AccountNotRegistered to ACCOUNT_BINDING 0x0019; ArithmeticOverflow to ARITHMETIC 0x001C; InsufficientFreeReserve to INSUFFICIENT_FREE 0x0018; FrozenRosterMismatch to WRONG_ROSTER 0x000E; InvalidPhase to WRONG_PHASE 0x000F; ZeroEntitlement to NOTHING_TO_CLAIM 0x060E; ReplayConflict to REPLAY_CONFLICT 0x0010; StaleCursor to STALE_CURSOR 0x0013; RecipientDictionaryFull and ResourceAdmissionRefused to CAPACITY 0x0016; RetentionFull to RETENTION_FULL 0x0017; TransferAuthorityRefused to HOST_CAPABILITY 0x001A; TransferFailed to HOST_TRANSFER 0x001B; UnknownOrPrunedEpoch to NOT_FOUND 0x0015. Error and operation fields are separate typed u16 namespaces. Native errors retain their original platform values."
+
+[contract.06]
+title = "State machine, timing and ordering"
+paragraph_1 = "F06-R17: V1 common epochs span 128 execution heights: work 64, commitment 16, reveal 16 and settlement 32. Half-open windows and exact opening height come from F01/core. Reservation precedes any accepted work. Reveals finish before F05 terminal scoring, and entitlement sealing is inseparable from the F05 terminal state. Settlement may finish after its scheduled window and blocks opening a later epoch until terminal; late reports/reveals remain forbidden. There is no automatic no-keeper refund or owner cancellation. A lack of permissionless keeper service is a liveness limitation, not authority to confiscate earned budget. Terminal height is the height of that authoritative terminal transition, never an arbitrary supplied timestamp or nominal deadline."
+paragraph_2 = "F06-R18: Claims last exactly 4096 execution heights after terminalization. Checked addition must succeed before opening an epoch whose eventual terminal-height arithmetic could overflow; terminalization near u64 maximum must refuse safely and enter the common recovery path without losing R. A failed transition never silently saturates. The completed ring retains at most 32 epochs and never evicts an unpaid unexpired entitlement to satisfy that count. One active epoch is separately bounded; pre-opening slot admission ensures its eventual terminal record fits. If old unpaid liabilities prevent capacity release, new epoch admission pauses until lawful expiry/pruning creates room."
+paragraph_3 = "Policy changes are prospective epoch configuration changes. They cannot change the asset, refund account, original budget, aggregation, recipients, amounts or expiry of existing rows. Funding principals and funding_policy_version=1 are immutable in v1; prospective task-policy changes cannot add or replace a treasury. Lifecycle admission is checked at execution and cannot erase previous deposit accounting. Pausing new admission preserves earned claims, expiry, refunds of Free and deterministic late-settlement recovery."
+
+[contract.07]
+title = "Exact deterministic allocation mathematics"
+paragraph_1 = "F06-R19: Consume only F05's immutable per-worker score table. A worker qualifies only when F05 accepted at least quorum=3 distinct authorized evaluator observations for that worker. Its scalar S_i is the lower median of its accepted scores, in integer score units 0..1,000,000: sort n scores ascending and select rank floor((n-1)/2), counting from zero. F05 produces this result; F06 rejects inconsistent producer digests and must not reinterpret quorum as a global substitute for worker-specific quorum. No-quorum worker scores contribute zero weight; a genuine median zero also contributes zero. A still-incomplete F05 state is not an all-zero finalized state."
+paragraph_2 = "F06-R20: Let eligible positive scores sum to T. With at most 32 workers, T <= 32,000,000 and fits u64. If T=0, release the entire B to F and record NO_ELIGIBLE_SCORE, with no entitlements. If T>0, each exact product B*S_i is evaluated in a checked integer domain of at least 256 bits. Let q_i=floor(B*S_i/T) and r_i=(B*S_i) mod T. Let L=B-sum(q_i). Allocate q_i+1 to the L workers with greatest r_i, breaking ties by unsigned ascending WorkerId byte order; all others receive q_i. Every final entitlement is u128 and sum(entitlements)=B exactly. Zero-score entries have zero entitlement and cannot receive a residual unit. L is less than the number of positive-score workers and is bounded by 31. Deterministic bounded sorting over <=32 entries is acceptable; floating point, saturation, random ties and traversal-order ties are forbidden."
+paragraph_3 = "F06-R21: Every successful reward mutation verifies the proof-bound sight balance for the registered account in the executing context and requires it to cover F+R+C. The post-transition balance includes the exact staged deposit or payment; sight authority grants no spending permission. Missing/invalid balance evidence is READINESS_BLOCKED or the typed host refusal, never an invented zero. The always-required conservation identity is D=P+X+F+R+C. R equals the sum of RESERVED budgets. C equals the sum of all unclaimed, unexpired allocated entitlements. P and X are monotonic cumulative physical transfers. Each epoch satisfies B=paid_sum+unclaimed_sum+expired_sum for ALLOCATED, and B is released exactly once for any nonallocated terminal outcome. The physical account observation may show an unsolicited surplus U>=0; it never raises D, F, R, C or an entitlement. A ledger inconsistency halts reward mutation with explicit error; it does not assign balances or silently repair counters. Each counter operation and all intermediate sums are checked. Lifetime funded_total cannot exceed u128::MAX; exhausted cumulative headroom requires a separately reviewed successor market, not wraparound."
+
+[contract.08]
+title = "Replay, restart, concurrency, finality and recovery"
+paragraph_1 = "F06-R22: State, replay record, allocation/claim disposition and native transfer effect commit in one real Program activity. No external send-then-mark sequence is permitted. Restart reads the authoritative state; there is no operator editable paid file. Two simultaneous claims for the same entry can produce at most one payment because object-local claim-disposition serialization determines the winner. Two claims for different entries serialize against authoritative state and preserve independent entitlements; no stale client amount or state image may overwrite another claim. Batch claiming is excluded in v1; one transfer per call narrows capability and recovery scope."
+paragraph_2 = "Finality consumers use existing Paxeer verified finalized receipts and proof-bound state. A submitted transaction or local successful simulation is not a paid claim. Unknown submission outcome is recovered by checking the finalized operation/entitlement and transfer-set receipt before reusing identity or advancing a local queue. Forked/unfinalized projections cannot drive external accounting. If payout fails from insufficient physical funds, bad grant, resource refusal or unavailable host ABI, keep the unclaimed entitlement and counters intact; retries are allowed before expiry. Missing keeper liveness does not grant a relayer the right to change amounts or windows. Operators surface expiry and permit independent relayers."
+
+[contract.09]
+title = "Abuse, trust and privacy"
+paragraph_1 = "F06-R23: Score collusion, identity aliases, manipulated benchmarks and false AI evidence can produce economically wrong but arithmetically valid rewards. F03/F05 authorization and aggregation reduce particular threats; they do not prove AI truth. The market must disclose evaluator trust and funding loss exposure. A worker cannot increase its share by a late payout-address edit, fresh deposit, key rotation or account balance observation. A funder cannot withdraw another epoch's reserve. A relayer cannot redirect a payout, skim fees or substitute an asset. Direct ledger transfers into the registered reserve are unaccounted gifts; any future recovery mechanism for such gifts is separately specified and may not sweep R/C."
+paragraph_2 = "No raw prompts, responses, private benchmarks, credentials or personal identifiers enter reward state. Public records include worker ID, recipient, scores/digests and amounts; these can reveal business relationships. F09 governs evidence disclosure separately. Do not promise anonymity from a hashed worker identifier or confidentiality from a public allocation digest."
+
+[contract.10]
+title = "Resource and storage bounds"
+paragraph_1 = "F06-R24: All ten features share one authoritative value <=196608 bytes (192KiB), the common C07 bound. F05/F06 jointly receive 81920 bytes; F06 deliberately narrows its own share to at most 49152 bytes. Proposed bounds fit: dictionary 256*67=17152 bytes; a conservative 33-record upper bound, each 174+32*19=782 bytes, is 25806 bytes; ledger header <=256; total <=43214 bytes plus 97 bytes for the bounded optional last-refund record, leaving 5841 bytes inside F06's narrowed cap for canonical container framing. Treasury identity storage is the single F01 creation/Header option (presence:u8 plus 32 bytes only when present), charged solely to the existing F01 header allocation. F06 stores no duplicate treasury principal, designation/rotation journal or unbudgeted authority table; its already allocated 8-byte fixed funding_policy_version field remains within the 206-byte ledger header. The actual pre-opening completed-ring rule limits the active+completed population further. F05 retains at most its current complete aggregate, roots/cursor and bounded scoring workspace in the rest of the joint section, rather than 32 complete historical vote matrices. Counts and ordered rows must be parsed with bounds before allocation. An implementation may use fewer bytes but cannot silently reduce identity/recipient promises."
+paragraph_2 = "F06-R25: Dictionary admission is a real finite limit. Before F01 opens an epoch, all frozen recipients must resolve to existing or available slots; if 256 retained distinct pairs are pinned, refuse the next epoch with RecipientDictionaryFull. F08 replacement can still update a future roster, but it cannot force reserve opening without this preflight. All references survive key changes. A retention-limit admission error is explicit, never silent claim deletion."
+paragraph_3 = "The existing Programs storage bridge stages the current nonempty value blob and namespace manifest, so the application namespace requires up to two new content-addressed blobs. Under common C13, native replay capture may additionally require a witness blob and an activity-keyed native KV record: a normal captured mutation can require three new blobs total, within four staged new blobs, and grows native KV as well. The two-blob application bound is never a total transaction guarantee. Replay-record/witness retention and cleanup are included in the global lifecycle prerequisite; capture must not be disabled to evade limits. Kernel global bounds include 512 module KV entries, 64 staged writes, 512 blobs and 67108864 aggregate blob bytes; transfer sets cap at 256 legs. One claim uses one economic transfer, while state/receipt overhead is metered by existing contracts. No per-epoch extra storage keys or per-claim blob namespace is introduced."
+paragraph_4 = "F06-R26: Sustained production operation is blocked until the verified global content lifecycle/readiness prerequisite in contracts/integration-map.kvx I02 exists for this Program profile. Existing Context exposes no free-blob count; guest code cannot promise host capacity reservation. Operator/admission-service preflight is revision-bound and the real finalizer remains the atomic capacity check; a successful preflight is not a reservation. Two new blob insertions per state update can exhaust the shared 512-blob count far before the byte ceiling. Retaining 32 epochs inside the one value does not reclaim earlier value/manifest blobs automatically. Sandbox-specific cleanup is not assumed applicable. Before enabling funding or new work for continuous operation, the deployment must qualify lifecycle/recovery and resource admission. A finite pilot must publish its exact mutation budget and headroom policy; it cannot be represented as continuous readiness. Under contention a native capacity refusal still rolls back atomically and is surfaced for retry/recovery. Pruning application rows alone is not claimed as host blob cleanup."
+
+[contract.11]
+title = "Inter-feature interfaces"
+paragraph_1 = "F01 supplies immutable market/asset/refund policy, authoritative phase, execution-height domain and WindingDown/Closed lifecycle. Any F01 expected_state_revision field is operation payload, not an added common envelope field. F06 permissionless monetary operations use their stated object-local cursor/entry checks. F02 supplies frozen worker IDs and payout recipients at epoch opening. F03/F04 supply authenticated observations/reveal admission indirectly through F05. F05 supplies exactly one terminal outcome, canonical score table, per-worker valid-count/quorum classification, roster and aggregation digests. F06 consumes those inputs exactly once and supplies allocated amounts, claim dispositions, expiry outcome and conserved accounting to F07 history and F10 finalized projections. F08 handles future membership while respecting dictionary/history preflight. F09 carries evidence digests rather than payment instructions."
+paragraph_2 = "F06-R27: F05 and F06 terminalization must share one atomic application transition; F05-T03 owns final dispatch wiring after F06-T02 supplies pure reward-state primitives, avoiding a cyclic task dependency; no committed score-final state without its corresponding reserve disposition, and no allocated state without its frozen producer result. F10 can project the immutable allocation, funding, claim and refund receipts but cannot grant payout authority. Recovery services are permissionless bounded callers with no discretionary score or budget role."
+
+[contract.12]
+title = "Acceptance cases and future qualification"
+paragraph_1 = "All acceptance cases require future qualification; qualification is UNRUN. Future tests must use real Program execution, authenticated grants, registered program accounts and native transfer application for economic boundaries; a handwritten balance fake is insufficient."
+paragraph_2 = "F06-A01 exact rounding: B=101, ordered worker scores [4,2,1], each with three accepted observations equal to its score. T=7; base [57,28,14], residuals [5,6,3], L=2; final [58,29,14]. State moves R=101 to C=101 with no transfer."
+paragraph_3 = "F06-A02 ties: B=2, scores [1,1,1], WorkerIds ascending A<B<C; entitlements [1,1,0]. Zero C claim sends nothing. Submission order changes do not change allocation digest."
+paragraph_4 = "F06-A03 lower median: worker A accepted scores [0,8,9,10] yields S_A=8; worker B [0,0,1] yields zero; worker C only two scores [1000000,1000000] is ineligible. B=13 gives A=13, B=C=0."
+paragraph_5 = "F06-A04 empty/zero: all workers have no quorum or median zero, B=77. R decreases by 77, F increases by 77, C/P unchanged; outcome NO_ELIGIBLE_SCORE. No owner/evaluator fallback."
+paragraph_6 = "F06-A05 maximal exact amount: B=0xffffffffffffffffffffffffffffffff, two equal positive scores; ascending first worker receives 0x80000000000000000000000000000000, second receives 0x7fffffffffffffffffffffffffffffff. No intermediate overflow, no saturation."
+paragraph_7 = "F06-A06 conservation lifecycle: contribute 120, reserve 101; F=19,R=101. Finalize A01: F=19,C=101. Claim first 58: P=58,C=43. Expire unclaimed 43: F=62,C=0. Close/refund 62: X=62,F=0; D=120=P+X."
+paragraph_8 = "F06-A07 insufficient free: F=10 and physical reserve balance 100 from an unsolicited transfer; budget=11 refuses. D/F remain 10; no live-balance funding inference."
+paragraph_9 = "F06-A08 grant binding: rightful 29-unit claim with grant cap 28, wrong seed, wrong asset, wrong registered source or wrong recipient refuses with claim disposition clear and C unchanged. A correct exact-29 grant pays once."
+paragraph_10 = "F06-A09 concurrency/replay: two accepted submissions for the same 58-unit entitlement yield one transfer totaling 58; resubmission observes core ALREADY_APPLIED. Different request payload under a reused funding identity refuses ReplayConflict."
+paragraph_11 = "F06-A10 rotation: worker payout A frozen, later live registration changes to B; entitlement still pays A. Permissionless relayer-specified B refuses. A caller presenting a different proposed treasury principal or funding_policy_version=2 cannot fund or alter the immutable F01 authority. No treasury rotation operation exists."
+paragraph_12 = "F06-A11 expiry edge: terminal height 900, expiry 4996. Claim at 4995 succeeds; claim at 4996 refuses. Expiry at 4996 releases exactly all remaining unclaimed amounts; duplicate expiry releases zero."
+paragraph_13 = "F06-A12 failed atomic payout: real recipient/account or transfer application refusal after guest staging leaves claimable amount, paid_total, paid_sum and disposition unchanged. After valid repair, one exact claim succeeds; no operator manual balance assignment."
+paragraph_14 = "F06-A13 late settlement/close: open funded epoch with no keeper through the settlement interval; R remains B, no refund/implicit abort occurs, and the next epoch cannot open. Later valid keeper processing completes the original sealed inputs and allocates once. Closing before terminalization cannot withdraw R. Closing after allocation cannot withdraw C."
+paragraph_15 = "F06-A14 retention/dictionary: 256 pinned distinct recipient pairs and a new frozen recipient refuses opening before accepting work. Thirty-two completed epochs fit; a new opening first safely prunes the oldest if that completed ring is full, thereby reserving its eventual terminal slot. An older unexpired liability cannot be pruned to make room."
+paragraph_16 = "F06-A15 overflow/corruption: funded_total=u128::MAX then add 1 refuses without deposit; forged C inconsistent with sum of rows produces LedgerInvariantViolation before transfer. Height addition overflow refuses without deleting R."
+paragraph_17 = "F06-A16 funding consent: otherwise authorized treasury request naming any refund recipient other than immutable market recipient refuses; an unsigned/inferred treasury identity never funds. Same accepted Fund request replays without a second debit. With treasury_present=0 only owner can fund; any other principal refuses. With treasury_present=1 only the distinct creation-time principal or owner can fund. funding_policy_version=0 or 2 and consent=false each refuse without a deposit or replay-sequence consumption."
+paragraph_18 = "F06-A17 resource exhaustion: simulate actual native blob admission boundary through real execution; new epoch/funding admission refuses before liability creation when no verified terminal path fits. Old claims are never marked paid merely because a host resource is unavailable."
+paragraph_19 = "F06-A18 finality recovery: interrupted client submission checks real finalized state/receipt and resumes with one economic payout; an unfinalized projection alone cannot cause external paid acknowledgement."
+paragraph_20 = "F06-A19 refund cursor: WindingDown X=0,F=62; permissionless refund(expected_X=0,amount=20) pays fixed recipient20 and sets X=20,F=42. An identical semantic repeat pays zero; altered amount with expected_X=0 returns STALE_CURSOR. A subsequent refund(expected_X=20,amount=42) pays42, X=62,F=0. Later expiry creates new Free but cannot make either old cursor payable again. Missing exact ProgramSpend authority leaves cursor/state unchanged."
+paragraph_21 = "F06-R28: Future qualification must cover arithmetic vector agreement and genuine guest/native conservation, rollback, source authority, atomic replay, finality proof and resource admission. Pure math tests alone do not qualify custody. Implementation qualification is UNRUN."
+
+[contract.13]
+title = "Future implementation tasks and gates"
+task_authority = "Detailed implementation contracts are subordinate to canonical task sections in ../../spec.kvx."
+qualification = "UNRUN"
+paragraph_1 = "All paths below are proposed additions under the common app package; commands are proposed future commands and currently UNRUN. Each task has one compile and one focused verify command after implementation; no aggregate gates are silently added."
+paragraph_2 = "F06-T01 depends on T-C01/T-C02 shared package/state and core contracts: implement reward types, strict encoding and checked exact allocation in new src/reward_math.rs and the reward portion of src/rewards.rs; add A01–A05/A15 cases to new tests/rewards.rs. Compile: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_math_and_encoding -- --exact. The named test is a future required target, not an existing command claimed to work."
+paragraph_3 = "F06-T02 depends on F06-T01, F01 epoch primitives, F02 frozen-roster primitives and F05-T02 aggregation math/types: implement funding replay, reserve, frozen dictionary, atomic producer settlement, ledger invariants and close/expiry/prune state transitions in new src/rewards.rs; require A06/A07/A10/A11/A13/A14/A16. Same one compile command. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_state_transitions -- --exact. Do not merge a detached F05 settlement commit path."
+paragraph_4 = "F06-T03 depends on F06-T02, F05-T03 atomic finalization integration and T-C03 verified existing account/ABI integration: wire Fund/Claim/Refund to existing SDK deposits and program-account payments through the new application entrypoint and rewards.rs; create genuine native integration cases in new tests/rewards_native.rs using the repository's real execution harness selected by the integration map. Compile is the same guest build. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_conservation_authority_and_rollback -- --exact. Exact real harness linkage is a prerequisite to implementing this target; it must not be replaced with fake accounts or host functions."
+paragraph_5 = "F06-T04 depends on F06-T03/F10 projection primitives and T-C04 platform resource prerequisite: implement finalized reward projections, client recovery and capacity preflight in the common F10-owned client paths, with F06 ownership limited to new tests/rewards_native.rs scenarios. No second writer edits F10 files. Same compile command for reward application. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_finality_recovery_and_capacity -- --exact. Resource admission/reclamation work outside the application needs its own platform task and authority; this spec does not authorize it."
+paragraph_6 = "F06-R29: Task acceptance requires all declared scenarios and actual gate exit/log evidence at the implementation revision. A successful build, unqualified candidate, document parse or pure math result is not a qualified financial path. Unknown package/harness integration must be recorded and resolved before claiming any task done."
+
+[contract.14]
+title = "Fixed decisions, prerequisites and release conditions"
+paragraph_1 = "Fixed v1 defaults: one Program per market; immutable asset; 32 workers, 8 evaluators, per-worker quorum 3; lower-median scalar score 0..1000000; workers-only budget; u128 base-unit amounts and checked u256 products; exact largest-remainder rounding tied by WorkerId; one irrevocable market reserve; owner or one immutable optional creation-time treasury contributor (default absent, distinct from owner when present); funding_policy_version=1; immutable refund recipient; one active reward reserve; one transfer per claim; permissionless fixed-recipient claim submission; 4096-height expiry; at most 32 completed epochs retained without pruning an unpaid unexpired liability; recipient dictionary 256; F06 storage <=49152 bytes in the shared <=196608-byte authoritative value."
+paragraph_2 = "F06-R30: Release requires common schemas/hash framing frozen, deployment registration authority established, candidate account funding/spending ABI actually admitted, genuine atomic state/transfer/receipt rollback qualified, source conservation and fixed account binding proven by focused gates, externally available finalized receipt verification, tested keeper recovery/expiry visibility, immutable funding consent shown before signing and verified sustained blob admission/reclamation. Funding amount/economics and evaluator trust are market policy choices made before opening; they are not inferred from account wealth or unstated monetary assumptions. Implementation and production qualification remain UNRUN."
+
+[requirement.F06-R01]
+id = "F06-R01"
+normative = true
+requirement = "The only reward authority is the market Program's deterministic state transition under the frozen market policy. No reward mint, inflation schedule, token price, capital stake, owner commission, evaluator commission, token pool, swapping, automatic compounding, portfolio, custody withdrawal or consensus voting change is introduced. V1 assigns the full positive-budget worker reward pool to eligible workers. Fees for external AI services or evaluator labor are separate existing agreements, never an implicit deduction from this budget."
+paragraph = "The only reward authority is the market Program's deterministic state transition under the frozen market policy. No reward mint, inflation schedule, token price, capital stake, owner commission, evaluator commission, token pool, swapping, automatic compounding, portfolio, custody withdrawal or consensus voting change is introduced. V1 assigns the full positive-budget worker reward pool to eligible workers. Fees for external AI services or evaluator labor are separate existing agreements, never an implicit deduction from this budget."
+
+[requirement.F06-R02]
+id = "F06-R02"
+normative = true
+requirement = "Funding is an irrevocable contribution by the market owner or the immutable optional treasury principal recorded at F01 creation. The immutable market refund recipient is disclosed in the signed funding request. A contribution does not create individual depositor shares, principal recovery rights or a refundable sponsor position. Attribution of work follows the frozen epoch roster, never the live account balance or live membership at claim time."
+paragraph = "Funding is an irrevocable contribution by the market owner or the immutable optional treasury principal recorded at F01 creation. The immutable market refund recipient is disclosed in the signed funding request. A contribution does not create individual depositor shares, principal recovery rights or a refundable sponsor position. Attribution of work follows the frozen epoch roster, never the live account balance or live membership at claim time."
+
+[requirement.F06-R03]
+id = "F06-R03"
+normative = true
+requirement = "Use one registered market Program account, immutable asset and seed ASCII 'paxai/rewards/v1', exactly 16 bytes. Derive and register through existing PreparedProgramAccount contracts. The account must have no ordinary operator authority key. No operator holds a whole-reserve private key, assigns ledger balances or fabricates a native spending token. Registration, ABI-version admission, actual source/asset binding and state/transfer atomicity are release prerequisites."
+paragraph = "Use one registered market Program account, immutable asset and seed ASCII 'paxai/rewards/v1', exactly 16 bytes. Derive and register through existing PreparedProgramAccount contracts. The account must have no ordinary operator authority key. No operator holds a whole-reserve private key, assigns ledger balances or fabricates a native spending token. Registration, ABI-version admission, actual source/asset binding and state/transfer atomicity are release prerequisites."
+
+[requirement.F06-R04]
+id = "F06-R04"
+normative = true
+requirement = "Preserve existing ledger conservation in src/ledger/lxp_journal.c and src/ledger/lxp_apply.c. Existing budget spending in src/modules/budget/lx_budget_spend.c requires a budget account and recipient account kind; it is not a substitute for this Program-account route. No native module ID, ABI ordinal, proof namespace, account-kind rule, finality rule or global capacity is expanded by this application specification."
+paragraph = "Preserve existing ledger conservation in src/ledger/lxp_journal.c and src/ledger/lxp_apply.c. Existing budget spending in src/modules/budget/lx_budget_spend.c requires a budget account and recipient account kind; it is not a substitute for this Program-account route. No native module ID, ABI ordinal, proof namespace, account-kind rule, finality rule or global capacity is expanded by this application specification."
+
+[requirement.F06-R05]
+id = "F06-R05"
+normative = true
+requirement = "All common PAXAI identifiers, request envelopes, authorization and epoch phase definitions come from contracts/core.kvx. Every integer here is unsigned big-endian and has no padding. Amount is u128 asset base units; a display decimal never enters arithmetic. EpochNumber and execution height are u64. WorkerId, ProgramId, MarketId, AccountId, AssetId, policy digest, roster digest and aggregation digest are 32 bytes. Noncanonical trailing bytes, unknown enum values and nonzero reserved fields are refused."
+paragraph = "All common PAXAI identifiers, request envelopes, authorization and epoch phase definitions come from contracts/core.kvx. Every integer here is unsigned big-endian and has no padding. Amount is u128 asset base units; a display decimal never enters arithmetic. EpochNumber and execution height are u64. WorkerId, ProgramId, MarketId, AccountId, AssetId, policy digest, roster digest and aggregation digest are 32 bytes. Noncanonical trailing bytes, unknown enum values and nonzero reserved fields are refused."
+
+[requirement.F06-R06]
+id = "F06-R06"
+normative = true
+requirement = "A recipient dictionary contains at most 256 occupied slots, each 67 bytes: occupied u8, worker_id32, frozen_recipient32 and reference_count u16. A slot is identified by the exact (worker_id, recipient) pair. Slot indexes are encoded u16 big-endian with semantic range 0..255; values 256..65535 are invalid. This matches each 19-byte claim entry and core C10; no u8 wire representation is admitted. An unused slot is entirely zero. Duplicate occupied pairs, zero identifiers and self-payment to the reward reserve are invalid. References count every retained or active epoch that includes the slot, at most 1,056. A slot can be reused only after every reference is removed by pruning; rotation or eviction never rewrites an old epoch's recipient."
+paragraph = "A recipient dictionary contains at most 256 occupied slots, each 67 bytes: occupied u8, worker_id32, frozen_recipient32 and reference_count u16. A slot is identified by the exact (worker_id, recipient) pair. Slot indexes are encoded u16 big-endian with semantic range 0..255; values 256..65535 are invalid. This matches each 19-byte claim entry and core C10; no u8 wire representation is admitted. An unused slot is entirely zero. Duplicate occupied pairs, zero identifiers and self-payment to the reward reserve are invalid. References count every retained or active epoch that includes the slot, at most 1,056. A slot can be reused only after every reference is removed by pruning; rotation or eviction never rewrites an old epoch's recipient."
+
+[requirement.F06-R07]
+id = "F06-R07"
+normative = true
+requirement = "AllocationDigest is H(PAXAI/reward-allocation/v1, schema_version:u16 || chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_digest32 || aggregation_digest32 || asset_id32 || budget:u128 || entry_count:u16 || ordered entries). Each hashed entry is worker_id32 || fixed_recipient32 || entitlement:u128, exactly 80 bytes. H is the exact NUL-separated SHA-256 construction in core C02. For a zero-allocation outcome, entry_count is zero and budget remains the original reserved B; the root proves that exact result rather than inventing a zero budget. Entitlement identity is H(PAXAI/reward-entitlement/v1, allocation_digest32 || worker_id32). Dictionary indexes and mutable claim disposition do not enter either immutable digest. Any digest mismatch refuses settlement or claim with no economic effect.\n4. Roles, authority and revocation"
+paragraph = "AllocationDigest is H(PAXAI/reward-allocation/v1, schema_version:u16 || chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_digest32 || aggregation_digest32 || asset_id32 || budget:u128 || entry_count:u16 || ordered entries). Each hashed entry is worker_id32 || fixed_recipient32 || entitlement:u128, exactly 80 bytes. H is the exact NUL-separated SHA-256 construction in core C02. For a zero-allocation outcome, entry_count is zero and budget remains the original reserved B; the root proves that exact result rather than inventing a zero budget. Entitlement identity is H(PAXAI/reward-entitlement/v1, allocation_digest32 || worker_id32). Dictionary indexes and mutable claim disposition do not enter either immutable digest. Any digest mismatch refuses settlement or claim with no economic effect."
+
+[requirement.F06-R08]
+id = "F06-R08"
+normative = true
+requirement = "Each Fund request explicitly names the fixed refund recipient and carries funding_policy_version=1 exactly. The client displays that the contribution is irrevocable and names that recipient before signing. Principal identity comes from authenticated host context, never caller-supplied identity bytes. Replay records for the owner and optional immutable treasury are bounded by the common two-actor contract. If treasury_present=0, no treasury actor can fund and no absent-principal replay record is invented. A proposed replacement principal has no authority; the v1 policy version cannot be advanced to authorize it. Funding payload irrevocable_contribution_consent is a required boolean and must equal true."
+paragraph = "Each Fund request explicitly names the fixed refund recipient and carries funding_policy_version=1 exactly. The client displays that the contribution is irrevocable and names that recipient before signing. Principal identity comes from authenticated host context, never caller-supplied identity bytes. Replay records for the owner and optional immutable treasury are bounded by the common two-actor contract. If treasury_present=0, no treasury actor can fund and no absent-principal replay record is invented. A proposed replacement principal has no authority; the v1 policy version cannot be advanced to authorize it. Funding payload irrevocable_contribution_consent is a required boolean and must equal true."
+
+[requirement.F06-R09]
+id = "F06-R09"
+normative = true
+requirement = "Normative operation contract: Fund. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+paragraph = "requires Fund; R10 ReserveEpoch; R11 TerminalizeRewards; R12 DeclinePendingEpoch and graceful close; R13 Claim; R14 ExpireEpochClaims; R15 RefundFree; R16 PruneEpoch. Errors are typed: UnauthorizedFundingPrincipal, FundingPolicyMismatch, RefundRecipientMismatch, WrongAsset, AccountNotRegistered, InvalidAmount, ArithmeticOverflow, InsufficientFreeReserve, EpochAlreadyReserved, EpochNotReserved, FrozenRosterMismatch, AggregationMismatch, InvalidPhase, EpochTerminal, ClaimNotReady, ClaimExpired, UnknownWorkerEntitlement, WrongClaimRecipient, WrongClaimAmount, ZeroEntitlement, ReplayConflict, StaleCursor, RecipientDictionaryFull, RetentionFull, ResourceAdmissionRefused, TransferAuthorityRefused, TransferFailed and LedgerInvariantViolation. Common errors use core C12 codes. Exact F06 extensions are 0x0601 FUNDING_POLICY_MISMATCH; 0x0602 REFUND_RECIPIENT_MISMATCH; 0x0603 WRONG_ASSET; 0x0604 INVALID_AMOUNT; 0x0605 EPOCH_ALREADY_RESERVED; 0x0606 EPOCH_NOT_RESERVED; 0x0607 AGGREGATION_MISMATCH; 0x0608 EPOCH_TERMINAL; 0x0609 CLAIM_NOT_READY; 0x060A CLAIM_EXPIRED; 0x060B UNKNOWN_WORKER_ENTITLEMENT; 0x060C WRONG_CLAIM_RECIPIENT; 0x060D WRONG_CLAIM_AMOUNT; 0x060E NOTHING_TO_CLAIM; 0x060F LEDGER_INVARIANT_VIOLATION; 0x0610 CONTRIBUTION_CONSENT_REQUIRED. CamelCase descriptions above are aliases for these uppercase wire names. UnauthorizedFundingPrincipal maps to UNAUTHORIZED 0x0006; AccountNotRegistered to ACCOUNT_BINDING 0x0019; ArithmeticOverflow to ARITHMETIC 0x001C; InsufficientFreeReserve to INSUFFICIENT_FREE 0x0018; FrozenRosterMismatch to WRONG_ROSTER 0x000E; InvalidPhase to WRONG_PHASE 0x000F; ZeroEntitlement to NOTHING_TO_CLAIM 0x060E; ReplayConflict to REPLAY_CONFLICT 0x0010; StaleCursor to STALE_CURSOR 0x0013; RecipientDictionaryFull and ResourceAdmissionRefused to CAPACITY 0x0016; RetentionFull to RETENTION_FULL 0x0017; TransferAuthorityRefused to HOST_CAPABILITY 0x001A; TransferFailed to HOST_TRANSFER 0x001B; UnknownOrPrunedEpoch to NOT_FOUND 0x0015. Error and operation fields are separate typed u16 namespaces. Native errors retain their original platform values."
+
+[requirement.F06-R10]
+id = "F06-R10"
+normative = true
+requirement = "Normative operation contract: ReserveEpoch. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R11]
+id = "F06-R11"
+normative = true
+requirement = "Normative operation contract: TerminalizeRewards. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R12]
+id = "F06-R12"
+normative = true
+requirement = "Normative operation contract: DeclinePendingEpoch and graceful close. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R13]
+id = "F06-R13"
+normative = true
+requirement = "Normative operation contract: Claim. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R14]
+id = "F06-R14"
+normative = true
+requirement = "Normative operation contract: ExpireEpochClaims. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R15]
+id = "F06-R15"
+normative = true
+requirement = "Normative operation contract: RefundFree. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R16]
+id = "F06-R16"
+normative = true
+requirement = "Normative operation contract: PruneEpoch. See section 5 for exact payload, preconditions, atomic effects, replay, results and failures."
+
+[requirement.F06-R17]
+id = "F06-R17"
+normative = true
+requirement = "V1 common epochs span 128 execution heights: work 64, commitment 16, reveal 16 and settlement 32. Half-open windows and exact opening height come from F01/core. Reservation precedes any accepted work. Reveals finish before F05 terminal scoring, and entitlement sealing is inseparable from the F05 terminal state. Settlement may finish after its scheduled window and blocks opening a later epoch until terminal; late reports/reveals remain forbidden. There is no automatic no-keeper refund or owner cancellation. A lack of permissionless keeper service is a liveness limitation, not authority to confiscate earned budget. Terminal height is the height of that authoritative terminal transition, never an arbitrary supplied timestamp or nominal deadline."
+paragraph = "V1 common epochs span 128 execution heights: work 64, commitment 16, reveal 16 and settlement 32. Half-open windows and exact opening height come from F01/core. Reservation precedes any accepted work. Reveals finish before F05 terminal scoring, and entitlement sealing is inseparable from the F05 terminal state. Settlement may finish after its scheduled window and blocks opening a later epoch until terminal; late reports/reveals remain forbidden. There is no automatic no-keeper refund or owner cancellation. A lack of permissionless keeper service is a liveness limitation, not authority to confiscate earned budget. Terminal height is the height of that authoritative terminal transition, never an arbitrary supplied timestamp or nominal deadline."
+
+[requirement.F06-R18]
+id = "F06-R18"
+normative = true
+requirement = "Claims last exactly 4096 execution heights after terminalization. Checked addition must succeed before opening an epoch whose eventual terminal-height arithmetic could overflow; terminalization near u64 maximum must refuse safely and enter the common recovery path without losing R. A failed transition never silently saturates. The completed ring retains at most 32 epochs and never evicts an unpaid unexpired entitlement to satisfy that count. One active epoch is separately bounded; pre-opening slot admission ensures its eventual terminal record fits. If old unpaid liabilities prevent capacity release, new epoch admission pauses until lawful expiry/pruning creates room."
+paragraph = "Claims last exactly 4096 execution heights after terminalization. Checked addition must succeed before opening an epoch whose eventual terminal-height arithmetic could overflow; terminalization near u64 maximum must refuse safely and enter the common recovery path without losing R. A failed transition never silently saturates. The completed ring retains at most 32 epochs and never evicts an unpaid unexpired entitlement to satisfy that count. One active epoch is separately bounded; pre-opening slot admission ensures its eventual terminal record fits. If old unpaid liabilities prevent capacity release, new epoch admission pauses until lawful expiry/pruning creates room."
+
+[requirement.F06-R19]
+id = "F06-R19"
+normative = true
+requirement = "Consume only F05's immutable per-worker score table. A worker qualifies only when F05 accepted at least quorum=3 distinct authorized evaluator observations for that worker. Its scalar S_i is the lower median of its accepted scores, in integer score units 0..1,000,000: sort n scores ascending and select rank floor((n-1)/2), counting from zero. F05 produces this result; F06 rejects inconsistent producer digests and must not reinterpret quorum as a global substitute for worker-specific quorum. No-quorum worker scores contribute zero weight; a genuine median zero also contributes zero. A still-incomplete F05 state is not an all-zero finalized state."
+paragraph = "Consume only F05's immutable per-worker score table. A worker qualifies only when F05 accepted at least quorum=3 distinct authorized evaluator observations for that worker. Its scalar S_i is the lower median of its accepted scores, in integer score units 0..1,000,000: sort n scores ascending and select rank floor((n-1)/2), counting from zero. F05 produces this result; F06 rejects inconsistent producer digests and must not reinterpret quorum as a global substitute for worker-specific quorum. No-quorum worker scores contribute zero weight; a genuine median zero also contributes zero. A still-incomplete F05 state is not an all-zero finalized state."
+
+[requirement.F06-R20]
+id = "F06-R20"
+normative = true
+requirement = "Let eligible positive scores sum to T. With at most 32 workers, T <= 32,000,000 and fits u64. If T=0, release the entire B to F and record NO_ELIGIBLE_SCORE, with no entitlements. If T>0, each exact product B*S_i is evaluated in a checked integer domain of at least 256 bits. Let q_i=floor(B*S_i/T) and r_i=(B*S_i) mod T. Let L=B-sum(q_i). Allocate q_i+1 to the L workers with greatest r_i, breaking ties by unsigned ascending WorkerId byte order; all others receive q_i. Every final entitlement is u128 and sum(entitlements)=B exactly. Zero-score entries have zero entitlement and cannot receive a residual unit. L is less than the number of positive-score workers and is bounded by 31. Deterministic bounded sorting over <=32 entries is acceptable; floating point, saturation, random ties and traversal-order ties are forbidden."
+paragraph = "Let eligible positive scores sum to T. With at most 32 workers, T <= 32,000,000 and fits u64. If T=0, release the entire B to F and record NO_ELIGIBLE_SCORE, with no entitlements. If T>0, each exact product B*S_i is evaluated in a checked integer domain of at least 256 bits. Let q_i=floor(B*S_i/T) and r_i=(B*S_i) mod T. Let L=B-sum(q_i). Allocate q_i+1 to the L workers with greatest r_i, breaking ties by unsigned ascending WorkerId byte order; all others receive q_i. Every final entitlement is u128 and sum(entitlements)=B exactly. Zero-score entries have zero entitlement and cannot receive a residual unit. L is less than the number of positive-score workers and is bounded by 31. Deterministic bounded sorting over <=32 entries is acceptable; floating point, saturation, random ties and traversal-order ties are forbidden."
+
+[requirement.F06-R21]
+id = "F06-R21"
+normative = true
+requirement = "Every successful reward mutation verifies the proof-bound sight balance for the registered account in the executing context and requires it to cover F+R+C. The post-transition balance includes the exact staged deposit or payment; sight authority grants no spending permission. Missing/invalid balance evidence is READINESS_BLOCKED or the typed host refusal, never an invented zero. The always-required conservation identity is D=P+X+F+R+C. R equals the sum of RESERVED budgets. C equals the sum of all unclaimed, unexpired allocated entitlements. P and X are monotonic cumulative physical transfers. Each epoch satisfies B=paid_sum+unclaimed_sum+expired_sum for ALLOCATED, and B is released exactly once for any nonallocated terminal outcome. The physical account observation may show an unsolicited surplus U>=0; it never raises D, F, R, C or an entitlement. A ledger inconsistency halts reward mutation with explicit error; it does not assign balances or silently repair counters. Each counter operation and all intermediate sums are checked. Lifetime funded_total cannot exceed u128::MAX; exhausted cumulative headroom requires a separately reviewed successor market, not wraparound."
+paragraph = "Every successful reward mutation verifies the proof-bound sight balance for the registered account in the executing context and requires it to cover F+R+C. The post-transition balance includes the exact staged deposit or payment; sight authority grants no spending permission. Missing/invalid balance evidence is READINESS_BLOCKED or the typed host refusal, never an invented zero. The always-required conservation identity is D=P+X+F+R+C. R equals the sum of RESERVED budgets. C equals the sum of all unclaimed, unexpired allocated entitlements. P and X are monotonic cumulative physical transfers. Each epoch satisfies B=paid_sum+unclaimed_sum+expired_sum for ALLOCATED, and B is released exactly once for any nonallocated terminal outcome. The physical account observation may show an unsolicited surplus U>=0; it never raises D, F, R, C or an entitlement. A ledger inconsistency halts reward mutation with explicit error; it does not assign balances or silently repair counters. Each counter operation and all intermediate sums are checked. Lifetime funded_total cannot exceed u128::MAX; exhausted cumulative headroom requires a separately reviewed successor market, not wraparound."
+
+[requirement.F06-R22]
+id = "F06-R22"
+normative = true
+requirement = "State, replay record, allocation/claim disposition and native transfer effect commit in one real Program activity. No external send-then-mark sequence is permitted. Restart reads the authoritative state; there is no operator editable paid file. Two simultaneous claims for the same entry can produce at most one payment because object-local claim-disposition serialization determines the winner. Two claims for different entries serialize against authoritative state and preserve independent entitlements; no stale client amount or state image may overwrite another claim. Batch claiming is excluded in v1; one transfer per call narrows capability and recovery scope."
+paragraph = "State, replay record, allocation/claim disposition and native transfer effect commit in one real Program activity. No external send-then-mark sequence is permitted. Restart reads the authoritative state; there is no operator editable paid file. Two simultaneous claims for the same entry can produce at most one payment because object-local claim-disposition serialization determines the winner. Two claims for different entries serialize against authoritative state and preserve independent entitlements; no stale client amount or state image may overwrite another claim. Batch claiming is excluded in v1; one transfer per call narrows capability and recovery scope."
+
+[requirement.F06-R23]
+id = "F06-R23"
+normative = true
+requirement = "Score collusion, identity aliases, manipulated benchmarks and false AI evidence can produce economically wrong but arithmetically valid rewards. F03/F05 authorization and aggregation reduce particular threats; they do not prove AI truth. The market must disclose evaluator trust and funding loss exposure. A worker cannot increase its share by a late payout-address edit, fresh deposit, key rotation or account balance observation. A funder cannot withdraw another epoch's reserve. A relayer cannot redirect a payout, skim fees or substitute an asset. Direct ledger transfers into the registered reserve are unaccounted gifts; any future recovery mechanism for such gifts is separately specified and may not sweep R/C."
+paragraph = "Score collusion, identity aliases, manipulated benchmarks and false AI evidence can produce economically wrong but arithmetically valid rewards. F03/F05 authorization and aggregation reduce particular threats; they do not prove AI truth. The market must disclose evaluator trust and funding loss exposure. A worker cannot increase its share by a late payout-address edit, fresh deposit, key rotation or account balance observation. A funder cannot withdraw another epoch's reserve. A relayer cannot redirect a payout, skim fees or substitute an asset. Direct ledger transfers into the registered reserve are unaccounted gifts; any future recovery mechanism for such gifts is separately specified and may not sweep R/C."
+
+[requirement.F06-R24]
+id = "F06-R24"
+normative = true
+requirement = "All ten features share one authoritative value <=196608 bytes (192KiB), the common C07 bound. F05/F06 jointly receive 81920 bytes; F06 deliberately narrows its own share to at most 49152 bytes. Proposed bounds fit: dictionary 256*67=17152 bytes; a conservative 33-record upper bound, each 174+32*19=782 bytes, is 25806 bytes; ledger header <=256; total <=43214 bytes plus 97 bytes for the bounded optional last-refund record, leaving 5841 bytes inside F06's narrowed cap for canonical container framing. Treasury identity storage is the single F01 creation/Header option (presence:u8 plus 32 bytes only when present), charged solely to the existing F01 header allocation. F06 stores no duplicate treasury principal, designation/rotation journal or unbudgeted authority table; its already allocated 8-byte fixed funding_policy_version field remains within the 206-byte ledger header. The actual pre-opening completed-ring rule limits the active+completed population further. F05 retains at most its current complete aggregate, roots/cursor and bounded scoring workspace in the rest of the joint section, rather than 32 complete historical vote matrices. Counts and ordered rows must be parsed with bounds before allocation. An implementation may use fewer bytes but cannot silently reduce identity/recipient promises."
+paragraph = "All ten features share one authoritative value <=196608 bytes (192KiB), the common C07 bound. F05/F06 jointly receive 81920 bytes; F06 deliberately narrows its own share to at most 49152 bytes. Proposed bounds fit: dictionary 256*67=17152 bytes; a conservative 33-record upper bound, each 174+32*19=782 bytes, is 25806 bytes; ledger header <=256; total <=43214 bytes plus 97 bytes for the bounded optional last-refund record, leaving 5841 bytes inside F06's narrowed cap for canonical container framing. Treasury identity storage is the single F01 creation/Header option (presence:u8 plus 32 bytes only when present), charged solely to the existing F01 header allocation. F06 stores no duplicate treasury principal, designation/rotation journal or unbudgeted authority table; its already allocated 8-byte fixed funding_policy_version field remains within the 206-byte ledger header. The actual pre-opening completed-ring rule limits the active+completed population further. F05 retains at most its current complete aggregate, roots/cursor and bounded scoring workspace in the rest of the joint section, rather than 32 complete historical vote matrices. Counts and ordered rows must be parsed with bounds before allocation. An implementation may use fewer bytes but cannot silently reduce identity/recipient promises."
+
+[requirement.F06-R25]
+id = "F06-R25"
+normative = true
+requirement = "Dictionary admission is a real finite limit. Before F01 opens an epoch, all frozen recipients must resolve to existing or available slots; if 256 retained distinct pairs are pinned, refuse the next epoch with RecipientDictionaryFull. F08 replacement can still update a future roster, but it cannot force reserve opening without this preflight. All references survive key changes. A retention-limit admission error is explicit, never silent claim deletion."
+paragraph = "Dictionary admission is a real finite limit. Before F01 opens an epoch, all frozen recipients must resolve to existing or available slots; if 256 retained distinct pairs are pinned, refuse the next epoch with RecipientDictionaryFull. F08 replacement can still update a future roster, but it cannot force reserve opening without this preflight. All references survive key changes. A retention-limit admission error is explicit, never silent claim deletion."
+
+[requirement.F06-R26]
+id = "F06-R26"
+normative = true
+requirement = "Sustained production operation is blocked until the verified global content lifecycle/readiness prerequisite in contracts/integration-map.kvx I02 exists for this Program profile. Existing Context exposes no free-blob count; guest code cannot promise host capacity reservation. Operator/admission-service preflight is revision-bound and the real finalizer remains the atomic capacity check; a successful preflight is not a reservation. Two new blob insertions per state update can exhaust the shared 512-blob count far before the byte ceiling. Retaining 32 epochs inside the one value does not reclaim earlier value/manifest blobs automatically. Sandbox-specific cleanup is not assumed applicable. Before enabling funding or new work for continuous operation, the deployment must qualify lifecycle/recovery and resource admission. A finite pilot must publish its exact mutation budget and headroom policy; it cannot be represented as continuous readiness. Under contention a native capacity refusal still rolls back atomically and is surfaced for retry/recovery. Pruning application rows alone is not claimed as host blob cleanup."
+paragraph = "Sustained production operation is blocked until the verified global content lifecycle/readiness prerequisite in contracts/integration-map.kvx I02 exists for this Program profile. Existing Context exposes no free-blob count; guest code cannot promise host capacity reservation. Operator/admission-service preflight is revision-bound and the real finalizer remains the atomic capacity check; a successful preflight is not a reservation. Two new blob insertions per state update can exhaust the shared 512-blob count far before the byte ceiling. Retaining 32 epochs inside the one value does not reclaim earlier value/manifest blobs automatically. Sandbox-specific cleanup is not assumed applicable. Before enabling funding or new work for continuous operation, the deployment must qualify lifecycle/recovery and resource admission. A finite pilot must publish its exact mutation budget and headroom policy; it cannot be represented as continuous readiness. Under contention a native capacity refusal still rolls back atomically and is surfaced for retry/recovery. Pruning application rows alone is not claimed as host blob cleanup."
+
+[requirement.F06-R27]
+id = "F06-R27"
+normative = true
+requirement = "F05 and F06 terminalization must share one atomic application transition; F05-T03 owns final dispatch wiring after F06-T02 supplies pure reward-state primitives, avoiding a cyclic task dependency; no committed score-final state without its corresponding reserve disposition, and no allocated state without its frozen producer result. F10 can project the immutable allocation, funding, claim and refund receipts but cannot grant payout authority. Recovery services are permissionless bounded callers with no discretionary score or budget role."
+paragraph = "F05 and F06 terminalization must share one atomic application transition; F05-T03 owns final dispatch wiring after F06-T02 supplies pure reward-state primitives, avoiding a cyclic task dependency; no committed score-final state without its corresponding reserve disposition, and no allocated state without its frozen producer result. F10 can project the immutable allocation, funding, claim and refund receipts but cannot grant payout authority. Recovery services are permissionless bounded callers with no discretionary score or budget role."
+
+[requirement.F06-R28]
+id = "F06-R28"
+normative = true
+requirement = "Future qualification must cover arithmetic vector agreement and genuine guest/native conservation, rollback, source authority, atomic replay, finality proof and resource admission. Pure math tests alone do not qualify custody. Implementation qualification is UNRUN."
+paragraph = "Future qualification must cover arithmetic vector agreement and genuine guest/native conservation, rollback, source authority, atomic replay, finality proof and resource admission. Pure math tests alone do not qualify custody. Implementation qualification is UNRUN."
+
+[requirement.F06-R29]
+id = "F06-R29"
+normative = true
+requirement = "Task acceptance requires all declared scenarios and actual gate exit/log evidence at the implementation revision. A successful build, unqualified candidate, document parse or pure math result is not a qualified financial path. Unknown package/harness integration must be recorded and resolved before claiming any task done."
+paragraph = "Task acceptance requires all declared scenarios and actual gate exit/log evidence at the implementation revision. A successful build, unqualified candidate, document parse or pure math result is not a qualified financial path. Unknown package/harness integration must be recorded and resolved before claiming any task done."
+
+[requirement.F06-R30]
+id = "F06-R30"
+normative = true
+requirement = "Release requires common schemas/hash framing frozen, deployment registration authority established, candidate account funding/spending ABI actually admitted, genuine atomic state/transfer/receipt rollback qualified, source conservation and fixed account binding proven by focused gates, externally available finalized receipt verification, tested keeper recovery/expiry visibility, immutable funding consent shown before signing and verified sustained blob admission/reclamation. Funding amount/economics and evaluator trust are market policy choices made before opening; they are not inferred from account wealth or unstated monetary assumptions. Implementation and production qualification remain UNRUN."
+paragraph = "Release requires common schemas/hash framing frozen, deployment registration authority established, candidate account funding/spending ABI actually admitted, genuine atomic state/transfer/receipt rollback qualified, source conservation and fixed account binding proven by focused gates, externally available finalized receipt verification, tested keeper recovery/expiry visibility, immutable funding consent shown before signing and verified sustained blob admission/reclamation. Funding amount/economics and evaluator trust are market policy choices made before opening; they are not inferred from account wealth or unstated monetary assumptions. Implementation and production qualification remain UNRUN."
+
+[acceptance.F06-A01]
+id = "F06-A01"
+case = "exact rounding: B=101, ordered worker scores [4,2,1], each with three accepted observations equal to its score. T=7; base [57,28,14], residuals [5,6,3], L=2; final [58,29,14]. State moves R=101 to C=101 with no transfer."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "exact rounding: B=101, ordered worker scores [4,2,1], each with three accepted observations equal to its score. T=7; base [57,28,14], residuals [5,6,3], L=2; final [58,29,14]. State moves R=101 to C=101 with no transfer."
+qualification = "UNRUN"
+
+[acceptance.F06-A02]
+id = "F06-A02"
+case = "ties: B=2, scores [1,1,1], WorkerIds ascending A<B<C; entitlements [1,1,0]. Zero C claim sends nothing. Submission order changes do not change allocation digest."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "ties: B=2, scores [1,1,1], WorkerIds ascending A<B<C; entitlements [1,1,0]. Zero C claim sends nothing. Submission order changes do not change allocation digest."
+qualification = "UNRUN"
+
+[acceptance.F06-A03]
+id = "F06-A03"
+case = "lower median: worker A accepted scores [0,8,9,10] yields S_A=8; worker B [0,0,1] yields zero; worker C only two scores [1000000,1000000] is ineligible. B=13 gives A=13, B=C=0."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "lower median: worker A accepted scores [0,8,9,10] yields S_A=8; worker B [0,0,1] yields zero; worker C only two scores [1000000,1000000] is ineligible. B=13 gives A=13, B=C=0."
+qualification = "UNRUN"
+
+[acceptance.F06-A04]
+id = "F06-A04"
+case = "empty/zero: all workers have no quorum or median zero, B=77. R decreases by 77, F increases by 77, C/P unchanged; outcome NO_ELIGIBLE_SCORE. No owner/evaluator fallback."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "empty/zero: all workers have no quorum or median zero, B=77. R decreases by 77, F increases by 77, C/P unchanged; outcome NO_ELIGIBLE_SCORE. No owner/evaluator fallback."
+qualification = "UNRUN"
+
+[acceptance.F06-A05]
+id = "F06-A05"
+case = "maximal exact amount: B=0xffffffffffffffffffffffffffffffff, two equal positive scores; ascending first worker receives 0x80000000000000000000000000000000, second receives 0x7fffffffffffffffffffffffffffffff. No intermediate overflow, no saturation."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "maximal exact amount: B=0xffffffffffffffffffffffffffffffff, two equal positive scores; ascending first worker receives 0x80000000000000000000000000000000, second receives 0x7fffffffffffffffffffffffffffffff. No intermediate overflow, no saturation."
+qualification = "UNRUN"
+
+[acceptance.F06-A06]
+id = "F06-A06"
+case = "conservation lifecycle: contribute 120, reserve 101; F=19,R=101. Finalize A01: F=19,C=101. Claim first 58: P=58,C=43. Expire unclaimed 43: F=62,C=0. Close/refund 62: X=62,F=0; D=120=P+X."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "conservation lifecycle: contribute 120, reserve 101; F=19,R=101. Finalize A01: F=19,C=101. Claim first 58: P=58,C=43. Expire unclaimed 43: F=62,C=0. Close/refund 62: X=62,F=0; D=120=P+X."
+qualification = "UNRUN"
+
+[acceptance.F06-A07]
+id = "F06-A07"
+case = "insufficient free: F=10 and physical reserve balance 100 from an unsolicited transfer; budget=11 refuses. D/F remain 10; no live-balance funding inference."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "insufficient free: F=10 and physical reserve balance 100 from an unsolicited transfer; budget=11 refuses. D/F remain 10; no live-balance funding inference."
+qualification = "UNRUN"
+
+[acceptance.F06-A08]
+id = "F06-A08"
+case = "grant binding: rightful 29-unit claim with grant cap 28, wrong seed, wrong asset, wrong registered source or wrong recipient refuses with claim disposition clear and C unchanged. A correct exact-29 grant pays once."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "grant binding: rightful 29-unit claim with grant cap 28, wrong seed, wrong asset, wrong registered source or wrong recipient refuses with claim disposition clear and C unchanged. A correct exact-29 grant pays once."
+qualification = "UNRUN"
+
+[acceptance.F06-A09]
+id = "F06-A09"
+case = "concurrency/replay: two accepted submissions for the same 58-unit entitlement yield one transfer totaling 58; resubmission observes core ALREADY_APPLIED. Different request payload under a reused funding identity refuses ReplayConflict."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "concurrency/replay: two accepted submissions for the same 58-unit entitlement yield one transfer totaling 58; resubmission observes core ALREADY_APPLIED. Different request payload under a reused funding identity refuses ReplayConflict."
+qualification = "UNRUN"
+
+[acceptance.F06-A10]
+id = "F06-A10"
+case = "rotation: worker payout A frozen, later live registration changes to B; entitlement still pays A. Permissionless relayer-specified B refuses. A caller presenting a different proposed treasury principal or funding_policy_version=2 cannot fund or alter the immutable F01 authority. No treasury rotation operation exists."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "rotation: worker payout A frozen, later live registration changes to B; entitlement still pays A. Permissionless relayer-specified B refuses. A caller presenting a different proposed treasury principal or funding_policy_version=2 cannot fund or alter the immutable F01 authority. No treasury rotation operation exists."
+qualification = "UNRUN"
+
+[acceptance.F06-A11]
+id = "F06-A11"
+case = "expiry edge: terminal height 900, expiry 4996. Claim at 4995 succeeds; claim at 4996 refuses. Expiry at 4996 releases exactly all remaining unclaimed amounts; duplicate expiry releases zero."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "expiry edge: terminal height 900, expiry 4996. Claim at 4995 succeeds; claim at 4996 refuses. Expiry at 4996 releases exactly all remaining unclaimed amounts; duplicate expiry releases zero."
+qualification = "UNRUN"
+
+[acceptance.F06-A12]
+id = "F06-A12"
+case = "failed atomic payout: real recipient/account or transfer application refusal after guest staging leaves claimable amount, paid_total, paid_sum and disposition unchanged. After valid repair, one exact claim succeeds; no operator manual balance assignment."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "failed atomic payout: real recipient/account or transfer application refusal after guest staging leaves claimable amount, paid_total, paid_sum and disposition unchanged. After valid repair, one exact claim succeeds; no operator manual balance assignment."
+qualification = "UNRUN"
+
+[acceptance.F06-A13]
+id = "F06-A13"
+case = "late settlement/close: open funded epoch with no keeper through the settlement interval; R remains B, no refund/implicit abort occurs, and the next epoch cannot open. Later valid keeper processing completes the original sealed inputs and allocates once. Closing before terminalization cannot withdraw R. Closing after allocation cannot withdraw C."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "late settlement/close: open funded epoch with no keeper through the settlement interval; R remains B, no refund/implicit abort occurs, and the next epoch cannot open. Later valid keeper processing completes the original sealed inputs and allocates once. Closing before terminalization cannot withdraw R. Closing after allocation cannot withdraw C."
+qualification = "UNRUN"
+
+[acceptance.F06-A14]
+id = "F06-A14"
+case = "retention/dictionary: 256 pinned distinct recipient pairs and a new frozen recipient refuses opening before accepting work. Thirty-two completed epochs fit; a new opening first safely prunes the oldest if that completed ring is full, thereby reserving its eventual terminal slot. An older unexpired liability cannot be pruned to make room."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "retention/dictionary: 256 pinned distinct recipient pairs and a new frozen recipient refuses opening before accepting work. Thirty-two completed epochs fit; a new opening first safely prunes the oldest if that completed ring is full, thereby reserving its eventual terminal slot. An older unexpired liability cannot be pruned to make room."
+qualification = "UNRUN"
+
+[acceptance.F06-A15]
+id = "F06-A15"
+case = "overflow/corruption: funded_total=u128::MAX then add 1 refuses without deposit; forged C inconsistent with sum of rows produces LedgerInvariantViolation before transfer. Height addition overflow refuses without deleting R."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "overflow/corruption: funded_total=u128::MAX then add 1 refuses without deposit; forged C inconsistent with sum of rows produces LedgerInvariantViolation before transfer. Height addition overflow refuses without deleting R."
+qualification = "UNRUN"
+
+[acceptance.F06-A16]
+id = "F06-A16"
+case = "funding consent: otherwise authorized treasury request naming any refund recipient other than immutable market recipient refuses; an unsigned/inferred treasury identity never funds. Same accepted Fund request replays without a second debit. With treasury_present=0 only owner can fund; any other principal refuses. With treasury_present=1 only the distinct creation-time principal or owner can fund. funding_policy_version=0 or 2 and consent=false each refuse without a deposit or replay-sequence consumption."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "funding consent: otherwise authorized treasury request naming any refund recipient other than immutable market recipient refuses; an unsigned/inferred treasury identity never funds. Same accepted Fund request replays without a second debit. With treasury_present=0 only owner can fund; any other principal refuses. With treasury_present=1 only the distinct creation-time principal or owner can fund. funding_policy_version=0 or 2 and consent=false each refuse without a deposit or replay-sequence consumption."
+qualification = "UNRUN"
+
+[acceptance.F06-A17]
+id = "F06-A17"
+case = "resource exhaustion: simulate actual native blob admission boundary through real execution; new epoch/funding admission refuses before liability creation when no verified terminal path fits. Old claims are never marked paid merely because a host resource is unavailable."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "resource exhaustion: simulate actual native blob admission boundary through real execution; new epoch/funding admission refuses before liability creation when no verified terminal path fits. Old claims are never marked paid merely because a host resource is unavailable."
+qualification = "UNRUN"
+
+[acceptance.F06-A18]
+id = "F06-A18"
+case = "finality recovery: interrupted client submission checks real finalized state/receipt and resumes with one economic payout; an unfinalized projection alone cannot cause external paid acknowledgement."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "finality recovery: interrupted client submission checks real finalized state/receipt and resumes with one economic payout; an unfinalized projection alone cannot cause external paid acknowledgement."
+qualification = "UNRUN"
+
+[acceptance.F06-A19]
+id = "F06-A19"
+case = "refund cursor: WindingDown X=0,F=62; permissionless refund(expected_X=0,amount=20) pays fixed recipient20 and sets X=20,F=42. An identical semantic repeat pays zero; altered amount with expected_X=0 returns STALE_CURSOR. A subsequent refund(expected_X=20,amount=42) pays42, X=62,F=0. Later expiry creates new Free but cannot make either old cursor payable again. Missing exact ProgramSpend authority leaves cursor/state unchanged."
+status = "PROPOSED_UNRUN"
+design_vector = true
+paragraph = "refund cursor: WindingDown X=0,F=62; permissionless refund(expected_X=0,amount=20) pays fixed recipient20 and sets X=20,F=42. An identical semantic repeat pays zero; altered amount with expected_X=0 returns STALE_CURSOR. A subsequent refund(expected_X=20,amount=42) pays42, X=62,F=0. Later expiry creates new Free but cannot make either old cursor payable again. Missing exact ProgramSpend authority leaves cursor/state unchanged."
+qualification = "UNRUN"
+
+[implementation.F06-T01]
+id = "F06-T01"
+dependencies = ["T-C01", "T-C02"]
+proposed_new_paths = ["programs/crates/layerx-programs-ai-market/src/reward_math.rs", "programs/crates/layerx-programs-ai-market/src/rewards.rs", "programs/crates/layerx-programs-ai-market/tests/rewards.rs"]
+compile_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_math_and_encoding -- --exact"
+qualification = "UNRUN"
+test_targets_exist = false
+implementation_first = true
+max_builds = 1
+max_verify_runs_initial = 1
+max_task_scoped_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Pass declared task gate with real-path evidence, or report exact blocker without weakening checks."
+canonical_task = "ai.F06-T01"
+canonical_spec = "../../spec.kvx"
+authority = "subordinate"
+paragraph = "depends on T-C01/T-C02 shared package/state and core contracts: implement reward types, strict encoding and checked exact allocation in new src/reward_math.rs and the reward portion of src/rewards.rs; add A01–A05/A15 cases to new tests/rewards.rs. Compile: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_math_and_encoding -- --exact. The named test is a future required target, not an existing command claimed to work."
+
+[implementation.F06-T02]
+id = "F06-T02"
+dependencies = ["F06-T01", "F01-T01", "F02-T01", "F05-T02"]
+proposed_new_paths = ["programs/crates/layerx-programs-ai-market/src/rewards.rs", "programs/crates/layerx-programs-ai-market/tests/rewards.rs"]
+compile_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_state_transitions -- --exact"
+qualification = "UNRUN"
+test_targets_exist = false
+implementation_first = true
+max_builds = 1
+max_verify_runs_initial = 1
+max_task_scoped_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Pass declared task gate with real-path evidence, or report exact blocker without weakening checks."
+scope = "Includes permissionless exact-refund cursor and A19; pure state primitives only, preceding F05-T03 final integration."
+canonical_task = "ai.F06-T02"
+canonical_spec = "../../spec.kvx"
+authority = "subordinate"
+paragraph = "depends on F06-T01, F01 epoch primitives, F02 frozen-roster primitives and F05-T02 aggregation math/types: implement funding replay, reserve, frozen dictionary, atomic producer settlement, ledger invariants and close/expiry/prune state transitions in new src/rewards.rs; require A06/A07/A10/A11/A13/A14/A16. Same one compile command. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_state_transitions -- --exact. Do not merge a detached F05 settlement commit path."
+
+[implementation.F06-T03]
+id = "F06-T03"
+dependencies = ["F06-T02", "F05-T03", "T-C03"]
+proposed_new_paths = ["programs/crates/layerx-programs-ai-market/src/rewards.rs", "programs/crates/layerx-programs-ai-market/tests/rewards_native.rs"]
+compile_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_conservation_authority_and_rollback -- --exact"
+qualification = "UNRUN"
+test_targets_exist = false
+implementation_first = true
+max_builds = 1
+max_verify_runs_initial = 1
+max_task_scoped_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Pass declared task gate with real-path evidence, or report exact blocker without weakening checks."
+canonical_task = "ai.F06-T03"
+canonical_spec = "../../spec.kvx"
+authority = "subordinate"
+paragraph = "depends on F06-T02, F05-T03 atomic finalization integration and T-C03 verified existing account/ABI integration: wire Fund/Claim/Refund to existing SDK deposits and program-account payments through the new application entrypoint and rewards.rs; create genuine native integration cases in new tests/rewards_native.rs using the repository's real execution harness selected by the integration map. Compile is the same guest build. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_conservation_authority_and_rollback -- --exact. Exact real harness linkage is a prerequisite to implementing this target; it must not be replaced with fake accounts or host functions."
+
+[implementation.F06-T04]
+id = "F06-T04"
+dependencies = ["F06-T03", "F10-projection-primitives", "T-C04"]
+proposed_new_paths = ["programs/crates/layerx-programs-ai-market/tests/rewards_native.rs"]
+compile_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_finality_recovery_and_capacity -- --exact"
+qualification = "UNRUN"
+test_targets_exist = false
+implementation_first = true
+max_builds = 1
+max_verify_runs_initial = 1
+max_task_scoped_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Pass declared task gate with real-path evidence, or report exact blocker without weakening checks."
+canonical_task = "ai.F06-T04"
+canonical_spec = "../../spec.kvx"
+authority = "subordinate"
+paragraph = "depends on F06-T03/F10 projection primitives and T-C04 platform resource prerequisite: implement finalized reward projections, client recovery and capacity preflight in the common F10-owned client paths, with F06 ownership limited to new tests/rewards_native.rs scenarios. No second writer edits F10 files. Same compile command for reward application. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_finality_recovery_and_capacity -- --exact. Resource admission/reclamation work outside the application needs its own platform task and authority; this spec does not authorize it."
+
+[metadata.dependencies]
+value = ["F01", "F02", "F05"]
+
+[metadata.consumers]
+value = ["F07", "F10"]
+
+[metadata.common_contract]
+value = "contracts/core.kvx"
+
+[metadata.integration_contract]
+value = "contracts/integration-map.kvx"
+
+[metadata.scope]
+value = "Paxeer application specification; implementation qualification is UNRUN."
+
+[metadata.fixed_defaults]
+asset_count = 1
+max_workers = 32
+max_evaluators = 8
+quorum_per_worker = 3
+score_max = 1000000
+amount_bits = 128
+allocation_product_bits = 256
+rounding = "exact largest remainder; descending remainder, ascending WorkerId tie"
+claim_expiry_execution_heights = 4096
+completed_epoch_ring_max = 32
+dictionary_pairs_max = 256
+entry_bytes = 19
+epoch_header_bytes = 174
+ledger_header_bytes = 206
+dictionary_entry_bytes = 67
+feature_state_cap_bytes = 49152
+shared_f05_f06_cap_bytes = 81920
+application_state_cap_bytes = 196608
+refund_recipient_mutable = false
+worker_rewards_only = true
+batch_claims = false
+late_settlement_allowed = true
+discretionary_abort = false
+refund_permissionless = true
+refund_cursor = "tracked_refunds u128, exact expected value; last semantic refund replay record bounded to one"
+last_refund_record_max_bytes = 97
+maximum_proposed_layout_bound_bytes = 43311
+native_captured_activity_blob_count_typical_max = 3
+namespace_blob_count_max = 2
+dictionary_index_encoding_bits = 16
+dictionary_index_semantic_min = 0
+dictionary_index_semantic_max = 255
+funding_policy_version = 1
+treasury_default = "absent"
+treasury_designation = "immutable optional F01 creation/Header principal"
+treasury_must_differ_from_owner = true
+treasury_rotation_supported = false
+treasury_replacement_supported = false
+treasury_authority_storage_owner = "F01 header; presence u8 plus32bytes when present; no duplicate principal in F06"
+
+[metadata.release_prerequisites]
+value = ["T-C01/T-C02 exact common codec and real host adapter", "T-C03 genuine registered-account custody/atomicity/finality qualification", "T-C04 verified native blob lifecycle for continuous operation", "Exact numeric operation and feature-error registry assignment", "Real proof-bound account sight and source authority", "F05/F06/F07 atomic terminal integration", "Immutable funding consent displayed before signing"]
+
+[metadata.builds]
+value = "UNRUN"
+
+[metadata.tests]
+value = "UNRUN"
+
+[metadata.runtime]
+value = "UNRUN"
+
+[metadata.deployment]
+value = "UNRUN"
+
+[metadata.operations.0]
+name = "FUND"
+operation_u16 = 1537
+operation_hex = "0x0601"
+authority = "immutable F01 owner or immutable optional creation-time treasury principal; treasury default absent and distinct from owner when present; kind0; funding_policy_version=1; explicit contribution consent"
+payload_bytes = 57
+monetary_transfers_max = 1
+actor_sequence = "role-bound next sequence"
+
+[metadata.operations.1]
+name = "CLAIM"
+operation_u16 = 1538
+operation_hex = "0x0602"
+authority = "permissionless kind0; frozen worker recipient and exact entitlement"
+payload_bytes = 80
+monetary_transfers_max = 1
+actor_sequence = "0; object-local state"
+
+[metadata.operations.2]
+name = "EXPIRE_EPOCH_CLAIMS"
+operation_u16 = 1539
+operation_hex = "0x0603"
+authority = "permissionless kind0 after immutable expiry"
+payload_bytes = 0
+monetary_transfers_max = 0
+actor_sequence = "0; object-local state"
+
+[metadata.operations.3]
+name = "REFUND_FREE"
+operation_u16 = 1540
+operation_hex = "0x0604"
+authority = "permissionless kind0 during WindingDown; exact tracked_refunds cursor; fixed recipient; exact ProgramSpend"
+payload_bytes = 64
+monetary_transfers_max = 1
+actor_sequence = "0; object-local state"
+
+[metadata.operations.4]
+name = "PRUNE_EPOCH"
+operation_u16 = 1541
+operation_hex = "0x0605"
+authority = "permissionless kind0; oldest safe completed record only"
+payload_bytes = 0
+monetary_transfers_max = 0
+actor_sequence = "0; object-local state"
+
+[metadata.feature_errors.0]
+name = "FUNDING_POLICY_MISMATCH"
+code_u16 = 1537
+code_hex = "0x0601"
+
+[metadata.feature_errors.1]
+name = "REFUND_RECIPIENT_MISMATCH"
+code_u16 = 1538
+code_hex = "0x0602"
+
+[metadata.feature_errors.2]
+name = "WRONG_ASSET"
+code_u16 = 1539
+code_hex = "0x0603"
+
+[metadata.feature_errors.3]
+name = "INVALID_AMOUNT"
+code_u16 = 1540
+code_hex = "0x0604"
+
+[metadata.feature_errors.4]
+name = "EPOCH_ALREADY_RESERVED"
+code_u16 = 1541
+code_hex = "0x0605"
+
+[metadata.feature_errors.5]
+name = "EPOCH_NOT_RESERVED"
+code_u16 = 1542
+code_hex = "0x0606"
+
+[metadata.feature_errors.6]
+name = "AGGREGATION_MISMATCH"
+code_u16 = 1543
+code_hex = "0x0607"
+
+[metadata.feature_errors.7]
+name = "EPOCH_TERMINAL"
+code_u16 = 1544
+code_hex = "0x0608"
+
+[metadata.feature_errors.8]
+name = "CLAIM_NOT_READY"
+code_u16 = 1545
+code_hex = "0x0609"
+
+[metadata.feature_errors.9]
+name = "CLAIM_EXPIRED"
+code_u16 = 1546
+code_hex = "0x060A"
+
+[metadata.feature_errors.10]
+name = "UNKNOWN_WORKER_ENTITLEMENT"
+code_u16 = 1547
+code_hex = "0x060B"
+
+[metadata.feature_errors.11]
+name = "WRONG_CLAIM_RECIPIENT"
+code_u16 = 1548
+code_hex = "0x060C"
+
+[metadata.feature_errors.12]
+name = "WRONG_CLAIM_AMOUNT"
+code_u16 = 1549
+code_hex = "0x060D"
+
+[metadata.feature_errors.13]
+name = "NOTHING_TO_CLAIM"
+code_u16 = 1550
+code_hex = "0x060E"
+
+[metadata.feature_errors.14]
+name = "LEDGER_INVARIANT_VIOLATION"
+code_u16 = 1551
+code_hex = "0x060F"
+
+[metadata.feature_errors.15]
+name = "CONTRIBUTION_CONSENT_REQUIRED"
+code_u16 = 1552
+code_hex = "0x0610"
+
+[metadata.qualification]
+value = "UNRUN"
+

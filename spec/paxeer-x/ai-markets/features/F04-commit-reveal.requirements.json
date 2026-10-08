@@ -1,0 +1,313 @@
+{
+  "id": "F04",
+  "title": "Score commitment and reveal windows",
+  "spec_version": 1,
+  "status": "SPECIFICATION_ONLY_IMPLEMENTATION_UNRUN",
+  "dependencies": [
+    "COMMON_CORE",
+    "F01",
+    "F02",
+    "F03",
+    "F08",
+    "F09"
+  ],
+  "consumers": [
+    "F05",
+    "F07",
+    "F08",
+    "F10"
+  ],
+  "normative_requirements": [
+    {
+      "id": "F04-R01",
+      "requirement": "At most one immutable commitment and admitted report per evaluator/epoch; no replacement.",
+      "acceptance_case_ids": [
+        "F04-A01",
+        "F04-A08",
+        "F04-A12"
+      ]
+    },
+    {
+      "id": "F04-R02",
+      "requirement": "Atomic Programs application transitions through one bounded shared state; native consensus/custody/finality unchanged.",
+      "acceptance_case_ids": [
+        "F04-A08",
+        "F04-A09",
+        "F04-A10"
+      ]
+    },
+    {
+      "id": "F04-R03",
+      "requirement": "Exact versioned SHA256 commitment binds canonical report digest, salt and full frozen domain tuple.",
+      "acceptance_case_ids": [
+        "F04-A03",
+        "F04-A04",
+        "F04-A05"
+      ]
+    },
+    {
+      "id": "F04-R04",
+      "requirement": "Fresh externally generated cryptographic nonzero32-byte salt; no onchain entropy claim.",
+      "acceptance_case_ids": [
+        "F04-A05",
+        "F04-A09"
+      ]
+    },
+    {
+      "id": "F04-R05",
+      "requirement": "Frozen versions with immediate admission revocation and eligibility exclusion before aggregation seal.",
+      "acceptance_case_ids": [
+        "F04-A04",
+        "F04-A12"
+      ]
+    },
+    {
+      "id": "F04-R06",
+      "requirement": "C03 exact last-request replay/idempotency and expiry; no double report or replay effects.",
+      "acceptance_case_ids": [
+        "F04-A01",
+        "F04-A08",
+        "F04-A09",
+        "F04-A12"
+      ]
+    },
+    {
+      "id": "F04-R07",
+      "requirement": "Exact half-open height windows; absent/late/invalid/unrevealed contributes no vote.",
+      "acceptance_case_ids": [
+        "F04-A02",
+        "F04-A06",
+        "F04-A11"
+      ]
+    },
+    {
+      "id": "F04-R08",
+      "requirement": "Bounded canonical row/signature/hash/membership work without inference or external fetch.",
+      "acceptance_case_ids": [
+        "F04-A03",
+        "F04-A07",
+        "F04-A10"
+      ]
+    },
+    {
+      "id": "F04-R09",
+      "requirement": "Durable secrets and finalized receipt/state reconciliation; native serialization determines concurrent winner.",
+      "acceptance_case_ids": [
+        "F04-A08",
+        "F04-A09"
+      ]
+    },
+    {
+      "id": "F04-R10",
+      "requirement": "No commitment truth claim, automatic slash or F04 economic movement; disclose withholding/censorship/privacy risks.",
+      "acceptance_case_ids": [
+        "F04-A06",
+        "F04-A11"
+      ]
+    },
+    {
+      "id": "F04-R11",
+      "requirement": "One row per activity, currentreports24KiB/common192KiB; no native capacity expansion or reclamation presumption.",
+      "acceptance_case_ids": [
+        "F04-A10",
+        "F04-A12"
+      ]
+    }
+  ],
+  "acceptance_case_ids": [
+    "F04-A01",
+    "F04-A02",
+    "F04-A03",
+    "F04-A04",
+    "F04-A05",
+    "F04-A06",
+    "F04-A07",
+    "F04-A08",
+    "F04-A09",
+    "F04-A10",
+    "F04-A11",
+    "F04-A12"
+  ],
+  "tasks": [
+    {
+      "id": "F04-T01",
+      "dependencies": [
+        "COMMON_CODEC",
+        "F01",
+        "F03_CODEC"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs",
+        "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"
+      ],
+      "paths_status": "PROPOSED_NEW; shared dispatch requires exclusive owner assignment",
+      "build_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical",
+      "qualification": "UNRUN; proposed target must be created and real Programs harness qualified",
+      "acceptance_case_ids": [
+        "F04-A03",
+        "F04-A04",
+        "F04-A05",
+        "F04-A07",
+        "F04-A10"
+      ],
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30
+    },
+    {
+      "id": "F04-T02",
+      "dependencies": [
+        "F04-T01",
+        "F01_STATE",
+        "F03_ADMISSION"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/commit_reveal.rs",
+        "programs/crates/layerx-programs-ai-market/tests/f04_windows.rs",
+        "programs/crates/layerx-programs-ai-market/src/lib.rs"
+      ],
+      "paths_status": "PROPOSED_NEW; shared dispatch requires exclusive owner assignment",
+      "build_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows",
+      "qualification": "UNRUN; proposed target must be created and real Programs harness qualified",
+      "acceptance_case_ids": [
+        "F04-A01",
+        "F04-A02",
+        "F04-A03",
+        "F04-A04",
+        "F04-A05",
+        "F04-A06",
+        "F04-A08",
+        "F04-A10",
+        "F04-A11",
+        "F04-A12"
+      ],
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30
+    },
+    {
+      "id": "F04-T03",
+      "dependencies": [
+        "F04-T02",
+        "F10_CLIENT"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/tests/f04_recovery.rs"
+      ],
+      "paths_status": "PROPOSED_NEW; shared dispatch requires exclusive owner assignment",
+      "build_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery",
+      "qualification": "UNRUN; proposed target must be created and real Programs harness qualified",
+      "acceptance_case_ids": [
+        "F04-A09",
+        "F04-A12"
+      ],
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30
+    }
+  ],
+  "common_contract": "contracts/core.kvx",
+  "fixed_defaults": {
+    "work_heights": 64,
+    "commit_heights": 16,
+    "reveal_heights": 16,
+    "settlement_heights": 32,
+    "maximum_workers": 32,
+    "maximum_evaluators": 8,
+    "report_body_max_bytes": 1380,
+    "reveal_payload_max_bytes": 1480,
+    "commit_payload_bytes": 224,
+    "salt_bytes": 32,
+    "maximum_current_reports_section_bytes": 24576,
+    "maximum_shared_state_bytes": 196608,
+    "commit_replacements": false,
+    "score_min": 0,
+    "score_max": 1000000,
+    "report_min_entries": 1,
+    "signature_message": "H(PAXAI/score-attestation/v1,report_digest32)"
+  },
+  "prerequisites": [
+    "Exact shared error-code and operation-code allocation",
+    "F03 real cryptographic/evidence admission",
+    "F01 immutable epoch freeze and checked arithmetic",
+    "F10 finalized receipt/state recovery",
+    "Verified content-blob lifecycle required for continuous-operation release",
+    "Real Programs runtime test harness and SDK host crypto test target"
+  ],
+  "integration_contract": "contracts/integration-map.kvx",
+  "operations": [
+    {
+      "name": "CommitScore",
+      "selector": "0x0401",
+      "payload_bytes": 224,
+      "result_payload_bytes": 81,
+      "event_topic": "PAXAI/v1/CommitScore",
+      "event_bytes": 194
+    },
+    {
+      "name": "RevealScore",
+      "selector": "0x0402",
+      "payload_max_bytes": 1480,
+      "result_payload_bytes": 81,
+      "event_topic": "PAXAI/v1/RevealScore",
+      "event_bytes": 228
+    }
+  ],
+  "event_contracts": {
+    "CommitScore": {
+      "bytes": 194,
+      "field_order": [
+        "schema_version:u16",
+        "market_id32",
+        "epoch:u64",
+        "config_version:u64",
+        "state_revision:u64",
+        "request_digest32",
+        "result_digest32",
+        "evaluator_id32",
+        "commit_digest32",
+        "accepted_height:u64"
+      ]
+    },
+    "RevealScore": {
+      "bytes": 228,
+      "field_order": [
+        "schema_version:u16",
+        "market_id32",
+        "epoch:u64",
+        "config_version:u64",
+        "state_revision:u64",
+        "request_digest32",
+        "result_digest32",
+        "evaluator_id32",
+        "report_digest32",
+        "evidence_root32",
+        "vector_count:u16",
+        "admitted_height:u64"
+      ],
+      "sole_admission_event": true,
+      "acceptance_case_ids": [
+        "F04-A02"
+      ]
+    }
+  },
+  "result_contract": {
+    "statuses": {
+      "OK": 0,
+      "ALREADY_APPLIED": 1,
+      "ERROR": 2
+    },
+    "application_error_bytes": 2,
+    "application_error_position": "immediately after status:u16",
+    "success_error_code": 0,
+    "operation_result_payload_bytes": 81
+  },
+  "qualification": "UNRUN",
+  "canonical_task_authority": "../../spec.kvx"
+}

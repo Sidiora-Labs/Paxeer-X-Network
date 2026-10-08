@@ -1,0 +1,702 @@
+[meta]
+id = "F03"
+title = "Evaluator authorization and signed assessment admission"
+version = 1
+status = "SPECIFICATION_ONLY"
+implementation = "UNRUN"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+task_precedence = "Canonical task sections in ../../spec.kvx control admission, dependencies, ownership and gates. Local proposals describe feature obligations only."
+requirements_file = "F03-evaluators.requirements.json"
+
+[contract.overview]
+title = "Evaluator authorization and signed assessment admission"
+paragraph_1 = "Specification version 1. Design only. Implementation and all qualification are UNRUN."
+paragraph_2 = "Normative words MUST, MUST NOT and SHOULD identify required, prohibited and recommended behavior. Shared contracts/core.kvx governs common encoding, epochs, state limits and operation allocation; this feature specifies additional admission behavior. All new interfaces below are proposed application interfaces."
+
+[contract.section_1]
+title = "Purpose and AI scope"
+paragraph_1 = "F03 gives an AI market an explicit, reviewable answer to who may evaluate completed work and which signed assessment becomes eligible for deterministic reward scoring. It supports external evaluators assessing inference, embedding and training-evaluation results against a frozen market policy. It authenticates a statement and binds it to approved policy and evidence commitments. It does not execute a model, establish factual truth, prove reproducibility, guarantee data availability or confer blockchain validator authority. F03 MUST NOT mint tokens, alter consensus, use native oracle voting membership as evaluator permission, or grant a market owner automatic evaluation rights."
+paragraph_2 = "A score is an evaluator's bounded assessment, not payment and not a correctness proof. A declared objective evaluation means the approved rubric describes an external reproducible measurement procedure; admission does not prove that procedure ran honestly. A subjective evaluation must be labeled as such in the market policy and every projection. The same distinction survives settlement and history; signatures never convert a subjective opinion into objective evidence."
+
+[contract.section_2]
+title = "Existing architecture and proposed integration"
+paragraph_1 = "Existing programs/sdk/rust/src/context.rs exposes Context::executing_program, invoking_principal, immediate_caller, activity_sequence and batch_height. Administrative authority MUST derive from this authenticated execution context, never a caller-supplied principal field. Existing programs/sdk/rust/src/crypto.rs exposes SHA256 and bounded Ed25519 verification; signatures in this design verify a 32-byte digest within the existing 64-byte message bound. Existing programs/sdk/rust/src/storage.rs and src/access.rs expose namespaced storage and declared access recipes. Existing programs/crates/layerx-programs-runtime/src/host/storage.rs provides metered storage calls. Existing src/modules/programs/storage.c persists changed storage values plus a namespace manifest, making the number of new blobs a design constraint."
+paragraph_2 = "Existing programs/crates/layerx-programs-market/src/attest.rs illustrates available policy-bound attestation infrastructure but has a separate lease/input schema and lifecycle; an AI assessment is not an existing input attestation. The new application MUST keep its own versioned application state and use the existing Program invocation, identity, receipts, transfer and finality infrastructure. No native module ID, proof namespace, ABI import, consensus voting rule, escrow custody or conservation equation changes are authorized by F03. A new application crate is proposed under programs/crates/layerx-programs-ai-market; its registration and deployment are future prerequisites, not existing functionality."
+
+[contract.section_3]
+title = "Glossary and typed data model [F03-R01..R07]"
+paragraph_1 = "The common domain consists of chain_domain, program_id and market_id, each exactly32 bytes. An evaluator_id is an opaque nonzero32-byte identifier, distinct from a signature key and a blockchain validator identity. A principal_id is a nonzero32-byte authenticated Paxeer principal. A worker_id refers to a frozen epoch roster entry, whose generation is part of that roster commitment. All integers are unsigned big-endian; no floating-point fields, text variants, duplicate fields, trailing bytes or alternative encodings are accepted. Unrecognized enum values and nonzero reserved bytes are malformed. Heights and epoch IDs are u64; counts and schema_version are u16; scores are u32 in inclusive range0..1000000; grants and key versions are u64 and MUST NOT wrap."
+paragraph_2 = "EvaluatorGrant contains evaluator_id32, principal_id32, rubric_digest32, grant_versionu64, key_versionu64, signing_key32, effective_epochu64, expiry_epoch_exclusiveu64 and statusu8. evaluator_id is H('PAXAI/evaluator/v1',market_id32||owner_principal32||enrollment_nonce32), using the common public enrollment nonce contract; the caller does not choose an unrelated identifier. Status values are pending=1,active=2,revoked=3,expired=4. A new pending grant is Owner nomination only, without participant consent or membership. F08 AdmitEvaluator subsequently records acceptance using its existing admitted membership flag, after evaluator-owner kind0 acceptance and registered delegate proof of possession. The same grant may remain pending until its activation snapshot, but accepted membership MUST be present before activation. No new status enum, second identity record or extra unbudgeted acceptance boolean is introduced. The zero expiry is forbidden: expiration is explicit and finite. Defaults are activation at next future epoch, expiration after32 epochs and one active key per evaluator. At most8 grants may be eligible in a market epoch. No key, evaluator ID or principal may occupy two active roster slots. An evaluator principal MUST NOT equal any frozen worker principal or the market owner principal. New grant versions strictly increase for the evaluator. Retired versions are never reactivated; key rotation uses a new key_version, even when changing back to previously used key bytes, and a revoked grant cannot regain authority in its frozen epoch. V1 checks key reuse against current/staged/frozen records only; it does not claim an unbounded global history of every key ever used."
+paragraph_3 = "EpochEvaluatorSnapshot is an immutable ordered list of eligible grant records, sorted by evaluator_id bytes, committed by the common roster_hash together with the worker roster. It captures key/grant versions, principal, rubric digest and eligibility. Weight policy belongs to F05 and MUST NOT be inferred from balance, validator power or report submission order. Live revocation is an additional exclusion overlay, not a rewrite of the frozen roster. Config version is the F01 frozen config_versionu64."
+paragraph_4 = "Canonical ScoreReportBody is exactly: schema_versionu16=1,chain_domain32,program_id32,market_id32,epochu64,config_versionu64,roster_hash32,evaluator_id32,grant_versionu64,key_versionu64,evidence_root32,vector_countu16,then vector_count repetitions of(worker_id32,scoreu32). vector_count is1..32; worker IDs are strictly ascending and unique and must occur in the frozen roster. Fixed prefix length is228 bytes; maximum body length is1380 bytes. An omitted worker is no vote; an explicit score0 is a vote assessing zero quality. No admission normalization, rounding, score rescaling or sum constraint applies. An all-zero vector is valid when its evidence declaration supports the assessments. evidence_root MUST be nonzero and match the F09 sealed epoch evidence registration for this evaluator."
+paragraph_5 = "For the common H function, report_digest=H('PAXAI/score-report/v1',canonical body) and attestation_digest=H('PAXAI/score-attestation/v1',report_digest32). Ed25519 signs exactly attestation_digest32; signature is exactly64 bytes. SignedReport is body followed by signature64, maximum1444 bytes; no embedded salt exists. F04 alone owns the32-byte commitment salt and commitment encoding. Report identity is report_digest, not a hash of the signature. Reserved feature extension bytes are absent in v1; schema evolution requires a new schema version and future epoch activation."
+paragraph_6 = "Evidence manifest semantics: an evaluator MUST examine an F09 bundle binding the epoch domain, config_version, roster_hash, evaluator_id, approved rubric/benchmark suite, model/dataset artifact commitments, the evaluated worker generation, F01 frozen task_set_digest, ordered admitted task/result statuses and receipt/manifest commitments and assessment reasons before signing. The F09 manifest maximum is65536 bytes and its root is H('PAXAI/evidence/v1',canonical manifest). The external evaluator MUST ensure the manifest's worker score pairs equal its exact report vector; the guest cannot establish this equality from the root alone. Detailed per-target records remain off chain. The Program checks the registered root and signature; it does not traverse an opaque remote manifest or validate all its semantics. A missing or unavailable result may justify omission under the rubric; it MUST NOT be silently presented as an observed poor response. Unsupported scored workers are prohibited by evaluator policy even when a malicious signer could create a cryptographically valid report."
+
+[contract.section_4]
+title = "Roles, grants and revocation [F03-R08..R12]"
+paragraph_1 = "Market administrator: the immutable F01 Owner authenticated principal may schedule grants and rotations, subject to bounds, suspension and next-epoch activation. It receives no automatic score privilege. Evaluator operator: owns the grant-bound signing key and follows the frozen rubric. A relayer may transport its signed report but gains no authority and cannot change any signed field. Worker: supplies task results through F02/F09; worker keys cannot submit scores absent a distinct valid evaluator grant. Anyone may submit a bounded evidence-backed challenge through object-local deduplication; a challenge is not an administrator grant. The Owner may revoke a grant; it cannot edit scores or reward outputs."
+paragraph_2 = "All application operations require a direct call: immediate_caller must be absent in v1. Grant and rotation operations additionally require the authenticated administrative principal. Delegated administrative contract calls are not supported unless a later explicitly configured authority scheme is introduced. Relayed report calls may have a different invoking principal because F04 verifies the evaluator's signature against both frozen and live grant status. A matching signature never substitutes for a missing grant."
+paragraph_3 = "Immediate revocation takes effect at its committed activity order. It rejects subsequent commit and reveal attempts and excludes a previously admitted report if revocation occurs before F05 sealing. At or after an epoch's immutable aggregate seal, revocation has prospective effect only and cannot rewrite the sealed result or recover paid rewards. Revocation cannot be undone; a replacement grant is next-epoch and cannot repair eligibility in the revoked epoch. Off-chain clients MUST distinguish observed local revocation from finalized revocation and wait for finality for irreversible decisions."
+paragraph_4 = "Self-dealing rules are mandatory at roster construction: no evaluator principal may match any roster worker principal or market owner principal. Snapshot validation MUST reject this conflict before an epoch opens, even if the evaluator promises to omit that worker. If an invalid snapshot is encountered at report admission, fail ROLE_CONFLICT; never silently repair the roster or remove a committed score. Identity mutation afterward cannot erase the frozen relationship. Hidden common ownership and undisclosed financial coordination remain outside what these principal identifiers can prove. External beneficial-ownership disclosure may be required by market policy, but v1 does not claim an on-chain ownership detector."
+
+[contract.section_5]
+title = "Operation contracts [F03-R13..R20]"
+paragraph_1 = "All mutating calls use the common request envelope/version, role actor_sequence or object-local replay state, and common state_revision results. No independent optimistic state-version field is introduced. A failure causes no feature state transition, consumed report slot, event, transfer or economic deduction by this feature; normal host transaction fees follow existing rules. Errors are typed application refusals, separate from host failures."
+paragraph_2 = "ScheduleEvaluator: input contains principal_id, enrollment_nonce32, rubric_digest32, signing_key, requested grant/key versions, effective_epoch and expiry. The application derives evaluator_id under the common domain. Preconditions: authenticated administrator, market not admission-suspended, capacity available, no duplicate active identity/principal/key and no worker/owner principal conflict, versions strictly valid, nonzero values, effective_epoch0 allowed only before any epoch has opened, otherwise next-future-epoch activation, expiry greater than activation and at most32 epochs afterward. Atomic effect: insert one Owner-nominated PENDING grant in compact application state, increment common state_revision and emit scheduled-grant digest plus effective epoch. ScheduleEvaluator does not establish evaluator-owner acceptance, prove delegate key possession, enroll membership or authorize scoring. The pending identity consumes a bounded evaluator record/capacity slot. It cannot activate or enter a frozen roster until F08 AdmitEvaluator consumes the matching Owner-approved permit and receives the nominated principal's genuine kind0 acceptance plus registered delegate proof of possession. An exact last-request retry returns ALREADY_APPLIED and the retained result digest; altered bytes at that actor sequence return REPLAY_CONFLICT. A request beyond capacity returns EVALUATOR_CAPACITY; unsupported authority returns NOT_AUTHORIZED; invalid timing returns BAD_ACTIVATION."
+paragraph_3 = "RotateEvaluatorKey: input evaluator_id,new key,new key_version,expected grant_version,effective_epoch. It requires administrator authority, an existing unrevoked grant and next-epoch timing. Atomic effect stages replacement key/version without changing the running epoch snapshot; it does not remove an old live revocation. It returns KEY_REUSED or KEY_VERSION_CONFLICT on current/staged/frozen reused forbidden key bytes or stale versions. Rotation cannot extend grant expiry implicitly."
+paragraph_4 = "RevokeEvaluator: input evaluator_id,grant_version,reason_codeu16 and evidence_commitment32. Only the immutable Owner principal has revocation authority in v1. It may operate during admission suspension. It records a terminal revocation and bounded reason commitment; before aggregate seal it sets the report exclusion overlay. A repeated identical revocation is idempotent. A mismatched grant version fails GRANT_VERSION_CONFLICT. No payout, slashing, score edit or arbitrary worker exclusion follows automatically. Revocation evidence is a commitment to an allegation, not proof of that allegation."
+paragraph_5 = "ValidateReportAdmission: this is an internal application transition invoked atomically only by F04's valid reveal operation. There MUST NOT be an externally callable direct-report bypass. Request is canonical SignedReport with the F04 commit identity. Preconditions are matching epoch/domain/config/roster, authorized frozen grant/rubric and same versions, live nonrevocation and expiry, sealed evidence root, allowed workers, no known conflict, valid scores/ordering/length, valid signature and unoccupied report slot. Phase/window and salt checks belong to F04 and occur in the same transaction. Atomic success stores canonical report/digest/signature plus admitted activity/height, marks the slot admitted and contributes the compact row to F05 input. F04 commit consumption and F03 admission MUST either both commit or both fail. Same admitted digest returns the original admission receipt only within common idempotency semantics; another digest for that evaluator/epoch returns REPORT_ALREADY_FINAL. No report replacements are permitted in v1."
+paragraph_6 = "ChallengeAssessment: input target epoch/evaluator/report_digest,categoryu8,evidence_commitment32 and bounded request identity. Categories are signature/domain=1,known identity conflict=2,policy/evidence mismatch=3,quality disagreement=4. Maximum8 recorded challenge commitments per epoch. A challenge identity is H('PAXAI/evaluator-challenge/v1',chain_domain32||program_id32||market_id32||epochu64||evaluator_id32||report_digest32||categoryu8||evidence_commitment32||requester_principal32); requester must equal the kind0 context principal. These permissionless requests use actor_sequence0 and deduplicate against this bounded list, not an unbounded relayer sequence table; identical challenge identity is ALREADY_APPLIED and conflicting body under an asserted identity is CONFLICT. Additional distinct submissions return CHALLENGE_CAPACITY without mutation. This quota can be exhausted by griefers and is not guaranteed dispute access; exhaustion never freezes rewards or claims. The Program can deterministically refuse a malformed reference and record a valid allegation. A challenge alone never changes scores, slashes funds, rewinds settlement or asserts an AI answer is false. Proven machine-checkable state violations would already fail admission; discovering new off-chain facts may cause an authorized preseal revocation or a future-epoch policy change. Arbitrary subjective dispute resolution and postseal clawback are excluded."
+paragraph_7 = "Queries return grant lifecycle, frozen/live eligibility, report digest, vector, evidence classification, challenge status and finality context through F10. Query exposure MUST NOT disclose signing secret keys, private prompts, answer plaintext or hidden benchmark data. Error catalog additionally includes common WRONG_DOMAIN,WRONG_EPOCH,WRONG_CONFIG,WRONG_ROSTER,REVOKED,EXPIRED,BAD_SIGNATURE,ROLE_CONFLICT,WRONG_PHASE,CAPACITY,BAD_VERSION,NON_CANONICAL; feature-local F03.NO_GRANT,F03.UNKNOWN_WORKER,F03.NO_SCORES,F03.SCORE_RANGE,F03.NONCANONICAL_VECTOR,F03.EVIDENCE_NOT_SEALED and F03.EVIDENCE_ROOT_MISMATCH. Other descriptive refusal names in this feature are aliases requiring mapping to the common error plus a feature reason; they MUST NOT change native result enums. Structural/domain checks precede expensive crypto; exact competing state errors follow common deterministic precedence. Feature-local numeric errors are 0x0301 NO_GRANT,0x0302 EVALUATOR_CAPACITY,0x0303 BAD_ACTIVATION,0x0304 KEY_REUSED,0x0305 KEY_VERSION_CONFLICT,0x0306 GRANT_VERSION_CONFLICT,0x0307 REPORT_ALREADY_FINAL,0x0308 CHALLENGE_CAPACITY,0x0309 UNKNOWN_WORKER,0x030A NO_SCORES,0x030B SCORE_RANGE,0x030C NONCANONICAL_VECTOR,0x030D EVIDENCE_NOT_SEALED,0x030E EVIDENCE_ROOT_MISMATCH. NOT_AUTHORIZED maps UNAUTHORIZED; GRANT_REVOKED maps REVOKED; GRANT_EXPIRED maps EXPIRED; MALFORMED maps NON_CANONICAL; WRONG_POLICY maps WRONG_CONFIG; SELF_CONFLICT maps ROLE_CONFLICT; RESOURCE_LIMIT maps CAPACITY; VERSION_UNSUPPORTED maps BAD_VERSION. Host errors remain host errors and no claim of qualified rollback is made. Common response status is0 OK,1 ALREADY_APPLIED or2 ERROR. Every response carries application_erroru16 immediately after status; it is0 on status0/1 and the explicit common/feature error code on status2. Error responses carry no business effects, and native host refusal remains separate. The uniform response prefix is schema_versionu16,statusu16,application_erroru16,request_digest32,state_revisionu64,result_digest32,payload_lengthu32,payload. These are response fields, not event fields; the RevealScore event keeps its228-byte contract."
+
+[contract.section_5b]
+title = "Exact evaluator acceptance boundary"
+paragraph_1 = "F08 AdmitEvaluator is the evaluator-owner kind0 acceptance operation; it consumes a pending F03 grant and matching Owner-approved F08 admission permit. The authenticated invoking principal MUST equal the nominated grant principal. The public nonce must derive exactly the nominated evaluator_id under the common evaluator domain, and registered key, grant/key versions, rubric, effective epoch, configuration, approval and expiry must match the still-valid nomination/permit. No signature key is inferred from a principal identifier."
+paragraph_2 = "The delegate signs the exact EvaluatorAdmissionConsentV1 record defined jointly with F08: schema_versionu16=1;chain_domain32;program_id32;market_id32;evaluator_id32;owner_principal32;registered_delegate_key32;enrollment_nonce32;rubric_digest32;approval_digest32;request_id32;grant_versionu64;key_versionu64;effective_epochu64;config_versionu64;expiry_heightu64. Its canonical fixed width is362 bytes. Consent digest is H('PAXAI/evaluator-admission-consent/v1',the exact362 bytes); the registered delegate Ed25519 key signs exactly the32-byte digest. The consent plus signature64 is426 bytes in the F08 admission payload. The F08 kind0 envelope supplies actual owner acceptance; delegate PoP alone never supplies it. Expiry is checked against authenticated executing height, and common replay/permit consumption occurs atomically with membership admission. A mismatched principal, stale grant/key/config, altered nonce/rubric/permit/request or invalid signature leaves the grant pending, membership absent and approval unconsumed. F03 OpenEpoch and F04 commit/reveal MUST require F08 accepted membership plus the correct frozen/live grant; Owner nomination alone is insufficient."
+
+[contract.section_5a]
+title = "Exact feature payloads and observable records"
+paragraph_1 = "ScheduleEvaluator creates a nomination and no participant signature is inferred from Owner authority. Its payload order is principal_id32,enrollment_nonce32,rubric_digest32,signing_key32,grant_versionu64,key_versionu64,effective_epochu64,expiry_epoch_exclusiveu64, exactly160 bytes. The envelope actor is Owner; evaluator_id is derived rather than supplied. RotateEvaluatorKey payload is evaluator_id32,new_key32,new_key_versionu64,expected_grant_versionu64,effective_epochu64, exactly88 bytes. RevokeEvaluator payload is evaluator_id32,grant_versionu64,reason_codeu16,evidence_commitment32, exactly74 bytes. ChallengeAssessment payload is evaluator_id32,report_digest32,categoryu8,evidence_commitment32, exactly97 bytes; epoch and requester are bound by the common envelope. IDs and digests must be nonzero. Revoke reason codes are compromised_key=1,policy_violation=2,known_identity_conflict=3,operator_removal=4; unknown values fail NON_CANONICAL. Revocation makes no factual determination beyond recording Owner action. Proposed application operation selectors are ScheduleEvaluator=0x0301,RotateEvaluatorKey=0x0302,RevokeEvaluator=0x0303,ChallengeAssessment=0x0304, in the assigned F03 namespace0x0300..0x03FF. They are application calldata selectors, never host ABI imports. No public ValidateReportAdmission selector exists."
+paragraph_2 = "The feature emits at most one event per successful semantic mutation, using common event framing and topic PAXAI/v1/<operation-name>. Schedule result/event payload is evaluator_id32,grant_versionu64,key_versionu64,effective_epochu64,expiry_epoch_exclusiveu64. Rotation payload is evaluator_id32,new_key_versionu64,effective_epochu64. Revocation payload is evaluator_id32,grant_versionu64,reason_codeu16,evidence_commitment32,excludes_current_epochu8. Report admission event is emitted only by the encompassing F04 RevealScore operation. Its exact228-byte body is schema_versionu16=1,market_id32,epochu64,config_versionu64,state_revisionu64,request_digest32,result_digest32,evaluator_id32,report_digest32,evidence_root32,vector_countu16,admitted_heightu64. This is the common122-byte event prefix followed by106 bytes of assessment binding. F03 MUST NOT emit a duplicate admission event. CommitAccepted remains194 bytes and RevealScore result payload remains81 bytes under F04; event expansion does not alter those contracts. Challenge payload is challenge_id32,evaluator_id32,report_digest32,categoryu8,evidence_commitment32,requester_principal32,recorded_heightu64,statusu8=1(recorded). There is no automatic adjudicated status in v1. Receipts bind common request_digest/result_digest/state_revision and native finalized context is attached by F10. All successful payloads fit the common2048-byte event limit. An ALREADY_APPLIED retry produces no new event. Normal successful report admission is only F04's operation, with its complete body/signature/salt contract; no F03 public selector may accept a raw report."
+
+[contract.section_6]
+title = "State machine and ordering [F03-R21..R24]"
+paragraph_1 = "A grant begins pending and may become active at an eligible epoch opening only if F08 has already recorded accepted membership through AdmitEvaluator kind0 acceptance and registered delegate proof of possession. Then active→expired at expiry, or pending/active→revoked by authorized call. Merely reaching effective_epoch never promotes an unaccepted pending nomination. F08 acceptance changes its existing membership flag, retaining the same current grant and pending status until activation; no second identity is allocated. Pending expiry also becomes expired without activating. Expired/revoked are terminal for that grant version. Epoch opening snapshots grants before any report commitment, using F01/F08 boundary ordering. Expiry_epoch_exclusive equal to current epoch means ineligible. A grant active from epoch5 through expiry7 is eligible in5 and6 only. Before any epoch has opened, grants may target initial epoch0; first OpenEpoch freezes them. A grant scheduled during epoch5 cannot enter epoch5, irrespective of whether any commitments exist."
+paragraph_2 = "A report slot progresses absent→committed(F04)→admitted(F03/F04), or committed→unrevealed when the reveal window closes. Live revocation may add excluded status before aggregation to committed or admitted slots; it does not destroy the original signed evidence. No missing report is carried from a previous epoch. Sealing excludes revoked/unrevealed slots and freezes accepted report identities for F05. Policy and roster changes only affect later epochs; market admission suspension preserves current-epoch commit/reveal eligibility for already admitted work and does not silently abort it. V1 has no AbortEpoch operation. Existing current-epoch obligations must reach deterministic settlement; Owner cannot discard an unfavorable committed assessment by aborting."
+
+[contract.section_7]
+title = "Deterministic constraints and bounded work [F03-R25..R27]"
+paragraph_1 = "Canonical vectors are already sorted input and are validated without reordering. Validation is bounded by32 vector entries and8 evaluator slots. Identity membership and conflicts are evaluated against frozen entries and checked using byte equality; this feature MUST NOT approximate equality through usernames, endpoints or labels. A zero score is retained unchanged. Every score greater than1000000 fails rather than saturating. Arithmetic for length and count checks is checked before allocation, and any version/height overflow fails closed. Report digest computation uses exact bytes and shared purpose framing; no JSON serialization, locale, decimal text, host endianness or floating point appears on deterministic paths. F03 computes no reward proportions, normalization, ties or averages. F05 receives exact admitted integers and an explicit no-vote mask."
+
+[contract.section_8]
+title = "Replay, restart, concurrency and finality [F03-R28..R31]"
+paragraph_1 = "A report binds chain, executing Program, market, epoch, frozen configuration, roster, evaluator and both authority versions. Changing any field changes the signed digest. A replay against another Program with the same market ID fails domain validation; a replay in a new epoch fails epoch binding. Common actor_sequence checks and committed activity ordering prevent racing administrative mutations from overwriting each other. Program state and host activity ordering serialize grant changes, revocations and admissions; a transaction observing stale state must reread finalized state and reconstruct its request, not blindly retry with a new digest."
+paragraph_2 = "On process restart, clients query committed report identity and receipt; they never infer success from a submitted HTTP response. An ambiguous reveal outcome is recovered by reading report slot plus F04 commit state at the same finalized head. Both present consistently means accepted; both absent means safe retry within the window; inconsistent state is an invariant failure and pauses the client. Original signatures and salts must be retained securely until definitive finality. No unfinalized admission may trigger external irreversible payout. F03 itself transfers no assets, and F06 settles only sealed finalized application outcomes."
+
+[contract.section_9]
+title = "Abuse, privacy and trust [F03-R32..R35]"
+paragraph_1 = "The administrator selects evaluators and can censor future membership; that trust is explicit. Multiple principals or hidden common ownership can defeat identity-level conflict restrictions. Colluding evaluators can sign false evidence; benchmarks can be leaked, prompts cherry-picked, results selectively unavailable, and model quality task-dependent. Admission proves which granted key signed which assessment bound to which root. It cannot prove how the evaluator obtained the score. External evaluator software MUST enforce the approved rubric, check task/result receipts and exact worker generation, verify artifact digests and access permissions, and report objective/subjective provenance honestly. Misbehavior can cause prospective removal; no automatic economic truth oracle is claimed."
+paragraph_2 = "Commitment roots do not encrypt data and can leak low-entropy material through guessing. Secret prompts, personal data and hidden test answers MUST stay in controlled external custody under F09. Do not put raw evaluation reasons or private result bytes into receipt/event payloads. Evidence disclosure, retention and access authorization are market policy decisions; unavailable evidence reduces auditability and is a displayed limitation, never silently treated as proof."
+
+[contract.section_10]
+title = "Storage and resources [F03-R36..R38]"
+paragraph_1 = "F03/F04 share a24576-byte current-epoch report/commit budget inside the common compact market state. Eight maximum SignedReports require11552 bytes; slot metadata, commitments and revocation flags must fit the remainder. Grants occupy the separate24576-byte F02/F03 identity section and challenges occupy common/F09/F10 control storage. Individual evidence content is never stored on chain by F03. Exact current evaluator record maximum is356 bytes: grant161, common last-request replay104, pending rekey48 and revocation fields43(reasonu16,evidence32,heightu64,presenceu8). Frozen evaluator record is152 bytes under core C04. Eight current+frozen records require4064 bytes plus at most224 bytes of evaluator section framing, within4288 of the common24576-byte identity section. Pending rekey slots are fixed-width zero when absent; no unbounded retired-key history is allocated. Current signed report plus at most256 bytes of commit/admission metadata is at most1700 bytes/evaluator,13600 total, leaving10976 report-section bytes for sealed-input digests and framing. Challenges are fixed170-byte records (challenge_id32,evaluator32,report32,category1,evidence32,requester32,height8,status1); eight require1360 bytes plus a2-byte count in the common control section. Headers and padding must be charged once against these bounds; future serialization gate must refuse any layout that exceeds them. Historical retention keeps compact report/evidence roots and eligibility summary, not all report bodies, according to the common32-epoch bounded ring. Full report/evidence availability is an external archival responsibility, and queries must identify when only a commitment remains."
+paragraph_2 = "Each operation changes one serialized shared market-state value, under exact common key ASCII paxai/state/v1, with F09 seal records in the same serialized value and declared shared access; the native adapter then persists the changed value plus its manifest within2 new blobs for this namespace and4 total/activity. A report reveal MUST NOT create one storage cell per evaluator, score, challenge and replay item. Application state planning must respect the shared192KiB total,512 committed blobs and64MiB committed-blob bytes. Pruning app history does not prove native blob reclamation: repeated serialized versions still consume distinct content blobs. Continuous operation is blocked until the integration-map lifecycle prerequisite is implemented and qualified; bounded retention alone is insufficient. Retention eviction/restart handling is common; no native capacity increase is assumed. If actual serialized state or occupancy admission cannot satisfy these limits, return RESOURCE_LIMIT atomically and leave the commit unconsumed so recovery remains possible within the original reveal window. Gas/fuel/decode costs require future real-host measurement; interface availability is not runtime qualification."
+
+[contract.section_11]
+title = "Inter-feature contracts [F03-R39..R42]"
+paragraph_1 = "F01 supplies policy version, Owner authority, objective/subjective rubric and immutable epoch policy. Every grant rubric_digest must equal the frozen approved rubric_digest; no grant may choose its own evaluation policy. F02 supplies worker identities/generations and external result producers. F08 supplies participant consent/admission, bounded eligible rosters and principal conflict checks. F03 supplies pending Owner nominations to F08; F08 alone obtains the evaluator-owner acceptance and registered delegate proof of possession before setting the existing F08 admitted flag that gates activation of that same grant. This is a staged state dependency, not authorization inferred from an Owner nomination. F09 supplies registered sealed evidence_root and external evidence manifest contract. SealEvidence occurs only in Commit[T+64,T+80), after F01 freezes task_set_digest and before CommitScore. Its compact immutable185-byte record binds evaluator/grant/key, evidence_root,task_policy_digest,task_set_digest,rubric_digest,mode and seal height; at most8 such records exist per epoch. F04 supplies commit/reveal phase, immutable commit match and atomic commit consumption. F03 emits exact admitted row, signature identity and eligibility overlay. F05 consumes only these rows with no-vote semantics; it cannot invent zero votes for omitted workers. F06 sees only sealed allocation inputs and receives no transfer authorization from a signature. F07 tracks timely admitted versus unrevealed/revoked reports as distinct events. F10 publishes assessments with evidence class, policy provenance and finality, never labeling admission as verified AI correctness."
+
+[contract.section_12]
+title = "Acceptance cases and future targets [F03-A01..A16]"
+paragraph_1 = "A01: frozen roster has workers11 and22, evaluator principal33 and distinct market owner, no conflicts; scores(11,700000),(22,0), registered root44 and valid signature. Reveal in its window admits unchanged scores and preserves explicit0; F03 moves zero assets."
+paragraph_2 = "A02: omit worker22 and submit(11,700000). Worker22 has no vote, not score0; F05 input mask differs from A01."
+paragraph_3 = "A03: submit(22,5),(11,6), or repeat11. NONCANONICAL_VECTOR; no slot consumed and no admission event."
+paragraph_4 = "A04: score1000000 succeeds;1000001 returns SCORE_RANGE with no mutation. Scores0 and vector length1 are valid; length0 returns NO_SCORES and33 returns MALFORMED."
+paragraph_5 = "A05: change only chain_domain from55 to56 while retaining signature. WRONG_DOMAIN; same refusal applies to another Program/market domain."
+paragraph_6 = "A06: snapshot grant_version7,key_version4; report key_version5 uses a newly staged valid key. NO_GRANT/version refusal for running epoch; epoch successor may use5 only after activation."
+paragraph_7 = "A07: revoke at activity100; reveal at101 fails GRANT_REVOKED. Reverse activity order admits at100 then records exclusion at101 before seal; F05 excludes the admitted row while preserving its evidence digest."
+paragraph_8 = "A08: seal at100, revoke at101. Sealed result remains unchanged; future grants are ineligible. No F03 transfer or clawback occurs."
+paragraph_9 = "A09: evaluator principal equals worker11 principal. OpenEpoch rejects ROLE_CONFLICT even if the report would omit11; no epoch snapshot or reward reserve is partially created. A corrupted conflicting snapshot also fails report admission."
+paragraph_10 = "A10: evaluator principal equals market owner principal. Same roster refusal applies. Two distinct principals controlled secretly by the same person cannot be claimed detected; external disclosure remains a trust assumption."
+paragraph_11 = "A11: evidence_root44 is not sealed or is sealed for another evaluator/epoch. EVIDENCE_NOT_SEALED or EVIDENCE_ROOT_MISMATCH; an arbitrary reachable URL does not establish sealing."
+paragraph_12 = "A12: root44 is correctly registered but an external document behind it contains fabricated measurements. Signature/root admission may pass; projection remains admitted signed assessment, never AI correctness verified. An allegation can produce a bounded challenge and prospective authorized revocation."
+paragraph_13 = "A13: evaluator grant expiry7; epoch6 accepts if otherwise valid and epoch7 refuses GRANT_EXPIRED. Grant creation in epoch6 cannot change epoch6 frozen roster."
+paragraph_14 = "A14: exact admitted report retransmission recovers original receipt without a second row/event/economic effect. A different digest for the same slot returns REPORT_ALREADY_FINAL. Lost response after a successful reveal is recovered through the finalized slot/commit query."
+paragraph_15 = "A15: admit eight maximum32-entry reports within24576-byte feature budget and shared192KiB state. Real native-host execution must demonstrate at most2 new blobs for this namespace/activity, within the host4-new-blob total; a ninth evaluator scheduling request returns EVALUATOR_CAPACITY. Resource failure leaves commit and row untouched atomically."
+paragraph_16 = "A16: an Owner schedules a valid grant but the nominated principal never submits F08 acceptance/PoP. Even when effective_epoch is reached, that grant remains pending/ineligible and OpenEpoch does not include it. An incorrect principal acceptance or invalid delegate PoP refuses atomically. Correct F08 acceptance consumes the matching permit and sets the existing F08 admitted membership flag without creating a second identity or prematurely activating the grant. Admission suspension halfway through an epoch rejects new grants but still allows already eligible evaluator commit/reveal for admitted work in correct windows. Quality disagreement challenge alone never changes a sealed score or rewards."
+paragraph_17 = "These cases must be implemented against the real Program interpreter and native adapter, real Ed25519 signing keys created for the new tests and real storage/receipt paths. Fixture vectors must exercise the specified contracts; fake hosts or claimed current passes are prohibited. Cross-feature atomicity, actual occupancy/fuel and finalized-head recovery remain future release gates."
+
+[contract.section_13]
+title = "Future implementation tasks; none run"
+paragraph_1 = "F03-T01 depends on common codec and F01/F08 snapshot model. New paths programs/crates/layerx-programs-ai-market/src/evaluators/model.rs and codec.rs. Deliver exact canonical report/grant types and refusal validation plus the specified case vectors. Proposed compile: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market. Proposed single verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec. New test path programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs. Package does not yet exist and must first be added by common application scaffolding. Status UNRUN."
+paragraph_2 = "F03-T02 depends onT01,F01 authority,F08 roster and common storage. New paths src/evaluators/authority.rs and tests/f03_evaluator_authority.rs under that crate. Deliver schedule/rotate/revoke lifecycle, host-context authority and conflict validation. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority. Status UNRUN."
+paragraph_3 = "F03-T03 depends onT02,F08 accepted membership,F04 atomic reveal contract,F09 evidence sealing. New paths src/evaluators/admission.rs and tests/f03_evaluator_admission.rs. Deliver signed-row validation, evidence root binding, immutable slot and challenge recording using real SDK crypto and storage. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_admission. Status UNRUN."
+paragraph_4 = "F03-T04 depends onT03 and F05 seal integration. New paths tests/f03_evaluator_host.rs plus integration registration in the common application test harness, whose exact current API is an integration prerequisite. Deliver real interpreter/native-adapter transactions for authority/reveal/revocation ordering and resource failure atomicity. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host. The test must fail/declare blocked if no real native adapter bridge is available; no mock substitute is authorized. Status UNRUN."
+paragraph_5 = "Every task is implementation-first then at most one compile and one focused verify pass with no more than two task-scoped repair cycles and30-minute cap. These commands are intended future commands for proposed test targets, not assertions that targets currently exist."
+
+[contract.section_14]
+title = "Fixed defaults, decisions and release conditions"
+paragraph_1 = "V1 uses8 evaluators,32 workers, complete frozen domain bindings, at most one row/evaluator/epoch, next-epoch grants/rotation, immediate irreversible revocation, scores0..1000000, sorted sparse votes, explicit no-vote omission, no owner exemption, no automatic stake-based admission, no automatic slashing, at most8 challenges/epoch and32 retained epoch summaries. Epoch length128 authenticated executing batch heights is shared: work64,commit16,reveal16,settle32; F03 itself adds no new time source. Authority expirations are finite and default32 epochs. Configuration changes are future-epoch only. Exact opcode assignment and shared storage framing follow the final common contracts."
+paragraph_2 = "Release prerequisites are qualified host crypto/context and artifact registration, bounded real-host storage occupancy, atomic F03/F04 persistence, F09 sealing/evaluator verification tooling, F05 revocation-before-seal exclusion, truthful F10 labels, and policy-level data access/retention rights. This document is a design specification; no implementation, deployment, production evidence is claimed."
+
+[requirement.F03-R01]
+id = "F03-R01"
+requirement = "Distinct typed nonzero identity and immutable domain binding"
+qualification = "UNRUN"
+
+[requirement.F03-R02]
+id = "F03-R02"
+requirement = "Fixed width big-endian canonical encoding and no floating point"
+qualification = "UNRUN"
+
+[requirement.F03-R03]
+id = "F03-R03"
+requirement = "Finite bounded grant lifecycle and nonwrapping versions"
+qualification = "UNRUN"
+
+[requirement.F03-R04]
+id = "F03-R04"
+requirement = "Frozen evaluator roster and live exclusion overlay"
+qualification = "UNRUN"
+
+[requirement.F03-R05]
+id = "F03-R05"
+requirement = "Exact compact signed report encoding and maximum1380-byte body"
+qualification = "UNRUN"
+
+[requirement.F03-R06]
+id = "F03-R06"
+requirement = "Missing means no vote and explicit zero remains a vote"
+qualification = "UNRUN"
+
+[requirement.F03-R07]
+id = "F03-R07"
+requirement = "Evidence bundle roots bind approved evaluation context but do not prove external truth"
+qualification = "UNRUN"
+
+[requirement.F03-R08]
+id = "F03-R08"
+requirement = "Authenticated administrative context and no automatic owner evaluation privilege"
+qualification = "UNRUN"
+
+[requirement.F03-R09]
+id = "F03-R09"
+requirement = "Direct calls only; relayers cannot manufacture authority"
+qualification = "UNRUN"
+
+[requirement.F03-R10]
+id = "F03-R10"
+requirement = "Next-epoch grant/key changes and irreversible revocation"
+qualification = "UNRUN"
+
+[requirement.F03-R11]
+id = "F03-R11"
+requirement = "Revocation excludes before seal and is prospective afterward"
+qualification = "UNRUN"
+
+[requirement.F03-R12]
+id = "F03-R12"
+requirement = "Evaluator principals cannot match any roster worker or owner"
+qualification = "UNRUN"
+
+[requirement.F03-R13]
+id = "F03-R13"
+requirement = "Common envelope/replay/state revision semantics"
+qualification = "UNRUN"
+
+[requirement.F03-R14]
+id = "F03-R14"
+requirement = "Schedule evaluator atomically with bounded capacity"
+qualification = "UNRUN"
+
+[requirement.F03-R15]
+id = "F03-R15"
+requirement = "Rotate keys without modifying current frozen roster"
+qualification = "UNRUN"
+
+[requirement.F03-R16]
+id = "F03-R16"
+requirement = "Revoke without automatic payment/slashing/clawback"
+qualification = "UNRUN"
+
+[requirement.F03-R17]
+id = "F03-R17"
+requirement = "Report admission occurs only atomically through valid reveal"
+qualification = "UNRUN"
+
+[requirement.F03-R18]
+id = "F03-R18"
+requirement = "One immutable report per evaluator epoch"
+qualification = "UNRUN"
+
+[requirement.F03-R19]
+id = "F03-R19"
+requirement = "Bounded advisory challenge recording cannot freeze rewards"
+qualification = "UNRUN"
+
+[requirement.F03-R20]
+id = "F03-R20"
+requirement = "Typed refusal errors with no business effects"
+qualification = "UNRUN"
+
+[requirement.F03-R21]
+id = "F03-R21"
+requirement = "Terminal grant state machine"
+qualification = "UNRUN"
+
+[requirement.F03-R22]
+id = "F03-R22"
+requirement = "Half-open epoch eligibility and expiry boundaries"
+qualification = "UNRUN"
+
+[requirement.F03-R23]
+id = "F03-R23"
+requirement = "No carry-forward or replacement report"
+qualification = "UNRUN"
+
+[requirement.F03-R24]
+id = "F03-R24"
+requirement = "Suspension preserves existing epoch obligations"
+qualification = "UNRUN"
+
+[requirement.F03-R25]
+id = "F03-R25"
+requirement = "Sorted input vector validation without mutation"
+qualification = "UNRUN"
+
+[requirement.F03-R26]
+id = "F03-R26"
+requirement = "Bounded deterministic validation and checked arithmetic"
+qualification = "UNRUN"
+
+[requirement.F03-R27]
+id = "F03-R27"
+requirement = "No admission score normalization or reward computation"
+qualification = "UNRUN"
+
+[requirement.F03-R28]
+id = "F03-R28"
+requirement = "Replay protection includes complete frozen domain"
+qualification = "UNRUN"
+
+[requirement.F03-R29]
+id = "F03-R29"
+requirement = "Committed order serializes revocation and reveal"
+qualification = "UNRUN"
+
+[requirement.F03-R30]
+id = "F03-R30"
+requirement = "Restart recovers from finalized report and commitment state"
+qualification = "UNRUN"
+
+[requirement.F03-R31]
+id = "F03-R31"
+requirement = "Irreversible external outcomes wait for authentic finality"
+qualification = "UNRUN"
+
+[requirement.F03-R32]
+id = "F03-R32"
+requirement = "Authorized assessment labels do not imply AI truth"
+qualification = "UNRUN"
+
+[requirement.F03-R33]
+id = "F03-R33"
+requirement = "External evaluators verify exact task/policy/generation provenance"
+qualification = "UNRUN"
+
+[requirement.F03-R34]
+id = "F03-R34"
+requirement = "Hidden common control and collusion remain explicit trust assumptions"
+qualification = "UNRUN"
+
+[requirement.F03-R35]
+id = "F03-R35"
+requirement = "Private prompts/results remain outside chain events"
+qualification = "UNRUN"
+
+[requirement.F03-R36]
+id = "F03-R36"
+requirement = "24576-byte report section and separate identity budget"
+qualification = "UNRUN"
+
+[requirement.F03-R37]
+id = "F03-R37"
+requirement = "One shared-state value and at most2 new blobs for namespace"
+qualification = "UNRUN"
+
+[requirement.F03-R38]
+id = "F03-R38"
+requirement = "No native capacity expansion; continuous operation awaits lifecycle qualification"
+qualification = "UNRUN"
+
+[requirement.F03-R39]
+id = "F03-R39"
+requirement = "Frozen policy and worker roster producers"
+qualification = "UNRUN"
+
+[requirement.F03-R40]
+id = "F03-R40"
+requirement = "F09 root sealing and F04 atomic reveal dependencies"
+qualification = "UNRUN"
+
+[requirement.F03-R41]
+id = "F03-R41"
+requirement = "F05 consumes exact admitted rows and live exclusion cutpoint"
+qualification = "UNRUN"
+
+[requirement.F03-R42]
+id = "F03-R42"
+requirement = "F06,F07,F10 preserve economic and evidence distinctions"
+qualification = "UNRUN"
+
+[requirement.F03-R43]
+id = "F03-R43"
+requirement = "Owner nomination remains PENDING and cannot activate before F08 evaluator-owner kind0 acceptance plus registered delegate proof of possession"
+qualification = "UNRUN"
+
+[requirement.F03-R44]
+id = "F03-R44"
+requirement = "Exact362-byte EvaluatorAdmissionConsentV1 and426-byte signed consent bind nomination, permit and authenticated owner acceptance"
+qualification = "UNRUN"
+
+[requirement.F03-R45]
+id = "F03-R45"
+requirement = "RevealScore event exact228-byte schema; uniform responses include status2 ERROR and explicit application_erroru16"
+qualification = "UNRUN"
+
+[acceptance.F03-A01]
+id = "F03-A01"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "frozen roster has workers11 and22, evaluator principal33 and distinct market owner, no conflicts; scores(11,700000),(22,0), registered root44 and valid signature. Reveal in its window admits unchanged scores and preserves explicit0; F03 moves zero assets."
+qualification = "UNRUN"
+
+[acceptance.F03-A02]
+id = "F03-A02"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "omit worker22 and submit(11,700000). Worker22 has no vote, not score0; F05 input mask differs from A01."
+qualification = "UNRUN"
+
+[acceptance.F03-A03]
+id = "F03-A03"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "submit(22,5),(11,6), or repeat11. NONCANONICAL_VECTOR; no slot consumed and no admission event."
+qualification = "UNRUN"
+
+[acceptance.F03-A04]
+id = "F03-A04"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "score1000000 succeeds;1000001 returns SCORE_RANGE with no mutation. Scores0 and vector length1 are valid; length0 returns NO_SCORES and33 returns MALFORMED."
+qualification = "UNRUN"
+
+[acceptance.F03-A05]
+id = "F03-A05"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "change only chain_domain from55 to56 while retaining signature. WRONG_DOMAIN; same refusal applies to another Program/market domain."
+qualification = "UNRUN"
+
+[acceptance.F03-A06]
+id = "F03-A06"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "snapshot grant_version7,key_version4; report key_version5 uses a newly staged valid key. NO_GRANT/version refusal for running epoch; epoch successor may use5 only after activation."
+qualification = "UNRUN"
+
+[acceptance.F03-A07]
+id = "F03-A07"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "revoke at activity100; reveal at101 fails GRANT_REVOKED. Reverse activity order admits at100 then records exclusion at101 before seal; F05 excludes the admitted row while preserving its evidence digest."
+qualification = "UNRUN"
+
+[acceptance.F03-A08]
+id = "F03-A08"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "seal at100, revoke at101. Sealed result remains unchanged; future grants are ineligible. No F03 transfer or clawback occurs."
+qualification = "UNRUN"
+
+[acceptance.F03-A09]
+id = "F03-A09"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "evaluator principal equals worker11 principal. OpenEpoch rejects ROLE_CONFLICT even if the report would omit11; no epoch snapshot or reward reserve is partially created. A corrupted conflicting snapshot also fails report admission."
+qualification = "UNRUN"
+
+[acceptance.F03-A10]
+id = "F03-A10"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "evaluator principal equals market owner principal. Same roster refusal applies. Two distinct principals controlled secretly by the same person cannot be claimed detected; external disclosure remains a trust assumption."
+qualification = "UNRUN"
+
+[acceptance.F03-A11]
+id = "F03-A11"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "evidence_root44 is not sealed or is sealed for another evaluator/epoch. EVIDENCE_NOT_SEALED or EVIDENCE_ROOT_MISMATCH; an arbitrary reachable URL does not establish sealing."
+qualification = "UNRUN"
+
+[acceptance.F03-A12]
+id = "F03-A12"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "root44 is correctly registered but an external document behind it contains fabricated measurements. Signature/root admission may pass; projection remains admitted signed assessment, never AI correctness verified. An allegation can produce a bounded challenge and prospective authorized revocation."
+qualification = "UNRUN"
+
+[acceptance.F03-A13]
+id = "F03-A13"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "evaluator grant expiry7; epoch6 accepts if otherwise valid and epoch7 refuses GRANT_EXPIRED. Grant creation in epoch6 cannot change epoch6 frozen roster."
+qualification = "UNRUN"
+
+[acceptance.F03-A14]
+id = "F03-A14"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "exact admitted report retransmission recovers original receipt without a second row/event/economic effect. A different digest for the same slot returns REPORT_ALREADY_FINAL. Lost response after a successful reveal is recovered through the finalized slot/commit query."
+qualification = "UNRUN"
+
+[acceptance.F03-A15]
+id = "F03-A15"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "admit eight maximum32-entry reports within24576-byte feature budget and shared192KiB state. Real native-host execution must demonstrate at most2 new blobs for this namespace/activity, within the host4-new-blob total; a ninth evaluator scheduling request returns EVALUATOR_CAPACITY. Resource failure leaves commit and row untouched atomically."
+qualification = "UNRUN"
+
+[acceptance.F03-A16]
+id = "F03-A16"
+location = "F03-evaluators.kvx section12"
+status = "FUTURE_UNRUN"
+case = "an Owner schedules a valid grant but the nominated principal never submits F08 acceptance/PoP. Even when effective_epoch is reached, that grant remains pending/ineligible and OpenEpoch does not include it. An incorrect principal acceptance or invalid delegate PoP refuses atomically. Correct F08 acceptance consumes the matching permit and sets the existing F08 admitted membership flag without creating a second identity or prematurely activating the grant. Admission suspension halfway through an epoch rejects new grants but still allows already eligible evaluator commit/reveal for admitted work in correct windows. Quality disagreement challenge alone never changes a sealed score or rewards."
+qualification = "UNRUN"
+
+[proposal.F03-T01]
+id = "F03-T01"
+title = "Canonical evaluator and report codec"
+dependencies = ["COMMON-CODEC", "F01", "F08"]
+compile_target = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec"
+command_status = "FUTURE_TARGET_NOT_PRESENT_UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F03-T01 depends on common codec and F01/F08 snapshot model. New paths programs/crates/layerx-programs-ai-market/src/evaluators/model.rs and codec.rs. Deliver exact canonical report/grant types and refusal validation plus the specified case vectors. Proposed compile: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market. Proposed single verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec. New test path programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs. Package does not yet exist and must first be added by common application scaffolding. Status UNRUN."
+
+[proposal.F03-T01.paths.01]
+path = "programs/crates/layerx-programs-ai-market/src/evaluators/model.rs"
+status = "proposed_new"
+
+[proposal.F03-T01.paths.02]
+path = "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs"
+status = "proposed_new"
+
+[proposal.F03-T01.paths.03]
+path = "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs"
+status = "proposed_new"
+
+[proposal.F03-T02]
+id = "F03-T02"
+title = "Grant rotation revocation authority"
+dependencies = ["F03-T01", "F01", "F08"]
+compile_target = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority"
+command_status = "FUTURE_TARGET_NOT_PRESENT_UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F03-T02 depends onT01,F01 authority,F08 roster and common storage. New paths src/evaluators/authority.rs and tests/f03_evaluator_authority.rs under that crate. Deliver schedule/rotate/revoke lifecycle, host-context authority and conflict validation. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority. Status UNRUN."
+
+[proposal.F03-T02.paths.01]
+path = "programs/crates/layerx-programs-ai-market/src/evaluators/authority.rs"
+status = "proposed_new"
+
+[proposal.F03-T02.paths.02]
+path = "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_authority.rs"
+status = "proposed_new"
+
+[proposal.F03-T03]
+id = "F03-T03"
+title = "Atomic signed score admission and challenges"
+dependencies = ["F03-T02", "F04", "F09", "F08-ACCEPTED-EVALUATOR-MEMBERSHIP"]
+compile_target = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_admission"
+command_status = "FUTURE_TARGET_NOT_PRESENT_UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F03-T03 depends onT02,F08 accepted membership,F04 atomic reveal contract,F09 evidence sealing. New paths src/evaluators/admission.rs and tests/f03_evaluator_admission.rs. Deliver signed-row validation, evidence root binding, immutable slot and challenge recording using real SDK crypto and storage. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_admission. Status UNRUN."
+
+[proposal.F03-T03.paths.01]
+path = "programs/crates/layerx-programs-ai-market/src/evaluators/admission.rs"
+status = "proposed_new"
+
+[proposal.F03-T03.paths.02]
+path = "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_admission.rs"
+status = "proposed_new"
+
+[proposal.F03-T04]
+id = "F03-T04"
+title = "Real host ordering and resource integration"
+dependencies = ["F03-T03", "F05", "COMMON-REAL-HOST-HARNESS"]
+compile_target = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host"
+command_status = "FUTURE_TARGET_NOT_PRESENT_UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+stop_condition = "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F03-T04 depends onT03 and F05 seal integration. New paths tests/f03_evaluator_host.rs plus integration registration in the common application test harness, whose exact current API is an integration prerequisite. Deliver real interpreter/native-adapter transactions for authority/reveal/revocation ordering and resource failure atomicity. Same proposed compile target; verify cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host. The test must fail/declare blocked if no real native adapter bridge is available; no mock substitute is authorized. Status UNRUN."
+
+[proposal.F03-T04.paths.01]
+path = "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs"
+status = "proposed_new"
+
+[metadata.schema_version]
+value = 1
+
+[metadata.status]
+value = "SPECIFICATION_ONLY_UNRUN"
+
+[metadata.dependencies]
+value = ["COMMON-CONTRACTS", "F01", "F02", "F04", "F08", "F09"]
+
+[metadata.common_contract]
+value = "contracts/core.kvx"
+
+[metadata.limits]
+max_evaluators = 8
+max_workers = 32
+report_body_max_bytes = 1380
+signed_report_max_bytes = 1444
+current_report_section_max_bytes = 24576
+shared_state_max_bytes = 196608
+max_challenges_per_epoch = 8
+evaluator_current_max_bytes = 356
+evaluator_frozen_bytes = 152
+challenge_record_bytes = 170
+
+[metadata.release_blockers]
+value = ["Real Programs native adapter host integration unqualified", "F09 external bundle validation and sealing tooling unimplemented", "Native historical content blob reclamation/lifecycle prerequisite unqualified"]
+
+[metadata.operations.01]
+name = "ScheduleEvaluator"
+opcode = "0x0301"
+payload_bytes = 160
+authentication = "kind0"
+
+[metadata.operations.02]
+name = "RotateEvaluatorKey"
+opcode = "0x0302"
+payload_bytes = 88
+authentication = "kind0"
+
+[metadata.operations.03]
+name = "RevokeEvaluator"
+opcode = "0x0303"
+payload_bytes = 74
+authentication = "kind0"
+
+[metadata.operations.04]
+name = "ChallengeAssessment"
+opcode = "0x0304"
+payload_bytes = 97
+authentication = "kind0"
+
+[metadata.internal_transitions.01]
+name = "ValidateReportAdmission"
+external_opcode = null
+invoked_by = "F04 Reveal atomically"
+
+[metadata.errors.01]
+name = "NO_GRANT"
+code = "0x0301"
+
+[metadata.errors.02]
+name = "EVALUATOR_CAPACITY"
+code = "0x0302"
+
+[metadata.errors.03]
+name = "BAD_ACTIVATION"
+code = "0x0303"
+
+[metadata.errors.04]
+name = "KEY_REUSED"
+code = "0x0304"
+
+[metadata.errors.05]
+name = "KEY_VERSION_CONFLICT"
+code = "0x0305"
+
+[metadata.errors.06]
+name = "GRANT_VERSION_CONFLICT"
+code = "0x0306"
+
+[metadata.errors.07]
+name = "REPORT_ALREADY_FINAL"
+code = "0x0307"
+
+[metadata.errors.08]
+name = "CHALLENGE_CAPACITY"
+code = "0x0308"
+
+[metadata.errors.09]
+name = "UNKNOWN_WORKER"
+code = "0x0309"
+
+[metadata.errors.10]
+name = "NO_SCORES"
+code = "0x030A"
+
+[metadata.errors.11]
+name = "SCORE_RANGE"
+code = "0x030B"
+
+[metadata.errors.12]
+name = "NONCANONICAL_VECTOR"
+code = "0x030C"
+
+[metadata.errors.13]
+name = "EVIDENCE_NOT_SEALED"
+code = "0x030D"
+
+[metadata.errors.14]
+name = "EVIDENCE_ROOT_MISMATCH"
+code = "0x030E"
+
+[metadata.events.01]
+name = "RevealScore"
+producer = "F04 encompassing reveal only"
+body_bytes = 228
+field_order = ["schema_version:u16", "market_id:32", "epoch:u64", "config_version:u64", "state_revision:u64", "request_digest:32", "result_digest:32", "evaluator_id:32", "report_digest:32", "evidence_root:32", "vector_count:u16", "admitted_height:u64"]
+commit_event_bytes_unchanged = 194
+reveal_result_payload_bytes_unchanged = 81
+
+[metadata.response_status]
+OK = 0
+ALREADY_APPLIED = 1
+ERROR = 2
+application_error = "u16 immediately after status;0 for0/1,explicit error code for2"
+
+[metadata.evaluator_acceptance]
+nomination_operation = "F03 ScheduleEvaluator"
+acceptance_operation = "F08 AdmitEvaluator"
+principal_authority = "kind0 actual invoking principal equals nominated evaluator owner"
+delegate_pop_domain = "PAXAI/evaluator-admission-consent/v1"
+consent_record_bytes = 362
+signed_consent_bytes = 426
+activation_gate = "existing F08 admitted membership flag plus effective frozen snapshot"
+additional_identity_record = false
+
+[metadata.qualification]
+value = "UNRUN"
+
+[metadata.canonical_task_authority]
+value = "../../spec.kvx"
+

@@ -1,0 +1,694 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:paxeer:paxai:application-contract:1",
+  "title": "PAXAI v1 diagnostic transport contracts",
+  "description": "Application diagnostic data. JSON is not a cryptographic preimage. core.kvx defines exact canonical binary bytes, numeric range checks, sorting, authority, timing and conservation. Definition-only schema; consumers select a $defs entry.",
+  "type": "object",
+  "$defs": {
+    "id32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "not": {
+        "const": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "digest32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "public_key32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "signature64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    },
+    "u64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "description": "Canonical decimal, numeric maximum18446744073709551615; semantic range check mandatory."
+    },
+    "u128": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,38})$",
+      "description": "Canonical decimal, numeric maximum340282366920938463463374607431768211455; semantic range check mandatory."
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "authentication": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": 0
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": 1
+            },
+            "public_key": {
+              "$ref": "#/$defs/public_key32"
+            },
+            "signature": {
+              "$ref": "#/$defs/signature64"
+            }
+          },
+          "required": [
+            "kind",
+            "public_key",
+            "signature"
+          ]
+        }
+      ]
+    },
+    "score_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "score_ppm": {
+          "$ref": "#/$defs/score"
+        }
+      },
+      "required": [
+        "worker_id",
+        "score_ppm"
+      ]
+    },
+    "worker_roster_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "owner_principal": {
+          "$ref": "#/$defs/id32"
+        },
+        "recipient_account": {
+          "$ref": "#/$defs/id32"
+        },
+        "generation": {
+          "$ref": "#/$defs/u64"
+        },
+        "key_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "public_key": {
+          "$ref": "#/$defs/public_key32"
+        },
+        "metadata_digest": {
+          "$ref": "#/$defs/digest32"
+        }
+      },
+      "required": [
+        "worker_id",
+        "owner_principal",
+        "recipient_account",
+        "generation",
+        "key_version",
+        "public_key",
+        "metadata_digest"
+      ]
+    },
+    "evaluator_roster_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evaluator_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "owner_principal": {
+          "$ref": "#/$defs/id32"
+        },
+        "grant_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "key_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "public_key": {
+          "$ref": "#/$defs/public_key32"
+        },
+        "rubric_digest": {
+          "$ref": "#/$defs/digest32"
+        }
+      },
+      "required": [
+        "evaluator_id",
+        "owner_principal",
+        "grant_version",
+        "key_version",
+        "public_key",
+        "rubric_digest"
+      ]
+    },
+    "score_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "chain_domain": {
+          "$ref": "#/$defs/digest32"
+        },
+        "program_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "config_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "roster_hash": {
+          "$ref": "#/$defs/digest32"
+        },
+        "evaluator_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "grant_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "key_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "evidence_root": {
+          "$ref": "#/$defs/digest32"
+        },
+        "scores": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/score_entry"
+          },
+          "description": "Strict ascending distinct WorkerId; canonical count u16."
+        }
+      },
+      "required": [
+        "schema_version",
+        "chain_domain",
+        "program_id",
+        "market_id",
+        "epoch",
+        "config_version",
+        "roster_hash",
+        "evaluator_id",
+        "grant_version",
+        "key_version",
+        "evidence_root",
+        "scores"
+      ]
+    },
+    "signed_score_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "$ref": "#/$defs/score_report"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature64"
+        }
+      },
+      "required": [
+        "report",
+        "signature"
+      ]
+    },
+    "commitment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "chain_domain": {
+          "$ref": "#/$defs/digest32"
+        },
+        "program_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "config_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "roster_hash": {
+          "$ref": "#/$defs/digest32"
+        },
+        "evaluator_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "grant_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "key_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "commit_digest": {
+          "$ref": "#/$defs/digest32"
+        }
+      },
+      "required": [
+        "schema_version",
+        "chain_domain",
+        "program_id",
+        "market_id",
+        "epoch",
+        "config_version",
+        "roster_hash",
+        "evaluator_id",
+        "grant_version",
+        "key_version",
+        "commit_digest"
+      ]
+    },
+    "roster": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "chain_domain": {
+          "$ref": "#/$defs/digest32"
+        },
+        "program_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "config_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "roster_hash": {
+          "$ref": "#/$defs/digest32"
+        },
+        "workers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/worker_roster_entry"
+          }
+        },
+        "evaluators": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/evaluator_roster_entry"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "chain_domain",
+        "program_id",
+        "market_id",
+        "epoch",
+        "config_version",
+        "roster_hash",
+        "workers",
+        "evaluators"
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "magic": {
+          "const": "PAXAI1"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "operation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "chain_domain": {
+          "$ref": "#/$defs/digest32"
+        },
+        "program_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "actor_principal": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "config_version": {
+          "$ref": "#/$defs/u64"
+        },
+        "roster_hash": {
+          "$ref": "#/$defs/digest32"
+        },
+        "actor_sequence": {
+          "$ref": "#/$defs/u64"
+        },
+        "expiry_height": {
+          "$ref": "#/$defs/u64"
+        },
+        "request_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "payload_hex": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{2})*$",
+          "maxLength": 31930
+        },
+        "authentication": {
+          "$ref": "#/$defs/authentication"
+        }
+      },
+      "required": [
+        "magic",
+        "schema_version",
+        "operation",
+        "chain_domain",
+        "program_id",
+        "market_id",
+        "actor_principal",
+        "epoch",
+        "config_version",
+        "roster_hash",
+        "actor_sequence",
+        "expiry_height",
+        "request_id",
+        "payload_hex",
+        "authentication"
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "status": {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2
+          ]
+        },
+        "request_digest": {
+          "$ref": "#/$defs/digest32"
+        },
+        "state_revision": {
+          "$ref": "#/$defs/u64"
+        },
+        "result_digest": {
+          "$ref": "#/$defs/digest32"
+        },
+        "payload_hex": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{2})*$",
+          "maxLength": 32604
+        },
+        "application_error": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "required": [
+        "schema_version",
+        "status",
+        "application_error",
+        "request_digest",
+        "state_revision",
+        "result_digest",
+        "payload_hex"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  0,
+                  1
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "application_error": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": 2
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "application_error": {
+                "minimum": 1
+              },
+              "payload_hex": {
+                "const": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+    "entitlement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "worker_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "recipient_account": {
+          "$ref": "#/$defs/id32"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "amount": {
+          "$ref": "#/$defs/u128"
+        },
+        "settlement_root": {
+          "$ref": "#/$defs/digest32"
+        },
+        "terminal_height": {
+          "$ref": "#/$defs/u64"
+        },
+        "expiry_height": {
+          "$ref": "#/$defs/u64"
+        },
+        "claimed": {
+          "type": "boolean"
+        },
+        "expired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "market_id",
+        "epoch",
+        "worker_id",
+        "recipient_account",
+        "asset_id",
+        "amount",
+        "settlement_root",
+        "terminal_height",
+        "expiry_height",
+        "claimed",
+        "expired"
+      ]
+    },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tracked_deposits": {
+          "$ref": "#/$defs/u128"
+        },
+        "tracked_refunds": {
+          "$ref": "#/$defs/u128"
+        },
+        "total_claimed": {
+          "$ref": "#/$defs/u128"
+        },
+        "free": {
+          "$ref": "#/$defs/u128"
+        },
+        "reserved": {
+          "$ref": "#/$defs/u128"
+        },
+        "liability": {
+          "$ref": "#/$defs/u128"
+        }
+      },
+      "required": [
+        "tracked_deposits",
+        "tracked_refunds",
+        "total_claimed",
+        "free",
+        "reserved",
+        "liability"
+      ]
+    },
+    "aggregation_cursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "market_id": {
+          "$ref": "#/$defs/id32"
+        },
+        "epoch": {
+          "$ref": "#/$defs/u64"
+        },
+        "input_digest": {
+          "$ref": "#/$defs/digest32"
+        },
+        "next_worker_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "worker_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "chunk_limit": {
+          "const": 8
+        },
+        "terminal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "market_id",
+        "epoch",
+        "input_digest",
+        "next_worker_index",
+        "worker_count",
+        "chunk_limit",
+        "terminal"
+      ]
+    },
+    "resource_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state_max_bytes": {
+          "const": 196608
+        },
+        "workers_max": {
+          "const": 32
+        },
+        "evaluators_max": {
+          "const": 8
+        },
+        "tasks_max": {
+          "const": 64
+        },
+        "retained_epochs_max": {
+          "const": 32
+        },
+        "payout_dictionary_max": {
+          "const": 256
+        },
+        "work_heights": {
+          "const": 64
+        },
+        "commit_heights": {
+          "const": 16
+        },
+        "reveal_heights": {
+          "const": 16
+        },
+        "settle_heights": {
+          "const": 32
+        },
+        "claim_window_heights": {
+          "const": 4096
+        },
+        "application_events_max": {
+          "const": 2
+        },
+        "application_event_bytes_max": {
+          "const": 2048
+        }
+      },
+      "required": [
+        "state_max_bytes",
+        "workers_max",
+        "evaluators_max",
+        "tasks_max",
+        "retained_epochs_max",
+        "payout_dictionary_max",
+        "work_heights",
+        "commit_heights",
+        "reveal_heights",
+        "settle_heights",
+        "claim_window_heights",
+        "application_events_max",
+        "application_event_bytes_max"
+      ]
+    }
+  }
+}

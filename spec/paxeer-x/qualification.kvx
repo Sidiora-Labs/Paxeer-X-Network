@@ -1,0 +1,606 @@
+[finding.task1041322]
+revision = "482767c0ad7132e5af3186f63cf8474404d2fc6a"
+command = "timeout 20m env CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service --bin layerx-human-service"
+exit_code = 101
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.22-build.log"
+observed_and_assumption = "Observed: existing Human ownership, rotation, authentication and zeroizing-body interfaces prevented compilation. Assumption: their bounded source owner must complete genuine type integration before runtime qualification."
+
+[finding.task1043531]
+revision = "cb075d56398fc411adf3c9cb89fdaa5976f550dc"
+command = "timeout 10m python3 tools/qualification/paxeer-x/replay-catalogue.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.31-verify.log"
+observed_and_assumption = "Observed: the genuine first DEPLOY failed its existing journal assertion before SDK cases. Assumption: fix the admitted native capture boundary without weakening the assertion."
+
+[finding.task1041324]
+revision = "05df32bfc66057ee4e1c0bbd81afaf96a2f649d3"
+command = "timeout 10m python3 tools/qualification/paxeer-x/human-service-contract.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.24-verify.log"
+observed_and_assumption = "Observed: six real boundary cases ran, with four refused by unavailable runtime clock authority. Assumption: genuine private runtime authority is required; no substitute clock establishes qualification."
+
+[finding.send-104.13.34-20261004]
+revision = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192"
+command = "python3 tools/qualification/paxeer-x/native_send_purpose.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-verify-extension1.log"
+observed = "NativeSend corpus first real import HTTP400: required ceremony identity omitted by legacy importKernelKey/importKey helper; production requires CeremonyID, exact public key, participants, threshold, epoch, and current approved inventory import authority. Assumption: a passed build does not establish the unified endpoint behavior."
+
+[finding.send-104.13.35-20261004]
+revision = "da9fad774a11f663dcf3e53d313d3fa465e010a5"
+command = "timeout --kill-after=2s 22s python3 tools/qualification/paxeer-x/native_send_profile.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.35-verify.log"
+observed = "Genuine protected Send profile authority fixture missing; no behavior cases credited. Assumption: a passed build does not establish the unified endpoint behavior."
+
+[finding.send-104.13.36-20261004]
+revision = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192"
+command = "timeout 559s python3 tools/qualification/paxeer-x/native-journey-approval.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.37-task36-verify.log"
+observed = "Genuine protected Journey authority fixture missing; zero behavior cases executed. Assumption: a passed build does not establish the unified endpoint behavior."
+
+[finding.send-104.13.38-20261004]
+revision = "73dee8a6903f6b905bc8ba958ee06898989b74ef"
+command = "python3 tools/qualification/paxeer-x/native_send_purpose.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.38-verify.log"
+observed = "Real ceremony import succeeded; preserved Rust StepUpMismatch assertion failed on a canonically invalid expiry fixture. Assumption: retain both source and assertion pending exact owner-approved correction."
+
+[finding.fleet-core-20261004]
+revision = "3e8f0593f"
+command = "tools/paxeer-x/verify-task.sh 103.6.2"
+exit_code = 8
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-result.json"
+observed = "Fixture loader lacks eth_account; no process cases ran. Assumption: source/build completion does not establish runtime qualification."
+
+[finding.fleet-copy-20261004]
+revision = "192de6aee"
+command = "tools/paxeer-x/verify-task.sh 104.26.2"
+exit_code = 8
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.26.2-qualification/verify.log"
+observed = "Fifteen copy lint cases passed; existing live vocabulary/copy catalogue bindings failed. Assumption: source/build completion does not establish runtime qualification."
+
+[finding.fleet-replay-authority-20261004]
+revision = "6e177a3e2"
+command = "task104.35.17 declared verify"
+exit_code = 101
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet1043517/verify.log"
+observed = "Genuine authenticated replay inputs missing; zero cases passed. Assumption: source/build completion does not establish runtime qualification."
+
+[finding.proof-export-103-6-13-20261004]
+revision = "0fb85a1eb08cd7ef47bf95189febe54129f0ddaf"
+command = "timeout 15m tools/paxeer-x/gates/103.6.13.sh"
+exit_code = 101
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.13-verify.log"
+observed = "Eleven cases passed; untouched rogue-key fixture Bound and maintenance-link error-class assertions failed. Assumption: preserve both original assertions and failure evidence without an unrelated rerun."
+
+[finding.proof-compiler-103-6-11-20261004]
+revision = "cca5386f2e4e8ad571ca42acaa28ba5c74780367"
+command = "tools/paxeer-x/gates/103.6.11.sh --build"
+exit_code = 101
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.11-build-repair1.log"
+observed = "Native fixture bindings shadowed the actual function in export_complete.rs. Assumption: scoped task103.6.13 compiler correction does not retroactively qualify this whole receipt gate."
+
+[finding.registry-publication-104-16-5-20261004]
+revision = "5a21c5e54a13ab25c9c933bcac5f1f38b551baf4"
+command = "timeout 30m tools/paxeer-x/verify-task.sh 104.16.5"
+exit_code = 8
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task-104.16.5-fleet/repair1/verify.log"
+observed = "Actual configured npm registry returned404 for the required published package. Assumption: no local package or alternate registry can replace publication provenance."
+
+[finding.v5-native-corpus-20261004]
+revision = "27071c42809e1725e46c3fa17af62e32ce67ba06"
+command = "timeout 70s timeout 20m scripts/paxeer-x/verify-sdk-program-go.sh"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/verify.log"
+observed = "Four genuine ABI3/4 callback and standalone settlement refusal cases remain unwritten; the gate refuses absent corpus. Assumption: successful transfer extras do not satisfy refusal coverage."
+
+[finding.v5-python-http-fixture-20261004]
+revision = "f91715b717ef87c64e8884484a8967de0f61b9a4"
+command = "timeout 20m scripts/paxeer-x/verify-sdk-program-python.sh"
+exit_code = 78
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-104.33.7.3-v5-verify.log"
+observed = "Protected actual gateway/native HTTP fixture and complete signed native corpus are unavailable. Assumption: compilation and fixture-free checks do not establish endpoint behavior."
+
+[finding.registry-foundation-20261004]
+revision = "5cbb949c3b62d4310f9e02bf3fedcae3c7d1f227"
+command = "timeout 15m python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material"
+exit_code = 78
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/verify.log"
+observed = "Actual qualified task24.11 foundation manifest is unavailable; no registry behavior cases ran. Assumption: source compilation does not qualify the hosted registry producer."
+
+[finding.finality-history-20261004]
+revision = "ddc77a3dd82c0d82dd1f730dc0121c9dc9581733"
+command = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.10"
+exit_code = 8
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout103610-approved-qualification/103.6.10-ddc77a3dd82c-20261004T180920070341Z-81425ce7.log"
+observed = "Genuine historical finality authority recordings manifest is absent after fresh SEND and receipt paths passed. Assumption: fresh execution does not establish historical replay qualification."
+
+[finding.v5-jvm-kotlin-20261004]
+revision = "00032eea837e67b29bc6905d2e01839e3a89e0aa"
+command = "mvn -o -q -f platform/sdk/jvm/pom.xml -Pconformance -DskipTests test-compile"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-fanout-104.33.7.5-v5-build.log"
+observed = "Kotlin AgentOperationEnvelopeProbe.kt lines60/64/79 cannot resolve agentOperation outside the assigned JVM paths. Assumption: this build failure requires its own scoped correction; the v5 behavior gate remains unrun."
+
+[terminal-v5-ts-20261004]
+evidence = ["4c209dfc86a97fa56e8892cf19c30b9b35c1b56f", "timeout 20m scripts/paxeer-x/verify-sdk-program-typescript.sh", 1, "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/verify-continuation.log"]
+observed = "The fixed105-byte truncation leaves genuine84-byte callback unchanged."
+assumption = "Exact proposed byte-removal correction awaits owner extension."
+
+[terminal-v5-dotnet-20261004]
+evidence = ["4c209dfc86a97fa56e8892cf19c30b9b35c1b56f", "timeout 516s scripts/paxeer-x/verify-sdk-program-dotnet.sh (recorded real SDK and genuine native corpus environment)", 1, "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-4c209dfc-qualification/verify.log"]
+observed = "13cases passed; altered authorized Asset was not refused."
+assumption = "Published v5-only repair builds0; matching-candidate native corpus and repair gate remain pending."
+
+
+[python-http-producer-compiler-5f475ec5]
+evidence = ["5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001", ["/root/.cargo/bin/cargo", "build", "--locked", "--manifest-path", "platform/Cargo.toml", "-p", "layerx-platform-agent-boundary", "-p", "layerx-platform-gateway", "-p", "layerx-platform-identity", "-p", "layerx-platform-registry", "-p", "layerx-platform-authority", "--bins", "--tests", "--message-format=json"], 101, "/root/lx-ops/paxeer-x-integration-2026-10-03/python-http-producer-qualification/build.log"]
+observed = "The genuine producer build found unavailable ureq KeyKind and missing WireError Display in hosted registry node_state.rs."
+assumption = "Registry repair is separately admitted as103.6.30; behavior still requires genuine upstream funding fixture."
+[gate.109.17]
+revision = "b22361f670696a099c041c832bfe2c87310aa260"
+command = "tools/ci/tests/workflow-runner-check.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.17/verify.log"
+
+[gate.109.7]
+revision = "5e383f1833b66d550e81885d10c2040355bf09cd"
+command = "tools/bringup/docs-names.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.7/verify.log"
+
+[gate.109.1]
+revision = "45e05fb0612050fe02468dbb1bb75a099d27fe56"
+command = "go test ./node/ -run V611 -count=1 -v"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.1/verify.log"
+
+[gate.109.3]
+revision = "0f2c419686fa215c8bd3ad877af2d791a0a1abed"
+command = "tools/paxeer-x/gov/test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.3/verify-2.log"
+
+[gate.109.4]
+revision = "4f4f9cfd1dfbdb899eff22c1371fb1b75c916262"
+command = "cd platform && cargo test -p layerx-platform-gateway --bin layerx-gateway capabilities::tests"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.4/verify-scoped.log"
+
+[gate.109.5]
+revision = "b722d704108b72a91b2ae3320f49decbcf1283d5"
+command = "go test ./rpc/ -run Syncing -count=1 -v"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.5/verify.log"
+
+[gate.109.6]
+revision = "1ca3fa7f3fca2c15a3a358086356530ff7424f11"
+command = "tools/release/reproducible-check.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.6/verify.log"
+
+[gate.109.8]
+revision = "393f94d70b3c257eea264331a4481f92524989c8"
+command = "tools/bringup/tests/kernel-genesis.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.8/verify.log"
+
+[gate.109.10]
+revision = "8368ab3e2d2757fc3c359bb34008e242c9b08091"
+command = "cd platform && cargo test -p layerx-oracle-feeder"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.10/verify.log"
+
+[gate.109.12]
+revision = "e3cb375490200c857a14e7ab27b63ce7b1e49182"
+command = "cd interop && cargo test -p layerx-intent-ingester"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.12/verify-repair2.log"
+
+[gate.109.14]
+revision = "a19a70a2b4322b9182e115eb847ff1c9051d2786"
+command = "tools/bringup/tests/mint-secrets.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.14/verify-r2.log"
+
+[gate.109.18]
+revision = "fab1bc4de1801ae8a53ba1189d670cadffe0df51"
+command = "tools/ci/beta-report.sh --check"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.18/verify.log"
+
+[gate.109.19]
+revision = "27e520a7ec98a5b3fb444bb35c341e8df9dd8171"
+command = "tools/wallet/tests/pwa-args.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.19/verify.log"
+
+[observation.109.1.1]
+revision = "45e05fb0612050fe02468dbb1bb75a099d27fe56"
+command = "go test ./node/ -run V611 -count=1 -v"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.1/verify.log"
+observed = "node/upgrades_v610_test.go:56 still expects knownUpgradePlans == [v6.9, v6.10] and fails now that v6.11 is registered."
+assumption = "Stale expectation, not a weakening; a reconciliation task updates it to include v6.11."
+
+[observation.109.4.1]
+revision = "4f4f9cfd1"
+command = "cd platform && cargo test -p layerx-platform-gateway --bin layerx-gateway capabilities"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.4/verify.log"
+observed = "complete_readiness_contract_tests::real_gateway_readiness_capabilities_contract panics without PAXEER_X_GATEWAY_READINESS_CASE; chain_rpc() and the /rpc default are implemented but not called from main.rs."
+assumption = "Env-gated pre-existing test; the /rpc wiring lands in a reconciliation task after 109.16 owns main.rs."
+
+[observation.109.5.1]
+revision = "b722d704108b72a91b2ae3320f49decbcf1283d5"
+command = "go test ./rpc/ -run Syncing -count=1 -v"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.5/verify.log"
+observed = "integration_test/evm_module/rpc_io_test/testdata/eth_syncing/not-supported.iox and rpc/AGENTS.md still describe eth_syncing as unsupported."
+assumption = "Fixture and doc follow the implementation in a reconciliation task."
+
+[observation.109.8.1]
+revision = "393f94d70b3c257eea264331a4481f92524989c8"
+command = "tools/bringup/tests/kernel-genesis.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.8/verify.log"
+observed = "platform/hosted/node/genesis-modules.conf still lists six modules; the beta seven come from --module-profile beta or the render env."
+assumption = "The conf default moves to seven modules in a reconciliation task."
+
+[observation.109.10.1]
+revision = "2507e513d8125b84020dca32e2508c5a7fd3f2f6"
+command = "cd platform && cargo test -p layerx-oracle-feeder"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.10/verify.log"
+observed = "LNI is a Unix socket, so a separate Fly app cannot reach the kernel; the feeder must be co-located with the kernel process or the socket forwarded."
+assumption = "The kernel image task (109.9) or the Fly deploy runs the feeder beside layerxd in the same machine."
+
+[observation.109.15.1]
+revision = "bb887305d6674c161261e37f79b2fd7c3fe9db7a"
+command = "cd platform && cargo test -p layerx-gas-station"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.15/verify-repair2.log"
+observed = "tests/rate.rs fails 8 of 9 against src/rate.rs since ad0582e4d: fixtures read as RateFileMalformed, cadence_must_stay_below_max_rate_age asserts cadence 299 valid at max_rate_age 300 while the code requires cadence + retry < max_rate_age, one test needs PAXEER_X_RATE_AUTHENTICATED_TRANSACTION; lib tests (35) and main tests (4) pass including the new stale-rate test."
+assumption = "Pre-existing contradiction between test and code; owner rules which is authoritative before the test is touched."
+
+[observation.109.18.1]
+revision = "fab1bc4de1801ae8a53ba1189d670cadffe0df51"
+command = "tools/ci/beta-report.sh --check"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.18/verify.log"
+observed = "scripts/ci/beta-report.sh and scripts/ci/beta-contract-check.sh still check the old k8s/402 beta.md layout; platform/sdk/go/go.mod still names LayerX-Network."
+assumption = "The scripts/ci pair is retired or repointed in a reconciliation task; the Go path moves in 109.38."
+
+[observation.109.19.1]
+revision = "27e520a7ec98a5b3fb444bb35c341e8df9dd8171"
+command = "pnpm --dir human/apps/wallet typecheck"
+exit_code = 2
+log = "/root/lx-fleet/logs/task-109.19/build.log"
+observed = "12 pre-existing TypeScript errors in src/surfaces/WebDataView.tsx, WebDataView.test.tsx and human/wallet/sdk/src/index.ts:760 (ExtendedPoint), none in files the task touched."
+assumption = "Pre-existing; a reconciliation task clears them before the PWA deploy."
+
+[gate.109.15]
+revision = "bb887305d6674c161261e37f79b2fd7c3fe9db7a"
+command = "cd platform && cargo test -p layerx-gas-station"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.15/verify-repair2.log"
+
+[observation.109.9.1]
+revision = "7ff0c486597eab8c22e0c88b445ae62d002f49e0"
+command = "docker build -f docker/kernel/Dockerfile --target build ."
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.9/build.log"
+observed = "cmd/layerxctl/Cargo.lock on main is stale, so the kernel image build stops at the layerxctl target under --locked; make layerxd layerx-genesis-build passes with cargo on PATH."
+assumption = "The lockfile refresh belongs to a reconciliation task; init.sh under the full profile needs LAYERX_KERNEL_AGENTD_RPC_PEER, _DAEMON_SEQUENCES, _PROTOCOL_SEQUENCES, LAYERX_NODE_NETWORK_NAME and the agentd-rpc TLS files from the deploy."
+
+[observation.109.16.1]
+revision = "a9e40cf403f1bf176f77ebf3ff388d4b201ab55b"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity signup"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.16/verify-2.log"
+observed = "Verification emails only reach an outbox directory (LAYERX_IDENTITY_SIGNUP_OUTBOX_DIR); no mailer consumes it; the new gateway tests in rpc_register.rs and rpc_faucet.rs compiled but were not run by the gate."
+assumption = "A mailer and a gateway test run join the reconciliation task."
+
+[observation.109.20.1]
+revision = "ff84de597b15310f07168b91d3bf0c14564b459b"
+command = "cargo test --manifest-path agent/Cargo.toml -p layerx-client --no-fail-fast --test '*' && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.20/verify-3.log"
+observed = "layerx-human-service's test target does not compile on main (identity_dispatch.rs, store/mod.rs, journeys/wire.rs, store/retention.rs, store/tenancy.rs, tests/wallet_identity_e2e.rs); layerx-client native-fixture tests need the real caps fixture env; lni_schema.rs:133 expects tag 44 refused at V1_8 but it is accepted."
+assumption = "Compile errors go to task 109.41; the V1_8 tag 44 assertion is a code-versus-test contradiction for the owner to rule on; fixture tests are env-gated and not a regression."
+
+[gate.109.2]
+revision = "f26c9fa4c0f51e0ace338418e34673aeaaffe70f"
+command = "FOUNDRY_CONFIG=foundry.paxeer.toml forge test --match-contract SidioraNativeERC20Test"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.2/verify2.log"
+
+[gate.109.16]
+revision = "a9e40cf403f1bf176f77ebf3ff388d4b201ab55b"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity signup"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.16/verify-2.log"
+
+[gate.109.9]
+revision = "7ff0c486597eab8c22e0c88b445ae62d002f49e0"
+command = "make layerxd layerx-genesis-build"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.9/verify-rerun1.log"
+
+[gate.109.20]
+revision = "ff84de597b15310f07168b91d3bf0c14564b459b"
+command = "cargo test --manifest-path agent/Cargo.toml -p layerx-client --no-fail-fast --test '*' && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.20/verify-3.log"
+
+[observation.109.13.1]
+revision = "9553651ac4291e4dc67ed0c6dc0282f76ca4e86e"
+command = "PATH=$HOME/.foundry/bin:$PATH tools/bringup/check-live.test.sh"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.13/verify-r2.log"
+observed = "25 cases pass; four ca cases (never_moves_a_volume_key, gateway_redis_as_staged_secrets, every_service, check_live_ca_passing) and the line-880 identity case encode ca.sh's pre-reuse behaviour (call counts, san=4/4, no prior certificate), so they fail against the current ca.sh; the worker's test edits were refused by the auto-mode classifier as security test removal."
+assumption = "Owner rules whether the test follows ca.sh's reuse behaviour; the kernel rows and deploy-input entries in human.toml stand. LAYERX_GATEWAY_UI_BINDINGS_FILE cannot be wired because ui_proxy.rs requires a root-owned 0600 file while the entrypoint drops to uid 4020 (owner ruling)."
+
+[gate.109.13]
+revision = "9553651ac4291e4dc67ed0c6dc0282f76ca4e86e"
+command = "PATH=$HOME/.foundry/bin:$PATH tools/bringup/check-live.test.sh"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.13/verify-r2.log"
+
+[gate.109.22]
+revision = "f141816743d60b6377414066ad885a71217c9a1f"
+command = "pnpm --dir human/wallet/ceremony/legacy-import test"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.22/verify-repair1.log"
+
+[gate.109.27]
+revision = "17443908b35c8a921ec23e8d4a40ee4b2e29d6d3"
+command = "tools/docs/gen-system-docs.sh --check"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.27/verify.log"
+
+[gate.109.31]
+revision = "4d014674dca7b72770887a1a9a5b769834df3f48"
+command = "explorer/deploy/tests/config-check.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.31/verify-2.log"
+
+[gate.109.33]
+revision = "17c1a7d220e06dcbcdcf5cc402a0c1d40188def8"
+command = "tools/ops/monitoring/test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.33/verify.log"
+
+[gate.109.32]
+revision = "5ddd1576f9fd52864621750c4deb199200908907"
+command = "tools/bringup/edge.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.32/verify-3.log"
+
+[gate.109.34]
+revision = "a27ca54e17ddec23b20305fc20823a6bab80ea5f"
+command = "tools/ops/backup/test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.34/verify.log"
+
+[gate.109.23]
+revision = "294f2f8630c2bb70e38948429c353dd0f30ea4a1"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.23/verify.log"
+
+[gate.109.11]
+revision = "25eb4d691a9a0df197667e9480fff7cc41c1e273"
+command = "cd interop && cargo test -p x-websearch relay"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.11/verify-2.log"
+
+[observation.109.23.1]
+revision = "294f2f8630c2bb70e38948429c353dd0f30ea4a1"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.23/verify.log"
+observed = "tests/finality_contract.rs panics on LAYERX_INDEXER_FINALITY_BATCH NotPresent; lib 18/18 and backfill 6 pass; ingest and rollback_projection did not run."
+assumption = "Pre-existing external-input gate; rerun at release with a published archive batch."
+
+[observation.109.11.1]
+revision = "25eb4d691a9a0df197667e9480fff7cc41c1e273"
+command = "cd interop && cargo test -p x-websearch relay"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.11/verify-2.log"
+observed = "kernel::relay tests pass; tests/binary.rs:429 asserts /health body {\"status\":\"ok\"} while main.rs serves a larger body since f6a97b616."
+assumption = "Pre-existing test contradiction; owner decides whether the test or the health body changes."
+[gate.109.30]
+revision = "cc6453c07e322004e412dc615104050c6f25235d"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.30/verify-2.log"
+
+[observation.109.30.1]
+revision = "cc6453c07e322004e412dc615104050c6f25235d"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.30/verify-2.log"
+observed = "tests/operator_config.rs:87 documented_example_loads_through_production_config: mints() on bridge/deploy/relayer-solana.example.json differs from [[1;32]] in the last 14 bytes; 10 config unit tests pass; the legacy single-app interop/deploy/bridge-relayer/fly.toml sets none of the new attestor env vars so its entrypoint now refuses to start."
+assumption = "Pre-existing example-file drift outside the lane; fix the example or the test in the bridge reconciliation and retire the single-app fly.toml."
+[gate.109.29]
+revision = "8bcb77ca082624bb020ba8fdc2249ff55ef8a3c4"
+command = "sh -c 'bridge/deploy/tests/deploy-scripts-check.sh && bridge/deploy/tests/checklist-check.sh'"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.29/verify-repair2.log"
+
+[observation.109.29.1]
+revision = "8bcb77ca082624bb020ba8fdc2249ff55ef8a3c4"
+command = "sh -c 'bridge/deploy/tests/deploy-scripts-check.sh && bridge/deploy/tests/checklist-check.sh'"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.29/verify-repair2.log"
+observed = "Passed; the new chainconfig overlay Go tests, evm/solana-dry-run-check.sh and docs-check.sh were not in the verify_cmd and did not run; hyperevm big-block step is an overlay flag check only."
+assumption = "Covered by the per-wave aggregate run (go test ./bridge/deploy/... and the bridge check scripts) before G1."
+[gate.109.28]
+revision = "d1573a69d3606b864cb92b04119d06987905f668"
+command = "tools/bringup/tests/search-front.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.28/verify-r1.log"
+
+[observation.109.28.1]
+revision = "d1573a69d3606b864cb92b04119d06987905f668"
+command = "tools/bringup/tests/search-front.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.28/verify-r1.log"
+observed = "Passed; the env-rendered template is interop/crates/x-websearch/config.example.json (new) while interop/deploy/x-websearch/config.example.json keeps REPLACE_WITH placeholders for the packaging check; backup switch to api1 happens at render time, not per request."
+assumption = "Two files with distinct roles; fold them when the packaging check allows env references."
+[gate.109.21]
+revision = "e51ca09d65549ce9e09ec80871038dc89e121f98"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.21/verify.log"
+
+[observation.109.21.1]
+revision = "e51ca09d65549ce9e09ec80871038dc89e121f98"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-intent-ingester submit"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.21/verify.log"
+observed = "Passed; interop/deploy/intent-ingester fly.toml names docker/intent-ingester/Dockerfile which does not exist; margin, bridge and launchpad intents are journaled as skipped; the gateway Bearer header format was assumed, not checked against the gateway auth code."
+assumption = "Dockerfile and header check go to the day-two kernel bring-up queue; skipped intent classes are out of the beta exchange scope."
+[gate.109.39]
+revision = "26a286b033bb06dd14dbe06f0266befbecc41596"
+command = "sh -c 'go test ./node/ ./rpc/ -count=1 && cargo check --locked --manifest-path cmd/layerxctl/Cargo.toml'"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.39/verify.log"
+
+[observation.109.39.1]
+revision = "26a286b033bb06dd14dbe06f0266befbecc41596"
+command = "sh -c 'go test ./node/ ./rpc/ -count=1 && cargo check --locked --manifest-path cmd/layerxctl/Cargo.toml'"
+exit_code = 1
+log = "/root/lx-fleet/logs/task-109.39/verify.log"
+observed = "TestV610* pass and cargo build --locked passes; red on pre-existing node tests (TestOptimisticProcessing ProcessProposalHandler, TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom app_feetoken_test.go:154, TestInvalidProposalWithExcessiveGasEstimates TempDir RemoveAll) and rpc tests (TestTraceTransaction empty validator set at height 7, TestTraceCall nil interface panic)."
+assumption = "Pre-existing chain test failures outside the lane; owner decides whether they are release blockers before v6.11.0 is tagged."
+[gate.109.36]
+revision = "232f4325cb166fb955333b46858eac13de11f7e2"
+command = "tools/bringup/sync-fleet.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.36/verify-rerun1.log"
+
+[observation.109.36.1]
+revision = "232f4325cb166fb955333b46858eac13de11f7e2"
+command = "tools/bringup/sync-fleet.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.36/verify-rerun1.log"
+observed = "Passed (90 cases); the hosts env file needs UPGRADE_UNITS and PAXD_RELEASE_URL at deploy time; only the paxd binary is staged, the libwasmvm .so release assets are not."
+assumption = "libwasmvm staging is added to the release-build task in the day-two queue, since the reproducible build already pins it."
+[gate.109.35]
+revision = "ad169dc1cda1a97db79c4f73bf8370dc646400d1"
+command = "tools/bringup/tests/validator-firewall.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.35/verify-2.log"
+
+[gate.109.37]
+revision = "b11509b9d157c8f8dc58d039bfd30c5721e4bfac"
+command = "cargo test --manifest-path agent/Cargo.toml -p layerx-client resolve"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.37/verify.log"
+
+[observation.109.35.1]
+revision = "ad169dc1cda1a97db79c4f73bf8370dc646400d1"
+command = "tools/bringup/tests/validator-firewall.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.35/verify-2.log"
+observed = "Passed (18/18); the guard drops 1317/9090/26657 on the validator host that also serves the public api1 full node; keyring-migrate.sh only detects test-keyring use via process args or client.toml and the xweb attestor sidecars' keyring backend was not checked."
+assumption = "Owner rules on api1 direct-port access before the guard is adopted; attestor keyring check added to the day-two hardening step."
+
+[observation.109.37.1]
+revision = "b11509b9d157c8f8dc58d039bfd30c5721e4bfac"
+command = "cargo test --manifest-path agent/Cargo.toml -p layerx-client resolve"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.37/verify.log"
+observed = "Client resolver and tests pass; the declared gateway file platform/hosted/gateway/src/submit.rs does not exist (submit path is main.rs submit_activity), so the gateway does not yet report the resolved state and nothing in agentd calls resolver::spawn_for_client."
+assumption = "Gateway reporting and the agentd call site go to the day-two agent reconciliation lane, after the platform reconciliation lane's main.rs change lands."
+[gate.109.40]
+revision = "33011e4efcceda748105ee4d2e85471b9c42b0f0"
+command = "sh -c 'G="cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway"; $G capabilities::tests && $G rpc_register && $G rpc_faucet && cargo test --manifest-path platform/Cargo.toml -p layerx-platform-identity mailer && tools/bringup/tests/kernel-genesis.test.sh'"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.40/verify-2.log"
+
+[observation.109.40.1]
+revision = "33011e4efcceda748105ee4d2e85471b9c42b0f0"
+command = "tools/bringup/tests/kernel-genesis.test.sh"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.40/verify-3-genesis.log"
+observed = "Seven-module genesis applied (bootstrap.sh and fixture-foundation.py guards moved from six to seven); the fixture-foundation check itself was not run."
+assumption = "Covered by the per-wave aggregate run."
+[observation.109.24.1]
+revision = "ed44b5e1822f858480f4fdaa69ad1eeeb16d7633"
+command = "sh -c 'cargo check --manifest-path agent/Cargo.toml -p paxeer-xdk && cargo check --manifest-path platform/Cargo.toml -p paxeer-xdk-cli && cargo check --manifest-path programs/Cargo.toml --workspace'"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.24/verify-cargo-2.log"
+observed = "Repair cycle 2 failed: E0432 unresolved import layerx_programs in programs/crates/layerx-programs-protocol-adapter and the porting crates because a package= rename changes the dependency key; a follow-up commit re-keys 8 manifests as layerx-programs = { package = \"paxeer-xdk-programs-registry\" } but was never run; the python template still names layerx-sdk."
+assumption = "Held off main (an unverified crate rename would break every dependent workspace); owner authorizes one rerun beyond the two cycles or the lane is re-cut."
+[gate.109.41]
+revision = "5ba714c9b41aa6aa967eb38371c3358c5db510d0"
+command = "sh -c 'pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls && pnpm --dir human/wallet/gateway test'"
+exit_code = 2
+log = "/root/lx-fleet/logs/task-109.41/verify.log"
+
+[observation.109.41.1]
+revision = "5ba714c9b41aa6aa967eb38371c3358c5db510d0"
+command = "sh -c 'pnpm --dir human/apps/wallet typecheck && cargo test --manifest-path human/Cargo.toml -p layerx-human-service tls && pnpm --dir human/wallet/gateway test'"
+exit_code = 2
+log = "/root/lx-fleet/logs/task-109.41/verify.log"
+observed = "Typecheck fails only on agent/sdk/typescript/src/xweb-api.ts TS2307 @noble/ciphers unresolved from the wallet app (package.json/tsconfig outside the lane); the human-service test target compiles again; tls tests and the gateway legacy-import test did not run; wallet sdk package.json still pins @noble/curves ^1.9.1 while the app bundles 2.4.0."
+assumption = "Closed by task 113.3 do_6; both repair cycles were spent on stale test targets."
+[gate.109.38]
+revision = "9b964cc3d8bfbbc8c6690f6aaad4631ac3444ca6"
+command = "sh -c 'go build ./... && go vet ./node/ ./rpc/'"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.38/verify.log"
+
+[observation.109.38.1]
+revision = "9b964cc3d8bfbbc8c6690f6aaad4631ac3444ca6"
+command = "sh -c 'go build ./... && go vet ./node/ ./rpc/'"
+exit_code = 0
+log = "/root/lx-fleet/logs/task-109.38/verify.log"
+observed = "Passed; 3933 files renamed, go.sum unchanged, no pin moved; the generated .pb.go descriptors still embed the old go_package until protos are regenerated."
+assumption = "Proto regeneration rides the next proto change; the build does not depend on the embedded descriptor path."
+[gate.109.11]
+revision = "b2d9e77984e4cec18941cd3b6703156b4488d973"
+command = "sh -c 'cd interop && cargo test -p x-websearch relay'"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.11/health-verify.log"
+
+[observation.109.11.2]
+revision = "b2d9e7798"
+command = "sh -c 'cd interop && cargo test -p x-websearch relay'"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.11/health-verify.log"
+observed = "Owner ruling applied (health test reads the status field); the relay binary test now fails at tests/binary.rs:725 asserting data/kernel is empty after relay start, while the relay writes its state files there."
+assumption = "Test written before the relay kept state under data/kernel; needs the same kind of ruling (test expects the state files, or the relay keeps state elsewhere); added to 113.3 do_5."
+[observation.109.24.2]
+revision = "b72416a5fc3b0d9aeefe8dad5475bd365dd2c3bd"
+command = "sh -c 'cargo check --manifest-path agent/Cargo.toml -p paxeer-xdk && cargo check --manifest-path platform/Cargo.toml -p paxeer-xdk-cli && cargo check --manifest-path programs/Cargo.toml --workspace && cargo check --manifest-path human/Cargo.toml --workspace'"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.24/verify-cargo-3.log"
+observed = "Owner-authorized rerun: agent check passes; platform check fails E0433 unresolved crate layerx_platform_cli at cli/src/wallet.rs:3 because the CLI package's library target took the new package name; programs and human checks did not run."
+assumption = "Unapplied fix is [lib] name = \"layerx_platform_cli\" in platform/cli/Cargo.toml; needs the owner's word for one more rerun or it moves to 113.2."
+[gate.109.30]
+revision = "7d0254cfa2450de2e518bf89de3dd0eb1147aaa4"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.30/ruling-verify.log"
+
+[observation.109.30.2]
+revision = "7d0254cfa"
+command = "cargo test --manifest-path interop/Cargo.toml -p layerx-bridge-relayer config"
+exit_code = 101
+log = "/root/lx-fleet/logs/task-109.30/ruling-verify.log"
+observed = "Owner ruling applied (single-app fly.toml deleted, check-live.sh and its fixture on relayer-1..5, example mint re-encoded to the real base58 of [1;32]); all 12 config tests pass; the only failure is supplied_operator_inventory_matches_registered_bridge_configuration, gated by design on LAYERX_BRIDGE_OPERATOR_CONTRACT_INPUTS which the config filter also matches."
+assumption = "Missing external input, not code; the gate passes once the approved operator inputs file exists at bridge deploy time (113.13)."
+
+[observation.ai-market-spec-existing-duplicate]
+revision = "87ec945976b6118d9746efaaf9d074a646caf818"
+command = "python3 /root/lx-ops/paxeer-ai-kvx-work/assemble.py"
+exit_code = 1
+log_path = "/root/lx-ops/paxeer-ai-kvx-work/baseline-parser-conflict.log"
+observed = "Initial baseline parsing encountered duplicate title in repeated req.109; new AI document and integrated dependency checks subsequently passed independently."
+assumption = "Retain the existing requirement blocks; complete-file parser qualification remains blocked until their owner resolves the duplicate."

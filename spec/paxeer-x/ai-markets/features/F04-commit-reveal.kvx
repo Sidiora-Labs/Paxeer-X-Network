@@ -1,0 +1,378 @@
+[meta]
+id = "F04"
+title = "Score commitment and reveal windows"
+version = 1
+status = "SPECIFICATION_ONLY"
+implementation = "UNRUN"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+task_precedence = "Canonical task sections in ../../spec.kvx control admission, dependencies, ownership and gates. Local proposals describe feature obligations only."
+requirements_file = "F04-commit-reveal.requirements.json"
+
+[contract.overview]
+title = "Score commitment and reveal windows"
+paragraph_1 = "Specification version 1; design and future qualification only; implementation UNRUN."
+
+[contract.section_1]
+title = "Purpose and behavioral scope"
+paragraph_1 = "F04 gives independent AI evaluators a bounded period in which to fix their score report without publishing the report, followed by a distinct period in which to publish and authenticate that exact report. This reduces the opportunity to wait for public reports and copy their scores. It does not prove that an evaluator performed inference, used the promised benchmark, acted independently, or reported truthfully. Such assertions require the evidence and evaluator policy defined by F03 and F09 and remain limited by the off-chain execution trust model."
+paragraph_2 = "V1 implements manually submitted salted hash commitments and manual reveals. There is no encrypted payload, automatic decryption, external randomness beacon, time-lock cryptography, automatic reveal daemon with custody authority. A client may schedule a reveal, but successful inclusion and finality remain necessary. A lost salt or missed window cannot be repaired administratively. No funds are minted, moved, confiscated, or locked by F04. Fees are those of the existing activity execution path."
+paragraph_3 = "F04-R01: Every evaluator has at most one immutable commitment and one admitted report in each market epoch. No replacement, cancellation, amendment, or extension is permitted after the first successful commitment. A later epoch is a new opportunity to report."
+
+[contract.section_2]
+title = "Existing architecture integration and proposed application placement"
+paragraph_1 = "The existing Rust Programs SDK is programs/sdk/rust. Its src/context.rs exposes authenticated executing-program, invoking-principal and batch-height context. The runtime contract is programs/crates/layerx-programs-runtime/src/abi/context.rs, whose ABI-v2 BatchHeight field is an existing host fact, not a new wall-clock or consensus mechanism. Its src/host/context.rs exposes that context to guest execution. programs/sdk/rust/src/crypto.rs supplies SHA-256 and Ed25519 verification; signing the 32-byte attestation digest fits its existing bounded message facility. programs/sdk/rust/src/storage.rs supplies shared storage. The existing marketplace at platform/examples/marketplace/program establishes a real cdylib Program and SDK dependency pattern; it is not an AI implementation."
+paragraph_2 = "The proposed new application path is programs/crates/layerx-programs-ai-market. F04 logic belongs within that application and its common bounded state. Existing native modules, module IDs, proof namespaces, terminal/receipt formats, account custody, fee schedules, conservation rules and consensus/finality are preserved. No host field may be fabricated from an HTTP timestamp. If authenticated batch height or executing-program identity is unavailable, operation fails. A deployment must use the ABI and capabilities verified for its selected runtime; interface availability does not qualify a deployment."
+paragraph_3 = "F04-R02: All business transitions occur in a single Program activity against the shared market state described by contracts/core.kvx. There is one market per Program. Reading and replacing its bounded state must be atomic through the existing Programs transaction boundary. Receipt and finalized-state clients are provided by F10; a mempool response is never commit confirmation."
+
+[contract.section_3]
+title = "Normative glossary, canonical types and data model"
+paragraph_1 = "An epoch is an unsigned 64-bit number. A height is an unsigned 64-bit authenticated protocol batch height. Config version, evaluator grant version and evaluator key version are unsigned 64-bit values. IDs and digests are exactly 32 raw bytes. Scores are unsigned 32-bit integers in [0,1000000], measured in millionths of the evaluator policy's quality scale. The schema version is unsigned 16-bit value 1. Every integer uses fixed-width big-endian encoding. Vector lengths use u16. No floating point, decimal text, JSON serialization, locale order, implicit padding, or native-language object encoding participates in a digest. No reserved field exists in these hash tuples; future fields require a new versioned domain and schema rather than inserting hidden bytes."
+paragraph_2 = "The binding tuple B has exactly this order and length: chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_hash32 || evaluator_id32 || grant_version:u64 || key_version:u64. B is 192 bytes. All values must equal the frozen epoch context and the authorized evaluator record. The chain domain is a configured 32-byte network identifier, never a user-selected string. ID32 and required digest fields are nonzero under C02; zero roster is allowed only for the common pre-epoch registry exception, never for CommitScore/RevealScore. A zero derived report or commitment hash is refused, not assigned a substitute digest. The roster hash covers the common frozen roster including membership identities and generations, so an old identity generation cannot inherit a vote by accident."
+paragraph_3 = "The canonical report body is schema_version:u16 || B || evidence_root32 || entry_count:u16 || entries. Each entry is worker_id32 || score:u32, exactly 36 bytes. Entry count is 1..32; entries are strictly ascending lexicographic unsigned-byte worker IDs, unique, and drawn from the frozen worker roster. Absence of a worker means no vote. An explicit score of zero is a valid vote of zero. An empty row is refused with F04_NO_SCORES and never converted into a full row of zero scores. Policy and benchmark interpretation is bound through config_version and the immutable config digest committed by the roster/epoch context; evidence_root refers to F09 evidence. F03 defines evidence admissibility."
+paragraph_4 = "A body has 228 + 36n bytes, at most 1380 bytes. Its signature is exactly 64 bytes. report_digest = H('PAXAI/score-report/v1', body), where H(D,x) = SHA256(ASCII(D) || byte 0 || x). The ASCII domain here has 21 bytes; report hash input has 250 + 36n bytes, at most 1402. The evaluator signs H('PAXAI/score-attestation/v1', report_digest32) as the exact 32-byte Ed25519 message, using the frozen key version. No signature bytes enter report_digest. The attestation-hash input is the26-byte ASCII domain PAXAI/score-attestation/v1, one NUL and report_digest32, exactly59 bytes."
+paragraph_5 = "F04-R03: A commitment is C = H('PAXAI/score-commit/v1', B || report_digest32 || salt32). That tuple has 256 bytes; with the 21-byte domain and one NUL, the SHA-256 preimage has exactly 278 bytes. It binds chain, executing Program, market, epoch, config, roster, evaluator identity, grant version, key version, score report including its evidence root, and salt. No count, length prefix or schema byte is inserted into B or this fixed commitment tuple. The report schema is already bound through report_digest."
+paragraph_6 = "F04-R04: A production salt is exactly 32 bytes freshly sampled from an operating-system cryptographically secure random generator for each report. Reuse across reports and deterministic salts derived from scores, keys, epochs, clocks or IDs are prohibited client behavior. A nonzero random salt is required; all-zero salt is rejected at reveal. The Program can verify length and nonzero value but cannot prove entropy. Commitment creation cannot enforce salt quality because it does not receive the salt. Clients must preserve salt and exact canonical report bytes securely until finalized reveal confirmation, then follow their retention policy. Public logs must not disclose either before reveal."
+paragraph_7 = "Per evaluator current-epoch state contains status, C32, accepted_commit_height:u64, accepted_commit_sequence:u64, frozen grant/key versions, and, after reveal, report_digest32, accepted_reveal_height:u64 and accepted_reveal_sequence:u64. The authenticated report body and signature are retained in the shared state until aggregation and history handoff permit bounded rollover. Status is encoded as u8: 0 ABSENT, 1 COMMITTED, 2 REVEALED. EXPIRED is a projection of COMMITTED when height reaches reveal_end; it need not rewrite eight rows just to advance time. Invalid reveal attempts create no new durable evaluator status. F08/F10 may project refusal receipts; they must not reinterpret failed calls as accepted reports."
+
+[contract.section_4]
+title = "Roles, authority, grants and revocation"
+paragraph_1 = "Evaluator: controls the F03-authorized Ed25519 report key and enrolled principal; may commit and reveal its own row. Kind0 requests require native invoking-principal equality with actor_principal and enrolled evaluator principal. Kind1 permits an unprivileged relayer to submit a request signed by the enrolled evaluator delegate using the exact C03 request digest and enrolled public key. This envelope signature authenticates the operation; the separate score-attestation signature authenticates the report. A relayer gains no ability to alter payload, versions, sequence or expiry. The Program must require direct entry with absent immediate_caller under C01."
+paragraph_2 = "Market administrator: chooses policy and future evaluator grants through F01/F03. It cannot alter C, accept a late report, replace a signed row, force a reveal, erase an accepted row, or override a digest mismatch. Configuration/key changes take effect according to the next-epoch freeze rules. An emergency halt may prevent new operations through common state policy, but cannot rewrite the deadline or turn an expired report into a valid report."
+paragraph_3 = "Caller of aggregation: follows F05 authority and liveness policy. It consumes the frozen set of admitted reports only after reveal end. It cannot ask F04 to admit a report during settlement."
+paragraph_4 = "F04-R05: Frozen grant/key versions and roster identities determine the required report binding throughout the epoch. Revocation is immediate for new admission: a revoked evaluator or key cannot commit or reveal. Rekeys and new grants are staged for the next roster. Revocation before aggregation seal excludes that row from eligible aggregation input without erasing its accepted history; revocation after seal is prospective and leaves sealed input unchanged. Owner suspension forbids new work/epochs but permits already valid reveal and deterministic settlement unless that participant is revoked. Abort is explicit and terminal; it cannot rewrite a digest or admit a late report."
+
+[contract.section_5]
+title = "Operation contracts and failures"
+paragraph_1 = "CommitScore operation selector is0x0401. CommitScore request: B and C32, inside the common application operation envelope. The Program validates the C03 kind0 native-principal or kind1 enrolled-delegate envelope, its exact request digest, actor sequence, request ID and expiry, then matches actor_principal to the enrolled evaluator principal. Preconditions are canonical envelope, authenticated host context, matching chain/program/market/epoch/config/roster/grant/key bindings, active frozen evaluator, nonhalted epoch, and commit-window inclusion. The payload is B192 || C32, exactly224 bytes; outer envelope bindings must equal payload B. Successful first admission consumes the next evaluator actor sequence, retains replay fields and increments common state_revision once. C may not be all-zero; rejection here is a format guard, not a statement about preimage existence."
+paragraph_2 = "On first acceptance, status changes ABSENT to COMMITTED, C and authenticated height/sequence are retained, and a bounded application CommitAccepted event is emitted. The topic is ASCII PAXAI/v1/CommitScore. The event contains C08 common market/epoch/config/state_revision/request_digest/result_digest fields followed by evaluator_id32, C32 and heightu64. Event binary body is schema_version:u16 followed by the C08 fields in order market_id32, epoch:u64, config_version:u64, state_revision:u64, request_digest32, result_digest32, then evaluator_id32, C32, height:u64:194 bytes. The application result payload is result_kind:u8=1 || evaluator_id32 || C32 || first_acceptance_height:u64 || first_acceptance_activity_sequence:u64,81 bytes. result_digest = H('PAXAI/result/v1', that payload); C08 wraps it with request_digest and state_revision. The common response status is0 OK,1 ALREADY_APPLIED or2 ERROR, followed immediately by application_error:u16; success/idempotent responses have error0 and failures use the allocated application code. Application error codes are not response status values. The receipt records the native Program result and existing execution identity. No report body, signature or salt is transmitted during commit. Report data cannot be inferred from C under the assumed hash and salt security, but evaluator timing and participation are public."
+paragraph_3 = "An exact last-envelope retry with the same B and C returns already-accepted information without changing report state, first-acceptance height or sequence, and without a second business event. C03 envelope expiry, authority and replay validation apply first. The exact last request retries only with unchanged sequence/ID/digest and returns ALREADY_APPLIED. A newly sequenced semantic retry of the same C is refused with CONFLICT rather than consuming a sequence for a nonmutation. A historical query may show acceptance after the phase closes; an expired request is still EXPIRED. A different C for the same frozen evaluator epoch returns Conflict. Native activity retry/replay rules remain in force; a newly submitted duplicate activity may incur native fees even if business state is unchanged."
+paragraph_4 = "RevealScore operation selector is0x0402. RevealScore request: canonical body, signature64 and salt32 inside the common envelope. Payload is body_length:u32 || body || signature64 || salt32, at most1480 bytes; unknown trailing bytes are refused. The body supplies B; the Program verifies the C03 native/delegate envelope, active nonrevoked authority, frozen versions and exact canonical body, F03 report signature/evidence checks, salt guard, and recomputed commitment. First admission is allowed only in the reveal window and only with an accepted C. All checks and storage effects form one atomic transition. The Program invokes F03 signed admission internally; no direct-submit path may bypass commitment checks."
+paragraph_5 = "On success, status COMMITTED becomes REVEALED; the admitted report, signature and report digest are retained; first reveal height/sequence are recorded; a bounded event under ASCII PAXAI/v1/RevealScore has exact order schema_version:u16, market_id32, epoch:u64, config_version:u64, state_revision:u64, request_digest32, result_digest32, evaluator_id32, report_digest32, evidence_root32, vector_count:u16, admitted_height:u64. This event is228 bytes. It is the sole admitted-report event for the atomic F03/F04 admission; the evidence_root and vector_count let consumers bind the accepted row without a duplicate F03 event. Reveal result payload uses result_kind:u8=2 followed by evaluator_id32, report_digest32, first_reveal_height:u64 and first_reveal_activity_sequence:u64,81 bytes; result_digest hashes that payload under PAXAI/result/v1. Salt need not be retained because C can be independently checked from the original reveal activity data; its public disclosure on reveal must be documented by clients. Failure in signature, evidence, digest, storage, event emission or fuel causes no business-state change. The immutable C remains available for a correct reveal before deadline."
+paragraph_6 = "F04-R06: Exact last-request retry of an accepted reveal returns ALREADY_APPLIED and its retained result digest without a second admission, event or reward input only when C03 expiry/authentication/replay checks still permit it. Identity means identical request bytes/digest/ID/sequence, not merely equal report digest. A changed request at the same sequence returns REPLAY_CONFLICT. A newly sequenced request after report admission returns CONFLICT without a new report. A valid alternative report signature cannot create another report. A different report or salt after acceptance cannot replace the accepted row. An old epoch whose state has been rolled into retained history returns the common historical-status response, never recreates live state. Client retry must query F10 first after ambiguous submission. Successful first reveal consumes its next actor sequence and increments common state_revision once; failed reveal consumes neither."
+paragraph_7 = "Normative application errors use C08 names: NON_CANONICAL for malformed payload/body/salt length or unsorted/duplicate scores; BAD_VERSION; HOST_CAPABILITY for unauthenticated/unavailable context; WRONG_DOMAIN/WRONG_PROGRAM/WRONG_MARKET/WRONG_EPOCH/WRONG_CONFIG/WRONG_ROSTER for each corresponding binding; UNAUTHORIZED or REVOKED; KEY_MISMATCH; EXPIRED for request expiry; WRONG_PHASE; NOT_FOUND for absent commitment; CONFLICT for replacement; BAD_SIGNATURE; EVIDENCE_BINDING; CAPACITY; ARITHMETIC; and C03 replay errors. Feature-specific names are F04_NO_SCORES for empty report, F04_SALT_INVALID for all-zero salt, and F04_COMMIT_MISMATCH for unequal digest. Numerical wire assignments remain a common-codec implementation prerequisite, not a native enum change. Short case labels Encoding, BindingMismatch, NotAuthorized, WrongPhase, MissingCommit, Conflict, InvalidReport, SignatureInvalid, EvidenceInvalid and ResourceLimit below mean the corresponding normative names just listed; they do not introduce alternate wire errors. Parser/version/context/authentication failures take precedence over digest comparison. Binding errors precede window checks; C03 expiry and exact replay checks precede first-admission phase checks. First reveal with no accepted C returns MissingCommit during its proper phase; first reveal at a wrong phase returns WrongPhase before missing-state inspection. F03 errors are mapped to the typed report/signature/evidence categories without a partial write. Failed operations never consume an evaluator row or mark it invalid permanently. Native fees and activity-sequence handling are governed by existing execution semantics and cannot be rolled back by a claimed application idempotency guarantee."
+
+[contract.section_6]
+title = "State machine, boundaries and change control"
+paragraph_1 = "Let T be the frozen start height for epoch e, with checked u64 arithmetic. Work is [T,T+64), commit [T+64,T+80), reveal [T+80,T+96), settlement [T+96,T+128). All intervals are half-open. At offset64 commitment becomes possible; at80 first commitment is closed and reveal becomes possible; at96 first reveal is closed and aggregation becomes possible; at128 the next epoch may begin only through the common rollover rules. Client submission time does not select the phase; executing authenticated batch height does. Operations in one height follow the protocol's existing activity order. No look-ahead, seconds conversion, producer timestamp, inclusive last boundary, or skipped-height extension is used."
+paragraph_2 = "F04-R07: The set of accepted C values is immutable when commit ends. The set of accepted reports is immutable when reveal ends. A missing commit contributes no report. An unrevealed, expired or invalid report contributes no vote, never an all-zero score vector. Its participation status is available to F07/F08. No late recovery is admitted. A chain outage can cause a missed window; it does not justify silently granting one evaluator extra time. Recovery or a market-wide abort, if permitted by common governance, is an explicit separately recorded epoch outcome."
+paragraph_3 = "A current COMMITTED row is projected EXPIRED at height>=T+96. The projection is identical whether or not a maintenance activity runs. F05 consumes only REVEALED rows and a frozen configuration/roster. When F05 has finalized its input/result and F07/F10 have retained the required bounded history digest, rollover removes obsolete live bodies atomically through common state rollover. No direct F04 prune endpoint exists. The common32-epoch retention ring may retain claim obligations; app history pruning does not prove native content-blob reclamation. Configuration changes never rewrite B for an in-flight report. Any bound requiring T+128 beyond u64 maximum prevents opening that epoch; there is no saturating arithmetic or wrap."
+
+[contract.section_7]
+title = "Deterministic mathematics and bounded work"
+paragraph_1 = "SHA-256 is applied to the exact byte strings in section3. Equality is exact 32-byte equality; comparison of secrets during construction remains client responsibility. Ed25519 verification uses the frozen evaluator public key on H('PAXAI/score-attestation/v1', report_digest32) according to the existing SDK's accepted verification semantics. F04 does not normalize scores, fill missing workers, average reports, adjust evaluator stake, or round quality. Score bounds and strictly ascending IDs are checked before report admission."
+paragraph_2 = "F04-R08: A reveal processes at most32 entries and one evaluator signature, performs at most one report hash and one commitment hash, and looks up at most8 frozen evaluator entries and32 frozen worker entries. Even a straightforward bounded membership check has at most1024 worker comparisons. No unbounded historical scan, network request, AI inference, recursion over external artifacts, or user-sized cryptographic message is allowed. Intermediate byte lengths are checked before addition/multiplication. Hash input maximums of1402 and278 bytes fit the existing SDK's1048576-byte hash bound. The32-byte signature message fits its64-byte bound."
+
+[contract.section_8]
+title = "Replay, restarts, concurrency, finality and ambiguity"
+paragraph_1 = "A caller must durably persist its salt, exact canonical report body, signature, B and C before broadcasting a commitment. It waits for a verified finalized receipt matching Program identity, market, epoch, evaluator and C, or for a finalized authenticated state showing that exact accepted C, before treating commitment as secured. A receipt only proves what its authenticated execution/result says. A successful HTTP send, a locally computed hash, and a transaction identifier are insufficient."
+paragraph_2 = "After a crash, the caller queries F10 at one finalized head. ABSENT plus an open commit window allows the original commitment to be sent; COMMITTED with matching C allows the saved report to be revealed during the open reveal phase; COMMITTED with a different C stops local submission and reports Conflict; REVEALED with the expected report digest is complete; EXPIRED stops submission and records missed participation. Loss of local secret material is not recoverable by changing C. A finalized head disagreement is handled by existing Paxeer verification refusal, never by selecting the most convenient RPC."
+paragraph_3 = "F04-R09: Concurrent first commitments from the same evaluator are ordered by existing activity serialization; the first valid one wins, the other conflicts unless identical. Concurrent identical reveals create one report. Reports from different evaluators commute in semantic content but still update the single bounded state using the common state-version discipline. A stale caller rereads rather than overwriting another evaluator's row. Native replay protection remains separate from application semantic retries. No application transition may rely on speculative inclusion or weaken finality verification."
+
+[contract.section_9]
+title = "Abuse, trust, privacy and economic limits"
+paragraph_1 = "A commitment does not establish honest scoring, independently performed computation, availability of evidence, knowledge of a useful preimage, or correctness of a model's output. Evaluators can collude before commit, share salts/reports, commit random digests then withhold, or deliberately reveal selectively. A last revealer can observe earlier reveals and withhold its fixed report; it cannot alter the fixed report without breaking the hash assumptions. Aggregation must account for insufficient quorum and adversarial withholding through F05 rather than claim this mechanism removes it. V1 makes no promise of fair transaction ordering or inclusion against a censoring producer, operator or gateway. Multiple independent submission routes can improve delivery but cannot guarantee it."
+paragraph_2 = "F04-R10: No automatic slashing or reward is attached to F04 failures. F07/F08 may use objective accepted/expired participation only under their published policies; application errors and temporary client outages must not be mislabeled proof of dishonesty. Before reveal, public commitment metadata exposes evaluator participation and timing; after reveal, score/evidence-root data is public. Salt is not an encryption key and the commitment offers no confidentiality once the low-entropy report is guessed with a leaked or weak salt. Sensitive prompts, personal data, model weights and raw responses stay off-chain according to F09."
+
+[contract.section_10]
+title = "Storage and resource feasibility"
+paragraph_1 = "F03/F04 together have a24576-byte allocation within the common single shared-state value capped at192KiB. A maximum signed row uses1444 bytes; eight such rows use11552 bytes. Eight metadata slots are allocated at most256 bytes each, adding2048; this leaves10976 bytes for common report/commit bookkeeping, alignment-free serialization metadata and future explicitly versioned fields. Neither feature may spend this remainder independently. A canonical state-size check must reject before attempting any over-limit write. The final common allocation is24576 bytes for current reports and commitment metadata, and total196608 bytes."
+paragraph_2 = "The application writes at most one shared-state value per commit/reveal and one bounded event. No external evidence bytes are copied into this state. The host's1MiB storage-value bound remains wider than the192KiB application cap. Existing native capacities include512 global KV slots,64 staged writes, and bounded blob storage; the shared-state design consumes one market state slot rather than one slot per report or epoch. F04 creates no direct artifact blobs. Runtime receipt/replay bookkeeping is host-owned and must fit the shared deployment admission budget: at most4new blobs/activity and the512global/64MiB envelope established by integration contracts. The number of concurrently deployed markets cannot be inferred from a per-market cap; the actual host ledger and retained blob use must be checked at deployment. A task may not expand host limits to make the feature fit."
+paragraph_3 = "F04-R11: One row is one activity; v1 excludes multi-evaluator batches and chunked reports. Continuous operation is blocked until the native content-blob lifecycle prerequisite in integration-map.kvx is implemented and qualified; bounded app rollover alone does not reclaim historic native blobs. Because blobs are canonical state leaves, cleanup cannot be unauthenticated background deletion or claim the current root is unchanged. Any future lifecycle must be an authenticated deterministic protocol transition preserving historical proof availability, separately specified and qualified; F04 does not implement it. This is feasible because the entire canonical report including signature and salt is at most1480 bytes before the common envelope. Artifact evidence is independently committed by F09 and is not an unbounded reveal payload. Epoch rollover must retire bodies and retain only the bounded common history material; unbounded per-epoch accumulation in the shared value is prohibited. Under contracts/integration-map.kvx, the actual guest ABI may be4 or another admitted version carrying the existing v2 extension surface, not a newly selected ABI2 deployment by assumption."
+
+[contract.section_11]
+title = "Inter-feature contracts"
+paragraph_1 = "Required producers: F01 frozen config and epoch schedule; F02/F08 frozen worker identities/generations and capacity; F03 evaluator IDs/grants/keys and exact canonical report/signature validation; F09 evidence_root and validity policy. F04 supplies REVEALED reports plus immutable report digests to F05, objective participation to F07/F08, and commitment/reveal status to F10. F06 receives only F05's finalized reward inputs; it must never pay directly for CommitAccepted or ReportRevealed. No feature may reinterpret absent as zero or accept a current worker ID with a different frozen roster generation. Common IDs and digest domains are authoritative across features."
+
+[contract.section_12]
+title = "Acceptance cases and future qualification"
+paragraph_1 = "All cases below are specified inputs, not currently executed tests. For the serialization-only known-input construction, let chain/program/market/evaluator IDs be32 repetitions of11/22/33/44 hexadecimal bytes respectively; roster_hash is32 repetitions of55; evidence_root is32 repetitions of66; grant_version3,key_version4,config_version2,epoch7. Let worker A be32 repetitions of10 and worker B32 repetitions of20; score entries (A,250000),(B,750000). Their canonical score encodings are0003d090 and000b71b0. T=1024. Report schema is0001; epoch is0000000000000007; config0000000000000002; count0002. The exact report body is the section3 concatenation with these bytes and has300 bytes; report hash preimage has322 bytes. Salt is32 successive bytes01..20 hexadecimal. B is192 bytes; commit preimage is278 bytes and uses the digest of that exact300-byte body. Expected hashes are defined mathematically by SHA256 on these fully specified byte strings; computed digest fixtures require qualification. These artificial raw IDs are codec inputs only and do not purport to satisfy derived market/worker/evaluator identity equations. Each behavioral case instead uses IDs derived by C02 from a real initialized test deployment, with origin_height128 so epoch7 has T1024, valid roster/evidence and evaluator grant. For two-worker behavioral cases assign250000 to the lower derived WorkerId and750000 to the higher, and recompute the report and C. Other values and expected lengths remain as above. All first-admission reveal requests use the next evaluator sequence after commit and expiry1120; exact replay cases reuse identical envelopes."
+paragraph_2 = "F04-A01: First commit of the resulting C at height1088 with evaluator sequence1, requestid nonzero and expiry1104 produces COMMITTED with height1088. An exact envelope retry at1089 returns ALREADY_APPLIED and preserves first height/sequence/revision. A commitment differing in its final bit at sequence1 returns REPLAY_CONFLICT and preserves C; at sequence2 returns CONFLICT. At1104 the original request is EXPIRED; the historical read still proves its accepted state."
+paragraph_3 = "F04-A02: First commit at1087 or1104 returns WrongPhase and leaves ABSENT. The commit interval is[1088,1104). Revealing the saved row at1104 succeeds exactly once, with score250000 and750000 and no monetary movement. The first commit emits the194-byte CommitScore event; the first successful reveal emits exactly one228-byte RevealScore event containing the accepted evidence_root and vector_count2. Exact retries emit neither event again. Reveal at1103 is WrongPhase; at1119 succeeds if still COMMITTED; first reveal at1120 is WrongPhase and remains expired. Reveal interval is[1104,1120)."
+paragraph_4 = "F04-A03: Swap entry order to(B,A), duplicate A, append a trailing byte, encode count0003 with two entries, use score1000001, or use a worker not in the frozen roster. Every variant rejects before admission; C survives for a valid reveal. Changing250000 to250001 in an otherwise valid report with its own valid signature fails commitment equality. Neither failure creates a zero vector."
+paragraph_5 = "F04-A04: Change each of chain/program/market/epoch/config/roster/evaluator/grant/key separately while retaining the rest. BindingMismatch or NotAuthorized occurs as appropriate and no state changes. A valid signature from evaluator B cannot reveal evaluator A's commitment. A kind0 request from an unauthorized native principal is UNAUTHORIZED. A kind1 valid enrolled-delegate request relayed by an unrelated native principal succeeds subject to all bindings, sequence, signature, expiry and phase checks; a changed payload makes its request signature fail."
+paragraph_6 = "F04-A05: With a correct C and body, a changed signature byte returns SignatureInvalid; zero salt returns F04_SALT_INVALID; a31-byte salt returns Encoding; a different nonzero32-byte salt returns InvalidReport for commitment mismatch. A correct retry before1120 still succeeds."
+paragraph_7 = "F04-A06: Missing commitment plus otherwise valid reveal at1104 returns MissingCommit. At1120, first reveal returns WrongPhase. Eight committed evaluators with only two accepted reveals supply exactly two rows to aggregation; six expired rows contribute no votes. F05 decides quorum separately and F04 emits no reward or slash."
+paragraph_8 = "F04-A07: Empty report count0000 structurally has body228 bytes and hash preimage250 bytes but is rejected F04_NO_SCORES with no admitted row. Explicit(A,0) has264-byte body, score00000000 and one valid zero vote; valid commit/reveal admits it. Absent, refused-empty and explicit-zero remain distinguishable in status and aggregation."
+paragraph_9 = "F04-A08: Two simultaneous distinct first commitments from one evaluator produce exactly one winner by native order and one Conflict. Two exact-envelope identical reveal activities produce one report and one business event; a different last-request body conflicts by C03 replay rules. Any native fees remain the native execution outcome, not a double reward."
+paragraph_10 = "F04-A09: A crash after finalized commit followed by recovery with saved report/salt reveals successfully in-window; without salt it cannot replace C. A transport timeout with finalized REVEALED state is reconciled by query without changing first reveal height; exact retry is ALREADY_APPLIED only while its envelope remains valid. An unfinalized HTTP acceptance cannot trigger a claim of secured commit."
+paragraph_11 = "F04-A10: Maximum32-entry report has body1380, signed1444, revealpayload1480 before envelope; entry33 returns ResourceLimit/Encoding without mutation. Eight maximum reports fit the11552-byte signed-row budget. A state exceeding the common192KiB cap rejects atomically. Opening an epoch whose T+128 overflows u64 rejects; arithmetic never wraps."
+paragraph_12 = "F04-A11: At reveal_end, aggregation sees a stable set irrespective of whether an expiry maintenance call ran. A producer delays an honest reveal to1120: it is refused and objective missed participation is retained; no local submission timestamp can override height."
+paragraph_13 = "F04-A12: A configuration/key rotation during epoch7 affects epoch8 only. Revocation during epoch7 blocks new commit/reveal immediately; revocation before aggregation seal excludes an already admitted row while retaining its acceptance history, and revocation after seal leaves the sealed set unchanged. The same B/report/salt cannot create an epoch8 report because the epoch binding changes. Rollover and a historical exact retry cannot recreate epoch7 live bodies or reward inputs."
+paragraph_14 = "Future qualification must use real compiled Program execution and real SDK encoders, native activity/receipt verification and finality checks, persistent storage/restart, actual cryptographic verification, and authenticated context. Pure mathematical serialization checks can precede integration, but mocks of host authorization, time or receipts cannot stand in for the required behavior. Every future task remains UNRUN here."
+
+[contract.section_13]
+title = "Future implementation task decomposition"
+paragraph_1 = "All paths below under programs/crates/layerx-programs-ai-market are proposed NEW paths, not present-day contracts. The application crate is proposed package layerx-programs-ai-market. Its Cargo.toml must depend on existing programs/sdk/rust and be registered by the shared owner in existing programs/Cargo.toml. Relative dependency/workspace enrollment must be verified against the live repository during implementation. Existing Programs SDK/host changes are excluded unless a demonstrated contract gap is separately authorized. Native code is not a fallback implementation path."
+paragraph_2 = "F04-T01, dependencies commoncodec,F01,F03codec: add proposed src/commit_reveal/commitment.rs and tests/f04_canonical.rs implementing only exact F04 framing, commitment digest and report-binding verification against the common report codec. Deliver bounded typed values and cases A03,A04,A05,A07,A10; use fixtures covering the stated requirements. Proposed build: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release. Proposed single verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical. This test target must be created and must use actual SDK cryptographic functions/independently calculated mathematical vectors as appropriate; no host-fake shortcut. Its ability to run SDK host crypto on the selected test target is an explicit prerequisite, not an existing assurance."
+paragraph_3 = "F04-T02, dependencies T01,F01state,F03admission: add proposed src/commit_reveal.rs and tests/f04_windows.rs; integrate dispatch via proposed src/lib.rs only under exclusive owner assignment. Deliver commit/reveal transitions, errors, frozen grants, idempotency and bounded shared state. Same proposed build target; single proposed verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows. The future target must exercise a real Programs runtime with authenticated native context; harness dependencies and their existing entrypoints must be chosen during implementation, not invented as verified here. Covers A01,A02,A03,A04,A05,A06,A08,A10,A11,A12."
+paragraph_4 = "F04-T03, dependencies T02,F10client: add proposed tests/f04_recovery.rs and proposed client docs/examples owned by F10; deliver durable local report/salt workflow and finalized receipt reconciliation without changing custody. Same proposed build; single proposed verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery. A real process/runtime finality and persistent-state harness is required before this command can qualify A09,A12. Its external transport prerequisites must be recorded explicitly."
+paragraph_5 = "Each task is implementation-first, then at most one declared build and one focused verification pass, up to two relevant repair cycles and a30-minute cap. Implementation and behavior qualification remain UNRUN. Missing harness qualification is reported rather than weakening an acceptance case. Aggregate release gates occur only at the integrated candidate stage and are not implied by these task commands."
+
+[contract.section_14]
+title = "Fixed decisions, remaining prerequisites and release conditions"
+paragraph_1 = "Fixed v1: SHA256; Ed25519 on32-byte attestation digest;32-byte fresh salt;64/16/16/32height phases; maximum32workers and8evaluators; immutable onecommit/onereport; missing=no vote; all windows half-open; no direct signed-report submit bypass; no automatic encrypted reveal; no F04 money movement;24576-byte combined F03/F04 budget;192KiB common state cap. These limits are not runtime-configurable during an epoch. A future version may alter them only with a new complete specification, bounded feasibility analysis and protocol/application versioning."
+paragraph_2 = "Release requires shared core encoding/error-code alignment and C03 replay/expiry behavior, F03 exact signature/evidence admission and immediate revocation, F01 immutable freeze and checked rollover, F05 quorum/aggregation behavior, F09 evidence semantics, F10 verified finalized status, and real deployment confirmation of ABI2context/crypto/storage/receipt capabilities and native storage/blob budget. The security review must acknowledge collusion, weak entropy, secret loss, withholding, censorship and timing risks. Interface availability and specification completion do not establish implementation qualification, deployment proof."
+
+[requirement.F04-R01]
+id = "F04-R01"
+requirement = "At most one immutable commitment and admitted report per evaluator/epoch; no replacement."
+acceptance_case_ids = ["F04-A01", "F04-A08", "F04-A12"]
+qualification = "UNRUN"
+
+[requirement.F04-R02]
+id = "F04-R02"
+requirement = "Atomic Programs application transitions through one bounded shared state; native consensus/custody/finality unchanged."
+acceptance_case_ids = ["F04-A08", "F04-A09", "F04-A10"]
+qualification = "UNRUN"
+
+[requirement.F04-R03]
+id = "F04-R03"
+requirement = "Exact versioned SHA256 commitment binds canonical report digest, salt and full frozen domain tuple."
+acceptance_case_ids = ["F04-A03", "F04-A04", "F04-A05"]
+qualification = "UNRUN"
+
+[requirement.F04-R04]
+id = "F04-R04"
+requirement = "Fresh externally generated cryptographic nonzero32-byte salt; no onchain entropy claim."
+acceptance_case_ids = ["F04-A05", "F04-A09"]
+qualification = "UNRUN"
+
+[requirement.F04-R05]
+id = "F04-R05"
+requirement = "Frozen versions with immediate admission revocation and eligibility exclusion before aggregation seal."
+acceptance_case_ids = ["F04-A04", "F04-A12"]
+qualification = "UNRUN"
+
+[requirement.F04-R06]
+id = "F04-R06"
+requirement = "C03 exact last-request replay/idempotency and expiry; no double report or replay effects."
+acceptance_case_ids = ["F04-A01", "F04-A08", "F04-A09", "F04-A12"]
+qualification = "UNRUN"
+
+[requirement.F04-R07]
+id = "F04-R07"
+requirement = "Exact half-open height windows; absent/late/invalid/unrevealed contributes no vote."
+acceptance_case_ids = ["F04-A02", "F04-A06", "F04-A11"]
+qualification = "UNRUN"
+
+[requirement.F04-R08]
+id = "F04-R08"
+requirement = "Bounded canonical row/signature/hash/membership work without inference or external fetch."
+acceptance_case_ids = ["F04-A03", "F04-A07", "F04-A10"]
+qualification = "UNRUN"
+
+[requirement.F04-R09]
+id = "F04-R09"
+requirement = "Durable secrets and finalized receipt/state reconciliation; native serialization determines concurrent winner."
+acceptance_case_ids = ["F04-A08", "F04-A09"]
+qualification = "UNRUN"
+
+[requirement.F04-R10]
+id = "F04-R10"
+requirement = "No commitment truth claim, automatic slash or F04 economic movement; disclose withholding/censorship/privacy risks."
+acceptance_case_ids = ["F04-A06", "F04-A11"]
+qualification = "UNRUN"
+
+[requirement.F04-R11]
+id = "F04-R11"
+requirement = "One row per activity, currentreports24KiB/common192KiB; no native capacity expansion or reclamation presumption."
+acceptance_case_ids = ["F04-A10", "F04-A12"]
+qualification = "UNRUN"
+
+[acceptance.F04-A01]
+id = "F04-A01"
+case = "First commit of the resulting C at height1088 with evaluator sequence1, requestid nonzero and expiry1104 produces COMMITTED with height1088. An exact envelope retry at1089 returns ALREADY_APPLIED and preserves first height/sequence/revision. A commitment differing in its final bit at sequence1 returns REPLAY_CONFLICT and preserves C; at sequence2 returns CONFLICT. At1104 the original request is EXPIRED; the historical read still proves its accepted state."
+qualification = "UNRUN"
+
+[acceptance.F04-A02]
+id = "F04-A02"
+case = "First commit at1087 or1104 returns WrongPhase and leaves ABSENT. The commit interval is[1088,1104). Revealing the saved row at1104 succeeds exactly once, with score250000 and750000 and no monetary movement. The first commit emits the194-byte CommitScore event; the first successful reveal emits exactly one228-byte RevealScore event containing the accepted evidence_root and vector_count2. Exact retries emit neither event again. Reveal at1103 is WrongPhase; at1119 succeeds if still COMMITTED; first reveal at1120 is WrongPhase and remains expired. Reveal interval is[1104,1120)."
+qualification = "UNRUN"
+
+[acceptance.F04-A03]
+id = "F04-A03"
+case = "Swap entry order to(B,A), duplicate A, append a trailing byte, encode count0003 with two entries, use score1000001, or use a worker not in the frozen roster. Every variant rejects before admission; C survives for a valid reveal. Changing250000 to250001 in an otherwise valid report with its own valid signature fails commitment equality. Neither failure creates a zero vector."
+qualification = "UNRUN"
+
+[acceptance.F04-A04]
+id = "F04-A04"
+case = "Change each of chain/program/market/epoch/config/roster/evaluator/grant/key separately while retaining the rest. BindingMismatch or NotAuthorized occurs as appropriate and no state changes. A valid signature from evaluator B cannot reveal evaluator A's commitment. A kind0 request from an unauthorized native principal is UNAUTHORIZED. A kind1 valid enrolled-delegate request relayed by an unrelated native principal succeeds subject to all bindings, sequence, signature, expiry and phase checks; a changed payload makes its request signature fail."
+qualification = "UNRUN"
+
+[acceptance.F04-A05]
+id = "F04-A05"
+case = "With a correct C and body, a changed signature byte returns SignatureInvalid; zero salt returns F04_SALT_INVALID; a31-byte salt returns Encoding; a different nonzero32-byte salt returns InvalidReport for commitment mismatch. A correct retry before1120 still succeeds."
+qualification = "UNRUN"
+
+[acceptance.F04-A06]
+id = "F04-A06"
+case = "Missing commitment plus otherwise valid reveal at1104 returns MissingCommit. At1120, first reveal returns WrongPhase. Eight committed evaluators with only two accepted reveals supply exactly two rows to aggregation; six expired rows contribute no votes. F05 decides quorum separately and F04 emits no reward or slash."
+qualification = "UNRUN"
+
+[acceptance.F04-A07]
+id = "F04-A07"
+case = "Empty report count0000 structurally has body228 bytes and hash preimage250 bytes but is rejected F04_NO_SCORES with no admitted row. Explicit(A,0) has264-byte body, score00000000 and one valid zero vote; valid commit/reveal admits it. Absent, refused-empty and explicit-zero remain distinguishable in status and aggregation."
+qualification = "UNRUN"
+
+[acceptance.F04-A08]
+id = "F04-A08"
+case = "Two simultaneous distinct first commitments from one evaluator produce exactly one winner by native order and one Conflict. Two exact-envelope identical reveal activities produce one report and one business event; a different last-request body conflicts by C03 replay rules. Any native fees remain the native execution outcome, not a double reward."
+qualification = "UNRUN"
+
+[acceptance.F04-A09]
+id = "F04-A09"
+case = "A crash after finalized commit followed by recovery with saved report/salt reveals successfully in-window; without salt it cannot replace C. A transport timeout with finalized REVEALED state is reconciled by query without changing first reveal height; exact retry is ALREADY_APPLIED only while its envelope remains valid. An unfinalized HTTP acceptance cannot trigger a claim of secured commit."
+qualification = "UNRUN"
+
+[acceptance.F04-A10]
+id = "F04-A10"
+case = "Maximum32-entry report has body1380, signed1444, revealpayload1480 before envelope; entry33 returns ResourceLimit/Encoding without mutation. Eight maximum reports fit the11552-byte signed-row budget. A state exceeding the common192KiB cap rejects atomically. Opening an epoch whose T+128 overflows u64 rejects; arithmetic never wraps."
+qualification = "UNRUN"
+
+[acceptance.F04-A11]
+id = "F04-A11"
+case = "At reveal_end, aggregation sees a stable set irrespective of whether an expiry maintenance call ran. A producer delays an honest reveal to1120: it is refused and objective missed participation is retained; no local submission timestamp can override height."
+qualification = "UNRUN"
+
+[acceptance.F04-A12]
+id = "F04-A12"
+case = "A configuration/key rotation during epoch7 affects epoch8 only. Revocation during epoch7 blocks new commit/reveal immediately; revocation before aggregation seal excludes an already admitted row while retaining its acceptance history, and revocation after seal leaves the sealed set unchanged. The same B/report/salt cannot create an epoch8 report because the epoch binding changes. Rollover and a historical exact retry cannot recreate epoch7 live bodies or reward inputs."
+qualification = "UNRUN"
+
+[proposal.F04-T01]
+id = "F04-T01"
+dependencies = ["COMMON_CODEC", "F01", "F03_CODEC"]
+paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs", "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"]
+paths_status = "PROPOSED_NEW; shared dispatch requires exclusive owner assignment"
+build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical"
+qualification = "UNRUN"
+acceptance_case_ids = ["F04-A03", "F04-A04", "F04-A05", "F04-A07", "F04-A10"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F04-T01, dependencies commoncodec,F01,F03codec: add proposed src/commit_reveal/commitment.rs and tests/f04_canonical.rs implementing only exact F04 framing, commitment digest and report-binding verification against the common report codec. Deliver bounded typed values and cases A03,A04,A05,A07,A10; use fixtures covering the stated requirements. Proposed build: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release. Proposed single verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical. This test target must be created and must use actual SDK cryptographic functions/independently calculated mathematical vectors as appropriate; no host-fake shortcut. Its ability to run SDK host crypto on the selected test target is an explicit prerequisite, not an existing assurance."
+
+[proposal.F04-T02]
+id = "F04-T02"
+dependencies = ["F04-T01", "F01_STATE", "F03_ADMISSION"]
+paths = ["programs/crates/layerx-programs-ai-market/src/commit_reveal.rs", "programs/crates/layerx-programs-ai-market/tests/f04_windows.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
+paths_status = "PROPOSED_NEW; shared dispatch requires exclusive owner assignment"
+build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows"
+qualification = "UNRUN"
+acceptance_case_ids = ["F04-A01", "F04-A02", "F04-A03", "F04-A04", "F04-A05", "F04-A06", "F04-A08", "F04-A10", "F04-A11", "F04-A12"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F04-T02, dependencies T01,F01state,F03admission: add proposed src/commit_reveal.rs and tests/f04_windows.rs; integrate dispatch via proposed src/lib.rs only under exclusive owner assignment. Deliver commit/reveal transitions, errors, frozen grants, idempotency and bounded shared state. Same proposed build target; single proposed verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows. The future target must exercise a real Programs runtime with authenticated native context; harness dependencies and their existing entrypoints must be chosen during implementation, not invented as verified here. Covers A01,A02,A03,A04,A05,A06,A08,A10,A11,A12."
+
+[proposal.F04-T03]
+id = "F04-T03"
+dependencies = ["F04-T02", "F10_CLIENT"]
+paths = ["programs/crates/layerx-programs-ai-market/tests/f04_recovery.rs"]
+paths_status = "PROPOSED_NEW; shared dispatch requires exclusive owner assignment"
+build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery"
+qualification = "UNRUN"
+acceptance_case_ids = ["F04-A09", "F04-A12"]
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_cap_minutes = 30
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F04-T03, dependencies T02,F10client: add proposed tests/f04_recovery.rs and proposed client docs/examples owned by F10; deliver durable local report/salt workflow and finalized receipt reconciliation without changing custody. Same proposed build; single proposed verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery. A real process/runtime finality and persistent-state harness is required before this command can qualify A09,A12. Its external transport prerequisites must be recorded explicitly."
+
+[metadata.spec_version]
+value = 1
+
+[metadata.status]
+value = "SPECIFICATION_ONLY_IMPLEMENTATION_UNRUN"
+
+[metadata.dependencies]
+value = ["COMMON_CORE", "F01", "F02", "F03", "F08", "F09"]
+
+[metadata.consumers]
+value = ["F05", "F07", "F08", "F10"]
+
+[metadata.common_contract]
+value = "contracts/core.kvx"
+
+[metadata.fixed_defaults]
+work_heights = 64
+commit_heights = 16
+reveal_heights = 16
+settlement_heights = 32
+maximum_workers = 32
+maximum_evaluators = 8
+report_body_max_bytes = 1380
+reveal_payload_max_bytes = 1480
+commit_payload_bytes = 224
+salt_bytes = 32
+maximum_current_reports_section_bytes = 24576
+maximum_shared_state_bytes = 196608
+commit_replacements = false
+score_min = 0
+score_max = 1000000
+report_min_entries = 1
+signature_message = "H(PAXAI/score-attestation/v1,report_digest32)"
+
+[metadata.prerequisites]
+value = ["Exact shared error-code and operation-code allocation", "F03 real cryptographic/evidence admission", "F01 immutable epoch freeze and checked arithmetic", "F10 finalized receipt/state recovery", "Verified content-blob lifecycle required for continuous-operation release", "Real Programs runtime test harness and SDK host crypto test target"]
+
+[metadata.integration_contract]
+value = "contracts/integration-map.kvx"
+
+[metadata.operations.01]
+name = "CommitScore"
+selector = "0x0401"
+payload_bytes = 224
+result_payload_bytes = 81
+event_topic = "PAXAI/v1/CommitScore"
+event_bytes = 194
+
+[metadata.operations.02]
+name = "RevealScore"
+selector = "0x0402"
+payload_max_bytes = 1480
+result_payload_bytes = 81
+event_topic = "PAXAI/v1/RevealScore"
+event_bytes = 228
+
+[metadata.event_contracts]
+
+[metadata.event_contracts.CommitScore]
+bytes = 194
+field_order = ["schema_version:u16", "market_id32", "epoch:u64", "config_version:u64", "state_revision:u64", "request_digest32", "result_digest32", "evaluator_id32", "commit_digest32", "accepted_height:u64"]
+
+[metadata.event_contracts.RevealScore]
+bytes = 228
+field_order = ["schema_version:u16", "market_id32", "epoch:u64", "config_version:u64", "state_revision:u64", "request_digest32", "result_digest32", "evaluator_id32", "report_digest32", "evidence_root32", "vector_count:u16", "admitted_height:u64"]
+sole_admission_event = true
+acceptance_case_ids = ["F04-A02"]
+
+[metadata.result_contract]
+application_error_bytes = 2
+application_error_position = "immediately after status:u16"
+success_error_code = 0
+operation_result_payload_bytes = 81
+
+[metadata.result_contract.statuses]
+OK = 0
+ALREADY_APPLIED = 1
+ERROR = 2
+
+[metadata.qualification]
+value = "UNRUN"
+
+[metadata.canonical_task_authority]
+value = "../../spec.kvx"
+

@@ -1,0 +1,54 @@
+%% PROPOSED lifecycle; execution and finality integration UNRUN.
+flowchart TB
+  schedule["T = origin_height + 128 * epoch; checked u64 arithmetic"]
+  previous{"Previous opened epoch terminal, if any?"}
+  opening["Lazy OpenEpoch only in Work; freeze policy, roster, recipients, keys and budget"]
+  subgraph work["Work: authenticated execution heights [T,T+64)"]
+    admitted["ADMIT_TASK: Active market, frozen worker metadata, bounded slot and deadline"]
+    validate["Worker service checks real runner, model/schema, rights, access and capacity"]
+    durable["Persist unique request and signed ACK before acknowledgment"]
+    accepted["ACCEPT_TASK: Admitted to Accepted with nonzero ACK digest"]
+    finalized["Verify finalized Accepted state with exactly matching ACK"]
+    run["Fenced real runner dispatch; ambiguous execution stays UNKNOWN_EXECUTION"]
+    persist["Persist immutable signed result before delivery"]
+    result["COMMIT_TASK_RESULT: Accepted to ResultCommitted before deadline and Work end"]
+    cancel["Requester CANCEL_TASK only while Admitted; slot remains occupied"]
+    admitted --> validate --> durable --> accepted --> finalized --> run --> persist --> result
+    admitted -->|"before acceptance and deadline"| cancel
+  end
+  subgraph commit["Commit: [T+64,T+80)"]
+    taskseal["Explicit permissionless SEAL_TASK_SET at or after T+64"]
+    evseal["Evaluator SealEvidence requires prior task-set seal and matching policy / mode"]
+    scorecommit["One immutable CommitScore per evaluator; no report or salt disclosed"]
+    taskseal --> evseal --> scorecommit
+  end
+  subgraph reveal["Reveal: [T+80,T+96)"]
+    scorereveal["RevealScore: exact report, signature and nonzero salt; atomic F03/F04 admission"]
+  end
+  subgraph settlement["Scheduled settlement: [T+96,T+128); completion may be later"]
+    begin["BeginAggregation at or after T+96 freezes eligible rows"]
+    chunks["Process at most eight frozen workers per call; persisted cursor"]
+    terminal["One atomic Finalize: aggregate + rewards ledger + history + terminal epoch"]
+    begin --> chunks --> terminal
+  end
+  blocked["Later OpenEpoch blocked until prior terminal; no late Commit or Reveal"]
+  skipped["Missed unopened Work window: skipped epoch; no invented work or history sample"]
+  suspended["Suspended / WindingDown: refuse new work and new epochs"]
+  preserved["Already admitted current-epoch commitments, reveals, settlement and claims continue within rules"]
+  expiry["Claims: [terminal_height, terminal_height+4096); paid or expired liabilities preserved"]
+  retention["At most 32 completed epochs; safe oldest pruning and dictionary preflight before new opening"]
+  schedule --> previous
+  previous -->|"yes and current Work window"| opening
+  previous -->|"no"| blocked
+  opening --> admitted
+  schedule -->|"Work window missed without opening"| skipped
+  result --> taskseal
+  cancel --> taskseal
+  scorecommit --> scorereveal --> begin
+  terminal --> expiry --> retention
+  retention -->|"next eligible Work window with headroom"| opening
+  suspended --> preserved
+  preserved --> taskseal
+  preserved --> scorereveal
+  preserved --> begin
+  chunks -->|"scheduled end passed; still nonterminal"| blocked

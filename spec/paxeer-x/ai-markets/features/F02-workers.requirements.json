@@ -1,0 +1,451 @@
+{
+  "id": "F02",
+  "title": "Worker identity, capability discovery and external AI execution",
+  "version": "1.0",
+  "status": "DESIGN",
+  "dependencies": [
+    "F01",
+    "F09",
+    "contracts/core.kvx",
+    "contracts/integration-map.kvx"
+  ],
+  "phase_dependencies": {
+    "identity": [
+      "T-C02",
+      "F01-registry-schema"
+    ],
+    "external_execution": [
+      "F08-roster",
+      "F01-task-registry",
+      "F09",
+      "F03",
+      "F10"
+    ]
+  },
+  "normative_requirements": [
+    {
+      "id": "F02-R001",
+      "normative_text": "A market shall identify finite, owner-controlled worker services and expose authenticated, versioned capability descriptions. These services may execute real inference, embedding, reranking, image generation or bounded asynchronous AI jobs outside the deterministic protocol. The chain stores identities, eligibility and commitments; it does not load model weights, run a GPU, adjudicate semantic truth or guarantee service availability. A feature is useful to AI because customers and evaluators can select a compatible provider, authenticate its response and distinguish its key, deployment and workload versions."
+    },
+    {
+      "id": "F02-R002",
+      "normative_text": "Version 1 supports inference, embedding and training-artifact evaluation requests, each with synchronous or bounded asynchronous delivery using the same admission/result lifecycle. Training-artifact evaluation means assessing supplied artifacts under the pinned benchmark/rubric; it does not coordinate distributed training or ingest untrusted executable model code. Distributed training, autonomous tool execution, remote shell, arbitrary uploaded executable execution, model-weight custody, permissionless compute scheduling and training-gradient aggregation are excluded. A model runner is an explicit external integration selected and operated by the worker owner; the market adapter must not pretend to supply one."
+    },
+    {
+      "id": "F02-R003",
+      "normative_text": "Enrollment, delegate rotation, revocation and discovery commitments are application operations. Worker credentials MUST NOT authorize reward treasury withdrawals, account migration, market administration, evaluator scoring or customer signing. This feature neither charges for requests nor allocates rewards; F06 alone defines funded entitlements. Worker-reported usage must not become payable merely because it is signed."
+    },
+    {
+      "id": "F02-R004",
+      "normative_text": "The market application MUST use the common Programs instance and shared state cell. Neither new module IDs nor enlarged native proof, ABI, custody or consensus namespaces are permitted. Full manifests, queues and model data reside in new external services. Proposed implementation paths are programs/crates/layerx-programs-ai-market/src/workers.rs and platform/hosted/paxai-worker/; these are additions, not existing capabilities. Existing session grant machinery does not automatically confer application-level scope: a host-authenticated principal and the application delegate record must both satisfy their applicable checks."
+    },
+    {
+      "id": "F02-R005",
+      "normative_text": "Identity records use the stable owner principal, not the current signing key, as the ownership anchor. Current primary-key resolution comes from finalized Paxeer identity evidence. Changing the primary key does not create a new worker or erase history. The external service MUST consume finalized authority and market updates through the existing gateway/client evidence path; cached or merely observed data is not finalized admission authority."
+    },
+    {
+      "id": "F02-R006",
+      "normative_text": "WorkerCurrent consists of worker_id32, owner_principal32, current_delegate_key32, metadata_digest32, delegate_generation:u64 starting 1, key_version:u64 starting 1, metadata_revision:u64 starting 1, metadata_valid_from_height:u64, metadata_expiry_height:u64, revocation_sequence:u64 starting 0, effective_epoch:u64, last_successful_actor_sequence:u64 starting0, last_request_id32, last_request_digest32, last_result_digest32 and current_state:u8. Enrollment nonce is committed in the enrollment operation/event and need not remain duplicated in current state. Current values describe the next usable configuration; the frozen epoch record retains the admitted key/metadata context. Updating current values never overwrites a frozen record. No second pending key or pending manifest is stored; successive authorized updates replace the staged current configuration and increment its revision. Common roster encoding may omit fields derivable from immutable market binding, but MUST retain their semantics. State values are ENROLLED=1, AVAILABLE=2, DRAINING=3, REVOKED=4, RETIRED=5 and PENDING_OWNER=6; other values refuse. F08 owns seat admission/removal and F07 owns history. No separate unbounded alias map is created."
+    },
+    {
+      "id": "F02-R007",
+      "normative_text": "MetadataManifest is an OFFCHAIN canonical binary document at most 8192 bytes. Fields in order: schema_version:u16=1; market_id32; worker_id32; owner_principal32; delegate_generation:u64; key_version:u64; revision:u64; valid_from_height:u64; expiry_height:u64; deployment_digest32; capability_count:u16 in 1..8; ordered capabilities; endpoint_count:u16 in 1..2; ordered endpoints; privacy_policy_digest32; service_terms_digest32; reserved:u32=0. Digest is SHA256(domain PAXAI/worker-metadata/v1 followed by zero byte and canonical document). Duplicate capabilities/endpoints, unsorted entries or invalid enums refuse. Expiry MUST exceed validity start and MUST be at most 256 authenticated execution batch heights after it. Default lifetime is 128 heights. Metadata version increments exactly by one and cannot wrap. The manifest is signed under the shared operation envelope; a digest alone is not proof of signature possession.\nA Capability entry contains kind:u8 (INFERENCE=1, EMBEDDING=2, TRAINING_EVALUATION=3), execution_mode:u8 (SYNC=1, ASYNC=2), model_digest32, model_manifest_digest32, tokenizer_or_preprocessor_digest32, input_schema_digest32, output_schema_digest32, maximum_input_bytes:u32 in 1..1048576, maximum_output_bytes:u32 in 1..1048576, maximum_input_units:u32 in 1..1048576, maximum_output_units:u32 in 1..1048576, unit_kind:u8 (TOKENS=1, VECTOR_ELEMENTS=2, ITEMS=3), maximum_latency_ms:u32 in 1..3600000, maximum_concurrent_jobs:u16 in 1..32 and determinism:u8 (BEST_EFFORT=1, DECLARED_DETERMINISTIC=2). Sort order is kind, then model_digest, then input_schema_digest as unsigned bytes. These are advertised maxima, not verified measurements. A declared deterministic capability is not accepted as deterministic proof.\nAn Endpoint entry contains endpoint_id:u8 in 1..2; URI as u32-length UTF-8 bytes at most 2048; tls_spki_sha25632; transport:u8=1 meaning HTTPS; minimum_api_version:u16=1; maximum_api_version:u16=1. URI MUST be ASCII HTTPS with a DNS hostname, explicit port 1..65535 if supplied, and path /paxai/v1; no userinfo, fragment, query or IP-literal hostname. DNS name maximum is 253 bytes, labels 1..63, lower-case letters/digits/hyphens, without leading/trailing hyphens. Endpoints sort by endpoint_id; no duplicate URI. TLS identities and resource maxima cannot be inferred from a bare model name."
+    },
+    {
+      "id": "F02-R008",
+      "normative_text": "ServiceRequest is off-chain, with the entire canonical signed envelope at most16384bytes and its payload at most15965bytes; private model input travels separately, and contains the shared signed-operation context plus receiver_worker_id32, task_id32, delegate_generation:u64, key_version:u64, metadata_revision:u64, method_code:u8=1 for submit, route_code:u8=1 for /paxai/v1/jobs, capability_digest32, workload_policy_digest32, model_digest32, input_commitment32, payload_bytes:u32, requested_max_output_bytes:u32, requested_max_units:u32, deadline_duration_ms:u32, task_expiry_height:u64, evaluation_access_digest32 and caller_ephemeral_result_key32 or explicit absence. RequestId32 is caller-generated, nonzero and unique within market/customer scope. The shared payload commitment commits to all these fields in their stated order. Private payload encryption and commitment construction follow F09. model_digest, input_commitment, output_commitment and F01 input_manifest_digest carry the corresponding F09 ArtifactManifestRoot32 values, not an unsalted hash of private plaintext. Manifest kind and context prevent cross-role substitution. Outer signature bytes are excluded from the signed content. Wrong method/route/body commitment is an authentication failure, not a redirect opportunity. Maximum admitted deadline is the lesser of declared capability latency and 3600000 ms; default 60000 ms. Task identity, commitment and expiry must match the F01 canonical admitted task; task expiry cannot exceed the epoch Work closing height. No request may start after either height expiry or its local runner deadline. A separate signed QUERY or CANCEL uses method_code 2/3 and route_code 2/3, includes the original RequestId and cannot change execution parameters.\nServiceAcknowledgment body fields in order: schema_version:u16=1, task_id32, request_id32, request_commitment32, admitted_metadata_digest32, model_digest32, deployment_digest32, admitted_delegate_generation:u64, admitted_key_version:u64, service_job_sequence:u64, task_deadline_height:u64 and admitted_height:u64. It is wrapped in the signed service envelope defined in section4 and one Ed25519 signature64. Its chain acknowledgment_digest is SHA256(domain PAXAI/worker-ack/v1 followed by zero byte and the complete canonical signed acknowledgment bytes). The signature itself binds the acknowledgment payload through the distinct service operation digest; digesting the signed object for provenance does not create circular signing."
+    },
+    {
+      "id": "F02-R009",
+      "normative_text": "ServiceResult contains schema_version:u16=1, MarketId, WorkerId, TaskId, RequestId, request_commitment32, admitted_metadata_digest32, admitted_delegate_generation:u64, admitted_key_version:u64, admitted_epoch:u64, deployment_digest32, model_digest32, outcome:u8, output_commitment32 or absence, output_bytes:u32, input_units:u64, output_units:u64, processing_ms:u64, started_at_ms:u64, finished_at_ms:u64, error_code:u16 and evidence_digest32 or absence. Outcomes: SUCCEEDED=1, FAILED=2, CANCELLED_BEFORE_START=3, EXPIRED_BEFORE_START=4, UNKNOWN_EXECUTION=5. Any completed attempt with uncertain external effects remains UNKNOWN_EXECUTION until evidence resolves it. Processing and wall-clock timestamps are observations, not consensus clocks. Usage values are nonnegative integers within admitted maxima. All integer widths, optional encodings and ordered vector count prefixes use C02; successful application actor sequence begins at1 and failed requests consume none. Signed usage is an assertion requiring F03 evaluation and the selected commercial contract before any payment. The signed service envelope plus canonical ServiceResult body plus signature64 forms the signed result manifest. F01 result_manifest_digest is SHA256(domain PAXAI/worker-result/v1 followed by zero byte and the complete signed result manifest bytes). Output/evidence commitments refer to F09 objects; neither the result manifest hash nor signature substitutes for actual encrypted output availability."
+    },
+    {
+      "id": "F02-R010",
+      "normative_text": "Every signed operation uses the core chain/program/market/epoch/config/roster/actor/sequence/expiry/request binding. Native application operations use the exact C03 envelope. External service messages use a distinct service envelope: magic ASCII PAXAIS1 (7bytes), schema_version:u16=1, operation:u16, then the same ordered C03 context fields from chain_domain through payload, followed by signer_public_key32 and signature64. Their digest domain is PAXAI/service-request/v1, over service magic through end of payload. They are never native application calls, never use C03 authentication_kind0 to invent an invoking principal, and cannot mint host capabilities. Customer request signatures resolve the customer primary key or explicitly admitted authentication-only session against finalized identity evidence; the session must be scoped to this service/market and cannot authorize monetary/native calls. Worker ACK/result signatures resolve the frozen worker delegate key/version. External replay sequences live in the service durable store and do not consume C03 on-chain actor sequences. Feature payloads additionally bind WorkerId, metadata revision, delegate generation and key_version. The native operation tag is the canonical u16 envelope operation, inside the common PAXAI/request/v1 digest domain. Proposed F02 native operation codes: EnrollWorker0x0201, PublishMetadata0x0202, SetDraining0x0203, UndoDrain0x0204, RotateDelegate0x0205, RevokeDelegate0x0206, RetireWorker0x0207, RESERVED_UNAVAILABLE0x0208 (never an admitted native selector), AcceptEnrollment0x0209 and ExpireEnrollment0x020A. External service-only codes: SubmitJob0x0281, QueryJob0x0282, CancelJob0x0283, ServiceAcknowledgment0x0284, ServiceResult0x0285 and ServiceStatus0x0286. Unknown codes refuse; service-only codes cannot be submitted as native F02 operations. Delegate operational requests use authentication_kind1 and may be relayed; owner/membership/revoke authority uses authentication_kind0 and authenticated invoking principal. Direct application calls only; no nested calls or callbacks. Signature verification covers the 32-byte digest, not a reserialized JSON body. Unknown signature schemes and noncanonical signatures refuse. Delegates need a proof-of-possession signature over the nomination context and the owner authorization; enrollment must not associate an unwilling delegate merely because its public key is known. Delegate consent signs H(PAXAI/worker-delegate-consent/v1, chain_domain32||program_id32||market_id32||worker_id32||owner_principal32||proposed_key32||generation:u64||key_version:u64||metadata_digest32||expiry_height:u64); the consent expires at height>=expiry. Owner nomination is not an unrestricted native capability grant."
+    },
+    {
+      "id": "F02-R011",
+      "normative_text": "Owner transfer to a different principal is excluded in v1. Owner primary-key rotation follows existing identity machinery and stable principal binding. Operational rotation retains WorkerId and all F07 history, increments generation, requires new-key consent, retires the old delegate for new admission immediately when revocation is finalized and activates replacement only at the next roster snapshot. No grace period permits old-key submissions. F03/F04 may verify previously accepted evidence against the immutable snapshot and accepted-at context; no new acceptance is allowed under a revoked key. Identity freeze fails closed for new admission and sensitive result release."
+    },
+    {
+      "id": "F02-R012",
+      "normative_text": "Enrollment is two explicit native kind0 phases, never a fabricated multi-principal invoking context. EnrollWorker is invoked by the market Owner and carries nominated_worker_owner_principal32, enrollment_nonce32, proposed_delegate_key32, initial_metadata_digest32 and consent_expiry_height:u64. Preconditions: live market, current identity count below32, nonzero canonical nominee/key/digest and valid bounded expiry. It reserves stable WorkerId/current record in PENDING_OWNER and authorizes no work. AcceptEnrollment is invoked by that exact nominated worker-owner principal and carries WorkerId, expected generation1/key_version1, digest and delegate proof-of-possession signature defined in section4; it requires unexpired unchanged proposal and authentic host invoking principal. It transitions PENDING_OWNER to ENROLLED and emits its own receipt/event. Both parties therefore consent through their actual authenticated native calls. Proposals expire after128executionheights by default. While PENDING_OWNER, existing metadata_valid_from_height stores the authenticated nomination height and metadata_expiry_height stores consent_expiry_height; the initial committed manifest must declare those same validity bounds. These fields, owner_principal, WorkerId, proposed delegate in current_delegate_key, initial metadata_digest, generation1 and key_version1 remain immutable until acceptance or expiry. PENDING_OWNER admits only AcceptEnrollment or ExpireEnrollment, never metadata publication, membership, rotation, draining, execution or reward claims. ExpireEnrollment is operation0x020A and has exact72byte payload WorkerId32 || expectedproposal_digest32 || expectedexpiry_height:u64. Its authority is market Owner via native authentication_kind0 and the current C03 market-owner role sequence. Define proposal_digest = H(PAXAI/worker-enrollment-proposal/v1, chain_domain32 || program_id32 || market_id32 || worker_id32 || owner_principal32 || current_delegate_key32 || metadata_digest32 || generation:u64 || key_version:u64 || metadata_valid_from_height:u64 || metadata_expiry_height:u64). It is derived from the existing immutable proposal fields and not stored as another record or extra unbudgeted digest. The expected digest and expiry must equal this exact current proposal; expectedexpiry_height is not a replacement or caller-selected deadline. Preconditions: the record exists in PENDING_OWNER, authenticated Context::batch_height >= its exact stored metadata_expiry_height, and the proposal has never acquired accepted membership, history or claims. Owner mismatch returns UNAUTHORIZED; existing record in another state or an early cleanup returns WRONG_PHASE; altered expected digest/expiry or any contradictory accepted-membership/history/claim relation returns CONFLICT; absent record returns NOT_FOUND unless exact C03 owner-role retry identifies the already applied result. On success delete only that candidate, free one bounded current-record slot and atomically update the common state revision/owner replay record with one shared-value write and one bounded EnrollmentExpired summary event containing WorkerId, proposal_digest and stored expiry plus common event bindings. No assets, accepted member, frozen roster, history or claim record changes. Event/resource/storage refusal commits none of the deletion or replay mutation. Exact retry uses the retained C03 market-owner role idempotency record after candidate deletion; earlier/changed requests follow common SEQUENCE_CONSUMED/REPLAY_CONFLICT rules. No per-expired-candidate tombstone or unbounded replay record is created. Accepted identity enrollment still does not allocate a membership seat, claim F08 eligibility or authorize service execution. F08 independently consumes the accepted identity for permit/join/roster operations. At full identity capacity, enrollment refuses until expired-proposal cleanup or authorized exit/retirement and rollover frees a current slot; no speculative thirty-third candidate is stored. Effects contain one WorkerEnrolled event with market/worker/owner/generation/effective epoch and commitments, never private URI or payload. No independent F02 payment. Ordinary native fees remain governed by actual fee receipts even when business enrollment effects are refused. Duplicate RequestId with identical commitment returns its original receipt; changed commitment returns IdempotencyConflict without mutation."
+    },
+    {
+      "id": "F02-R013",
+      "normative_text": "PublishMetadata is delegate-signed and carries expected revision, new revision/digest/window. Preconditions: state is ENROLLED, AVAILABLE or DRAINING and current generation active, not revoked/frozen/retired, expected revision equals current, next revision exact +1, valid expiry and F01 approved capability policy. Minimum successful update distance is 8 authenticated execution heights, except owner emergency revoke which is unrestricted by this cooldown. Atomic transition stages the new commitment for the next roster epoch; current in-flight request bindings do not change. Same exact operation replay returns original receipt. Public discovery publication is withheld until the authoritative finalized receipt/state has been verified; submission or observed inclusion alone must not expose the staged record as admitted. A failed validation, resource refusal or signature failure leaves state, sequence and existing metadata unchanged."
+    },
+    {
+      "id": "F02-R014",
+      "normative_text": "SetDraining is owner-only, transitions AVAILABLE or ENROLLED to DRAINING for new service admissions immediately after finalization; existing jobs continue under their original policy unless separately cancelled. UndoDrain is owner-only, stages AVAILABLE for the next roster snapshot. RetireWorker is owner-only and requires no unresolved local execution claim that would be erased; it stops new work immediately and retains tombstone/history links through F07/F08. Retire does not cancel existing reward claims or transfer assets. After F08 exit and the relevant roster rollover, an eligible retired current record may be reclaimed within the32record bound; prior frozen context, F06claims and F07/F10 historical evidence remain bound to its oldWorkerId independently of a live current record. There is no unbounded chain tombstone map in F02; historical execution evidence remains committed and archived through the history/query features. Worker delegate cannot reactivate itself."
+    },
+    {
+      "id": "F02-R015",
+      "normative_text": "RotateDelegate payload contains expected generation and key_version, new key, consent and pending metadata digest. Owner authorization and new-key proof of possession are required; generation and key_version each increment exactly once, old active generation is blocked for new admissions as of the finalized mutation, new generation becomes usable at next snapshot, and staged manifest must bind it. RevokeDelegate has expected generation, reason enum COMPROMISED=1/OWNER_ACTION=2/IDENTITY_FREEZE=3, revocation sequence exact current+1. Worker revocation immediately blocks new work admission and new worker-delegate signing. It does not erase or invalidate otherwise valid quality evidence for already accepted and completed tasks, and does not erase frozen recipient claims. Existing evidence still must satisfy the original task deadline, provenance, frozen context and F03 admission rules. No worker-level REVOKED aggregation status or retroactive worker-quality exclusion is introduced. The pre-BeginAggregation versus post-seal row-exclusion rule applies to evaluator revocation under F03/core, not to worker revocation. Immutable historical identifiers, sealed outputs and existing claim rights remain unchanged. Revocation is permanent for that generation. Re-enabling requires rotation, not decrementing counters."
+    },
+    {
+      "id": "F02-R016",
+      "normative_text": "DiscoverWorker is an off-chain F10 view over core C14 READ_HEADER0x0A01 and READ_STATE_CHUNK0x0A02 carried by the existing ProgramRead path; F02 opcode0x0208 is explicitly RESERVED_UNAVAILABLE and MUST refuse instead of dispatching a native query. No F02-specific read authority or undocumented selector exists. The F10 view returns finalized proof-bound current eligibility, active epoch snapshot entry and off-chain manifest retrieval status separately. C14 requires authenticated kind0 reader, actor_sequence0 and discovery selector epoch/config0 with zero roster hash; returned bindings are actual committed values and never inherit those selector zeros. Reads may not mutate replay/state, emit events, transfer funds or create application blobs, and publication requires expected native root and independently verified finality. Verify manifest digest, signature, generation, revision and validity against the correct context. Retrieval failure returns MetadataUnavailable; digest mismatch returns MetadataIntegrityFailure. An indexer MUST NOT synthesize readiness from existence of a record."
+    },
+    {
+      "id": "F02-R017",
+      "normative_text": "SubmitJob verifies current finalized authority, F01 admitted task identity/commitment and unexpired Work phase, policy/capability compatibility, private payload access, exact request commitment, TLS identity and durable uniqueness BEFORE contacting a model runner. Atomic local admission transaction persists immutable request bytes/commitment, caller authorization context, current model/deployment identifiers, frozen key_version, deadline, state ACCEPTED and replay marker. Acknowledgment is signed and includes these bindings and a monotonically increasing service_job_sequence:u64. This acknowledgment feeds the F01 canonical task acceptance operation. Actual model dispatch MUST wait for finalized F01 Accepted state matching the task and acknowledgment commitment; local ACCEPTED alone never authorizes runner execution. Chain submission ambiguity is reconciled using the original activity/task IDs, not a second task. A chain acceptance refusal leaves the durable local job unexecuted until corrected authorization or deadline expiry. If durable admission cannot commit, return Unavailable without starting execution. Queue overflow returns CapacityExceeded; input-size violation returns InputTooLarge; no partial admission or billable result is emitted."
+    },
+    {
+      "id": "F02-R018",
+      "normative_text": "QueryJob authorizes original customer or expressly granted evaluator, checks revocation/privacy policy at result release, and returns signed state plus an authorized result locator when terminal. Unknown ID returns NotFound without revealing another tenant's identity. CancelJob is idempotent. ACCEPTED jobs can atomically become CANCELLED_BEFORE_START; RUNNING jobs can request cooperative cancellation but cannot claim never executed. Acknowledgment loss after acceptance yields an uncertain client outcome; query with original RequestId, never generate a second identity for a blind retry. PublishResult persists the signed terminal record before delivery and before the F01 result-commit operation; callback retries cannot rerun computation. A result must be committed before the F01 task deadline and Work end to qualify for evaluation. A late real runner result is retained with its actual timing for diagnosis and authorized disclosure but cannot become an on-time score or silently extend the canonical deadline.\nTyped errors: NonCanonical, UnsupportedVersion, WrongDomain, BadSignature, OwnerRequired, DelegateConsentRequired, DelegateRevoked, IdentityFrozen, StaleAuthority, WrongGeneration, WrongRevision, MetadataExpired, MetadataUnavailable, MetadataIntegrityFailure, CapabilityMismatch, AdmissionNotEffective, MarketPaused, RateLimited, CapacityExceeded, InputTooLarge, OutputTooLarge, DeadlineInvalid, IdempotencyConflict, SequenceGap, Overflow, NotFound, AccessDenied, ExecutionUnavailable and UnknownExecution. Native application refusals map to C08 common codes where applicable (BadSignature→BAD_SIGNATURE, wrong domain→WRONG_DOMAIN, expired→EXPIRED, replay conflict→REPLAY_CONFLICT, overflow→ARITHMETIC, capacity→CAPACITY, readiness→READINESS_BLOCKED). Remaining feature-specific errors are encoded in a declared F02 payload namespace; they do not change native result enums. External service error enums use the listed PascalCase names in their canonical u16 order starting1, with zero reserved for no error; unknown values refuse. Error bodies carry error enum and RequestId only; they MUST NOT echo secret inputs, keys, signatures or decrypted output. Authentication and tenant-discovery errors must not expose private membership details."
+    },
+    {
+      "id": "F02-R019",
+      "normative_text": "Enrollment/metadata/rotation changes that affect the frozen roster become effective only at the next Work opening. Epochs are 128 authenticated execution batch heights with Work64, Commit16, Reveal16 and Settle32, all half-open as common contract. Staged metadata cannot alter an already admitted request's model/capability commitment. New service admission uses the frozen epoch metadata digest/revision and requires that the frozen delegate generation and key_version equal the unrevoked current versions. A metadata-only staged revision does not block service under the existing frozen manifest until its own expiry; a staged delegate rotation makes old generation ineligible immediately and does not allow the replacement before its snapshot. For one finalized activity: validate canonical encoding and authorization; validate expected state/revision; calculate resource-bound next state; emit mutation/events atomically. A refusal never consumes application actor sequence unless the common host receipt explicitly defines a consumed native attempt; application state remains unchanged.\nService lifecycle is ABSENT → ACCEPTED → RUNNING → SUCCEEDED or FAILED or UNKNOWN_EXECUTION. ACCEPTED may alternatively become EXPIRED_BEFORE_START or CANCELLED_BEFORE_START. RUNNING may enter UNKNOWN_EXECUTION after a crash, deadline, disconnected runner or ambiguous cancellation. UNKNOWN_EXECUTION can resolve to a signed terminal outcome only with saved runner evidence; absence of evidence does not mean failure or permission to rerun. Terminal content is immutable; contradictory terminal evidence is a conflict retained for operator/evaluator review, not last-write-wins."
+    },
+    {
+      "id": "F02-R020",
+      "normative_text": "Service readiness states are ADVERTISED, VERIFIED_TRANSPORT, RUNNER_READY and NOT_READY. ADVERTISED means a valid signed manifest only; VERIFIED_TRANSPORT requires an actual TLS handshake and authenticated API version check; RUNNER_READY additionally requires a real runner loaded with the pinned artifacts and a real authorized bounded workload qualification. Readiness observations expire after 30000 ms wall-clock and are never on-chain quality truth. A paused market, stale finalized authority, unavailable durable store, stale TLS pin, missing model or queue saturation forces NOT_READY for new admissions."
+    },
+    {
+      "id": "F02-R021",
+      "normative_text": "Stable IDs, canonical bytes and signatures follow the common formulas exactly. Every revision/generation/sequence increment uses checked addition; maximum u64 refuses with Overflow and unchanged state. Window checks are inclusive at valid_from and exclusive at expiry. Membership and eligibility lookup scans at most 32 workers and 8 evaluators; no unbounded linked-key traversal. Manifest capabilities/endpoints sort by declared byte keys, duplicates refuse rather than resolve by order. A worker's active slot never doubles as identity. Replacement cannot make a delayed request target a different worker."
+    },
+    {
+      "id": "F02-R022",
+      "normative_text": "Service usage calculations use integer counts provided by the explicitly pinned model tokenizer/preprocessor. Token totals are the number of produced token IDs, not text byte length; embedding vector units are the number of scalar elements returned, with dimension in the output schema. No conversion between tokens, elements and items is implicit. processing_ms = max(0, finish_monotonic_ns - start_monotonic_ns) divided by 1000000 with floor; if a monotonic sample reverses, fail the measurement and mark evidence invalid instead of reporting zero. Wall-clock timestamps use milliseconds since Unix epoch as observations only. All multiplication/count accumulation uses checked u64; count overflow, model-reported negative count or count above admission bound fails evidence validation. Latency budget controls admission and cancellation requests, not a consensus assertion that the GPU definitely stopped."
+    },
+    {
+      "id": "F02-R023",
+      "normative_text": "Off-chain replicas MUST share a durable admission uniqueness store keyed by (MarketId, customer principal, RequestId). Exact duplicate immutable request commitment returns the saved acknowledgment/result, even after signature freshness expires, provided query authorization is current; it never executes again. Different commitment for that key refuses. Transport replay markers key (actor principal, delegate generation, actor sequence, operation tag) and persist at least through operation expiry plus the maximum reconciliation retention. Request uniqueness is retained for 30 days after terminal resolution by default; UNKNOWN_EXECUTION is not purged automatically. At retention expiry a tombstone persists a digest of the uniqueness key and request commitment so the same RequestId can never silently execute again. Tombstones contain no plaintext inputs."
+    },
+    {
+      "id": "F02-R024",
+      "normative_text": "Two replicas admitting the same RequestId race through one atomic unique insert; exactly one obtains execution ownership. Job dispatch additionally requires finalized F01 Accepted state, an unexpired canonical task deadline and the frozen roster eligibility. It uses a durable lease with monotonically increasing fencing token. A real runner integration MUST support admission-id idempotency or durable fenced acknowledgment; a runner with neither is not automatically retried after ambiguous dispatch. Failure before runner start can retry dispatch under the same job identity; failure after possible runner start yields UNKNOWN_EXECUTION. Process restart reloads accepted/running/unknown state and reconciles runner records before admitting replacement attempts. Queued economic activities continue existing Paxeer receipt resolution even when the service session is revoked.\nFinalized height, epoch, config and roster evidence must be consistent in one admission view. A future/old roster combination refuses. If the finality observer lags more than 8 finalized heights relative to independently validated latest-head evidence, admissions stop; inability to obtain fresh evidence is NOT_READY, not an extension of expired authority. This limit is a service freshness policy, not a new consensus timeout. Finalized revocation prevents new admissions and result release at the receiving service; unavoidable already-disclosed data cannot be recalled."
+    },
+    {
+      "id": "F02-R025",
+      "normative_text": "Worker identity proves accountable control, not one person, one machine or useful AI execution. Model/deployment commitments identify declarations; signatures do not prove that a particular model produced an output. Evaluator collusion, fabricated metrics and deterministic-looking wrong results remain F03/F05 trust concerns. F02 does not claim confidential compute. TLS protects transit; an authorized worker/evaluator can see decrypted content. F09 governs evidence encryption, access, retention and disclosure.\nEndpoint clients MUST perform normal certificate chain, validity and hostname validation AND compare the leaf SubjectPublicKeyInfo SHA256 to the signed manifest pin. Pin alone must not disable hostname/certificate validation. TLS1.3 is the v1 minimum; redirects are forbidden; failure never downgrades to HTTP or a different host. DNS is resolved at connection time, every returned address is checked against an operator-maintained globally routable address policy, and the actual connected peer address is checked again. Loopback, link-local, multicast, unspecified, documentation/test, private-use and cloud metadata networks are refused. Private deployments require a separate explicit network profile and allowlist; v1 public profile has no private bypass. This policy must use maintained standard address classification, not the existence of a plausible hostname. Training-artifact evaluation and model loading MUST use operator-approved data formats and installed model code; no request may enable remote model repository code, pickle deserialization or arbitrary uploaded executable loading. No prompt, decrypted result, bearer token or customer secret may enter public events, on-chain state or ordinary diagnostic logs."
+    },
+    {
+      "id": "F02-R026",
+      "normative_text": "All on-chain F02/F03 current identity and roster data must fit their shared 24576-byte allocation inside the single common state cell <=196608 bytes. F02 shall target <=384 serialized bytes per current worker record, including immutable IDs, key version, staged current commitments and the96bytes of retained request/result digests required by C03. The common frozen worker entry is exactly176bytes (worker, owner, frozen recipient, generation, key_version, key and metadata digest), plus bounded eligibility flags maintained outside the immutable hash.32 workers therefore target <=17952bytes current plus frozen entries/flags. Eight evaluator current plus frozen records and common section overhead must fit the remaining6624bytes. The frozen metadata revision and validity windows are recovered from its digest-matched manifest, not invented extra roster bytes. These are joint budget targets, not permission to omit required common fields. Current vs frozen roster duplicated key metadata must be counted explicitly in the combined budget; if complete encoding exceeds the allocation, enrollment/transition refuses CapacityExceeded rather than spilling into hidden cells. Off-chain raw manifests, TLS material, queues and historical key chains are excluded from this cell. The future layout task must compute the actual current plus pending plus frozen encoding and reconcile it with F03 before implementation completion; the budget is an acceptance constraint, not a proven size claim.\nOne application mutation rewrites the existing shared value and may create at most its first state value when initializing; common namespace finalization adds its manifest so initialization/mutation must fit at most2new content blobs for this namespace. At most two application events of at most2048bytes each and a response at most16384bytes are allowed. It must remain within native constraints of max4 new blobs/activity,512 committed blobs and64MiB total blob data, and respect the stricter shared application allocation. No per-job, per-key or per-manifest native blob expansion is assumed. Off-chain job records permit payload references <=4096 bytes, encrypted request/result payloads each <=1048576 bytes, per-worker32 running and128 accepted queued jobs, total queued encrypted bytes <=134217728, metadata cache <=256 manifests and active local result retention 30days. Admission refuses at any first exhausted bound. Retention does not authorize deletion of unresolved evidence or uniqueness tombstones; archives must preserve integrity and access controls."
+    }
+  ],
+  "acceptance_cases": [
+    {
+      "id": "F02-A01",
+      "case": "market M, owner P, enrollment nonce N and delegate K with valid delegate consent complete market-owner nomination and worker-owner acceptance once at height130 in epoch1. WorkerId equals the common formula; member cannot serve the frozen epoch1 roster and becomes eligible at epoch2 Work opening if F08 admits it. Treasury and customer balances unchanged.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A02",
+      "case": "worker metadata revision4, expiry400 and generation2 receives revision5 valid_from300 expiry428. Valid next revision stages. Revision6 sent while current expected revision4 is used refuses WrongRevision, state byte-identical and no reward change.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A03",
+      "case": "metadata valid_from300 expiry428 is acceptable at finalized300 and427, expired at428. Lifetime257 refuses. Revision u64max increment refuses Overflow.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A04",
+      "case": "owner rotates generation2 to3 at height300. Old generation cannot admit a new request after finalized300. A job admitted at299 retains its request/model context; epoch's immutable worker identity is unchanged. New generation not active until next snapshot. F07 history and existing F06 claims unchanged.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A05",
+      "case": "two real replicas receive RequestId all0x31 with identical commitment concurrently. One durable admission and one model execution occur, both clients receive the same acknowledgment. Same ID with changed output bound returns IdempotencyConflict and zero additional execution.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A06",
+      "case": "TLS certificate hostname matches but SPKI differs by one byte: handshake route fails pin verification and no payload is sent. Correct pin with expired certificate also fails. HTTPS hostname that re-resolves to127.0.0.1 or169.254.169.254 is rejected before payload transmission.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A07",
+      "case": "transport signs receiver W1 but is delivered to W2, or method/route, network, program, input commitment, metadata revision or request ID changes: BadSignature/WrongDomain and zero queue insert.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A08",
+      "case": "accepted request max_output_bytes1024 returns1025 bytes. Result cannot be SUCCEEDED; OutputTooLarge evidence retained, no automatic reward or charge. Token kind request cannot accept vector-element usage under the same units field.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A09",
+      "case": "runner may have accepted dispatch before service crashes. Restart shows UNKNOWN_EXECUTION and queries runner using original admission identity. No second execution occurs without idempotent runner evidence. Lost result callback repeats delivery only.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A10",
+      "case": "32 running and128 queued jobs already exist; the next queue insert refuses CapacityExceeded before any runner call. Total encrypted queue bytes exact134217728 permits no byte more. Worker admission number33 refuses capacity without creating identity or debiting funds.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A11",
+      "case": "monotonic start1000000ns and finish4999999ns yields processing_ms3. Finish999999ns yields invalid measurement, not success with zero latency. Counts u64max plus1 refuse overflow.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A12",
+      "case": "stranger queries known RequestId with valid signature under another principal; AccessDenied without output locator. Finalized owner identity freeze blocks new admission and private result release, while already queued chain-effect reconciliation continues.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A13",
+      "case": "unknown schema2, nonzero reserved field, duplicate capability sort key, extra trailing byte, URI userinfo, query redirect target, unbound receiver or HTTP scheme all refuse before state mutation. Valid manifest8192bytes admitted;8193 refuses.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A14",
+      "case": "durable store failure before commit means no runner execution and no acknowledgment claiming admission. Store failure after runner start means UNKNOWN_EXECUTION; service must not emit FAILED_BEFORE_START. Cancel RUNNING cannot claim CANCELLED_BEFORE_START.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A15",
+      "case": "expire metadata while an earlier admitted job runs. New work refuses; old immutable model binding remains. Later metadata pointing at another model cannot relabel the old result. Worker signature claiming high quality alone produces no evaluator score and no PAX mint/transfer.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A16",
+      "case": "serialize maximum current/pending/frozen F02+F03 roster, all32workers and8evaluators, C03 retained replay digests and C04 fixed recipient/keyversion bindings. Combined encoding <=24576bytes and total state<=196608bytes must be measured by future test; over-limit configuration refuses atomically. No hidden per-worker blob is permitted.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A17",
+      "case": "local durable acknowledgment exists but canonical task acceptance is absent or uncertain. Queue retains the request but runner call count stays zero. After finalized matching acceptance, one dispatch can occur. At task expiry height, a real completed late output is retained diagnostically but F01 result commitment refuses and F03 admission cannot count it. No reward or customer debit results from the local acknowledgment alone.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A18",
+      "case": "a PENDING_OWNER proposal nominated at executionheight500 expires at628. MarketOwner ExpireEnrollment0x020A at627 returns WRONG_PHASE and preserves the candidate. At628 with exact derived proposal_digest and expectedexpiry628, it deletes only that candidate, frees one current slot, emits one bounded summary event and moves no assets. Changed expectedexpiry629 or one-bit digest change returns CONFLICT with no mutation; another invoker returns UNAUTHORIZED. After AcceptEnrollment or any accepted membership/claim relation, cleanup refuses and preserves all records. Exact successful owner-role retry returns ALREADY_APPLIED without another event/deletion; no unbounded tombstone appears. Opcode0x0208 returns unavailable/refusal; actual discovery exclusively uses C14/F10 selectors0x0A01/0x0A02 with independently verified native root/finality.",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F02-A19",
+      "case": "worker W completed an accepted task and persisted a valid signed result before its canonical deadline; its operational delegate is revoked before evaluator reveal/aggregation. New worker admissions and new delegate signatures refuse, while an otherwise valid evaluator report may still include that completed task evidence under the frozen worker identity. No worker REVOKED aggregate state is synthesized, no valid historical quality sample is erased and frozen recipient claims remain payable through F06. By contrast, revoking an evaluator before BeginAggregation excludes that evaluator row under F03/core; worker revocation does not invoke that separate rule.",
+      "qualification": "UNRUN"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "F02-T01",
+      "depends_on": [
+        "T-C02",
+        "F01-registry-schema"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/workers.rs",
+        "programs/crates/layerx-programs-ai-market/tests/workers_lifecycle.rs",
+        "agent/crates/layerx-types/src/paxai/worker.rs"
+      ],
+      "paths_status": "proposed new",
+      "deliverable": "bounded two-party worker identity enrollment, delegate consent/lifecycle and canonical encoding; independent of F08 runtime; exact ExpireEnrollment0x020A and reserved0x0208 refusal",
+      "compile": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test workers_lifecycle",
+      "qualification": "UNRUN",
+      "commands_status": "proposed future commands; targets require implementation",
+      "gate_budget": "one compile plus one focused verify, <=2 task-scoped repair cycles,30minute cap"
+    },
+    {
+      "id": "F02-T02",
+      "depends_on": [
+        "F02-T01",
+        "F08-roster",
+        "F09-envelopes",
+        "COMMON-FINALIZED-CLIENT"
+      ],
+      "paths": [
+        "platform/hosted/paxai-worker/src/auth.rs",
+        "platform/hosted/paxai-worker/src/metadata.rs",
+        "platform/hosted/paxai-worker/src/discovery.rs",
+        "platform/hosted/gateway/src/public_reads.rs"
+      ],
+      "paths_status": "new worker service; existing gateway integration",
+      "deliverable": "distinct signed service transport, real TLS pinning, discovery and finalized authority freshness",
+      "compile": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test transport_identity",
+      "qualification": "UNRUN",
+      "commands_status": "proposed future commands; targets require implementation",
+      "gate_budget": "one compile plus one focused verify, <=2 task-scoped repair cycles,30minute cap"
+    },
+    {
+      "id": "F02-T03",
+      "depends_on": [
+        "F02-T02",
+        "F01-task-registry"
+      ],
+      "paths": [
+        "platform/hosted/paxai-worker/src/jobs.rs",
+        "platform/hosted/paxai-worker/src/store.rs",
+        "platform/hosted/paxai-worker/src/runner.rs",
+        "platform/hosted/paxai-worker/tests/job_recovery.rs"
+      ],
+      "paths_status": "proposed new",
+      "deliverable": "durable idempotent jobs waiting for finalized canonical task acceptance, real runner and restart reconciliation",
+      "compile": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test job_recovery -- --test-threads=1",
+      "qualification": "UNRUN",
+      "commands_status": "proposed future commands; targets require implementation",
+      "gate_budget": "one compile plus one focused verify, <=2 task-scoped repair cycles,30minute cap"
+    },
+    {
+      "id": "F02-T04",
+      "depends_on": [
+        "F02-T03",
+        "F03",
+        "F10"
+      ],
+      "paths": [
+        "platform/hosted/paxai-worker/tests/real_workload.rs"
+      ],
+      "paths_status": "proposed new",
+      "deliverable": "real inference and embedding qualification with pinned licensed artifacts",
+      "compile": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test real_workload -- --test-threads=1",
+      "external_prerequisites": [
+        "selected real model runner",
+        "pinned model artifacts",
+        "provisioned durable store",
+        "TLS credentials",
+        "finalized gateway"
+      ],
+      "qualification": "UNRUN",
+      "commands_status": "proposed future commands; targets require implementation",
+      "gate_budget": "one compile plus one focused verify, <=2 task-scoped repair cycles,30minute cap"
+    }
+  ],
+  "implementation": "UNRUN",
+  "qualification": "UNRUN",
+  "limits": {
+    "workers": 32,
+    "evaluators": 8,
+    "combined_identity_section_bytes": 24576,
+    "total_shared_state_bytes": 196608,
+    "maximum_new_blobs_per_namespace_mutation": 2,
+    "maximum_external_envelope_bytes": 16384,
+    "maximum_model_input_bytes": 1048576,
+    "maximum_model_output_bytes": 1048576
+  },
+  "boundaries": [
+    "Programs-first",
+    "no native module or proof namespace changes",
+    "AI execution external",
+    "no worker reward or custody authority",
+    "authoritative finality before external work and publication",
+    "continuous-operation requires qualified native blob lifecycle"
+  ],
+  "operations": [
+    {
+      "selector": "0x0201",
+      "name": "EnrollWorker",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0202",
+      "name": "PublishMetadata",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "worker operational kind1"
+    },
+    {
+      "selector": "0x0203",
+      "name": "SetDraining",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0204",
+      "name": "UndoDrain",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0205",
+      "name": "RotateDelegate",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0206",
+      "name": "RevokeDelegate",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0207",
+      "name": "RetireWorker",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x0208",
+      "name": "RESERVED_UNAVAILABLE",
+      "availability": "RESERVED_UNAVAILABLE",
+      "authority": "none; refuses"
+    },
+    {
+      "selector": "0x0209",
+      "name": "AcceptEnrollment",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "authenticated role kind0"
+    },
+    {
+      "selector": "0x020A",
+      "name": "ExpireEnrollment",
+      "availability": "PROPOSED_NATIVE",
+      "authority": "market Owner authentication_kind0 and current owner role sequence",
+      "payload_bytes": 72,
+      "payload_fields": [
+        "WorkerId32",
+        "expectedproposal_digest32",
+        "expectedexpiry_height:u64"
+      ],
+      "preconditions": [
+        "existing PENDING_OWNER only",
+        "Context::batch_height >= exact stored proposal expiry",
+        "derived proposal digest and expected expiry exact match",
+        "no accepted membership,history or claims"
+      ],
+      "effects": [
+        "delete only bounded candidate",
+        "one atomic shared-value write",
+        "one bounded summary event",
+        "ordinary owner role replay record only"
+      ],
+      "errors": [
+        "UNAUTHORIZED",
+        "WRONG_PHASE",
+        "CONFLICT",
+        "NOT_FOUND"
+      ],
+      "proposal_digest_domain": "PAXAI/worker-enrollment-proposal/v1",
+      "proposal_digest_stored": false
+    }
+  ],
+  "discovery": {
+    "native_f02_selector": "0x0208",
+    "availability": "RESERVED_UNAVAILABLE",
+    "actual_path": "off-chain F10 view of core C14 ProgramRead",
+    "selectors": [
+      "0x0A01",
+      "0x0A02"
+    ],
+    "publication": "expected native root and independently verified finality",
+    "mutations": false
+  },
+  "constraints": {
+    "expire_enrollment_additional_unbounded_record": false,
+    "proposal_digest_derived_from_existing_immutable_fields": true,
+    "pending_owner_allows_only": [
+      "AcceptEnrollment",
+      "ExpireEnrollment"
+    ],
+    "expire_enrollment_no_accepted_membership_history_claim_deletion": true,
+    "native_discoverworker_available": false,
+    "worker_revocation_blocks_new_work_and_delegate_signing": true,
+    "worker_revocation_erases_valid_completed_task_quality_evidence": false,
+    "worker_revocation_invalidates_frozen_recipient_claims": false,
+    "worker_revocation_adds_aggregate_revoked_status": false,
+    "evaluator_revocation_row_cutoff_owner": "F03/core BeginAggregation seal"
+  },
+  "canonical_task_authority": "../../spec.kvx"
+}

@@ -1,0 +1,41 @@
+%% PROPOSED assessment pipeline; all behavior qualification UNRUN.
+flowchart TB
+  snapshot["Frozen chain / program / market / epoch / config / roster / grant / key bindings"]
+  tasks["Explicit F01 task-set seal; immutable task and result commitments"]
+  evaluator["Real evaluator verifies evidence, exact score pairs, generations, access and rubric"]
+  evidence["SealEvidence in [T+64,T+80): matching evidence root / policy / task set / mode"]
+  body["Canonical sparse report: 1..32 ascending unique workers; scores 0..1000000"]
+  signature["Ed25519 over H score-attestation of report_digest; exact 32-byte message"]
+  saved["Durably save exact report, signature and fresh nonzero 32-byte salt"]
+  commitment["C = H score-commit of frozen bindings, report_digest and salt"]
+  commit["CommitScore in [T+64,T+80): one immutable C; exact request retry only"]
+  reveal["RevealScore in [T+80,T+96): canonical body + signature + salt"]
+  admission["Atomic F04 commitment match and F03 authority / evidence admission; one event"]
+  missing["Absent / invalid / unrevealed report: no vote; explicit score zero is a real vote"]
+  seal["BeginAggregation at height at least T+96 seals eligible evaluator rows and input_digest"]
+  revocation["Evaluator grant/key revoked before seal: row excluded; after seal no input change"]
+  chunk["Process exactly min of 8 and remaining workers in ascending frozen WorkerId order"]
+  quorum{"At least 3 distinct eligible explicit votes for this worker?"}
+  absent["INSUFFICIENT_QUORUM: quality absent; reward weight 0"]
+  median["Sort bounded scores; lower median at index floor of (n-1)/2"]
+  zero["SCORED_ZERO: measured score 0; reward weight 0"]
+  positive["SCORED_POSITIVE: raw median is reward weight"]
+  cursor["Persist whole chunk with input_digest, output rows and next cursor atomically"]
+  provisional["Cursor complete remains provisional and unclaimable"]
+  final["Atomic Finalize: aggregate root + F06 exact reserve disposition + F07 history + terminal status"]
+  retry["Crash recovery reads committed cursor; stale cursor refuses; no processed worker repeated"]
+  snapshot --> evaluator
+  tasks --> evaluator --> evidence
+  evaluator --> body --> signature --> saved --> commitment --> commit --> reveal --> admission
+  evidence --> commit
+  admission --> seal
+  missing --> seal
+  revocation --> seal
+  seal --> chunk --> quorum
+  quorum -->|"no"| absent --> cursor
+  quorum -->|"yes"| median
+  median -->|"median = 0"| zero --> cursor
+  median -->|"median greater than 0"| positive --> cursor
+  cursor -->|"workers remain"| chunk
+  cursor -->|"all workers processed"| provisional --> final
+  retry --> cursor

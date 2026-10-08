@@ -1,0 +1,50 @@
+%% PROPOSED local AI dependency waves 0..18; implementation and release gates UNRUN.
+flowchart TB
+  w0["LOCAL AI WAVE 0<br/>ai.P-WORKSPACE: controlled implementation workspace and exact ownership"]
+  w1["LOCAL AI WAVE 1<br/>ai.P-DEPLOYMENT<br/>ai.P-REAL-SERVICES<br/>ai.P-STORAGE-PROFILE<br/>ai.T-C01"]
+  w2["LOCAL AI WAVE 2<br/>ai.F01-T01<br/>ai.T-C02<br/>ai.T-S01"]
+  w3["LOCAL AI WAVE 3<br/>ai.F01-T02<br/>ai.F02-T01<br/>ai.F03-T01<br/>ai.F06-T01<br/>ai.F09-T01<br/>ai.T-C03<br/>ai.T-S02"]
+  w4["LOCAL AI WAVE 4<br/>ai.F04-T01<br/>ai.F07-T01<br/>ai.F08-T01<br/>ai.F09-T03<br/>ai.F10-T01<br/>ai.T-S03"]
+  w5["LOCAL AI WAVE 5<br/>ai.F03-T02<br/>ai.F05-T01<br/>ai.F10-T02<br/>ai.T-C04"]
+  w6["LOCAL AI WAVE 6<br/>ai.F05-T02<br/>ai.F10-T03<br/>ai.F10-T05"]
+  w7["LOCAL AI WAVE 7<br/>ai.F02-T02<br/>ai.F06-T02<br/>ai.F10-T04<br/>ai.F10-T07"]
+  w8["LOCAL AI WAVE 8<br/>ai.F08-T02"]
+  w9["LOCAL AI WAVE 9<br/>ai.F01-T03-EPOCH"]
+  w10["LOCAL AI WAVE 10<br/>ai.F01-T04<br/>ai.F08-T03"]
+  w11["LOCAL AI WAVE 11<br/>ai.F02-T03<br/>ai.F09-T02"]
+  w12["LOCAL AI WAVE 12<br/>ai.F01-T04-SERVICE<br/>ai.F03-T03<br/>ai.F09-T04<br/>ai.F10-T06"]
+  w13["LOCAL AI WAVE 13<br/>ai.F04-T02"]
+  w14["LOCAL AI WAVE 14<br/>ai.F04-T03<br/>ai.F05-T03"]
+  w15["LOCAL AI WAVE 15<br/>ai.F03-T04<br/>ai.F06-T03"]
+  w16["LOCAL AI WAVE 16<br/>ai.F01-T03-CLOSE<br/>ai.F02-T04<br/>ai.F07-T02<br/>ai.T-S04"]
+  w17["LOCAL AI WAVE 17<br/>ai.F06-T04<br/>ai.F07-T03<br/>ai.F10-T02-FULL"]
+  w18["LOCAL AI WAVE 18<br/>ai.RELEASE-CANDIDATE"]
+  w0 -->|"earliest dependency wave; exact requires remain per task"| w1
+  w1 -->|"earliest dependency wave; exact requires remain per task"| w2
+  w2 -->|"earliest dependency wave; exact requires remain per task"| w3
+  w3 -->|"earliest dependency wave; exact requires remain per task"| w4
+  w4 -->|"earliest dependency wave; exact requires remain per task"| w5
+  w5 -->|"earliest dependency wave; exact requires remain per task"| w6
+  w6 -->|"earliest dependency wave; exact requires remain per task"| w7
+  w7 -->|"earliest dependency wave; exact requires remain per task"| w8
+  w8 -->|"earliest dependency wave; exact requires remain per task"| w9
+  w9 -->|"earliest dependency wave; exact requires remain per task"| w10
+  w10 -->|"earliest dependency wave; exact requires remain per task"| w11
+  w11 -->|"earliest dependency wave; exact requires remain per task"| w12
+  w12 -->|"earliest dependency wave; exact requires remain per task"| w13
+  w13 -->|"earliest dependency wave; exact requires remain per task"| w14
+  w14 -->|"earliest dependency wave; exact requires remain per task"| w15
+  w15 -->|"earliest dependency wave; exact requires remain per task"| w16
+  w16 -->|"earliest dependency wave; exact requires remain per task"| w17
+  w17 -->|"earliest dependency wave; exact requires remain per task"| w18
+  ownership["One integration writer for workspace manifests, common codec/state/dispatch, SDK generators and shared routes"]
+  cuts["Complete producers first: evaluator codec before admission; reward/history primitives before atomic finalization"]
+  services["AI runtime workers are service processes; developer task assignments are a separate implementation plan"]
+  assemble["Global candidate assembly: canonical tasks 60.1 and 113.5 follow AI implementation"]
+  deployment["Actual deployment readiness: canonical tasks 60.8 and 113.16"]
+  gates["Each future task: implementation first, one build + one focused verify, at most two repairs, 30 minutes"]
+  w17 --> assemble --> deployment --> w18
+  ownership -.-> w1
+  cuts -.-> w8
+  services -.-> w11
+  gates -.-> w16

@@ -1,0 +1,1296 @@
+[meta]
+name = "AI market supporting schematics"
+status = "PROPOSED_SPECIFICATION"
+implementation = "UNRUN"
+runtime_qualification = "UNRUN"
+continuous_operation = "BLOCKED"
+canonical_spec = "../../spec.kvx"
+canonical_authority = "Canonical requirements AI.<requirement> and tasks ai.<task ID> in spec.kvx govern behavior, admission, global waves and gates."
+diagram_count = 8
+diagram_validation = "Bounded text structural checks; parser only when an existing callable installation is available. No browser rendering validation is claimed."
+verification_scope = "Documentation KVX syntax, linked contract existence, requirement/case identifiers and Mermaid text structure only; no product build or runtime test."
+builds_allowed = 0
+verify_runs_initial = 1
+repair_cycles_max = 2
+time_cap_minutes = 30
+stop_condition = "Stop after the document check and report its exit/log; no task claims, product implementation, build, deployment or git action."
+
+[diagram.01]
+title = "Architectural service boundaries"
+file = "01-service-boundaries.mmd"
+purpose = "Separate deterministic market authority, native capabilities, AI service processes, private artifact custody, finalized projections and storage maintenance."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows are authenticated control, data or native effect paths; dotted arrows are display-only operational observations. Service process boxes do not allocate developer implementation tasks."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/integration-map.kvx", "../contracts/storage-lifecycle.kvx"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F02-workers.kvx", "../features/F03-evaluators.kvx", "../features/F06-rewards.kvx", "../features/F09-artifacts.kvx", "../features/F10-views-sdk.kvx"]
+requirements = ["AI.F01-R001", "AI.F01-R004", "AI.F01-R005", "AI.F01-R006", "AI.F02-R004", "AI.F02-R017", "AI.F06-R03", "AI.F10-R003", "AI.F10-R031"]
+acceptance_cases = ["F01-A01", "F02-A17", "F06-A08", "F09-A17", "F10-A02"]
+invariant_1 = "One independently deployed market Program; deterministic code validates compact statements and conserves existing assets."
+invariant_2 = "Host capabilities and application roles are independently required; direct application calls only."
+invariant_3 = "No model execution, private artifact fetch, automatic truth adjudication or new native module occurs in the guest."
+invariant_4 = "Existing owner consent and native activity framing remain authoritative."
+node_count = 21
+
+[node.01.customer]
+label = "Customer / participant principal"
+purpose = "Customer / participant principal"
+
+[node.01.owner]
+label = "Market Owner / optional immutable Treasury"
+purpose = "Market Owner / optional immutable Treasury"
+
+[node.01.sdk]
+label = "SDK and existing owner review / approve / sign"
+purpose = "SDK and existing owner review / approve / sign"
+
+[node.01.router]
+label = "Unified router: authenticated product discovery"
+purpose = "Unified router: authenticated product discovery"
+
+[node.01.gateway]
+label = "Existing native ProgramCall / ProgramRead boundary"
+purpose = "Existing native ProgramCall / ProgramRead boundary"
+
+[node.01.native]
+label = "Authenticated native activity and capability checks"
+purpose = "Authenticated native activity and capability checks"
+
+[node.01.context]
+label = "Context: program, principal, absent immediate caller, batch height"
+purpose = "Context: program, principal, absent immediate caller, batch height"
+
+[node.01.guest]
+label = "Proposed AI market WASM instance: F01-F09 + F10 reads"
+purpose = "Proposed AI market WASM instance: F01-F09 + F10 reads"
+
+[node.01.state]
+label = "One shared value: paxai/state/v1; maximum 196608 bytes"
+purpose = "One shared value: paxai/state/v1; maximum 196608 bytes"
+
+[node.01.account]
+label = "Registered derived rewards account; one immutable asset"
+purpose = "Registered derived rewards account; one immutable asset"
+
+[node.01.receipts]
+label = "Canonical receipts / state roots / native replay evidence"
+purpose = "Canonical receipts / state roots / native replay evidence"
+
+[node.01.worker]
+label = "AI worker service: durable jobs and signing delegate"
+purpose = "AI worker service: durable jobs and signing delegate"
+
+[node.01.runner]
+label = "Selected real model runner: inference / embedding / evaluation"
+purpose = "Selected real model runner: inference / embedding / evaluation"
+
+[node.01.evaluator]
+label = "Authorized evaluator service: frozen rubric and evidence"
+purpose = "Authorized evaluator service: frozen rubric and evidence"
+
+[node.01.artifacts]
+label = "Artifact service: immutable objects, grants and retention"
+purpose = "Artifact service: immutable objects, grants and retention"
+
+[node.01.kms]
+label = "Service KMS: object keys and access envelopes"
+purpose = "Service KMS: object keys and access envelopes"
+
+[node.01.verifier]
+label = "Existing independent finality verifier: exact batch and root"
+purpose = "Existing independent finality verifier: exact batch and root"
+
+[node.01.projection]
+label = "Verified snapshot indexer: rows + cursor + outbox atomically"
+purpose = "Verified snapshot indexer: rows + cursor + outbox atomically"
+
+[node.01.views]
+label = "Authenticated canonical views and private webhook producer"
+purpose = "Authenticated canonical views and private webhook producer"
+
+[node.01.health]
+label = "Separate signed operational observations; readiness expires in 30 seconds"
+purpose = "Separate signed operational observations; readiness expires in 30 seconds"
+
+[node.01.archive]
+label = "Private native archive / storage keeper; candidate profile approval required"
+purpose = "Private native archive / storage keeper; candidate profile approval required"
+
+[diagram.02]
+title = "Task lifecycle and epoch timing"
+file = "02-task-and-epoch-lifecycle.mmd"
+purpose = "Show onchain task admission, durable worker ACK, finalized acceptance before real dispatch, strict task deadline, explicit task-set sealing and the immutable epoch cadence."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows are prerequisite transitions or retained rights; labeled edges distinguish accepted work, requester cancellation, missed Work windows and delayed terminalization."
+linked_contract_files = ["../contracts/core.kvx"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F02-workers.kvx", "../features/F05-aggregation.kvx", "../features/F06-rewards.kvx", "../features/F08-admission.kvx", "../features/F09-artifacts.kvx"]
+requirements = ["AI.F01-R026", "AI.F01-R027", "AI.F01-R028", "AI.F01-R041", "AI.F01-R042", "AI.F01-R043", "AI.F01-R044", "AI.F01-R046", "AI.F02-R017", "AI.F02-R018", "AI.F02-R024", "AI.F05-R06", "AI.F06-R18"]
+acceptance_cases = ["F01-A02", "F01-A05", "F01-A12", "F01-A13", "F01-A14", "F01-A15", "F01-A17", "F02-A17", "F05-A12", "F06-A13"]
+invariant_1 = "Authenticated executing batch height controls Work [0,64), Commit [64,80), Reveal [80,96) and scheduled Settlement [96,128)."
+invariant_2 = "External costly work waits for independently verified finalized task acceptance and exact ACK binding."
+invariant_3 = "Task acceptance, cancellation and result commitment all stop at Work end and the task deadline."
+invariant_4 = "F09 evidence sealing requires a prior explicit F01 task-set seal; it never seals another feature implicitly."
+invariant_5 = "Suspension or graceful close preserves admitted work, ordinary commit/reveal, settlement and claims; v1 has no abort."
+invariant_6 = "Delayed settlement blocks later opening; skipped unopened epochs produce no quality samples."
+node_count = 25
+
+[node.02.schedule]
+label = "T = origin_height + 128 * epoch; checked u64 arithmetic"
+purpose = "T = origin_height + 128 * epoch; checked u64 arithmetic"
+
+[node.02.opening]
+label = "Lazy OpenEpoch only in Work; freeze policy, roster, recipients, keys and budget"
+purpose = "Lazy OpenEpoch only in Work; freeze policy, roster, recipients, keys and budget"
+
+[node.02.admitted]
+label = "ADMIT_TASK: Active market, frozen worker metadata, bounded slot and deadline"
+purpose = "ADMIT_TASK: Active market, frozen worker metadata, bounded slot and deadline"
+
+[node.02.validate]
+label = "Worker service checks real runner, model/schema, rights, access and capacity"
+purpose = "Worker service checks real runner, model/schema, rights, access and capacity"
+
+[node.02.durable]
+label = "Persist unique request and signed ACK before acknowledgment"
+purpose = "Persist unique request and signed ACK before acknowledgment"
+
+[node.02.accepted]
+label = "ACCEPT_TASK: Admitted to Accepted with nonzero ACK digest"
+purpose = "ACCEPT_TASK: Admitted to Accepted with nonzero ACK digest"
+
+[node.02.finalized]
+label = "Verify finalized Accepted state with exactly matching ACK"
+purpose = "Verify finalized Accepted state with exactly matching ACK"
+
+[node.02.run]
+label = "Fenced real runner dispatch; ambiguous execution stays UNKNOWN_EXECUTION"
+purpose = "Fenced real runner dispatch; ambiguous execution stays UNKNOWN_EXECUTION"
+
+[node.02.persist]
+label = "Persist immutable signed result before delivery"
+purpose = "Persist immutable signed result before delivery"
+
+[node.02.result]
+label = "COMMIT_TASK_RESULT: Accepted to ResultCommitted before deadline and Work end"
+purpose = "COMMIT_TASK_RESULT: Accepted to ResultCommitted before deadline and Work end"
+
+[node.02.cancel]
+label = "Requester CANCEL_TASK only while Admitted; slot remains occupied"
+purpose = "Requester CANCEL_TASK only while Admitted; slot remains occupied"
+
+[node.02.taskseal]
+label = "Explicit permissionless SEAL_TASK_SET at or after T+64"
+purpose = "Explicit permissionless SEAL_TASK_SET at or after T+64"
+
+[node.02.evseal]
+label = "Evaluator SealEvidence requires prior task-set seal and matching policy / mode"
+purpose = "Evaluator SealEvidence requires prior task-set seal and matching policy / mode"
+
+[node.02.scorecommit]
+label = "One immutable CommitScore per evaluator; no report or salt disclosed"
+purpose = "One immutable CommitScore per evaluator; no report or salt disclosed"
+
+[node.02.scorereveal]
+label = "RevealScore: exact report, signature and nonzero salt; atomic F03/F04 admission"
+purpose = "RevealScore: exact report, signature and nonzero salt; atomic F03/F04 admission"
+
+[node.02.begin]
+label = "BeginAggregation at or after T+96 freezes eligible rows"
+purpose = "BeginAggregation at or after T+96 freezes eligible rows"
+
+[node.02.chunks]
+label = "Process at most eight frozen workers per call; persisted cursor"
+purpose = "Process at most eight frozen workers per call; persisted cursor"
+
+[node.02.terminal]
+label = "One atomic Finalize: aggregate + rewards ledger + history + terminal epoch"
+purpose = "One atomic Finalize: aggregate + rewards ledger + history + terminal epoch"
+
+[node.02.blocked]
+label = "Later OpenEpoch blocked until prior terminal; no late Commit or Reveal"
+purpose = "Later OpenEpoch blocked until prior terminal; no late Commit or Reveal"
+
+[node.02.skipped]
+label = "Missed unopened Work window: skipped epoch; no invented work or history sample"
+purpose = "Missed unopened Work window: skipped epoch; no invented work or history sample"
+
+[node.02.suspended]
+label = "Suspended / WindingDown: refuse new work and new epochs"
+purpose = "Suspended / WindingDown: refuse new work and new epochs"
+
+[node.02.preserved]
+label = "Already admitted current-epoch commitments, reveals, settlement and claims continue within rules"
+purpose = "Already admitted current-epoch commitments, reveals, settlement and claims continue within rules"
+
+[node.02.expiry]
+label = "Claims: [terminal_height, terminal_height+4096); paid or expired liabilities preserved"
+purpose = "Claims: [terminal_height, terminal_height+4096); paid or expired liabilities preserved"
+
+[node.02.retention]
+label = "At most 32 completed epochs; safe oldest pruning and dictionary preflight before new opening"
+purpose = "At most 32 completed epochs; safe oldest pruning and dictionary preflight before new opening"
+
+[node.02.previous]
+label = "Previous opened epoch terminal, if any?"
+purpose = "Previous opened epoch terminal, if any?"
+
+[diagram.03]
+title = "Worker and evaluator authorization"
+file = "03-participant-authorization.mmd"
+purpose = "Distinguish native authentication, operational delegates, owner consent, finite membership permits, roster activation, rotation and different worker/evaluator revocation effects."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows carry separate native consent, delegated operational authority, finite nomination/admission transitions and frozen roster rights. They never imply one principal can impersonate the other party."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/operation-registry.json"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F02-workers.kvx", "../features/F03-evaluators.kvx", "../features/F08-admission.kvx"]
+requirements = ["AI.F02-R010", "AI.F02-R011", "AI.F02-R012", "AI.F02-R015", "AI.F03-R08", "AI.F03-R09", "AI.F03-R10", "AI.F03-R11", "AI.F03-R12", "AI.F08-R009", "AI.F08-R010", "AI.F08-R015"]
+acceptance_cases = ["F02-A01", "F02-A04", "F02-A18", "F02-A19", "F03-A07", "F03-A08", "F03-A09", "F03-A10", "F03-A16", "F08-A17", "F08-A18", "F08-A19"]
+invariant_1 = "Worker nomination requires exact nominated worker-owner kind0 acceptance and registered delegate proof of possession."
+invariant_2 = "Evaluator nomination remains PENDING until evaluator-owner kind0 F08 admission and registered delegate consent; the same record is activated only at snapshot."
+invariant_3 = "Membership authority changes and funding/refunds do not use relayed delegate authentication."
+invariant_4 = "Bootstrap membership may target epoch0 before any opening; later new admission targets checked clock_epoch+1."
+invariant_5 = "Roster evaluator principal cannot equal a worker principal or Market Owner; undisclosed common control remains a limitation."
+invariant_6 = "Worker revocation preserves completed task evidence and frozen claims; only evaluator revocation before aggregation seal excludes a row."
+node_count = 26
+
+[node.03.frame]
+label = "Direct authenticated native call; no immediate caller"
+purpose = "Direct authenticated native call; no immediate caller"
+
+[node.03.native]
+label = "Kind0: actor principal equals authenticated invoking principal"
+purpose = "Kind0: actor principal equals authenticated invoking principal"
+
+[node.03.delegated]
+label = "Kind1: only enrolled worker operations / evaluator statements / heartbeat"
+purpose = "Kind1: only enrolled worker operations / evaluator statements / heartbeat"
+
+[node.03.verify]
+label = "Active scoped Ed25519 key signs exact domain-separated request digest"
+purpose = "Active scoped Ed25519 key signs exact domain-separated request digest"
+
+[node.03.role]
+label = "Host capability and application role both required"
+purpose = "Host capability and application role both required"
+
+[node.03.nominateW]
+label = "Market Owner EnrollWorker: bounded PENDING_OWNER proposal"
+purpose = "Market Owner EnrollWorker: bounded PENDING_OWNER proposal"
+
+[node.03.acceptW]
+label = "Nominated worker owner AcceptEnrollment kind0 + delegate proof of possession"
+purpose = "Nominated worker owner AcceptEnrollment kind0 + delegate proof of possession"
+
+[node.03.enrolled]
+label = "ENROLLED identity; no membership or runner authority yet"
+purpose = "ENROLLED identity; no membership or runner authority yet"
+
+[node.03.permitW]
+label = "Market Owner ApproveAdmission: one bound expiring permit"
+purpose = "Market Owner ApproveAdmission: one bound expiring permit"
+
+[node.03.admitW]
+label = "Worker owner AdmitWorker consumes permit and stages membership"
+purpose = "Worker owner AdmitWorker consumes permit and stages membership"
+
+[node.03.nominateE]
+label = "Market Owner ScheduleEvaluator: one PENDING grant"
+purpose = "Market Owner ScheduleEvaluator: one PENDING grant"
+
+[node.03.permitE]
+label = "Market Owner ApproveAdmission binds pending grant and registered key"
+purpose = "Market Owner ApproveAdmission binds pending grant and registered key"
+
+[node.03.acceptE]
+label = "Nominated evaluator owner AdmitEvaluator kind0 + registered delegate consent"
+purpose = "Nominated evaluator owner AdmitEvaluator kind0 + registered delegate consent"
+
+[node.03.memberE]
+label = "Same PENDING grant gains accepted membership; no immediate score authority"
+purpose = "Same PENDING grant gains accepted membership; no immediate score authority"
+
+[node.03.roster]
+label = "OpenEpoch freezes admitted identities, recipients, generations and authority versions"
+purpose = "OpenEpoch freezes admitted identities, recipients, generations and authority versions"
+
+[node.03.bootstrap]
+label = "Before first opening: effective_epoch 0; afterward new admission targets clock_epoch+1"
+purpose = "Before first opening: effective_epoch 0; afterward new admission targets clock_epoch+1"
+
+[node.03.conflict]
+label = "Evaluator principal differs from every worker principal and Market Owner; declared controls checked"
+purpose = "Evaluator principal differs from every worker principal and Market Owner; declared controls checked"
+
+[node.03.workerops]
+label = "Worker delegate: metadata / ACK / result operations; no treasury or evaluator privilege"
+purpose = "Worker delegate: metadata / ACK / result operations; no treasury or evaluator privilege"
+
+[node.03.evalops]
+label = "Evaluator: SealEvidence / CommitScore / RevealScore; exact frozen and live grant"
+purpose = "Evaluator: SealEvidence / CommitScore / RevealScore; exact frozen and live grant"
+
+[node.03.rotation]
+label = "Rekeys / new grants staged for future roster; stable identity history and claims retained"
+purpose = "Rekeys / new grants staged for future roster; stable identity history and claims retained"
+
+[node.03.revokeW]
+label = "Worker revocation: stop new work and signatures; completed evidence / fixed claims preserved"
+purpose = "Worker revocation: stop new work and signatures; completed evidence / fixed claims preserved"
+
+[node.03.revokeE]
+label = "Evaluator revocation before BeginAggregation: exclude its row without erasing evidence"
+purpose = "Evaluator revocation before BeginAggregation: exclude its row without erasing evidence"
+
+[node.03.afterseal]
+label = "Evaluator revocation after BeginAggregation: prospective; sealed inputs unchanged"
+purpose = "Evaluator revocation after BeginAggregation: prospective; sealed inputs unchanged"
+
+[node.03.relayer]
+label = "Permissionless kind0 relayer: actor_sequence 0; deterministic cursor or fixed-recipient claim only"
+purpose = "Permissionless kind0 relayer: actor_sequence 0; deterministic cursor or fixed-recipient claim only"
+
+[node.03.replay]
+label = "Role sequences advance only on success; exact last request idempotent; changed body conflicts"
+purpose = "Role sequences advance only on success; exact last request idempotent; changed body conflicts"
+
+[node.03.kind]
+label = "Envelope authentication kind?"
+purpose = "Envelope authentication kind?"
+
+[diagram.04]
+title = "Score commit, reveal and deterministic aggregation"
+file = "04-score-commit-reveal-aggregation.mmd"
+purpose = "Connect evidence sealing, exact signed reports, concealed commitments, bounded reveal admission, sealed evaluator eligibility, lower-median chunks and atomic economic terminalization."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows express ordered admission and deterministic computation. Branches explicitly separate insufficient quorum, observed zero and positive scores; the cursor loop is bounded by 32 workers."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/operation-registry.json", "../contracts/wire.schema.json"]
+linked_feature_files = ["../features/F03-evaluators.kvx", "../features/F04-commit-reveal.kvx", "../features/F05-aggregation.kvx", "../features/F06-rewards.kvx", "../features/F07-reputation.kvx", "../features/F09-artifacts.kvx"]
+requirements = ["AI.F04-R01", "AI.F04-R03", "AI.F04-R04", "AI.F04-R05", "AI.F04-R06", "AI.F04-R07", "AI.F04-R08", "AI.F04-R09", "AI.F05-R01", "AI.F05-R05", "AI.F05-R07", "AI.F05-R10", "AI.F09-R27", "AI.F09-R28"]
+acceptance_cases = ["F04-A01", "F04-A02", "F04-A03", "F04-A05", "F04-A07", "F04-A09", "F04-A12", "F05-A02", "F05-A03", "F05-A13", "F05-A14", "F05-A16", "F09-A23", "F09-A25"]
+invariant_1 = "Report signature and request-envelope signature bind distinct exact 32-byte domain-separated digests."
+invariant_2 = "One immutable commitment and admitted report per evaluator/epoch; failed reveal consumes no row or application sequence."
+invariant_3 = "Missing workers and unrevealed rows are no votes; an explicit zero is a valid observation."
+invariant_4 = "Quorum is three distinct sealed eligible evaluator identities; lower median index is floor((n-1)/2)."
+invariant_5 = "Each Process handles exactly min(8,remaining) consecutive frozen workers, once; maximum four chunks."
+invariant_6 = "A complete cursor is provisional until aggregate, F06 ledger/entitlements, F07 history and terminal epoch commit together."
+node_count = 24
+
+[node.04.snapshot]
+label = "Frozen chain / program / market / epoch / config / roster / grant / key bindings"
+purpose = "Frozen chain / program / market / epoch / config / roster / grant / key bindings"
+
+[node.04.tasks]
+label = "Explicit F01 task-set seal; immutable task and result commitments"
+purpose = "Explicit F01 task-set seal; immutable task and result commitments"
+
+[node.04.evaluator]
+label = "Real evaluator verifies evidence, exact score pairs, generations, access and rubric"
+purpose = "Real evaluator verifies evidence, exact score pairs, generations, access and rubric"
+
+[node.04.evidence]
+label = "SealEvidence in [T+64,T+80): matching evidence root / policy / task set / mode"
+purpose = "SealEvidence in [T+64,T+80): matching evidence root / policy / task set / mode"
+
+[node.04.body]
+label = "Canonical sparse report: 1..32 ascending unique workers; scores 0..1000000"
+purpose = "Canonical sparse report: 1..32 ascending unique workers; scores 0..1000000"
+
+[node.04.signature]
+label = "Ed25519 over H score-attestation of report_digest; exact 32-byte message"
+purpose = "Ed25519 over H score-attestation of report_digest; exact 32-byte message"
+
+[node.04.saved]
+label = "Durably save exact report, signature and fresh nonzero 32-byte salt"
+purpose = "Durably save exact report, signature and fresh nonzero 32-byte salt"
+
+[node.04.commitment]
+label = "C = H score-commit of frozen bindings, report_digest and salt"
+purpose = "C = H score-commit of frozen bindings, report_digest and salt"
+
+[node.04.commit]
+label = "CommitScore in [T+64,T+80): one immutable C; exact request retry only"
+purpose = "CommitScore in [T+64,T+80): one immutable C; exact request retry only"
+
+[node.04.reveal]
+label = "RevealScore in [T+80,T+96): canonical body + signature + salt"
+purpose = "RevealScore in [T+80,T+96): canonical body + signature + salt"
+
+[node.04.admission]
+label = "Atomic F04 commitment match and F03 authority / evidence admission; one event"
+purpose = "Atomic F04 commitment match and F03 authority / evidence admission; one event"
+
+[node.04.missing]
+label = "Absent / invalid / unrevealed report: no vote; explicit score zero is a real vote"
+purpose = "Absent / invalid / unrevealed report: no vote; explicit score zero is a real vote"
+
+[node.04.seal]
+label = "BeginAggregation at height at least T+96 seals eligible evaluator rows and input_digest"
+purpose = "BeginAggregation at height at least T+96 seals eligible evaluator rows and input_digest"
+
+[node.04.revocation]
+label = "Evaluator grant/key revoked before seal: row excluded; after seal no input change"
+purpose = "Evaluator grant/key revoked before seal: row excluded; after seal no input change"
+
+[node.04.chunk]
+label = "Process exactly min of 8 and remaining workers in ascending frozen WorkerId order"
+purpose = "Process exactly min of 8 and remaining workers in ascending frozen WorkerId order"
+
+[node.04.absent]
+label = "INSUFFICIENT_QUORUM: quality absent; reward weight 0"
+purpose = "INSUFFICIENT_QUORUM: quality absent; reward weight 0"
+
+[node.04.median]
+label = "Sort bounded scores; lower median at index floor of (n-1)/2"
+purpose = "Sort bounded scores; lower median at index floor of (n-1)/2"
+
+[node.04.zero]
+label = "SCORED_ZERO: measured score 0; reward weight 0"
+purpose = "SCORED_ZERO: measured score 0; reward weight 0"
+
+[node.04.positive]
+label = "SCORED_POSITIVE: raw median is reward weight"
+purpose = "SCORED_POSITIVE: raw median is reward weight"
+
+[node.04.cursor]
+label = "Persist whole chunk with input_digest, output rows and next cursor atomically"
+purpose = "Persist whole chunk with input_digest, output rows and next cursor atomically"
+
+[node.04.provisional]
+label = "Cursor complete remains provisional and unclaimable"
+purpose = "Cursor complete remains provisional and unclaimable"
+
+[node.04.final]
+label = "Atomic Finalize: aggregate root + F06 exact reserve disposition + F07 history + terminal status"
+purpose = "Atomic Finalize: aggregate root + F06 exact reserve disposition + F07 history + terminal status"
+
+[node.04.retry]
+label = "Crash recovery reads committed cursor; stale cursor refuses; no processed worker repeated"
+purpose = "Crash recovery reads committed cursor; stale cursor refuses; no processed worker repeated"
+
+[node.04.quorum]
+label = "At least 3 distinct eligible explicit votes for this worker?"
+purpose = "At least 3 distinct eligible explicit votes for this worker?"
+
+[diagram.05]
+title = "Conserved funded rewards"
+file = "05-conserved-rewards.mmd"
+purpose = "Track exact existing-asset deposits, reservation, largest-remainder allocation, fixed-recipient claims, lawful expiry, safe pruning and Free-only refunds."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid monetary arrows are exact ledger movements with stated native transfer boundaries; dotted edges assert conservation or preserve a refused operation. Internal reserve and terminal seal are not independently selectable calls."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/integration-map.kvx", "../contracts/operation-registry.json"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F05-aggregation.kvx", "../features/F06-rewards.kvx", "../features/F08-admission.kvx"]
+requirements = ["AI.F06-R01", "AI.F06-R02", "AI.F06-R06", "AI.F06-R08", "AI.F06-R09", "AI.F06-R10", "AI.F06-R11", "AI.F06-R13", "AI.F06-R14", "AI.F06-R15", "AI.F06-R16", "AI.F06-R19", "AI.F06-R20", "AI.F06-R21", "AI.F06-R22", "AI.F06-R25"]
+acceptance_cases = ["F06-A01", "F06-A02", "F06-A04", "F06-A05", "F06-A06", "F06-A07", "F06-A08", "F06-A09", "F06-A10", "F06-A11", "F06-A12", "F06-A14", "F06-A16", "F06-A19"]
+invariant_1 = "tracked_deposits = tracked_refunds + total_claimed + Free + Reserved + Liability after every success."
+invariant_2 = "Proof-bound sight balance covers Free+Reserved+Liability; unexplained surplus is unaccounted."
+invariant_3 = "One immutable asset/account/refund recipient and optional immutable creation-time Treasury; funding requires true irrevocable consent."
+invariant_4 = "Positive weights allocate the entire frozen budget using checked u256 products and largest remainders; no owner/evaluator cut."
+invariant_5 = "No positive score releases the whole budget to Free; no fallback reward."
+invariant_6 = "Claims pay exactly one frozen recipient atomically before terminal_height+4096; expiry releases unpaid liability once."
+invariant_7 = "No live dictionary reference or unsafe oldest claim record is overwritten to admit new work."
+node_count = 19
+
+[node.05.funder]
+label = "Kind0 Market Owner or immutable optional Treasury; explicit irrevocable consent"
+purpose = "Kind0 Market Owner or immutable optional Treasury; explicit irrevocable consent"
+
+[node.05.deposit]
+label = "One exact principal-funded native transfer to registered rewards account"
+purpose = "One exact principal-funded native transfer to registered rewards account"
+
+[node.05.free]
+label = "Free F"
+purpose = "Free F"
+
+[node.05.reserved]
+label = "Reserved R: one immutable prefunded epoch budget B"
+purpose = "Reserved R: one immutable prefunded epoch budget B"
+
+[node.05.math]
+label = "q_i = floor of B*s_i/S using checked u256; r_i = B*s_i modulo S"
+purpose = "q_i = floor of B*s_i/S using checked u256; r_i = B*s_i modulo S"
+
+[node.05.residual]
+label = "L = B - sum of q_i; largest remainders gain one; ties ascending WorkerId"
+purpose = "L = B - sum of q_i; largest remainders gain one; ties ascending WorkerId"
+
+[node.05.liability]
+label = "Liability C: immutable allocation root and frozen recipient entitlements"
+purpose = "Liability C: immutable allocation root and frozen recipient entitlements"
+
+[node.05.claim]
+label = "Permissionless single claim: positive amount, unclaimed, height before expiry"
+purpose = "Permissionless single claim: positive amount, unclaimed, height before expiry"
+
+[node.05.transfer]
+label = "One exact ProgramSpend payment to frozen recipient; mark claimed in same commit"
+purpose = "One exact ProgramSpend payment to frozen recipient; mark claimed in same commit"
+
+[node.05.paid]
+label = "total_claimed P"
+purpose = "total_claimed P"
+
+[node.05.expiry]
+label = "At terminal_height+4096: unclaimed C moves to F once; no transfer"
+purpose = "At terminal_height+4096: unclaimed C moves to F once; no transfer"
+
+[node.05.refund]
+label = "WindingDown: permissionless refund of Free only to immutable refund recipient"
+purpose = "WindingDown: permissionless refund of Free only to immutable refund recipient"
+
+[node.05.refunded]
+label = "tracked_refunds X; monotonic refund cursor prevents duplicate payment"
+purpose = "tracked_refunds X; monotonic refund cursor prevents duplicate payment"
+
+[node.05.dictionary]
+label = "256 immutable worker / recipient dictionary pairs; live references cannot be replaced"
+purpose = "256 immutable worker / recipient dictionary pairs; live references cannot be replaced"
+
+[node.05.retention]
+label = "32 completed epochs; safe oldest pruning only; unsafe ring or dictionary blocks opening"
+purpose = "32 completed epochs; safe oldest pruning only; unsafe ring or dictionary blocks opening"
+
+[node.05.invariant]
+label = "After success: tracked_deposits D = X + P + F + R + C; sight balance at least F+R+C"
+purpose = "After success: tracked_deposits D = X + P + F + R + C; sight balance at least F+R+C"
+
+[node.05.surplus]
+label = "Unsolicited physical excess is unaccounted; never Free or spend authority"
+purpose = "Unsolicited physical excess is unaccounted; never Free or spend authority"
+
+[node.05.failure]
+label = "Any host transfer / state / event refusal commits no business effects; native fees remain separate"
+purpose = "Any host transfer / state / event refusal commits no business effects; native fees remain separate"
+
+[node.05.score]
+label = "Atomic terminal result has positive total weight S?"
+purpose = "Atomic terminal result has positive total weight S?"
+
+[diagram.06]
+title = "Evidence privacy and finalized reads"
+file = "06-evidence-privacy-finalized-reads.mmd"
+purpose = "Keep encrypted content custody and revocable access separate from public commitments, then require coherent same-root state capture and independent finality before canonical views/events."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows identify ciphertext publication/retrieval, independently checked evidence and proof-gated projection. The dotted health path carries expiring observations only."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/integration-map.kvx", "../contracts/wire.schema.json"]
+linked_feature_files = ["../features/F02-workers.kvx", "../features/F03-evaluators.kvx", "../features/F09-artifacts.kvx", "../features/F10-views-sdk.kvx"]
+requirements = ["AI.F09-R01", "AI.F09-R11", "AI.F09-R15", "AI.F09-R17", "AI.F09-R18", "AI.F09-R19", "AI.F09-R21", "AI.F09-R22", "AI.F09-R27", "AI.F09-R28", "AI.F10-R008", "AI.F10-R014", "AI.F10-R015", "AI.F10-R019", "AI.F10-R020", "AI.F10-R021", "AI.F10-R025", "AI.F10-R029"]
+acceptance_cases = ["F09-A09", "F09-A10", "F09-A11", "F09-A12", "F09-A20", "F09-A24", "F10-A01", "F10-A02", "F10-A05", "F10-A06", "F10-A11", "F10-A13", "F10-A14"]
+invariant_1 = "Private public commitments identify randomized authenticated ciphertext, never an unsalted plaintext secret digest."
+invariant_2 = "Current task-purpose-principal grants and revocations govern key release; old snapshot possession gives no access authority."
+invariant_3 = "Evidence root, artifact manifest root, report digest and native root are distinct types and verification claims."
+invariant_4 = "Read-only discovery selectors are kind0 with sequence0 and zero epoch/config/roster selectors; actual returned bindings remain exact."
+invariant_5 = "Complete maximum state capture uses exactly 24 aligned 8192-byte chunks at one native root and state digest; heads cannot be joined."
+invariant_6 = "Checkpoint rank at least4 for the same root/batch gates finalized publication; sequencer signature/depth/time alone cannot."
+invariant_7 = "Snapshot rows, cursor and outbox commit together; private data never enters public views/events."
+node_count = 23
+
+[node.06.private]
+label = "Private prompt / dataset / output / explanation"
+purpose = "Private prompt / dataset / output / explanation"
+
+[node.06.encrypt]
+label = "Random object key + random frame nonce; XChaCha20-Poly1305 and context-bound associated data"
+purpose = "Random object key + random frame nonce; XChaCha20-Poly1305 and context-bound associated data"
+
+[node.06.object]
+label = "Durable ciphertext object: bounded chunks, content tree and typed manifest root"
+purpose = "Durable ciphertext object: bounded chunks, content tree and typed manifest root"
+
+[node.06.acl]
+label = "Current task / principal / purpose / generation / expiry authorization"
+purpose = "Current task / principal / purpose / generation / expiry authorization"
+
+[node.06.key]
+label = "Approved service KMS releases keys only under current grant"
+purpose = "Approved service KMS releases keys only under current grant"
+
+[node.06.bytes]
+label = "Authorized consumer verifies tags, exact stream, lengths, manifest and task bindings"
+purpose = "Authorized consumer verifies tags, exact stream, lengths, manifest and task bindings"
+
+[node.06.declaration]
+label = "Separate rights declaration / reproduction / availability dispositions"
+purpose = "Separate rights declaration / reproduction / availability dispositions"
+
+[node.06.manifest]
+label = "Evidence manifest: frozen rubric / mode / task set / generations / exact score pairs"
+purpose = "Evidence manifest: frozen rubric / mode / task set / generations / exact score pairs"
+
+[node.06.compact]
+label = "Onchain: compact evidence seal, score report and commitment roots only"
+purpose = "Onchain: compact evidence seal, score report and commitment roots only"
+
+[node.06.conclusions]
+label = "Binding / signatures / integrity / availability / declared rights / reproduction / quality remain separate"
+purpose = "Binding / signatures / integrity / availability / declared rights / reproduction / quality remain separate"
+
+[node.06.selector]
+label = "READ_HEADER 0x0A01 / READ_STATE_CHUNK 0x0A02; kind0 and actor_sequence 0"
+purpose = "READ_HEADER 0x0A01 / READ_STATE_CHUNK 0x0A02; kind0 and actor_sequence 0"
+
+[node.06.discovery]
+label = "Selector epoch/config 0 and zero roster; chain/program/market/expiry still mandatory"
+purpose = "Selector epoch/config 0 and zero roster; chain/program/market/expiry still mandatory"
+
+[node.06.chunks]
+label = "At most 24 aligned chunks of 8192 bytes; pin exact native root, sequence, revision and digest"
+purpose = "At most 24 aligned chunks of 8192 bytes; pin exact native root, sequence, revision and digest"
+
+[node.06.complete]
+label = "Reconstruct exact state at most 196608 bytes and verify view-state digest"
+purpose = "Reconstruct exact state at most 196608 bytes and verify view-state digest"
+
+[node.06.finality]
+label = "Independent checkpoint proof binds that same native root / batch; minimum rank 4"
+purpose = "Independent checkpoint proof binds that same native root / batch; minimum rank 4"
+
+[node.06.capture]
+label = "Atomic immutable snapshot + rows + projection cursor + outbox"
+purpose = "Atomic immutable snapshot + rows + projection cursor + outbox"
+
+[node.06.pages]
+label = "Authorized pinned SnapshotId pages; default 16 / maximum 32; cursor TTL 15 minutes"
+purpose = "Authorized pinned SnapshotId pages; default 16 / maximum 32; cursor TTL 15 minutes"
+
+[node.06.publish]
+label = "Admitted private producer and durable verified webhook delivery"
+purpose = "Admitted private producer and durable verified webhook delivery"
+
+[node.06.gap]
+label = "Missing chunk / unavailable pinned root / unrelated finality proof: capture refuses"
+purpose = "Missing chunk / unavailable pinned root / unrelated finality proof: capture refuses"
+
+[node.06.confidential]
+label = "Public views exclude plaintext, private locators, credentials and object keys"
+purpose = "Public views exclude plaintext, private locators, credentials and object keys"
+
+[node.06.revoked]
+label = "Revocation blocks new reads / key release; already disclosed bytes cannot be recalled"
+purpose = "Revocation blocks new reads / key release; already disclosed bytes cannot be recalled"
+
+[node.06.health]
+label = "Signed health is separate: expiry 30 seconds, public rollups need at least 20 samples"
+purpose = "Signed health is separate: expiry 30 seconds, public rollups need at least 20 samples"
+
+[node.06.truth]
+label = "Admitted assessment is authorized attribution; no semantic AI truth or execution proof"
+purpose = "Admitted assessment is authorized attribution; no semantic AI truth or execution proof"
+
+[diagram.07]
+title = "Native archive and authenticated retirement"
+file = "07-storage-archive-retirement.mmd"
+purpose = "Describe the candidate storage prerequisite, complete archives, independent archive attestations, current liveness checks, deterministic root-changing retirement and historical recovery."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid arrows are proposal approval, durable archive, deterministic admission/cleanup and recovery dependencies. New root and immutable historical proof identities are shown as separate outputs."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/integration-map.kvx", "../contracts/storage-lifecycle.kvx"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F06-rewards.kvx", "../features/F09-artifacts.kvx", "../features/F10-views-sdk.kvx"]
+requirements = ["AI.F01-R039", "AI.F06-R26", "AI.F09-R23", "AI.F10-R034"]
+acceptance_cases = ["F06-A17", "F10-A13"]
+invariant_1 = "Application 192KiB retention is independent from native 512 blob /64MiB /4 staged blob /512KV bounds."
+invariant_2 = "Replay capture can add witness content and activity-keyed KV beyond the application value/manifest pair."
+invariant_3 = "Candidate profile retires only proven obsolete PAXAI namespace versions and eligible replay record/witness pairs."
+invariant_4 = "Two separately administered archive signatures follow exact durable inventory verification; signatures are an approved availability trust assumption."
+invariant_5 = "All supported shared/principal heads, manifests, values, artifacts, replay and prepared transitions participate in current transitive liveness checks."
+invariant_6 = "Unknown reference formats, current-root races, missing provenance/archive/reserve and full live pinned stores refuse atomically."
+invariant_7 = "Actual native deletions change the canonical current root through deterministic native commit; original historical proofs remain valid against original archived roots."
+invariant_8 = "Finite capacity with reserved terminal obligations remains the only advertised profile until continuous-operation approval and qualification."
+node_count = 22
+
+[node.07.bounds]
+label = "Unchanged native caps: 512 blobs / 64 MiB / 4 staged blobs / 512 KV"
+purpose = "Unchanged native caps: 512 blobs / 64 MiB / 4 staged blobs / 512 KV"
+
+[node.07.mutation]
+label = "One application value + manifest; replay capture may add witness blob and replay KV"
+purpose = "One application value + manifest; replay capture may add witness blob and replay KV"
+
+[node.07.finite]
+label = "Until lifecycle qualified: finite mutation budget; NO_CONTINUOUS_OPERATION"
+purpose = "Until lifecycle qualified: finite mutation budget; NO_CONTINUOUS_OPERATION"
+
+[node.07.reserve]
+label = "Root-bound capacity admission preserves measured pending claim / exit obligations"
+purpose = "Root-bound capacity admission preserves measured pending claim / exit obligations"
+
+[node.07.profile]
+label = "Owner-approved versioned Programs maintenance profile, controller, hot horizon and archive keys"
+purpose = "Owner-approved versioned Programs maintenance profile, controller, hot horizon and archive keys"
+
+[node.07.snapshot]
+label = "Complete canonical snapshot + contiguous logs + witnesses + metadata proofs + authority history"
+purpose = "Complete canonical snapshot + contiguous logs + witnesses + metadata proofs + authority history"
+
+[node.07.archiveA]
+label = "Independent archive A: persist bytes, verify digest / root / continuity, durable inventory"
+purpose = "Independent archive A: persist bytes, verify digest / root / continuity, durable inventory"
+
+[node.07.archiveB]
+label = "Independent archive B: same immutable manifest and independent durable inventory"
+purpose = "Independent archive B: same immutable manifest and independent durable inventory"
+
+[node.07.cert]
+label = "Candidate 2-of-2 enrolled archive signatures; availability trust separate from finality"
+purpose = "Candidate 2-of-2 enrolled archive signatures; availability trust separate from finality"
+
+[node.07.keeper]
+label = "Keeper persists exact bounded request / certificate / submission identity before sending"
+purpose = "Keeper persists exact bounded request / certificate / submission identity before sending"
+
+[node.07.request]
+label = "Maintenance request: expected global root / sequence, verified finalized cutoff, at most 3 candidates"
+purpose = "Maintenance request: expected global root / sequence, verified finalized cutoff, at most 3 candidates"
+
+[node.07.provenance]
+label = "Verify historical namespace / replay origin under original authenticated roots"
+purpose = "Verify historical namespace / replay origin under original authenticated roots"
+
+[node.07.live]
+label = "Recompute transitive live references across every supported Programs namespace and staged view"
+purpose = "Recompute transitive live references across every supported Programs namespace and staged view"
+
+[node.07.pinned]
+label = "Current heads / manifests / values / artifacts / replay witnesses / prepared transitions remain pinned"
+purpose = "Current heads / manifests / values / artifacts / replay witnesses / prepared transitions remain pinned"
+
+[node.07.unknown]
+label = "Unknown reference format, stale root, absent archive or reserve: refuse atomically"
+purpose = "Unknown reference format, stale root, absent archive or reserve: refuse atomically"
+
+[node.07.retire]
+label = "Normal native prepare / commit / journal: deterministic deletion and paired replay KV retirement"
+purpose = "Normal native prepare / commit / journal: deterministic deletion and paired replay KV retirement"
+
+[node.07.outcome]
+label = "Explicit new canonical root and bounded receipt-backed outcome; replica replay agrees"
+purpose = "Explicit new canonical root and bounded receipt-backed outcome; replica replay agrees"
+
+[node.07.history]
+label = "Historical roots / proofs / receipts unchanged in authenticated archive material"
+purpose = "Historical roots / proofs / receipts unchanged in authenticated archive material"
+
+[node.07.restore]
+label = "Independent restore / historical proof adapter reconstructs exact old state and claims"
+purpose = "Independent restore / historical proof adapter reconstructs exact old state and claims"
+
+[node.07.recovery]
+label = "Crash before commit: prior complete table; after commit: new complete table and exact root"
+purpose = "Crash before commit: prior complete table; after commit: new complete table and exact root"
+
+[node.07.capacity]
+label = "Cleanup restores headroom only after commit; planned deletions do not credit additions early"
+purpose = "Cleanup restores headroom only after commit; planned deletions do not credit additions early"
+
+[node.07.blocked]
+label = "CONTINUOUS_OPERATION BLOCKED until profile approval and all storage / economic gates qualify"
+purpose = "CONTINUOUS_OPERATION BLOCKED until profile approval and all storage / economic gates qualify"
+
+[acceptance.storage]
+contract = "../contracts/storage-lifecycle.kvx"
+clauses = ["S14"]
+archive = "Exact snapshot-root reconstruction, all needed replay proofs, corrupt/missing/conflicting bytes refusal, independently durable matching certificate inventories and restore with one archive unavailable."
+retirement = "Shared and principal heads, dedup protection, paired replay retirement, unknown formats, root races, authority/profile/cutoff failures, bounded deletions, changed current root, preserved old proofs and untouched liabilities."
+capacity = "No early credit for staged deletes, reads are not reservations, concurrent reserve admission, crash-safe request identity, full pinned-store refusal and terminal obligation reserve."
+continuity = "More than512 distinct real native mutations, multiple checkpoints, archive/commit crashes, independent replica replay, historical proofs, balance proof consistency and one fixed-recipient claim after restart; all UNRUN."
+
+[diagram.08]
+title = "Implementation dependency waves"
+file = "08-implementation-dependency-waves.mmd"
+purpose = "Display local AI waves0..18 and exact task references independently from runtime AI service processes, then place release validation after actual deployment readiness."
+status = "PROPOSED_UNRUN"
+edge_semantics = "Solid wave arrows show earliest local dependency-wave order, not an all-to-all task dependency. Exact canonical per-task requires fields govern admission. Dotted notes state exclusive integration ownership and task qualification limits."
+linked_contract_files = ["../contracts/core.kvx", "../contracts/integration-map.kvx", "../contracts/storage-lifecycle.kvx"]
+linked_feature_files = ["../features/F01-markets.kvx", "../features/F02-workers.kvx", "../features/F03-evaluators.kvx", "../features/F04-commit-reveal.kvx", "../features/F05-aggregation.kvx", "../features/F06-rewards.kvx", "../features/F07-reputation.kvx", "../features/F08-admission.kvx", "../features/F09-artifacts.kvx", "../features/F10-views-sdk.kvx"]
+requirements = ["AI.F01-R039", "AI.F10-R034"]
+acceptance_cases = []
+invariant_1 = "All task references are ai.<task ID>; controlled workspace prerequisite is ai.P-WORKSPACE."
+invariant_2 = "Local waves0..18 are distinct from the canonical global wave numbering assigned in spec.kvx."
+invariant_3 = "Complete shared producers precede consumers; no unfinished producer is replaced by a fake boundary."
+invariant_4 = "One named integration writer serializes shared manifests, codec/state/dispatch, generators and routes."
+invariant_5 = "All AI implementation precedes global candidate assembly tasks60.1 and113.5; ai.RELEASE-CANDIDATE additionally requires actual deployment readiness60.8 and113.16."
+invariant_6 = "Future work remains UNRUN; documentation does not claim, implement, qualify, deploy or publish tasks."
+node_count = 25
+
+[node.08.w0]
+label = "LOCAL AI WAVE 0<br/>ai.P-WORKSPACE: controlled implementation workspace and exact ownership"
+purpose = "LOCAL AI WAVE 0; ai.P-WORKSPACE: controlled implementation workspace and exact ownership"
+
+[node.08.w1]
+label = "LOCAL AI WAVE 1<br/>ai.P-DEPLOYMENT<br/>ai.P-REAL-SERVICES<br/>ai.P-STORAGE-PROFILE<br/>ai.T-C01"
+purpose = "LOCAL AI WAVE 1; ai.P-DEPLOYMENT; ai.P-REAL-SERVICES; ai.P-STORAGE-PROFILE; ai.T-C01"
+
+[node.08.w2]
+label = "LOCAL AI WAVE 2<br/>ai.F01-T01<br/>ai.T-C02<br/>ai.T-S01"
+purpose = "LOCAL AI WAVE 2; ai.F01-T01; ai.T-C02; ai.T-S01"
+
+[node.08.w3]
+label = "LOCAL AI WAVE 3<br/>ai.F01-T02<br/>ai.F02-T01<br/>ai.F03-T01<br/>ai.F06-T01<br/>ai.F09-T01<br/>ai.T-C03<br/>ai.T-S02"
+purpose = "LOCAL AI WAVE 3; ai.F01-T02; ai.F02-T01; ai.F03-T01; ai.F06-T01; ai.F09-T01; ai.T-C03; ai.T-S02"
+
+[node.08.w4]
+label = "LOCAL AI WAVE 4<br/>ai.F04-T01<br/>ai.F07-T01<br/>ai.F08-T01<br/>ai.F09-T03<br/>ai.F10-T01<br/>ai.T-S03"
+purpose = "LOCAL AI WAVE 4; ai.F04-T01; ai.F07-T01; ai.F08-T01; ai.F09-T03; ai.F10-T01; ai.T-S03"
+
+[node.08.w5]
+label = "LOCAL AI WAVE 5<br/>ai.F03-T02<br/>ai.F05-T01<br/>ai.F10-T02<br/>ai.T-C04"
+purpose = "LOCAL AI WAVE 5; ai.F03-T02; ai.F05-T01; ai.F10-T02; ai.T-C04"
+
+[node.08.w6]
+label = "LOCAL AI WAVE 6<br/>ai.F05-T02<br/>ai.F10-T03<br/>ai.F10-T05"
+purpose = "LOCAL AI WAVE 6; ai.F05-T02; ai.F10-T03; ai.F10-T05"
+
+[node.08.w7]
+label = "LOCAL AI WAVE 7<br/>ai.F02-T02<br/>ai.F06-T02<br/>ai.F10-T04<br/>ai.F10-T07"
+purpose = "LOCAL AI WAVE 7; ai.F02-T02; ai.F06-T02; ai.F10-T04; ai.F10-T07"
+
+[node.08.w8]
+label = "LOCAL AI WAVE 8<br/>ai.F08-T02"
+purpose = "LOCAL AI WAVE 8; ai.F08-T02"
+
+[node.08.w9]
+label = "LOCAL AI WAVE 9<br/>ai.F01-T03-EPOCH"
+purpose = "LOCAL AI WAVE 9; ai.F01-T03-EPOCH"
+
+[node.08.w10]
+label = "LOCAL AI WAVE 10<br/>ai.F01-T04<br/>ai.F08-T03"
+purpose = "LOCAL AI WAVE 10; ai.F01-T04; ai.F08-T03"
+
+[node.08.w11]
+label = "LOCAL AI WAVE 11<br/>ai.F02-T03<br/>ai.F09-T02"
+purpose = "LOCAL AI WAVE 11; ai.F02-T03; ai.F09-T02"
+
+[node.08.w12]
+label = "LOCAL AI WAVE 12<br/>ai.F01-T04-SERVICE<br/>ai.F03-T03<br/>ai.F09-T04<br/>ai.F10-T06"
+purpose = "LOCAL AI WAVE 12; ai.F01-T04-SERVICE; ai.F03-T03; ai.F09-T04; ai.F10-T06"
+
+[node.08.w13]
+label = "LOCAL AI WAVE 13<br/>ai.F04-T02"
+purpose = "LOCAL AI WAVE 13; ai.F04-T02"
+
+[node.08.w14]
+label = "LOCAL AI WAVE 14<br/>ai.F04-T03<br/>ai.F05-T03"
+purpose = "LOCAL AI WAVE 14; ai.F04-T03; ai.F05-T03"
+
+[node.08.w15]
+label = "LOCAL AI WAVE 15<br/>ai.F03-T04<br/>ai.F06-T03"
+purpose = "LOCAL AI WAVE 15; ai.F03-T04; ai.F06-T03"
+
+[node.08.w16]
+label = "LOCAL AI WAVE 16<br/>ai.F01-T03-CLOSE<br/>ai.F02-T04<br/>ai.F07-T02<br/>ai.T-S04"
+purpose = "LOCAL AI WAVE 16; ai.F01-T03-CLOSE; ai.F02-T04; ai.F07-T02; ai.T-S04"
+
+[node.08.w17]
+label = "LOCAL AI WAVE 17<br/>ai.F06-T04<br/>ai.F07-T03<br/>ai.F10-T02-FULL"
+purpose = "LOCAL AI WAVE 17; ai.F06-T04; ai.F07-T03; ai.F10-T02-FULL"
+
+[node.08.w18]
+label = "LOCAL AI WAVE 18<br/>ai.RELEASE-CANDIDATE"
+purpose = "LOCAL AI WAVE 18; ai.RELEASE-CANDIDATE"
+
+[node.08.ownership]
+label = "One integration writer for workspace manifests, common codec/state/dispatch, SDK generators and shared routes"
+purpose = "One integration writer for workspace manifests, common codec/state/dispatch, SDK generators and shared routes"
+
+[node.08.cuts]
+label = "Complete producers first: evaluator codec before admission; reward/history primitives before atomic finalization"
+purpose = "Complete producers first: evaluator codec before admission; reward/history primitives before atomic finalization"
+
+[node.08.services]
+label = "AI runtime workers are service processes; developer task assignments are a separate implementation plan"
+purpose = "AI runtime workers are service processes; developer task assignments are a separate implementation plan"
+
+[node.08.assemble]
+label = "Global candidate assembly: canonical tasks 60.1 and 113.5 follow AI implementation"
+purpose = "Global candidate assembly: canonical tasks 60.1 and 113.5 follow AI implementation"
+
+[node.08.deployment]
+label = "Actual deployment readiness: canonical tasks 60.8 and 113.16"
+purpose = "Actual deployment readiness: canonical tasks 60.8 and 113.16"
+
+[node.08.gates]
+label = "Each future task: implementation first, one build + one focused verify, at most two repairs, 30 minutes"
+purpose = "Each future task: implementation first, one build + one focused verify, at most two repairs, 30 minutes"
+
+[dependency.ai.P-WORKSPACE]
+task = "ai.P-WORKSPACE"
+local_wave = 0
+requires = []
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.P-DEPLOYMENT]
+task = "ai.P-DEPLOYMENT"
+local_wave = 1
+requires = ["ai.P-WORKSPACE"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.P-REAL-SERVICES]
+task = "ai.P-REAL-SERVICES"
+local_wave = 1
+requires = ["ai.P-WORKSPACE"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.P-STORAGE-PROFILE]
+task = "ai.P-STORAGE-PROFILE"
+local_wave = 1
+requires = ["ai.P-WORKSPACE"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-C01]
+task = "ai.T-C01"
+local_wave = 1
+requires = ["ai.P-WORKSPACE"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T01]
+task = "ai.F01-T01"
+local_wave = 2
+requires = ["ai.T-C01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-C02]
+task = "ai.T-C02"
+local_wave = 2
+requires = ["ai.T-C01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-S01]
+task = "ai.T-S01"
+local_wave = 2
+requires = ["ai.P-STORAGE-PROFILE", "ai.P-DEPLOYMENT"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T02]
+task = "ai.F01-T02"
+local_wave = 3
+requires = ["ai.F01-T01", "ai.T-C02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F02-T01]
+task = "ai.F02-T01"
+local_wave = 3
+requires = ["ai.T-C02", "ai.F01-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F03-T01]
+task = "ai.F03-T01"
+local_wave = 3
+requires = ["ai.T-C01", "ai.F01-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F06-T01]
+task = "ai.F06-T01"
+local_wave = 3
+requires = ["ai.T-C01", "ai.T-C02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F09-T01]
+task = "ai.F09-T01"
+local_wave = 3
+requires = ["ai.T-C01", "ai.T-C02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-C03]
+task = "ai.T-C03"
+local_wave = 3
+requires = ["ai.T-C02", "ai.P-DEPLOYMENT"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-S02]
+task = "ai.T-S02"
+local_wave = 3
+requires = ["ai.T-S01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F04-T01]
+task = "ai.F04-T01"
+local_wave = 4
+requires = ["ai.T-C01", "ai.F03-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F07-T01]
+task = "ai.F07-T01"
+local_wave = 4
+requires = ["ai.T-C02", "ai.F01-T01", "ai.F02-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F08-T01]
+task = "ai.F08-T01"
+local_wave = 4
+requires = ["ai.T-C02", "ai.F01-T01", "ai.F02-T01", "ai.F03-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F09-T03]
+task = "ai.F09-T03"
+local_wave = 4
+requires = ["ai.F09-T01", "ai.P-REAL-SERVICES"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T01]
+task = "ai.F10-T01"
+local_wave = 4
+requires = ["ai.T-C01", "ai.T-C02", "ai.F01-T01", "ai.F02-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-S03]
+task = "ai.T-S03"
+local_wave = 4
+requires = ["ai.T-S02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F03-T02]
+task = "ai.F03-T02"
+local_wave = 5
+requires = ["ai.F03-T01", "ai.F01-T02", "ai.F08-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F05-T01]
+task = "ai.F05-T01"
+local_wave = 5
+requires = ["ai.T-C01", "ai.F03-T01", "ai.F04-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T02]
+task = "ai.F10-T02"
+local_wave = 5
+requires = ["ai.F10-T01", "ai.T-C03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-C04]
+task = "ai.T-C04"
+local_wave = 5
+requires = ["ai.T-S03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F05-T02]
+task = "ai.F05-T02"
+local_wave = 6
+requires = ["ai.F05-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T03]
+task = "ai.F10-T03"
+local_wave = 6
+requires = ["ai.F10-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T05]
+task = "ai.F10-T05"
+local_wave = 6
+requires = ["ai.F10-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F02-T02]
+task = "ai.F02-T02"
+local_wave = 7
+requires = ["ai.F02-T01", "ai.F08-T01", "ai.F09-T01", "ai.F10-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F06-T02]
+task = "ai.F06-T02"
+local_wave = 7
+requires = ["ai.F06-T01", "ai.F01-T01", "ai.F02-T01", "ai.F05-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T04]
+task = "ai.F10-T04"
+local_wave = 7
+requires = ["ai.F10-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T07]
+task = "ai.F10-T07"
+local_wave = 7
+requires = ["ai.F10-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F08-T02]
+task = "ai.F08-T02"
+local_wave = 8
+requires = ["ai.F08-T01", "ai.F06-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T03-EPOCH]
+task = "ai.F01-T03-EPOCH"
+local_wave = 9
+requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T04]
+task = "ai.F01-T04"
+local_wave = 10
+requires = ["ai.F01-T02", "ai.F02-T01", "ai.F09-T01", "ai.F01-T03-EPOCH"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F08-T03]
+task = "ai.F08-T03"
+local_wave = 10
+requires = ["ai.F08-T02", "ai.F10-T03", "ai.F01-T03-EPOCH"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F02-T03]
+task = "ai.F02-T03"
+local_wave = 11
+requires = ["ai.F02-T02", "ai.F01-T04", "ai.P-REAL-SERVICES"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F09-T02]
+task = "ai.F09-T02"
+local_wave = 11
+requires = ["ai.F09-T01", "ai.F01-T04", "ai.F03-T01"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T04-SERVICE]
+task = "ai.F01-T04-SERVICE"
+local_wave = 12
+requires = ["ai.F01-T04", "ai.F02-T03", "ai.F10-T03", "ai.P-REAL-SERVICES"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F03-T03]
+task = "ai.F03-T03"
+local_wave = 12
+requires = ["ai.F03-T02", "ai.F04-T01", "ai.F09-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F09-T04]
+task = "ai.F09-T04"
+local_wave = 12
+requires = ["ai.F09-T03", "ai.F02-T03", "ai.F10-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T06]
+task = "ai.F10-T06"
+local_wave = 12
+requires = ["ai.F10-T02", "ai.F02-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F04-T02]
+task = "ai.F04-T02"
+local_wave = 13
+requires = ["ai.F04-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F04-T03]
+task = "ai.F04-T03"
+local_wave = 14
+requires = ["ai.F04-T02", "ai.F10-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F05-T03]
+task = "ai.F05-T03"
+local_wave = 14
+requires = ["ai.F05-T02", "ai.F06-T02", "ai.F07-T01", "ai.F04-T02", "ai.F01-T03-EPOCH"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F03-T04]
+task = "ai.F03-T04"
+local_wave = 15
+requires = ["ai.F03-T03", "ai.F05-T03", "ai.T-C03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F06-T03]
+task = "ai.F06-T03"
+local_wave = 15
+requires = ["ai.F06-T02", "ai.F05-T03", "ai.T-C03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F01-T03-CLOSE]
+task = "ai.F01-T03-CLOSE"
+local_wave = 16
+requires = ["ai.F01-T02", "ai.F05-T03", "ai.F06-T03", "ai.F10-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F02-T04]
+task = "ai.F02-T04"
+local_wave = 16
+requires = ["ai.F02-T03", "ai.F03-T04", "ai.F10-T03", "ai.P-REAL-SERVICES"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F07-T02]
+task = "ai.F07-T02"
+local_wave = 16
+requires = ["ai.F07-T01", "ai.F05-T03", "ai.F06-T03", "ai.F08-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.T-S04]
+task = "ai.T-S04"
+local_wave = 16
+requires = ["ai.T-S01", "ai.T-S02", "ai.T-S03", "ai.F06-T03", "ai.F02-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F06-T04]
+task = "ai.F06-T04"
+local_wave = 17
+requires = ["ai.F06-T03", "ai.F10-T02", "ai.T-C04", "ai.T-S04"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F07-T03]
+task = "ai.F07-T03"
+local_wave = 17
+requires = ["ai.F07-T02", "ai.T-C03", "ai.F10-T02"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.F10-T02-FULL]
+task = "ai.F10-T02-FULL"
+local_wave = 17
+requires = ["ai.F10-T02", "ai.F03-T04", "ai.F05-T03", "ai.F06-T03", "ai.F07-T02", "ai.F08-T03", "ai.F09-T02", "ai.F02-T03"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+
+[dependency.ai.RELEASE-CANDIDATE]
+task = "ai.RELEASE-CANDIDATE"
+local_wave = 18
+requires = ["ai.F01-T03-CLOSE", "ai.F02-T04", "ai.F03-T04", "ai.F04-T03", "ai.F06-T04", "ai.F07-T03", "ai.F08-T03", "ai.F09-T04", "ai.F10-T04", "ai.F10-T05", "ai.F10-T06", "ai.F10-T07", "ai.T-S04", "ai.F01-T04-SERVICE", "ai.F10-T02-FULL", "60.8", "113.16"]
+status = "FUTURE_UNRUN"
+canonical_admission = "../../spec.kvx"
+

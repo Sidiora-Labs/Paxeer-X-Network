@@ -1,0 +1,615 @@
+{
+  "schema_version": 1,
+  "id": "F10",
+  "title": "Finalized market snapshots, queries, SDK/client and operator projections",
+  "status": "SPECIFICATION_ONLY",
+  "dependencies": {
+    "minimal": [
+      "core",
+      "integration-map",
+      "F01",
+      "F02"
+    ],
+    "full_components": [
+      "F03",
+      "F04",
+      "F05",
+      "F06",
+      "F07",
+      "F08",
+      "F09"
+    ],
+    "note": "Deterministic application producers do not depend on full F10; finalized read primitives precede external runner release."
+  },
+  "requirements": [
+    {
+      "id": "F10-R001",
+      "requirement": "A client shall inspect one coherent AI market: policy, admitted worker/evaluator identities, capabilities, task commitments, accepted evaluation status, epoch results, reputation and explicitly funded rewards. Discovery lets customers select a compatible AI provider and lets operators identify unavailable evidence, evaluator disagreement and service failures. These views prove only facts supported by their stated evidence. They never establish semantic model quality, real GPU execution or commercial demand merely through membership or a numeric score.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "A client shall inspect one coherent AI market: policy, admitted worker/evaluator identities, capabilities, task commitments, accepted evaluation status, epoch results, reputation and explicitly funded rewards. Discovery lets customers select a compatible AI provider and lets operators identify unavailable evidence, evaluator disagreement and service failures. These views prove only facts supported by their stated evidence. They never establish semantic model quality, real GPU execution or commercial demand merely through membership or a numeric score."
+    },
+    {
+      "id": "F10-R002",
+      "requirement": "V1 provides read-only market snapshots, participant pagination, historical snapshots, typed client operation plans, precise submission/outcome tracking, finalized event publication and separate operational observations. Minimal discovery after F01/F02 exposes policy and worker declarations; later feature availability is explicit. F10 does not implement scoring, rewards, private result retrieval, model execution, a new custody service, a new native module, a replacement signing stack or a new finality rule. It does not invent financial quotes for products absent from this design.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "V1 provides read-only market snapshots, participant pagination, historical snapshots, typed client operation plans, precise submission/outcome tracking, finalized event publication and separate operational observations. Minimal discovery after F01/F02 exposes policy and worker declarations; later feature availability is explicit. F10 does not implement scoring, rewards, private result retrieval, model execution, a new custody service, a new native module, a replacement signing stack or a new finality rule. It does not invent financial quotes for products absent from this design."
+    },
+    {
+      "id": "F10-R003",
+      "requirement": "Existing agent/crates/layerx-client/src/client.rs read_program uses immutable snapshot constraints and verified signed evidence; agent/crates/layerx-client/src/lni/program_read.rs binds minimum sequence and optional state root. This evidence is not by itself checkpoint finality. Existing agent/crates/layerx-proof/src/checkpoint.rs and settlement.rs, together with agent/crates/layerx-types/src/verify.rs, provide evidence-gated verification levels and identifiers. The feature must join the exact snapshot root to actual existing finality evidence through these boundaries. A new cache flag or elapsed time cannot construct finality.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Existing agent/crates/layerx-client/src/client.rs read_program uses immutable snapshot constraints and verified signed evidence; agent/crates/layerx-client/src/lni/program_read.rs binds minimum sequence and optional state root. This evidence is not by itself checkpoint finality. Existing agent/crates/layerx-proof/src/checkpoint.rs and settlement.rs, together with agent/crates/layerx-types/src/verify.rs, provide evidence-gated verification levels and identifiers. The feature must join the exact snapshot root to actual existing finality evidence through these boundaries. A new cache flag or elapsed time cannot construct finality."
+    },
+    {
+      "id": "F10-R004",
+      "requirement": "Existing platform/hosted/indexer/src/layerx.rs decodes canonical native receipts/effects. store.rs commits projections and cursor together and refuses rollback across its recorded finalized boundary. Its depth-based local cursor is not sufficient authority for the word finalized in this feature. Proposed ai_market.rs projection and ai_views.rs adapter must separately require verified checkpoint evidence for the same chain, batch/root and position before releasing a finalized snapshot. Missing binding produces FinalityUnavailable rather than a successful finalized response. Existing platform/hosted/gateway/src/lib.rs recognizes POST /v1/programs/read, /simulate and /call. AI market-specific routes below are proposed additions; they do not exist merely because generic reads exist.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Existing platform/hosted/indexer/src/layerx.rs decodes canonical native receipts/effects. store.rs commits projections and cursor together and refuses rollback across its recorded finalized boundary. Its depth-based local cursor is not sufficient authority for the word finalized in this feature. Proposed ai_market.rs projection and ai_views.rs adapter must separately require verified checkpoint evidence for the same chain, batch/root and position before releasing a finalized snapshot. Missing binding produces FinalityUnavailable rather than a successful finalized response. Existing platform/hosted/gateway/src/lib.rs recognizes POST /v1/programs/read, /simulate and /call. AI market-specific routes below are proposed additions; they do not exist merely because generic reads exist."
+    },
+    {
+      "id": "F10-R005",
+      "requirement": "Existing agent/crates/layerx-types/src/program_call.rs NativeProgramCall, agent/crates/layerx-client/src/submit.rs and receipt.rs remain authoritative for call encoding, exact-byte submission, uncertain outcomes and receipt resolution. Existing wallet review/approve/sign routes and agent/sdk/typescript/src/wallet.ts remain owner-consent paths. Proposed SDK convenience modules must compose these interfaces, never substitute the legacy intent ProgramCall or invent a new digest-only approval bypass. Existing platform/hosted/webhooks/src/events.rs, trusted.rs, hosted.rs and scheme.rs remain producer admission, verification labels, durable delivery and receiver authentication boundaries.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Existing agent/crates/layerx-types/src/program_call.rs NativeProgramCall, agent/crates/layerx-client/src/submit.rs and receipt.rs remain authoritative for call encoding, exact-byte submission, uncertain outcomes and receipt resolution. Existing wallet review/approve/sign routes and agent/sdk/typescript/src/wallet.ts remain owner-consent paths. Proposed SDK convenience modules must compose these interfaces, never substitute the legacy intent ProgramCall or invent a new digest-only approval bypass. Existing platform/hosted/webhooks/src/events.rs, trusted.rs, hosted.rs and scheme.rs remain producer admission, verification labels, durable delivery and receiver authentication boundaries."
+    },
+    {
+      "id": "F10-R006",
+      "requirement": "Proposed additions are programs/crates/layerx-programs-ai-market/src/queries.rs; platform/hosted/indexer/src/ai_market.rs; platform/hosted/gateway/src/ai_views.rs; platform/hosted/webhooks/src/ai_market.rs; agent/crates/layerx-client/src/ai_market.rs; agent/sdk/typescript/src/ai_market.ts; agent/sdk/python/layerx_sdk/ai_market.py; and new platform/sdk/schema/paxai-v1.kvx with generator support in platform/sdk/generators/src/main.rs. Paths are intended future implementation ownership, not a claim of present capability. Implementation, runtime and deployment qualification remain UNRUN.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Proposed additions are programs/crates/layerx-programs-ai-market/src/queries.rs; platform/hosted/indexer/src/ai_market.rs; platform/hosted/gateway/src/ai_views.rs; platform/hosted/webhooks/src/ai_market.rs; agent/crates/layerx-client/src/ai_market.rs; agent/sdk/typescript/src/ai_market.ts; agent/sdk/python/layerx_sdk/ai_market.py; and new platform/sdk/schema/paxai-v1.kvx with generator support in platform/sdk/generators/src/main.rs. Paths are intended future implementation ownership, not a claim of present capability. Implementation, runtime and deployment qualification remain UNRUN."
+    },
+    {
+      "id": "F10-R007",
+      "requirement": "The common contracts/core.kvx controls chain domain, MarketId, ProgramId, worker/evaluator/task identifiers, operation framing, state revision, epoch, policy and roster identity. A root is an exact 32-byte value of its declared kind; unlike kinds are not interchangeable. On deterministic and signed paths all integers are fixed-width unsigned big-endian and all reserved bytes are zero. Floating point, ambiguous absent values, duplicate fields, unknown enums and trailing bytes refuse. JSON presents identifiers/digests as exactly 64 lower-case hexadecimal characters, all u64/u128 quantities as canonical decimal strings without sign/leading zero, u32 scores as integers in 0..1000000, and booleans as JSON booleans. Missing data uses explicit status plus null, never a fabricated zero score, zero balance or empty endpoint.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "The common contracts/core.kvx controls chain domain, MarketId, ProgramId, worker/evaluator/task identifiers, operation framing, state revision, epoch, policy and roster identity. A root is an exact 32-byte value of its declared kind; unlike kinds are not interchangeable. On deterministic and signed paths all integers are fixed-width unsigned big-endian and all reserved bytes are zero. Floating point, ambiguous absent values, duplicate fields, unknown enums and trailing bytes refuse. JSON presents identifiers/digests as exactly 64 lower-case hexadecimal characters, all u64/u128 quantities as canonical decimal strings without sign/leading zero, u32 scores as integers in 0..1000000, and booleans as JSON booleans. Missing data uses explicit status plus null, never a fabricated zero score, zero balance or empty endpoint."
+    },
+    {
+      "id": "F10-R008",
+      "requirement": "SnapshotBindingV1 in canonical order is schema_version:u16=1, chain_domain32, program_id32, market_id32, observed_sequence:u64, execution_height:u64, batch_id32, native_state_root32, market_state_revision:u64, market_state_digest32, epoch_present:bool, epoch:u64, config_version:u64, policy_digest32, roster_present:bool, roster_digest32 (the common roster_hash, identical bytes), checkpoint_id32, settlement_reference_present:bool, settlement_reference_hash32, achieved_verification_rank:u8, publication_time_ms:u64, reserved8. Optional epoch/roster/settlement values use the core presence byte and encode their value only when present; a missing epoch is not epoch0. chain/program/market/native root/state digest/checkpoint are nonzero. The market state digest is SHA256(ASCII(\"PAXAI/view-state/v1\") || 00 || exact common serialized state bytes). It is an application integrity digest, not a new native proof root. publication_time_ms is an observer timestamp, not a deterministic execution clock. For fixed content identity SnapshotId = SHA256(ASCII(\"PAXAI/view/v1\") || 00 || canonical state-binding prefix through roster_digest, excluding checkpoint/settlement evidence fields, publication_time_ms and achieved rank); upgrading proof strength does not fabricate a different state. The response still carries the stronger actual evidence and its own publication time.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "SnapshotBindingV1 in canonical order is schema_version:u16=1, chain_domain32, program_id32, market_id32, observed_sequence:u64, execution_height:u64, batch_id32, native_state_root32, market_state_revision:u64, market_state_digest32, epoch_present:bool, epoch:u64, config_version:u64, policy_digest32, roster_present:bool, roster_digest32 (the common roster_hash, identical bytes), checkpoint_id32, settlement_reference_present:bool, settlement_reference_hash32, achieved_verification_rank:u8, publication_time_ms:u64, reserved8. Optional epoch/roster/settlement values use the core presence byte and encode their value only when present; a missing epoch is not epoch0. chain/program/market/native root/state digest/checkpoint are nonzero. The market state digest is SHA256(ASCII(\"PAXAI/view-state/v1\") || 00 || exact common serialized state bytes). It is an application integrity digest, not a new native proof root. publication_time_ms is an observer timestamp, not a deterministic execution clock. For fixed content identity SnapshotId = SHA256(ASCII(\"PAXAI/view/v1\") || 00 || canonical state-binding prefix through roster_digest, excluding checkpoint/settlement evidence fields, publication_time_ms and achieved rank); upgrading proof strength does not fabricate a different state. The response still carries the stronger actual evidence and its own publication time."
+    },
+    {
+      "id": "F10-R009",
+      "requirement": "A MarketSnapshot consists of binding, public market/header/policy summary, feature_availability[10], participant page, task summary, epoch summary, reward summary, history summary and evidence references. feature_availability is ten entries in F01..F10 order, status:u8 where 1=available,2=not-enabled,3=not-yet-produced,4=content-unavailable,5=unsupported-version; each nonavailable component is null. Complete canonical state <=196608 bytes is reconstructed through bounded application chunk selectors carried by generic ProgramRead before off-chain projection; the public page excludes private manifests. An evidence reference includes kind, digest32, byte_length:u32, authorized retrieval route identifier and verification disposition. A URI supplied by an untrusted worker is never proof authority.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "A MarketSnapshot consists of binding, public market/header/policy summary, feature_availability[10], participant page, task summary, epoch summary, reward summary, history summary and evidence references. feature_availability is ten entries in F01..F10 order, status:u8 where 1=available,2=not-enabled,3=not-yet-produced,4=content-unavailable,5=unsupported-version; each nonavailable component is null. Complete canonical state <=196608 bytes is reconstructed through bounded application chunk selectors carried by generic ProgramRead before off-chain projection; the public page excludes private manifests. An evidence reference includes kind, digest32, byte_length:u32, authorized retrieval route identifier and verification disposition. A URI supplied by an untrusted worker is never proof authority."
+    },
+    {
+      "id": "F10-R010",
+      "requirement": "ParticipantRow contains participant_kind:u8 worker=1/evaluator=2, stable participant_id32, owner_principal32, current generation:u64, current identity state, frozen-roster membership flag, frozen generation if present, eligibility flags, metadata_digest32, metadata_revision:u64, score_epoch_present:bool and score_epoch:u64, score_status:u8, score_ppm:u32 or null, entitlement_status:u8, reward_asset32 or null, earned_units:u128 or null, claimed_units:u128 or null, history_status and history commitment32 or null. Score status is present, no-admissible-score, insufficient-coverage, not-produced, unavailable, unsupported. Zero with present means actual zero; other statuses mean no number. Reward values are F06-backed entitlements/claims, never inferred by multiplying a display score by an advertised budget. Endpoint/capability manifest availability and integrity are separate fields; registry presence is not readiness.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "ParticipantRow contains participant_kind:u8 worker=1/evaluator=2, stable participant_id32, owner_principal32, current generation:u64, current identity state, frozen-roster membership flag, frozen generation if present, eligibility flags, metadata_digest32, metadata_revision:u64, score_epoch_present:bool and score_epoch:u64, score_status:u8, score_ppm:u32 or null, entitlement_status:u8, reward_asset32 or null, earned_units:u128 or null, claimed_units:u128 or null, history_status and history commitment32 or null. Score status is present, no-admissible-score, insufficient-coverage, not-produced, unavailable, unsupported. Zero with present means actual zero; other statuses mean no number. Reward values are F06-backed entitlements/claims, never inferred by multiplying a display score by an advertised budget. Endpoint/capability manifest availability and integrity are separate fields; registry presence is not readiness."
+    },
+    {
+      "id": "F10-R011",
+      "requirement": "HealthObservation is separately signed off-chain data: schema_version, market/worker/model/deployment identifiers, observer principal, observer_sequence:u64, observed_at_ms:u64, expires_at_ms:u64, advertised/transport/runner status, sample_count:u32, success_count:u32, latency_p50_ms:u32 or null, latency_p95_ms:u32 or null, error category, observation_signature64. It has no native_state_root claim and cannot raise eligibility. Samples never contain prompts, outputs, user IDs, API credentials or task locators. Service readiness expires after30000ms, matching F02. Metric rollups require at least20 samples before publishing per-worker latency/success aggregates; smaller counts are withheld with insufficient-samples. This threshold mitigates leakage but is not an anonymity guarantee.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "HealthObservation is separately signed off-chain data: schema_version, market/worker/model/deployment identifiers, observer principal, observer_sequence:u64, observed_at_ms:u64, expires_at_ms:u64, advertised/transport/runner status, sample_count:u32, success_count:u32, latency_p50_ms:u32 or null, latency_p95_ms:u32 or null, error category, observation_signature64. It has no native_state_root claim and cannot raise eligibility. Samples never contain prompts, outputs, user IDs, API credentials or task locators. Service readiness expires after30000ms, matching F02. Metric rollups require at least20 samples before publishing per-worker latency/success aggregates; smaller counts are withheld with insufficient-samples. This threshold mitigates leakage but is not an anonymity guarantee."
+    },
+    {
+      "id": "F10-R012",
+      "requirement": "PageRequestV1 contains schema_version, MarketId, SnapshotId or absent latest-finalized selector, participant_kind filter all/worker/evaluator, active_only:bool=false, limit:u8 default16 in1..32, cursor or absent. Unknown filters refuse. Sort workers before evaluators, then ascending stable ID bytes; never sort by a mutable online rank. Cursor is an opaque authenticated off-chain token <=1024 ASCII bytes. Its server-authenticated payload binds schema, tenant/principal visibility scope, MarketId, SnapshotId, hash of exact normalized filters, next ordinal:u16, expiry_ms:u64 and key generation:u32. Cursor lifetime900000ms. Query cursors are a new service contract, separate from existing webhook cursor encoding. No signing/key material is placed in the snapshot.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "PageRequestV1 contains schema_version, MarketId, SnapshotId or absent latest-finalized selector, participant_kind filter all/worker/evaluator, active_only:bool=false, limit:u8 default16 in1..32, cursor or absent. Unknown filters refuse. Sort workers before evaluators, then ascending stable ID bytes; never sort by a mutable online rank. Cursor is an opaque authenticated off-chain token <=1024 ASCII bytes. Its server-authenticated payload binds schema, tenant/principal visibility scope, MarketId, SnapshotId, hash of exact normalized filters, next ordinal:u16, expiry_ms:u64 and key generation:u32. Cursor lifetime900000ms. Query cursors are a new service contract, separate from existing webhook cursor encoding. No signing/key material is placed in the snapshot."
+    },
+    {
+      "id": "F10-R013",
+      "requirement": "Reader: public finalized canonical declarations where market privacy policy permits, authenticated developer principal for tenant/private views. Owner/operator: same read rights plus authorized operational diagnostics, no projection rewrite authority. Worker/evaluator: publish their own F02/F03 signed objects through their own contracts, not through a view endpoint. Indexer: verifies existing canonical evidence and writes derived tables, cannot mutate chain state or increase verification level. Finalized event producer: admitted private producer role, consumes verified projection/outbox facts. Webhook operator: dispatch authority only, cannot manufacture protocol facts. SDK signer: existing owner/delegate approval and native scopes; a read API credential is never signing authority.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Reader: public finalized canonical declarations where market privacy policy permits, authenticated developer principal for tenant/private views. Owner/operator: same read rights plus authorized operational diagnostics, no projection rewrite authority. Worker/evaluator: publish their own F02/F03 signed objects through their own contracts, not through a view endpoint. Indexer: verifies existing canonical evidence and writes derived tables, cannot mutate chain state or increase verification level. Finalized event producer: admitted private producer role, consumes verified projection/outbox facts. Webhook operator: dispatch authority only, cannot manufacture protocol facts. SDK signer: existing owner/delegate approval and native scopes; a read API credential is never signing authority."
+    },
+    {
+      "id": "F10-R014",
+      "requirement": "Every tenant-scoped lookup and cursor must recheck current session authorization/revocation; a cursor grants no additional access. Public fields must already be public commitments. External manifest retrieval applies F02/F09 ACL, digest/signature/context and current revocation checks. Browser clients never receive producer credentials, private upstream origins, cursor MAC keys or customer result decryption keys. If finality/authority freshness is unavailable, fail closed for routing, signing or private release; historical public viewing may continue with an explicit stale label.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Every tenant-scoped lookup and cursor must recheck current session authorization/revocation; a cursor grants no additional access. Public fields must already be public commitments. External manifest retrieval applies F02/F09 ACL, digest/signature/context and current revocation checks. Browser clients never receive producer credentials, private upstream origins, cursor MAC keys or customer result decryption keys. If finality/authority freshness is unavailable, fail closed for routing, signing or private release; historical public viewing may continue with an explicit stale label."
+    },
+    {
+      "id": "F10-R015",
+      "requirement": "CAPTURE_FINALIZED_SNAPSHOT is an internal projection transaction. Request identifies exact chain/program/market, observed sequence, native state root, application state bytes, canonical source receipt set and finality evidence. Preconditions: supported codecs, verified ProgramRead/state binding, market derivation, successful source effects, complete policy/roster context, actual checkpoint proof for that root/batch and configured minimum rank4. Transition atomically writes immutable snapshot content, participant/task/epoch/reward rows, evidence IDs, projection cursor and an outbox record. No chain state or asset movement occurs. Same SnapshotId and identical content/evidence is idempotent; same ID with different canonical state fails SnapshotConflict and halts publication. A partially missing producer component is marked unavailable, never filled with another head. If finality arrives after observed projection, promotion verifies the saved exact root and does not reread latest mutable state. Errors: InvalidEncoding, UnsupportedVersion, WrongDomain, IntegrityFailure, BindingMismatch, FinalityUnavailable, SnapshotConflict, ProjectionUnavailable, CapacityExceeded. Failure commits none of the transaction.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "CAPTURE_FINALIZED_SNAPSHOT is an internal projection transaction. Request identifies exact chain/program/market, observed sequence, native state root, application state bytes, canonical source receipt set and finality evidence. Preconditions: supported codecs, verified ProgramRead/state binding, market derivation, successful source effects, complete policy/roster context, actual checkpoint proof for that root/batch and configured minimum rank4. Transition atomically writes immutable snapshot content, participant/task/epoch/reward rows, evidence IDs, projection cursor and an outbox record. No chain state or asset movement occurs. Same SnapshotId and identical content/evidence is idempotent; same ID with different canonical state fails SnapshotConflict and halts publication. A partially missing producer component is marked unavailable, never filled with another head. If finality arrives after observed projection, promotion verifies the saved exact root and does not reread latest mutable state. Errors: InvalidEncoding, UnsupportedVersion, WrongDomain, IntegrityFailure, BindingMismatch, FinalityUnavailable, SnapshotConflict, ProjectionUnavailable, CapacityExceeded. Failure commits none of the transaction."
+    },
+    {
+      "id": "F10-R016",
+      "requirement": "GET_MARKET_VIEW and LIST_PARTICIPANTS are proposed authenticated GET /v1/ai/markets/{market}/snapshot and /participants, not present endpoints. Requests select exact SnapshotId or latest-finalized plus bounded filters. Preconditions: current visibility authorization, retained snapshot, authentic matching cursor. Effects: zero protocol and zero projection mutation; return binding, typed component statuses, selected rows, same SnapshotId and next cursor/null. Latest is pinned on first page; subsequent pages retain it even if a newer root arrives. Expired cursor returns CursorExpired; changed filters/principal/market returns CursorMismatch; unknown market or prohibited private market returns the existing nonenumerating access refusal. Rate limit exhaustion returns RateLimited before expensive work. SnapshotPruned returns oldest available ID/position if disclosure is allowed. It never silently substitutes latest for a requested historical root.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "GET_MARKET_VIEW and LIST_PARTICIPANTS are proposed authenticated GET /v1/ai/markets/{market}/snapshot and /participants, not present endpoints. Requests select exact SnapshotId or latest-finalized plus bounded filters. Preconditions: current visibility authorization, retained snapshot, authentic matching cursor. Effects: zero protocol and zero projection mutation; return binding, typed component statuses, selected rows, same SnapshotId and next cursor/null. Latest is pinned on first page; subsequent pages retain it even if a newer root arrives. Expired cursor returns CursorExpired; changed filters/principal/market returns CursorMismatch; unknown market or prohibited private market returns the existing nonenumerating access refusal. Rate limit exhaustion returns RateLimited before expensive work. SnapshotPruned returns oldest available ID/position if disclosure is allowed. It never silently substitutes latest for a requested historical root."
+    },
+    {
+      "id": "F10-R017",
+      "requirement": "GET_HISTORY is proposed GET /v1/ai/markets/{market}/epochs with ascending epoch order and default16/max32 records. Each historical row carries its own SnapshotId and immutable policy/roster/result/reward/history commitments. Requested epoch absence distinguishes never-opened, retained-terminal, archive-required, archive-unavailable and unsupported-version. Archive content must verify against its retained commitment and finalized source evidence before returning a verified value. Failure retrieving policy/evidence is ContentUnavailable, not a score or balance of zero. Reused live membership slots never merge old WorkerId history with a replacement.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "GET_HISTORY is proposed GET /v1/ai/markets/{market}/epochs with ascending epoch order and default16/max32 records. Each historical row carries its own SnapshotId and immutable policy/roster/result/reward/history commitments. Requested epoch absence distinguishes never-opened, retained-terminal, archive-required, archive-unavailable and unsupported-version. Archive content must verify against its retained commitment and finalized source evidence before returning a verified value. Failure retrieving policy/evidence is ContentUnavailable, not a score or balance of zero. Reused live membership slots never merge old WorkerId history with a replacement."
+    },
+    {
+      "id": "F10-R018",
+      "requirement": "PREPARE_OPERATION is an SDK/local planning contract for F01..F09 operation requests. Input is action, exact common payload, desired native fee/resource caps, actor, idempotency key, validity interval and required verification rank. Preconditions: same finalized market/policy/roster context and current authority; supported action and budget; existing canonical NativeProgramCall encoder; exact selected resource/access/capability declarations. Output preserves canonical unsigned/signed activity bytes as applicable, payload digest, expected revision, previewed semantic effects, fee ceiling, validity and evidence binding. Simulation is advisory and may refuse; a refusal remains typed. Preparation cannot authorize signing. REVIEW/APPROVE uses existing owner-consent route, showing market/program, action, exact amount/asset/payee where relevant, capability scope, fee/resource ceilings, validity, policy/epoch and native byte commitment. Changing any bound field invalidates approval and requires fresh review.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "PREPARE_OPERATION is an SDK/local planning contract for F01..F09 operation requests. Input is action, exact common payload, desired native fee/resource caps, actor, idempotency key, validity interval and required verification rank. Preconditions: same finalized market/policy/roster context and current authority; supported action and budget; existing canonical NativeProgramCall encoder; exact selected resource/access/capability declarations. Output preserves canonical unsigned/signed activity bytes as applicable, payload digest, expected revision, previewed semantic effects, fee ceiling, validity and evidence binding. Simulation is advisory and may refuse; a refusal remains typed. Preparation cannot authorize signing. REVIEW/APPROVE uses existing owner-consent route, showing market/program, action, exact amount/asset/payee where relevant, capability scope, fee/resource ceilings, validity, policy/epoch and native byte commitment. Changing any bound field invalidates approval and requires fresh review."
+    },
+    {
+      "id": "F10-R019",
+      "requirement": "SIGN/SUBMIT/RESOLVE use existing native client and wallet contracts. Signing binds the exact approved canonical activity; no reconstructed JSON signing. Before submission persist activity ID, idempotency key, signed bytes, intent digest and current lifecycle durably. Submit once using the existing boundary. Acknowledgment means pending, not executed. Receipt resolution verifies identity, native result and actual achieved evidence. A verified successful execution becomes executed; a verified refusal becomes failed with its result code. Achieved checkpoint-finalised proof promotes successful executed to finalized. Timeout/disconnection after possible submission becomes unknown and retains exact bytes; never auto-resign, create a fresh idempotency key or infer nonexecution from absent receipt. Explicitly authorized existing exact-byte resend can resolve through the same identity only. Private signing keys remain in existing signer custody.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "SIGN/SUBMIT/RESOLVE use existing native client and wallet contracts. Signing binds the exact approved canonical activity; no reconstructed JSON signing. Before submission persist activity ID, idempotency key, signed bytes, intent digest and current lifecycle durably. Submit once using the existing boundary. Acknowledgment means pending, not executed. Receipt resolution verifies identity, native result and actual achieved evidence. A verified successful execution becomes executed; a verified refusal becomes failed with its result code. Achieved checkpoint-finalised proof promotes successful executed to finalized. Timeout/disconnection after possible submission becomes unknown and retains exact bytes; never auto-resign, create a fresh idempotency key or infer nonexecution from absent receipt. Explicitly authorized existing exact-byte resend can resolve through the same identity only. Private signing keys remain in existing signer custody."
+    },
+    {
+      "id": "F10-R020",
+      "requirement": "PUBLISH_FINALIZED_EVENT consumes the durable capture outbox only after the matching rank>=4 proof. Proposed event adapter uses existing EventKind::Program with an AI action type in bounded facts; no new event family is assumed. One fact event identifies MarketId, SnapshotId, action/epoch, source activity ID and truthful verification label. Content fits existing32facts,512bytes/value and128byte token bounds. Per-market subject sequence is a durable checked monotonic outbox ordinal, not epoch alone; multiple same-epoch events remain ordered. Stable event ID is a prefixed hexadecimal SHA256 of domain PAXAI/view-event/v1, zero separator, MarketId32, source_activity_id32, effect_ordinal:u16 and ai_event_tag:u16. Missing fact prerequisites delay publication; changed reuse fails. Publish may be retried with identical ID/body without duplicate protocol effect. Existing webhook delivery can repeat; receivers verify exact body signature/timestamp/key ID and durable DeliveryId replay policy before applying one local effect. Event delivery never substitutes for independently verifying the referenced state/receipt when economic authority is required.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "PUBLISH_FINALIZED_EVENT consumes the durable capture outbox only after the matching rank>=4 proof. Proposed event adapter uses existing EventKind::Program with an AI action type in bounded facts; no new event family is assumed. One fact event identifies MarketId, SnapshotId, action/epoch, source activity ID and truthful verification label. Content fits existing32facts,512bytes/value and128byte token bounds. Per-market subject sequence is a durable checked monotonic outbox ordinal, not epoch alone; multiple same-epoch events remain ordered. Stable event ID is a prefixed hexadecimal SHA256 of domain PAXAI/view-event/v1, zero separator, MarketId32, source_activity_id32, effect_ordinal:u16 and ai_event_tag:u16. Missing fact prerequisites delay publication; changed reuse fails. Publish may be retried with identical ID/body without duplicate protocol effect. Existing webhook delivery can repeat; receivers verify exact body signature/timestamp/key ID and durable DeliveryId replay policy before applying one local effect. Event delivery never substitutes for independently verifying the referenced state/receipt when economic authority is required."
+    },
+    {
+      "id": "F10-R021",
+      "requirement": "Projection states are observed-unverified, evidence-verified-unfinalized, finalized-publishable, archived and quarantined. Only actual existing proof verification permits promotion to finalized-publishable; no age/depth transition does. Unsupported codec, root inconsistency or finality conflict quarantines the affected stream, preserves evidence and stops new finalized publication. Existing already-finalized history cannot be rewritten. Observation rollback removes provisional descendants and their unpublished outbox rows atomically. Crossing a verified finality boundary is an incident requiring authority resolution, never an automatic rollback or score repair.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Projection states are observed-unverified, evidence-verified-unfinalized, finalized-publishable, archived and quarantined. Only actual existing proof verification permits promotion to finalized-publishable; no age/depth transition does. Unsupported codec, root inconsistency or finality conflict quarantines the affected stream, preserves evidence and stops new finalized publication. Existing already-finalized history cannot be rewritten. Observation rollback removes provisional descendants and their unpublished outbox rows atomically. Crossing a verified finality boundary is an incident requiring authority resolution, never an automatic rollback or score repair."
+    },
+    {
+      "id": "F10-R022",
+      "requirement": "SDK states are prepared→reviewed→signed→submitting→pending→executed→finalized, with failed when a definite refusal/nonexecution is established and unknown after uncertain delivery. Before submit, invalid approval/expiry can terminate failed with no submitted activity. Pending and unknown can resolve to executed or failed using verified receipt identity; unknown cannot become failed merely through elapsed time. Executed and finalized describe native operation result, not AI completion. A finalized admitted task can still have a pending or unknown F02 runner job; domain job status is a separate field. Common epoch is authenticated execution height with Work64/Commit16/Reveal16/Settle32 over128 heights. Off-chain finality determines safe observation/publication, not epoch calculation. Policies and frozen roster semantics come from their producer features, never recomputed from current rows.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "SDK states are prepared→reviewed→signed→submitting→pending→executed→finalized, with failed when a definite refusal/nonexecution is established and unknown after uncertain delivery. Before submit, invalid approval/expiry can terminate failed with no submitted activity. Pending and unknown can resolve to executed or failed using verified receipt identity; unknown cannot become failed merely through elapsed time. Executed and finalized describe native operation result, not AI completion. A finalized admitted task can still have a pending or unknown F02 runner job; domain job status is a separate field. Common epoch is authenticated execution height with Work64/Commit16/Reveal16/Settle32 over128 heights. Off-chain finality determines safe observation/publication, not epoch calculation. Policies and frozen roster semantics come from their producer features, never recomputed from current rows."
+    },
+    {
+      "id": "F10-R023",
+      "requirement": "All joined canonical values must share the exact binding tuple(chain,program,market,sequence,native root,state revision,epoch,config,policy,roster). Historical components may refer to their immutable earlier tuple explicitly; they must not masquerade as current fields. Participant order is lexicographic over(kind,stable ID). Filtering precedes ordinal pagination over a pinned immutable rowset. For N selected rows and offset o, page indices are o through min(N,o+limit)-1; empty N returns empty rows and null cursor; o>N refuses CursorMismatch. No rank tie policy is needed because mutable rank never orders identity pages. Score_ppm is displayed exactly; percentage is integer score_ppm/10000 with explicitly selected decimal precision, not binary floating-point authority.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "All joined canonical values must share the exact binding tuple(chain,program,market,sequence,native root,state revision,epoch,config,policy,roster). Historical components may refer to their immutable earlier tuple explicitly; they must not masquerade as current fields. Participant order is lexicographic over(kind,stable ID). Filtering precedes ordinal pagination over a pinned immutable rowset. For N selected rows and offset o, page indices are o through min(N,o+limit)-1; empty N returns empty rows and null cursor; o>N refuses CursorMismatch. No rank tie policy is needed because mutable rank never orders identity pages. Score_ppm is displayed exactly; percentage is integer score_ppm/10000 with explicitly selected decimal precision, not binary floating-point authority."
+    },
+    {
+      "id": "F10-R024",
+      "requirement": "Operational success_ppm=floor(1000000*success_count/sample_count), computed using checked u128; zero samples yields no metric. Nearest-rank latency percentile for n>0 is sorted_latency[ceil(p*n/100)-1] for p50/p95, checked integer arithmetic; n<20 withholds public rollup. Overflow, success_count>sample_count, timestamp reversal, unsupported unit or expired signature invalidates the observation. Operational calculations never feed F05 scores or F06 money automatically. Source reward values are exact smallest units with explicit AssetId; decimal presentation uses independently verified asset metadata and cannot change raw amounts.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Operational success_ppm=floor(1000000*success_count/sample_count), computed using checked u128; zero samples yields no metric. Nearest-rank latency percentile for n>0 is sorted_latency[ceil(p*n/100)-1] for p50/p95, checked integer arithmetic; n<20 withholds public rollup. Overflow, success_count>sample_count, timestamp reversal, unsupported unit or expired signature invalidates the observation. Operational calculations never feed F05 scores or F06 money automatically. Source reward values are exact smallest units with explicit AssetId; decimal presentation uses independently verified asset metadata and cannot change raw amounts."
+    },
+    {
+      "id": "F10-R025",
+      "requirement": "Projection content and cursor commit together. Crash before transaction commit yields no visible snapshot; crash after commit before webhook publish leaves one durable outbox row for retry. Event ID/body and per-subject sequence survive restart. Concurrent capture of the same root serializes by immutable unique SnapshotId. Latest pointer advances only by canonical chain sequence and verified root lineage; wall-clock arrival order cannot replace a newer finalized snapshot with an older one. Finality verification must bind the view root through actual native evidence, not a matching height string or a finality certificate for an unrelated root.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Projection content and cursor commit together. Crash before transaction commit yields no visible snapshot; crash after commit before webhook publish leaves one durable outbox row for retry. Event ID/body and per-subject sequence survive restart. Concurrent capture of the same root serializes by immutable unique SnapshotId. Latest pointer advances only by canonical chain sequence and verified root lineage; wall-clock arrival order cannot replace a newer finalized snapshot with an older one. Finality verification must bind the view root through actual native evidence, not a matching height string or a finality certificate for an unrelated root."
+    },
+    {
+      "id": "F10-R026",
+      "requirement": "Cursor keys rotate with bounded overlap no shorter than live cursor TTL; an unknown retired key causes CursorExpired, never an unauthenticated decode fallback. Pruning cannot invalidate a retained snapshot during its advertised cursor lease. Webhook resume uses the existing principal/endpoint-bound authenticated cursor and bounded retention semantics, separate from snapshot paging. A webhook gap/expired cursor triggers exact finalized snapshot resynchronization, not blind last-write-wins. Consumer stores last accepted subject sequence and event identity transactionally with its local effect. Duplicates return the saved result; gaps suspend order-sensitive application until resumed; changed duplicate body or decreasing sequence refuses. Finality conflicts do not produce compensating fake payment events.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Cursor keys rotate with bounded overlap no shorter than live cursor TTL; an unknown retired key causes CursorExpired, never an unauthenticated decode fallback. Pruning cannot invalidate a retained snapshot during its advertised cursor lease. Webhook resume uses the existing principal/endpoint-bound authenticated cursor and bounded retention semantics, separate from snapshot paging. A webhook gap/expired cursor triggers exact finalized snapshot resynchronization, not blind last-write-wins. Consumer stores last accepted subject sequence and event identity transactionally with its local effect. Duplicates return the saved result; gaps suspend order-sensitive application until resumed; changed duplicate body or decreasing sequence refuses. Finality conflicts do not produce compensating fake payment events."
+    },
+    {
+      "id": "F10-R027",
+      "requirement": "A compromised indexer can omit or delay facts; authenticated verification is required before trusting canonical values, and completeness of a historical archive is separate from an individual valid proof. Clients must expose observed age and evidence rank. Score and reputation are evaluator-driven claims under pinned policy, not objective model truth. Manifest availability is not signature validity, valid signature is not service readiness, and readiness is not task quality. A worker may lie about model inventory or measurements. Health observations state observer identity and sample policy and never acquire authoritative chain status.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "A compromised indexer can omit or delay facts; authenticated verification is required before trusting canonical values, and completeness of a historical archive is separate from an individual valid proof. Clients must expose observed age and evidence rank. Score and reputation are evaluator-driven claims under pinned policy, not objective model truth. Manifest availability is not signature validity, valid signature is not service readiness, and readiness is not task quality. A worker may lie about model inventory or measurements. Health observations state observer identity and sample policy and never acquire authoritative chain status."
+    },
+    {
+      "id": "F10-R028",
+      "requirement": "Public views/events exclude raw prompts, outputs, dataset records, result locators, private endpoint credentials, billing-customer identity, private metadata and signing material. F09 controls permitted public commitments and salted/encrypted objects. Private retrieval performs authorization at access time, including revocation; old snapshot possession is not authorization. Metrics use allowlisted labels market/worker/model/error category and bounded histogram buckets; no request ID/customer/task label. Diagnostic logs redact bearer credentials, signatures when unnecessary and decrypted content. Malicious metadata names are plain escaped display text, never HTML/script or executable links. Cursor parsing, manifests, evidence payloads and filters are bounded before allocation or cryptographic work.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Public views/events exclude raw prompts, outputs, dataset records, result locators, private endpoint credentials, billing-customer identity, private metadata and signing material. F09 controls permitted public commitments and salted/encrypted objects. Private retrieval performs authorization at access time, including revocation; old snapshot possession is not authorization. Metrics use allowlisted labels market/worker/model/error category and bounded histogram buckets; no request ID/customer/task label. Diagnostic logs redact bearer credentials, signatures when unnecessary and decrypted content. Malicious metadata names are plain escaped display text, never HTML/script or executable links. Cursor parsing, manifests, evidence payloads and filters are bounded before allocation or cryptographic work."
+    },
+    {
+      "id": "F10-R029",
+      "requirement": "On-chain read selectors inspect the common <=196608byte state value and return bounded chunks/projections, with no writes, events, payments or new blobs. The application READ_STATE_CHUNK payload is exact expected_state_revision:u64, expected_market_state_digest32, offset:u32, requested_bytes:u16 in1..8192. The first request may set expected revision0 and expected digest zero together to discover the captured state; the outer ProgramRead still requires an authenticated expected native state root for finalized publication. Later requests must pin the discovered nonzero revision/digest and the same outer native root. Offset must be a multiple of8192 except the final empty sentinel is forbidden; offset>=total_bytes refuses. Response body is schema1, actual state revision/digest, total_bytes:u32, offset:u32, chunk_bytes:u16, exact bytes and is wrapped by the common result. A chunk has min(requested_bytes,total_bytes-offset) bytes and never crosses the exact state end. Complete196608bytes requires24chunks at8192; count and reconstructed total are checked before allocating. All24 read results must prove the same native root/sequence/application identity and digest, then the reconstructed bytes must match the market state digest. A changing head, unavailable pinned root or missing chunk fails the whole capture, never joins heads. The existing current-snapshot ProgramRead interface does not promise historical-root execution or retain a root across24 independent requests. A real capture must succeed with the same root throughout, or a separately qualified Paxeer snapshot-retention/archive adapter must serve it. Retry may restart the whole capture from one new finalized root; no partial old/new merge is allowed. Availability of sustained24chunk capture is a release prerequisite, not inferred from the expected-root parameter. Read actions use the common read-only discovery exception: kind0 authenticated principal, actor_sequence0, no replay-record write, epoch0/config_version0/roster_hashzero selector context, while still validating chain/program/market/schema/expiry and the outer ProgramRead pinned native root. Actual returned epoch/config/roster are exact facts, not selector defaults. This exception never applies to mutations or signed score statements. Proposed read operation tags must be allocated in the common application operation dictionary before implementation. Full-state capture requests8192bytes for each nonfinal chunk; smaller requested chunks are permitted only for bounded individual inspection and cannot count as a complete24chunk reconstruction. Common successful application response maximum16384bytes is preserved; default NativeProgramCall response_capacity is16384. Native read capacity is an outer bound, not permission to exceed application bounds. The projector may produce off-chain65536byte pages after verification. No per-participant native key expansion is permitted. Current host global512KV entries,64staged writes,512blobs/64MiB and host<=4newstagedblobs/activity remain unchanged. The common application namespace uses<=2newblobs/mutation; native replay capture when present can add its witness blob and activity-keyed nativeKV record, so total ordinary mutation may use3blobs and nativeKV growth must be counted. F10 noncommitting ProgramRead creates zero committed application writes/blobs/transfers; off-chain cache storage is separate. No claim is made that application one-cell retention reclaims native witnesses or KV history. The common/F09/F10control allocation is24576bytes; F10 consumes no extra authoritative state section or per-cursor chain cell. The content-store lifecycle prerequisite in integration-map.kvx blocks continuous market mutation until qualified; read-only projection does not cure it.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "On-chain read selectors inspect the common <=196608byte state value and return bounded chunks/projections, with no writes, events, payments or new blobs. The application READ_STATE_CHUNK payload is exact expected_state_revision:u64, expected_market_state_digest32, offset:u32, requested_bytes:u16 in1..8192. The first request may set expected revision0 and expected digest zero together to discover the captured state; the outer ProgramRead still requires an authenticated expected native state root for finalized publication. Later requests must pin the discovered nonzero revision/digest and the same outer native root. Offset must be a multiple of8192 except the final empty sentinel is forbidden; offset>=total_bytes refuses. Response body is schema1, actual state revision/digest, total_bytes:u32, offset:u32, chunk_bytes:u16, exact bytes and is wrapped by the common result. A chunk has min(requested_bytes,total_bytes-offset) bytes and never crosses the exact state end. Complete196608bytes requires24chunks at8192; count and reconstructed total are checked before allocating. All24 read results must prove the same native root/sequence/application identity and digest, then the reconstructed bytes must match the market state digest. A changing head, unavailable pinned root or missing chunk fails the whole capture, never joins heads. The existing current-snapshot ProgramRead interface does not promise historical-root execution or retain a root across24 independent requests. A real capture must succeed with the same root throughout, or a separately qualified Paxeer snapshot-retention/archive adapter must serve it. Retry may restart the whole capture from one new finalized root; no partial old/new merge is allowed. Availability of sustained24chunk capture is a release prerequisite, not inferred from the expected-root parameter. Read actions use the common read-only discovery exception: kind0 authenticated principal, actor_sequence0, no replay-record write, epoch0/config_version0/roster_hashzero selector context, while still validating chain/program/market/schema/expiry and the outer ProgramRead pinned native root. Actual returned epoch/config/roster are exact facts, not selector defaults. This exception never applies to mutations or signed score statements. Proposed read operation tags must be allocated in the common application operation dictionary before implementation. Full-state capture requests8192bytes for each nonfinal chunk; smaller requested chunks are permitted only for bounded individual inspection and cannot count as a complete24chunk reconstruction. Common successful application response maximum16384bytes is preserved; default NativeProgramCall response_capacity is16384. Native read capacity is an outer bound, not permission to exceed application bounds. The projector may produce off-chain65536byte pages after verification. No per-participant native key expansion is permitted. Current host global512KV entries,64staged writes,512blobs/64MiB and host<=4newstagedblobs/activity remain unchanged. The common application namespace uses<=2newblobs/mutation; native replay capture when present can add its witness blob and activity-keyed nativeKV record, so total ordinary mutation may use3blobs and nativeKV growth must be counted. F10 noncommitting ProgramRead creates zero committed application writes/blobs/transfers; off-chain cache storage is separate. No claim is made that application one-cell retention reclaims native witnesses or KV history. The common/F09/F10control allocation is24576bytes; F10 consumes no extra authoritative state section or per-cursor chain cell. The content-store lifecycle prerequisite in integration-map.kvx blocks continuous market mutation until qualified; read-only projection does not cure it."
+    },
+    {
+      "id": "F10-R030",
+      "requirement": "Off-chain limits per market: current32worker+8evaluator rows,64task summary rows,64recent finalized snapshot bodies cached at <=262144bytes each, recent epoch index4096headers, page32rows/65536bytes, evidence object per fetch<=1048576bytes and at most8 concurrent fetches per tenant. Snapshot content older than cache moves to a separately operated digest-verified archive; archived full content is not promised available by default. Total recent view cache<=16777216bytes/market before bounded indexes/proofs, all counted against operator quotas. Live cursor retention900000ms can require temporarily pinning a snapshot; admission refuses new cursor leases if configured total storage quota is exhausted. Unpublished outbox and unresolved conflicts cannot be silently deleted to meet quota; stop capture and alert. Default authenticated query rate60/minute/principal with burst10 and at most4concurrent requests; public deployment needs separately configured global/anonymous quotas. Empty rate configuration means disabled endpoint, not unlimited.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Off-chain limits per market: current32worker+8evaluator rows,64task summary rows,64recent finalized snapshot bodies cached at <=262144bytes each, recent epoch index4096headers, page32rows/65536bytes, evidence object per fetch<=1048576bytes and at most8 concurrent fetches per tenant. Snapshot content older than cache moves to a separately operated digest-verified archive; archived full content is not promised available by default. Total recent view cache<=16777216bytes/market before bounded indexes/proofs, all counted against operator quotas. Live cursor retention900000ms can require temporarily pinning a snapshot; admission refuses new cursor leases if configured total storage quota is exhausted. Unpublished outbox and unresolved conflicts cannot be silently deleted to meet quota; stop capture and alert. Default authenticated query rate60/minute/principal with burst10 and at most4concurrent requests; public deployment needs separately configured global/anonymous quotas. Empty rate configuration means disabled endpoint, not unlimited."
+    },
+    {
+      "id": "F10-R031",
+      "requirement": "F01 produces immutable market/policy/task state and lifecycle; F02 produces identity/metadata commitments and external signed readiness; F03 evaluator roster/admissible evidence; F04 commitment/reveal status; F05 terminal score/result commitment; F06 asset/funding/reservation/entitlement/claim state; F07 stable-ID history commitment and continuity; F08 seat/eligibility/liveness state; F09 artifact commitment/privacy/access metadata. The application read selector→existing ProgramRead→verified root/finality adapter→atomic AI indexer projection→proposed gateway view→SDK verifier is the canonical view path. The projection outbox→admitted private webhook producer→existing durable webhook delivery→authenticated consumer is the notification path. External readiness collector→signed HealthObservation→separate operational table/view never feeds the canonical root tuple.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "F01 produces immutable market/policy/task state and lifecycle; F02 produces identity/metadata commitments and external signed readiness; F03 evaluator roster/admissible evidence; F04 commitment/reveal status; F05 terminal score/result commitment; F06 asset/funding/reservation/entitlement/claim state; F07 stable-ID history commitment and continuity; F08 seat/eligibility/liveness state; F09 artifact commitment/privacy/access metadata. The application read selector→existing ProgramRead→verified root/finality adapter→atomic AI indexer projection→proposed gateway view→SDK verifier is the canonical view path. The projection outbox→admitted private webhook producer→existing durable webhook delivery→authenticated consumer is the notification path. External readiness collector→signed HealthObservation→separate operational table/view never feeds the canonical root tuple."
+    },
+    {
+      "id": "F10-R032",
+      "requirement": "F10 minimal tasks depend F01/F02 schema and common finality/read interfaces. Full components require their specific producer before available status. Producers must emit/version enough successful canonical effect information and retain/fold commitments so historical reconstruction can verify identity, policy and roster; F10 must report content gaps rather than invent historical policies from current defaults. Worker replacement retains old stable IDs in historical views; revocation overlay is a current eligibility fact, not alteration of frozen enrollment context. F06 is the sole reward producer; SDK claims compose its payload and cannot derive a payee from an untrusted external manifest. F10 does not become a dependency for deterministic state changes; it is an off-chain consumer. F02 runner release can depend on shared finalized read primitives implemented before full F10 projections.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "F10 minimal tasks depend F01/F02 schema and common finality/read interfaces. Full components require their specific producer before available status. Producers must emit/version enough successful canonical effect information and retain/fold commitments so historical reconstruction can verify identity, policy and roster; F10 must report content gaps rather than invent historical policies from current defaults. Worker replacement retains old stable IDs in historical views; revocation overlay is a current eligibility fact, not alteration of frozen enrollment context. F06 is the sole reward producer; SDK claims compose its payload and cannot derive a payee from an untrusted external manifest. F10 does not become a dependency for deterministic state changes; it is an off-chain consumer. F02 runner release can depend on shared finalized read primitives implemented before full F10 projections."
+    },
+    {
+      "id": "F10-R033",
+      "requirement": "Fixed v1 defaults: canonical publication minimum checkpoint rank4; rank5 settlement anchoring displayed only when achieved; latest-finalized by default; immutable pinned pagination16/max32; 15minute query cursor TTL;64cached finalized snapshots;4096recent epoch headers;65536byte page;32worker/8evaluator and64task bounds; no floating point or inferred zero; existing program event family; operational readiness30seconds and public aggregate minimum20samples; exact native owner consent and durable uncertain submission; no automatic re-signing. No release can relax these by silently changing labels or defaults.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Fixed v1 defaults: canonical publication minimum checkpoint rank4; rank5 settlement anchoring displayed only when achieved; latest-finalized by default; immutable pinned pagination16/max32; 15minute query cursor TTL;64cached finalized snapshots;4096recent epoch headers;65536byte page;32worker/8evaluator and64task bounds; no floating point or inferred zero; existing program event family; operational readiness30seconds and public aggregate minimum20samples; exact native owner consent and durable uncertain submission; no automatic re-signing. No release can relax these by silently changing labels or defaults."
+    },
+    {
+      "id": "F10-R034",
+      "requirement": "Remaining implementation prerequisites: actual ProgramRead-to-checkpoint-root evidence adapter, sustained same-root chunk capture or qualified snapshot-retention adapter, and deployment provisioning; complete canonical producer effect schemas; shared state/read selectors and concrete native resources; archive operator/retention/quota configuration; route catalogue integration; existing private webhook producer enrollment; exclusive generator ownership; TypeScript/Python toolchain and real boundary-service provisioning; selected actual AI runner/health observer; qualified global native blob lifecycle for continuous operation. Required release evidence includes real canonical read/finality verification, tenant/consent boundaries, root consistency across pages, restart/outbox/cursor recovery, refusal of finalized rollback, reward unit/zero/absence correctness, real private webhook producer/receiver authentication and no private metric/event leakage. Passing documentation JSON checks proves only artifact syntax. Implementation, runtime, deployment and release qualification remain UNRUN.",
+      "status": "specified-not-implemented",
+      "normative": true,
+      "paragraph": "Remaining implementation prerequisites: actual ProgramRead-to-checkpoint-root evidence adapter, sustained same-root chunk capture or qualified snapshot-retention adapter, and deployment provisioning; complete canonical producer effect schemas; shared state/read selectors and concrete native resources; archive operator/retention/quota configuration; route catalogue integration; existing private webhook producer enrollment; exclusive generator ownership; TypeScript/Python toolchain and real boundary-service provisioning; selected actual AI runner/health observer; qualified global native blob lifecycle for continuous operation. Required release evidence includes real canonical read/finality verification, tenant/consent boundaries, root consistency across pages, restart/outbox/cursor recovery, refusal of finalized rollback, reward unit/zero/absence correctness, real private webhook producer/receiver authentication and no private metric/event leakage. Passing documentation JSON checks proves only artifact syntax. Implementation, runtime, deployment and release qualification remain UNRUN."
+    }
+  ],
+  "acceptance_cases": [
+    {
+      "id": "F10-A01",
+      "case": "Snapshot S at sequence900/rootA/config2/epoch7 has workers W1,W2. A new sequence901/rootB/config3 arrives between page1(limit1) and page2. Both pages remain S/config2/rootA and return W1 thenW2 once. Changing filter or principal on the cursor returns CursorMismatch and no canonical mutation.",
+      "qualification": "UNRUN",
+      "paragraph": "Snapshot S at sequence900/rootA/config2/epoch7 has workers W1,W2. A new sequence901/rootB/config3 arrives between page1(limit1) and page2. Both pages remain S/config2/rootA and return W1 thenW2 once. Changing filter or principal on the cursor returns CursorMismatch and no canonical mutation."
+    },
+    {
+      "id": "F10-A02",
+      "case": "ProgramRead rootA has valid sequencer signature but no checkpoint proof. Snapshot remains evidence-verified-unfinalized; finalized endpoint returns FinalityUnavailable; webhook outbox publishes zero events. A checkpoint for rootB at the same displayed height does not promote A. Actual rank4 proof bound to A permits one finalized publication.",
+      "qualification": "UNRUN",
+      "paragraph": "ProgramRead rootA has valid sequencer signature but no checkpoint proof. Snapshot remains evidence-verified-unfinalized; finalized endpoint returns FinalityUnavailable; webhook outbox publishes zero events. A checkpoint for rootB at the same displayed height does not promote A. Actual rank4 proof bound to A permits one finalized publication."
+    },
+    {
+      "id": "F10-A03",
+      "case": "Worker W has present score0 at epoch7; worker X has insufficient coverage. View returns W score0 and X null/statusinsufficient-coverage. Both reward summaries remain sourced from F06; no display multiplication transfers or creates funds. Missing reward producer is not-enabled/null.",
+      "qualification": "UNRUN",
+      "paragraph": "Worker W has present score0 at epoch7; worker X has insufficient coverage. View returns W score0 and X null/statusinsufficient-coverage. Both reward summaries remain sourced from F06; no display multiplication transfers or creates funds. Missing reward producer is not-enabled/null."
+    },
+    {
+      "id": "F10-A04",
+      "case": "32workers/8evaluators with limit32 give exactly32rows then8rows in kind/ID order. Limit0/33, forged next ordinal41, noncanonical decimal \"01\",65hex-character identifier or oversized cursor refuse before expensive reads. Empty filter result returns[] and null cursor.",
+      "qualification": "UNRUN",
+      "paragraph": "32workers/8evaluators with limit32 give exactly32rows then8rows in kind/ID order. Limit0/33, forged next ordinal41, noncanonical decimal \"01\",65hex-character identifier or oversized cursor refuse before expensive reads. Empty filter result returns[] and null cursor."
+    },
+    {
+      "id": "F10-A05",
+      "case": "Crash after atomic snapshot+cursor+outbox commit but before publication. Restart publishes the same eventID/sequence once semantically; repeated delivery is accepted idempotently by a real durable consumer. Changed body under reused ID refuses; next higher subject sequence with a gap suspends ordered application until resume.",
+      "qualification": "UNRUN",
+      "paragraph": "Crash after atomic snapshot+cursor+outbox commit but before publication. Restart publishes the same eventID/sequence once semantically; repeated delivery is accepted idempotently by a real durable consumer. Changed body under reused ID refuses; next higher subject sequence with a gap suspends ordered application until resume."
+    },
+    {
+      "id": "F10-A06",
+      "case": "A provisional descendant rolls back above finality: remove its rows/unpublished outbox. A request to roll back below verified rootA is refused and stream quarantined. No previously finalized reward claim is erased or compensated by a fabricated event.",
+      "qualification": "UNRUN",
+      "paragraph": "A provisional descendant rolls back above finality: remove its rows/unpublished outbox. A request to roll back below verified rootA is refused and stream quarantined. No previously finalized reward claim is erased or compensated by a fabricated event."
+    },
+    {
+      "id": "F10-A07",
+      "case": "SDK approved claim10assetX/payeeP with native bytesB. Alter amount11, actor, market, validity, access declaration, response capacity or fee bound: approval fails before signing. Valid B uses NativeProgramCall and existing owner consent. Unauthorized worker key cannot approve a treasury movement.",
+      "qualification": "UNRUN",
+      "paragraph": "SDK approved claim10assetX/payeeP with native bytesB. Alter amount11, actor, market, validity, access declaration, response capacity or fee bound: approval fails before signing. Valid B uses NativeProgramCall and existing owner consent. Unauthorized worker key cannot approve a treasury movement."
+    },
+    {
+      "id": "F10-A08",
+      "case": "Submit B then lose transport acknowledgment. Durable SDK state unknown retains same activity/idempotency/bytes. Native receipt absence after a timeout does not become failed. A verified successful receipt becomes executed; rank4 proof becomes finalized. Domain AI result remains pending if the runner has not completed. Exact-byte resend is separately authorized, not automatic fresh signing.",
+      "qualification": "UNRUN",
+      "paragraph": "Submit B then lose transport acknowledgment. Durable SDK state unknown retains same activity/idempotency/bytes. Native receipt absence after a timeout does not become failed. A verified successful receipt becomes executed; rank4 proof becomes finalized. Domain AI result remains pending if the runner has not completed. Exact-byte resend is separately authorized, not automatic fresh signing."
+    },
+    {
+      "id": "F10-A09",
+      "case": "Requested epoch4 was never opened: never-opened/null. Epoch5 root retained but policy content pruned: archive-required. Archive returns content with a one-byte digest difference: IntegrityFailure; no current policy substitution. Reused live seat with WorkerIdNew does not inherit WorkerIdOld history.",
+      "qualification": "UNRUN",
+      "paragraph": "Requested epoch4 was never opened: never-opened/null. Epoch5 root retained but policy content pruned: archive-required. Archive returns content with a one-byte digest difference: IntegrityFailure; no current policy substitution. Reused live seat with WorkerIdNew does not inherit WorkerIdOld history."
+    },
+    {
+      "id": "F10-A10",
+      "case": "20latency samples1..20ms yield p50=10ms,p95=19ms. success_count19 gives950000ppm.19samples withhold public aggregate.0samples gives null, not0ppm.21successes from20samples invalidates observation. Observation expiry at time30000 after observation refuses routing readiness at equality, even when membership is finalized.",
+      "qualification": "UNRUN",
+      "paragraph": "20latency samples1..20ms yield p50=10ms,p95=19ms. success_count19 gives950000ppm.19samples withhold public aggregate.0samples gives null, not0ppm.21successes from20samples invalidates observation. Observation expiry at time30000 after observation refuses routing readiness at equality, even when membership is finalized."
+    },
+    {
+      "id": "F10-A11",
+      "case": "Private result locator appears in upstream manifest: public view/event excludes it; private query requires current F09 authorization. Revoked tenant using an unexpired paging cursor is refused. Untrusted name containing markup renders as text. Query/metrics logs contain no customer prompt, token or output.",
+      "qualification": "UNRUN",
+      "paragraph": "Private result locator appears in upstream manifest: public view/event excludes it; private query requires current F09 authorization. Revoked tenant using an unexpired paging cursor is refused. Untrusted name containing markup renders as text. Query/metrics logs contain no customer prompt, token or output."
+    },
+    {
+      "id": "F10-A12",
+      "case": "Public process receives private producer route/certificate role mismatch: refuse before publish. Real signed callback with wrong body/key/timestamp fails existing receiver verification. Valid callback retried concurrently against two consumer processes creates one durable local effect. Expired webhook cursor triggers explicit gap and snapshot resync.",
+      "qualification": "UNRUN",
+      "paragraph": "Public process receives private producer route/certificate role mismatch: refuse before publish. Real signed callback with wrong body/key/timestamp fails existing receiver verification. Valid callback retried concurrently against two consumer processes creates one durable local effect. Expired webhook cursor triggers explicit gap and snapshot resync."
+    },
+    {
+      "id": "F10-A13",
+      "case": "Full state196608bytes is reconstructed from exactly24chunks of8192bytes, each under16384byte application response and pinned to the same root/digest;196609bytes is a common state violation. One mismatched chunk root, missing chunk, offset8193 or offset196608 refuses capture. Off-chain page response65537bytes with cap65536 fails ResponseTooLarge. Query causes zero native KV/blob/writes/transfers, proven through actual interpreter receipts and storage accounting.",
+      "qualification": "UNRUN",
+      "paragraph": "Full state196608bytes is reconstructed from exactly24chunks of8192bytes, each under16384byte application response and pinned to the same root/digest;196609bytes is a common state violation. One mismatched chunk root, missing chunk, offset8193 or offset196608 refuses capture. Off-chain page response65537bytes with cap65536 fails ResponseTooLarge. Query causes zero native KV/blob/writes/transfers, proven through actual interpreter receipts and storage accounting."
+    },
+    {
+      "id": "F10-A14",
+      "case": "Latest finalized snapshot lags independently verified authority by9heights where F02 freshness limit is8: routing/signing/runner release refuses stale authority. Historical public inspection still returns the exact snapshot with stale label. A live8height bound does not alter epoch clock or manufacture a missing finality certificate.",
+      "qualification": "UNRUN",
+      "paragraph": "Latest finalized snapshot lags independently verified authority by9heights where F02 freshness limit is8: routing/signing/runner release refuses stale authority. Historical public inspection still returns the exact snapshot with stale label. A live8height bound does not alter epoch clock or manufacture a missing finality certificate."
+    },
+    {
+      "id": "F10-A15",
+      "case": "Same SnapshotId with differing state bytes, same eventID differing content, rank4 certificate from another chain or unavailable decoder version each quarantines/refuses the affected artifact. Operator alert contains IDs/error category only. Restoring database from committed cursor/rows reproduces the same canonical snapshots, no new entitlement and no synthetic success.",
+      "qualification": "UNRUN",
+      "paragraph": "Same SnapshotId with differing state bytes, same eventID differing content, rank4 certificate from another chain or unavailable decoder version each quarantines/refuses the affected artifact. Operator alert contains IDs/error category only. Restoring database from committed cursor/rows reproduces the same canonical snapshots, no new entitlement and no synthetic success."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "F10-T01",
+      "dependencies": [
+        "T-C01",
+        "T-C02",
+        "F01-T01",
+        "F02-T01"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/queries.rs",
+        "programs/crates/layerx-programs-ai-market/tests/view_binding.rs"
+      ],
+      "compile": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test view_binding",
+      "cases": [
+        "F10-A02",
+        "F10-A03",
+        "F10-A04",
+        "F10-A13"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T01",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After common codec/read/finality adapter and F01/F02 schema: add proposed programs/crates/layerx-programs-ai-market/src/queries.rs and tests/view_binding.rs. Deliver bounded read selectors over real shared state, exact canonical binding and no effects. Compile: cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market. Single future verify_cmd: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test view_binding. New package/test do not yet exist. Cover A02/A03/A04/A13 using actual interpreter/state/native evidence, no fabricated finality token."
+    },
+    {
+      "id": "F10-T02",
+      "dependencies": [
+        "F10-T01",
+        "T-C03"
+      ],
+      "producer_dependencies": [
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09"
+      ],
+      "paths": [
+        "platform/hosted/indexer/src/ai_market.rs",
+        "platform/hosted/gateway/src/ai_views.rs",
+        "platform/hosted/indexer/tests/ai_snapshot_projection.rs",
+        "platform/hosted/indexer/src/store.rs",
+        "platform/hosted/indexer/src/layerx.rs",
+        "platform/hosted/gateway/src/lib.rs"
+      ],
+      "compile": "cargo check --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_snapshot_projection -- --test-threads=1",
+      "cases": [
+        "F10-A01",
+        "F10-A02",
+        "F10-A04",
+        "F10-A05",
+        "F10-A06",
+        "F10-A09",
+        "F10-A14",
+        "F10-A15"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T02",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After T01 and producer event schemas: add proposed platform/hosted/indexer/src/ai_market.rs, gateway/src/ai_views.rs and platform/hosted/indexer/tests/ai_snapshot_projection.rs; integrate existing indexer store.rs/layerx.rs and gateway lib.rs under one assigned writer. Deliver exact root lineage/finality admission, atomic rows/cursor/outbox, retention/cursor binding, real bounded query routes and quarantine. Compile: cargo check --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway. Single future verify_cmd: cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_snapshot_projection -- --test-threads=1. Cover A01/A02/A04/A05/A06/A09/A14/A15 with actual durable SQLite/process boundary and valid independently produced Paxeer proof material. Complete F03..F09 fields are incremental producer-dependent additions in this same contract, not fabricated empty implementations."
+    },
+    {
+      "id": "F10-T03",
+      "dependencies": [
+        "F10-T02"
+      ],
+      "paths": [
+        "agent/crates/layerx-client/src/ai_market.rs",
+        "agent/crates/layerx-client/tests/ai_market_client.rs",
+        "platform/sdk/schema/paxai-v1.kvx",
+        "platform/sdk/generators/src/main.rs"
+      ],
+      "compile": "cargo check --manifest-path agent/Cargo.toml -p layerx-client",
+      "verify_cmd": "cargo test --manifest-path agent/Cargo.toml -p layerx-client --test ai_market_client -- --test-threads=1",
+      "cases": [
+        "F10-A02",
+        "F10-A07",
+        "F10-A08",
+        "F10-A09",
+        "F10-A14"
+      ],
+      "ownership_note": "Generator/schema changes require one exclusive writer and independently bounded common pipeline task; client consumes its output.",
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T03",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After T02 and existing consent/native-client interfaces: add proposed agent/crates/layerx-client/src/ai_market.rs and tests/ai_market_client.rs plus generated schema contract owned once through platform/sdk/schema/paxai-v1.kvx and platform/sdk/generators/src/main.rs. Deliver proof-bound typed views and operation prepare/review/sign/submit/resolve preserving exact bytes and uncertainty. Compile: cargo check --manifest-path agent/Cargo.toml -p layerx-client. Single future verify_cmd: cargo test --manifest-path agent/Cargo.toml -p layerx-client --test ai_market_client -- --test-threads=1. Cover A02/A07/A08/A09/A14 with real canonical codecs/owner-consent service and native receipts. Generator schema writer must be exclusive and dependency order explicit; legacy mirror-v2.kvx is not assumed to be the new AI schema."
+    },
+    {
+      "id": "F10-T04",
+      "dependencies": [
+        "F10-T03"
+      ],
+      "paths": [
+        "agent/sdk/typescript/src/ai_market.ts",
+        "agent/sdk/typescript/test/ai-market.test.ts"
+      ],
+      "compile": "npm --prefix agent/sdk/typescript run build",
+      "verify_cmd": "node agent/sdk/typescript/dist/test/ai-market.test.js",
+      "cases": [
+        "F10-A01",
+        "F10-A03",
+        "F10-A04",
+        "F10-A07",
+        "F10-A08"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T04",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After T03: add proposed agent/sdk/typescript/src/ai_market.ts and test/ai-market.test.ts. Deliver exact integer/ID/status/evidence mapping through existing transport and wallet. Compile: npm --prefix agent/sdk/typescript run build (existing tsc script). Single future verify_cmd: node agent/sdk/typescript/dist/test/ai-market.test.js. This test is proposed, not present. Cover A01/A03/A04/A07/A08 against real native client/owner-consent boundary and independently authored vectors. The generator/schema owner produces shared contracts first; this task consumes them without independently editing generator state."
+    },
+    {
+      "id": "F10-T05",
+      "dependencies": [
+        "F10-T02"
+      ],
+      "paths": [
+        "platform/hosted/webhooks/src/ai_market.rs",
+        "platform/hosted/webhooks/tests/ai_finalized_delivery.rs"
+      ],
+      "compile": "cargo check --manifest-path platform/Cargo.toml -p layerx-platform-webhooks",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-webhooks --test ai_finalized_delivery -- --test-threads=1",
+      "cases": [
+        "F10-A05",
+        "F10-A06",
+        "F10-A11",
+        "F10-A12",
+        "F10-A15"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T05",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After T02, full producer schemas and existing webhook finality verifier: add proposed platform/hosted/webhooks/src/ai_market.rs and tests/ai_finalized_delivery.rs. Deliver private producer adapter, stable program-kind event/outbox mapping, signature validation/resume/dedup with actual receiver storage. Compile: cargo check --manifest-path platform/Cargo.toml -p layerx-platform-webhooks. Single future verify_cmd: cargo test --manifest-path platform/Cargo.toml -p layerx-platform-webhooks --test ai_finalized_delivery -- --test-threads=1. Cover A05/A06/A11/A12/A15 through real service sockets, existing TLS/producer roles and durable state, not fake callbacks."
+    },
+    {
+      "id": "F10-T06",
+      "dependencies": [
+        "F10-T02",
+        "F02-T03"
+      ],
+      "paths": [
+        "platform/hosted/indexer/src/ai_health.rs",
+        "platform/hosted/indexer/tests/ai_health_privacy.rs"
+      ],
+      "compile": "cargo check --manifest-path platform/Cargo.toml -p layerx-indexer",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_health_privacy",
+      "cases": [
+        "F10-A10",
+        "F10-A11",
+        "F10-A14"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T06",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After F02 actual runner observations and T02: add proposed platform/hosted/indexer/src/ai_health.rs and tests/ai_health_privacy.rs. Deliver distinct signed health projection, integer histograms, expiry, minimum sample/label privacy and bounded operator alerts. Compile: cargo check --manifest-path platform/Cargo.toml -p layerx-indexer. Single future verify_cmd: cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_health_privacy. Cover A10/A11/A14 with actual observer signature and real selected F02 runner where readiness is asserted. An advertised-only fixture cannot qualify RUNNER_READY. All future tasks allow at most one build plus one focused gate, two task-scoped repair cycles and30minutes; aggregate/runtime release gates remain separate."
+    },
+    {
+      "id": "F10-T07",
+      "dependencies": [
+        "F10-T03"
+      ],
+      "paths": [
+        "agent/sdk/python/layerx_sdk/ai_market.py",
+        "tests/agent/sdk/python/test_ai_market.py"
+      ],
+      "compile": "python3 -m compileall -q agent/sdk/python/layerx_sdk/ai_market.py",
+      "verify_cmd": "python3 -m pytest -q tests/agent/sdk/python/test_ai_market.py",
+      "cases": [
+        "F10-A01",
+        "F10-A03",
+        "F10-A04",
+        "F10-A07",
+        "F10-A08"
+      ],
+      "status": "PROPOSED",
+      "qualification": "UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_task_scoped_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "One focused gate passes or task cap/two failed repair cycles reached; report exact command exit and log. Missing real authority/runner evidence is a blocker, never substituted.",
+      "canonical_task": "ai.F10-T07",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "paragraph": "After T03 and same shared schema: add proposed agent/sdk/python/layerx_sdk/ai_market.py and tests/agent/sdk/python/test_ai_market.py. Deliver Python exact integer/status/proof parity through existing native transport. Compile target: python3 -m compileall -q agent/sdk/python/layerx_sdk/ai_market.py (syntax check only, not runtime qualification). Single future verify_cmd: python3 -m pytest -q tests/agent/sdk/python/test_ai_market.py. Existing Python package declares this test-root/pytest convention; new test is proposed. Cover A01/A03/A04/A07/A08 with real boundary services and independently authored canonical vectors. Dependency installation and test execution follow the canonical implementation tasks."
+    }
+  ],
+  "limits": {
+    "state_bytes_common": 196608,
+    "state_chunk_bytes": 8192,
+    "state_chunks_max": 24,
+    "application_response_bytes_max": 16384,
+    "offchain_page_bytes_max": 65536,
+    "workers": 32,
+    "evaluators": 8,
+    "tasks_per_epoch": 64,
+    "page_rows_default": 16,
+    "page_rows_max": 32,
+    "cursor_ttl_ms": 900000,
+    "health_ttl_ms": 30000,
+    "minimum_public_metric_samples": 20,
+    "native_new_blobs_per_read": 0
+  },
+  "release_prerequisites": [
+    "Same-root finalized chunk capture or qualified snapshot-retention adapter",
+    "Existing verified checkpoint-root binding; no confirmations heuristic",
+    "Real native canonical owner consent and unknown-outcome recovery",
+    "Full producer effect and archive contracts",
+    "Private producer/consumer role and webhook signature qualification",
+    "Native content lifecycle qualification for continuous market mutation"
+  ],
+  "qualification": "UNRUN",
+  "canonical_spec": "../../spec.kvx"
+}

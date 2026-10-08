@@ -1,0 +1,40 @@
+%% PROPOSED candidate profile 1; approval / implementation / archive recovery / continuity UNRUN.
+flowchart TB
+  bounds["Unchanged native caps: 512 blobs / 64 MiB / 4 staged blobs / 512 KV"]
+  mutation["One application value + manifest; replay capture may add witness blob and replay KV"]
+  finite["Until lifecycle qualified: finite mutation budget; NO_CONTINUOUS_OPERATION"]
+  reserve["Root-bound capacity admission preserves measured pending claim / exit obligations"]
+  profile["Owner-approved versioned Programs maintenance profile, controller, hot horizon and archive keys"]
+  snapshot["Complete canonical snapshot + contiguous logs + witnesses + metadata proofs + authority history"]
+  archiveA["Independent archive A: persist bytes, verify digest / root / continuity, durable inventory"]
+  archiveB["Independent archive B: same immutable manifest and independent durable inventory"]
+  cert["Candidate 2-of-2 enrolled archive signatures; availability trust separate from finality"]
+  keeper["Keeper persists exact bounded request / certificate / submission identity before sending"]
+  request["Maintenance request: expected global root / sequence, verified finalized cutoff, at most 3 candidates"]
+  provenance["Verify historical namespace / replay origin under original authenticated roots"]
+  live["Recompute transitive live references across every supported Programs namespace and staged view"]
+  pinned["Current heads / manifests / values / artifacts / replay witnesses / prepared transitions remain pinned"]
+  unknown["Unknown reference format, stale root, absent archive or reserve: refuse atomically"]
+  retire["Normal native prepare / commit / journal: deterministic deletion and paired replay KV retirement"]
+  outcome["Explicit new canonical root and bounded receipt-backed outcome; replica replay agrees"]
+  history["Historical roots / proofs / receipts unchanged in authenticated archive material"]
+  restore["Independent restore / historical proof adapter reconstructs exact old state and claims"]
+  recovery["Crash before commit: prior complete table; after commit: new complete table and exact root"]
+  capacity["Cleanup restores headroom only after commit; planned deletions do not credit additions early"]
+  blocked["CONTINUOUS_OPERATION BLOCKED until profile approval and all storage / economic gates qualify"]
+  bounds --> mutation --> finite
+  bounds --> reserve
+  reserve --> profile --> snapshot
+  snapshot --> archiveA
+  snapshot --> archiveB
+  archiveA --> cert
+  archiveB --> cert
+  cert --> keeper --> request --> provenance --> live
+  pinned --> live
+  live -->|"candidate still referenced / unsupported"| unknown
+  live -->|"all exact candidates eligible and capacity safe"| retire --> outcome --> capacity
+  outcome --> recovery
+  snapshot --> history --> restore
+  outcome -->|"new root never replaces old proof identity"| history
+  profile --> blocked
+  finite --> blocked

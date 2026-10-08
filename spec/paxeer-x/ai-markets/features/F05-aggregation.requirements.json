@@ -1,0 +1,229 @@
+{
+  "id": "F05",
+  "title": "Deterministic AI quality aggregation",
+  "version": "PAXAI-v1",
+  "status": "SPECIFICATION_ONLY",
+  "qualification": "UNRUN",
+  "dependencies": [
+    "CORE",
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F08",
+    "F09"
+  ],
+  "consumers": [
+    "F06",
+    "F07",
+    "F10"
+  ],
+  "requirements": [
+    {
+      "id": "F05-R01",
+      "normative_summary": "Bounded unweighted lower median; quorum3; absence distinct from zero",
+      "acceptance_case_ids": [
+        "F05-A01",
+        "F05-A02",
+        "F05-A03",
+        "F05-A04"
+      ]
+    },
+    {
+      "id": "F05-R02",
+      "normative_summary": "Existing Programs integration; no consensus/custody/ABI expansion",
+      "acceptance_case_ids": [
+        "F05-A16"
+      ]
+    },
+    {
+      "id": "F05-R03",
+      "normative_summary": "Canonical versioned types, bounds, statuses and ordering",
+      "acceptance_case_ids": [
+        "F05-A05",
+        "F05-A06",
+        "F05-A08",
+        "F05-A10"
+      ]
+    },
+    {
+      "id": "F05-R04",
+      "normative_summary": "Frozen identities and current revocation refusal; no key multiplication",
+      "acceptance_case_ids": [
+        "F05-A11",
+        "F05-A14",
+        "F05-A15"
+      ]
+    },
+    {
+      "id": "F05-R05",
+      "normative_summary": "Seal/chunk/finalize contracts and atomic failure effects",
+      "acceptance_case_ids": [
+        "F05-A12",
+        "F05-A13",
+        "F05-A16"
+      ]
+    },
+    {
+      "id": "F05-R06",
+      "normative_summary": "Height windows and immutable terminal/retention states",
+      "acceptance_case_ids": [
+        "F05-A12",
+        "F05-A13"
+      ]
+    },
+    {
+      "id": "F05-R07",
+      "normative_summary": "Lower median exact integer result per worker",
+      "acceptance_case_ids": [
+        "F05-A01",
+        "F05-A02",
+        "F05-A03",
+        "F05-A04",
+        "F05-A17"
+      ]
+    },
+    {
+      "id": "F05-R08",
+      "normative_summary": "Checked sums and display-only normalization; no zero fallback",
+      "acceptance_case_ids": [
+        "F05-A06",
+        "F05-A07",
+        "F05-A08",
+        "F05-A09"
+      ]
+    },
+    {
+      "id": "F05-R09",
+      "normative_summary": "Bounded work at admitted maxima",
+      "acceptance_case_ids": [
+        "F05-A08",
+        "F05-A16"
+      ]
+    },
+    {
+      "id": "F05-R10",
+      "normative_summary": "Restart/replay/concurrency/finality controls",
+      "acceptance_case_ids": [
+        "F05-A13",
+        "F05-A14",
+        "F05-A15"
+      ]
+    },
+    {
+      "id": "F05-R11",
+      "normative_summary": "Collusion and privacy trust limitations",
+      "acceptance_case_ids": [
+        "F05-A17",
+        "F05-A18"
+      ]
+    },
+    {
+      "id": "F05-R12",
+      "normative_summary": "Shared state/storage/native staging bounds and proof limits",
+      "acceptance_case_ids": [
+        "F05-A08",
+        "F05-A16"
+      ]
+    },
+    {
+      "id": "F05-R13",
+      "normative_summary": "Inter-feature stable contracts, raw rewards and absent quality",
+      "acceptance_case_ids": [
+        "F05-A03",
+        "F05-A07",
+        "F05-A09",
+        "F05-A15"
+      ]
+    }
+  ],
+  "acceptance_case_ids": [
+    "F05-A01",
+    "F05-A02",
+    "F05-A03",
+    "F05-A04",
+    "F05-A05",
+    "F05-A06",
+    "F05-A07",
+    "F05-A08",
+    "F05-A09",
+    "F05-A10",
+    "F05-A11",
+    "F05-A12",
+    "F05-A13",
+    "F05-A14",
+    "F05-A15",
+    "F05-A16",
+    "F05-A17",
+    "F05-A18"
+  ],
+  "tasks": [
+    {
+      "id": "F05-T01",
+      "depends_on": [
+        "CORE",
+        "F03",
+        "F04"
+      ],
+      "proposed_new_files": [
+        "programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs",
+        "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"
+      ],
+      "deliverable": "Canonical codec, bounded records, invariant errors and commitments",
+      "compile_target": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F05-T02",
+      "depends_on": [
+        "F05-T01"
+      ],
+      "proposed_new_files": [
+        "programs/crates/layerx-programs-ai-market/src/aggregation.rs"
+      ],
+      "deliverable": "Exact lower median, checked raw weights and specified vectors",
+      "compile_target": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_integer_contract -- --exact",
+      "qualification": "UNRUN"
+    },
+    {
+      "id": "F05-T03",
+      "depends_on": [
+        "F05-T02",
+        "F06-T02",
+        "F07-T01"
+      ],
+      "proposed_new_files": [
+        "programs/crates/layerx-programs-ai-market/src/aggregation.rs",
+        "programs/tests/ai-market/run-aggregation-runtime.sh"
+      ],
+      "deliverable": "Real guest/native seal/chunk/finalize and resource/atomicity contracts",
+      "compile_target": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --lib",
+      "verify_cmd": "programs/tests/ai-market/run-aggregation-runtime.sh",
+      "qualification": "UNRUN"
+    }
+  ],
+  "bounds": {
+    "workers": 32,
+    "evaluators": 8,
+    "quorum": 3,
+    "score_max_ppm": 1000000,
+    "state_bytes": 196608,
+    "retained_epochs": 32,
+    "claim_expiry_heights": 4096,
+    "workers_per_chunk": 8,
+    "shared_F05_F06_section_bytes": 81920
+  },
+  "hash_domains": [
+    "PAXAI/aggregation-input/v1",
+    "PAXAI/aggregation-output/v1"
+  ],
+  "cross_feature_contract": "contracts/core.kvx C01-C09",
+  "operations": [
+    "BeginAggregation",
+    "ProcessAggregation",
+    "FinalizeAggregation"
+  ],
+  "canonical_task_authority": "../../spec.kvx"
+}

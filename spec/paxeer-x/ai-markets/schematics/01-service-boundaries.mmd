@@ -1,0 +1,53 @@
+%% PROPOSED architecture; implementation and runtime qualification UNRUN.
+flowchart TB
+  customer["Customer / participant principal"]
+  owner["Market Owner / optional immutable Treasury"]
+  sdk["SDK and existing owner review / approve / sign"]
+  router["Unified router: authenticated product discovery"]
+  gateway["Existing native ProgramCall / ProgramRead boundary"]
+  subgraph chain["Deterministic Paxeer Programs execution"]
+    native["Authenticated native activity and capability checks"]
+    context["Context: program, principal, absent immediate caller, batch height"]
+    guest["Proposed AI market WASM instance: F01-F09 + F10 reads"]
+    state["One shared value: paxai/state/v1; maximum 196608 bytes"]
+    account["Registered derived rewards account; one immutable asset"]
+    receipts["Canonical receipts / state roots / native replay evidence"]
+    native -->|"authenticated frame"| context
+    context -->|"application roles checked independently"| guest
+    guest -->|"one atomic shared replacement"| state
+    guest -->|"exact deposit / ProgramSpend grant"| account
+    state -->|"native finalization"| receipts
+    account -->|"same atomic activity"| receipts
+  end
+  subgraph external["Proposed AI service processes and private data services"]
+    worker["AI worker service: durable jobs and signing delegate"]
+    runner["Selected real model runner: inference / embedding / evaluation"]
+    evaluator["Authorized evaluator service: frozen rubric and evidence"]
+    artifacts["Artifact service: immutable objects, grants and retention"]
+    kms["Service KMS: object keys and access envelopes"]
+    worker -->|"only after finalized matching task acceptance"| runner
+    worker -->|"signed result and encrypted artifact references"| artifacts
+    evaluator -->|"authorized retrieval and independent binding checks"| artifacts
+    artifacts -->|"task / purpose / principal scoped key release"| kms
+  end
+  verifier["Existing independent finality verifier: exact batch and root"]
+  projection["Verified snapshot indexer: rows + cursor + outbox atomically"]
+  views["Authenticated canonical views and private webhook producer"]
+  health["Separate signed operational observations; readiness expires in 30 seconds"]
+  archive["Private native archive / storage keeper; candidate profile approval required"]
+  customer --> sdk
+  owner --> sdk
+  sdk --> router
+  router --> gateway
+  gateway --> native
+  customer -->|"authenticated service request; private payload separate"| worker
+  receipts --> verifier
+  verifier -->|"finalized authority and accepted task evidence"| worker
+  verifier -->|"frozen rubric / roster / result commitments"| evaluator
+  evaluator -->|"SealEvidence then CommitScore then RevealScore"| gateway
+  verifier -->|"same-root ProgramRead plus checkpoint rank at least 4"| projection
+  projection --> views
+  views --> customer
+  worker --> health
+  health -.->|"operational display only; no scoring or reward authority"| views
+  receipts -->|"complete snapshots / logs / proofs / witnesses"| archive

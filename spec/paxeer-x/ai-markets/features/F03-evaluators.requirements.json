@@ -1,0 +1,539 @@
+{
+  "id": "F03",
+  "title": "Evaluator authorization and signed assessment admission",
+  "schema_version": 1,
+  "status": "SPECIFICATION_ONLY_UNRUN",
+  "dependencies": [
+    "COMMON-CONTRACTS",
+    "F01",
+    "F02",
+    "F04",
+    "F08",
+    "F09"
+  ],
+  "normative_requirements": [
+    {
+      "id": "F03-R01",
+      "requirement": "Distinct typed nonzero identity and immutable domain binding"
+    },
+    {
+      "id": "F03-R02",
+      "requirement": "Fixed width big-endian canonical encoding and no floating point"
+    },
+    {
+      "id": "F03-R03",
+      "requirement": "Finite bounded grant lifecycle and nonwrapping versions"
+    },
+    {
+      "id": "F03-R04",
+      "requirement": "Frozen evaluator roster and live exclusion overlay"
+    },
+    {
+      "id": "F03-R05",
+      "requirement": "Exact compact signed report encoding and maximum1380-byte body"
+    },
+    {
+      "id": "F03-R06",
+      "requirement": "Missing means no vote and explicit zero remains a vote"
+    },
+    {
+      "id": "F03-R07",
+      "requirement": "Evidence bundle roots bind approved evaluation context but do not prove external truth"
+    },
+    {
+      "id": "F03-R08",
+      "requirement": "Authenticated administrative context and no automatic owner evaluation privilege"
+    },
+    {
+      "id": "F03-R09",
+      "requirement": "Direct calls only; relayers cannot manufacture authority"
+    },
+    {
+      "id": "F03-R10",
+      "requirement": "Next-epoch grant/key changes and irreversible revocation"
+    },
+    {
+      "id": "F03-R11",
+      "requirement": "Revocation excludes before seal and is prospective afterward"
+    },
+    {
+      "id": "F03-R12",
+      "requirement": "Evaluator principals cannot match any roster worker or owner"
+    },
+    {
+      "id": "F03-R13",
+      "requirement": "Common envelope/replay/state revision semantics"
+    },
+    {
+      "id": "F03-R14",
+      "requirement": "Schedule evaluator atomically with bounded capacity"
+    },
+    {
+      "id": "F03-R15",
+      "requirement": "Rotate keys without modifying current frozen roster"
+    },
+    {
+      "id": "F03-R16",
+      "requirement": "Revoke without automatic payment/slashing/clawback"
+    },
+    {
+      "id": "F03-R17",
+      "requirement": "Report admission occurs only atomically through valid reveal"
+    },
+    {
+      "id": "F03-R18",
+      "requirement": "One immutable report per evaluator epoch"
+    },
+    {
+      "id": "F03-R19",
+      "requirement": "Bounded advisory challenge recording cannot freeze rewards"
+    },
+    {
+      "id": "F03-R20",
+      "requirement": "Typed refusal errors with no business effects"
+    },
+    {
+      "id": "F03-R21",
+      "requirement": "Terminal grant state machine"
+    },
+    {
+      "id": "F03-R22",
+      "requirement": "Half-open epoch eligibility and expiry boundaries"
+    },
+    {
+      "id": "F03-R23",
+      "requirement": "No carry-forward or replacement report"
+    },
+    {
+      "id": "F03-R24",
+      "requirement": "Suspension preserves existing epoch obligations"
+    },
+    {
+      "id": "F03-R25",
+      "requirement": "Sorted input vector validation without mutation"
+    },
+    {
+      "id": "F03-R26",
+      "requirement": "Bounded deterministic validation and checked arithmetic"
+    },
+    {
+      "id": "F03-R27",
+      "requirement": "No admission score normalization or reward computation"
+    },
+    {
+      "id": "F03-R28",
+      "requirement": "Replay protection includes complete frozen domain"
+    },
+    {
+      "id": "F03-R29",
+      "requirement": "Committed order serializes revocation and reveal"
+    },
+    {
+      "id": "F03-R30",
+      "requirement": "Restart recovers from finalized report and commitment state"
+    },
+    {
+      "id": "F03-R31",
+      "requirement": "Irreversible external outcomes wait for authentic finality"
+    },
+    {
+      "id": "F03-R32",
+      "requirement": "Authorized assessment labels do not imply AI truth"
+    },
+    {
+      "id": "F03-R33",
+      "requirement": "External evaluators verify exact task/policy/generation provenance"
+    },
+    {
+      "id": "F03-R34",
+      "requirement": "Hidden common control and collusion remain explicit trust assumptions"
+    },
+    {
+      "id": "F03-R35",
+      "requirement": "Private prompts/results remain outside chain events"
+    },
+    {
+      "id": "F03-R36",
+      "requirement": "24576-byte report section and separate identity budget"
+    },
+    {
+      "id": "F03-R37",
+      "requirement": "One shared-state value and at most2 new blobs for namespace"
+    },
+    {
+      "id": "F03-R38",
+      "requirement": "No native capacity expansion; continuous operation awaits lifecycle qualification"
+    },
+    {
+      "id": "F03-R39",
+      "requirement": "Frozen policy and worker roster producers"
+    },
+    {
+      "id": "F03-R40",
+      "requirement": "F09 root sealing and F04 atomic reveal dependencies"
+    },
+    {
+      "id": "F03-R41",
+      "requirement": "F05 consumes exact admitted rows and live exclusion cutpoint"
+    },
+    {
+      "id": "F03-R42",
+      "requirement": "F06,F07,F10 preserve economic and evidence distinctions"
+    },
+    {
+      "id": "F03-R43",
+      "requirement": "Owner nomination remains PENDING and cannot activate before F08 evaluator-owner kind0 acceptance plus registered delegate proof of possession"
+    },
+    {
+      "id": "F03-R44",
+      "requirement": "Exact362-byte EvaluatorAdmissionConsentV1 and426-byte signed consent bind nomination, permit and authenticated owner acceptance"
+    },
+    {
+      "id": "F03-R45",
+      "requirement": "RevealScore event exact228-byte schema; uniform responses include status2 ERROR and explicit application_erroru16"
+    }
+  ],
+  "acceptance_cases": [
+    {
+      "id": "F03-A01",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A02",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A03",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A04",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A05",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A06",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A07",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A08",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A09",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A10",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A11",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A12",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A13",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A14",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A15",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    },
+    {
+      "id": "F03-A16",
+      "location": "F03-evaluators.kvx section12",
+      "status": "FUTURE_UNRUN"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "F03-T01",
+      "title": "Canonical evaluator and report codec",
+      "paths": [
+        {
+          "path": "programs/crates/layerx-programs-ai-market/src/evaluators/model.rs",
+          "status": "proposed_new"
+        },
+        {
+          "path": "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs",
+          "status": "proposed_new"
+        },
+        {
+          "path": "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs",
+          "status": "proposed_new"
+        }
+      ],
+      "dependencies": [
+        "COMMON-CODEC",
+        "F01",
+        "F08"
+      ],
+      "compile_target": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec",
+      "command_status": "FUTURE_TARGET_NOT_PRESENT_UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+    },
+    {
+      "id": "F03-T02",
+      "title": "Grant rotation revocation authority",
+      "paths": [
+        {
+          "path": "programs/crates/layerx-programs-ai-market/src/evaluators/authority.rs",
+          "status": "proposed_new"
+        },
+        {
+          "path": "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_authority.rs",
+          "status": "proposed_new"
+        }
+      ],
+      "dependencies": [
+        "F03-T01",
+        "F01",
+        "F08"
+      ],
+      "compile_target": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority",
+      "command_status": "FUTURE_TARGET_NOT_PRESENT_UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+    },
+    {
+      "id": "F03-T03",
+      "title": "Atomic signed score admission and challenges",
+      "paths": [
+        {
+          "path": "programs/crates/layerx-programs-ai-market/src/evaluators/admission.rs",
+          "status": "proposed_new"
+        },
+        {
+          "path": "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_admission.rs",
+          "status": "proposed_new"
+        }
+      ],
+      "dependencies": [
+        "F03-T02",
+        "F04",
+        "F09",
+        "F08-ACCEPTED-EVALUATOR-MEMBERSHIP"
+      ],
+      "compile_target": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_admission",
+      "command_status": "FUTURE_TARGET_NOT_PRESENT_UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+    },
+    {
+      "id": "F03-T04",
+      "title": "Real host ordering and resource integration",
+      "paths": [
+        {
+          "path": "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs",
+          "status": "proposed_new"
+        }
+      ],
+      "dependencies": [
+        "F03-T03",
+        "F05",
+        "COMMON-REAL-HOST-HARNESS"
+      ],
+      "compile_target": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host",
+      "command_status": "FUTURE_TARGET_NOT_PRESENT_UNRUN",
+      "max_builds": 1,
+      "max_verify_runs": 1,
+      "max_repair_cycles": 2,
+      "time_cap_minutes": 30,
+      "stop_condition": "Deliver complete task and one focused qualification result, or exact blocker without expanding scope."
+    }
+  ],
+  "common_contract": "contracts/core.kvx",
+  "limits": {
+    "max_evaluators": 8,
+    "max_workers": 32,
+    "report_body_max_bytes": 1380,
+    "signed_report_max_bytes": 1444,
+    "current_report_section_max_bytes": 24576,
+    "shared_state_max_bytes": 196608,
+    "max_challenges_per_epoch": 8,
+    "evaluator_current_max_bytes": 356,
+    "evaluator_frozen_bytes": 152,
+    "challenge_record_bytes": 170
+  },
+  "release_blockers": [
+    "Real Programs native adapter host integration unqualified",
+    "F09 external bundle validation and sealing tooling unimplemented",
+    "Native historical content blob reclamation/lifecycle prerequisite unqualified"
+  ],
+  "operations": [
+    {
+      "name": "ScheduleEvaluator",
+      "opcode": "0x0301",
+      "payload_bytes": 160,
+      "authentication": "kind0"
+    },
+    {
+      "name": "RotateEvaluatorKey",
+      "opcode": "0x0302",
+      "payload_bytes": 88,
+      "authentication": "kind0"
+    },
+    {
+      "name": "RevokeEvaluator",
+      "opcode": "0x0303",
+      "payload_bytes": 74,
+      "authentication": "kind0"
+    },
+    {
+      "name": "ChallengeAssessment",
+      "opcode": "0x0304",
+      "payload_bytes": 97,
+      "authentication": "kind0"
+    }
+  ],
+  "internal_transitions": [
+    {
+      "name": "ValidateReportAdmission",
+      "external_opcode": null,
+      "invoked_by": "F04 Reveal atomically"
+    }
+  ],
+  "errors": [
+    {
+      "name": "NO_GRANT",
+      "code": "0x0301"
+    },
+    {
+      "name": "EVALUATOR_CAPACITY",
+      "code": "0x0302"
+    },
+    {
+      "name": "BAD_ACTIVATION",
+      "code": "0x0303"
+    },
+    {
+      "name": "KEY_REUSED",
+      "code": "0x0304"
+    },
+    {
+      "name": "KEY_VERSION_CONFLICT",
+      "code": "0x0305"
+    },
+    {
+      "name": "GRANT_VERSION_CONFLICT",
+      "code": "0x0306"
+    },
+    {
+      "name": "REPORT_ALREADY_FINAL",
+      "code": "0x0307"
+    },
+    {
+      "name": "CHALLENGE_CAPACITY",
+      "code": "0x0308"
+    },
+    {
+      "name": "UNKNOWN_WORKER",
+      "code": "0x0309"
+    },
+    {
+      "name": "NO_SCORES",
+      "code": "0x030A"
+    },
+    {
+      "name": "SCORE_RANGE",
+      "code": "0x030B"
+    },
+    {
+      "name": "NONCANONICAL_VECTOR",
+      "code": "0x030C"
+    },
+    {
+      "name": "EVIDENCE_NOT_SEALED",
+      "code": "0x030D"
+    },
+    {
+      "name": "EVIDENCE_ROOT_MISMATCH",
+      "code": "0x030E"
+    }
+  ],
+  "events": [
+    {
+      "name": "RevealScore",
+      "producer": "F04 encompassing reveal only",
+      "body_bytes": 228,
+      "field_order": [
+        "schema_version:u16",
+        "market_id:32",
+        "epoch:u64",
+        "config_version:u64",
+        "state_revision:u64",
+        "request_digest:32",
+        "result_digest:32",
+        "evaluator_id:32",
+        "report_digest:32",
+        "evidence_root:32",
+        "vector_count:u16",
+        "admitted_height:u64"
+      ],
+      "commit_event_bytes_unchanged": 194,
+      "reveal_result_payload_bytes_unchanged": 81
+    }
+  ],
+  "response_status": {
+    "OK": 0,
+    "ALREADY_APPLIED": 1,
+    "ERROR": 2,
+    "application_error": "u16 immediately after status;0 for0/1,explicit error code for2"
+  },
+  "evaluator_acceptance": {
+    "nomination_operation": "F03 ScheduleEvaluator",
+    "acceptance_operation": "F08 AdmitEvaluator",
+    "principal_authority": "kind0 actual invoking principal equals nominated evaluator owner",
+    "delegate_pop_domain": "PAXAI/evaluator-admission-consent/v1",
+    "consent_record_bytes": 362,
+    "signed_consent_bytes": 426,
+    "activation_gate": "existing F08 admitted membership flag plus effective frozen snapshot",
+    "additional_identity_record": false
+  },
+  "qualification": "UNRUN",
+  "canonical_task_authority": "../../spec.kvx"
+}

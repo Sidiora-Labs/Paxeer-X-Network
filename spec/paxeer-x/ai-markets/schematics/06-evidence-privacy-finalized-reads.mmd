@@ -1,0 +1,44 @@
+%% PROPOSED evidence and read paths; all service / proof qualification UNRUN.
+flowchart TB
+  private["Private prompt / dataset / output / explanation"]
+  encrypt["Random object key + random frame nonce; XChaCha20-Poly1305 and context-bound associated data"]
+  object["Durable ciphertext object: bounded chunks, content tree and typed manifest root"]
+  acl["Current task / principal / purpose / generation / expiry authorization"]
+  key["Approved service KMS releases keys only under current grant"]
+  bytes["Authorized consumer verifies tags, exact stream, lengths, manifest and task bindings"]
+  declaration["Separate rights declaration / reproduction / availability dispositions"]
+  manifest["Evidence manifest: frozen rubric / mode / task set / generations / exact score pairs"]
+  compact["Onchain: compact evidence seal, score report and commitment roots only"]
+  conclusions["Binding / signatures / integrity / availability / declared rights / reproduction / quality remain separate"]
+  private --> encrypt --> object
+  object --> acl --> key --> bytes
+  bytes --> manifest
+  declaration --> manifest
+  manifest --> compact
+  manifest --> conclusions
+  subgraph read["Noncommitting application ProgramRead path"]
+    selector["READ_HEADER 0x0A01 / READ_STATE_CHUNK 0x0A02; kind0 and actor_sequence 0"]
+    discovery["Selector epoch/config 0 and zero roster; chain/program/market/expiry still mandatory"]
+    chunks["At most 24 aligned chunks of 8192 bytes; pin exact native root, sequence, revision and digest"]
+    complete["Reconstruct exact state at most 196608 bytes and verify view-state digest"]
+    finality["Independent checkpoint proof binds that same native root / batch; minimum rank 4"]
+    capture["Atomic immutable snapshot + rows + projection cursor + outbox"]
+    pages["Authorized pinned SnapshotId pages; default 16 / maximum 32; cursor TTL 15 minutes"]
+    publish["Admitted private producer and durable verified webhook delivery"]
+    selector --> discovery --> chunks --> complete --> finality --> capture
+    capture --> pages
+    capture --> publish
+  end
+  compact --> selector
+  gap["Missing chunk / unavailable pinned root / unrelated finality proof: capture refuses"]
+  confidential["Public views exclude plaintext, private locators, credentials and object keys"]
+  revoked["Revocation blocks new reads / key release; already disclosed bytes cannot be recalled"]
+  health["Signed health is separate: expiry 30 seconds, public rollups need at least 20 samples"]
+  truth["Admitted assessment is authorized attribution; no semantic AI truth or execution proof"]
+  chunks -->|"root mismatch or gap"| gap
+  finality -->|"absent same-root evidence"| gap
+  confidential --> pages
+  revoked --> acl
+  health -.->|"operational view only"| pages
+  conclusions --> truth
+  compact --> truth

@@ -4802,3 +4802,9 @@ observed = "the kernel and registry units created their /var/lib/layerx/<app> da
 [gotcha.1024]
 title = "one LAYERX_TLS_DIR per ca.sh run, one volume per unit"
 observed = "ca.sh issue writes every box row under the single LAYERX_TLS_DIR of the run; when the kernel and registry share a host the registry rows land in the kernel volume and must be moved to /var/lib/layerx/registry/tls where the registry container mounts /data"
+
+[gotcha.1025]
+area = "spec"
+symptom = "An existing canonical requirement section is repeated with duplicate title and acceptance keys, blocking complete-file KVX parsing."
+cause = "Separate planning additions reused a requirement identifier."
+do = "Keep new requirement identifiers namespaced; record the pre-existing duplicate and validate added sections and dependencies separately without claiming a complete-file pass."

@@ -1,0 +1,931 @@
+{
+  "release": "PAXAI-SPEC-2026-10-08-r1",
+  "status": "APPLICATION_WIRE_ALLOCATION_UNRUN",
+  "precedence": "This registry freezes named onchain selectors. Decimal and hex values denote the same u16. Operation and application-error code spaces are distinct. C08/C12/C15 freeze result framing; no native host opcode/status is renumbered.",
+  "operations": [
+    {
+      "feature": "F01",
+      "name": "CREATE",
+      "operation_u16": 257,
+      "operation_hex": "0x0101",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "STAGE_POLICY",
+      "operation_u16": 258,
+      "operation_hex": "0x0102",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "CANCEL_POLICY",
+      "operation_u16": 259,
+      "operation_hex": "0x0103",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "SCHEDULE_ACTIVATION",
+      "operation_u16": 260,
+      "operation_hex": "0x0104",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "ADVANCE_ACTIVATION",
+      "operation_u16": 261,
+      "operation_hex": "0x0105",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "SUSPEND",
+      "operation_u16": 262,
+      "operation_hex": "0x0106",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "UPDATE_METADATA",
+      "operation_u16": 263,
+      "operation_hex": "0x0107",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "APPOINT_OPERATOR",
+      "operation_u16": 264,
+      "operation_hex": "0x0108",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "REVOKE_OPERATOR",
+      "operation_u16": 265,
+      "operation_hex": "0x0109",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "REQUEST_CLOSE",
+      "operation_u16": 266,
+      "operation_hex": "0x010A",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "ADVANCE_CLOSE",
+      "operation_u16": 267,
+      "operation_hex": "0x010B",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "ADMIT_TASK",
+      "operation_u16": 268,
+      "operation_hex": "0x010C",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "ACCEPT_TASK",
+      "operation_u16": 269,
+      "operation_hex": "0x010D",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "CANCEL_TASK",
+      "operation_u16": 270,
+      "operation_hex": "0x010E",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "COMMIT_TASK_RESULT",
+      "operation_u16": 271,
+      "operation_hex": "0x010F",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "SEAL_TASK_SET",
+      "operation_u16": 272,
+      "operation_hex": "0x0110",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F01",
+      "name": "OPEN_EPOCH",
+      "operation_u16": 273,
+      "operation_hex": "0x0111",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F01-markets.kvx",
+      "payload_contract": "../features/F01-markets.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "EnrollWorker",
+      "operation_u16": 513,
+      "operation_hex": "0x0201",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "PublishMetadata",
+      "operation_u16": 514,
+      "operation_hex": "0x0202",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "SetDraining",
+      "operation_u16": 515,
+      "operation_hex": "0x0203",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "UndoDrain",
+      "operation_u16": 516,
+      "operation_hex": "0x0204",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "RotateDelegate",
+      "operation_u16": 517,
+      "operation_hex": "0x0205",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "RevokeDelegate",
+      "operation_u16": 518,
+      "operation_hex": "0x0206",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "RetireWorker",
+      "operation_u16": 519,
+      "operation_hex": "0x0207",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "AcceptEnrollment",
+      "operation_u16": 521,
+      "operation_hex": "0x0209",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F02",
+      "name": "ExpireEnrollment",
+      "operation_u16": 522,
+      "operation_hex": "0x020A",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F02-workers.kvx",
+      "payload_contract": "../features/F02-workers.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F03",
+      "name": "ScheduleEvaluator",
+      "operation_u16": 769,
+      "operation_hex": "0x0301",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F03-evaluators.kvx",
+      "payload_contract": "../features/F03-evaluators.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F03",
+      "name": "RotateEvaluatorKey",
+      "operation_u16": 770,
+      "operation_hex": "0x0302",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F03-evaluators.kvx",
+      "payload_contract": "../features/F03-evaluators.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F03",
+      "name": "RevokeEvaluator",
+      "operation_u16": 771,
+      "operation_hex": "0x0303",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F03-evaluators.kvx",
+      "payload_contract": "../features/F03-evaluators.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F03",
+      "name": "ChallengeAssessment",
+      "operation_u16": 772,
+      "operation_hex": "0x0304",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F03-evaluators.kvx",
+      "payload_contract": "../features/F03-evaluators.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F04",
+      "name": "CommitScore",
+      "operation_u16": 1025,
+      "operation_hex": "0x0401",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F04-commit-reveal.kvx",
+      "payload_contract": "../features/F04-commit-reveal.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F04",
+      "name": "RevealScore",
+      "operation_u16": 1026,
+      "operation_hex": "0x0402",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F04-commit-reveal.kvx",
+      "payload_contract": "../features/F04-commit-reveal.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F05",
+      "name": "BeginAggregation",
+      "operation_u16": 1281,
+      "operation_hex": "0x0501",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F05-aggregation.kvx",
+      "payload_contract": "../features/F05-aggregation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F05",
+      "name": "ProcessAggregation",
+      "operation_u16": 1282,
+      "operation_hex": "0x0502",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F05-aggregation.kvx",
+      "payload_contract": "../features/F05-aggregation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F05",
+      "name": "FinalizeAggregation",
+      "operation_u16": 1283,
+      "operation_hex": "0x0503",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F05-aggregation.kvx",
+      "payload_contract": "../features/F05-aggregation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F06",
+      "name": "FUND",
+      "operation_u16": 1537,
+      "operation_hex": "0x0601",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F06-rewards.kvx",
+      "payload_contract": "../features/F06-rewards.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F06",
+      "name": "CLAIM",
+      "operation_u16": 1538,
+      "operation_hex": "0x0602",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F06-rewards.kvx",
+      "payload_contract": "../features/F06-rewards.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F06",
+      "name": "EXPIRE_EPOCH_CLAIMS",
+      "operation_u16": 1539,
+      "operation_hex": "0x0603",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F06-rewards.kvx",
+      "payload_contract": "../features/F06-rewards.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F06",
+      "name": "REFUND_FREE",
+      "operation_u16": 1540,
+      "operation_hex": "0x0604",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F06-rewards.kvx",
+      "payload_contract": "../features/F06-rewards.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F06",
+      "name": "PRUNE_EPOCH",
+      "operation_u16": 1541,
+      "operation_hex": "0x0605",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F06-rewards.kvx",
+      "payload_contract": "../features/F06-rewards.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F07",
+      "name": "ResetHistory",
+      "operation_u16": 1793,
+      "operation_hex": "0x0701",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F07-reputation.kvx",
+      "payload_contract": "../features/F07-reputation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F07",
+      "name": "SuspendHistory",
+      "operation_u16": 1794,
+      "operation_hex": "0x0702",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F07-reputation.kvx",
+      "payload_contract": "../features/F07-reputation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F07",
+      "name": "ResumeHistory",
+      "operation_u16": 1795,
+      "operation_hex": "0x0703",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F07-reputation.kvx",
+      "payload_contract": "../features/F07-reputation.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "ApproveAdmission",
+      "operation_u16": 2049,
+      "operation_hex": "0x0801",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "RevokeAdmissionApproval",
+      "operation_u16": 2050,
+      "operation_hex": "0x0802",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "AdmitWorker",
+      "operation_u16": 2051,
+      "operation_hex": "0x0803",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "AdmitEvaluator",
+      "operation_u16": 2052,
+      "operation_hex": "0x0804",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "Heartbeat",
+      "operation_u16": 2053,
+      "operation_hex": "0x0805",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "RequestExit",
+      "operation_u16": 2054,
+      "operation_hex": "0x0806",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "CancelExit",
+      "operation_u16": 2055,
+      "operation_hex": "0x0807",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "PruneInactive",
+      "operation_u16": 2056,
+      "operation_hex": "0x0808",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F08",
+      "name": "AdministrativeRemove",
+      "operation_u16": 2057,
+      "operation_hex": "0x0809",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F08-admission.kvx",
+      "payload_contract": "../features/F08-admission.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F09",
+      "name": "SealEvidence",
+      "operation_u16": 2305,
+      "operation_hex": "0x0901",
+      "scope": "PAXAI inner application calldata",
+      "contract": "../features/F09-artifacts.kvx",
+      "payload_contract": "../features/F09-artifacts.kvx operation contracts",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F10",
+      "name": "READ_HEADER",
+      "operation_u16": 2561,
+      "operation_hex": "0x0A01",
+      "scope": "noncommitting ProgramRead",
+      "contract": "../features/F10-views-sdk.kvx",
+      "payload_contract": "core.kvx C14",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    },
+    {
+      "feature": "F10",
+      "name": "READ_STATE_CHUNK",
+      "operation_u16": 2562,
+      "operation_hex": "0x0A02",
+      "scope": "noncommitting ProgramRead",
+      "contract": "../features/F10-views-sdk.kvx",
+      "payload_contract": "core.kvx C14",
+      "status": "PROPOSED_V1_FROZEN_UNRUN"
+    }
+  ],
+  "reserved": [
+    {
+      "feature": "F02",
+      "operation_u16": 520,
+      "operation_hex": "0x0208",
+      "name": "DiscoverWorker",
+      "status": "RESERVED_UNAVAILABLE",
+      "reason": "Discovery is an offchain F10 projection/SDK operation using READ_HEADER/READ_STATE_CHUNK; this selector refuses UNKNOWN_OPERATION."
+    }
+  ],
+  "common_errors": [
+    {
+      "name": "BAD_VERSION",
+      "application_error_u16": 1,
+      "application_error_hex": "0x0001"
+    },
+    {
+      "name": "NON_CANONICAL",
+      "application_error_u16": 2,
+      "application_error_hex": "0x0002"
+    },
+    {
+      "name": "WRONG_DOMAIN",
+      "application_error_u16": 3,
+      "application_error_hex": "0x0003"
+    },
+    {
+      "name": "WRONG_PROGRAM",
+      "application_error_u16": 4,
+      "application_error_hex": "0x0004"
+    },
+    {
+      "name": "WRONG_MARKET",
+      "application_error_u16": 5,
+      "application_error_hex": "0x0005"
+    },
+    {
+      "name": "UNAUTHORIZED",
+      "application_error_u16": 6,
+      "application_error_hex": "0x0006"
+    },
+    {
+      "name": "ROLE_CONFLICT",
+      "application_error_u16": 7,
+      "application_error_hex": "0x0007"
+    },
+    {
+      "name": "REVOKED",
+      "application_error_u16": 8,
+      "application_error_hex": "0x0008"
+    },
+    {
+      "name": "KEY_MISMATCH",
+      "application_error_u16": 9,
+      "application_error_hex": "0x0009"
+    },
+    {
+      "name": "BAD_SIGNATURE",
+      "application_error_u16": 10,
+      "application_error_hex": "0x000A"
+    },
+    {
+      "name": "EXPIRED",
+      "application_error_u16": 11,
+      "application_error_hex": "0x000B"
+    },
+    {
+      "name": "WRONG_EPOCH",
+      "application_error_u16": 12,
+      "application_error_hex": "0x000C"
+    },
+    {
+      "name": "WRONG_CONFIG",
+      "application_error_u16": 13,
+      "application_error_hex": "0x000D"
+    },
+    {
+      "name": "WRONG_ROSTER",
+      "application_error_u16": 14,
+      "application_error_hex": "0x000E"
+    },
+    {
+      "name": "WRONG_PHASE",
+      "application_error_u16": 15,
+      "application_error_hex": "0x000F"
+    },
+    {
+      "name": "REPLAY_CONFLICT",
+      "application_error_u16": 16,
+      "application_error_hex": "0x0010"
+    },
+    {
+      "name": "SEQUENCE_CONSUMED",
+      "application_error_u16": 17,
+      "application_error_hex": "0x0011"
+    },
+    {
+      "name": "SEQUENCE_GAP",
+      "application_error_u16": 18,
+      "application_error_hex": "0x0012"
+    },
+    {
+      "name": "STALE_CURSOR",
+      "application_error_u16": 19,
+      "application_error_hex": "0x0013"
+    },
+    {
+      "name": "CONFLICT",
+      "application_error_u16": 20,
+      "application_error_hex": "0x0014"
+    },
+    {
+      "name": "NOT_FOUND",
+      "application_error_u16": 21,
+      "application_error_hex": "0x0015"
+    },
+    {
+      "name": "CAPACITY",
+      "application_error_u16": 22,
+      "application_error_hex": "0x0016"
+    },
+    {
+      "name": "RETENTION_FULL",
+      "application_error_u16": 23,
+      "application_error_hex": "0x0017"
+    },
+    {
+      "name": "INSUFFICIENT_FREE",
+      "application_error_u16": 24,
+      "application_error_hex": "0x0018"
+    },
+    {
+      "name": "ACCOUNT_BINDING",
+      "application_error_u16": 25,
+      "application_error_hex": "0x0019"
+    },
+    {
+      "name": "HOST_CAPABILITY",
+      "application_error_u16": 26,
+      "application_error_hex": "0x001A"
+    },
+    {
+      "name": "HOST_TRANSFER",
+      "application_error_u16": 27,
+      "application_error_hex": "0x001B"
+    },
+    {
+      "name": "ARITHMETIC",
+      "application_error_u16": 28,
+      "application_error_hex": "0x001C"
+    },
+    {
+      "name": "EVIDENCE_BINDING",
+      "application_error_u16": 29,
+      "application_error_hex": "0x001D"
+    },
+    {
+      "name": "READINESS_BLOCKED",
+      "application_error_u16": 30,
+      "application_error_hex": "0x001E"
+    },
+    {
+      "name": "UNKNOWN_OPERATION",
+      "application_error_u16": 31,
+      "application_error_hex": "0x001F"
+    }
+  ],
+  "explicit_feature_errors": [
+    {
+      "feature": "F03",
+      "name": "NO_GRANT",
+      "application_error_u16": 769,
+      "application_error_hex": "0x0301"
+    },
+    {
+      "feature": "F03",
+      "name": "EVALUATOR_CAPACITY",
+      "application_error_u16": 770,
+      "application_error_hex": "0x0302"
+    },
+    {
+      "feature": "F03",
+      "name": "BAD_ACTIVATION",
+      "application_error_u16": 771,
+      "application_error_hex": "0x0303"
+    },
+    {
+      "feature": "F03",
+      "name": "KEY_REUSED",
+      "application_error_u16": 772,
+      "application_error_hex": "0x0304"
+    },
+    {
+      "feature": "F03",
+      "name": "KEY_VERSION_CONFLICT",
+      "application_error_u16": 773,
+      "application_error_hex": "0x0305"
+    },
+    {
+      "feature": "F03",
+      "name": "GRANT_VERSION_CONFLICT",
+      "application_error_u16": 774,
+      "application_error_hex": "0x0306"
+    },
+    {
+      "feature": "F03",
+      "name": "REPORT_ALREADY_FINAL",
+      "application_error_u16": 775,
+      "application_error_hex": "0x0307"
+    },
+    {
+      "feature": "F03",
+      "name": "CHALLENGE_CAPACITY",
+      "application_error_u16": 776,
+      "application_error_hex": "0x0308"
+    },
+    {
+      "feature": "F03",
+      "name": "UNKNOWN_WORKER",
+      "application_error_u16": 777,
+      "application_error_hex": "0x0309"
+    },
+    {
+      "feature": "F03",
+      "name": "NO_SCORES",
+      "application_error_u16": 778,
+      "application_error_hex": "0x030A"
+    },
+    {
+      "feature": "F03",
+      "name": "SCORE_RANGE",
+      "application_error_u16": 779,
+      "application_error_hex": "0x030B"
+    },
+    {
+      "feature": "F03",
+      "name": "NONCANONICAL_VECTOR",
+      "application_error_u16": 780,
+      "application_error_hex": "0x030C"
+    },
+    {
+      "feature": "F03",
+      "name": "EVIDENCE_NOT_SEALED",
+      "application_error_u16": 781,
+      "application_error_hex": "0x030D"
+    },
+    {
+      "feature": "F03",
+      "name": "EVIDENCE_ROOT_MISMATCH",
+      "application_error_u16": 782,
+      "application_error_hex": "0x030E"
+    },
+    {
+      "feature": "F06",
+      "name": "FUNDING_POLICY_MISMATCH",
+      "application_error_u16": 1537,
+      "application_error_hex": "0x0601"
+    },
+    {
+      "feature": "F06",
+      "name": "REFUND_RECIPIENT_MISMATCH",
+      "application_error_u16": 1538,
+      "application_error_hex": "0x0602"
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_ASSET",
+      "application_error_u16": 1539,
+      "application_error_hex": "0x0603"
+    },
+    {
+      "feature": "F06",
+      "name": "INVALID_AMOUNT",
+      "application_error_u16": 1540,
+      "application_error_hex": "0x0604"
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_ALREADY_RESERVED",
+      "application_error_u16": 1541,
+      "application_error_hex": "0x0605"
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_NOT_RESERVED",
+      "application_error_u16": 1542,
+      "application_error_hex": "0x0606"
+    },
+    {
+      "feature": "F06",
+      "name": "AGGREGATION_MISMATCH",
+      "application_error_u16": 1543,
+      "application_error_hex": "0x0607"
+    },
+    {
+      "feature": "F06",
+      "name": "EPOCH_TERMINAL",
+      "application_error_u16": 1544,
+      "application_error_hex": "0x0608"
+    },
+    {
+      "feature": "F06",
+      "name": "CLAIM_NOT_READY",
+      "application_error_u16": 1545,
+      "application_error_hex": "0x0609"
+    },
+    {
+      "feature": "F06",
+      "name": "CLAIM_EXPIRED",
+      "application_error_u16": 1546,
+      "application_error_hex": "0x060A"
+    },
+    {
+      "feature": "F06",
+      "name": "UNKNOWN_WORKER_ENTITLEMENT",
+      "application_error_u16": 1547,
+      "application_error_hex": "0x060B"
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_CLAIM_RECIPIENT",
+      "application_error_u16": 1548,
+      "application_error_hex": "0x060C"
+    },
+    {
+      "feature": "F06",
+      "name": "WRONG_CLAIM_AMOUNT",
+      "application_error_u16": 1549,
+      "application_error_hex": "0x060D"
+    },
+    {
+      "feature": "F06",
+      "name": "NOTHING_TO_CLAIM",
+      "application_error_u16": 1550,
+      "application_error_hex": "0x060E"
+    },
+    {
+      "feature": "F06",
+      "name": "LEDGER_INVARIANT_VIOLATION",
+      "application_error_u16": 1551,
+      "application_error_hex": "0x060F"
+    },
+    {
+      "feature": "F06",
+      "name": "CONTRIBUTION_CONSENT_REQUIRED",
+      "application_error_u16": 1552,
+      "application_error_hex": "0x0610"
+    }
+  ],
+  "remaining_feature_error_rule": "For feature-specific names without an explicit numeric table, ai.T-C01 owns a single generated declaration-order code table in that feature high-byte namespace. It must be frozen with shared codec before clients/tests are implemented; no runtime allocation, native-code substitution or per-agent number choice. Common aliases use the exact common code. This new table is an implementation-owned protocol allocation from the normative symbolic contracts.",
+  "internal_operations": [
+    "F03 ValidateReportAdmission",
+    "F07 ApplyCompletedEpoch",
+    "F08 RolloverRoster",
+    "F09 BindArtifact"
+  ],
+  "offchain_operation_rule": "F02 PAXAIS1 service selectors and F09 artifact-service operations use their own signed offchain envelopes. They are not PAXAI onchain selectors. F10 PREPARE/REVIEW/SUBMIT are SDK/client states, not onchain mutation opcodes.",
+  "event_registry": {
+    "CommitAccepted": {
+      "topic": "PAXAI/v1/CommitScore",
+      "bytes": 194
+    },
+    "RevealScore": {
+      "topic": "PAXAI/v1/RevealScore",
+      "bytes": 228,
+      "suffix_after_common_fields": [
+        "evaluator_id32",
+        "report_digest32",
+        "evidence_root32",
+        "vector_count:u16",
+        "admitted_height:u64"
+      ]
+    }
+  }
+}

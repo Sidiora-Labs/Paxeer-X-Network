@@ -1,0 +1,372 @@
+[meta]
+id = "F05"
+title = "Deterministic AI quality aggregation"
+version = "PAXAI-v1"
+status = "SPECIFICATION_ONLY"
+implementation = "UNRUN"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+task_precedence = "Canonical task sections in ../../spec.kvx control admission, dependencies, ownership and gates. Local proposals describe feature obligations only."
+requirements_file = "F05-aggregation.requirements.json"
+
+[contract.overview]
+title = "Deterministic AI quality aggregation"
+paragraph_1 = "Version: PAXAI v1. Status: proposed design. Implementation, compilation, behavior qualification, resource qualification and deployment: UNRUN."
+
+[contract.section_1]
+title = "PURPOSE AND BEHAVIORAL SCOPE"
+paragraph_1 = "F05 converts independently admitted evaluator assessments into one bounded, deterministic quality result per eligible worker per epoch. The AI use case is comparing externally produced outputs under an immutable market rubric. It establishes the agreed assessment and the precise raw weights consumed by funded rewards and history. It does not execute an AI model, establish factual correctness, inspect private evidence, infer evaluator honesty, decide chain finality, mint assets or move funds."
+paragraph_2 = "F05-R01: Version one uses an unweighted lower median of admitted scores, independently for each worker. Quorum is three distinct authorized evaluator identities. At most eight evaluators and 32 workers participate in a market epoch. A missing assessment contributes no vote. A signed score of zero contributes a real zero vote. No stake, account balance, history weight, owner privilege, special evaluator override, moving average or silent fallback changes this rule."
+paragraph_3 = "This choice gives bounded arithmetic and a comprehensible disagreement rule. It does not make a three-person panel objectively correct. Market operators must commission meaningful independent assessment and publish its limitations. A high aggregate states agreement under the selected rubric, never proof of true or safe AI behavior."
+
+[contract.section_2]
+title = "EXISTING PAXEER INTEGRATION AND PROPOSED ADDITIONS"
+paragraph_1 = "F05-R02: Implement F05 as proposed application logic inside the one Program instance assigned to the market. Preserve existing consensus, validator membership, finality, monetary conservation, account custody, ABI versions, native module IDs and state-proof namespaces. Do not add a native aggregation host function or modify host limits to accommodate this feature."
+paragraph_2 = "Confirmed existing integration points are programs/sdk/rust/src/context.rs, providing authenticated executing_program, invoking_principal and batch_height; programs/sdk/rust/src/storage.rs, providing explicitly shared read/write bindings and SharedStorageKey/StorageValue; programs/sdk/rust/src/crypto.rs, providing SHA-256 through hash(HashAlgorithm::Sha256, HashInput); and programs/sdk/rust/src/event.rs, providing bounded event emission. The application must request the corresponding admitted capabilities. Shared storage visibility does not itself grant application authority. Target deployment admission of these SDK and runtime interfaces requires qualification."
+paragraph_3 = "The existing runtime storage host registration is programs/crates/layerx-programs-runtime/src/host/storage.rs. The SDK bounds a storage key to 256 bytes and a storage value to 1,048,576 bytes. The proposed application imposes its own smaller 196,608-byte complete-market state bound. Host limits are ceilings, not a reservation or an execution guarantee. Actual target authority, serialization feasibility, native staging and fuel limits remain release prerequisites."
+paragraph_4 = "Proposed new files are programs/crates/layerx-programs-ai-market/src/aggregation.rs, src/aggregation_codec.rs and tests/aggregation_contract.rs, within a proposed new workspace crate layerx-programs-ai-market. None exists or is represented as deployed by this specification. contracts/core.kvx and contracts/integration-map.kvx govern shared message headers, state location, error envelopes, hashes and common account bindings; this feature defines only aggregation-specific semantics."
+
+[contract.section_3]
+title = "GLOSSARY, TYPES AND CANONICAL MODEL"
+paragraph_1 = "F05-R03: An epoch is the immutable policy-and-roster interval identified by the core market/Program/chain domain, immutable MarketId, config_version and u64 epoch number. All multibyte unsigned integers are big endian. IDs and commitments are exactly 32 bytes. Scores are u32 integers in parts per million, inclusive range 0 through 1,000,000. No deterministic path uses floating point. Reserved bits/bytes must be zero and unknown versions must refuse. Canonical worker order is lexicographic ascending unsigned 32-byte worker ID; evaluator identity is a stable distinct identity rather than an operational public key."
+paragraph_2 = "An AggregationInputView is an internal validated view, not a new public wire format: the frozen eligible worker identities and generations, frozen eligible evaluator identities/grants, immutable policy/rubric commitment, accepted assessment records and core epoch/domain identifiers. Generations are bound to the frozen records. A replacement may reuse a slot but cannot reuse eligibility or assessments belonging to the previous occupant."
+paragraph_3 = "Each WorkerAggregate contains worker ID32, frozen worker generation u64, support_count u8 in 0..8, result_status u8, median_score_ppm u32 and reward_weight u32. Result_status is INSUFFICIENT_QUORUM=0, SCORED_ZERO=1 or SCORED_POSITIVE=2. For status0 both integer score fields are canonical zero but MUST be rendered as absent/unknown quality, not as a measured zero. For status1 both are zero and support_count>=3. For status2 median_score_ppm equals reward_weight and is in 1..1,000,000. Every frozen worker receives exactly one result record, including workers with no reports."
+paragraph_4 = "EpochAggregation contains the common immutable epoch header/bindings, input commitment32, worker_count u16 in 0..32, ordered WorkerAggregates, total_reward_weight u64, result commitment32 and terminal status. The sum is at most 32,000,000. Optional client display ratios are derived views, never stored authoritative reward weights. This feature adds no separate amount or transfer type. F06 owns the funded budget, entitlement amounts, exact apportionment and remainder accounting."
+
+[contract.section_4]
+title = "AUTHORITY, KEYS AND DOMAIN BINDING"
+paragraph_1 = "Role | Permitted F05 action | Limitation"
+paragraph_2 = "Any authorized transaction submitter | Request deterministic terminalization for an eligible epoch | Cannot choose inputs or override computed values."
+paragraph_3 = "Frozen evaluator identity | Supplies assessments through F03/F04 | At most one effective assessment per worker; no self-assessment."
+paragraph_4 = "Market owner/policy authority | Configures future policy through F01 | Cannot replace an open epoch rubric, grant special scoring weight or rewrite a terminal result."
+paragraph_5 = "Current grant authority | Revokes a compromised operational key according to core rules | Revocation effects occur at authoritative transition order; cannot retroactively rewrite an already terminal result."
+paragraph_6 = "Reward claimant/history reader | Reads the immutable terminal result through F06/F07/F10 | No authority to change its contents."
+paragraph_7 = "F05-R04: Freeze membership and grants before the epoch starts. Rotation or additional keys do not create additional evaluator identities or votes. Multiple identities controlled by one organization remain a trust risk; identity uniqueness cannot establish economic independence. F03 must refuse a worker assessing itself or a declared same-owner worker. Unknown beneficial-owner relationships are not automatically detectable."
+paragraph_8 = "Revoked current operational authority is refused on new admission even if the key was eligible at the boundary. BeginAggregation seals rows from F03/F04, excluding an evaluator row whose grant/key was revoked before this seal. A revocation ordered after the seal is prospective and cannot change the sealed input, partially computed output or terminal result. Live revocation ordering is determined by authoritative state transitions, never by request data or service wall clock. Every assessment and result is bound to chain domain, executing Program, market, frozen worker generation, epoch, roster and rubric; moving any component to another domain must fail rather than be treated as an equivalent vote."
+
+[contract.section_5]
+title = "OPERATION CONTRACTS"
+paragraph_1 = "F05-R05: BeginAggregation, ProcessAggregation and FinalizeAggregation are permissionless direct kind0 application operations in the common C03 envelope. actor_sequence=0; the authenticated relayer has no owner/evaluator privilege. All requests retain expiry checks and exact market/epoch/config/roster bindings. No nested caller is allowed. Their payloads may not supply an arbitrary score list, aggregate, total weight or result root."
+paragraph_2 = "BeginAggregation payload is empty. Preconditions are supported version/domain, an opened nonterminal epoch, authenticated execution height>=reveal_end, valid frozen roster/policy and canonical accepted F03/F04 records. It atomically seals current eligibility: only accepted revealed reports whose frozen evaluator grant/key has not been revoked before this operation remain eligible. It stores immutable input_digest, seal_height:u64 and cursor:u16=0, plus an empty bounded partial output. Expired/failed/unrevealed commitments produce no report, not a zero row. Exact semantic repetition exposes the same input digest/cursor without re-evaluating live revocations. An owner suspension permits this deterministic progression."
+paragraph_3 = "ProcessAggregation payload is input_digest32 || expected_cursor:u16. It requires the same sealed digest and exact persisted cursor, a nonterminal aggregation and valid canonical sealed inputs. It processes exactly min(8, worker_count-cursor) consecutive frozen workers, producing those WorkerAggregates and extending the checked running sum atomically with the cursor. At terminal cursor, an exact repeat returns ALREADY_APPLIED/current cursor and does no work. Stale earlier cursor returns STALE_CURSOR/current cursor; no processed record is recomputed or appended twice. Digest mismatch returns CONFLICT. The operation cannot choose a smaller chunk, different worker set, submit weights, pay a worker or alter a sealed report. Failed fuel/storage/event/capacity checks roll back the whole chunk, retaining its prior cursor and results."
+paragraph_4 = "FinalizeAggregation payload is input_digest32. It requires cursor==worker_count, complete canonical outputs and checked sum. It computes aggregate_root and invokes the F06 entitlement seal in the same application transition, without a nested Program call. Result root, budget release/allocation, immutable entitlements, claim flags, F07 history and epoch terminal status commit atomically or all refuse. No committed score-terminal state exists without its corresponding exact ledger allocation/release. Before this final transition the complete cursor remains provisional and no claim is allowed. No transfer exists in F05; F06 claims occur later. Failure retains the previous complete cursor and sealed input, without a partially claimable entitlement, terminal history or new root. Reattempting Finalize uses the same immutable inputs."
+paragraph_5 = "V1 exposes no abort operation, discretionary or otherwise. No owner may discard valid work or seize its Reserved budget. Structural corruption refuses without attempting an accounting mutation; recovery needs separately authorized, versioned handling. Any future abort requires an explicit versioned deterministic predicate, authority and qualification contract. Delayed deterministic processing remains valid and blocks a later opening until the one terminal seal succeeds."
+paragraph_6 = "The response is exactly common C08. Begin payload is input_digest32 || cursor:u16 || worker_count:u16. Process payload is input_digest32 || cursor:u16 || worker_count:u16 || partial_weight_sum:u64. Finalize payload is input_digest32 || aggregate_root32 || worker_count:u16 || total_reward_weight:u64. ALREADY_APPLIED repeats the existing object result without a new state revision, history append or event. A successful semantic mutation increments common state_revision once."
+paragraph_7 = "Event topics are ASCII PAXAI/v1/BeginAggregation, PAXAI/v1/ProcessAggregation and PAXAI/v1/FinalizeAggregation, with common C08 fields and the corresponding compact operation result. At most two application events per invocation and2048 bytes each apply. Do not emit raw assessments, salts or private evidence. F10 owns finalized projections."
+paragraph_8 = "Use the common refusal names BAD_VERSION, WRONG_DOMAIN, WRONG_PROGRAM, WRONG_MARKET, WRONG_EPOCH, WRONG_CONFIG, WRONG_ROSTER, WRONG_PHASE, STALE_CURSOR, CONFLICT, NON_CANONICAL, ARITHMETIC, CAPACITY and HOST_CAPABILITY. The sole added aggregation namespace error F05_REPORT_INVARIANT means persisted accepted data violates a previously checked invariant; it refuses rather than silently dropping a row. Host meter/storage/event refusals retain their native refusal evidence. Failed operations have no business effect; ordinary native fee law remains independent."
+
+[contract.section_6]
+title = "STATE MACHINE AND TRANSITION BOUNDARIES"
+paragraph_1 = "F05-R06: The shared cycle is 128 authenticated block heights: work offsets0..63, commitment64..79, reveal80..95 and settlement96..127. The inclusive lower/exclusive upper boundary rule comes from core. No aggregation input seal before offset96. Window progression is determined by height, not by when a service wakes. The epoch starts from core's configured origin; addition/multiplication overflow in computing boundaries is a refusal."
+paragraph_2 = "F03/F04 own open, admitted and revealed records. F05 seals a closed reveal set and processes bounded resumable chunks. F06 subsequently seals funded entitlements from the aggregate root; F07 consumes the same immutable result at successful epoch terminalization. Worker/evaluator memberships or rubric changes queued during the epoch affect only a future frozen roster. The number of configured evaluators does not change the fixed quorum3. A frozen roster containing fewer than three available independent evaluators can validly produce only insufficient-quorum worker results."
+paragraph_3 = "The progression is opened -> input-sealed/cursor0 -> input-sealed/cursor1..worker_count -> complete-cursor/provisional -> aggregate-and-entitlement-sealed/terminal. Every settled worker carries its explicit quality status. Delayed settlement remains permitted after scheduled end but blocks a later epoch opening until terminal; no late report is accepted. A scheduled epoch never opened during its Work window is skipped, producing no fake quality sample. An epoch where no worker achieves quorum is not an arithmetic error and is not an equal-pay epoch. Retain the core 32 terminal epochs, with claim expiry terminal_height+4096 heights; pruning is permitted only under the shared retention and claim rules. A pruned epoch cannot be recreated by a late Begin/Process/Finalize request. The high-watermark and terminal cursor must survive pruning."
+
+[contract.section_7]
+title = "DETERMINISTIC MATHEMATICS"
+paragraph_1 = "F05-R07: For each worker w let V(w) be the finite set of valid accepted assessments whose frozen worker ID and generation match w and whose evaluator identity is admitted exactly once for w. Let n(w)=|V(w)|. Missing reports do not occur in this set. Sort the n scalar scores into nondecreasing sequence a[0]..a[n-1]. If n<3 then status0 and reward_weight0. Otherwise select a[floor((n-1)/2)]. This is the lower median for even n; do not average the central pair. An eligible score0 remains in the ordered sequence. For n>=3 a selected zero yields status1; a positive selected score yields status2. No clipping, row rescaling, rank weighting or stake normalization is performed."
+paragraph_2 = "F05-R08: Let W be the sum of reward_weight over canonical worker order. W is a checked u64 sum; overflow is a state invariant failure, never saturation. W=0 yields no positive reward proportions. It does not trigger equal shares, owner payout, evaluator payout or stake fallback. F06 must keep or return funded amounts according to its own exact zero-weight rule. For W>0 a client may display floor(1,000,000*reward_weight/W) ppm for a worker. Use a checked u64 numerator, bounded above by 1,000,000,000,000. Displayed shares can sum below1,000,000; that dust has no economic meaning and must never be used to allocate funded units. F06 uses raw weights and owns exact monetary remainders."
+paragraph_3 = "input_digest = H(PAXAI/aggregation-input/v1, schema_version:u16 || chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_hash32 || seal_height:u64 || eligible_evaluator_count:u16 || ascending (evaluator_id32,report_digest32) entries). Only retained eligible full report digests are included; the frozen roster and original reports bind generations and rubric. Zero eligible evaluators is encoded by count0, not an absent digest. H is exactly the C02 domain/NUL/canonical-bytes construction."
+paragraph_4 = "aggregate_root = H(PAXAI/aggregation-output/v1, schema_version:u16 || chain_domain32 || program_id32 || market_id32 || epoch:u64 || config_version:u64 || roster_hash32 || input_digest32 || worker_count:u16 || canonical WorkerAggregate entries || total_reward_weight:u64). WorkerAggregate byte order is worker_id32 || generation:u64 || support_count:u8 || result_status:u8 || median_score_ppm:u32 || reward_weight:u32, exactly50bytes. This root commits scoring, not entitlements; F06 binds it into its economic settlement root. Generic C08 result_digest remains a separate digest under PAXAI/result/v1."
+paragraph_5 = "Within-worker score ties give the same selected integer independent of evaluator order. Canonical serialization remains ordered by worker identity, with accepted input records ordered by worker identity then evaluator identity under the core input codec. No map insertion order or operational-key ordering changes a vote. Permuting request/arrival order cannot change score outputs when the sealed admitted set and bindings are identical. Commitments additionally bind seal_height; different seal heights intentionally produce different input/result roots even if numeric outputs match."
+paragraph_6 = "F05-R09: Whole-epoch worst case is256 report cells,32 independent sorts of at most8 scores and32 additions, spread across at most4 Process calls. A Process call handles at most64report cells and8sorts. A simple sorting method with a declared at-most28 pair comparisons per worker is sufficient, giving at most896 score comparisons across the epoch and224per Process call; the implementation may choose another method only if it preserves outputs and provides a no-greater declared bounded cost. Require bounded arrays or checked allocation sizes. Never allocate a participant-squared matrix or scan historical reports to derive the current epoch."
+
+[contract.section_8]
+title = "REPLAY, RESTART, CONCURRENCY AND FINALITY"
+paragraph_1 = "F05-R10: All competing requests execute against the serial authoritative market state and use core expected revision/binding checks. Exactly one transition can seal a given input or economic terminal outcome; only one call can advance any particular cursor. A retry after a lost response queries the terminal epoch/receipt before creating another action. No caller may interpret a transport timeout as failed execution or compute a local replacement aggregate. Restart resumes from the committed cursor and immutable sealed input, never cached worker service memory. A crash after a chunk committed but before its response is recovered by reading the cursor, not applying the chunk again."
+paragraph_2 = "Only finalized core state/receipts constitute externally actionable terminal outcomes. An inclusion receipt, indexer row or event notification without required finalized binding is provisional. F06 must not pay from an offchain recomputation. F10 must report expired, unavailable, pruned and conflicting-proof states explicitly. Core upgrades must not reinterpret a retained v1 result as a different algorithm version; version changes apply prospectively with an explicit new policy commitment."
+
+[contract.section_9]
+title = "ABUSE, TRUST AND PRIVACY"
+paragraph_1 = "F05-R11: Lower median limits the influence of isolated extreme votes under a fixed honest-panel assumption; it is not a general collusion defense. With three reports two colluding identities can select an arbitrary median. With four reports the second ordered value is selected: two low colluding votes can force a low value. With eight reports the fourth is selected, so four low colluding votes can force a low value. Selective withholding can change which reports meet quorum and therefore change results. Quorum3 is a minimum evidence count, not a claim of Byzantine agreement."
+paragraph_2 = "F03/F04 must prevent duplicate identities, self-assessment, stale replacement generations, wrong-rubric reports, replayed signatures and late reveals. The commitment phase can reduce reactive copying but cannot prove independent measurement. Operator evidence for reviewer separation, rubric calibration and benchmark leakage belongs outside deterministic computation. F05 must not fetch private payloads or promise reproducibility where the rubric uses nondeterministic models. Persist only bounded commitments/metadata, IDs and scores; F09 owns payload custody, authorized retrieval and deletion rules."
+
+[contract.section_10]
+title = "STORAGE AND RESOURCE FEASIBILITY"
+paragraph_1 = "F05-R12: Store aggregation within the one complete-market shared state value at exact ASCII key paxai/state/v1. Total application maximum is196608bytes (192KiB). F05/F06 jointly own the81920byte settlement/historicalclaims section; F05 has no independent81920byte reservation. Never create a shared key per worker/epoch. The canonical50byte worker result gives1600bytes at32workers, plus fixed bindings/roots/cursor/status and sealed current inputs. F06 recipient-bound retained entitlements dominate history. Retain the full50byte-perworker aggregate only for the current epoch. After successful F06/history terminalization, historical perworker quality arrays are archived in authenticated external projections rather than duplicated for32epochs. Authoritative terminal history retains aggregate root, input root, epoch/config/roster bindings and required economic fields; root bindings authenticate archive content but do not prove archive availability. Do not store1024historic50byte results in addition to F06claims inside this shared budget. Current raw reports occupy the separate24576byte F03/F04 section, never duplicated per retained epoch."
+paragraph_2 = "Exact proposed F05 section layout, without duplicating the shared market/epoch header: aggregation_phase:u8 (0unsealed,1sealed-processing,2terminal); seal_height:u64; input_digest32; cursor:u16; eligible_report_count:u16; ascending (evaluator_id32,report_digest32) entries; output_count:u16; ascending WorkerAggregate50bytes entries; running_weight:u64; aggregate_root optional with common1byte presence and32bytes when present. output_count must equal cursor; eligible_report_count<=8, cursor<=frozenworker_count<=32. Before seal, seal_height/input_digest/cursor/running_weight are canonicalzero, vectors empty and aggregate_root absent. Input digest is explicitly absent only in phase0. In phase1 root remains absent, including complete cursor. In phase2 root is present and final F06/history accounting already committed atomically. Maximum current bytes are1+8+32+2+2+8*64+2+32*50+8+33=2200. Separately retain a historical F05 summary vector count:u16 plus up to32 entries(epoch:u64,config_version:u64,roster_hash32,input_digest32,aggregate_root32), exactly112bytes/entry: maximum3586bytes. Combined F05 maximum5786bytes is below core C11's32768remaining shared allocation; the unused26982bytes is headroom, not another per-feature reservation. Canonical history order is ascending epoch. The authoritative claim/history terminal height remains in F06/common, not duplicated here. Current epoch and historical summary insertion commit in the same terminal transition. All framing above is included in the sum; market/Program/domain bindings occur in the one shared header and digest preimages. Historical worker arrays and signed reports are not repeated in these summaries."
+paragraph_3 = "The full integrated serializer must account for all feature section bounds, reject both section and total overflow before effects, and maintain32terminal epochs without evicting live claim records. A full unsafe-to-prune ring refuses new epoch opening RETENTION_FULL. The state-size proof must use actual field widths/array bounds, not average-size assumptions or a separate allocation per feature."
+paragraph_4 = "Each mutating call writes this one shared value once and emits at most2events of2048bytes. Native finalization requires one content value and one namespace manifest, at most2new staged blobs for this namespace. Existing kernel ceilings are4staged blobs/activity,1MiB/blob,512committedblobs and64MiBcommittedblobtotal. No nested app calls or principal namespace mutation is allowed. The192KiB application state bound is not a new proof or ABI limit and does not enlarge any native ceiling."
+paragraph_5 = "Each chunk must fit actual fuel/memory, receipt and staging admission. If a chunk cannot fit, refusal is atomic and preserves previous cursor/input; do not skip workers or widen limits. A smaller hidden chunk is not allowed. Release must establish admitted maxima with the real guest/native adapter. Native version blobs can accumulate even though the app retains only32epochs. Pruning app records is not proven to reclaim those blobs. Continuous operation is blocked until the shared integration map's global lifecycle prerequisite is implemented and qualified; bounded aggregate memory alone cannot resolve content-store exhaustion."
+paragraph_6 = "The aggregate/input root is a binding digest, not a new state-proof primitive. Existing state witnesses and finality bindings must be used within actual key/value limits. A digest of scores cannot independently prove all eligible reports were included; a verifier needs the sealed roster, canonical reports, revocation snapshot/seal binding, output bytes and authenticated authoritative state or receipt. External archives do not manufacture missing onchain proofs."
+
+[contract.section_11]
+title = "INTER-FEATURE CONTRACTS"
+paragraph_1 = "F01 supplies immutable market identity, rubric/policy configuration and cycle origin. F02/F08 supply frozen worker generations and bounded identities/capacity. F03 supplies valid accepted evaluator identity and assessment records. F04 supplies the closed accepted reveal set and replay status. BeginAggregation additionally applies the core live revocation snapshot before sealing. F09 supplies evidence commitments through F03 without forcing payload retrieval. F05 publishes exactly one immutable canonical aggregate root and raw integer reward weights after all chunks complete. F06 consumes those weights, handles exact funded allocation/claims/remainders and never substitutes display ppm. F07 consumes support, status and score with epoch/generation binding, and must distinguish unknown quality from zero. F10 projects finalized outputs and proof limitations without reimplementing authoritative aggregation."
+paragraph_2 = "F05-R13: All features share core IDs, epochs, roster/policy commitments, error vocabulary and terminal retention. No feature may reinterpret missing assessments as zero, infer evaluator independence from distinct keys, normalize raw scores before F05 or feed past reputation into the v1 median. A cross-feature contradiction blocks implementation until the shared contract is amended explicitly."
+
+[contract.section_12]
+title = "ACCEPTANCE CASES AND FUTURE QUALIFICATION"
+paragraph_1 = "These vectors are specified examples, not current test results. All qualification is UNRUN. IDs below are permanent traceability identifiers."
+paragraph_2 = "F05-A01: One worker, distinct evaluator scores210000,620000,970000 -> support3, SCORED_POSITIVE, score/weight620000. No transfer is produced by F05."
+paragraph_3 = "F05-A02: Scores10000,20000,900000,990000 -> lower median20000, not460000; support4."
+paragraph_4 = "F05-A03: Scores0,0,1000000 -> support3, SCORED_ZERO, weight0. Scores0,1000000 with six missing evaluators -> support2, INSUFFICIENT_QUORUM; quality absent, weight0. Do not equate the two states in the API."
+paragraph_5 = "F05-A04: Scores0,300000,700000 with five missing evaluators -> score300000, not0; absent reports add no observations."
+paragraph_6 = "F05-A05: Scores111111,111111,999999 in every arrival permutation -> identical output bytes and input/aggregate roots when canonical admitted set, seal_height and all domain bindings match. Different seal_height changes roots but not median111111."
+paragraph_7 = "F05-A06: Worker IDs ending01,02,03, earlier31 bytes all0, scores250000,500000,250000 with quorum -> canonical output01,02,03; W1000000 and display250000,500000,250000."
+paragraph_8 = "F05-A07: Three workers each weight1 -> W3, display333333 each; total999999 is acceptable display truncation. F06 independently settles funded units from weights, never999999-denominator display values."
+paragraph_9 = "F05-A08: 32 workers each quorum score1000000 -> W32000000; maximum reportset with8 evaluators has256 cells. All outcomes deterministic without numeric overflow."
+paragraph_10 = "F05-A09: No workers or no admitted reports -> W0 and no positive weights. No equal fallback and no evaluator or owner reward invented."
+paragraph_11 = "F05-A10: Duplicate evaluator identity using two keys for one worker, score1000001, duplicate worker ID, unknown generation, nonzero reserved field or unsorted persisted canonical records -> admission refusal or invariant refusal as appropriate, zero terminal effects."
+paragraph_12 = "F05-A11: Self-assessment or same declared owner -> F03 refusal; no vote added. Malformed persisted self-vote -> F05 ReportInvariantViolation, not silently omitted."
+paragraph_13 = "F05-A12: BeginAggregation at epoch offset95 -> WRONG_PHASE; offset96 -> eligible if other conditions hold. Reveal at96 cannot enlarge the closed set. Delayed Process after offset128 remains valid and blocks next opening until terminal."
+paragraph_14 = "F05-A13: Seal13workers atcursor0; Processcursor0 commits8, restart, retrycursor0 -> STALE_CURSOR/current8 and no duplicate output. Processcursor8 commits5 and reaches13. Finalize once then identical retry -> same aggregate root and no duplicate history/reward/event. Retry with another epoch/config/roster binding -> conflict."
+paragraph_15 = "F05-A14: Key revoked before a new report admission -> refused even if frozen eligible. Accepted row revoked before BeginAggregation -> excluded. Revocation after BeginAggregation -> sealed input and all later chunks unchanged. Revocation after terminalization -> terminal commitment unchanged. Exercise both authoritative orderings."
+paragraph_16 = "F05-A15: A worker replaced after roster freeze -> replacement's reports cannot count for old generation. Old-generation result cannot become history/reward for new worker."
+paragraph_17 = "F05-A16: Forced fuel/storage/event refusal during a Process call -> prior committed cursor/results retained, no partial next chunk. F06 final seal accounting refusal -> no partially claimable entitlement/history. Test real host paths, not mock authorities."
+paragraph_18 = "F05-A17: Two low colluding reports among four, scores0,0,900000,1000000 -> result0. The test demonstrates the specified vulnerability; it must not assert objective quality or collusion detection."
+paragraph_19 = "F05-A18: A private evidence URI is unreachable during settlement -> no network fetch occurs; admitted commitment-based score behavior is unchanged. Prior evidence-admission failures remain F03/F09's responsibility."
+
+[contract.section_13]
+title = "FUTURE IMPLEMENTATION TASKS, PATHS AND BOUNDED GATES"
+paragraph_1 = "These are proposed tasks for a separate authorized implementation team. Execution requires canonical task admission. Existing code paths are integration anchors, not permission to edit them. Each task completes all implementation before one compile and one focused verify command, with at most two task-scoped repair cycles and30-minute cap; stop implemented-not-qualified on unresolved failure. No aggregate gates here."
+paragraph_2 = "F05-T01, depends on shared core crate/types and F03/F04 input codecs: create proposed aggregation_codec.rs and requirements-linked tests in proposed tests/aggregation_contract.rs. Deliver bounded canonical WorkerAggregate/result encoding, invariant checks, typed errors and domain-bound commitment integration. Proposed compile: cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib. Proposed verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact. Package/target/test do not exist yet and must be created and registered honestly. Covers A05,A06,A10,A15."
+paragraph_3 = "F05-T02, dependsT01: create proposed aggregation.rs pure integer lower-median function over already validated bounded views; add real function contract tests. Same proposed compile target asT01. Proposed verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_integer_contract -- --exact. Covers A01..A09,A17. One bounded task includes all stated examples and permutations; implement the specified algorithm and all requirements-linked cases."
+paragraph_4 = "F05-T03, dependsF05-T02 plus F06-T02 reward state primitives and F07-T01 history arithmetic/types (not whole-feature completion): wire Begin/Process/Finalize aggregation into proposed src/aggregation.rs and common dispatcher/state through existing SDK shared storage/context/crypto/event capabilities. Proposed compile: cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --lib. Proposed verify: programs/tests/ai-market/run-aggregation-runtime.sh. This proposed new command must deploy/invoke a genuine built guest against real runtime/native adapter paths, exercise chunk crash/resume, atomicity, staging/fuel bounds, real authority and terminal idempotency, and emit revision/command/exit/log evidence. It must not return success from document inspection or fake hosts. CoversA11..A16,A18. Availability of this runner is an implementation deliverable, not claimed here."
+
+[contract.section_14]
+title = "FIXED V1 DECISIONS, PREREQUISITES AND RELEASE CONDITIONS"
+paragraph_1 = "Fixed: quorum3; evaluators<=8; workers<=32; u32ppm scores0..1000000; unweighted lower median; missing=no-vote; self-assessment forbidden; immutable frozen eligibility; current revocation refusal on new admission; absent and measured-zero distinct; ascending ID32worker ordering; checked integer arithmetic; no stake/history weighting; no fallback payment; raw weight allocation owned byF06;128heightcycle64/16/16/32;32retainedterminalepochs;4096heightclaimexpiry; one market Program and one bounded196608byte state; at most8workers per resumable chunk;SHA-256 domains/BE integers shared with core."
+paragraph_2 = "Prerequisites before implementation completion: the stated shared core/result/input encoding, complete integrated state size calculation, actual target capabilities/ABI admission, real runtime/native staging qualification and F06 conservation contract. Release requires task-specific tests to pass at one recorded revision, real maximum-roster chunk/settlement under admitted fuel/memory/blob/receipt limits and qualified native version-blob lifecycle, finalized query/receipt binding and no unresolved cross-feature contradictions. Nothing here certifies AI truth, freedom from collusion, patent clearance, production readiness or successful execution. Future algorithm/weight/quorum changes require a new policy/algorithm version and prospective epoch boundary, not silent modification of retained v1 results."
+
+[requirement.F05-R01]
+id = "F05-R01"
+normative_summary = "Bounded unweighted lower median; quorum3; absence distinct from zero"
+acceptance_case_ids = ["F05-A01", "F05-A02", "F05-A03", "F05-A04"]
+qualification = "UNRUN"
+
+[requirement.F05-R02]
+id = "F05-R02"
+normative_summary = "Existing Programs integration; no consensus/custody/ABI expansion"
+acceptance_case_ids = ["F05-A16"]
+qualification = "UNRUN"
+
+[requirement.F05-R03]
+id = "F05-R03"
+normative_summary = "Canonical versioned types, bounds, statuses and ordering"
+acceptance_case_ids = ["F05-A05", "F05-A06", "F05-A08", "F05-A10"]
+qualification = "UNRUN"
+
+[requirement.F05-R04]
+id = "F05-R04"
+normative_summary = "Frozen identities and current revocation refusal; no key multiplication"
+acceptance_case_ids = ["F05-A11", "F05-A14", "F05-A15"]
+qualification = "UNRUN"
+
+[requirement.F05-R05]
+id = "F05-R05"
+normative_summary = "Seal/chunk/finalize contracts and atomic failure effects"
+acceptance_case_ids = ["F05-A12", "F05-A13", "F05-A16"]
+qualification = "UNRUN"
+
+[requirement.F05-R06]
+id = "F05-R06"
+normative_summary = "Height windows and immutable terminal/retention states"
+acceptance_case_ids = ["F05-A12", "F05-A13"]
+qualification = "UNRUN"
+
+[requirement.F05-R07]
+id = "F05-R07"
+normative_summary = "Lower median exact integer result per worker"
+acceptance_case_ids = ["F05-A01", "F05-A02", "F05-A03", "F05-A04", "F05-A17"]
+qualification = "UNRUN"
+
+[requirement.F05-R08]
+id = "F05-R08"
+normative_summary = "Checked sums and display-only normalization; no zero fallback"
+acceptance_case_ids = ["F05-A06", "F05-A07", "F05-A08", "F05-A09"]
+qualification = "UNRUN"
+
+[requirement.F05-R09]
+id = "F05-R09"
+normative_summary = "Bounded work at admitted maxima"
+acceptance_case_ids = ["F05-A08", "F05-A16"]
+qualification = "UNRUN"
+
+[requirement.F05-R10]
+id = "F05-R10"
+normative_summary = "Restart/replay/concurrency/finality controls"
+acceptance_case_ids = ["F05-A13", "F05-A14", "F05-A15"]
+qualification = "UNRUN"
+
+[requirement.F05-R11]
+id = "F05-R11"
+normative_summary = "Collusion and privacy trust limitations"
+acceptance_case_ids = ["F05-A17", "F05-A18"]
+qualification = "UNRUN"
+
+[requirement.F05-R12]
+id = "F05-R12"
+normative_summary = "Shared state/storage/native staging bounds and proof limits"
+acceptance_case_ids = ["F05-A08", "F05-A16"]
+qualification = "UNRUN"
+
+[requirement.F05-R13]
+id = "F05-R13"
+normative_summary = "Inter-feature stable contracts, raw rewards and absent quality"
+acceptance_case_ids = ["F05-A03", "F05-A07", "F05-A09", "F05-A15"]
+qualification = "UNRUN"
+
+[acceptance.F05-A01]
+id = "F05-A01"
+case = "One worker, distinct evaluator scores210000,620000,970000 -> support3, SCORED_POSITIVE, score/weight620000. No transfer is produced by F05."
+qualification = "UNRUN"
+
+[acceptance.F05-A02]
+id = "F05-A02"
+case = "Scores10000,20000,900000,990000 -> lower median20000, not460000; support4."
+qualification = "UNRUN"
+
+[acceptance.F05-A03]
+id = "F05-A03"
+case = "Scores0,0,1000000 -> support3, SCORED_ZERO, weight0. Scores0,1000000 with six missing evaluators -> support2, INSUFFICIENT_QUORUM; quality absent, weight0. Do not equate the two states in the API."
+qualification = "UNRUN"
+
+[acceptance.F05-A04]
+id = "F05-A04"
+case = "Scores0,300000,700000 with five missing evaluators -> score300000, not0; absent reports add no observations."
+qualification = "UNRUN"
+
+[acceptance.F05-A05]
+id = "F05-A05"
+case = "Scores111111,111111,999999 in every arrival permutation -> identical output bytes and input/aggregate roots when canonical admitted set, seal_height and all domain bindings match. Different seal_height changes roots but not median111111."
+qualification = "UNRUN"
+
+[acceptance.F05-A06]
+id = "F05-A06"
+case = "Worker IDs ending01,02,03, earlier31 bytes all0, scores250000,500000,250000 with quorum -> canonical output01,02,03; W1000000 and display250000,500000,250000."
+qualification = "UNRUN"
+
+[acceptance.F05-A07]
+id = "F05-A07"
+case = "Three workers each weight1 -> W3, display333333 each; total999999 is acceptable display truncation. F06 independently settles funded units from weights, never999999-denominator display values."
+qualification = "UNRUN"
+
+[acceptance.F05-A08]
+id = "F05-A08"
+case = "32 workers each quorum score1000000 -> W32000000; maximum reportset with8 evaluators has256 cells. All outcomes deterministic without numeric overflow."
+qualification = "UNRUN"
+
+[acceptance.F05-A09]
+id = "F05-A09"
+case = "No workers or no admitted reports -> W0 and no positive weights. No equal fallback and no evaluator or owner reward invented."
+qualification = "UNRUN"
+
+[acceptance.F05-A10]
+id = "F05-A10"
+case = "Duplicate evaluator identity using two keys for one worker, score1000001, duplicate worker ID, unknown generation, nonzero reserved field or unsorted persisted canonical records -> admission refusal or invariant refusal as appropriate, zero terminal effects."
+qualification = "UNRUN"
+
+[acceptance.F05-A11]
+id = "F05-A11"
+case = "Self-assessment or same declared owner -> F03 refusal; no vote added. Malformed persisted self-vote -> F05 ReportInvariantViolation, not silently omitted."
+qualification = "UNRUN"
+
+[acceptance.F05-A12]
+id = "F05-A12"
+case = "BeginAggregation at epoch offset95 -> WRONG_PHASE; offset96 -> eligible if other conditions hold. Reveal at96 cannot enlarge the closed set. Delayed Process after offset128 remains valid and blocks next opening until terminal."
+qualification = "UNRUN"
+
+[acceptance.F05-A13]
+id = "F05-A13"
+case = "Seal13workers atcursor0; Processcursor0 commits8, restart, retrycursor0 -> STALE_CURSOR/current8 and no duplicate output. Processcursor8 commits5 and reaches13. Finalize once then identical retry -> same aggregate root and no duplicate history/reward/event. Retry with another epoch/config/roster binding -> conflict."
+qualification = "UNRUN"
+
+[acceptance.F05-A14]
+id = "F05-A14"
+case = "Key revoked before a new report admission -> refused even if frozen eligible. Accepted row revoked before BeginAggregation -> excluded. Revocation after BeginAggregation -> sealed input and all later chunks unchanged. Revocation after terminalization -> terminal commitment unchanged. Exercise both authoritative orderings."
+qualification = "UNRUN"
+
+[acceptance.F05-A15]
+id = "F05-A15"
+case = "A worker replaced after roster freeze -> replacement's reports cannot count for old generation. Old-generation result cannot become history/reward for new worker."
+qualification = "UNRUN"
+
+[acceptance.F05-A16]
+id = "F05-A16"
+case = "Forced fuel/storage/event refusal during a Process call -> prior committed cursor/results retained, no partial next chunk. F06 final seal accounting refusal -> no partially claimable entitlement/history. Test real host paths, not mock authorities."
+qualification = "UNRUN"
+
+[acceptance.F05-A17]
+id = "F05-A17"
+case = "Two low colluding reports among four, scores0,0,900000,1000000 -> result0. The test demonstrates the specified vulnerability; it must not assert objective quality or collusion detection."
+qualification = "UNRUN"
+
+[acceptance.F05-A18]
+id = "F05-A18"
+case = "A private evidence URI is unreachable during settlement -> no network fetch occurs; admitted commitment-based score behavior is unchanged. Prior evidence-admission failures remain F03/F09's responsibility."
+qualification = "UNRUN"
+
+[proposal.F05-T01]
+id = "F05-T01"
+depends_on = ["CORE", "F03", "F04"]
+proposed_new_files = ["programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs", "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"]
+deliverable = "Canonical codec, bounded records, invariant errors and commitments"
+compile_target = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F05-T01, depends on shared core crate/types and F03/F04 input codecs: create proposed aggregation_codec.rs and requirements-linked tests in proposed tests/aggregation_contract.rs. Deliver bounded canonical WorkerAggregate/result encoding, invariant checks, typed errors and domain-bound commitment integration. Proposed compile: cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib. Proposed verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact. Package/target/test do not exist yet and must be created and registered honestly. Covers A05,A06,A10,A15."
+
+[proposal.F05-T02]
+id = "F05-T02"
+depends_on = ["F05-T01"]
+proposed_new_files = ["programs/crates/layerx-programs-ai-market/src/aggregation.rs"]
+deliverable = "Exact lower median, checked raw weights and specified vectors"
+compile_target = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_integer_contract -- --exact"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F05-T02, dependsT01: create proposed aggregation.rs pure integer lower-median function over already validated bounded views; add real function contract tests. Same proposed compile target asT01. Proposed verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_integer_contract -- --exact. Covers A01..A09,A17. One bounded task includes all stated examples and permutations; implement the specified algorithm and all requirements-linked cases."
+
+[proposal.F05-T03]
+id = "F05-T03"
+depends_on = ["F05-T02", "F06-T02", "F07-T01"]
+proposed_new_files = ["programs/crates/layerx-programs-ai-market/src/aggregation.rs", "programs/tests/ai-market/run-aggregation-runtime.sh"]
+deliverable = "Real guest/native seal/chunk/finalize and resource/atomicity contracts"
+compile_target = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --lib"
+verify_cmd = "programs/tests/ai-market/run-aggregation-runtime.sh"
+qualification = "UNRUN"
+canonical_task_authority = "../../spec.kvx"
+admission = "Canonical task sections only"
+contract = "F05-T03, dependsF05-T02 plus F06-T02 reward state primitives and F07-T01 history arithmetic/types (not whole-feature completion): wire Begin/Process/Finalize aggregation into proposed src/aggregation.rs and common dispatcher/state through existing SDK shared storage/context/crypto/event capabilities. Proposed compile: cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --lib. Proposed verify: programs/tests/ai-market/run-aggregation-runtime.sh. This proposed new command must deploy/invoke a genuine built guest against real runtime/native adapter paths, exercise chunk crash/resume, atomicity, staging/fuel bounds, real authority and terminal idempotency, and emit revision/command/exit/log evidence. It must not return success from document inspection or fake hosts. CoversA11..A16,A18. Availability of this runner is an implementation deliverable, not claimed here."
+
+[metadata.version]
+value = "PAXAI-v1"
+
+[metadata.status]
+value = "SPECIFICATION_ONLY"
+
+[metadata.qualification]
+value = "UNRUN"
+
+[metadata.dependencies]
+value = ["CORE", "F01", "F02", "F03", "F04", "F08", "F09"]
+
+[metadata.consumers]
+value = ["F06", "F07", "F10"]
+
+[metadata.bounds]
+workers = 32
+evaluators = 8
+quorum = 3
+score_max_ppm = 1000000
+state_bytes = 196608
+retained_epochs = 32
+claim_expiry_heights = 4096
+workers_per_chunk = 8
+shared_F05_F06_section_bytes = 81920
+
+[metadata.hash_domains]
+value = ["PAXAI/aggregation-input/v1", "PAXAI/aggregation-output/v1"]
+
+[metadata.cross_feature_contract]
+value = "contracts/core.kvx C01-C09"
+
+[metadata.operations]
+value = ["BeginAggregation", "ProcessAggregation", "FinalizeAggregation"]
+
+[metadata.canonical_task_authority]
+value = "../../spec.kvx"
+

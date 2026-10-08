@@ -1,0 +1,405 @@
+{
+  "id": "F08",
+  "title": "Bounded admission, capacity, liveness and replacement",
+  "status": "SPECIFICATION_ONLY",
+  "schema_version": 1,
+  "dependencies": [
+    "core",
+    "F01-policy",
+    "F02-identity-schema",
+    "F03-evaluator-identity-schema"
+  ],
+  "runtime_consumers": [
+    "F02-service-eligibility",
+    "F03-score-admission",
+    "F04-roster-binding",
+    "F05-quorum",
+    "F06-claims-preservation",
+    "F07-history",
+    "F10-finalized-projection"
+  ],
+  "explicit_non_dependencies": [
+    "F07-quality-selection"
+  ],
+  "requirements": [
+    {
+      "id": "F08-R001",
+      "normative": true,
+      "paragraph": "Establish finite, accountable market membership for external AI workers and evaluators, making resource admission predictable and preventing an unbounded registry or rotating online key from bypassing limits. Membership means permission to participate under an explicit policy; it does not prove AI execution, model quality, unique humanity, independent ownership, available GPUs or economic entitlement. F08 admits roles, freezes epoch rosters, records authenticated key activity, stages exits and removes objectively inactive members. It does not perform inference, benchmark scoring or minting."
+    },
+    {
+      "id": "F08-R002",
+      "normative": true,
+      "paragraph": "V1 admission is permissioned by the market administrator plus the participant owner. There is no admission fee, collateral ledger, automatic lease purchase, token burning, proof of work, stake ranking, demand pricing or auction. Existing funded compute leases remain separate commercial contracts and never imply membership automatically. Those exclusions avoid inventing unverified spending/lease authority and keep the initial dependency graph acyclic. Quality history is optional information for human operators; v1 replacement MUST NOT depend on F07. A future quality-based selection policy requires a new configuration version and explicit specification, not a hidden fallback."
+    },
+    {
+      "id": "F08-R003",
+      "normative": true,
+      "paragraph": "Implement in the common market WASM Program through ABI2 authenticated context and shared storage. Paxeer integration surfaces are programs/sdk/rust/src/context.rs (host-authenticated principal, activity sequence and batch height), programs/sdk/rust/src/crypto.rs (hash/signature verification), programs/sdk/rust/src/storage.rs (scoped and shared storage), programs/sdk/rust/src/capability.rs (explicit authority), agent/crates/layerx-types/src/program_call.rs (native framing), src/state/lxp_identity.c (identity resolution), and src/modules/governance/lxp_governance_rotation.c (stable identity owner-key rotation). Runtime qualification is UNRUN. src/modules/governance/lxp_governance.c restricts native session grant scope; an application delegate is not automatically a valid native session grant. Use owner-authorized native submission with application delegate evidence where required, and do not widen masks."
+    },
+    {
+      "id": "F08-R004",
+      "normative": true,
+      "paragraph": "Proposed additions are programs/crates/layerx-programs-ai-market/src/admission.rs, roster.rs and tests/admission_lifecycle.rs, plus application DTOs under agent/crates/layerx-types/src/paxai/. These paths are NEW and not existing deployed functionality. F08 SHALL preserve current consensus, finality verification, account custody, integer conservation, module IDs, activity ordinals and native proof namespaces. It has zero business transfer legs and no authority to change balances. Protocol transaction/occupancy fees still apply according to native execution, even when admission itself has zero price."
+    },
+    {
+      "id": "F08-R005",
+      "normative": true,
+      "paragraph": "Capacity constants are workers32 and evaluators8, including F02 current enrolled/not-yet-active worker records and F03 pending/accepted evaluator grant records. There is no extra hidden candidate pool. One participant role record has AdmissionMeta: role:u8 WORKER=1/EVALUATOR=2; admitted_epoch_present:bool; admitted_epoch:u64 only when present; last_heartbeat_epoch_present:bool; last_heartbeat_epoch:u64 only when present; last_heartbeat_height_present:bool; last_heartbeat_height:u64 only when present; immunity_until_epoch:u64; pending_exit_epoch_present:bool; pending_exit_epoch:u64 only when present; membership_generation:u64 starting1; complete_missed_opened_epochs:u8 in0..2 starting0; membership_flags:u8; and reserved:u16=0. Epoch0 and height0 are legitimate values whenever the corresponding presence field is true; they MUST NOT be absence sentinels. On staged admission admitted_epoch_present=false and heartbeat presence fields=false; OpenEpoch sets actual admitted_epoch and initial liveness baseline to the actual first frozen roster epoch, including0. First accepted heartbeat separately sets its height presence. Pending exit absence uses its boolean, never a zero epoch value. Participant identity, owner, current delegate generation and credential context come from F02 or F03 current records and MUST NOT be duplicated unnecessarily. Flags are admitted1, draining2, revoked4; other bits refuse. A member has one stable identity and one role. The same owner may control several members subject to limits; this is visible and does not certify independence."
+    },
+    {
+      "id": "F08-R006",
+      "normative": true,
+      "paragraph": "AdmissionPolicyV1 fields are worker_capacity:u8=32, evaluator_capacity:u8=8, worker_per_owner:u8=2, evaluator_per_owner:u8=1, successful_enrollments_per_epoch:u8=4, minimum_owner_admission_distance:u16=16 heights, heartbeat_distance:u16=16 heights, missed_epoch_threshold:u8=2, new_member_immunity_epochs:u8=1, score_quorum:u8=3 and reserved:u32=0. Constants are immutable within v1 and cannot be supplied by a caller. Bound owner counters by the current roster: latest successful enrollment height is stored in a current owner's existing member metadata or the bounded common actor replay entry. There is no lifetime owner-address map. An owner absent from all current records may enroll again but does not gain a unique-person certificate."
+    },
+    {
+      "id": "F08-R007",
+      "normative": true,
+      "paragraph": "A roster entry includes stable participant ID32, role, owner principal32, membership generation, frozen delegate/key generation and metadata/policy commitment as specified by F02/F03/core. The immutable epoch snapshot is sorted first by role then participant ID. Slot index is a temporary encoding position only; requests and results MUST bind stable ID, epoch, roster digest and delegate generation. Membership generations and counters use checked u64 addition. No decrement, wrap, saturating acceptance or address alias recursion is allowed."
+    },
+    {
+      "id": "F08-R008",
+      "normative": true,
+      "paragraph": "Every operation payload below uses the shared operation envelope including schema, network/program/market, epoch/config/roster, actor, nonce/sequence, RequestId and exclusive expiry height. Additional fields appear in the stated order. Operation payload maximum is1024 bytes including delegate signatures; response/event maximum is512 bytes. Common errors, receipts and actor replay bounds take precedence where stricter."
+    },
+    {
+      "id": "F08-R009",
+      "normative": true,
+      "paragraph": "Market administrator may approve an admission and pause or stage administrative removal under F01. Participant owner authorizes enrollment, drain, exit and credential rotation. Delegate may prove possession and heartbeat, but cannot approve its own admission, remove others, change capacity/policy, spend treasury assets or inherit custody authority. Any authorized payer may submit a bounded deterministic rollover or inactivity-prune request, but this conveys no policy override. Off-chain observer verifies finalized evidence and readiness; it cannot write membership by observation alone."
+    },
+    {
+      "id": "F08-R010",
+      "normative": true,
+      "paragraph": "ApproveAdmission is market-owner-only kind0, takes role/participant ID, expected identity/delegate versions, effective epoch computed by the bootstrap/future rule below, expiry_height and expected state revision. Preconditions: an existing bounded F02 worker in actual ENROLLED state after AcceptEnrollment, or an F03 evaluator PENDING grant created by ScheduleEvaluator, current policy and future expiry no later than effective epoch Work end; conflicts/role caps checked. It stages the bound approval digest/56byte fields and emits AdmissionApproved; reapproval replaces the old approval with incremented owner sequence, never accumulates records. RevokeAdmissionApproval is market-owner-only and clears only an unconsumed approval; it cannot remove a live member or erase claims. AdmitWorker consumes the actual F02 ENROLLED identity produced only after worker-owner AcceptEnrollment. AdmitEvaluator instead consumes the existing F03 PENDING grant produced by ScheduleEvaluator: a pending evaluator grant is NOT an ENROLLED identity or accepted membership. AdmitEvaluator IS the evaluator-owner kind0 acceptance plus registered-delegate proof of possession. Host invoking principal and envelope actor MUST equal pending grant principal_id; supplied enrollment nonce MUST derive the exact pending evaluator_id; grant_version, key_version, signing_key, rubric, activation/expiry and approval binding MUST match the pending record. It atomically records owner acceptance/F08 membership and grants eligibility for activation at the permitted future snapshot, using the same existing bounded grant record. Before that acceptance no evaluator grant can enter a roster or submit a score. No new identity record, native principal-public-key lookup or secondary native owner signature is introduced. AdmitWorker payload: role, enrollment nonce32, expected policy revision:u64, intended effective epoch:u64, worker identity binding/consent, approval_digest32. AdmitEvaluator payload instead uses the exact426byte consent+signature contract below; its selector fixes the evaluator role and its consent carries nonce/config/effective epoch/approval, so none of those fields is prepended or duplicated. Preconditions: live admission policy, correct owner, stored approval digest/versions/expiry/effective epoch valid, valid delegate consent, no duplicate stable ID, role identity record count within capacity, a new identity nomination handled independently under F02/F03 capacity, no existing membership for this identity, per-owner limit available, evaluator owner distinct from every frozen/current worker owner and market owner as required by core ROLE_CONFLICT, epoch enrollment count below4, owner minimum distance satisfied and complete combined state encoding within the resource bound. Intended effective epoch MUST equal0 while initialized market epoch_present=false (no epoch has ever opened). After any epoch opens it MUST equal clock_epoch+1, where clock_epoch=floor((authenticated height-origin_height)/128), checked only for height>=origin_height. This is a strictly future scheduled roster; it never inserts into the current frozen snapshot. Height before origin after first opening is impossible and refuses WrongEpoch. If scheduled epochs are skipped, a previously staged and still-authorized membership may be included at the first actually opened epoch E>=its effective epoch; admission epoch and immunity begin at that actual E. A new post-bootstrap admission never backdates its effective epoch to a missed scheduled window. Effects retain the existing F02 ENROLLED worker record or F03 PENDING evaluator grant, consume its approval and create AdmissionMeta; for evaluator set the accepted membership flag that gates F03 activation, leave admission/heartbeat presence false until actual roster inclusion, reserve one-epoch immunity beginning at actual first inclusion, increment successful epoch count and owner watermark, and emit AdmissionStaged with participant ID, role, owner, generation, effective epoch and policy digest. Before any first opening, the initialized-market envelope binds epoch0 and explicit absent roster under core; ApproveAdmission and Admit both accept effective_epoch0. The bootstrap admission counter starts0, permits at most4 successful initial admissions and resets on first OpenEpoch. At minimum one worker and three authorized role-distinct evaluators can therefore bootstrap within this quota. A valid pre-first-opening approval/admission does not itself open an epoch or authorize work. New enrollment does not enter any already frozen roster. Exact successful replay returns its original bounded receipt through common replay handling; changed bytes at same identity return IdempotencyConflict. Failure leaves application state/replay/admission counters unchanged; native execution fee semantics remain native."
+    },
+    {
+      "id": "F08-R011",
+      "normative": true,
+      "paragraph": "Heartbeat payload: participant ID, role, membership generation, delegate generation and current epoch. Verify current admitted identity, signature, scope, unrevoked generation and epoch equality, host height in this epoch, last successful heartbeat distance>=16 and no exit effective already. Store last_heartbeat_epoch=current and last_heartbeat_height=host height, reset complete_missed_opened_epochs=0, emit ActivityObserved. First heartbeat has an explicit absent watermark, never height0 sentinel. Heartbeat proves authenticated key activity only: it MUST NOT increase quality, create score evidence, mark a model job complete or pay rewards. Draining members may heartbeat until exit so custody recovery and reliable exit do not require pretending to be absent."
+    },
+    {
+      "id": "F08-R012",
+      "normative": true,
+      "paragraph": "RequestExit payload: participant ID, generation, expected effective epoch=current+1 and reason:u8 VOLUNTARY=1/RETIRE=2. Owner authority required. Set draining immediately for new task/service admissions and pending_exit_epoch; keep current epoch snapshot bytes immutable and preserve already accepted task/evidence attribution. Before BeginAggregation seals eligibility, revoked evaluator rows are excluded; after seal revocation is prospective and MUST NOT recompute sealed scoring or claims. Exit cancels no customer escrow, reward entitlement or unknown external execution. Repeat identical request is idempotent. CancelExit is owner-only, possible only before removal, clears pending_exit and stages restored availability at the following snapshot; it cannot undo finalized delegate revocation or reopen an old epoch. CancelExit is not a way to reset admission time/immunity/heartbeat history."
+    },
+    {
+      "id": "F08-R013",
+      "normative": true,
+      "paragraph": "PruneInactive payload: role, expected candidate ID and expected current state revision. Any submitter may request it. Only the deterministic eligible candidate in section7 may be marked draining with exit=current+1; if none, NoPrunableMember. Wrong candidate returns CandidateChanged; concurrent revision change returns StaleState. Emit InactivityExitStaged with exact last activity epoch and threshold. Do not remove another live member when no inactive candidate exists. AdministrativeRemove is a separate administrator operation with participant ID, expected generation, policy-bound reason enum SECURITY=1/TERMS=2/OPERATOR_DECISION=3 and exit=current+1. It is visibly discretionary, not disguised as an objective quality verdict. Security revocation may immediately block new acceptance while historical snapshot references remain."
+    },
+    {
+      "id": "F08-R014",
+      "normative": true,
+      "paragraph": "RolloverRoster is invoked only through the shared OpenEpoch transition, lazy within the next scheduled Work window. Missing an entire Work window skips that epoch under core rules; no fake zero-work roster or reputation sample is created. When epoch_present=false, no old epoch, old score seal or historical terminal record is required: OpenEpoch0 during its Work window consumes initial effective_epoch0 admitted candidates and freezes the first roster once. If epoch0 Work was missed, the common skipped-epoch rule chooses the actual later eligible first opening and no earlier Work/Commit/Reveal is manufactured. When epoch_present=true, previous opened epoch must be terminal before opening another. Preconditions: previous epoch terminal if one exists, all outstanding application obligations retained, height within next allowed Work window and common state revision correct. Effects atomically remove pending exits effective now, discard their current identity records only after archival/current-context retention prerequisites, install eligible staged identities/rotations with effective_epoch<=actual opening epoch, set admission/heartbeat baseline presence and values for first inclusions, freeze next roster, compute digest and quorum-health flag, reset epoch enrollment count and advance epoch once. At identity capacity, a new identity nomination returns CapacityExceeded until a real exit/prune and rollover free a current record. An existing F02 ENROLLED worker or F03 PENDING grant may still be accepted/admitted within that same capacity; it does not allocate an additional current record. There is no atomic buyout, temporary record33 or evaluator9, automatic reclaim of a healthy participant, or hidden queue. Vacancy may remain for an epoch while a replacement stages. Emit one RosterOpened summary with counts/root/health; detailed public membership is proof-bound F10 data."
+    },
+    {
+      "id": "F08-R015",
+      "normative": true,
+      "paragraph": "The initialized market explicitly tracks epoch_present=false until first OpenEpoch; epoch0 with epoch_present=true is an actually opened epoch and a different state. Initial role membership effective_epoch0 is allowed only before the first opening. Worker current role states follow F02; evaluator grant statuses remain F03 PENDING, ACTIVE, REVOKED and EXPIRED rather than inventing evaluator ENROLLED. F08 accepted membership is an orthogonal flag in the same bounded record, with draining/revoked overlays and removal represented by record retirement. A PENDING evaluator with owner acceptance=false is never roster-eligible; an owner-accepted, consent-verified PENDING grant becomes ACTIVE only at its valid snapshot. An accepted worker becomes ACTIVE at its valid snapshot if authority and manifest remain valid. DRAINING accepts no new work immediately once finalized but continues historical obligations. REVOKED accepts no new signed role operation; removal waits for safe rollover. REMOVED has no current slot and cannot receive delayed slot-index requests. Reenrollment uses a fresh nonce/new stable role ID and receives no automatic history/claim migration. Historical claims retain the old stable ID and owner."
+    },
+    {
+      "id": "F08-R016",
+      "normative": true,
+      "paragraph": "Let E be current epoch and A(x) the last accepted heartbeat epoch or effective admission epoch if no later heartbeat exists. At OpenEpoch, for each continuing member from the previous actually opened terminal epoch P, increment complete_missed_opened_epochs by one, capped at2, only when P>A(x); otherwise set it0. Skipped scheduled epochs and periods without an opened epoch create no missing samples. An active member x is inactivity-prunable iff E>admitted_epoch and complete_missed_opened_epochs=2. Key activity in the current opened epoch immediately resets this counter and disqualifies inactivity pruning. For consecutively opened epochs this is equivalent to E-A(x)>=3, requiring TWO complete absent epochs after A(x). New immunity protects exactly its first effective epoch and is never renewed by rotation, metadata change or cancelled exit. No owner exemption or immortal seat exists. Revocation/security disable remains possible during immunity. Voluntary exit is always allowed and not blocked by immunity."
+    },
+    {
+      "id": "F08-R017",
+      "normative": true,
+      "paragraph": "Health has separate values: roster_evaluators=count frozen authorized evaluator identities; eligible_evaluators=count currently unrevoked/unfrozen nondraining members in that roster; quorum_ready=(eligible_evaluators>=3). Readiness does not imply any evaluator submitted a score. Per-worker score quorum counts actually admitted distinct contributions under F03/F05 and uses the common lower-median rule; it may still fail with8 roster members. If health drops to2 before aggregation seals eligibility, new task admission requiring future evaluation refuses QuorumUnavailable through F01; already accepted tasks keep truthful pending/unscorable outcomes under F03/F05, never reduce quorum or convert absence to a zero reward-quality verdict. Membership can be repaired for the next epoch only; no mid-epoch emergency evaluator insertion."
+    },
+    {
+      "id": "F08-R018",
+      "normative": true,
+      "paragraph": "Application mutation uses common expected state revision and actor sequence replay discipline. Two admissions seeing one vacancy cannot both win: native atomic state/access ordering admits one and the other's re-evaluated count/revision refuses. A stale administrator approval cannot evade current limits. Exact replay is served only while common retained replay context allows it; an aged request returns explicit stale/replay refusal and never reenrolls. State/digests/approvals/counters stage together in one shared cell. Restart reloads canonical state and revision, never reconstructs membership from event arrival alone."
+    },
+    {
+      "id": "F08-R019",
+      "normative": true,
+      "paragraph": "Permissioned admission, finite capacity, per-owner quotas and cooldowns are operational anti-spam controls. Multiple DIDs under common control can bypass a per-owner quota unless the administrator detects and refuses them. A stable identity, signature, fee, heartbeat or stake is NOT unique-human proof or evaluator independence. The administrator can censor or strategically choose permits/removals; this is an explicit trust assumption. Evaluators can collude and workers can fabricate liveness while not serving AI. Objective assignment receipts and scores from other features provide separate evidence. No inactivity fine, collateral seizure or quality claim is made. Public events contain IDs, generations, epochs, reasons and digests; no customer prompt, result, endpoint credential, private benchmark or identity document belongs in this registry."
+    },
+    {
+      "id": "F08-R020",
+      "normative": true,
+      "paragraph": "One authoritative shared application state value MUST remain<=196608bytes and F08 MUST use exact shared key ASCII paxai/state/v1, accept only direct calls with immediate_caller absent, and may mutate only that value, using at most TWO distinct new native blobs: value+namespace manifest. No separate permit, heartbeat, participant or history cell is added. F02/F03 jointly own current+frozen identity allocation24576bytes; F07/F08 share allocation24576bytes; F08 metadata, pending exit flags and one-use approval fields must fit this shared allocation, with proposed incremental metadata<=120bytes/member (40x120=4800bytes), plus256bytes policy/counters. F07 proposed9088bytes plus F08 proposed5056bytes is14144bytes, below24576; actual full encoding remains a qualification prerequisite. Exact combined encoding is a future qualification prerequisite; if the common allocation cannot fit all fields, change compact layout explicitly or refuse, never silently omit bindings. Frozen/history roots and F06 obligations are separately bounded by common contract."
+    },
+    {
+      "id": "F08-R021",
+      "normative": true,
+      "paragraph": "F01 produces market/admin/policy/epoch/task gating. F02 first supplies actual ENROLLED worker identity after its owner acceptance. F03 instead supplies administrator-scheduled PENDING evaluator grant; F08 AdmitEvaluator provides the actual evaluator-owner acceptance/registered delegate consent. F08 consumes these distinct producer states to construct live seats/rosters; pending grant existence alone is insufficient. F02 service dispatch and F03 score admission consume frozen roster membership plus current revocation overlay. This is a staged data dependency with no cyclic implementation dependency. F04 consumes immutable roster digest and generations; F05 consumes admitted distinct evaluators and score quorum3, never a heartbeat. F06 owns historical entitlement/payee/claim authority and MUST NOT erase them when F08 removes a slot. F07 history follows stable old IDs and rotation continuity, no bootstrap dependency or v1 selection authority. F09 handles private identity/evidence artifacts and rights; F10 archives finalized membership and exposes separate health/finality statuses. Role ID, key generation, epoch, config and roster digest MUST match core bytes exactly."
+    },
+    {
+      "id": "F08-R022",
+      "normative": true,
+      "paragraph": "Fixed v1: permissioned admin approval+owner+delegate consent;32workers8evaluators; owner caps2workers1evaluator;4successful enrollments/epoch;16height admission/heartbeat cooldown;1epoch new immunity;2complete missed epochs before inactivity eligibility; no owner protection; deterministic longest-idle then oldest-admission then stable-ID selection; pre-first-open effective_epoch0 bootstrap, then clock_epoch+1 staged roster activation; current count includes enrolled records; full registry requires real exit and rollover before enrollment; quorum3;128height common epoch64/16/16/32; no F07 selection, mint, fee, collateral, PoW, auction or dynamic pricing. Per-market state and all limits obey common contracts."
+    }
+  ],
+  "acceptance_cases": [
+    {
+      "id": "F08-A01",
+      "qualification": "UNRUN",
+      "paragraph": "empty market at epoch4/height520, valid owner+admin approval+delegate consent enroll worker W for epoch5. Current count1, frozen epoch4 count0, no business transfer; rollover epoch5 includes W once."
+    },
+    {
+      "id": "F08-A02",
+      "qualification": "UNRUN",
+      "paragraph": "32 current worker records; worker33 refuses CapacityExceeded, no approval consumption/counter change. After owner exit then rollover frees one record, valid new enrollment stages following epoch, never immediately fills old frozen index."
+    },
+    {
+      "id": "F08-A03",
+      "qualification": "UNRUN",
+      "paragraph": "owner P already owns2 worker records; third refuses OwnerCapacityExceeded. P with1 evaluator cannot add second; another owner may add evaluator until count8. This does not claim distinct humans."
+    },
+    {
+      "id": "F08-A04",
+      "qualification": "UNRUN",
+      "paragraph": "successful enrollment at height600; same owner new valid enrollment height615 refuses RateLimited and616 succeeds if otherwise allowed. Fifth successful market enrollment in one epoch refuses AdmissionWindowFull; failed bad signature did not consume one of4 slots."
+    },
+    {
+      "id": "F08-A05",
+      "qualification": "UNRUN",
+      "paragraph": "admission effective epoch7, no heartbeat. At epoch8/9 not prunable; at10 eligible because opened epochs8,9 are complete absent. If8,9 were skipped with no opened epoch, counter remains0 and pruning refuses. Heartbeat epoch10 accepted before prune disqualifies it immediately."
+    },
+    {
+      "id": "F08-A06",
+      "qualification": "UNRUN",
+      "paragraph": "candidates each with missed_opened_epochs2: A lastactivity3/admission1, B lastactivity3/admission2, C lastactivity4/admission1 at epoch7. A selected. Equal activity/admission ties select unsigned lexicographically smaller stable ID, independent of array insertion or key bytes."
+    },
+    {
+      "id": "F08-A07",
+      "qualification": "UNRUN",
+      "paragraph": "all members live or newly immune; prune returns NoPrunableMember. Owner/admin is not exempt, and no immune fallback occurs. Security revocation still blocks new submissions during first epoch."
+    },
+    {
+      "id": "F08-A08",
+      "qualification": "UNRUN",
+      "paragraph": "heartbeat height700 then715 refuses,716 succeeds. Duplicate signed envelope returns original result; changed epoch/generation/market/signature refuses with unchanged heartbeat and zero quality/reward change."
+    },
+    {
+      "id": "F08-A09",
+      "qualification": "UNRUN",
+      "paragraph": "two concurrent admits for last vacancy: exactly one enrolled current record and one successful approval consumption. Losing candidate retains no partial identity. Restart yields same count/root."
+    },
+    {
+      "id": "F08-A10",
+      "qualification": "UNRUN",
+      "paragraph": "owner rotates primary key and delegate rotates. Stable ID, owner quotas, admission epoch, heartbeat history, immunity and old claims unchanged. Old delegate cannot create new heartbeat after finalized revocation; old signed task evidence remains attributed to old frozen generation."
+    },
+    {
+      "id": "F08-A11",
+      "qualification": "UNRUN",
+      "paragraph": "frozen evaluator count3, one revocation: health eligible2, new evaluation-dependent task refuses QuorumUnavailable. Two received scores cannot settle as quorum3, and operator cannot insert replacement into frozen roster."
+    },
+    {
+      "id": "F08-A12",
+      "qualification": "UNRUN",
+      "paragraph": "draining old W has unpaid entitlement19 units and uncertain runner job. Exit preserves entitlement19 and unknown context; no implicit refund/zeroing occurs. Removal retaining inadequate authoritative context returns RetentionBlocked. A new W2 in freed slot inherits neither19 units nor W history."
+    },
+    {
+      "id": "F08-A13",
+      "qualification": "UNRUN",
+      "paragraph": "epoch height offsets63/64,79/80,95/96,127/128 respect common phase boundaries. Enrollment at last old height stages next; duplicate rollover cannot increment twice or consume epoch counters twice. Missing authenticated height never substitutes a local clock."
+    },
+    {
+      "id": "F08-A14",
+      "qualification": "UNRUN",
+      "paragraph": "generation/state revision at u64max requiring increment returns Overflow. Unknown role3, nonzero reserved byte, trailing payload byte, approval bound to another owner or effective epoch+2 refuse before mutation."
+    },
+    {
+      "id": "F08-A15",
+      "qualification": "UNRUN",
+      "paragraph": "maximum40 current members plus frozen roster, all F08 metadata, permits/replay and other feature allocations serialize within complete state196608byte and current+frozen identity24576byte constraints; actual native execution creates at most2 new blobs. A proposed oversized state refuses atomically. Native blob exhaustion is surfaced without deleting historical claims."
+    },
+    {
+      "id": "F08-A16",
+      "qualification": "UNRUN",
+      "paragraph": "event observed for admit but finality evidence missing/invalid: worker remains NOT_READY and executes no admitted task. An ambiguous client retry resolves original activity, not a new enrollment nonce."
+    },
+    {
+      "id": "F08-A17",
+      "qualification": "UNRUN",
+      "paragraph": "initialized market epoch_present=false, origin_height1000, height1000..1007, no frozen roster. Market owner approves and four distinct eligible owners admit one worker and three evaluators with effective_epoch0, valid consent and no role conflicts. OpenEpoch0 at1008 freezes exactly those IDs, sets epoch_present=true/epoch0, actual admitted_epoch_present=true/0 and liveness baseline epoch_present=true/0; no heartbeat height is invented and no business transfer occurs. With fewer than3 evaluators readiness/opening follows the common failure contract and must not silently lower quorum."
+    },
+    {
+      "id": "F08-A18",
+      "qualification": "UNRUN",
+      "paragraph": "before any opening, effective_epoch1 admission refuses WrongEpoch without consuming stored approval, role sequence or bootstrap counter. After first OpenEpoch0, a new approval/admission with effective_epoch0 refuses; clock epoch0 requires1. A heartbeat with last_height_present=false at host height0 is distinguishable from a successful heartbeat at height0 with last_height_present=true. Skipping epoch1 then opening2 never admits an after-opening candidate whose effective_epoch3 was requested; a legitimately previously staged effective_epoch1 candidate may join actual2 with admitted_epoch2 and immunity2, never backdate work."
+    },
+    {
+      "id": "F08-A19",
+      "qualification": "UNRUN",
+      "paragraph": "ScheduleEvaluator by market owner creates one PENDING grant for evaluator owner Q, grant_version1/key_version1, registered key K and effective_epoch0 before first open. F08 ApproveAdmission stores its exact approval. Caller R!=Q attempts AdmitEvaluator: OwnerRequired and pending grant unchanged. Caller Q with valid native kind0 authority but PoP under another key K2, altered nonce, rubric or grant_version2 refuses BadConsent/WrongGeneration without consuming approval. Caller Q with exact consent digest and signature by K succeeds: same one grant record now has accepted membership=true, no extra identity, no transfer, no current-epoch score authority. First OpenEpoch0 may activate it if all F03/core conditions hold. Opening before this acceptance excludes/refuses that evaluator and cannot satisfy minimum3 by counting the PENDING record."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "F08-T01",
+      "depends": [
+        "common-codec-state",
+        "F01-policy",
+        "F02-identity-schema",
+        "F03-evaluator-schema"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/admission.rs",
+        "programs/crates/layerx-programs-ai-market/src/roster.rs",
+        "agent/crates/layerx-types/src/paxai/admission.rs",
+        "programs/crates/layerx-programs-ai-market/tests/admission_lifecycle.rs"
+      ],
+      "build": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test admission_lifecycle",
+      "status": "FUTURE_UNRUN",
+      "canonical_task": "ai.F08-T01",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "qualification": "UNRUN",
+      "paragraph": "depends common codec/state and F01,F02/F03 identity schemas: NEW programs/crates/layerx-programs-ai-market/src/admission.rs, roster.rs, agent/crates/layerx-types/src/paxai/admission.rs and programs/crates/layerx-programs-ai-market/tests/admission_lifecycle.rs. Deliver typed encoding, permits/consent, quotas, cooldowns, atomic enroll and typed errors with real native runtime fixture. Build: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test admission_lifecycle. Gate must execute real Program host/storage/capabilities, not a substitute state model."
+    },
+    {
+      "id": "F08-T02",
+      "depends": [
+        "F08-T01",
+        "shared-rollover",
+        "F06-historical-claims"
+      ],
+      "paths": [
+        "programs/crates/layerx-programs-ai-market/src/roster.rs",
+        "programs/crates/layerx-programs-ai-market/tests/roster_transition.rs"
+      ],
+      "build": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+      "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test roster_transition",
+      "status": "FUTURE_UNRUN",
+      "canonical_task": "ai.F08-T02",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "qualification": "UNRUN",
+      "paragraph": "depends T01 plus shared rollover/F02/F03/F06 retention contracts: NEW programs/crates/layerx-programs-ai-market/tests/roster_transition.rs and complete roster.rs. Deliver heartbeat/prune mathematics, stage/drain/exit, deterministic snapshot/health, claim preservation and resource-size check. Build: cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market. Verify: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test roster_transition. Measure complete state and native distinct blob counts at maxima."
+    },
+    {
+      "id": "F08-T03",
+      "depends": [
+        "F08-T02",
+        "F10-finalized-client"
+      ],
+      "paths": [
+        "platform/hosted/paxai-worker/src/membership.rs",
+        "platform/hosted/paxai-worker/tests/membership_recovery.rs"
+      ],
+      "build": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+      "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test membership_recovery -- --test-threads=1",
+      "status": "FUTURE_UNRUN",
+      "canonical_task": "ai.F08-T03",
+      "canonical_spec": "../../spec.kvx",
+      "authority": "subordinate",
+      "qualification": "UNRUN",
+      "paragraph": "depends T02 and F10 finalized client: NEW platform/hosted/paxai-worker/tests/membership_recovery.rs, integrate NEW membership observer under platform/hosted/paxai-worker/src/membership.rs using existing proof authority boundaries. Build: cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker. Verify: cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test membership_recovery -- --test-threads=1. The package, real finalized proof fixture/authority history and durable store must exist; absent inputs yield UNRUN/BLOCKED, never a fake proof/verifier. Demonstrate finalized revoke/drain prevents new real service admission while unknown job/economic reconciliation survives restart."
+    }
+  ],
+  "defaults": {
+    "workers": 32,
+    "evaluators": 8,
+    "quorum": 3,
+    "epoch_heights": 128,
+    "phase_lengths": [
+      64,
+      16,
+      16,
+      32
+    ],
+    "worker_per_owner": 2,
+    "evaluator_per_owner": 1,
+    "successful_enrollments_per_epoch": 4,
+    "owner_admission_distance_heights": 16,
+    "heartbeat_distance_heights": 16,
+    "complete_missed_epochs": 2,
+    "new_member_immunity_epochs": 1,
+    "state_max_bytes": 196608,
+    "F07_F08_section_bytes": 24576,
+    "new_blobs_per_mutation": 2,
+    "quality_pruning": false,
+    "admission_fee": 0,
+    "collateral": false,
+    "continuous_operation_release": "BLOCKED_PENDING_QUALIFIED_NATIVE_CONTENT_LIFECYCLE",
+    "admission_authority": "MARKET_OWNER_KIND0_APPROVAL_THEN_PARTICIPANT_OWNER_KIND0_ACCEPTANCE_AND_DELEGATE_POSSESSION",
+    "complete_missed_epochs_semantics": "TWO_ACTUALLY_OPENED_COMPLETE_ABSENT_EPOCHS; SKIPPED_SCHEDULED_EPOCHS_ADD_NO_SAMPLE",
+    "F08_proposed_incremental_bytes": 5056,
+    "bootstrap": {
+      "condition": "initialized market epoch_present=false; no epoch ever opened",
+      "effective_epoch": 0,
+      "first_open": "initial effective_epoch0 memberships consumed by actual first OpenEpoch; no backdated work or scores",
+      "post_first_open": "new effective_epoch=authenticated clock_epoch+1; staged eligible entries may activate at actual open E>=effective_epoch",
+      "epoch_zero_semantics": "legitimate value; admission, heartbeat height/epoch and exit absence use explicit presence fields",
+      "initial_admission_count_max": 4
+    }
+  },
+  "integration_prerequisites": [
+    "T-C01",
+    "T-C02",
+    "T-C04-continuous-operation-blocker"
+  ],
+  "operations": [
+    {
+      "name": "ApproveAdmission",
+      "opcode": "0x0801",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "RevokeAdmissionApproval",
+      "opcode": "0x0802",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "AdmitWorker",
+      "opcode": "0x0803",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "AdmitEvaluator",
+      "opcode": "0x0804",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "Heartbeat",
+      "opcode": "0x0805",
+      "authority": "kind1 delegate operational only"
+    },
+    {
+      "name": "RequestExit",
+      "opcode": "0x0806",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "CancelExit",
+      "opcode": "0x0807",
+      "authority": "kind0 exact role authority"
+    },
+    {
+      "name": "PruneInactive",
+      "opcode": "0x0808",
+      "authority": "kind0 permissionless actor_sequence0"
+    },
+    {
+      "name": "AdministrativeRemove",
+      "opcode": "0x0809",
+      "authority": "kind0 exact role authority"
+    }
+  ],
+  "internal_effects": [
+    "RolloverRoster within common OpenEpoch; no independent opcode"
+  ],
+  "admission_producers": {
+    "worker": "F02 actual ENROLLED after owner AcceptEnrollment",
+    "evaluator": "F03 ScheduleEvaluator PENDING grant, not ENROLLED; evaluator-owner-kind0 AdmitEvaluator is owner acceptance plus registered delegate PoP",
+    "evaluator_roster_gate": "accepted membership flag true and consent checked, then F03 valid future snapshot activation",
+    "evaluator_consent": {
+      "name": "EvaluatorAdmissionConsentV1",
+      "record_bytes": 362,
+      "signature_bytes": 64,
+      "digest_domain": "PAXAI/evaluator-admission-consent/v1",
+      "payload_bytes": 426,
+      "primary_key_lookup": false,
+      "additional_identity_record": false
+    }
+  },
+  "canonical_spec": "../../spec.kvx",
+  "qualification": "UNRUN"
+}

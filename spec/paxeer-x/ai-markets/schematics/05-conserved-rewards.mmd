@@ -1,0 +1,42 @@
+%% PROPOSED monetary state flow; genuine account / rollback / finality qualification UNRUN.
+flowchart TB
+  funder["Kind0 Market Owner or immutable optional Treasury; explicit irrevocable consent"]
+  deposit["One exact principal-funded native transfer to registered rewards account"]
+  free["Free F"]
+  reserved["Reserved R: one immutable prefunded epoch budget B"]
+  score{"Atomic terminal result has positive total weight S?"}
+  math["q_i = floor of B*s_i/S using checked u256; r_i = B*s_i modulo S"]
+  residual["L = B - sum of q_i; largest remainders gain one; ties ascending WorkerId"]
+  liability["Liability C: immutable allocation root and frozen recipient entitlements"]
+  claim["Permissionless single claim: positive amount, unclaimed, height before expiry"]
+  transfer["One exact ProgramSpend payment to frozen recipient; mark claimed in same commit"]
+  paid["total_claimed P"]
+  expiry["At terminal_height+4096: unclaimed C moves to F once; no transfer"]
+  refund["WindingDown: permissionless refund of Free only to immutable refund recipient"]
+  refunded["tracked_refunds X; monotonic refund cursor prevents duplicate payment"]
+  dictionary["256 immutable worker / recipient dictionary pairs; live references cannot be replaced"]
+  retention["32 completed epochs; safe oldest pruning only; unsafe ring or dictionary blocks opening"]
+  invariant["After success: tracked_deposits D = X + P + F + R + C; sight balance at least F+R+C"]
+  surplus["Unsolicited physical excess is unaccounted; never Free or spend authority"]
+  failure["Any host transfer / state / event refusal commits no business effects; native fees remain separate"]
+  funder --> deposit
+  deposit -->|"D and F increase atomically"| free
+  free -->|"OpenEpoch: F decreases by B; R increases by B"| reserved
+  reserved --> score
+  score -->|"no: release all B"| free
+  score -->|"yes"| math --> residual
+  residual -->|"sum entitlements equals B exactly; no settlement transfer"| liability
+  liability --> claim --> transfer
+  transfer -->|"C decreases; P increases by exact amount"| paid
+  liability --> expiry --> free
+  free --> refund --> refunded
+  dictionary -->|"recipient preflight before any reserve"| reserved
+  retention -->|"completed slot preflight before any reserve"| reserved
+  reserved -.-> invariant
+  liability -.-> invariant
+  paid -.-> invariant
+  refunded -.-> invariant
+  surplus -.-> invariant
+  failure -.-> claim
+  failure -.-> deposit
+  failure -.-> refund

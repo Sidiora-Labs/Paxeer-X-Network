@@ -1,0 +1,88 @@
+[meta]
+title = "PROPOSED SYSTEM ACCEPTANCE JOURNEYS — ALL UNRUN"
+version = "1"
+status = "UNRUN"
+canonical_spec = "../../spec.kvx"
+task_authority = "Canonical ai.* tasks and requirements are defined in ../../spec.kvx."
+paragraph_001 = "These cases are application requirements. They complement feature-level cases and require real deployed Programs, actual authorized signatures, durable stores and genuine worker/evaluator processes. No fake model server, fabricated receipt or synthetic finality response may substitute for required integration evidence. The future release owner chooses the single exact candidate, commands and evidence locations; all gates remain UNRUN until candidate-specific evidence is recorded."
+
+[journey.G01]
+title = "Real AI work to conserved reward"
+status = "UNRUN"
+paragraph_001 = "Use an admitted market with a configured immutable asset and funded reserve; enroll one actual model worker and at least three genuinely separate evaluator processes, with approved artifacts and task policy. Create an inference task during Work; obtain the worker acknowledgment and finality-verified acceptance before the real runner starts. Persist and commit its result before the declared height deadline. Each evaluator retrieves permitted evidence, runs the specified benchmark/rubric, signs its own report, commits during Commit and reveals during Reveal. Seal aggregation, derive entitlements, claim once and verify existing authoritative payment/receipt/finality evidence. Trace task, artifact, report, epoch, claimant and asset bindings throughout."
+paragraph_002 = "A model response alone is not payment success; a paid reward alone is not proof of model truth."
+
+[journey.G02]
+title = "Exact phase boundaries"
+status = "UNRUN"
+paragraph_001 = "For an origin height 10000 and default cadence128, Work is [10000,10064), Commit[10064,10080), Reveal[10080,10096), Settlement[10096,10128). Task work at10064 is refused; commit at10064 is eligible, commit at10080 is refused; reveal at10080 is eligible, reveal at10096 is refused; aggregation before10096 is refused. Heights are authenticated execution heights. Clients wait independently verified finality before announcing a transition final. A skipped market epoch must not reopen old windows."
+
+[journey.G03]
+title = "Identity and scope"
+status = "UNRUN"
+paragraph_001 = "Attempt report submission with a valid signature from another market, epoch, program, chain domain, roster or policy; each fails without changing report or monetary state. A worker operational grant cannot spend market funds. Rotation takes effect at the defined epoch boundary; emergency revocation before the aggregate input seal excludes that evaluator, while revocation after the seal does not retroactively rewrite the sealed result."
+
+[journey.G04]
+title = "Missing versus zero"
+status = "UNRUN"
+paragraph_001 = "At a worker, accept explicit scores100000,300000,900000 from three eligible evaluators; the lower median is300000. With only two actual votes the worker has no quorum even if one omitted evaluator could have voted zero. With three explicit zero votes quorum exists and the aggregate is zero; this remains different from NO_QUORUM in state and projections. No fallback award is invented for either case."
+
+[journey.G05]
+title = "Aggregation determinism"
+status = "UNRUN"
+paragraph_001 = "Replay the same admitted reports in different arrival orders, including absent-target entries and duplicate retries. The sealed canonical accepted set and result digest agree. Row duplicates or descending worker IDs fail admission. A report without an evidence commitment does not acquire eligibility from a display label. Verify exact lower-median behavior for even vote counts through the feature cases."
+
+[journey.G06]
+title = "Exact funded allocation"
+status = "UNRUN"
+paragraph_001 = "Given eligible raw aggregate scores10,20,70 and a funded budget101 base units, exact largest-remainder allocations are10,20,71. The sum is101 and no claim can move more than its immutable entitlement. Equal remainder ties use ascending worker ID. Exercise the same rule with an amount above64-bit range and exact checked wide arithmetic; no floating-point conversion is permitted. No quorum/all-zero allocation leaves the budget conserved according to F06."
+
+[journey.G07]
+title = "Retry and crash at money boundary"
+status = "UNRUN"
+paragraph_001 = "Crash the real submitting process after broadcast but before receiving a response, after execution but before local receipt persistence, and after payment execution before finality observation. Recover the exact original activity key, receipt and operation identity. Never create a second claim or a second payment to solve an unknown outcome. Conflicting inner request identity fails even with a new outer key. Replica replay preserves reservations, paid markers and balances."
+
+[journey.G08]
+title = "Untracked incoming funds"
+status = "UNRUN"
+paragraph_001 = "Send a direct transfer to the registered program account outside the application funding operation. The transfer may increase real account balance but does not automatically increase tracked epoch funding or reward entitlements. Reconciliation reports the surplus and follows the prescribed explicit authority path. Deficits, wrong assets, unavailable balance/finality or mismatched account registration prevent economic readiness."
+
+[journey.G09]
+title = "Endpoint and actual runner failures"
+status = "UNRUN"
+paragraph_001 = "An endpoint advertisement without a successful authenticated readiness operation is unverified. Wrong TLS key, bad receiver/body signature, stale advertisement, forbidden destination, oversized payload and missing capability fail before model execution. Timeout after dispatch becomes UNKNOWN until durable job/result recovery establishes the outcome. Retrying the same request does not blindly execute expensive AI work twice."
+
+[journey.G10]
+title = "Artifact confidentiality and truth limits"
+status = "UNRUN"
+paragraph_001 = "Commit an opaque private artifact manifest and release only to an authorized evaluator. Raw prompts, keys, personal datasets and private weights are absent from public chain/events/logs. A mismatched content digest fails verification; unavailable evidence is explicitly unavailable. A correct hash and signature alone are not displayed as a truthful output, ownership proof, dataset license grant or unique-provider proof."
+
+[journey.G11]
+title = "Membership churn with outstanding obligations"
+status = "UNRUN"
+paragraph_001 = "Fill32 worker seats and8 evaluator seats; the next admission follows the exact capacity refusal/replacement policy. Revoke/exit/rotate a participant around roster freeze and aggregation sealing. Old generations cannot target a replacement. Existing entitlements remain claimable to frozen authorized recipients even when membership changes. No quality-history dependency is required for initial admission."
+
+[journey.G12]
+title = "Reputation isolation"
+status = "UNRUN"
+paragraph_001 = "Feed identical sealed quality observations to two distinct policy/model namespaces. Each maintains its own integer history and sample count. Key rotation preserves the same identity history; an explicit lineage-reset generation does not relabel prior observations. Missing observations and failed work have distinct states. A heartbeat alone is never successful inference evidence."
+
+[journey.G13]
+title = "Resource ceilings and sustained operation"
+status = "UNRUN"
+paragraph_001 = "Exercise the complete maximum roster/report/task/history state at192KiB and the application namespace ceiling of two new blobs per mutation (native replay capture, when enabled, can add a witness blob and a replay KV record; include them in total native headroom). Refuse one byte over the state limit without partial effects. Exercise the actual native four-new-blob,512-blob and64MiB store constraints with current live headroom. Demonstrate the required safe blob retention/reclamation strategy over sustained real transitions, restart and historical proof retention before claiming continuous operation. App-level record pruning alone does not prove global blob reclamation."
+
+[journey.G14]
+title = "Projection and finality"
+status = "UNRUN"
+paragraph_001 = "Pin a market snapshot to exact program/market/config/roster/epoch/root and authoritative finality evidence. Continue pagination at that snapshot, then expire it according to F10; do not silently mix heads. A local indexer stability-depth cursor or a signed read root without the required finality evidence remains insufficient. Rollback, lag, restart, duplicate events and webhook redelivery preserve truthful status and durable cursors."
+
+[journey.G15]
+title = "Closure and expired claims"
+status = "UNRUN"
+paragraph_001 = "Stop new task/report admission as defined, finish or cancel existing obligations, retain unexpired claims, return expired unpaid claims to the prescribed reserve and refund only free funds to the immutable authorized refund recipient. Close cannot strand still-valid entitlements, reroute ownership funds or reuse the same market namespace. Restart during each closure stage preserves exact conservation."
+
+[journey.G16]
+title = "Host compatibility and release proof"
+status = "UNRUN"
+paragraph_001 = "Execute the chosen admitted host ABI and verify account registration, ProgramSpend authorization, shared-state access declarations, canonical106-byte native ProgramCall encoding, resource ceilings, receipt/proof version and finality adapter on the exact candidate. Runtime readiness, focused qualification and aggregate release evidence are recorded separately. Interface availability or a compile success does not close any real-service, custody, finality or sustained-operation requirement."

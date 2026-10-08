@@ -1,0 +1,52 @@
+%% PROPOSED authority transitions; native host integration UNRUN.
+flowchart TB
+  frame["Direct authenticated native call; no immediate caller"]
+  kind{"Envelope authentication kind?"}
+  native["Kind0: actor principal equals authenticated invoking principal"]
+  delegated["Kind1: only enrolled worker operations / evaluator statements / heartbeat"]
+  verify["Active scoped Ed25519 key signs exact domain-separated request digest"]
+  role["Host capability and application role both required"]
+  frame --> kind
+  kind -->|"0"| native --> role
+  kind -->|"1"| delegated --> verify --> role
+  subgraph workers["AI worker identity and membership"]
+    nominateW["Market Owner EnrollWorker: bounded PENDING_OWNER proposal"]
+    acceptW["Nominated worker owner AcceptEnrollment kind0 + delegate proof of possession"]
+    enrolled["ENROLLED identity; no membership or runner authority yet"]
+    permitW["Market Owner ApproveAdmission: one bound expiring permit"]
+    admitW["Worker owner AdmitWorker consumes permit and stages membership"]
+    nominateW --> acceptW --> enrolled --> permitW --> admitW
+  end
+  subgraph evaluators["Evaluator identity and membership"]
+    nominateE["Market Owner ScheduleEvaluator: one PENDING grant"]
+    permitE["Market Owner ApproveAdmission binds pending grant and registered key"]
+    acceptE["Nominated evaluator owner AdmitEvaluator kind0 + registered delegate consent"]
+    memberE["Same PENDING grant gains accepted membership; no immediate score authority"]
+    nominateE --> permitE --> acceptE --> memberE
+  end
+  roster["OpenEpoch freezes admitted identities, recipients, generations and authority versions"]
+  bootstrap["Before first opening: effective_epoch 0; afterward new admission targets clock_epoch+1"]
+  conflict["Evaluator principal differs from every worker principal and Market Owner; declared controls checked"]
+  workerops["Worker delegate: metadata / ACK / result operations; no treasury or evaluator privilege"]
+  evalops["Evaluator: SealEvidence / CommitScore / RevealScore; exact frozen and live grant"]
+  rotation["Rekeys / new grants staged for future roster; stable identity history and claims retained"]
+  revokeW["Worker revocation: stop new work and signatures; completed evidence / fixed claims preserved"]
+  revokeE["Evaluator revocation before BeginAggregation: exclude its row without erasing evidence"]
+  afterseal["Evaluator revocation after BeginAggregation: prospective; sealed inputs unchanged"]
+  relayer["Permissionless kind0 relayer: actor_sequence 0; deterministic cursor or fixed-recipient claim only"]
+  replay["Role sequences advance only on success; exact last request idempotent; changed body conflicts"]
+  role --> nominateW
+  role --> nominateE
+  role --> relayer
+  admitW --> roster
+  memberE --> roster
+  bootstrap --> roster
+  conflict --> roster
+  roster --> workerops
+  roster --> evalops
+  role --> replay
+  workerops --> rotation
+  evalops --> rotation
+  workerops --> revokeW
+  evalops --> revokeE
+  evalops --> afterseal

@@ -1,0 +1,3415 @@
+{
+  "release": "PAXAI-v1",
+  "status": "PLANNED_UNRUN",
+  "authority": "spec/paxeer-x/spec.kvx",
+  "precedence": "Each node binds the exact complete task scope, paths and single gate. Dependencies govern admission. Evidence markers consume existing results without repeating producer gates.",
+  "nodes": [
+    {
+      "id": "ai.P-WORKSPACE",
+      "requires": [
+        "0.2"
+      ],
+      "wave": 14,
+      "status": "pending",
+      "task_kind": "prerequisite",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.P-WORKSPACE]",
+      "manager": "FM-CORE",
+      "worker": "W-P-WORKSPACE",
+      "worker_role": "workspace admission specialist",
+      "reqs": [
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.WORKSPACE-A01"
+      ],
+      "admission_contract": {
+        "scope": "Bind selected Paxeer checkout/revision, immutable contract version, approved toolchain/dependencies, exact path ownership, allowed tools/access and private evidence location; block task admission when a required workspace/toolchain/access control is absent.",
+        "exact_paths": [
+          "tools/paxeer-x/ai_evidence.py",
+          "tools/paxeer-x/tests/ai_evidence_test.py"
+        ],
+        "compile_cmd": "NONE",
+        "verify_cmd": "python3 tools/paxeer-x/ai_evidence.py --selector workspace-admission",
+        "entry_condition": "An approved checkout, versioned contract and toolchain decision are available; missing access or ownership controls keep admission BLOCKED.",
+        "max_builds": 0,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
+      },
+      "local_wave": 0,
+      "acceptance_cases": [
+        "AI.WORKSPACE-A01"
+      ]
+    },
+    {
+      "id": "ai.P-DEPLOYMENT",
+      "requires": [
+        "ai.P-WORKSPACE"
+      ],
+      "wave": 15,
+      "status": "pending",
+      "task_kind": "prerequisite",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.P-DEPLOYMENT]",
+      "manager": "FM-OPERATIONS",
+      "worker": "W-P-DEPLOYMENT",
+      "worker_role": "deployment readiness specialist",
+      "reqs": [
+        "AI.OPERATIONS"
+      ],
+      "acceptance": [
+        "AI.DEPLOYMENT-A01"
+      ],
+      "admission_contract": {
+        "scope": "Record approved actual domain/genesis, Program/artifact/ABI/runtime/fee manifest, registration/capability/finality/proof authorities and real funded account references; validate readiness without deploying or fabricating authority/balances.",
+        "exact_paths": [
+          "spec/paxeer-x/ai-markets/evidence/deployment-readiness.kvx"
+        ],
+        "compile_cmd": "NONE",
+        "verify_cmd": "python3 tools/paxeer-x/ai_evidence.py --selector deployment-admission",
+        "entry_condition": "Approved actual domain/ABI/registration/finality authorities, artifact manifest and funded account references exist; any missing assignment keeps readiness BLOCKED.",
+        "max_builds": 0,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
+      },
+      "local_wave": 1,
+      "acceptance_cases": [
+        "AI.DEPLOYMENT-A01"
+      ]
+    },
+    {
+      "id": "ai.P-REAL-SERVICES",
+      "requires": [
+        "ai.P-WORKSPACE"
+      ],
+      "wave": 15,
+      "status": "pending",
+      "task_kind": "prerequisite",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.P-REAL-SERVICES]",
+      "manager": "FM-OPERATIONS",
+      "worker": "W-P-REAL-SERVICES",
+      "worker_role": "AI service readiness specialist",
+      "reqs": [
+        "AI.OPERATIONS"
+      ],
+      "acceptance": [
+        "AI.SERVICES-A01"
+      ],
+      "admission_contract": {
+        "scope": "Record approved model/dataset/benchmark licenses and pinned artifacts, actual runner/evaluator choices, durable stores, TLS identities and tenant/KMS service references; refuse readiness when any necessary provider/resource is absent.",
+        "exact_paths": [
+          "spec/paxeer-x/ai-markets/evidence/services-readiness.kvx"
+        ],
+        "compile_cmd": "NONE",
+        "verify_cmd": "python3 tools/paxeer-x/ai_evidence.py --selector real-services-admission",
+        "entry_condition": "Approved rights and provisioned real runner/evaluator/durable/TLS/tenant/KMS resources exist; unavailable resources keep service admission BLOCKED.",
+        "max_builds": 0,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
+      },
+      "local_wave": 1,
+      "acceptance_cases": [
+        "AI.SERVICES-A01"
+      ]
+    },
+    {
+      "id": "ai.P-STORAGE-PROFILE",
+      "requires": [
+        "ai.P-WORKSPACE"
+      ],
+      "wave": 15,
+      "status": "pending",
+      "task_kind": "prerequisite",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.P-STORAGE-PROFILE]",
+      "manager": "FM-STORAGE",
+      "worker": "W-P-STORAGE-PROFILE",
+      "worker_role": "native storage profile specialist",
+      "reqs": [
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.PROFILE-A01"
+      ],
+      "admission_contract": {
+        "scope": "Bind owner-approved module version/ordinal/activation, controller and archive key generations, supported reference parser set, hot horizon, indefinite archive retention, certificate protocol, work/fee bounds and obligation reserves; retain finite-capacity profile until approval and real qualification.",
+        "exact_paths": [
+          "spec/paxeer-x/ai-markets/evidence/storage-profile.kvx"
+        ],
+        "compile_cmd": "NONE",
+        "verify_cmd": "python3 tools/paxeer-x/ai_evidence.py --selector storage-profile-admission",
+        "entry_condition": "Protocol/storage owners assign actual version/ordinal/controller/archive operators/hot horizon/reference registry; unassigned decisions keep continuous operation BLOCKED.",
+        "max_builds": 0,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
+      },
+      "local_wave": 1,
+      "acceptance_cases": [
+        "AI.PROFILE-A01"
+      ]
+    },
+    {
+      "id": "ai.T-C01",
+      "requires": [
+        "ai.P-WORKSPACE"
+      ],
+      "wave": 15,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C01]",
+      "manager": "FM-CORE",
+      "worker": "W-T-C01",
+      "worker_role": "Programs protocol codec specialist",
+      "reqs": [
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.CORE-A01"
+      ],
+      "admission_contract": {
+        "scope": "Create application crate/workspace entry and canonical common typed IDs, operation/state/event framing, hashes, signature digests and error tables; freeze remaining feature-specific symbolic error numeric codes centrally in declaration order and reject malformed/unknown/overflow inputs.",
+        "exact_paths": [
+          "programs/Cargo.toml",
+          "programs/crates/layerx-programs-ai-market/Cargo.toml",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs",
+          "programs/crates/layerx-programs-ai-market/src/types.rs",
+          "programs/crates/layerx-programs-ai-market/src/codec.rs",
+          "programs/crates/layerx-programs-ai-market/src/errors.rs",
+          "programs/crates/layerx-programs-ai-market/src/dispatch.rs",
+          "programs/crates/layerx-programs-ai-market/tests/canonical_contract.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test canonical_contract",
+        "entry_condition": "ai.P-WORKSPACE passed; FM-CORE exclusively owns crate/workspace and common declarations.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 1,
+      "acceptance_cases": [
+        "AI.CORE-A01"
+      ]
+    },
+    {
+      "id": "ai.F01-T01",
+      "requires": [
+        "ai.T-C01"
+      ],
+      "wave": 16,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T01",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R001",
+        "AI.F01-R002",
+        "AI.F01-R003",
+        "AI.F01-R004",
+        "AI.F01-R005",
+        "AI.F01-R006",
+        "AI.F01-R007",
+        "AI.F01-R008",
+        "AI.F01-R009",
+        "AI.F01-R010",
+        "AI.F01-R011",
+        "AI.F01-R012",
+        "AI.F01-R025",
+        "AI.F01-R029",
+        "AI.F01-R032",
+        "AI.F01-R033",
+        "AI.F01-R034",
+        "AI.F01-R035",
+        "AI.F01-R038",
+        "AI.F01-R039",
+        "AI.F01-R045",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A01",
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A09",
+        "AI.F01-A16",
+        "AI.F01-A19"
+      ],
+      "admission_contract": {
+        "scope": "Encode bounded market header, 307-byte policy with assessment mode, immutable optional treasury and funding binding; validate canonical fields, limits, immutable policy digest and checked epoch arithmetic.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/registry.rs",
+          "programs/crates/layerx-programs-ai-market/src/policy.rs",
+          "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 2,
+      "acceptance_cases": [
+        "AI.F01-A01",
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A09",
+        "AI.F01-A16",
+        "AI.F01-A19"
+      ]
+    },
+    {
+      "id": "ai.T-C02",
+      "requires": [
+        "ai.T-C01"
+      ],
+      "wave": 16,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C02]",
+      "manager": "FM-CORE",
+      "worker": "W-T-C02",
+      "worker_role": "Programs runtime storage specialist",
+      "reqs": [
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.CORE-A02"
+      ],
+      "admission_contract": {
+        "scope": "Implement one authoritative paxai/state/v1 value with exact section budgets and <=196608 bytes, host-authenticated context/height/principal, real storage finalization/crypto/events, replay and no nested calls; verify rollback and <=2 application content blobs plus actual native overhead within unchanged caps.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/state.rs",
+          "programs/crates/layerx-programs-ai-market/src/host_adapter.rs",
+          "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary",
+        "entry_condition": "ai.T-C01 passed; actual Programs interpreter/native adapter exposes admitted context/storage/crypto; absent real bridge is BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 2,
+      "acceptance_cases": [
+        "AI.CORE-A02"
+      ]
+    },
+    {
+      "id": "ai.T-S01",
+      "requires": [
+        "ai.P-STORAGE-PROFILE",
+        "ai.P-DEPLOYMENT"
+      ],
+      "wave": 16,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-S01]",
+      "manager": "FM-STORAGE",
+      "worker": "W-T-S01",
+      "worker_role": "native archive and recovery specialist",
+      "reqs": [
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.STORAGE-A01"
+      ],
+      "admission_contract": {
+        "scope": "Implement immutable ongoing full snapshot/log/witness/metadata-proof inventories, two independently administered actual archive processes and 2-of-2 durable availability certificates; restore native root/replay and original historical proofs, refuse corrupt/missing/conflicting segments and preserve issuance policy during one archive outage.",
+        "exact_paths": [
+          "include/layerx/lxp_snapshot.h",
+          "src/state/lxp_snapshot.c",
+          "src/storage/lxp_snapshot_store.c",
+          "src/replica/lxp_replay_checkpoint.c",
+          "src/replica/lxp_history.c",
+          "platform/relay_archive/store.py",
+          "platform/relay_archive/protocol.py",
+          "platform/relay_archive/runtime.py",
+          "platform/relay_archive/state_archive.py",
+          "tests/relay-archive/state_archive_lifecycle.py"
+        ],
+        "compile_cmd": "make layerxd",
+        "verify_cmd": "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd",
+        "entry_condition": "ai.P-STORAGE-PROFILE and ai.P-DEPLOYMENT passed; approved enrolled archive keys/operators, real node artifact and historical retention decisions exist.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 2,
+      "acceptance_cases": [
+        "AI.STORAGE-A01"
+      ]
+    },
+    {
+      "id": "ai.F01-T02",
+      "requires": [
+        "ai.F01-T01",
+        "ai.T-C02"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T02]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T02",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R013",
+        "AI.F01-R014",
+        "AI.F01-R015",
+        "AI.F01-R016",
+        "AI.F01-R017",
+        "AI.F01-R018",
+        "AI.F01-R019",
+        "AI.F01-R020",
+        "AI.F01-R021",
+        "AI.F01-R022",
+        "AI.F01-R026",
+        "AI.F01-R030",
+        "AI.F01-R036",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A01",
+        "AI.F01-A03",
+        "AI.F01-A04",
+        "AI.F01-A05",
+        "AI.F01-A06",
+        "AI.F01-A10",
+        "AI.F01-A19"
+      ],
+      "admission_contract": {
+        "scope": "Implement CREATE, STAGE_POLICY, CANCEL_POLICY, SCHEDULE_ACTIVATION, SUSPEND, UPDATE_METADATA and operator grant lifecycle with exact state-revision and replay semantics; preserve existing obligations.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/registry_ops.rs",
+          "programs/crates/layerx-programs-ai-market/tests/market_lifecycle.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_lifecycle",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.F01-A01",
+        "AI.F01-A03",
+        "AI.F01-A04",
+        "AI.F01-A05",
+        "AI.F01-A06",
+        "AI.F01-A10",
+        "AI.F01-A19"
+      ]
+    },
+    {
+      "id": "ai.F02-T01",
+      "requires": [
+        "ai.T-C02",
+        "ai.F01-T01"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F02-T01]",
+      "manager": "FM-F02",
+      "worker": "W-F02-T01",
+      "worker_role": "worker identity and execution specialist",
+      "reqs": [
+        "AI.F02-R001",
+        "AI.F02-R003",
+        "AI.F02-R004",
+        "AI.F02-R005",
+        "AI.F02-R006",
+        "AI.F02-R010",
+        "AI.F02-R011",
+        "AI.F02-R012",
+        "AI.F02-R013",
+        "AI.F02-R014",
+        "AI.F02-R015",
+        "AI.F02-R019",
+        "AI.F02-R021",
+        "AI.F02-R026",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F02-A01",
+        "AI.F02-A02",
+        "AI.F02-A03",
+        "AI.F02-A04",
+        "AI.F02-A13",
+        "AI.F02-A16",
+        "AI.F02-A18",
+        "AI.F02-A19"
+      ],
+      "admission_contract": {
+        "scope": "Implement bounded two-party enrollment/consent, delegate generation and rotation, metadata commitments, draining/revocation and exact ExpireEnrollment 0x020A; refuse reserved 0x0208, preserve frozen attribution and existing claims.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/workers.rs",
+          "programs/crates/layerx-programs-ai-market/tests/workers_lifecycle.rs",
+          "agent/crates/layerx-types/src/paxai/worker.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test workers_lifecycle",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F02",
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.F02-A01",
+        "AI.F02-A02",
+        "AI.F02-A03",
+        "AI.F02-A04",
+        "AI.F02-A13",
+        "AI.F02-A16",
+        "AI.F02-A18",
+        "AI.F02-A19"
+      ]
+    },
+    {
+      "id": "ai.F03-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.F01-T01"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F03-T01]",
+      "manager": "FM-F03",
+      "worker": "W-F03-T01",
+      "worker_role": "evaluator authority specialist",
+      "reqs": [
+        "AI.F03-R01",
+        "AI.F03-R02",
+        "AI.F03-R05",
+        "AI.F03-R06",
+        "AI.F03-R07",
+        "AI.F03-R20",
+        "AI.F03-R25",
+        "AI.F03-R26",
+        "AI.F03-R27",
+        "AI.F03-R28",
+        "AI.F03-R35",
+        "AI.F03-R36",
+        "AI.F03-R44",
+        "AI.F03-R45",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F03-A01",
+        "AI.F03-A02",
+        "AI.F03-A03",
+        "AI.F03-A04",
+        "AI.F03-A05"
+      ],
+      "admission_contract": {
+        "scope": "Implement typed evaluator/grant/report codecs with exact compact bounded canonical vector and signature framing; preserve explicit zero versus omitted vote, registered evidence context and stable error representation.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/evaluators/model.rs",
+          "programs/crates/layerx-programs-ai-market/src/evaluators/codec.rs",
+          "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_codec.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F03",
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.F03-A01",
+        "AI.F03-A02",
+        "AI.F03-A03",
+        "AI.F03-A04",
+        "AI.F03-A05"
+      ]
+    },
+    {
+      "id": "ai.F06-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.T-C02"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F06-T01]",
+      "manager": "FM-F06",
+      "worker": "W-F06-T01",
+      "worker_role": "native reward accounting specialist",
+      "reqs": [
+        "AI.F06-R01",
+        "AI.F06-R03",
+        "AI.F06-R04",
+        "AI.F06-R05",
+        "AI.F06-R06",
+        "AI.F06-R07",
+        "AI.F06-R19",
+        "AI.F06-R20",
+        "AI.F06-R23",
+        "AI.F06-R24",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F06-A01",
+        "AI.F06-A02",
+        "AI.F06-A03",
+        "AI.F06-A04",
+        "AI.F06-A05",
+        "AI.F06-A15"
+      ],
+      "admission_contract": {
+        "scope": "Implement canonical bounded reward/account/recipient/epoch records and checked u128 largest-remainder arithmetic over positive F05 raw weights, deterministic ties, zero entitlement and exact conservation equations.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/reward_math.rs",
+          "programs/crates/layerx-programs-ai-market/src/rewards.rs",
+          "programs/crates/layerx-programs-ai-market/tests/rewards.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_math_and_encoding -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F06",
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.F06-A01",
+        "AI.F06-A02",
+        "AI.F06-A03",
+        "AI.F06-A04",
+        "AI.F06-A05",
+        "AI.F06-A15"
+      ]
+    },
+    {
+      "id": "ai.F09-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.T-C02"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F09-T01]",
+      "manager": "FM-F09",
+      "worker": "W-F09-T01",
+      "worker_role": "artifact security and provenance specialist",
+      "reqs": [
+        "AI.F09-R01",
+        "AI.F09-R02",
+        "AI.F09-R03",
+        "AI.F09-R04",
+        "AI.F09-R05",
+        "AI.F09-R06",
+        "AI.F09-R17",
+        "AI.F09-R18",
+        "AI.F09-R27",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F09-A01",
+        "AI.F09-A02",
+        "AI.F09-A03",
+        "AI.F09-A04",
+        "AI.F09-A05",
+        "AI.F09-A06",
+        "AI.F09-A20",
+        "AI.F09-A22"
+      ],
+      "admission_contract": {
+        "scope": "Implement strict bounded manifest/publisher/evidence codecs, domain-separated roots, exact context binding and bounded chunk proofs with canonical privacy/authority enums.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/evidence.rs",
+          "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_contract",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F09",
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.F09-A01",
+        "AI.F09-A02",
+        "AI.F09-A03",
+        "AI.F09-A04",
+        "AI.F09-A05",
+        "AI.F09-A06",
+        "AI.F09-A20",
+        "AI.F09-A22"
+      ]
+    },
+    {
+      "id": "ai.T-C03",
+      "requires": [
+        "ai.T-C02",
+        "ai.P-DEPLOYMENT"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C03]",
+      "manager": "FM-CORE",
+      "worker": "W-T-C03",
+      "worker_role": "native custody integration specialist",
+      "reqs": [
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.CORE-A03"
+      ],
+      "admission_contract": {
+        "scope": "Integrate actual registered Program-derived rewards account/seed/immutable asset, principal-funded deposit, exact ProgramSpend transfer ceilings and proof-bound balances; verify native grants, rollback, fee/finality evidence and real account custody.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/value_adapter.rs",
+          "programs/crates/layerx-programs-ai-market/tests/value_boundary.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test value_boundary",
+        "entry_condition": "ai.T-C02 and ai.P-DEPLOYMENT passed; actual registration authority, native account and finality/proof interfaces are available; missing authorities are BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.CORE-A03"
+      ]
+    },
+    {
+      "id": "ai.T-S02",
+      "requires": [
+        "ai.T-S01"
+      ],
+      "wave": 17,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-S02]",
+      "manager": "FM-STORAGE",
+      "worker": "W-T-S02",
+      "worker_role": "native Programs lifecycle specialist",
+      "reqs": [
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.STORAGE-A02"
+      ],
+      "admission_contract": {
+        "scope": "Implement versioned maintenance with exact current-root/controller/archive/provenance admission, closed 41/73-byte shared/principal reference parser set and transitive dedup protection; retire only eligible obsolete app content or paired replay KV/witness, <=3 deletions within4 staged entries, atomically change current root and preserve original historical proofs/caps/liabilities.",
+        "exact_paths": [
+          "include/layerx/programs.h",
+          "include/layerx/lxp_module.h",
+          "include/layerx/lxp_kernel.h",
+          "src/modules/programs/registration.c",
+          "src/modules/programs/storage.c",
+          "src/modules/programs/state_record.c",
+          "src/modules/programs/blob_lifecycle.c",
+          "src/modules/programs/blob_lifecycle.h",
+          "src/protocol/lxp_module_ctx.c",
+          "src/protocol/lxp_kernel.c",
+          "src/state/lxp_state_root.c",
+          "src/state/lxp_state_proof.c",
+          "tests/programs/test_blob_lifecycle.c",
+          "Makefile"
+        ],
+        "compile_cmd": "make build/tests/lxp_test_blob_lifecycle",
+        "verify_cmd": "make test-paxai-blob-lifecycle",
+        "entry_condition": "ai.T-S01 passed under approved profile; module version/ordinal/controller/reference set fixed; serial native/Makefile ownership held and no prepared transition may race retirement.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 3,
+      "acceptance_cases": [
+        "AI.STORAGE-A02"
+      ]
+    },
+    {
+      "id": "ai.F04-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.F03-T01"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F04-T01]",
+      "manager": "FM-F04",
+      "worker": "W-F04-T01",
+      "worker_role": "commitment and recovery specialist",
+      "reqs": [
+        "AI.F04-R03",
+        "AI.F04-R04",
+        "AI.F04-R08",
+        "AI.F04-R10",
+        "AI.F04-R11",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A07",
+        "AI.F04-A10"
+      ],
+      "admission_contract": {
+        "scope": "Implement exact domain-separated report/salt commitment, strict canonical report fields, nonzero 32-byte external salt and bounded signature/hash work; reject empty reports while retaining explicit zero votes.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/commit_reveal/commitment.rs",
+          "programs/crates/layerx-programs-ai-market/tests/f04_canonical.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_canonical",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F04",
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A07",
+        "AI.F04-A10"
+      ]
+    },
+    {
+      "id": "ai.F07-T01",
+      "requires": [
+        "ai.T-C02",
+        "ai.F01-T01",
+        "ai.F02-T01"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F07-T01]",
+      "manager": "FM-F07",
+      "worker": "W-F07-T01",
+      "worker_role": "reputation history specialist",
+      "reqs": [
+        "AI.F07-R001",
+        "AI.F07-R002",
+        "AI.F07-R003",
+        "AI.F07-R004",
+        "AI.F07-R006",
+        "AI.F07-R007",
+        "AI.F07-R008",
+        "AI.F07-R009",
+        "AI.F07-R012",
+        "AI.F07-R017",
+        "AI.F07-R018",
+        "AI.F07-R019",
+        "AI.F07-R020",
+        "AI.F07-R024",
+        "AI.F07-R025",
+        "AI.F07-R026",
+        "AI.F07-R027",
+        "AI.F07-R028",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F07-A01",
+        "AI.F07-A02",
+        "AI.F07-A03",
+        "AI.F07-A04",
+        "AI.F07-A05",
+        "AI.F07-A06",
+        "AI.F07-A10",
+        "AI.F07-A11"
+      ],
+      "admission_contract": {
+        "scope": "Implement bounded codec, integer quality/coverage/decay and complete pure ApplyCompletedEpoch with once-only identity, ring/segment/observation presence and overflow rules on real typed state.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/reputation.rs",
+          "programs/crates/layerx-programs-ai-market/src/reputation_codec.rs",
+          "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs",
+          "programs/crates/layerx-programs-ai-market/tests/reputation_vectors.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F07",
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.F07-A01",
+        "AI.F07-A02",
+        "AI.F07-A03",
+        "AI.F07-A04",
+        "AI.F07-A05",
+        "AI.F07-A06",
+        "AI.F07-A10",
+        "AI.F07-A11"
+      ]
+    },
+    {
+      "id": "ai.F08-T01",
+      "requires": [
+        "ai.T-C02",
+        "ai.F01-T01",
+        "ai.F02-T01",
+        "ai.F03-T01"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F08-T01]",
+      "manager": "FM-F08",
+      "worker": "W-F08-T01",
+      "worker_role": "membership and liveness specialist",
+      "reqs": [
+        "AI.F08-R001",
+        "AI.F08-R002",
+        "AI.F08-R003",
+        "AI.F08-R004",
+        "AI.F08-R005",
+        "AI.F08-R006",
+        "AI.F08-R007",
+        "AI.F08-R008",
+        "AI.F08-R009",
+        "AI.F08-R010",
+        "AI.F08-R011",
+        "AI.F08-R012",
+        "AI.F08-R013",
+        "AI.F08-R014",
+        "AI.F08-R015",
+        "AI.F08-R016",
+        "AI.F08-R017",
+        "AI.F08-R018",
+        "AI.F08-R019",
+        "AI.F08-R020",
+        "AI.F08-R021",
+        "AI.F08-R022",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F08-A01",
+        "AI.F08-A02",
+        "AI.F08-A03",
+        "AI.F08-A04",
+        "AI.F08-A05",
+        "AI.F08-A06",
+        "AI.F08-A07",
+        "AI.F08-A08",
+        "AI.F08-A09",
+        "AI.F08-A10",
+        "AI.F08-A11",
+        "AI.F08-A14",
+        "AI.F08-A15",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ],
+      "admission_contract": {
+        "scope": "Implement actual approval/owner acceptance/delegate possession, current identities, quotas/rate windows, heartbeat presence, bootstrap admission, deterministic pruning and live exclusions; keep quality independent from membership.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/admission.rs",
+          "programs/crates/layerx-programs-ai-market/src/roster.rs",
+          "agent/crates/layerx-types/src/paxai/admission.rs",
+          "programs/crates/layerx-programs-ai-market/tests/admission_lifecycle.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test admission_lifecycle",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F08",
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.F08-A01",
+        "AI.F08-A02",
+        "AI.F08-A03",
+        "AI.F08-A04",
+        "AI.F08-A05",
+        "AI.F08-A06",
+        "AI.F08-A07",
+        "AI.F08-A08",
+        "AI.F08-A09",
+        "AI.F08-A10",
+        "AI.F08-A11",
+        "AI.F08-A14",
+        "AI.F08-A15",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ]
+    },
+    {
+      "id": "ai.F09-T03",
+      "requires": [
+        "ai.F09-T01",
+        "ai.P-REAL-SERVICES"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F09-T03]",
+      "manager": "FM-F09",
+      "worker": "W-F09-T03",
+      "worker_role": "artifact security and provenance specialist",
+      "reqs": [
+        "AI.F09-R07",
+        "AI.F09-R08",
+        "AI.F09-R09",
+        "AI.F09-R11",
+        "AI.F09-R12",
+        "AI.F09-R13",
+        "AI.F09-R14",
+        "AI.F09-R15",
+        "AI.F09-R20",
+        "AI.F09-R22",
+        "AI.F09-R23",
+        "AI.F09-R25",
+        "AI.F09-R26",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F09-A07",
+        "AI.F09-A08",
+        "AI.F09-A09",
+        "AI.F09-A10",
+        "AI.F09-A11",
+        "AI.F09-A12",
+        "AI.F09-A13",
+        "AI.F09-A17"
+      ],
+      "admission_contract": {
+        "scope": "Create real durable ingress/publication/retrieval with signed publisher authority, tenant purpose grants, authenticated encryption/KMS, quota/idempotency and safe locator resolution; persist intent before publication and refuse unsafe routes.",
+        "exact_paths": [
+          "platform/hosted/ai-artifacts/Cargo.toml",
+          "platform/hosted/ai-artifacts/src/main.rs",
+          "platform/hosted/ai-artifacts/src/store.rs",
+          "platform/hosted/ai-artifacts/src/authority.rs",
+          "platform/hosted/ai-artifacts/src/resolver.rs",
+          "platform/hosted/ai-artifacts/src/crypto.rs",
+          "platform/hosted/ai-artifacts/tests/artifact_service.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/hosted/ai-artifacts/Cargo.toml",
+        "verify_cmd": "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_service",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F09",
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.F09-A07",
+        "AI.F09-A08",
+        "AI.F09-A09",
+        "AI.F09-A10",
+        "AI.F09-A11",
+        "AI.F09-A12",
+        "AI.F09-A13",
+        "AI.F09-A17"
+      ]
+    },
+    {
+      "id": "ai.F10-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.T-C02",
+        "ai.F01-T01",
+        "ai.F02-T01"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T01]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T01",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R002",
+        "AI.F10-R006",
+        "AI.F10-R007",
+        "AI.F10-R008",
+        "AI.F10-R009",
+        "AI.F10-R010",
+        "AI.F10-R012",
+        "AI.F10-R029",
+        "AI.F10-R030",
+        "AI.F10-R032",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A02",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A13"
+      ],
+      "admission_contract": {
+        "scope": "Implement read-only header/state chunk selectors, exact snapshot binding, explicit absence/availability, canonical pagination inputs and bounded response framing against actual Programs execution.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/queries.rs",
+          "programs/crates/layerx-programs-ai-market/tests/view_binding.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test view_binding",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Gate covers only implemented minimal selectors/projections; complete score/reward producers remain explicit unavailable until their later task evidence.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.F10-A02",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A13"
+      ]
+    },
+    {
+      "id": "ai.T-S03",
+      "requires": [
+        "ai.T-S02"
+      ],
+      "wave": 18,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-S03]",
+      "manager": "FM-STORAGE",
+      "worker": "W-T-S03",
+      "worker_role": "native capacity and keeper specialist",
+      "reqs": [
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.STORAGE-A03"
+      ],
+      "admission_contract": {
+        "scope": "Implement root-bound authenticated capacity observations, serialized request reservations and obligation reserves through real LNI/kernel/authority; create durable keeper package and persist exact requests/certificates/receipt reconciliation; never credit staged deletions as available additions or treat reads as reservations.",
+        "exact_paths": [
+          "include/layerx/lxp_kernel.h",
+          "src/protocol/lxp_kernel.c",
+          "src/protocol/lxp_module_ctx.c",
+          "cmd/layerxd/lxp_daemon_lni.c",
+          "platform/hosted/authority/src/ai_storage_admission.rs",
+          "platform/hosted/paxai-storage-keeper/Cargo.toml",
+          "platform/hosted/paxai-storage-keeper/src/main.rs",
+          "platform/hosted/paxai-storage-keeper/src/store.rs",
+          "platform/hosted/paxai-storage-keeper/src/native.rs",
+          "tests/programs/test_blob_admission.c",
+          "Makefile"
+        ],
+        "compile_cmd": "make build/tests/lxp_test_blob_admission",
+        "verify_cmd": "make test-paxai-blob-admission",
+        "entry_condition": "ai.T-S02 passed; exact private authority/LNI integration ownership and keeper package layerx-paxai-storage-keeper are admitted; unavailable authoritative counters/reservations are BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 4,
+      "acceptance_cases": [
+        "AI.STORAGE-A03"
+      ]
+    },
+    {
+      "id": "ai.F03-T02",
+      "requires": [
+        "ai.F03-T01",
+        "ai.F01-T02",
+        "ai.F08-T01"
+      ],
+      "wave": 19,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F03-T02]",
+      "manager": "FM-F03",
+      "worker": "W-F03-T02",
+      "worker_role": "evaluator authority specialist",
+      "reqs": [
+        "AI.F03-R03",
+        "AI.F03-R04",
+        "AI.F03-R08",
+        "AI.F03-R09",
+        "AI.F03-R10",
+        "AI.F03-R11",
+        "AI.F03-R12",
+        "AI.F03-R13",
+        "AI.F03-R14",
+        "AI.F03-R15",
+        "AI.F03-R16",
+        "AI.F03-R21",
+        "AI.F03-R22",
+        "AI.F03-R24",
+        "AI.F03-R34",
+        "AI.F03-R43",
+        "AI.F03-R44",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F03-A06",
+        "AI.F03-A07",
+        "AI.F03-A08",
+        "AI.F03-A09",
+        "AI.F03-A10",
+        "AI.F03-A13",
+        "AI.F03-A16"
+      ],
+      "admission_contract": {
+        "scope": "Implement schedule/rotate/revoke, half-open expiry, owner/worker role exclusions, accepted membership and delegate proof of possession before activation; freeze current keys and apply live exclusion prospectively.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/evaluators/authority.rs",
+          "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_authority.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F03",
+      "local_wave": 5,
+      "acceptance_cases": [
+        "AI.F03-A06",
+        "AI.F03-A07",
+        "AI.F03-A08",
+        "AI.F03-A09",
+        "AI.F03-A10",
+        "AI.F03-A13",
+        "AI.F03-A16"
+      ]
+    },
+    {
+      "id": "ai.F05-T01",
+      "requires": [
+        "ai.T-C01",
+        "ai.F03-T01",
+        "ai.F04-T01"
+      ],
+      "wave": 19,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F05-T01]",
+      "manager": "FM-F05",
+      "worker": "W-F05-T01",
+      "worker_role": "deterministic aggregation specialist",
+      "reqs": [
+        "AI.F05-R02",
+        "AI.F05-R03",
+        "AI.F05-R04",
+        "AI.F05-R09",
+        "AI.F05-R12",
+        "AI.F05-R13",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F05-A05",
+        "AI.F05-A08",
+        "AI.F05-A10",
+        "AI.F05-A11"
+      ],
+      "admission_contract": {
+        "scope": "Implement strict canonical aggregation input/output/state codecs, explicit absent/zero/positive statuses, ordering, domain commitments and invariant errors before numerical consumers.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs",
+          "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F05",
+      "local_wave": 5,
+      "acceptance_cases": [
+        "AI.F05-A05",
+        "AI.F05-A08",
+        "AI.F05-A10",
+        "AI.F05-A11"
+      ]
+    },
+    {
+      "id": "ai.F10-T02",
+      "requires": [
+        "ai.F10-T01",
+        "ai.T-C03"
+      ],
+      "wave": 19,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T02]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T02",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R001",
+        "AI.F10-R003",
+        "AI.F10-R004",
+        "AI.F10-R008",
+        "AI.F10-R009",
+        "AI.F10-R012",
+        "AI.F10-R013",
+        "AI.F10-R014",
+        "AI.F10-R015",
+        "AI.F10-R016",
+        "AI.F10-R017",
+        "AI.F10-R021",
+        "AI.F10-R023",
+        "AI.F10-R025",
+        "AI.F10-R026",
+        "AI.F10-R027",
+        "AI.F10-R030",
+        "AI.F10-R032",
+        "AI.F10-R033",
+        "AI.F10-R034",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A01",
+        "AI.F10-A02",
+        "AI.F10-A04",
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A09",
+        "AI.F10-A14",
+        "AI.F10-A15"
+      ],
+      "admission_contract": {
+        "scope": "Implement real finalized market/worker snapshot capture with exact root/checkpoint binding, atomic rows/cursor/outbox and current tenant authorization; later components carry explicit availability status until their producers exist.",
+        "exact_paths": [
+          "platform/hosted/indexer/src/ai_market.rs",
+          "platform/hosted/gateway/src/ai_views.rs",
+          "platform/hosted/indexer/tests/ai_snapshot_minimal.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_snapshot_minimal -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 5,
+      "acceptance_cases": [
+        "AI.F10-A01",
+        "AI.F10-A02",
+        "AI.F10-A04",
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A09",
+        "AI.F10-A14",
+        "AI.F10-A15"
+      ]
+    },
+    {
+      "id": "ai.T-C04",
+      "requires": [
+        "ai.T-S03"
+      ],
+      "wave": 19,
+      "status": "pending",
+      "task_kind": "evidence_marker",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-C04]",
+      "manager": "FM-CORE",
+      "worker": "W-T-C04",
+      "worker_role": "qualification evidence specialist",
+      "reqs": [
+        "AI.CORE",
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.CORE-A04"
+      ],
+      "admission_contract": {
+        "scope": "Consume exact identified-revision command/exit/private-log evidence from ai.T-S01, ai.T-S02 and ai.T-S03; validate profile identity, unchanged caps and complete dependency coverage without rebuilding or rerunning producer gates.",
+        "exact_paths": [
+          "spec/paxeer-x/ai-markets/evidence/storage-readiness.kvx"
+        ],
+        "compile_cmd": "NONE",
+        "verify_cmd": "python3 tools/paxeer-x/ai_evidence.py --selector storage-prerequisite-evidence",
+        "entry_condition": "ai.T-S01..03 have passed exact evidence under the approved storage profile; missing/mismatched evidence keeps readiness BLOCKED.",
+        "max_builds": 0,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Consume and validate exact required evidence once; missing/unassigned/contradictory decisions remain BLOCKED and qualification UNRUN; do not deploy, rebuild producers or fabricate readiness. Stop at30minutes or two task-scoped repairs."
+      },
+      "local_wave": 5,
+      "acceptance_cases": [
+        "AI.CORE-A04"
+      ]
+    },
+    {
+      "id": "ai.F05-T02",
+      "requires": [
+        "ai.F05-T01"
+      ],
+      "wave": 20,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F05-T02]",
+      "manager": "FM-F05",
+      "worker": "W-F05-T02",
+      "worker_role": "deterministic aggregation specialist",
+      "reqs": [
+        "AI.F05-R01",
+        "AI.F05-R07",
+        "AI.F05-R08",
+        "AI.F05-R09",
+        "AI.F05-R11",
+        "AI.F05-R13",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F05-A01",
+        "AI.F05-A02",
+        "AI.F05-A03",
+        "AI.F05-A04",
+        "AI.F05-A05",
+        "AI.F05-A06",
+        "AI.F05-A07",
+        "AI.F05-A08",
+        "AI.F05-A09",
+        "AI.F05-A17"
+      ],
+      "admission_contract": {
+        "scope": "Implement bounded unweighted lower median with quorum3, absent-vote exclusion, checked sums and display-only integer normalization; preserve deterministic identity order and zero-total semantics.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/aggregation.rs",
+          "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_integer_contract -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F05",
+      "local_wave": 6,
+      "acceptance_cases": [
+        "AI.F05-A01",
+        "AI.F05-A02",
+        "AI.F05-A03",
+        "AI.F05-A04",
+        "AI.F05-A05",
+        "AI.F05-A06",
+        "AI.F05-A07",
+        "AI.F05-A08",
+        "AI.F05-A09",
+        "AI.F05-A17"
+      ]
+    },
+    {
+      "id": "ai.F10-T03",
+      "requires": [
+        "ai.F10-T02"
+      ],
+      "wave": 20,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T03]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T03",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R003",
+        "AI.F10-R005",
+        "AI.F10-R006",
+        "AI.F10-R007",
+        "AI.F10-R018",
+        "AI.F10-R019",
+        "AI.F10-R022",
+        "AI.F10-R023",
+        "AI.F10-R027",
+        "AI.F10-R031",
+        "AI.F10-R033",
+        "AI.F10-R034",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A02",
+        "AI.F10-A07",
+        "AI.F10-A08",
+        "AI.F10-A09",
+        "AI.F10-A14"
+      ],
+      "admission_contract": {
+        "scope": "Implement typed Rust client/schema/generator support using existing NativeProgramCall, owner review/signing and exact-byte durable submission/receipt/finality resolution; preserve unknown outcomes and archive-required statuses.",
+        "exact_paths": [
+          "agent/crates/layerx-client/src/ai_market.rs",
+          "agent/crates/layerx-client/tests/ai_market_client.rs",
+          "platform/sdk/schema/paxai-v1.kvx",
+          "platform/sdk/generators/src/main.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path agent/Cargo.toml -p layerx-client",
+        "verify_cmd": "cargo test --manifest-path agent/Cargo.toml -p layerx-client --test ai_market_client -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 6,
+      "acceptance_cases": [
+        "AI.F10-A02",
+        "AI.F10-A07",
+        "AI.F10-A08",
+        "AI.F10-A09",
+        "AI.F10-A14"
+      ]
+    },
+    {
+      "id": "ai.F10-T05",
+      "requires": [
+        "ai.F10-T02"
+      ],
+      "wave": 20,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T05]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T05",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R005",
+        "AI.F10-R013",
+        "AI.F10-R014",
+        "AI.F10-R020",
+        "AI.F10-R021",
+        "AI.F10-R025",
+        "AI.F10-R026",
+        "AI.F10-R027",
+        "AI.F10-R028",
+        "AI.F10-R030",
+        "AI.F10-R033",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A11",
+        "AI.F10-A12",
+        "AI.F10-A15"
+      ],
+      "admission_contract": {
+        "scope": "Implement matching rank4 proof admission, durable outbox and signed callbacks with exact IDs/content, tenant privacy/current revocation, receiver authentication, retry uniqueness and explicit stream gaps/resync.",
+        "exact_paths": [
+          "platform/hosted/webhooks/src/ai_market.rs",
+          "platform/hosted/webhooks/tests/ai_finalized_delivery.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path platform/Cargo.toml -p layerx-platform-webhooks",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-webhooks --test ai_finalized_delivery -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 6,
+      "acceptance_cases": [
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A11",
+        "AI.F10-A12",
+        "AI.F10-A15"
+      ]
+    },
+    {
+      "id": "ai.F02-T02",
+      "requires": [
+        "ai.F02-T01",
+        "ai.F08-T01",
+        "ai.F09-T01",
+        "ai.F10-T03"
+      ],
+      "wave": 21,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F02-T02]",
+      "manager": "FM-F02",
+      "worker": "W-F02-T02",
+      "worker_role": "worker identity and execution specialist",
+      "reqs": [
+        "AI.F02-R005",
+        "AI.F02-R007",
+        "AI.F02-R008",
+        "AI.F02-R010",
+        "AI.F02-R016",
+        "AI.F02-R018",
+        "AI.F02-R020",
+        "AI.F02-R025",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F02-A03",
+        "AI.F02-A06",
+        "AI.F02-A07",
+        "AI.F02-A12",
+        "AI.F02-A13",
+        "AI.F02-A15"
+      ],
+      "admission_contract": {
+        "scope": "Create worker service package and distinct signed transport; enforce real TLS hostname/certificate/SPKI checks, safe resolution, bounded signed metadata, current finalized authority and readiness before private payload transmission.",
+        "exact_paths": [
+          "platform/hosted/paxai-worker/src/auth.rs",
+          "platform/hosted/paxai-worker/src/metadata.rs",
+          "platform/hosted/paxai-worker/src/discovery.rs",
+          "platform/hosted/gateway/src/public_reads.rs",
+          "platform/hosted/paxai-worker/Cargo.toml",
+          "platform/hosted/paxai-worker/src/main.rs",
+          "platform/hosted/paxai-worker/tests/transport_identity.rs",
+          "platform/Cargo.toml"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test transport_identity",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F02",
+      "local_wave": 7,
+      "acceptance_cases": [
+        "AI.F02-A03",
+        "AI.F02-A06",
+        "AI.F02-A07",
+        "AI.F02-A12",
+        "AI.F02-A13",
+        "AI.F02-A15"
+      ]
+    },
+    {
+      "id": "ai.F06-T02",
+      "requires": [
+        "ai.F06-T01",
+        "ai.F01-T01",
+        "ai.F02-T01",
+        "ai.F05-T02"
+      ],
+      "wave": 21,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F06-T02]",
+      "manager": "FM-F06",
+      "worker": "W-F06-T02",
+      "worker_role": "native reward accounting specialist",
+      "reqs": [
+        "AI.F06-R02",
+        "AI.F06-R06",
+        "AI.F06-R08",
+        "AI.F06-R09",
+        "AI.F06-R10",
+        "AI.F06-R11",
+        "AI.F06-R12",
+        "AI.F06-R13",
+        "AI.F06-R14",
+        "AI.F06-R15",
+        "AI.F06-R16",
+        "AI.F06-R17",
+        "AI.F06-R18",
+        "AI.F06-R19",
+        "AI.F06-R20",
+        "AI.F06-R24",
+        "AI.F06-R25",
+        "AI.F06-R27",
+        "AI.F06-R29",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F06-A01",
+        "AI.F06-A02",
+        "AI.F06-A03",
+        "AI.F06-A04",
+        "AI.F06-A05",
+        "AI.F06-A06",
+        "AI.F06-A07",
+        "AI.F06-A10",
+        "AI.F06-A11",
+        "AI.F06-A13",
+        "AI.F06-A14",
+        "AI.F06-A15",
+        "AI.F06-A16",
+        "AI.F06-A19"
+      ],
+      "admission_contract": {
+        "scope": "Implement Fund consent, reserve, terminal allocation, claim/expiry/refund cursor, pruning and recipient dictionary admission against actual typed state; preserve pooled Free/Reserved/Claimable/Paid/Refunded conservation and exact fixed-recipient semantics.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/rewards.rs",
+          "programs/crates/layerx-programs-ai-market/tests/rewards.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards reward_state_transitions -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F06",
+      "local_wave": 7,
+      "acceptance_cases": [
+        "AI.F06-A01",
+        "AI.F06-A02",
+        "AI.F06-A03",
+        "AI.F06-A04",
+        "AI.F06-A05",
+        "AI.F06-A06",
+        "AI.F06-A07",
+        "AI.F06-A10",
+        "AI.F06-A11",
+        "AI.F06-A13",
+        "AI.F06-A14",
+        "AI.F06-A15",
+        "AI.F06-A16",
+        "AI.F06-A19"
+      ]
+    },
+    {
+      "id": "ai.F10-T04",
+      "requires": [
+        "ai.F10-T03"
+      ],
+      "wave": 21,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T04]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T04",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R005",
+        "AI.F10-R006",
+        "AI.F10-R007",
+        "AI.F10-R010",
+        "AI.F10-R012",
+        "AI.F10-R018",
+        "AI.F10-R019",
+        "AI.F10-R022",
+        "AI.F10-R023",
+        "AI.F10-R030",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A01",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A07",
+        "AI.F10-A08"
+      ],
+      "admission_contract": {
+        "scope": "Implement TypeScript snapshots/pagination/absence and native operation approval/submission/recovery APIs from shared schema; preserve exact u64/u128 decimal, ID, domain and signature bindings.",
+        "exact_paths": [
+          "agent/sdk/typescript/src/ai_market.ts",
+          "agent/sdk/typescript/test/ai-market.test.ts"
+        ],
+        "compile_cmd": "npm --prefix agent/sdk/typescript run build",
+        "verify_cmd": "node agent/sdk/typescript/dist/test/ai-market.test.js",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Shared schema/generated contracts from ai.F10-T03 are frozen and no client allocates independent wire/error codes.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 7,
+      "acceptance_cases": [
+        "AI.F10-A01",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A07",
+        "AI.F10-A08"
+      ]
+    },
+    {
+      "id": "ai.F10-T07",
+      "requires": [
+        "ai.F10-T03"
+      ],
+      "wave": 21,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T07]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T07",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R005",
+        "AI.F10-R006",
+        "AI.F10-R007",
+        "AI.F10-R010",
+        "AI.F10-R012",
+        "AI.F10-R018",
+        "AI.F10-R019",
+        "AI.F10-R022",
+        "AI.F10-R023",
+        "AI.F10-R030",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A01",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A07",
+        "AI.F10-A08"
+      ],
+      "admission_contract": {
+        "scope": "Implement Python snapshots/pagination/absence and native operation approval/submission/recovery APIs from shared schema; preserve exact integer/ID/domain binding and unknown submission outcomes.",
+        "exact_paths": [
+          "agent/sdk/python/layerx_sdk/ai_market.py",
+          "tests/agent/sdk/python/test_ai_market.py"
+        ],
+        "compile_cmd": "python3 -m compileall -q agent/sdk/python/layerx_sdk/ai_market.py",
+        "verify_cmd": "python3 -m pytest -q tests/agent/sdk/python/test_ai_market.py",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Shared schema/generated contracts from ai.F10-T03 are frozen and no client allocates independent wire/error codes.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 7,
+      "acceptance_cases": [
+        "AI.F10-A01",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A07",
+        "AI.F10-A08"
+      ]
+    },
+    {
+      "id": "ai.F08-T02",
+      "requires": [
+        "ai.F08-T01",
+        "ai.F06-T02"
+      ],
+      "wave": 22,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F08-T02]",
+      "manager": "FM-F08",
+      "worker": "W-F08-T02",
+      "worker_role": "membership and liveness specialist",
+      "reqs": [
+        "AI.F08-R002",
+        "AI.F08-R003",
+        "AI.F08-R005",
+        "AI.F08-R006",
+        "AI.F08-R007",
+        "AI.F08-R008",
+        "AI.F08-R009",
+        "AI.F08-R010",
+        "AI.F08-R011",
+        "AI.F08-R012",
+        "AI.F08-R013",
+        "AI.F08-R014",
+        "AI.F08-R015",
+        "AI.F08-R017",
+        "AI.F08-R018",
+        "AI.F08-R019",
+        "AI.F08-R020",
+        "AI.F08-R021",
+        "AI.F08-R022",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F08-A01",
+        "AI.F08-A02",
+        "AI.F08-A05",
+        "AI.F08-A06",
+        "AI.F08-A07",
+        "AI.F08-A10",
+        "AI.F08-A12",
+        "AI.F08-A13",
+        "AI.F08-A15",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ],
+      "admission_contract": {
+        "scope": "Implement complete deterministic RolloverRoster on bounded market state/grants/claim dictionaries; preserve pending/current/frozen versions, actual-opened missed counts, bootstrap/skip/expiry and outstanding recipient obligations.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/roster.rs",
+          "programs/crates/layerx-programs-ai-market/tests/roster_transition.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test roster_transition",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F08",
+      "local_wave": 8,
+      "acceptance_cases": [
+        "AI.F08-A01",
+        "AI.F08-A02",
+        "AI.F08-A05",
+        "AI.F08-A06",
+        "AI.F08-A07",
+        "AI.F08-A10",
+        "AI.F08-A12",
+        "AI.F08-A13",
+        "AI.F08-A15",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ]
+    },
+    {
+      "id": "ai.F01-T03-EPOCH",
+      "requires": [
+        "ai.F01-T02",
+        "ai.F02-T01",
+        "ai.F03-T02",
+        "ai.F08-T02",
+        "ai.F06-T02"
+      ],
+      "wave": 23,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-EPOCH]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T03-EPOCH",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R015",
+        "AI.F01-R020",
+        "AI.F01-R027",
+        "AI.F01-R028",
+        "AI.F01-R029",
+        "AI.F01-R030",
+        "AI.F01-R036",
+        "AI.F01-R037",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A04"
+      ],
+      "admission_contract": {
+        "scope": "Implement actual OpenEpoch with authenticated execution clock, policy/roster/recipient snapshots, first-epoch presence, checked budget reserve, readiness and lazy skipped-epoch semantics using completed reward/roster helpers.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/epoch.rs",
+          "programs/crates/layerx-programs-ai-market/tests/market_epoch_open.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_epoch_open",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 9,
+      "acceptance_cases": [
+        "AI.F01-A02",
+        "AI.F01-A03",
+        "AI.F01-A04"
+      ]
+    },
+    {
+      "id": "ai.F01-T04",
+      "requires": [
+        "ai.F01-T02",
+        "ai.F02-T01",
+        "ai.F09-T01",
+        "ai.F01-T03-EPOCH"
+      ],
+      "wave": 24,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T04]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T04",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R002",
+        "AI.F01-R040",
+        "AI.F01-R016",
+        "AI.F01-R041",
+        "AI.F01-R042",
+        "AI.F01-R043",
+        "AI.F01-R044",
+        "AI.F01-R046",
+        "AI.F01-R034",
+        "AI.F01-R037",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A12",
+        "AI.F01-A13",
+        "AI.F01-A14",
+        "AI.F01-A16",
+        "AI.F01-A17",
+        "AI.F01-A18"
+      ],
+      "admission_contract": {
+        "scope": "Implement ADMIT_TASK, ACCEPT_TASK, CANCEL_TASK, COMMIT_TASK_RESULT and permissionless explicit SEAL_TASK_SET against actual frozen identities, commitments and phase/capacity checks; canonical TaskId order fixes the immutable task-set digest.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/tasks.rs",
+          "programs/crates/layerx-programs-ai-market/tests/task_state_boundary.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_state_boundary",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 10,
+      "acceptance_cases": [
+        "AI.F01-A12",
+        "AI.F01-A13",
+        "AI.F01-A14",
+        "AI.F01-A16",
+        "AI.F01-A17",
+        "AI.F01-A18"
+      ]
+    },
+    {
+      "id": "ai.F08-T03",
+      "requires": [
+        "ai.F08-T02",
+        "ai.F10-T03",
+        "ai.F01-T03-EPOCH"
+      ],
+      "wave": 24,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F08-T03]",
+      "manager": "FM-F08",
+      "worker": "W-F08-T03",
+      "worker_role": "membership and liveness specialist",
+      "reqs": [
+        "AI.F08-R004",
+        "AI.F08-R010",
+        "AI.F08-R012",
+        "AI.F08-R016",
+        "AI.F08-R020",
+        "AI.F08-R021",
+        "AI.F08-R022",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F08-A09",
+        "AI.F08-A10",
+        "AI.F08-A12",
+        "AI.F08-A16",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ],
+      "admission_contract": {
+        "scope": "Integrate actual OpenEpoch membership with finalized client evidence; retain NOT_READY on missing/stale/invalid proof and resolve ambiguous enrollment by original identity while preserving revoked-generation history/claims.",
+        "exact_paths": [
+          "platform/hosted/paxai-worker/src/membership.rs",
+          "platform/hosted/paxai-worker/tests/membership_recovery.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test membership_recovery -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F08",
+      "local_wave": 10,
+      "acceptance_cases": [
+        "AI.F08-A09",
+        "AI.F08-A10",
+        "AI.F08-A12",
+        "AI.F08-A16",
+        "AI.F08-A17",
+        "AI.F08-A18",
+        "AI.F08-A19"
+      ]
+    },
+    {
+      "id": "ai.F02-T03",
+      "requires": [
+        "ai.F02-T02",
+        "ai.F01-T04",
+        "ai.P-REAL-SERVICES"
+      ],
+      "wave": 25,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F02-T03]",
+      "manager": "FM-F02",
+      "worker": "W-F02-T03",
+      "worker_role": "worker identity and execution specialist",
+      "reqs": [
+        "AI.F02-R002",
+        "AI.F02-R008",
+        "AI.F02-R009",
+        "AI.F02-R017",
+        "AI.F02-R018",
+        "AI.F02-R020",
+        "AI.F02-R022",
+        "AI.F02-R023",
+        "AI.F02-R024",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F02-A05",
+        "AI.F02-A08",
+        "AI.F02-A09",
+        "AI.F02-A10",
+        "AI.F02-A11",
+        "AI.F02-A12",
+        "AI.F02-A14",
+        "AI.F02-A15",
+        "AI.F02-A17"
+      ],
+      "admission_contract": {
+        "scope": "Implement transactional uniqueness/admission, durable signed acknowledgment, queue/resource bounds, finalized task-acceptance wait, real runner idempotency and UNKNOWN_EXECUTION reconciliation; authorize private retrieval and retain late outputs without chain rewards.",
+        "exact_paths": [
+          "platform/hosted/paxai-worker/src/jobs.rs",
+          "platform/hosted/paxai-worker/src/store.rs",
+          "platform/hosted/paxai-worker/src/runner.rs",
+          "platform/hosted/paxai-worker/tests/job_recovery.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test job_recovery -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F02",
+      "local_wave": 11,
+      "acceptance_cases": [
+        "AI.F02-A05",
+        "AI.F02-A08",
+        "AI.F02-A09",
+        "AI.F02-A10",
+        "AI.F02-A11",
+        "AI.F02-A12",
+        "AI.F02-A14",
+        "AI.F02-A15",
+        "AI.F02-A17"
+      ]
+    },
+    {
+      "id": "ai.F09-T02",
+      "requires": [
+        "ai.F09-T01",
+        "ai.F01-T04",
+        "ai.F03-T01"
+      ],
+      "wave": 25,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F09-T02]",
+      "manager": "FM-F09",
+      "worker": "W-F09-T02",
+      "worker_role": "artifact security and provenance specialist",
+      "reqs": [
+        "AI.F09-R03",
+        "AI.F09-R04",
+        "AI.F09-R05",
+        "AI.F09-R07",
+        "AI.F09-R10",
+        "AI.F09-R14",
+        "AI.F09-R19",
+        "AI.F09-R27",
+        "AI.F09-R28",
+        "AI.F09-R24",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F09-A06",
+        "AI.F09-A18",
+        "AI.F09-A19",
+        "AI.F09-A20",
+        "AI.F09-A21",
+        "AI.F09-A23",
+        "AI.F09-A24",
+        "AI.F09-A25"
+      ],
+      "admission_contract": {
+        "scope": "Implement only independent SealEvidence mutation and owning-operation artifact bindings against explicit F01 task-set seal, F03 report codec and frozen mode/policy/roster/generations; enforce exact state accounting and irreversible immutable roots.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/evidence.rs",
+          "programs/crates/layerx-programs-ai-market/tests/artifact_binding.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_binding",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F09",
+      "local_wave": 11,
+      "acceptance_cases": [
+        "AI.F09-A06",
+        "AI.F09-A18",
+        "AI.F09-A19",
+        "AI.F09-A20",
+        "AI.F09-A21",
+        "AI.F09-A23",
+        "AI.F09-A24",
+        "AI.F09-A25"
+      ]
+    },
+    {
+      "id": "ai.F01-T04-SERVICE",
+      "requires": [
+        "ai.F01-T04",
+        "ai.F02-T03",
+        "ai.F10-T03",
+        "ai.P-REAL-SERVICES"
+      ],
+      "wave": 26,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T04-SERVICE]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T04-SERVICE",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R002",
+        "AI.F01-R041",
+        "AI.F01-R042",
+        "AI.F01-R043",
+        "AI.F01-R030",
+        "AI.F01-R031",
+        "AI.F01-R036",
+        "AI.F01-R037",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A13",
+        "AI.F01-A15",
+        "AI.F01-A18"
+      ],
+      "admission_contract": {
+        "scope": "Connect persisted worker acknowledgment to verified finalized chain acceptance, one real runner dispatch/result commit and restart reconciliation; reject unsupported or unlicensed models before acknowledgment, preserve late results diagnostically.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/tests/task_admission_boundary.rs",
+          "platform/hosted/paxai-worker/tests/task_chain_handoff.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_admission_boundary",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 12,
+      "acceptance_cases": [
+        "AI.F01-A13",
+        "AI.F01-A15",
+        "AI.F01-A18"
+      ]
+    },
+    {
+      "id": "ai.F03-T03",
+      "requires": [
+        "ai.F03-T02",
+        "ai.F04-T01",
+        "ai.F09-T02"
+      ],
+      "wave": 26,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F03-T03]",
+      "manager": "FM-F03",
+      "worker": "W-F03-T03",
+      "worker_role": "evaluator authority specialist",
+      "reqs": [
+        "AI.F03-R06",
+        "AI.F03-R07",
+        "AI.F03-R17",
+        "AI.F03-R18",
+        "AI.F03-R19",
+        "AI.F03-R20",
+        "AI.F03-R23",
+        "AI.F03-R25",
+        "AI.F03-R26",
+        "AI.F03-R27",
+        "AI.F03-R28",
+        "AI.F03-R32",
+        "AI.F03-R33",
+        "AI.F03-R39",
+        "AI.F03-R40",
+        "AI.F03-R42",
+        "AI.F03-R45",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F03-A01",
+        "AI.F03-A02",
+        "AI.F03-A03",
+        "AI.F03-A04",
+        "AI.F03-A05",
+        "AI.F03-A06",
+        "AI.F03-A11",
+        "AI.F03-A12",
+        "AI.F03-A14",
+        "AI.F03-A16"
+      ],
+      "admission_contract": {
+        "scope": "Implement complete pure admission called atomically by reveal with real SDK signatures, frozen domain/version/roster validation, sealed F09 evidence, one immutable slot and bounded advisory challenges; no score normalization or monetary effects.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/evaluators/admission.rs",
+          "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_admission.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_admission",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F03",
+      "local_wave": 12,
+      "acceptance_cases": [
+        "AI.F03-A01",
+        "AI.F03-A02",
+        "AI.F03-A03",
+        "AI.F03-A04",
+        "AI.F03-A05",
+        "AI.F03-A06",
+        "AI.F03-A11",
+        "AI.F03-A12",
+        "AI.F03-A14",
+        "AI.F03-A16"
+      ]
+    },
+    {
+      "id": "ai.F09-T04",
+      "requires": [
+        "ai.F09-T03",
+        "ai.F02-T03",
+        "ai.F10-T02"
+      ],
+      "wave": 26,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F09-T04]",
+      "manager": "FM-F09",
+      "worker": "W-F09-T04",
+      "worker_role": "artifact security and provenance specialist",
+      "reqs": [
+        "AI.F09-R12",
+        "AI.F09-R13",
+        "AI.F09-R14",
+        "AI.F09-R15",
+        "AI.F09-R16",
+        "AI.F09-R19",
+        "AI.F09-R20",
+        "AI.F09-R21",
+        "AI.F09-R22",
+        "AI.F09-R23",
+        "AI.F09-R24",
+        "AI.F09-R25",
+        "AI.F09-R26",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F09-A14",
+        "AI.F09-A15",
+        "AI.F09-A16",
+        "AI.F09-A19",
+        "AI.F09-A21"
+      ],
+      "admission_contract": {
+        "scope": "Implement crash recovery, current revocation on restore, immutable tombstones, retention holds, pending purge and terminal/finality-dependent deletion; fail closed on missing authority/evidence.",
+        "exact_paths": [
+          "platform/hosted/ai-artifacts/src/retention.rs",
+          "platform/hosted/ai-artifacts/tests/artifact_recovery.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/hosted/ai-artifacts/Cargo.toml",
+        "verify_cmd": "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_recovery",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F09",
+      "local_wave": 12,
+      "acceptance_cases": [
+        "AI.F09-A14",
+        "AI.F09-A15",
+        "AI.F09-A16",
+        "AI.F09-A19",
+        "AI.F09-A21"
+      ]
+    },
+    {
+      "id": "ai.F10-T06",
+      "requires": [
+        "ai.F10-T02",
+        "ai.F02-T03"
+      ],
+      "wave": 26,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T06]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T06",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R011",
+        "AI.F10-R013",
+        "AI.F10-R014",
+        "AI.F10-R024",
+        "AI.F10-R027",
+        "AI.F10-R028",
+        "AI.F10-R030",
+        "AI.F10-R034",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A10",
+        "AI.F10-A11",
+        "AI.F10-A14"
+      ],
+      "admission_contract": {
+        "scope": "Implement separate bounded signed health observations with integer percentiles/success ratio, minimum20 samples and precise expiry; sanitize public metadata/logs and retain canonical evidence versus operational freshness distinctions.",
+        "exact_paths": [
+          "platform/hosted/indexer/src/ai_health.rs",
+          "platform/hosted/indexer/tests/ai_health_privacy.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path platform/Cargo.toml -p layerx-indexer",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_health_privacy",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 12,
+      "acceptance_cases": [
+        "AI.F10-A10",
+        "AI.F10-A11",
+        "AI.F10-A14"
+      ]
+    },
+    {
+      "id": "ai.F04-T02",
+      "requires": [
+        "ai.F04-T01",
+        "ai.F03-T03",
+        "ai.F01-T03-EPOCH"
+      ],
+      "wave": 27,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F04-T02]",
+      "manager": "FM-F04",
+      "worker": "W-F04-T02",
+      "worker_role": "commitment and recovery specialist",
+      "reqs": [
+        "AI.F04-R01",
+        "AI.F04-R02",
+        "AI.F04-R05",
+        "AI.F04-R06",
+        "AI.F04-R07",
+        "AI.F04-R08",
+        "AI.F04-R10",
+        "AI.F04-R11",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F04-A01",
+        "AI.F04-A02",
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A06",
+        "AI.F04-A08",
+        "AI.F04-A10",
+        "AI.F04-A11",
+        "AI.F04-A12"
+      ],
+      "admission_contract": {
+        "scope": "Implement one immutable commitment and one atomic reveal/admitted F03 row through real Programs dispatch; authenticate half-open heights, replay/expiry, versions/live revocation and concurrent first-write order; emit exact 194/228-byte events once.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/commit_reveal.rs",
+          "programs/crates/layerx-programs-ai-market/tests/f04_windows.rs",
+          "programs/crates/layerx-programs-ai-market/src/lib.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F04",
+      "local_wave": 13,
+      "acceptance_cases": [
+        "AI.F04-A01",
+        "AI.F04-A02",
+        "AI.F04-A03",
+        "AI.F04-A04",
+        "AI.F04-A05",
+        "AI.F04-A06",
+        "AI.F04-A08",
+        "AI.F04-A10",
+        "AI.F04-A11",
+        "AI.F04-A12"
+      ]
+    },
+    {
+      "id": "ai.F04-T03",
+      "requires": [
+        "ai.F04-T02",
+        "ai.F10-T03"
+      ],
+      "wave": 28,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F04-T03]",
+      "manager": "FM-F04",
+      "worker": "W-F04-T03",
+      "worker_role": "commitment and recovery specialist",
+      "reqs": [
+        "AI.F04-R05",
+        "AI.F04-R06",
+        "AI.F04-R09",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F04-A09",
+        "AI.F04-A12"
+      ],
+      "admission_contract": {
+        "scope": "Persist report/salt before submit and reconcile original finalized commit/reveal receipt/state after crashes and dropped responses; preserve epoch binding and irrevocable sealed exclusion cutpoint.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/tests/f04_recovery.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F04",
+      "local_wave": 14,
+      "acceptance_cases": [
+        "AI.F04-A09",
+        "AI.F04-A12"
+      ]
+    },
+    {
+      "id": "ai.F05-T03",
+      "requires": [
+        "ai.F05-T02",
+        "ai.F06-T02",
+        "ai.F07-T01",
+        "ai.F04-T02",
+        "ai.F01-T03-EPOCH"
+      ],
+      "wave": 28,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F05-T03]",
+      "manager": "FM-F05",
+      "worker": "W-F05-T03",
+      "worker_role": "deterministic aggregation specialist",
+      "reqs": [
+        "AI.F05-R02",
+        "AI.F05-R04",
+        "AI.F05-R05",
+        "AI.F05-R06",
+        "AI.F05-R09",
+        "AI.F05-R10",
+        "AI.F05-R11",
+        "AI.F05-R12",
+        "AI.F05-R13",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F05-A10",
+        "AI.F05-A11",
+        "AI.F05-A12",
+        "AI.F05-A13",
+        "AI.F05-A14",
+        "AI.F05-A15",
+        "AI.F05-A16",
+        "AI.F05-A18"
+      ],
+      "admission_contract": {
+        "scope": "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/aggregation.rs",
+          "programs/tests/ai-market/run-aggregation-runtime.sh"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --lib",
+        "verify_cmd": "programs/tests/ai-market/run-aggregation-runtime.sh",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F05",
+      "local_wave": 14,
+      "acceptance_cases": [
+        "AI.F05-A10",
+        "AI.F05-A11",
+        "AI.F05-A12",
+        "AI.F05-A13",
+        "AI.F05-A14",
+        "AI.F05-A15",
+        "AI.F05-A16",
+        "AI.F05-A18"
+      ]
+    },
+    {
+      "id": "ai.F03-T04",
+      "requires": [
+        "ai.F03-T03",
+        "ai.F05-T03",
+        "ai.T-C03"
+      ],
+      "wave": 29,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F03-T04]",
+      "manager": "FM-F03",
+      "worker": "W-F03-T04",
+      "worker_role": "evaluator authority specialist",
+      "reqs": [
+        "AI.F03-R11",
+        "AI.F03-R29",
+        "AI.F03-R30",
+        "AI.F03-R31",
+        "AI.F03-R36",
+        "AI.F03-R37",
+        "AI.F03-R38",
+        "AI.F03-R41",
+        "AI.F03-R42",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F03-A07",
+        "AI.F03-A08",
+        "AI.F03-A09",
+        "AI.F03-A10",
+        "AI.F03-A14",
+        "AI.F03-A15",
+        "AI.F03-A16"
+      ],
+      "admission_contract": {
+        "scope": "Exercise actual interpreter/native adapter for reveal/revocation and aggregation-seal orderings, finalized restart recovery, capacity and resource rollback; verify accepted rows remain history while pre-seal revocations exclude eligible inputs.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/tests/f03_evaluator_host.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F03",
+      "local_wave": 15,
+      "acceptance_cases": [
+        "AI.F03-A07",
+        "AI.F03-A08",
+        "AI.F03-A09",
+        "AI.F03-A10",
+        "AI.F03-A14",
+        "AI.F03-A15",
+        "AI.F03-A16"
+      ]
+    },
+    {
+      "id": "ai.F06-T03",
+      "requires": [
+        "ai.F06-T02",
+        "ai.F05-T03",
+        "ai.T-C03"
+      ],
+      "wave": 29,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F06-T03]",
+      "manager": "FM-F06",
+      "worker": "W-F06-T03",
+      "worker_role": "native reward accounting specialist",
+      "reqs": [
+        "AI.F06-R02",
+        "AI.F06-R03",
+        "AI.F06-R04",
+        "AI.F06-R08",
+        "AI.F06-R09",
+        "AI.F06-R13",
+        "AI.F06-R15",
+        "AI.F06-R21",
+        "AI.F06-R22",
+        "AI.F06-R27",
+        "AI.F06-R28",
+        "AI.F06-R29",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F06-A06",
+        "AI.F06-A07",
+        "AI.F06-A08",
+        "AI.F06-A09",
+        "AI.F06-A10",
+        "AI.F06-A12",
+        "AI.F06-A15",
+        "AI.F06-A16",
+        "AI.F06-A19"
+      ],
+      "admission_contract": {
+        "scope": "Connect reward mutations to actual registered Program account/immutable asset, proof-bound sight balance, principal-funded deposit and exact ProgramSpend grants; atomic transfer/state/replay and rollback preserve physical and application conservation.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/rewards.rs",
+          "programs/crates/layerx-programs-ai-market/tests/rewards_native.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_conservation_authority_and_rollback -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F06",
+      "local_wave": 15,
+      "acceptance_cases": [
+        "AI.F06-A06",
+        "AI.F06-A07",
+        "AI.F06-A08",
+        "AI.F06-A09",
+        "AI.F06-A10",
+        "AI.F06-A12",
+        "AI.F06-A15",
+        "AI.F06-A16",
+        "AI.F06-A19"
+      ]
+    },
+    {
+      "id": "ai.F01-T03-CLOSE",
+      "requires": [
+        "ai.F01-T02",
+        "ai.F05-T03",
+        "ai.F06-T03",
+        "ai.F10-T02"
+      ],
+      "wave": 30,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T03-CLOSE]",
+      "manager": "FM-F01",
+      "worker": "W-F01-T03-CLOSE",
+      "worker_role": "Programs market lifecycle specialist",
+      "reqs": [
+        "AI.F01-R006",
+        "AI.F01-R023",
+        "AI.F01-R024",
+        "AI.F01-R026",
+        "AI.F01-R030",
+        "AI.F01-R031",
+        "AI.F01-R038",
+        "AI.F01-R045",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F01-A07",
+        "AI.F01-A08",
+        "AI.F01-A11"
+      ],
+      "admission_contract": {
+        "scope": "Implement journaled winding-down, terminal epoch checks, fixed-recipient Free refunds and closure; recover exact phase/cursor after restart, preserve reserved/claimable amounts and immutable market identity.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/closure.rs",
+          "programs/crates/layerx-programs-ai-market/tests/market_protocol_boundary.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_protocol_boundary",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F01",
+      "local_wave": 16,
+      "acceptance_cases": [
+        "AI.F01-A07",
+        "AI.F01-A08",
+        "AI.F01-A11"
+      ]
+    },
+    {
+      "id": "ai.F02-T04",
+      "requires": [
+        "ai.F02-T03",
+        "ai.F03-T04",
+        "ai.F10-T03",
+        "ai.P-REAL-SERVICES"
+      ],
+      "wave": 30,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F02-T04]",
+      "manager": "FM-F02",
+      "worker": "W-F02-T04",
+      "worker_role": "worker identity and execution specialist",
+      "reqs": [
+        "AI.F02-R001",
+        "AI.F02-R002",
+        "AI.F02-R009",
+        "AI.F02-R020",
+        "AI.F02-R022",
+        "AI.F02-R025",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F02-A08",
+        "AI.F02-A11",
+        "AI.F02-A15",
+        "AI.F02-A17",
+        "AI.F02-A19"
+      ],
+      "admission_contract": {
+        "scope": "Run pinned licensed inference and embedding artifacts through real runner, durable service, TLS and finalized gateway; verify exact output/usage bounds, provenance, generation and admitted evaluator evidence without treating worker signatures as quality.",
+        "exact_paths": [
+          "platform/hosted/paxai-worker/tests/real_workload.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/Cargo.toml -p layerx-paxai-worker",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test real_workload -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED. Approved rights, pinned real artifacts and provisioned durable/TLS/tenant/KMS/runner services are mandatory as applicable; no substitutes establish readiness.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F02",
+      "local_wave": 16,
+      "acceptance_cases": [
+        "AI.F02-A08",
+        "AI.F02-A11",
+        "AI.F02-A15",
+        "AI.F02-A17",
+        "AI.F02-A19"
+      ]
+    },
+    {
+      "id": "ai.F07-T02",
+      "requires": [
+        "ai.F07-T01",
+        "ai.F05-T03",
+        "ai.F06-T03",
+        "ai.F08-T02"
+      ],
+      "wave": 30,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F07-T02]",
+      "manager": "FM-F07",
+      "worker": "W-F07-T02",
+      "worker_role": "reputation history specialist",
+      "reqs": [
+        "AI.F07-R002",
+        "AI.F07-R005",
+        "AI.F07-R010",
+        "AI.F07-R011",
+        "AI.F07-R012",
+        "AI.F07-R013",
+        "AI.F07-R014",
+        "AI.F07-R016",
+        "AI.F07-R017",
+        "AI.F07-R022",
+        "AI.F07-R027",
+        "AI.F07-R028",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F07-A06",
+        "AI.F07-A07",
+        "AI.F07-A08",
+        "AI.F07-A12"
+      ],
+      "admission_contract": {
+        "scope": "Wire completed ApplyCompletedEpoch into actual atomic terminalization; implement reset/status authority, model/policy segment rollover, key continuity, replacement isolation and sealed history_allowed semantics with economic rollback.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs",
+          "programs/crates/layerx-programs-ai-market/src/epoch.rs",
+          "programs/crates/layerx-programs-ai-market/tests/reputation_lifecycle.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_lifecycle",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F07",
+      "local_wave": 16,
+      "acceptance_cases": [
+        "AI.F07-A06",
+        "AI.F07-A07",
+        "AI.F07-A08",
+        "AI.F07-A12"
+      ]
+    },
+    {
+      "id": "ai.T-S04",
+      "requires": [
+        "ai.T-S01",
+        "ai.T-S02",
+        "ai.T-S03",
+        "ai.F06-T03",
+        "ai.F02-T03"
+      ],
+      "wave": 30,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.T-S04]",
+      "manager": "FM-STORAGE",
+      "worker": "W-T-S04",
+      "worker_role": "native continuity integration specialist",
+      "reqs": [
+        "AI.STORAGE"
+      ],
+      "acceptance": [
+        "AI.STORAGE-A04"
+      ],
+      "admission_contract": {
+        "scope": "Create one focused real native continuity harness for >512 distinct authoritative app mutations across checkpoints/repeated cleanup, actual namespace/replay overhead, crashes around archive/native commits, independent replica replay and original historical proof retrieval; settle funded epoch and pay exactly one fixed-recipient claim after restart while recording peak unchanged512/64MiB/4/512 capacities.",
+        "exact_paths": [
+          "tests/programs/test_paxai_storage_continuity.c",
+          "Makefile"
+        ],
+        "compile_cmd": "make build/tests/lxp_test_paxai_storage_continuity",
+        "verify_cmd": "make test-paxai-storage-continuity",
+        "entry_condition": "ai.T-S01..03, ai.F06-T03 and ai.F02-T03 passed; actual funded accounts, two archives, native maintenance and independent replica are available.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 16,
+      "acceptance_cases": [
+        "AI.STORAGE-A04"
+      ]
+    },
+    {
+      "id": "ai.F06-T04",
+      "requires": [
+        "ai.F06-T03",
+        "ai.F10-T02",
+        "ai.T-C04",
+        "ai.T-S04"
+      ],
+      "wave": 31,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F06-T04]",
+      "manager": "FM-F06",
+      "worker": "W-F06-T04",
+      "worker_role": "native reward accounting specialist",
+      "reqs": [
+        "AI.F06-R18",
+        "AI.F06-R22",
+        "AI.F06-R25",
+        "AI.F06-R26",
+        "AI.F06-R28",
+        "AI.F06-R29",
+        "AI.F06-R30",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F06-A13",
+        "AI.F06-A14",
+        "AI.F06-A17",
+        "AI.F06-A18"
+      ],
+      "admission_contract": {
+        "scope": "Exercise actual finalized receipt/state reconciliation after lost responses, one economic payout, reserve-aware native capacity refusal and sustained funded lifecycle; unavailable resources cannot fabricate paid disposition or erase old claims.",
+        "exact_paths": [
+          "programs/crates/layerx-programs-ai-market/tests/rewards_native.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release",
+        "verify_cmd": "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_finality_recovery_and_capacity -- --exact",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F06",
+      "local_wave": 17,
+      "acceptance_cases": [
+        "AI.F06-A13",
+        "AI.F06-A14",
+        "AI.F06-A17",
+        "AI.F06-A18"
+      ]
+    },
+    {
+      "id": "ai.F07-T03",
+      "requires": [
+        "ai.F07-T02",
+        "ai.T-C03",
+        "ai.F10-T02"
+      ],
+      "wave": 31,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F07-T03]",
+      "manager": "FM-F07",
+      "worker": "W-F07-T03",
+      "worker_role": "reputation history specialist",
+      "reqs": [
+        "AI.F07-R005",
+        "AI.F07-R015",
+        "AI.F07-R021",
+        "AI.F07-R023",
+        "AI.F07-R026",
+        "AI.F07-R028",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F07-A09",
+        "AI.F07-A11"
+      ],
+      "admission_contract": {
+        "scope": "Implement proof-bound monotonic historical projections and freshness/retention status; reject root conflicts and stale rollback, recover durable cursors and preserve archive-required responses without copying another enrollment history.",
+        "exact_paths": [
+          "platform/hosted/indexer/src/ai_reputation.rs",
+          "platform/hosted/indexer/tests/ai_reputation_finality.rs"
+        ],
+        "compile_cmd": "cargo build --manifest-path platform/Cargo.toml -p layerx-indexer",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_reputation_finality",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F07",
+      "local_wave": 17,
+      "acceptance_cases": [
+        "AI.F07-A09",
+        "AI.F07-A11"
+      ]
+    },
+    {
+      "id": "ai.F10-T02-FULL",
+      "requires": [
+        "ai.F10-T02",
+        "ai.F03-T04",
+        "ai.F05-T03",
+        "ai.F06-T03",
+        "ai.F07-T02",
+        "ai.F08-T03",
+        "ai.F09-T02",
+        "ai.F02-T03"
+      ],
+      "wave": 31,
+      "status": "pending",
+      "task_kind": "implementation_and_focused_qualification",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F10-T02-FULL]",
+      "manager": "FM-F10",
+      "worker": "W-F10-T02-FULL",
+      "worker_role": "finalized views and SDK specialist",
+      "reqs": [
+        "AI.F10-R001",
+        "AI.F10-R004",
+        "AI.F10-R008",
+        "AI.F10-R009",
+        "AI.F10-R010",
+        "AI.F10-R015",
+        "AI.F10-R016",
+        "AI.F10-R017",
+        "AI.F10-R021",
+        "AI.F10-R023",
+        "AI.F10-R025",
+        "AI.F10-R027",
+        "AI.F10-R028",
+        "AI.F10-R030",
+        "AI.F10-R031",
+        "AI.F10-R032",
+        "AI.F10-R033",
+        "AI.F10-R034",
+        "AI.CORE"
+      ],
+      "acceptance": [
+        "AI.F10-A01",
+        "AI.F10-A02",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A09",
+        "AI.F10-A14",
+        "AI.F10-A15"
+      ],
+      "admission_contract": {
+        "scope": "Integrate real report/reveal/aggregate/entitlement/claim/history/admission/evidence producers into exact coherent finalized snapshots; preserve zero versus absent, durable outbox, historical identity, conflict quarantine and feature availability.",
+        "exact_paths": [
+          "platform/hosted/indexer/tests/ai_snapshot_projection.rs",
+          "platform/hosted/indexer/src/ai_market.rs",
+          "platform/hosted/gateway/src/ai_views.rs"
+        ],
+        "compile_cmd": "cargo check --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway",
+        "verify_cmd": "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_snapshot_projection -- --test-threads=1",
+        "entry_condition": "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "feature": "F10",
+      "local_wave": 17,
+      "acceptance_cases": [
+        "AI.F10-A01",
+        "AI.F10-A02",
+        "AI.F10-A03",
+        "AI.F10-A04",
+        "AI.F10-A05",
+        "AI.F10-A06",
+        "AI.F10-A09",
+        "AI.F10-A14",
+        "AI.F10-A15"
+      ]
+    },
+    {
+      "id": "ai.RELEASE-CANDIDATE",
+      "requires": [
+        "ai.F01-T03-CLOSE",
+        "ai.F02-T04",
+        "ai.F03-T04",
+        "ai.F04-T03",
+        "ai.F06-T04",
+        "ai.F07-T03",
+        "ai.F08-T03",
+        "ai.F09-T04",
+        "ai.F10-T04",
+        "ai.F10-T05",
+        "ai.F10-T06",
+        "ai.F10-T07",
+        "ai.T-S04",
+        "ai.F01-T04-SERVICE",
+        "ai.F10-T02-FULL",
+        "60.8",
+        "113.16"
+      ],
+      "wave": 40,
+      "status": "pending",
+      "task_kind": "release_gate",
+      "spec": "spec/paxeer-x/spec.kvx",
+      "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.RELEASE-CANDIDATE]",
+      "manager": "FM-OPERATIONS",
+      "worker": "W-RELEASE-CANDIDATE",
+      "worker_role": "integrated release qualification specialist",
+      "reqs": [
+        "AI.OPERATIONS"
+      ],
+      "acceptance": [
+        "AI.RELEASE-A01"
+      ],
+      "admission_contract": {
+        "scope": "Bind one merged source/artifact/configuration/authority/state manifest and implement a single release dispatcher selector covering every declared system journey, actual service dependencies, funded account/finality/native storage continuity and release matrices; consume unchanged task evidence and run release-only aggregate gates once per identified candidate.",
+        "exact_paths": [
+          "tools/paxeer-x/ai_release.py",
+          "tools/paxeer-x/tests/ai_release_test.py",
+          "spec/paxeer-x/ai-markets/evidence/release-candidate.kvx"
+        ],
+        "compile_cmd": "python3 -m py_compile tools/paxeer-x/ai_release.py",
+        "verify_cmd": "python3 tools/paxeer-x/ai_release.py --selector release-candidate",
+        "entry_condition": "Every declared dependency has exact passed evidence on the identified candidate; actual deployments/resources/rights/profile authorities are ready; missing external decisions remain BLOCKED.",
+        "max_builds": 1,
+        "max_verify_runs": 1,
+        "max_repair_cycles": 2,
+        "time_limit_minutes": 30,
+        "gate_kind": "planned",
+        "qualification": "UNRUN",
+        "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+      },
+      "local_wave": 18,
+      "acceptance_cases": [
+        "AI.RELEASE-A01"
+      ]
+    }
+  ],
+  "canonical_spec": "spec/paxeer-x/spec.kvx",
+  "scheduling": "Global waves and task dependencies in the canonical specification govern admission. Local wave is the AI workstream sequence only."
+}
