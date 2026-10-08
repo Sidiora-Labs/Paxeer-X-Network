@@ -13,6 +13,7 @@ pub mod dispatch;
 pub mod errors;
 pub mod evidence;
 pub mod evaluators {
+    pub mod authority;
     pub mod codec;
     pub mod model;
 }
