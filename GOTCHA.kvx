@@ -5008,3 +5008,7 @@ text = "clippy::large_stack_arrays fires on const items too; fixed-capacity tabl
 [gotcha.1076]
 area = "platform/hosted"
 text = "A standalone crate under platform/ needs an empty [workspace] table in its Cargo.toml, otherwise cargo attaches it to platform/Cargo.toml and refuses to build because it is not a listed member."
+
+[gotcha.1077]
+area = "fleet-landing"
+text = "Parallel ai-market tasks each append pub mod lines to lib.rs, so the rebase at landing conflicts on the module list; the leader landing script must detect the conflict and resolve it by union, and the status flip to done must happen only after the fast-forward merge succeeded, never in the same unchecked command sequence."
