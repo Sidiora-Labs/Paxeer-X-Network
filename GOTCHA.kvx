@@ -5136,3 +5136,11 @@ text = "Envelope::validate checks payload length per operation at encode time, s
 [gotcha.1108]
 area = "fleet"
 text = "Clippy and rustfmt fixes are the format step, not repair cycles; the two repair cycles belong to build_cmd and verify_cmd failures only. Workers that spend the budget on lint must be sent back."
+
+[gotcha.1109]
+area = "layerxd"
+text = "The LNI socket parent directory must be mode 0750 with the peer gid; mkdtemp gives 0700 and lxp_daemon_lni_serve then fails without detail. Programs transfer execution resolves the source account by authority->principal (the DID id); accounts opened from agent:<did>:main get a different id, so kernel-executed LX_PROGRAMS_TRANSFER fails UNKNOWN_ACCOUNT_NAMESPACE in fixtures."
+
+[gotcha.1110]
+area = "platform"
+text = "Clippy on a standalone hosted crate does not lint its path dependencies; lint authority changes with `cargo clippy -p layerx-platform-authority --lib` from platform/. Test stdout is block-buffered when piped while stderr is not, so a FAIL line can precede the CASE lines that ran first in make logs."

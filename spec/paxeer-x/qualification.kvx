@@ -845,3 +845,19 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F09-T02-verify-2.log"
 observed = "SealEvidence needs ActorSlot::evaluator(i) bound to the evaluator owner, and no producer binds the evaluator replay slots yet, so on a live chain SealEvidence refuses NOT_FOUND; F03/F04 report admission must take ReportContext.evidence from evidence::sealed_evidence; owning records must write roots through evidence::bind_root / check_root_binding; T-C02 must route SealEvidence."
 assumption = "ai.F03-T03 (evaluator admission) binds the evaluator slots at acceptance; F04-T02 and F01/F02 record owners add the root binding calls; T-C02 routes evidence::apply."
+
+[qualification.ai-t-s03-authority-clippy-20261009-01]
+revision = "0652584e8"
+command = "cargo clippy -p layerx-platform-authority --all-targets"
+exit_code = 101
+log = "private ops log wt/logs/ai.T-S03-clippy-3.log"
+observed = "Pre-existing pedantic findings outside the task: needless_pass_by_value in hosted/authority/src/human/budget_state.rs:149, ignored_unit_patterns in hosted/authority/src/main.rs:690 and :1140, expect_used and too_many_lines in hosted/authority/tests/budget_proof_exports.rs; the new ai_storage_admission module is clean under --lib."
+assumption = "Authority crate lint debt is cleared by a wave-level lint task like LINT-AI-MARKET, not per task."
+
+[qualification.ai-t-s03-prepare-recheck-20261009-01]
+revision = "0652584e8"
+command = "make test-paxai-blob-admission"
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S03-verify-3.log"
+observed = "Ten admission cases pass on the real kernel, LNI server and keeper binary, but prepare-time re-check of commits against open reservations is not wired (native prepare_commit refusal stays authoritative), NODE_INFO advertises no capacity capability, and profile values (floor 64 blobs / 8388608 bytes / 16 kv, work lifetime 8) are parameters pending ai.P-STORAGE-PROFILE."
+assumption = "Held at implemented; the prepare re-check and the NODE_INFO capability belong to ai.T-C04 / ai.T-S04 and are recorded there."
