@@ -11,7 +11,9 @@ use crate::{
         F02_WRONG_REVISION, KEY_MISMATCH, NON_CANONICAL, NOT_FOUND, UNAUTHORIZED,
         UNKNOWN_OPERATION, WRONG_PHASE,
     },
-    evaluators::{codec::verify_digest, model::VerificationError},
+    evaluators::{
+        authority::split_identity_section, codec::verify_digest, model::VerificationError,
+    },
     registry::{market_clock, MarketHeader},
     state::{self, ActorSlot, ReplayDecision, ReplayRequest, RetainedResult, Section, SharedState},
     types::{
@@ -29,8 +31,10 @@ pub const METADATA_COOLDOWN: u64 = 8;
 pub const WORKER_RECORD_BYTES: usize = 298;
 pub const WORKER_TABLE_MAX_BYTES: usize = 1 + MAX_WORKERS * WORKER_RECORD_BYTES;
 pub const RESERVED_UNAVAILABLE: u16 = 0x0208;
-/// Minimum `control_scratch` length accepted by [`apply`]: the control section payload cap.
-pub const CONTROL_SCRATCH_BYTES: usize = Section::Control.payload_cap();
+/// Minimum `control_scratch` length accepted by [`apply`]: one identity section payload
+/// (worker table followed by the F03 evaluator region) plus one control payload.
+pub const CONTROL_SCRATCH_BYTES: usize =
+    Section::IdentityRoster.payload_cap() + Section::Control.payload_cap();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WorkerState {
@@ -673,6 +677,8 @@ struct Commit<'a> {
 /// Decoded, admitted facts shared by every step of one native call.
 struct Call<'a> {
     state: &'a SharedState<'a>,
+    /// F03 evaluator region that follows the worker table; carried byte-for-byte.
+    region: &'a [u8],
     ctx: &'a CallContext<'a>,
     env: &'a codec::ValidatedEnvelope<'a>,
     next_epoch: u64,
@@ -696,11 +702,18 @@ fn finish(
         event,
         control,
     } = buffers;
-    let mut section = [0u8; WORKER_TABLE_MAX_BYTES];
-    let n = commit.table.encode(&mut section)?;
+    let (section, control) = control
+        .split_at_mut_checked(Section::IdentityRoster.payload_cap())
+        .ok_or(CAPACITY)?;
+    let workers = commit.table.encode(section)?;
+    let total = workers.checked_add(call.region.len()).ok_or(ARITHMETIC)?;
+    section
+        .get_mut(workers..total)
+        .ok_or(CAPACITY)?
+        .copy_from_slice(call.region);
     let mut next = call
         .state
-        .replace_section(Section::IdentityRoster, &section[..n])?;
+        .replace_section(Section::IdentityRoster, &section[..total])?;
     match commit.slot_change {
         SlotChange::None => {}
         SlotChange::Bind(slot, principal) => {
@@ -738,11 +751,13 @@ fn stamp(record: &mut WorkerCurrent, replay: &ReplayRequest, suffix: &[u8]) -> C
 }
 
 /// Apply one finalized F02 native mutation. Refusals leave `state_bytes` authoritative;
-/// nothing is written to the caller unless the whole candidate state is valid.
+/// nothing is written to the caller unless the whole candidate state is valid. The worker
+/// table is the prefix of the identity section; the F03 region after it is kept unchanged.
 ///
 /// # Errors
-/// Returns the F02 refusal code of the first failed check, or `CAPACITY` when `out`, `event`
-/// or `control_scratch` (which needs [`CONTROL_SCRATCH_BYTES`]) cannot hold its encoding.
+/// Returns the F02 refusal code of the first failed check, `CAPACITY` when the next worker
+/// table followed by the region exceeds the identity section cap, or when `out`, `event` or
+/// `control_scratch` (which needs [`CONTROL_SCRATCH_BYTES`]) cannot hold its encoding.
 pub fn apply(
     state_bytes: &[u8],
     ctx: &CallContext<'_>,
@@ -756,11 +771,13 @@ pub fn apply(
     admit_selector(e.operation.selector())?;
     check_market(ctx, &e)?;
     let state = state::decode_shared_state(state_bytes)?;
-    let table = WorkerTable::decode(state.section(Section::IdentityRoster)?)?;
+    let (workers, region) = split_identity_section(state.section(Section::IdentityRoster)?)?;
+    let table = WorkerTable::decode(workers)?;
     let epoch = market_clock(ctx.market.origin_height, ctx.height)?.epoch;
     let next_epoch = epoch.checked_add(1).ok_or(ARITHMETIC)?;
     let call = Call {
         state: &state,
+        region,
         ctx,
         env: &env,
         next_epoch,

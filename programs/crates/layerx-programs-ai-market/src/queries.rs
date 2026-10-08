@@ -8,6 +8,7 @@ use crate::{
         ApplicationError, CodecResult, ARITHMETIC, CAPACITY, CONFLICT, NON_CANONICAL, NOT_FOUND,
         WRONG_DOMAIN, WRONG_MARKET, WRONG_PROGRAM,
     },
+    evaluators::authority::split_identity_section,
     registry_ops::PolicySection,
     state::{self, Section, SharedState},
     types::{
@@ -54,6 +55,11 @@ impl From<ApplicationError> for QueryError {
     }
 }
 pub type QueryResult<T> = Result<T, QueryError>;
+
+/// The F02 worker table prefix of the identity section; the F03 region after it is not F10's.
+fn worker_table(shared: &SharedState<'_>) -> CodecResult<WorkerTable> {
+    WorkerTable::decode(split_identity_section(shared.section(Section::IdentityRoster)?)?.0)
+}
 
 fn policy_of<'s>(shared: &'s SharedState<'_>) -> CodecResult<PolicySection<'s>> {
     let bytes = shared.section(Section::PolicyLifecycle)?;
@@ -418,7 +424,7 @@ pub fn feature_availability(state_bytes: &[u8]) -> CodecResult<[Availability; 10
         Err(NOT_FOUND) => Availability::NotYetProduced,
         Err(e) => return Err(e),
     };
-    WorkerTable::decode(shared.section(Section::IdentityRoster)?)?;
+    worker_table(&shared)?;
     out[1] = Availability::Available;
     out[5] = Availability::NotEnabled;
     out[9] = Availability::Available;
@@ -626,7 +632,7 @@ pub fn participant_rows(
     if frozen.is_some_and(|view| view.market != market) {
         return Err(WRONG_MARKET);
     }
-    let table = WorkerTable::decode(shared.section(Section::IdentityRoster)?)?;
+    let table = worker_table(&shared)?;
     let evaluators = frozen.map_or(0, RosterView::evaluator_count);
     let total = table.len() + evaluators;
     let slots = out.get_mut(..total).ok_or(CAPACITY)?;
