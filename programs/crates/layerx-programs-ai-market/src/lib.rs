@@ -10,6 +10,7 @@ pub mod commit_reveal {
 }
 pub mod dispatch;
 pub mod errors;
+pub mod evidence;
 pub mod evaluators {
     pub mod codec;
     pub mod model;
