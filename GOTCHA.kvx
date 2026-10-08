@@ -4936,3 +4936,19 @@ text = "The AI simulation evidence module belongs under programs/crates/layerx-p
 [gotcha.1057]
 date = "2026-10-08"
 text = "Acceptance identifiers are case-sensitive. Preserve the canonical uppercase AI prefix when selecting metadata blocks."
+
+[gotcha.1059]
+date = "2026-10-08"
+text = "The canonical spec completion command can exceed fifteen minutes after its focused gate has already passed, even with the indexed parser. Record the passed gate as the task evidence, set the status directly, and note the completion timeout once in the qualification log instead of repeating the gate."
+
+[gotcha.1060]
+date = "2026-10-08"
+text = "The AI evidence validator checks the workspace admission's pinned checkout HEAD and branch before it reads any selector record, so every non-workspace selector refuses with git-head once that checkout moves. Re-pin the admission on the current candidate before running any selector gate, and reference each selector record from other_selector_records."
+
+[gotcha.1061]
+date = "2026-10-08"
+text = "The Codify server spawns spec trace workers that can spin at full CPU for hours against a large spec. Check for stuck trace processes before running gates and stop them; they do not finish on their own."
+
+[gotcha.1062]
+date = "2026-10-08"
+text = "A process kill by command-line pattern also matches the shell that issued it and ends the current tool call. Match on a bracketed character class or kill by process id."

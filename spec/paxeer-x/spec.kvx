@@ -35019,7 +35019,7 @@ evidence = "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d
 
 [task.ai.F01-T01]
 title = "Define canonical market identity and task policy"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 16
 requires = ["ai.T-C01"]
@@ -35051,7 +35051,7 @@ evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76
 
 [task.ai.T-C02-STATE]
 title = "Implement bounded shared-state codec and compile concrete host adapter"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 16
 requires = ["ai.T-C01"]
@@ -35206,7 +35206,7 @@ worker_role_id = "W-F02-IDENTITY"
 
 [task.ai.F03-T01]
 title = "Encode evaluator grants and signed reports"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-C01"]
@@ -35365,7 +35365,7 @@ worker_role_id = "W-STORAGE-RETIREMENT"
 
 [task.ai.F04-T01]
 title = "Implement canonical report commitments"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C01"]
@@ -35400,7 +35400,7 @@ evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33a
 
 [task.ai.F07-T01]
 title = "Implement bounded reputation and terminal helper"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C01"]
@@ -35590,7 +35590,7 @@ worker_role_id = "W-F03-AUTHORITY"
 
 [task.ai.F05-T01]
 title = "Define bounded aggregation records and commitments"
-status = "implemented"
+status = "done"
 mode = "BUILD"
 wave = 19
 requires = ["ai.T-C01"]

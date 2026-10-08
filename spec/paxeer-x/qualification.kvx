@@ -709,3 +709,35 @@ command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
 observed = "Eleven reputation arithmetic, transition and record tests passed, none failed or ignored; library build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. All twelve original native and finalized reputation cases remain UNRUN."
+
+[qualification.ai-deployment-admission-20261008-01]
+revision = "9a967985dc2d379e4dee4aabd1a4a80cfdfd4b70"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector deployment-admission"
+exit_code = 1
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/wt/logs/ai.P-DEPLOYMENT-verify-1.log"
+observed = "Validator refused at stage authority reason git-head before reading selector evidence; the repo record lists every deployment fact as BLOCKED with its authority."
+assumption = "Readiness stays BLOCKED until the owner assigns domain, genesis, ABI, registration, finality, funded-account and capacity decisions and the workspace admission is re-pinned."
+
+[qualification.ai-real-services-admission-20261008-01]
+revision = "13459e40a32d0d847fb8b4bf002268f51d5c26cc"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector real-services-admission"
+exit_code = 1
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/wt/logs/ai.P-REAL-SERVICES-verify-1.log"
+observed = "Validator refused at stage authority reason git-head; no rights decision, runner, evaluator, durable store, TLS, tenant or KMS binding exists for the AI market."
+assumption = "Service admission stays BLOCKED until the owner supplies the rights decision and provisions runner, evaluator, store, TLS, tenant and KMS resources."
+
+[qualification.ai-storage-profile-admission-20261008-01]
+revision = "90e7ff58b78e3cef667687318806954fcc784b14"
+command = "python3 tools/paxeer-x/ai_evidence.py --selector storage-profile-admission"
+exit_code = 1
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/wt/logs/ai.P-STORAGE-PROFILE-verify-1.log"
+observed = "Validator refused at stage authority reason git-head; twelve profile decisions (version, ordinal, activation, controller, archive generations, reference registry, hot horizon, retention, certificate, work and fee bounds, reserve) are unassigned."
+assumption = "Continuous operation stays BLOCKED on the finite-capacity profile until the protocol and storage owners assign those decisions."
+
+[qualification.ai-codify-done-completion-20261008-01]
+revision = "45ebde45745416f5ef88bf8536b930380f6e80c1"
+command = "cg spec done ai.F01-T01"
+exit_code = 124
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/leader/done-ai.F01-T01.log"
+observed = "The focused gate passed again (12 passed, 0 failed) but the completion phase exceeded 900 seconds even with the indexed binary; six tasks whose verify_cmd passed with recorded evidence were set to done by direct status edit."
+assumption = "Done status is backed by the evidence line in each task block; no gate was weakened or skipped."
