@@ -757,3 +757,11 @@ exit_code = 101
 log = "private ops log wt/logs/ai.F10-T01-clippy-5.log"
 observed = "Deny-level clippy findings in files landed by earlier ai.* tasks (codec.rs 116, aggregation_codec.rs 89, evidence.rs 64, workers.rs 33, state.rs 31, more in other src and test files) plus the layerx-program-sdk build script."
 assumption = "Wave-level lint debt; cleared by a dedicated per-file-owner clippy pass once the in-flight wave lands, without changing any gate."
+
+[qualification.ai-f09-t03-prereq-unapproved-20261008-01]
+revision = "de3c4c7bd403f2933bc5191472d6ab3e1aa8c082"
+command = "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_service"
+exit_code = 0
+log = "private ops log wt/logs/ai.F09-T03-verify-3.log"
+observed = "Focused gate passed (12 tests, TLS on loopback, purge, UnknownDelivery, restore gating) while prerequisite ai.P-REAL-SERVICES remains unapproved; production certificate, KMS and live-mark authority are local files."
+assumption = "Task held at implemented until the services prerequisite is approved at deployment time; no code change expected."
