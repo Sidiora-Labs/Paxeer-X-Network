@@ -13,6 +13,7 @@ pub mod ids;
 pub mod intent;
 pub mod json;
 pub mod limits;
+pub mod paxai;
 pub mod payload;
 pub mod policy;
 pub mod program_call;

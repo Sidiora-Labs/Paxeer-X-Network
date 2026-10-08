@@ -24,6 +24,7 @@ pub mod reputation_codec;
 pub mod reputation_transition;
 pub mod state;
 pub mod types;
+pub mod workers;
 
 pub use errors::{ApplicationError, CodecResult};
 pub use types::*;
