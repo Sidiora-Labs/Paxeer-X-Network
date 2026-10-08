@@ -6,9 +6,7 @@ pub mod admission;
 pub mod aggregation;
 pub mod aggregation_codec;
 pub mod codec;
-pub mod commit_reveal {
-    pub mod commitment;
-}
+pub mod commit_reveal;
 pub mod dispatch;
 pub mod epoch;
 pub mod errors;
