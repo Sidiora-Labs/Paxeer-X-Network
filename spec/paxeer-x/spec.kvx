@@ -35334,7 +35334,7 @@ worker_role_id = "W-CORE-VALUE"
 
 [task.ai.T-S01-REPLAY]
 title = "Replay canonical history from an older checkpoint after restore"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-S01"]
@@ -35365,7 +35365,7 @@ worker_role_id = "W-STORAGE-ARCHIVE"
 
 [task.ai.T-S02]
 title = "Implement deterministic authenticated Programs retirement"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-S01"]
@@ -35997,7 +35997,7 @@ worker_role_id = "W-CORE-INTEG"
 
 [task.ai.F01-T03-EPOCH]
 title = "Open epochs with complete frozen snapshots"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 23
 requires = ["ai.F01-T02", "ai.F02-T01", "ai.F03-T02", "ai.F08-T02", "ai.F06-T02", "ai.INTEG-IDENTITY-SECTION"]
