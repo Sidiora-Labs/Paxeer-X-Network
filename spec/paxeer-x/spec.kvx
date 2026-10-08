@@ -35687,7 +35687,7 @@ worker_role_id = "W-F10-PROJECTION"
 
 [task.ai.T-C04]
 title = "Consume qualified native lifecycle evidence"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 19
 requires = ["ai.T-S03"]
