@@ -14,6 +14,7 @@ pub mod epoch;
 pub mod errors;
 pub mod evidence;
 pub mod evaluators {
+    pub mod admission;
     pub mod authority;
     pub mod codec;
     pub mod model;
