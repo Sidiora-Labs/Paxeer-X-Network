@@ -702,3 +702,10 @@ command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-
 exit_code = 0
 log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
 observed = "One structural codec test passed, none failed or ignored; library build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. All eighteen original native aggregation cases remain UNRUN."
+
+[qualification.ai-reputation-pure-20261008-01]
+revision = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors"
+exit_code = 0
+log_path = "/root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+observed = "Eleven reputation arithmetic, transition and record tests passed, none failed or ignored; library build passed. Codify completion exit124 after successful behavior verification; task remains implemented and overall qualification UNRUN. All twelve original native and finalized reputation cases remain UNRUN."

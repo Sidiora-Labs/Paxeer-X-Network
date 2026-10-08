@@ -4924,3 +4924,15 @@ text = "Large active KVX specifications expose quadratic parser entry lookup. A 
 [gotcha.1054]
 date = "2026-10-08"
 text = "Large parsed KVX specifications also require indexed repeated lookups. The local persistent lookup candidate preserves semantic parity and passed 769 focused checks; its publication guard completed in 0.22 seconds. Retain all checks and never repeat already-passed behavior gates merely to record them."
+
+[gotcha.1055]
+date = "2026-10-08"
+text = "The local Codify scanner candidate preserves all graph and FTS writes while batching repeated FTS deletions per existing transaction chunk. Its single focused sync gate passed; large repository completion still timed out after the product behavior gate passed."
+
+[gotcha.1056]
+date = "2026-10-08"
+text = "The AI simulation evidence module belongs under programs/crates/layerx-programs-registry, not the agent workspace. Use the exact existing producer path when granting source inputs."
+
+[gotcha.1057]
+date = "2026-10-08"
+text = "Acceptance identifiers are case-sensitive. Preserve the canonical uppercase AI prefix when selecting metadata blocks."

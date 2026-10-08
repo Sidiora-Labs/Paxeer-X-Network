@@ -35400,24 +35400,24 @@ evidence = "64a43bebac1e0cc346ac90390c3e03474af2e9c6+source:f0fddd217c3498d4c33a
 
 [task.ai.F07-T01]
 title = "Implement bounded reputation and terminal helper"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 18
-requires = ["ai.T-C02-STATE", "ai.F01-T01", "ai.F02-T01"]
+requires = ["ai.T-C01"]
 reqs = ["AI.F07-R001", "AI.F07-R002", "AI.F07-R003", "AI.F07-R004", "AI.F07-R006", "AI.F07-R007", "AI.F07-R008", "AI.F07-R009", "AI.F07-R012", "AI.F07-R017", "AI.F07-R018", "AI.F07-R019", "AI.F07-R020", "AI.F07-R024", "AI.F07-R025", "AI.F07-R026", "AI.F07-R027", "AI.F07-R028", "AI.CORE"]
-do_1 = "Implement bounded codec, integer quality/coverage/decay and complete pure ApplyCompletedEpoch with once-only identity, ring/segment/observation presence and overflow rules on real typed state."
+do_1 = "Implement the complete original pure F07 typed component: bounded184/92byte codecs, canonical segment/root/closure digests, checked integer quality/coverage/decay, internal staged completion identity/order/ring/reset/rollover primitives; qualify only AI.F07-PURE-C01..C11. No authenticated producer, native transition, economic pruning, finality or shared F08 layout is qualified here."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
 manager = "FM-F07"
 worker_role = "reputation history specialist"
 worker = "W-F07-T01"
-deliverables = ["Implement bounded codec, integer quality/coverage/decay and complete pure ApplyCompletedEpoch with once-only identity, ring/segment/observation presence and overflow rules on real typed state.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
-touches = ["programs/crates/layerx-programs-ai-market/src/reputation.rs", "programs/crates/layerx-programs-ai-market/src/reputation_codec.rs", "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs", "programs/crates/layerx-programs-ai-market/tests/reputation_vectors.rs"]
+deliverables = ["Implement the complete original pure F07 typed component: bounded184/92byte codecs, canonical segment/root/closure digests, checked integer quality/coverage/decay, internal staged completion identity/order/ring/reset/rollover primitives; qualify only AI.F07-PURE-C01..C11. No authenticated producer, native transition, economic pruning, finality or shared F08 layout is qualified here.", "Original complete four pure F07 files and root serial three-module export handoff; unchanged focused reputation_vectors verify_cmd, one bounded build/verify after admission.", "Every original AI.F07-A01..A12 scenario and qualification bytes remain unchanged; complete native/lifecycle coverage mandatory F07-T02 and finalized projection/retention coverage F07-T03; pure success never discharges full scenarios."]
+entry_condition = "Actual compatible ai.T-C01 codec/errors/types are qualified; exclusive original pure F07 paths and root serial lib export ownership are available. No F01/F02/STATE/F05/F06/native interface is imported by this pure source/test closure. Those authority, policy, admitted-input, atomic terminalization, financial retention and host obligations remain mandatory in F07-T02/T03 and original full scenarios remain UNRUN."
+touches = ["programs/crates/layerx-programs-ai-market/src/reputation.rs", "programs/crates/layerx-programs-ai-market/src/reputation_codec.rs", "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs", "programs/crates/layerx-programs-ai-market/tests/reputation_vectors.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 build_cmd = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors"
-gate_kind = "planned"
+gate_kind = "executable"
 qualification = "UNRUN"
 max_builds = 1
 max_verify_runs = 1
@@ -35425,9 +35425,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 4
-acceptance_cases = ["AI.F07-A01", "AI.F07-A02", "AI.F07-A03", "AI.F07-A04", "AI.F07-A05", "AI.F07-A06", "AI.F07-A10", "AI.F07-A11"]
-paths = ["programs/crates/layerx-programs-ai-market/src/reputation.rs", "programs/crates/layerx-programs-ai-market/src/reputation_codec.rs", "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs", "programs/crates/layerx-programs-ai-market/tests/reputation_vectors.rs"]
+acceptance_cases = ["AI.F07-PURE-C01", "AI.F07-PURE-C02", "AI.F07-PURE-C03", "AI.F07-PURE-C04", "AI.F07-PURE-C05", "AI.F07-PURE-C06", "AI.F07-PURE-C07", "AI.F07-PURE-C08", "AI.F07-PURE-C09", "AI.F07-PURE-C10", "AI.F07-PURE-C11"]
+paths = ["programs/crates/layerx-programs-ai-market/src/reputation.rs", "programs/crates/layerx-programs-ai-market/src/reputation_codec.rs", "programs/crates/layerx-programs-ai-market/src/reputation_transition.rs", "programs/crates/layerx-programs-ai-market/tests/reputation_vectors.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F07-TRANSITION"
+serial_integration_owner = "root/FM-CORE; FM7 fresh isolated lib-only author under root exclusive grant"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs"]
+serial_integration_obligations = "Add only pub mod reputation; pub mod reputation_codec; pub mod reputation_transition; preserve latest lib exports/no_std/constants and existing sha2 dependency; no new dependency or business overlay."
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
 
 [task.ai.F08-T01]
 title = "Implement bounded membership and liveness policy"
@@ -36430,9 +36434,9 @@ title = "Integrate reputation lifecycle and identity continuity"
 status = "pending"
 mode = "BUILD"
 wave = 30
-requires = ["ai.F07-T01", "ai.F05-T03", "ai.F06-T03", "ai.F08-T02"]
+requires = ["ai.F07-T01", "ai.F05-T03", "ai.F06-T03", "ai.F08-T02", "ai.T-C02"]
 reqs = ["AI.F07-R002", "AI.F07-R005", "AI.F07-R010", "AI.F07-R011", "AI.F07-R012", "AI.F07-R013", "AI.F07-R014", "AI.F07-R016", "AI.F07-R017", "AI.F07-R022", "AI.F07-R027", "AI.F07-R028", "AI.CORE"]
-do_1 = "Wire completed ApplyCompletedEpoch into actual atomic terminalization; implement reset/status authority, model/policy segment rollover, key continuity, replacement isolation and sealed history_allowed semantics with economic rollback."
+do_1 = "Wire completed ApplyCompletedEpoch into actual atomic terminalization; implement reset/status authority, model/policy segment rollover, key continuity, replacement isolation and sealed history_allowed semantics with economic rollback. Mandatory complete unchanged AI.F07-A01..A08,A10,A11,A12 must execute through actual authenticated shared-state/F03/F04/F05/F06/F08 producers and production-linked native host, including every clause allocated by integration.I14-PURE-F07. Numerical vector success alone cannot satisfy these cases. Keep all original scenarios UNRUN until complete compatible actual evidence; no new numerical override or authority stand-in."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36452,9 +36456,10 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 16
-acceptance_cases = ["AI.F07-A06", "AI.F07-A07", "AI.F07-A08", "AI.F07-A12"]
+acceptance_cases = ["AI.F07-A01", "AI.F07-A02", "AI.F07-A03", "AI.F07-A04", "AI.F07-A05", "AI.F07-A06", "AI.F07-A07", "AI.F07-A08", "AI.F07-A10", "AI.F07-A11", "AI.F07-A12"]
 paths = ["programs/crates/layerx-programs-ai-market/src/reputation_transition.rs", "programs/crates/layerx-programs-ai-market/src/epoch.rs", "programs/crates/layerx-programs-ai-market/tests/reputation_lifecycle.rs"]
 worker_role_id = "W-F07-LIFECYCLE"
+native_acceptance_obligations = "Full original A01 key rotation; A02/A03 genuine qualifying versus missing/worker success; A04 canonical score/overflow full-state rollback; A05 distinct eligible evaluator/accepted-support dedup and heartbeat isolation; A06 common terminal/replay/receipt/order/gaps; A07 stable identity/replacement/seat/model rollover; A08 owner/admin reset authority, revocation/cooldown/claims/replay; A10 original policy/model/market and self-owner exclusion; A11 actual joint shared encoding, lawful financial safe-prune/blocked opening; A12 actual host refusal/atomic rollback/lost-response original receipt and immutable history_allowed seal. Finalized evicted history proof is mandatory T03."
 
 [task.ai.T-S04]
 title = "Qualify real continuous storage and funded recovery"
@@ -36525,7 +36530,7 @@ mode = "BUILD"
 wave = 31
 requires = ["ai.F07-T02", "ai.T-C03", "ai.F10-T02"]
 reqs = ["AI.F07-R005", "AI.F07-R015", "AI.F07-R021", "AI.F07-R023", "AI.F07-R026", "AI.F07-R028", "AI.CORE"]
-do_1 = "Implement proof-bound monotonic historical projections and freshness/retention status; reject root conflicts and stale rollback, recover durable cursors and preserve archive-required responses without copying another enrollment history."
+do_1 = "Implement proof-bound monotonic historical projections and freshness/retention status; reject root conflicts and stale rollback, recover durable cursors and preserve archive-required responses without copying another enrollment history. Original AI.F07-A09 and the finalized evicted-epoch/history-retention portion of AI.F07-A11 remain mandatory in full, including authenticated4096height freshness, no earlier-proof rollback, same-height root conflict, persisted monotonic cursor and actual finalized HistoryOutsideRetention/archive response. Pure codecs or local lookup cannot satisfy these assertions."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -44502,4 +44507,104 @@ derived_from = ["AI.F05-A10", "AI.F05-A11"]
 actual_test_function = "aggregation_codec_contract"
 qualification = "UNRUN"
 evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+
+[acceptance.AI.F07-PURE-C01]
+feature = "F07"
+scenario = "Using real C01 WorkerRosterEntry and frozen typed binding in the internal pure update, bootstrap quality0/count0 and explicit qualified800000 at epoch7 produce100000/count1/confidence125000; next qualified800000 at epoch8 produces187500/count2/confidence250000. Changing only the supplied roster operational key/version retains segment and resetgeneration1. This is typed-record continuity only; actual authenticated key rotation and ownership admission remain mandatory in F07-T02."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A01"]
+test_function = "a01_continuity_and_count"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C02]
+feature = "F07"
+scenario = "The actual pure update gives203704 for q123457,s765433 and121527 for the missing branch. Qualified zero from800000 gives700000/count2 and observed(epoch7,height107); missing gives787500/count1 and preserves prior observation. Bootstrap missing epoch0 stays0. No worker success or API authority is established; the real producer must select the branch."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A02", "AI.F07-A03"]
+test_function = "a02_floor_and_a03_zero_is_observed"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C03]
+feature = "F07"
+scenario = "At q=s1000000 quality remains1000000. Count31 advances32 then remains32, confidence1000000. Score1000001 and count33 refuse through actual C01/pure validators. Reset generationu64MAX refuses common ARITHMETIC before changing the input record; encode_current bytes remain identical. Authenticated reset and full-state rollback remain later native obligations."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A04"]
+test_function = "a04_bounds_saturation_and_generation_overflow"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C04]
+feature = "F07"
+scenario = "Pure E6,N4 gives666666; E8,N2 gives250000 with missing quality decay787500. E0,N0 is absent coverage; E0,N1 and E9 refuse binding mismatch. The supplied immutable history_allowed bit controls observation admission independently of current status: true permits qualified zero on a suspended record, false decays even with positive median and keeps coverage. Present median with support2 refuses. These supplied counts/bits never prove evaluator uniqueness or authenticated seal provenance."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A05", "AI.F07-A12"]
+test_function = "a05_independent_coverage_and_sealed_history_permission"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C05]
+feature = "F07"
+scenario = "Pure CompletionDraft stages epoch12 fromq100000/s800000 to187500 and appends once without modifying original state. Retained same epoch/result returns identical state/summary; changed result refuses CONFLICT and epoch11 refuses WRONG_EPOCH. Jump to22 applies one missing decay184570 and one summary, never ten fabricated samples. Failed worker admission cannot finish/publish draft. This local retained summary is not a native receipt or finality proof."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A06"]
+test_function = "a06_internal_staging_retry_order_and_gaps"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C06]
+feature = "F07"
+scenario = "With two real typed workers, accept first pending update then refuse second inconsistent support/median; unfinished CompletionDraft refuses F07_EPOCH_NOT_SEALED and original source state, current observations and ring remain unchanged. This proves local pure staging only; actual host resource/storage rollback and atomic F05/F06/F07 commit/restart are mandatory later."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A12"]
+test_function = "staged_multiworker_failure_cannot_publish_partial_history"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C07]
+feature = "F07"
+scenario = "Pure exact market/policy/model lookup refuses mismatch. Deterministic reset computes nextgeneration2, quality/count0, absent observation, carried latestepoch6, retained suspension, and exact old closure digest. Unchanged rollover returns absent; changedmodel creates a distinct segment candidate. Different supplied worker owner refuses numerical update. These helpers accept no authority proof and cannot establish owner/admin authorization, self-owner evaluator rejection, native replay, financial preservation or nonterminal guard."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A07", "AI.F07-A08", "AI.F07-A10"]
+test_function = "a10_exact_segment_binding_reset_and_rollover"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C08]
+feature = "F07"
+scenario = "Actual bounded typed state refuses a33rd current worker unchanged.32current184byte rows+32history92byte rows+64header encode8896 and roundtrip. check_storage_budget enforces F07<=9088,F07+suppliedF08<=24576,total<=196608 and checked addition. Full ring refuses append unchanged; wrong oldestepoch refuses; explicit pure prune0 thenappend32 removes only oldest summary, retains32workers and completed high-watermark and reports HistoryOutsideRetention for0. Supplied bytecounts and prune invocation do not establish actual F08 encoding, F06 claim safety or opening authority."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A11"]
+test_function = "a11_capacity_budgets_and_synchronised_retention_primitive"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C09]
+feature = "F07"
+scenario = "Current record is exactly184bytes, epoch0 present differs from absence by flags. Roundtrip qualifiedzero and unobserved record. Refuse unknownstatus/reservedflag/reservedbytes, inconsistent absent flags/observation/coverage, zero observedheight, count33,score1000001,zero worker,trailing byte and every truncation0..183. Existing actual validators/types and exact unchanged field order apply."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A03", "AI.F07-A04"]
+test_function = "epoch_zero_absence_codec_and_malformed_current"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C10]
+feature = "F07"
+scenario = "CompletedHistory is exactly92bytes and canonical epoch0 roundtrips. Refuse counters above total,total33,reservedbyte; section refuses unsupported schema,count33,invalid presence,nonzero reserved/absentepoch,duplicate and descending workers and trailing bytes. RP07/schema1 current/history normalized ordering and184/92/64 lengths remain unchanged; full native shared-state/F08 framing is later."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A11"]
+test_function = "history_and_section_malformed_order_presence_version"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
+
+[acceptance.AI.F07-PURE-C11]
+feature = "F07"
+scenario = "Production SHA256 segment/root/closure digests equal independently constructed canonical preimages with exact PAXAI domains and zero delimiter, big-endian fields and current record bytes. Root binds status and epoch0 presence, refuses duplicate/descending workers. Closure binds exact reason; invalid reason0/5 refuses. Digests establish audit consistency only, never authority, finality, model correctness or entitlement."
+qualification = "UNRUN"
+derived_from = ["AI.F07-A10", "AI.F07-A11"]
+test_function = "canonical_digest_inputs_domain_status_and_order"
+contract = "ai-markets/features/F07-reputation.kvx"
+evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72abca471024c81e547732c566f0d35da3289bddcd730ad2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_vectors | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm10/codec-qualification-01.log"
 
