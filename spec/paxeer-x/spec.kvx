@@ -35334,7 +35334,7 @@ worker_role_id = "W-CORE-VALUE"
 
 [task.ai.T-S01-REPLAY]
 title = "Replay canonical history from an older checkpoint after restore"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-S01"]

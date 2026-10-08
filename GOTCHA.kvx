@@ -5100,3 +5100,15 @@ text = "Test worlds must keep header.state_revision equal to SharedState.revisio
 [gotcha.1099]
 area = "programs/ai-market"
 text = "F08 approve/admit refuse evaluator-owner conflicts up front, so conflict states for A04 must be built with a direct AdmissionTable::insert of a staged meta plus an F03 grant, modelling restored committed state. clippy --all-targets prints nothing for clean integration test targets."
+
+[gotcha.1100]
+area = "layerxd"
+text = "process->programs.fee_schedule in the daemon struct is a stale cache that nothing writes since c9f7d3a04; version gates must resolve the governed schedule through occupancy_parameters (receipt fee_schedule_version or active record), never read the cached field."
+
+[gotcha.1101]
+area = "layerxd"
+text = "Replay must bind each activity with the batch prefix (batch_id plus activity_root) rebuilt from the published DA body, as live execution and the guarantor do, not the per-activity lxp_batch_identity_activity; on a batch-maintenance protocol header last_sequence covers the maintenance record, so the DA activity count is last-first, not last-first+1."
+
+[gotcha.1102]
+area = "fleet"
+text = "If cd and export sit inside a backgrounded command chain, make runs in the leader repo's working directory; always cd to the worktree explicitly in the same foreground command."

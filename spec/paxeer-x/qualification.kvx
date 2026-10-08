@@ -813,3 +813,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F01-T03-EPOCH-verify-1.log"
 observed = "OpenEpoch and AdvanceActivation are complete behind epoch::open_epoch / epoch::advance_activation, but no selector router exists to call them; dispatch.rs holds only the operation table. Composition still leaves F07 segment rollover and the F01 task-region reset to their owners, and uses the owner principal as frozen recipient until F02 binds a payout recipient."
 assumption = "ai.T-C02 (owns dispatch.rs and the host boundary) adds the execute entry point with a scratch constant covering OPEN_SCRATCH_BYTES/ADVANCE_SCRATCH_BYTES and routes every selector; F07-T02 and F01-T04 compose their parts; F02-T02 adds the recipient."
+
+[qualification.ai-t-s01-full-gate-20261008-01]
+revision = "c8bad8e76"
+command = "python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd"
+exit_code = 0
+log = "private ops log wt/logs/ai.T-S01-REPLAY-verify-1.log"
+observed = "All ten state-archive scenarios pass on a real paxd chain after the daemon replay fix, which is also ai.T-S01's full verify_cmd."
+assumption = "ai.T-S01 stays at implemented only because ai.P-STORAGE-PROFILE and ai.P-DEPLOYMENT are unapproved; no rerun is needed when they pass, this evidence stands."
