@@ -4908,3 +4908,7 @@ text = "A Codify claim and work-open record do not set canonical task status to 
 [gotcha.1050]
 date = "2026-10-08"
 text = "Codify completion may outlast a bounded subprocess timeout after its behavior gate has passed. Retain separate verify and completion outcomes, publish an honest implemented checkpoint, and do not automatically repeat the unchanged gate or mark the task done."
+
+[gotcha.1051]
+date = "2026-10-08"
+text = "Resolve the configured repository identity from existing verified project records before remote API reads; a local workspace directory name does not identify its remote owner or repository."

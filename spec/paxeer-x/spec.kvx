@@ -35019,7 +35019,7 @@ evidence = "cf4f21a372ab8732b64fa9c23a6345a8747b764c+source:0461a94c0abfd1334f4d
 
 [task.ai.F01-T01]
 title = "Define canonical market identity and task policy"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 16
 requires = ["ai.T-C01"]
@@ -35036,7 +35036,7 @@ entry_condition = "ai.T-C01 has exact passed evidence on compatible inputs and s
 touches = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 build_cmd = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec"
-gate_kind = "planned"
+gate_kind = "executable"
 qualification = "UNRUN"
 max_builds = 1
 max_verify_runs = 1
@@ -35047,6 +35047,7 @@ local_wave = 2
 acceptance_cases = ["AI.F01-CODEC-A01", "AI.F01-CODEC-A02", "AI.F01-CODEC-A03", "AI.F01-CODEC-A04", "AI.F01-CODEC-A05", "AI.F01-CODEC-A06", "AI.F01-CODEC-A07", "AI.F01-CODEC-A08", "AI.F01-CODEC-A09", "AI.F01-CODEC-A10", "AI.F01-CODEC-A11"]
 paths = ["programs/crates/layerx-programs-ai-market/src/registry.rs", "programs/crates/layerx-programs-ai-market/src/policy.rs", "programs/crates/layerx-programs-ai-market/tests/market_policy_codec.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F01-POLICY"
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [task.ai.T-C02-STATE]
 title = "Implement bounded shared-state codec and compile concrete host adapter"
@@ -44029,6 +44030,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R007", "AI.F01-R009", "AI.F01-R010", "AI.CORE"]
 criteria = ["Actual registry/policy encoders and decoders consume the accepted common distinct ID/Digest/Amount types and strict bounded Reader/Writer; all integers are unsigned fixed-width big-endian, bytes are raw, booleans are exactly0/1, optionals use exactly0/1 presence and unknown trailing bytes refuse.", "Every truncated prefix of each supported canonical record refuses; extra bytes, invalid bool/presence, unknown enum, nonzero reserved byte and any zero required identifier/digest refuse with the frozen typed error. No floating-point, arbitrary strings, raw artifacts or JSON preimages exist in these records.", "ID comparisons and digest equality inspect all32bytes; values differing only in the final byte remain distinct."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A02]
 feature = "F01"
@@ -44038,6 +44040,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R001", "AI.F01-R005", "AI.F01-R008", "AI.F01-R009"]
 criteria = ["MarketId derives from SHA256(ASCII PAXAI/market/v1 ||00||deployment_chain_domain32||program32) through the accepted real SHA-256 implementation. Known canonical vectors match; changing either domain or Program changes the vector; identical Program/domain remains stable across policy metadata/code-version input changes because those are absent from this preimage.", "A decoded header checks schema1, exact derived identity, nonzero IDs, lifecycle1..5, nonzero revision/config versions and active_config<=highest_config. Zero-derived identity is refused without adding a retry salt.", "Header round trips preserve every R009 field exactly, including origin, immutable funding/refund/owner identities, schedule, closure journal, digests and reserved8zero. Registered/origin1000/revision1 is a codec vector, never evidence of successful CREATE.", "activation_scheduled=false requires activation_epoch0; close_phase0 requires closure_requested_at0 and close_cursor0. Valid absence fields use the specified zero representation. Unknown lifecycle/close-phase values refuse; codec restore preserves Closed tombstones and cannot manufacture a lifecycle transition."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A03]
 feature = "F01"
@@ -44047,6 +44050,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R009", "AI.F01-R006", "AI.CORE"]
 criteria = ["Treasury optional appears immediately after refund_recipient_account32. Absent encodes exactly one zero byte; present encodes one byte1 and exactly32 principal bytes. Header totals are384bytes absent and416bytes present; the remainder shifts by exactly32bytes.", "Presence2, truncated present principal, present zero principal, present owner principal, absent presence plus stray treasury bytes, and trailing bytes refuse. Valid T!=owner round trips unchanged and does not change owner/refund recipient.", "Codec data model contains the immutable creation-time optional choice only; a codec round trip supplies no treasury policy setter, funding authority or rotation operation."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A04]
 feature = "F01"
@@ -44056,6 +44060,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R002", "AI.F01-R007", "AI.F01-R010", "AI.F01-R029"]
 criteria = ["Actual TaskPolicyV1 serializes to exactly307bytes in the canonical R010 order recorded with offsets in admission.json. config_version starts offset0, task_kind8, assessment_mode9, seven digests10..233, remaining bounded numeric fields234..290 and reserved16 at291..306.", "task_kind is1/2/3 only; assessment_mode1/2 only. Version0, task_kind0/4/255, assessment_mode0/3/255, length306/308, all shorter prefixes, trailing bytes and any nonzero reserved byte refuse.", "Policy digest is SHA256(ASCII PAXAI/policy/v1 ||00||exact307bytes), including mode and reservedzero bytes. Known vectors use actual production hashing and canonical records. Changing only mode1to2 changes digest. A changed required artifact commitment changes the digest.", "Neither accepted task kind nor assessment mode encodes proof of model execution or semantic truth; modes classify the approved procedure."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A05]
 feature = "F01"
@@ -44065,6 +44070,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R010", "AI.F01-R011"]
 criteria = ["Reject max_workers0/33/255; accept1/32. Reject max_evaluators0/9/255 and any policy unable to satisfy minimum_evaluator_count>=3 and <=max_evaluators; accept3/8 with matching valid minima. Reject max_tasks0/65/65535; accept1/64.", "Reject max_input_bytes/max_output_bytes0/16777217/u32MAX; accept1/16777216. Reject timeout0/65/u16MAX; accept1/64.", "Reject minimum_worker_count0 or above max_workers; accept1/max_workers. Reject minimum_evaluator_count0/1/2 or above max_evaluators; accept3/max_evaluators.", "Reject score_min!=0, including1/u32MAX; reject score_max!=1000000, including999999/1000001/u32MAX. Reject owner_affiliation_policy0/2/255 and nonzero reserved16 byte.", "Reject zero epoch_budget_cap; reject zero minimum_epoch_funding or minimum_epoch_funding>cap; accept minimum1/cap and exact u128 maxima when otherwise valid. No decimal rescaling, float, saturation or wrap is permitted.", "Reject zero model/benchmark/rubric/task-schema/result-schema/service-terms digest independently, including zero rubric explicitly listed in A09. Reject zero dataset for embedding and training_evaluation. An inference zero-dataset vector can establish only syntactic admission; the rubric's explicit no-dataset declaration remains an external artifact validation obligation.", "The original A09 negatives workers33/evaluators9/tasks65/score_max999999/mode0or3/nonzeroreserved/zerorubric/embeddingzerodataset/minimumfundingabovecap all return InvalidPolicy through the actual production validator.", "Default bounded values are modeOBJECTIVE, workers32, evaluators8, tasks64, input/output1048576, timeout32, minimumworkers1 and minimumevaluators3. Required commitments and exact budget parameters remain explicit valid inputs; no placeholder policy is invented."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A06]
 feature = "F01"
@@ -44074,6 +44080,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R012", "AI.F01-R029"]
 criteria = ["PendingPolicy is exactly379bytes: policy307,digest32,effective_epoch8,proposer32. Decoding validates its policy and exact digest; rejects zero proposer, mismatched digest, malformed presence or extra bytes. A representation admits at most current plus one pending policy.", "PolicyHistoryHeader is49bytes: version8,digest32,effective_epoch8,disposition1. Disposition1activated/2cancelled only, versions positive/ascending/duplicate-free, at most4 recent headers. Reject unknown dispositions, duplicate/reversed/inconsistent completed ordering and inconsistent pending/version bounds.", "Initial history root uses exactly H(PAXAI/policy-history/v1,empty). Fold uses previous_root32,disposition:u8,version:u64,digest32,effective_epoch:u64 in the normative hash order, with known real SHA-256 vectors. Initial policy1 activated/effective_epoch0 is representable without an opened epoch.", "Round trip current and pending records preserves independent policy bytes/digests/config versions and immutable history roots. Codec operations do not apply a pending policy, cancel one or consume a configuration version."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A07]
 feature = "F01"
@@ -44083,6 +44090,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R008", "AI.F01-R029"]
 criteria = ["Actual checked version-successor arithmetic returns2from1 and u64MAXfromu64MAX-1; highest=u64MAX returns ArithmeticOverflow. No wrap, reuse or saturating value is returned.", "Revision/config/height/size computations used by owned codecs and arithmetic helpers use checked integer operations. Overflow refuses without partially updating any caller-visible owned record; ownership/state mutation is outside these helpers.", "The highest_config_version=u64MAX staging operation itself remains a separate real lifecycle clause; the arithmetic helper result does not mark that operation qualified."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A08]
 feature = "F01"
@@ -44092,6 +44100,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R029", "AI.F01-R038", "AI.CORE"]
 criteria = ["Pure clock/window helpers use checked height-origin, epoch*128, origin+product and endpoints+64/+80/+96/+128; h<origin and any unrepresentable endpoint refuse. Only clock floor/modulus divides; no wall clock or external finality assertion enters the helper.", "Origin1000 produces epoch0 Work[1000,1064), Commit[1064,1080), Reveal[1080,1096), Settle[1096,1128), epoch1start1128 and epoch2start1256. Positions63/64/79/80/95/96/127/128 satisfy exactly the half-open transitions.", "Vectors include origin0, origin1000, height0/u64MAX, multiplication/addition/subtraction overflow, and representable height with unrepresentable scheduled epoch end. Future-epoch increment overflow refuses.", "No codec/arithmetic call opens an epoch, books a budget, authenticates caller height or claims finalized execution."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A09]
 feature = "F01"
@@ -44101,6 +44110,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R006", "AI.F01-R009", "AI.CORE"]
 criteria = ["Use actual portable SDK PreparedProgramAccount::new(program,b\"paxai/rewards/v1\",asset), seed16bytes, to validate the derived rewards AccountId for a canonical funding binding; do not reimplement native derivation. A mismatched supplied rewards account refuses.", "Funding AssetId, derived rewards AccountId, owner and refund recipient are preserved in header round trips; distinct SDK/application identity types cross only checked constructors/bytes conversions.", "Derivation is not registration evidence. Codec tests must not claim asset existence, registry-bound readiness, native grants, sight balances, custody, deposits or transfer rollback."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A10]
 feature = "F01"
@@ -44110,6 +44120,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R009", "AI.F01-R012", "AI.F01-R034", "AI.F01-R035"]
 criteria = ["Measure actual owned maximum encodings: header416, operatorgrant50, currentpolicy307, pendingpolicy379 and fourhistoryheaders196. OperatorGrant validates principal32,permissions1..3,nonzerograntsequence,canonicalrevokedbool,reserved8zero. Framing/presence/counts and roots remain explicit bounded bytes.", "Worksheet is header416+operator50+policies686+history196+historyroot32+taskcount2+tasksetpresence/root33+pendingpresence1+operatorpresence1+historycount2+sectionframing4=1423 non-task bytes.64*233=14912; combined16335<=16384; headroom49. Checked size arithmetic must reject overflow and any requested F01 length16385.", "Owned codec output-buffer exhaustion and over-limit framing refuse before returning a successful encoded record. No dropping roots, authority fields, history or reducing64-task capacity can make the worksheet pass.", "Only implemented owned encodings and exact arithmetic are qualified here. Measurement of the actual full64-task shared-state serializer and no-writes/events/transfers on its refusal is reserved to the existing T04 integration clause; no synthetic TaskBinding stand-in satisfies it. The total196608 framing/native occupancy obligations remain CORE/storage/release-owned."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F01-CODEC-A11]
 feature = "F01"
@@ -44119,6 +44130,7 @@ task = "ai.F01-T01"
 kind = "pure_codec_and_checked_arithmetic"
 reqs = ["AI.F01-R025", "AI.F01-R032", "AI.F01-R033", "AI.F01-R039", "AI.F01-R045", "AI.CORE"]
 criteria = ["Actual codec/arithmetic errors use the accepted frozen common/F01 numeric mapping, not Rust discriminant inference. Invalid encoding/policy, derived identity mismatch, bounds refusal and arithmetic overflow remain refusals; no fallback converts failure to success.", "Canonical records contain fixed public commitments and bounded integers only; no raw prompts, model weights, datasets, credentials, URIs or mutable hidden policy defaults. Schema evolution/unknown fields refuse rather than silently default.", "Restoring an encoded header/policy preserves market/origin/version/tombstone and authority fields exactly; this is a codec invariant, not proof of an authorized upgrade or migration. The immutable upgrade/trust and continuous-operation release requirements remain unchanged and UNRUN."]
+evidence = "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
 
 [acceptance.AI.F04-CODEC-C01]
 feature = "F04"

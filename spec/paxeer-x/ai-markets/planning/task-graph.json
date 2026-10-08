@@ -244,7 +244,7 @@
         "ai.T-C01"
       ],
       "wave": 16,
-      "status": "pending",
+      "status": "implemented",
       "task_kind": "implementation_and_focused_qualification",
       "spec": "spec/paxeer-x/spec.kvx",
       "contract_path": "spec/paxeer-x/spec.kvx#[task.ai.F01-T01]",
@@ -303,7 +303,7 @@
         "max_verify_runs": 1,
         "max_repair_cycles": 2,
         "time_limit_minutes": 30,
-        "gate_kind": "planned",
+        "gate_kind": "executable",
         "qualification": "UNRUN",
         "stop_condition": "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs.",
         "implementation_obligations": "Create the owned registry/policy implementation and real market_policy_codec tests using the accepted production common types/codecs/hash and actual portable SDK derivation before qualification. Preserve every codec refusal/recovery/bound. Do not fabricate host, account registration, epoch, TaskBinding or finality producers; full runtime assertions remain in the explicit integration allocation.",
@@ -328,7 +328,9 @@
         "AI.F01-CODEC-A09",
         "AI.F01-CODEC-A10",
         "AI.F01-CODEC-A11"
-      ]
+      ],
+      "qualification": "UNRUN",
+      "evidence": "43c9b0481ce8af58f29ca4e81a645c24030b6389+source:5bd58b505a4cff4adf76136464485660342a7232e9f1fba1801fbae067c3ea01 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_policy_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm4/codec-qualification-01.log"
     },
     {
       "id": "ai.T-C02-STATE",
