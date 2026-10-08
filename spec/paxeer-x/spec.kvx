@@ -35081,7 +35081,7 @@ evidence = "ee3148237882b732a29ff7c2dca5fb64daabfcd6+source:1200b9f88ff487ece3da
 
 [task.ai.T-C02]
 title = "Qualify bounded shared state on actual native host"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 27
 requires = ["ai.T-C02-STATE", "ai.F01-T02", "ai.F02-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]
@@ -36276,7 +36276,7 @@ worker_role_id = "W-F10-HEALTH"
 
 [task.ai.F04-T02]
 title = "Implement atomic commit and reveal windows"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 27
 requires = ["ai.F04-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]
