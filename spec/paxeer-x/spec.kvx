@@ -35113,7 +35113,7 @@ integration_obligations = "The unchanged complete AI.F01-A01/A02/A03/A09/A16/A19
 
 [task.ai.T-S01]
 title = "Archive exact native state and restore historical proofs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 16
 requires = ["ai.P-STORAGE-PROFILE", "ai.P-DEPLOYMENT"]
@@ -35175,7 +35175,7 @@ worker_role_id = "W-F01-LIFECYCLE"
 
 [task.ai.F02-T01]
 title = "Implement worker identities and enrollment lifecycle"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 17
 requires = ["ai.T-C02-STATE", "ai.F01-T01"]
@@ -35435,7 +35435,7 @@ evidence = "1a8027bdce092dd68ee3223e2cefdba22e089197+source:b4ca8501078faa4c72ab
 
 [task.ai.F08-T01]
 title = "Implement bounded membership and liveness policy"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C02-STATE", "ai.F01-T01", "ai.F02-T01", "ai.F03-T01"]
@@ -35466,7 +35466,7 @@ worker_role_id = "W-F08-ADMISSION"
 
 [task.ai.F09-T03]
 title = "Implement durable private artifact service"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 18
 requires = ["ai.F09-T01", "ai.P-REAL-SERVICES"]
@@ -35497,7 +35497,7 @@ worker_role_id = "W-F09-SERVICE"
 
 [task.ai.F10-T01]
 title = "Implement bounded coherent state queries"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 18
 requires = ["ai.T-C01", "ai.T-C02-STATE", "ai.F01-T01", "ai.F02-T01"]

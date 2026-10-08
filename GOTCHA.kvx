@@ -4964,3 +4964,11 @@ text = "ReplayTable::record_success refuses revision 0, so a creating operation 
 [gotcha.1065]
 area = "programs/ai-market"
 text = "The ai-market crate is no_std without alloc: decoded variable-length lists must be borrowed typed-or-encoded views (like codec::ScoreVector) and complete-content checks need a caller-supplied leaf scratch buffer; publisher checks go through evaluators::codec::verify_digest, not ed25519-dalek directly, so host errors stay separate from bad signatures."
+
+[gotcha.1066]
+area = "programs/ai-market"
+text = "The programs workspace clippy lints are deny (all/pedantic/unwrap_used) but cargo build and cargo test do not run them; new crate code can pass its task gate and still fail the wave-level clippy gate."
+
+[gotcha.1067]
+area = "tooling"
+text = "In a crate whose lib.rs is the only file under src/, a sed run from src/ against both ../src/lib.rs and lib.rs edits the same file twice and duplicates the module line."
