@@ -2,6 +2,7 @@
 //! Programs entrypoint. No codec value establishes host authority or finality.
 #![no_std]
 
+pub mod aggregation_codec;
 pub mod codec;
 pub mod commit_reveal {
     pub mod commitment;

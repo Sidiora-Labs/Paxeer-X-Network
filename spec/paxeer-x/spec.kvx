@@ -35586,24 +35586,24 @@ worker_role_id = "W-F03-AUTHORITY"
 
 [task.ai.F05-T01]
 title = "Define bounded aggregation records and commitments"
-status = "pending"
+status = "implemented"
 mode = "BUILD"
 wave = 19
-requires = ["ai.T-C01", "ai.F03-T01", "ai.F04-T01"]
+requires = ["ai.T-C01"]
 reqs = ["AI.F05-R02", "AI.F05-R03", "AI.F05-R04", "AI.F05-R09", "AI.F05-R12", "AI.F05-R13", "AI.CORE"]
-do_1 = "Implement strict canonical aggregation input/output/state codecs, explicit absent/zero/positive statuses, ordering, domain commitments and invariant errors before numerical consumers."
+do_1 = "Qualify the completed actual stateless F05 aggregation_codec source and aggregation_codec_contract structural test against passed C01 common codecs/types/errors/hash and existing sha2. Preserve exact bounded input/output/current/history representations, explicit absent/zero/positive status, canonical order, domain commitments and invariant refusals. This source imports no F03/F04 owned implementation, STATE, arithmetic aggregator, runtime or payout producer. Structural values and fixture outputs confer no authenticated provenance, numerical correctness or terminal authority. Every original complete F05 scenario remains mandatory on the later actual native aggregation/payout/restart gate, with real T02 arithmetic and F03/F04/F06/F07 producers."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
 manager = "FM-F05"
 worker_role = "deterministic aggregation specialist"
 worker = "W-F05-T01"
-deliverables = ["Implement strict canonical aggregation input/output/state codecs, explicit absent/zero/positive statuses, ordering, domain commitments and invariant errors before numerical consumers.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
-entry_condition = "All requires tasks have exact passed evidence on compatible inputs; named path ownership is available and actual required host/native/finality interfaces are admitted. Missing producers, authority or real resources keep entry BLOCKED."
-touches = ["programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs", "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"]
+deliverables = ["Implement strict canonical aggregation input/output/state codecs, explicit absent/zero/positive statuses, ordering, domain commitments and invariant errors before numerical consumers.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success.", "The unchanged focused aggregation_codec_contract selector may qualify only new AI.F05-CODEC-C01..C08; every original complete F05-A01..A18 remains UNRUN until mandatory downstream native evidence covers all assertions."]
+entry_condition = "ai.T-C01 has exact PASSED evidence on compatible source and exports actual common Reader/Writer/Roster/ReportBody/report/roster/domain hashing, errors/types/SCHEMA_VERSION. The completed FM8 aggregation_codec.rs and aggregation_contract.rs import only those producers, their own codec module and existing sha2; F03-T01/F04-T01 implementation qualification is not a prerequisite for this structural task. Root/FM1 serially registers only pub mod aggregation_codec; preserving all latest exports. Actual missing common API or module wiring blocks qualification rather than admitting a substitute. Native authenticated report provenance, accepted closed-set/seal/revocation, arithmetic, transfer/history/restart/finality and host resource obligations stay UNRUN in their existing later owners; codec success passes none of the original full cases."
+touches = ["programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs", "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 build_cmd = "cargo check --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --lib"
 verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact"
-gate_kind = "planned"
+gate_kind = "executable"
 qualification = "UNRUN"
 max_builds = 1
 max_verify_runs = 1
@@ -35611,9 +35611,13 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 5
-acceptance_cases = ["AI.F05-A05", "AI.F05-A08", "AI.F05-A10", "AI.F05-A11"]
-paths = ["programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs", "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs"]
+acceptance_cases = ["AI.F05-CODEC-C01", "AI.F05-CODEC-C02", "AI.F05-CODEC-C03", "AI.F05-CODEC-C04", "AI.F05-CODEC-C05", "AI.F05-CODEC-C06", "AI.F05-CODEC-C07", "AI.F05-CODEC-C08"]
+paths = ["programs/crates/layerx-programs-ai-market/src/aggregation_codec.rs", "programs/crates/layerx-programs-ai-market/tests/aggregation_contract.rs", "programs/crates/layerx-programs-ai-market/src/lib.rs"]
 worker_role_id = "W-F05-CODEC"
+serial_integration_owner = "FM-CORE root/FM1; producer author owns only original aggregation_codec.rs and aggregation_contract.rs"
+serial_integration_paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs"]
+serial_integration_obligations = "Root/FM1 serially adds only pub mod aggregation_codec; to actual shared lib.rs and retains every latest C01/STATE/F01/F03/F04 export. Existing sha2 suffices; no new manifest/dependency or business aggregation module is required by T01. No arithmetic aggregation.rs, F03/F04 handler, native staging, terminalizer, F06 payout or F07 history implementation is duplicated or admitted by this codec task. Shared lib.rs remains under the named exclusive writer."
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
 
 [task.ai.F10-T02]
 title = "Project minimal verified finalized market snapshots"
@@ -36273,7 +36277,7 @@ mode = "BUILD"
 wave = 28
 requires = ["ai.F05-T02", "ai.F06-T02", "ai.F07-T01", "ai.F04-T02", "ai.F01-T03-EPOCH"]
 reqs = ["AI.F05-R02", "AI.F05-R04", "AI.F05-R05", "AI.F05-R06", "AI.F05-R09", "AI.F05-R10", "AI.F05-R11", "AI.F05-R12", "AI.F05-R13", "AI.CORE"]
-do_1 = "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access. Add mandatory original AI.F04-A06/A07/A11 and A12 rollover/aggregation-consumer assertions. Consume actual admitted F04 rows: missing/expired/refused remain no vote, explicitzero is a vote, two of eight reveals supply exactlytwo rows, stable eligible set after reveal_end without expiry maintenance, quorum handled only by F05; no reward/slash from F04 event. Test actual seal/output not a locally invented eligible vector."
+do_1 = "Implement real guest/native BeginAggregation, bounded Process cursor and Finalize with complete F06 reward and F07 history helpers; freeze eligible rows/history flags at seal, preserve delayed settlement and enforce atomic rollback, once-only completion and no network access. Add mandatory original AI.F04-A06/A07/A11 and A12 rollover/aggregation-consumer assertions. Consume actual admitted F04 rows: missing/expired/refused remain no vote, explicitzero is a vote, two of eight reveals supply exactlytwo rows, stable eligible set after reveal_end without expiry maintenance, quorum handled only by F05; no reward/slash from F04 event. Test actual seal/output not a locally invented eligible vector. Mandatorily run every unchanged complete AI.F05-A01..A18 scenario through the actual native aggregation runtime using real T02 numerical outputs, authenticated F03/F04 accepted reports, frozen identities/evidence and authoritative preseal revocation, actual F06 payout/accounting and F07 history. Preserve exact lower median, absent-versus-zero/API state, every arrival permutation and seal binding, all32x8/256-cell and weight/display bounds, no invented fallback/reward, zero F05 transfers, invalid/self/same-owner refusal with zero terminal effects, half-open phase boundaries,13-worker8+5 restart/stale-cursor/once-only finalization, all revocation/replacement orderings, actual fuel/storage/event/accounting rollback and no settlement network fetch. Codec fixture records and individual arithmetic vectors are prerequisites, never substitutes for any complete original native scenario. Missing real producer/authority/resource keeps it UNRUN; no full case can pass from T01 partial evidence."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
 do_3 = "Honor named shared writers: FM-CORE owns workspace/crate/common types/state/errors/dispatch; FM-STORAGE serializes native files and root Makefile; FM-F10 owns schema/generator and shared gateway/indexer integration; FM-F01 owns epoch.rs. Obtain exact serial handoff before shared-file edits; preserve unrelated owner changes."
 do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
@@ -36293,7 +36297,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 14
-acceptance_cases = ["AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A18", "AI.F04-A06", "AI.F04-A07", "AI.F04-A11", "AI.F04-A12"]
+acceptance_cases = ["AI.F05-A10", "AI.F05-A11", "AI.F05-A12", "AI.F05-A13", "AI.F05-A14", "AI.F05-A15", "AI.F05-A16", "AI.F05-A18", "AI.F04-A06", "AI.F04-A07", "AI.F04-A11", "AI.F04-A12", "AI.F05-A01", "AI.F05-A02", "AI.F05-A03", "AI.F05-A04", "AI.F05-A05", "AI.F05-A06", "AI.F05-A07", "AI.F05-A08", "AI.F05-A09", "AI.F05-A17"]
 paths = ["programs/crates/layerx-programs-ai-market/src/aggregation.rs", "programs/tests/ai-market/run-aggregation-runtime.sh"]
 worker_role_id = "W-F05-FINALIZATION"
 
@@ -44409,4 +44413,93 @@ derived_from = []
 actual_test_functions = ["core_response_status_and_numeric_application_error_contract"]
 qualification = "UNRUN"
 evidence = "fe2d44ed4ab81fa26b0c233c5a98b126cd829b22+source:0cd239cce1e595fa7fd768d77535bc023a917df3713284a4a4994b517d4b1b09 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_codec | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm6/codec-qualification-01.log"
+
+
+[acceptance.AI.F05-CODEC-C01]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Exact worker output representation"
+scenario = "Actual WorkerAggregate checked constructors and encode_worker_aggregate/decode_worker_aggregate enforce the exact50-byte representation, nonzero worker/generation, support0..8, score/weight0..1000000 and unchanged QualityStatus tags. InsufficientQuorum has support below3 and absent quality with zero score/weight; ScoredZero retains present zero quality and quorum; ScoredPositive requires quorum and positive score equal to raw weight. Wrong status/support/score/weight combinations refuse. These values are structural fixtures and do not prove lower-median computation or live quorum admission."
+derived_from = ["AI.F05-A08", "AI.F05-A10"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C02]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Strict supplied roster and persisted report invariants"
+scenario = "Use actual common Roster/ReportBody/ScoreVector codecs and AggregationInputView::structural/persisted_report. Check supplied chain/program/market/epoch/config/roster digest, stable evaluator identities, grant/key versions, known workers and frozen generations. Duplicate evaluator identities or two-key attempts, unsorted/duplicate score vectors, score1000001, unknown identities, self identity and same declared owner refuse through real structural/F05_REPORT_INVARIANT paths. Validate malformed persisted rows before any runtime exclusion. Supplied structural facts establish no authenticated F03 admission, signature, commitment opening, evidence authority, deadline or revocation decision."
+derived_from = ["AI.F05-A10", "AI.F05-A11"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C03]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Canonical input commitment and arrival normalization"
+scenario = "Actual canonicalize_arrivals refuses duplicate stable identities and bounds rows at8 before normalization; strict persisted decoders never sort or repair input. Across all six permutations of three actual common report encodings, independently assembled canonical input preimages and domain-separated SHA256 roots agree for identical supplied bindings/seal height. Changed seal height or domain binding changes the input commitment. Strict input preimage decoding checks schema, count/order, mandatory IDs/digests, expected binding/root and trailing/truncated bytes within668 bytes. This proves canonical structure and hashing, not authenticated accepted-set provenance or arithmetic outputs."
+derived_from = ["AI.F05-A05"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C04]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Structural output root and checked totals"
+scenario = "Actual EpochAggregation::structural/encode_preimage and decode_epoch_preimage enforce canonical frozen-worker identity/generation order, complete output count, checked raw-weight total at most32000000, supplied input digest and exact domain-separated output root within1788 bytes. Independently assembled output preimages and SHA256 known answers agree; corruption, sum/ordering/count/binding/root mismatch refuses. Numerical records in this codec test are explicitly fixtures, with actual lower median/raw weights remaining T02 duties. A decoded output/root is neither a native terminal transition nor economic authority."
+derived_from = ["AI.F05-A05", "AI.F05-A08"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C05]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Bounded current aggregation framing"
+scenario = "Actual CurrentAggregation validation and encode_current/decode_current/DecodedCurrent::encode retain Unsealed/Processing/Terminal structural phases, immutable supplied seal/input/report digests, cursor/output count agreement, bounded support, checked running sum and exact optional-root invariants within2200 bytes. Validate current input commitments against actual common reports; refuse malformed phase/presence/cursor/sum/order/count/truncation/trailing and mismatched worker generation. Supplied origin checks use actual checked EpochWindows; no phase flag or supplied height authenticates a host seal/window, restart, replay receipt or atomic persistence."
+derived_from = ["AI.F05-A10"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C06]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Strict summary history and cross-record consistency"
+scenario = "Actual encode_history/decode_history preserve at most32 strictly increasing epoch summaries within3586 bytes, each binding config/roster/input/root without historical worker arrays or duplicate reports. validate_current_history checks same-epoch terminal summary equality and rejects future/nonterminal/conflicting history. Strict canonical field/order/count/truncation/trailing refusals remain intact. Structural summary consistency proves no finality, safe pruning, high-watermark, exactly-once history insertion, claim retention or payout completion."
+derived_from = ["AI.F05-A10"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C07]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Exact maxima and common framing budgets"
+scenario = "The real codec test builds actual common reports for32 workers and8 evaluators with256 explicit score cells, fixture total32000000 and strict maxima+1 refusals. Preserve all bounds: worker record50, input preimage668, output preimage1788, current2200, history3586 and F05 combined5786. Actual common full-state framing charges these bytes to the joint settlement section with81912 payload plus8-byte header, and enforces all six framed sections and196608 total. No independent section reservation, narrowed worker/evaluator cap, overflow fallback, numeric saturation or host resource-admission claim is introduced."
+derived_from = ["AI.F05-A08"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
+
+[acceptance.AI.F05-CODEC-C08]
+feature = "F05"
+task = "ai.F05-T01"
+kind = "stateless_structural_codec"
+title = "Canonical errors and no authority surrogate"
+scenario = "Exercise the unchanged actual shared schemas/reserved fields and frozen typed errors with malformed canonical input, unknown tags, zero required values, duplicate identity, unsorted persisted records, context mismatch and unavailable capacity. All source paths use actual C01 codecs/types/hash/error producers. Codec decode, structural(), retained phase flags and known-answer fixtures never create an accepted-report token or authorize F03 admission, native effects, reward/history mutation or finality. Preserve all refusal assertions in the authored aggregation_codec_contract function."
+derived_from = ["AI.F05-A10", "AI.F05-A11"]
+actual_test_function = "aggregation_codec_contract"
+qualification = "UNRUN"
+evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9ddc2a7953f7a62b20102b7bcb9f332bbd3a48fae2995c2 | cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test aggregation_contract aggregation_codec_contract -- --exact | 0 | /root/lx-ops/px26-ai-implementation-2026-10-08/fm8/codec-qualification-01.log"
 

@@ -4920,3 +4920,7 @@ text = "Codify work-open may time out before producing a packet. Record that too
 [gotcha.1053]
 date = "2026-10-08"
 text = "Large active KVX specifications expose quadratic parser entry lookup. A local indexed parser candidate passed ordered semantic parity and focused checks; use its explicit path for new task commands while retaining all graph and verification checks. Existing installed tools and already-passed gates remain unchanged."
+
+[gotcha.1054]
+date = "2026-10-08"
+text = "Large parsed KVX specifications also require indexed repeated lookups. The local persistent lookup candidate preserves semantic parity and passed 769 focused checks; its publication guard completed in 0.22 seconds. Retain all checks and never repeat already-passed behavior gates merely to record them."
