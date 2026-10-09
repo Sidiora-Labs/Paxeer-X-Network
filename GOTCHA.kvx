@@ -5270,3 +5270,7 @@ text = "layerx_sdk is not importable under pytest unless the test inserts agent/
 [gotcha.1137]
 area = "paxai-worker"
 text = "RewardState decoding needs exactly REWARD_STATE_BYTES, but after an epoch opening the F06 section also carries an F05 tail; fixtures must slice ..REWARD_STATE_BYTES and re-append the tail (the transport_identity fund helper decodes the whole section). Clippy pedantic struct_field_names refuses a field that starts with its struct name. The worker crate lacks layerx-proof and layerx-types dev-dependencies, so membership tests bind real FinalityEvidence, Head, IdentityEvidence and roster documents without a signed checkpoint-certificate fixture."
+
+[gotcha.1138]
+area = "paxai-worker"
+text = "Array-repeat patterns such as [0; 32] are not valid match patterns; use a guard (bytes if bytes == [0; 32]). Splicing the transport_identity fixture into a new test collides registry_ops::Outcome with the crate Outcome and a local customer binding shadows the customer() key fn; alias and rename. With fsync on every write the job_recovery gate takes about six minutes (160 durable submits plus 128 MiB queued payload). The ProcessRunner speaks the PAXRUN1 describe/dispatch/lookup/cancel protocol over PAXAI_RUNNER; without a provisioned runner the real-runner cases fail."

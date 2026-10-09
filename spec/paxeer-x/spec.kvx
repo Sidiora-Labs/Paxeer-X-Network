@@ -36245,7 +36245,7 @@ worker_role_id = "W-F08-RECOVERY"
 
 [task.ai.F02-T03]
 title = "Persist and reconcile real worker jobs"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 32
 requires = ["ai.F02-T02", "ai.F01-T04", "ai.P-REAL-SERVICES"]

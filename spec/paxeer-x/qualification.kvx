@@ -1069,3 +1069,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F08-T03-verify-1.log"
 observed = "11 membership recovery cases pass against the real F01/F02/F03/F06/F08 transitions and OpenEpoch openings bound through FinalizedAuthority; the durable store is a local fsync'd file with atomic rename and off-chain job reconciliation stays with F02-T03."
 assumption = "F02-T03 wires MembershipObserver::new_work/admitted_work ahead of job admission and runs job-store UNKNOWN reconciliation beside the retained unresolved replay result; a managed durable store waits on ai.P-REAL-SERVICES."
+
+[qualification.ai-f02-t03-job-persistence-20261009-01]
+revision = "67c629242"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test job_recovery -- --test-threads=1"
+exit_code = 101
+log = "private ops logs wt/logs/ai.F02-T03-verify-1.log"
+observed = "12 of 14 pass on the durable local store, fenced lease, UNKNOWN_EXECUTION reconciliation and late-result refusal; the two real-runner cases fail because no PAXRUN1 model runner executable is provisioned (PAXAI_RUNNER unset)."
+assumption = "ai.P-REAL-SERVICES provisions the runner, shared durable store, tenant and KMS; main.rs routing of Submit/Query/Cancel to JobService and the F01 task-acceptance reader feeding claim/dispatch are owed by the F02-T02 service owner."
