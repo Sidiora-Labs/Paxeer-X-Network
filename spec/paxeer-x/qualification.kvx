@@ -1029,3 +1029,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F10-T03-verify-2.log, build-1.log, clippy-6.log, checkpaxai-1.log"
 observed = "13 cases pass: planning, review, submission and journaled recovery of native AI market calls against the shared paxai-v1 schema with a --check-paxai contract check exiting 0; the first run failed on a test helper that sent sequence 1 for the object-local CLAIM."
 assumption = "Receipts bind to a checkpoint by network and sequence range only and ReadProof execution_height/batch_id are caller-supplied until an authenticating adapter exists; pipeline.kvx regeneration and the Makefile/CI wiring for --check-paxai are owed by FM-F10/FM-STORAGE and recorded, not run here."
+
+[qualification.ai-f07-t02-reputation-lifecycle-20261009-01]
+revision = "c591cee44"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test reputation_lifecycle"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F07-T02-verify-2.log, build-2.log, clippy-9.log"
+observed = "10 lifecycle cases pass (aggregation and history phases, identity continuity across generations, 32-epoch evaluator rotation); the first run exposed a WRONG_ROSTER at Finalize for a no-score epoch, fixed by rebuilding the roster from the pre-transition state."
+assumption = "Router arms epoch::aggregate (0x0501-0x0503) and epoch::history (0x0701-0x0703) plus epoch::carry_reputation around every non-F07 producer, and the F07 region allocation at CREATE, go to the FM-CORE router task; A02/A03 exact vectors, the u64::MAX generation and A12 native are printed NOT_RUN."

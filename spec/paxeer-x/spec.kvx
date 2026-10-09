@@ -36617,7 +36617,7 @@ worker_role_id = "W-F02-WORKLOAD"
 
 [task.ai.F07-T02]
 title = "Integrate reputation lifecycle and identity continuity"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F07-T01", "ai.F05-T03", "ai.F06-T03", "ai.F08-T02", "ai.T-C02"]
