@@ -17,6 +17,7 @@ members = [
     "hosted/indexer",
     "hosted/registry",
     "hosted/webhooks",
+    "hosted/paxai-worker",
     "hosted/dashboard",
     "hosted/testnet",
     "hosted/feeder",

@@ -1,0 +1,29 @@
+[package]
+name = "layerx-paxai-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "layerx-paxai-worker"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek.workspace = true
+layerx-client.workspace = true
+layerx-programs-ai-market = { path = "../../../programs/crates/layerx-programs-ai-market" }
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+rcgen = "=0.14.10"
+
+[lints]
+workspace = true
