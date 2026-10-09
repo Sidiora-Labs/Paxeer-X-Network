@@ -36709,6 +36709,35 @@ acceptance_cases = ["AI.STORAGE-A04"]
 paths = ["tests/programs/test_paxai_storage_continuity.c", "Makefile"]
 worker_role_id = "W-STORAGE-CONTINUITY"
 
+[task.ai.T-S05-NATIVE-GAPS]
+title = "Close the native storage gaps the continuity harness exposed: v5 retirement scope, reservation-aware prepare_commit, capacity capability in node info, daemon module pin"
+status = "in_progress"
+mode = "BUILD"
+wave = 33
+requires = ["ai.T-S04", "ai.T-C02-ABI5"]
+reqs = ["AI.STORAGE"]
+do_1 = "programs_module_registration_v5 in src/modules/programs/registration.c registers activity_types_v4, which lacks LX_PROGRAMS_STORAGE_RETIREMENT (0x0009000B), so a retirement activity under module 5 is refused at authority resolution with AUTH_SCOPE (-204). Add the v5 activity list carrying every v4 activity plus STORAGE_RETIREMENT, register it under module 5 exactly as the v4 storage-retirement registration does for module 4, and keep every module 1-4 registration byte-identical."
+do_2 = "lxp_module_ctx_prepare_commit in src/protocol/lxp_module_ctx.c re-checks only the kernel blob and KV totals and ignores open capacity reservations, so a commit can exceed the reserved capacity. Re-check the open reservations of the committing context against the capacity the kernel granted, refusing with the existing capacity refusal code and leaving the staged slots untouched on refusal; no new refusal codes, no widening of any existing bound."
+do_3 = "send_node_info in cmd/layerxd/lxp_daemon_lni.c advertises no capacity capability, and the daemon pins the programs module version in cmd/layerxd/lxp_daemon_lni.c and cmd/layerxd/lxp_daemon_process.c. Advertise the capacity capability with the real granted capacity figures from the kernel, and make the module pin follow the highest registered programs module (5 once ai.T-C02-ABI5 registration is linked) without changing the pinned value for builds that register only module 4."
+do_4 = "Add tests/programs/test_paxai_native_gaps.c on the real native harness pattern of tests/programs/test_paxai_storage_continuity.c: module-5 retirement activity resolves and applies; a commit above open reservations is refused and the staged slots survive; NODE_INFO carries the capacity capability with the granted figures; the daemon module pin equals the highest registered module. Add the Makefile build and test targets beside the continuity ones. Finish the entire implementation first; then format touched files, run build_cmd once and verify_cmd once, at most two task-scoped repair cycles; record unrelated failures once."
+manager = "FM-STORAGE"
+worker_role = "native storage and kernel capacity specialist"
+worker = "W-STORAGE-NATIVE-GAPS"
+deliverables = ["Module-5 activity registration carrying STORAGE_RETIREMENT with modules 1-4 unchanged.", "Reservation-aware prepare_commit with the existing capacity refusal.", "Capacity capability in NODE_INFO and a module pin that follows the highest registered module.", "Native harness test and Makefile targets with the focused gate passing."]
+entry_condition = "ai.T-S04 landed with the continuity harness recording these four gaps; ai.T-C02-ABI5 landed programs_module_registration_v5."
+touches = ["src/modules/programs/registration.c", "include/layerx/programs.h", "src/protocol/lxp_module_ctx.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_process.c", "tests/programs/test_paxai_native_gaps.c", "Makefile"]
+build_cmd = "make build/tests/lxp_test_paxai_native_gaps"
+verify_cmd = "make test-paxai-native-gaps"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+acceptance_cases = ["AI.STORAGE-A04"]
+paths = ["src/modules/programs/registration.c", "include/layerx/programs.h", "src/protocol/lxp_module_ctx.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_process.c", "tests/programs/test_paxai_native_gaps.c", "Makefile"]
+worker_role_id = "W-STORAGE-NATIVE-GAPS"
+local_wave = 5
+
 [task.ai.F06-T04]
 title = "Qualify reward finality recovery and capacity"
 status = "implemented"
