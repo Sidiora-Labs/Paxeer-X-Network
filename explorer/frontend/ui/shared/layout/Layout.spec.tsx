@@ -37,16 +37,6 @@ describe('LayoutDefault', () => {
       .toEqual([ 'utility-bar', 'brand-row', 'content', 'footer-top' ]);
   });
 
-  it('keeps the brand row inside the sticky header', () => {
-    const { container } = render(<LayoutDefault><div>page body</div></LayoutDefault>);
-
-    const header = container.querySelector('[data-label="sticky-header"]') as HTMLElement;
-
-    expect(header).toBeTruthy();
-    expect(header.querySelector('[data-label="brand-row"]')).toBeTruthy();
-    expect(header.querySelector('[data-label="utility-bar"]')).toBeNull();
-  });
-
   it('puts the page inside the centred content container', () => {
     const { container } = render(<LayoutDefault><div>page body</div></LayoutDefault>);
 

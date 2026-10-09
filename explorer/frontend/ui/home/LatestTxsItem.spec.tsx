@@ -49,4 +49,29 @@ describe('LatestTxsItem', () => {
     expect(value.textContent).toContain('ETH');
     expect(value.textContent).toContain('Fee');
   });
+
+  it('stacks the time and the tags under the hash instead of giving the tags a column', () => {
+    const { container } = render(<LatestTxsItem tx={ txMock.base }/>);
+
+    const row = container.querySelector(`[data-latest-tx="${ txMock.base.hash }"]`) as HTMLElement;
+    const columns = Array.from(row.children);
+    const hashColumn = columns.find((column) => column.querySelector(`a[href="/tx/${ txMock.base.hash }"]`)) as HTMLElement;
+    const tags = hashColumn.querySelector('[data-label="tx-tags"]') as HTMLElement;
+
+    expect(tags).not.toBeNull();
+    expect(tags.parentElement?.children.length).toBeGreaterThan(1);
+    expect(columns.map((column) => column.getAttribute('data-label'))).not.toContain('tx-tags');
+  });
+
+  it('follows the hash with the parties and then the value as their own columns', () => {
+    const { container } = render(<LatestTxsItem tx={ txMock.base }/>);
+
+    const row = container.querySelector(`[data-latest-tx="${ txMock.base.hash }"]`) as HTMLElement;
+    const columns = Array.from(row.children);
+    const labels = columns.map((column) => column.getAttribute('data-label'));
+    const hashIndex = columns.findIndex((column) => column.querySelector(`a[href="/tx/${ txMock.base.hash }"]`));
+
+    expect(labels.indexOf('tx-parties')).toBe(hashIndex + 1);
+    expect(labels.indexOf('tx-value')).toBe(hashIndex + 2);
+  });
 });
