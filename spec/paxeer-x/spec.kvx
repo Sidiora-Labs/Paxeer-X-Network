@@ -36524,7 +36524,7 @@ worker_role_id = "W-F03-HOST"
 
 [task.ai.F06-T03]
 title = "Integrate real account funding and reward claims"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F06-T02", "ai.F05-T03", "ai.T-C03"]

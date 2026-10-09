@@ -949,3 +949,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F01-T03-CLOSE-verify-{1,2}.log, build-2.log, clippy-4.log"
 observed = "Seven boundary cases pass (claim and expiry close paths with exact ledger counters and no second payout, wind-down waits on reserved epochs and unsealed task sets, byte-exact resume with STALE_CURSOR, Closed refuses CREATE, exact retries retained); REQUEST_CLOSE/ADVANCE_CLOSE run through closure::apply because 0x010A/0x010B are not yet routed, and rollback after a failed native transfer waits on the F06 transfer seam and the native host."
 assumption = "FM-CORE adds the reported 0x010A/0x010B arm and SCRATCH_BYTES union in the router integration task and stages the Payout effect atomically with the committed state; native rollback is witnessed under ai.F10-T02-FULL once the host path clears."
+
+[qualification.ai-f06-t03-rewards-native-20261009-01]
+revision = "6b75377d0"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native reward_conservation_authority_and_rollback -- --exact"
+exit_code = 101
+log = "private ops logs wt/logs/ai.F06-T03-verify-{1,2,3}.log, build-1.log, clippy-5.log"
+observed = "The in-process reward journey (fund, allocate 58/43, claim, expiry release, closing refunds to D=P+X, prune) and the forged-ledger A15 refusal pass with conservation F+R+C == held and cover 0 at every step; the single native Fund part stops at the missing host-boundary manifest in this worktree and would next refuse UNKNOWN_OPERATION because 0x0601-0x0605 are unrouted, then need ABI 5 admission and the Transfer402/ProgramSpend/BalanceView grants."
+assumption = "Held at implemented; the FM-CORE router task adds the reported arm and removes 0x0601-0x0605 from the host_boundary unknown-selector list, and the native Fund witness re-runs once ai.T-C02-FUEL, ai.T-C02-ACCOUNTS-V5 and ai.T-C02-ARTIFACT-READ clear the host path."
