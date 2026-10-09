@@ -12,6 +12,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
   alias Explorer.Chain
   alias Explorer.Chain.{Block, Hash}
   alias Explorer.Chain.PaxeerX.UnifiedAccount
+  alias Phoenix.Token
 
   action_fallback(BlockScoutWeb.API.V2.FallbackController)
 
@@ -112,7 +113,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
             page: page,
             snapshot: snapshot
           } = state} <-
-           Phoenix.Token.verify(conn, @cursor_salt, cursor, max_age: @cursor_max_age),
+           Token.verify(conn, @cursor_salt, cursor, max_age: @cursor_max_age),
          true <- account == to_string(address_hash) and kernel == kernel_account,
          true <- valid_key?(after_key) and valid_key?(first) and is_integer(page) and page > 0,
          true <- is_integer(snapshot) and snapshot <= System.system_time(:microsecond),
@@ -166,12 +167,11 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountController do
   defp anchor_valid?(nil), do: true
 
   defp anchor_valid?(value) do
-    with {:ok, hash} <- Hash.Full.cast(value) do
-      not is_nil(Chain.select_repo(@api_true).get_by(Block, hash: hash, consensus: true))
-    else
+    case Hash.Full.cast(value) do
+      {:ok, hash} -> not is_nil(Chain.select_repo(@api_true).get_by(Block, hash: hash, consensus: true))
       _ -> false
     end
   end
 
-  defp sign_cursor(conn, state), do: Phoenix.Token.sign(conn, @cursor_salt, state)
+  defp sign_cursor(conn, state), do: Token.sign(conn, @cursor_salt, state)
 end

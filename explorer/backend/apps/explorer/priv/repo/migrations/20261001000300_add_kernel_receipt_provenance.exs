@@ -77,7 +77,13 @@ defmodule Explorer.Repo.Migrations.AddKernelReceiptProvenance do
     execute("DELETE FROM lx_receipts WHERE origin <> 'evm'")
 
     drop(index(:lx_receipts, [:origin]))
-    drop(index(:lx_receipts, [:kernel_batch_number, :kernel_sequence], name: :lx_receipts_kernel_batch_number_kernel_sequence_index))
+
+    drop(
+      index(:lx_receipts, [:kernel_batch_number, :kernel_sequence],
+        name: :lx_receipts_kernel_batch_number_kernel_sequence_index
+      )
+    )
+
     drop(index(:lx_receipts, [:transaction_hash, :log_index], name: :lx_receipts_transaction_hash_log_index_index))
     drop(constraint(:lx_receipts, :lx_receipts_origin_fields))
     drop(constraint(:lx_receipts, :lx_receipts_origin_check))

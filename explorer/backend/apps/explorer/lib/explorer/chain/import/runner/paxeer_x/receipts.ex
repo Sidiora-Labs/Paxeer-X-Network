@@ -126,11 +126,17 @@ defmodule Explorer.Chain.Import.Runner.PaxeerX.Receipts do
         on_conflict: :nothing
       )
 
-    fields = ~w(origin receipt_id account payload_hash status kernel_batch_number kernel_batch_id kernel_sequence kernel_activity_id kernel_result_code kernel_receipt_sha256 kernel_canonical_sha256 kernel_batch_raw_sha256 kernel_state_root kernel_proof kernel_verification)a
-    consistent = Enum.all?(ordered_changes_list, fn row ->
-      existing = repo.get_by!(Receipt, kernel_batch_number: row.kernel_batch_number, kernel_sequence: row.kernel_sequence)
-      Enum.all?(fields, fn field -> Map.get(existing, field) == Map.get(row, field) end)
-    end)
+    fields =
+      ~w(origin receipt_id account payload_hash status kernel_batch_number kernel_batch_id kernel_sequence kernel_activity_id kernel_result_code kernel_receipt_sha256 kernel_canonical_sha256 kernel_batch_raw_sha256 kernel_state_root kernel_proof kernel_verification)a
+
+    consistent =
+      Enum.all?(ordered_changes_list, fn row ->
+        existing =
+          repo.get_by!(Receipt, kernel_batch_number: row.kernel_batch_number, kernel_sequence: row.kernel_sequence)
+
+        Enum.all?(fields, fn field -> Map.get(existing, field) == Map.get(row, field) end)
+      end)
+
     if consistent, do: {:ok, inserted}, else: {:error, :kernel_receipt_conflict}
   end
 

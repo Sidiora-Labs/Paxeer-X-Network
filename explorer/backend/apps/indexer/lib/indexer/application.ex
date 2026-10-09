@@ -65,14 +65,14 @@ defmodule Indexer.Application do
       {FirstTraceOnDemand.Supervisor, [json_rpc_named_arguments]}
     ]
 
-    children =
+    indexer_children =
       if Application.get_env(:indexer, Indexer.Supervisor)[:enabled] do
         Enum.reverse([{Indexer.Supervisor, [%{memory_monitor: memory_monitor_name}]} | base_children])
       else
         base_children
       end
 
-    children = children ++ paxeer_x_kernel_receipts_children()
+    children = indexer_children ++ paxeer_x_kernel_receipts_children()
 
     opts = [
       # If the `Memory.Monitor` dies, it needs all the `Shrinkable`s to re-register, so restart them.
