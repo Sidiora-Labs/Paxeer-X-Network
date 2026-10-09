@@ -35997,7 +35997,7 @@ worker_role_id = "W-F06-STATE"
 
 [task.ai.F10-T04]
 title = "Implement TypeScript AI market client"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F10-T03"]

@@ -1037,3 +1037,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F07-T02-verify-2.log, build-2.log, clippy-9.log"
 observed = "10 lifecycle cases pass (aggregation and history phases, identity continuity across generations, 32-epoch evaluator rotation); the first run exposed a WRONG_ROSTER at Finalize for a no-score epoch, fixed by rebuilding the roster from the pre-transition state."
 assumption = "Router arms epoch::aggregate (0x0501-0x0503) and epoch::history (0x0701-0x0703) plus epoch::carry_reputation around every non-F07 producer, and the F07 region allocation at CREATE, go to the FM-CORE router task; A02/A03 exact vectors, the u64::MAX generation and A12 native are printed NOT_RUN."
+
+[qualification.ai-f10-t04-typescript-client-20261009-01]
+revision = "eae152f8e"
+command = "node agent/sdk/typescript/dist/test/ai-market.test.js"
+exit_code = 1
+log = "private ops logs wt/logs/ai.F10-T04-verify-2.log, build-3.log"
+observed = "19 of 21 pass on the real ProgramOperations and transport path (snapshots, pagination, absence, lost ack to unknown, exact resend, interrupted submit, expiry, corrupt records, no re-signing); the two A07 flows fail at prepare because the SDK native call codec and generated supportsProgramGuestAbi refuse guest ABI 5."
+assumption = "ABI 5 admission belongs to the generated contracts and verifiers across TS and Python (leader task ai.F10-T08-SDK-ABI5); the A08 executed and finalized branches wait on an ABI 5 sequencer-signed receipt and checkpoint fixture; FUND and CLAIM recipient previews wait on the gateway serving funding asset, rewards account, owner and refund principals."
