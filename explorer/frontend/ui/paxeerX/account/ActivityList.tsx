@@ -39,10 +39,18 @@ const ActivityList = ({ items, isLoading, page, total, hasNextPage, canGoBackwar
     />
   );
 
+  let title: string;
+  if (isLoading) {
+    title = 'Loading activity entries…';
+  } else if (total !== null) {
+    title = `A total of ${ total } activity entries found`;
+  } else {
+    title = `${ items.length } activity entries on this page`;
+  }
+
   return (
     <ScanTableCard
-      title={ isLoading ? 'Loading activity entries…' : total !== null ?
-        `A total of ${ total } activity entries found` : `${ items.length } activity entries on this page` }
+      title={ title }
       note="Chain-side and kernel-side entries in one feed, newest first"
       pagination={ paginationNode }
 

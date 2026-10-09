@@ -133,17 +133,34 @@ const PaxeerXAccountPageContent = () => {
     if (!next || accountQuery.isFetching) {
       return;
     }
+    // Browser back/forward remains available when session storage is unavailable.
     try {
       sessionStorage.setItem(previousKey(next), cursor || accountQuery.data?.page_cursor || '');
-    } catch {
-      // Browser back/forward remains available when session storage is unavailable.
-    }
+    } catch {}
     navigate(next);
   }, [ accountQuery.data, accountQuery.isFetching, cursor, navigate, previousKey ]);
 
   const handleTabChange = React.useCallback((value: string) => {
     router.push({ pathname: router.pathname, query: { ...router.query, tab: value } }, undefined, { shallow: true });
   }, [ router ]);
+
+  const handlePrevPage = React.useCallback(() => {
+    if (previousCursor) {
+      navigate(previousCursor);
+    }
+  }, [ navigate, previousCursor ]);
+
+  const handleResetPage = React.useCallback(() => {
+    navigate(accountQuery.data?.first_page_cursor);
+  }, [ accountQuery.data, navigate ]);
+
+  const handleRetry = React.useCallback(() => {
+    accountQuery.refetch();
+  }, [ accountQuery ]);
+
+  const handleStartOver = React.useCallback(() => {
+    navigate(undefined);
+  }, [ navigate ]);
 
   const isLoading = !malformedCursor && (accountQuery.isPlaceholderData || accountQuery.isPending || accountQuery.isFetching);
   const capabilities = capabilitiesQuery.data;
@@ -244,8 +261,8 @@ const PaxeerXAccountPageContent = () => {
       component: <ActivityList items={ data.activity } isLoading={ isLoading }
         page={ data.page_number } total={ data.activity_total } hasNextPage={ Boolean(data.next_page_params) }
         canGoBackwards={ Boolean(previousCursor) } onNextPageClick={ handleNextPage }
-        onPrevPageClick={ () => previousCursor && navigate(previousCursor) }
-        resetPage={ () => navigate(data.first_page_cursor) }/>,
+        onPrevPageClick={ handlePrevPage }
+        resetPage={ handleResetPage }/>,
     },
   ] : [];
 
@@ -279,8 +296,8 @@ const PaxeerXAccountPageContent = () => {
       { malformedCursor || accountQuery.isError || !data ? (
         <Box role="alert">
           <Text>Unable to load this history page. Its cursor may be invalid, expired, or refer to a changed account or chain snapshot.</Text>
-          <Button onClick={ () => accountQuery.refetch() } disabled={ malformedCursor || accountQuery.isFetching }>Retry this page</Button>
-          <Button onClick={ () => navigate(undefined) }>Start a new history view</Button>
+          <Button onClick={ handleRetry } disabled={ malformedCursor || accountQuery.isFetching }>Retry this page</Button>
+          <Button onClick={ handleStartOver }>Start a new history view</Button>
         </Box>
       ) : (
         <>

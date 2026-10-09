@@ -138,7 +138,9 @@ const ReceiptContent = ({ id, chainId }: { id: string; chainId?: string }) => {
         clearTimeout(deadline);
         if (!stopped && !terminal(latest.current?.data)) {
           const delay = Math.min(MAX_RETRY_INTERVAL, REFRESH_INTERVAL * (2 ** Math.min(failures, 3)));
-          scheduled = setTimeout(() => { void refresh(); }, delay);
+          scheduled = setTimeout(() => {
+            void refresh();
+          }, delay);
         }
       }
     };
@@ -163,10 +165,20 @@ const ReceiptContent = ({ id, chainId }: { id: string; chainId?: string }) => {
 
   const data = evidence?.data;
   const isLoading = !data && !problem;
+  let freshnessState: 'current' | 'refreshing' | 'stale' | 'paused' | 'complete';
+  if (problem || !availability.online) {
+    freshnessState = 'stale';
+  } else if (isTerminal) {
+    freshnessState = 'complete';
+  } else if (!availability.visible) {
+    freshnessState = 'paused';
+  } else if (receiptQuery.isFetching) {
+    freshnessState = 'refreshing';
+  } else {
+    freshnessState = 'current';
+  }
   const freshness = {
-    state: problem || !availability.online ? 'stale' as const :
-      isTerminal ? 'complete' as const : !availability.visible ? 'paused' as const :
-        receiptQuery.isFetching ? 'refreshing' as const : 'current' as const,
+    state: freshnessState,
     checkedAt: evidence?.receivedAt,
     message: !availability.online ? 'Offline. Retaining the last indexed evidence.' : problem,
   };
