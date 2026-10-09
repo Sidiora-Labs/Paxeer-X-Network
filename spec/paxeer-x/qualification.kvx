@@ -989,3 +989,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.T-C02-ACCOUNTS-V5-verify-1.log (11 passed), build-2.log"
 observed = "Eleven admission cases pass on the real kernel: the ABI 1 to 6 validation matrix under OCCUPANCY and STATE_COMMITMENT for module and guest validation, a v5-first lifecycle (DEPLOY, ACCOUNT register, LXPA2 opt-in, UPGRADE to 5, guest_validate, direct ABI 5 deploy), ABI 6 refused without a program record, the ABI 4 protocol rule preserved, and ledger admission binding under v4 and v5 with CONTEXT_MISMATCH on rebind; the host-boundary harness now registers v5 up front but was not run."
 assumption = "The daemon's hardcoded ABI 4 module version in lxp_daemon_lni.c and lxp_daemon_process.c and the genesis-table registration are deployment activation steps recorded under ai.P-DEPLOYMENT; the host-boundary gate re-runs once ai.T-C02-FUEL and ai.T-C02-ARTIFACT-READ land."
+
+[qualification.ai-t-c02-artifact-read-20261009-01]
+revision = "6c48328e3"
+command = "make test-program-artifacts"
+exit_code = 0
+log = "private ops logs wt/logs/ai.T-C02-ARTIFACT-READ-verify-{1,2,3}.log, build-1.log"
+observed = "Artifact resolution per call activity drops from once per byte (385,742 SHA-256 passes for the AI market guest, times the catalog entries) to one per root walk, catalog entry, interface and storage namespace, proven through the bound activity's own ctx by deleting the manifest after the first byte and serving every remaining byte exactly; the hash check, TRUNCATED and UNKNOWN_FIELD ends, no cross-call caching and release on commit or rollback are asserted; both earlier runs failed on fixtures only (staged-blob limit, legacy-protocol UNKNOWN_FIELD)."
+assumption = "The native host-boundary gate is re-run under ai.T-C02-ABI5 once ai.T-C02-FUEL lands, at which point each CALL should complete in seconds instead of ~25 minutes."

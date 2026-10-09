@@ -35396,7 +35396,7 @@ worker_role_id = "W-CORE-HOST"
 
 [task.ai.T-C02-ARTIFACT-READ]
 title = "Open program artifacts once per call instead of once per byte"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 28
 requires = ["ai.T-C02-ABI5"]
