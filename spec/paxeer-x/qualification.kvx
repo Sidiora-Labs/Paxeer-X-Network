@@ -1005,3 +1005,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.F06-T04-verify-3.log, clippy-3.log"
 observed = "The four in-process scenarios (lost Fund recovery, idempotent resubmit, 32-epoch retention with prune at the 33rd reserve, R18/R22 terminalization) pass; the native half stops at the absent harness manifest and would next hit unrouted 0x0601-0x0605, the missing Transfer402/ProgramSpend/BalanceView harness grants and the CPU fuel cap."
 assumption = "Held at implemented until the FM-CORE router task routes F06 and ai.T-C02-FUEL lands; terminalization is driven directly because F05 0x0501-0x0503 are unrouted."
+
+[qualification.ai-f03-t04-evaluator-host-20261009-01]
+revision = "97013359c"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_host"
+exit_code = 101
+log = "private ops logs wt/logs/ai.F03-T04-verify-1.log, clippy-2.log, mk-1.log"
+observed = "12 of 17 pass through the real router (A01/A02/A04 bounds/A05 chain/A07/A08/A09/A10/A12/A14 retransmit/A15/A16); 4 fail on spec-versus-code refusal codes (780 vs 2, 778 unreachable behind payload_min, 3 vs 4/5, 775 vs 20) left intact in both code and test; the native CREATE returns -3 after ~40 minutes under the CPU fuel cap."
+assumption = "The four code conflicts need a spec ruling, not a repair; the native case re-runs after ai.T-C02-FUEL lands and the evaluator arm's aggregate_sealed derivation goes into the FM-CORE router task."

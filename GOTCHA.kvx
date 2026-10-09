@@ -5238,3 +5238,7 @@ text = "A module ctx can stage at most 4 blobs (LXP_KERNEL_MAX_STAGED_BLOBS); ev
 [gotcha.1129]
 area = "programs-ai-market"
 text = "The F08 enrollment window admits 4 successful admissions per epoch counting workers and evaluators together and resets only at OPEN_EPOCH, so a fixture with 2 workers and 3 evaluators must open its first epoch with one worker and enroll the second afterwards; retained_epochs counts completed rows (rises at terminalize, not reserve) and the 33rd reserve prunes the oldest prunable completed row; a crate test target that includes a native ABI 5 CALL takes ~40 minutes for that case alone until the fuel cap lands; the native harness manifest must exist (make paxai-host-boundary-build) before any native case runs."
+
+[gotcha.1130]
+area = "programs-ai-market"
+text = "Four F03 refusal codes in the spec are unreachable or shadowed through the envelope: unsorted/duplicate score vectors return NON_CANONICAL (2) not F03_NONCANONICAL_VECTOR (780); an empty vector is refused NON_CANONICAL by the reveal payload_min (364 bytes) before F03_NO_SCORES (778) is checked; a changed program or market returns WRONG_PROGRAM (4) / WRONG_MARKET (5) not WRONG_DOMAIN (3); a different digest on a final slot returns CONFLICT (20) because the existing-report check precedes F03_REPORT_ALREADY_FINAL (775). Also the dispatch::route evaluator arm passes aggregate_sealed=false unconditionally and F03-A16 'suspension still allows commit' contradicts F04's F08_MARKET_PAUSED refusal; both left intact and recorded."

@@ -36493,7 +36493,7 @@ worker_role_id = "W-F05-FINALIZATION"
 
 [task.ai.F03-T04]
 title = "Qualify evaluator ordering on the real host"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F03-T03", "ai.F05-T03", "ai.T-C03"]
