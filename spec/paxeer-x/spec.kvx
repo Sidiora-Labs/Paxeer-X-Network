@@ -36057,6 +36057,37 @@ acceptance_cases = ["AI.F10-A01", "AI.F10-A03", "AI.F10-A04", "AI.F10-A07", "AI.
 paths = ["agent/sdk/python/layerx_sdk/ai_market.py", "tests/agent/sdk/python/test_ai_market.py"]
 worker_role_id = "W-F10-PYTHON"
 
+[task.ai.F10-T08-SDK-ABI5]
+title = "Admit guest ABI 5 across the shared SDK contracts and wire the paxai schema check"
+status = "in_progress"
+mode = "BUILD"
+wave = 31
+requires = ["ai.F10-T03"]
+reqs = ["AI.F10-R005", "AI.F10-R006", "AI.F10-R007", "AI.F10-R010", "AI.F10-R012", "AI.F10-R018", "AI.F10-R019", "AI.F10-R022", "AI.F10-R023", "AI.F10-R030", "AI.CORE"]
+do_1 = "The frozen paxai schema (platform/sdk/schema/paxai-v1.kvx guest_abi = 5) and the canonical policy programs/sdk/rust/src/abi_policy.rs admit ABI_V5_VERSION, but agent/schema/agent-api/programs.kvx type.ProgramGuestAbi lists four wire values, platform/sdk/generators/src/main.rs pins program_abis to [u16; 4] and renders four constants per language, and every generated receipt contract (Rust receipt_generated.rs, TypeScript generated/receipt.ts, Python generated/receipt.py and .pyi, Go, JVM, Swift, .NET) therefore refuses 5. Extend the schema wire values and the generator to the five canonical versions, regenerate every language contract through the generator write mode (never hand-edit generated output), and keep the drift and provenance checks exact."
+do_2 = "Admit ABI 5 in the hand-written consumers with the runtime's real rules taken from src/modules/programs/call.c, src/modules/programs/registration.c (programs_module_registration_v5) and the Rust client path agent/crates/layerx-client that already executes ABI 5 calls: TypeScript native-program-call.ts (NativeProgramCall/NativeProgramCallV1 guestAbi types, encode, decode), verifier.ts (supportedProgramGuestAbi, programsModuleVersionForProtocol and the v5 receipt outcome path), programs.ts (NativeProgramRequestV1, execution evidence), and Python native_program_call.py/.pyi (encode, decode, native_guest_abi_for_protocol), programs.py (_execution module_version/guest_abi checks), program_lifecycle.py. Protocol-version and module-version pairing for ABI 5 must match the runtime exactly; no widening for ABI 1-4."
+do_3 = "Export the AI market client from agent/sdk/typescript/src/index.ts and agent/sdk/python/layerx_sdk/__init__.py/__init__.pyi alongside the existing surface; regenerate platform/sdk/pipeline.kvx for the paxai contract; wire the generator --check-paxai arm into the Makefile platform-sdk-check target as one added line (FM-STORAGE serializes the Makefile; expect a union with ai.T-S04 on landing). Add one TypeScript test and one Python test that encode, decode and verify an ABI 5 native call and receipt outcome against real fixtures, and extend the generator drift test to the fifth version."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
+manager = "FM-F10"
+worker_role = "finalized views and SDK specialist"
+worker = "W-F10-T08"
+deliverables = ["Schema, generator and every generated receipt contract admitting the five canonical guest ABI versions with drift checks exact.", "TypeScript and Python native call codecs, verifiers and execution evidence admitting ABI 5 under the runtime's protocol and module pairing, with the AI market clients exported.", "Complete owned paths and runnable focused gate: the generator check, the TypeScript ai-market test and the Python ai_market test all passing.", "Exact revision, command, exit code and access-controlled log reference; qualification remains UNRUN until actual success."]
+entry_condition = "ai.F10-T03 landed with the frozen paxai schema; ai.F10-T04 and ai.F10-T07 are held at implemented with their A07 cases failing only on ABI 5 refusal in the SDK codecs."
+touches = ["agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs", "platform/sdk/pipeline.kvx", "agent/crates/layerx-sdk/src/receipt_generated.rs", "agent/sdk/typescript/src/generated/receipt.ts", "agent/sdk/typescript/src/native-program-call.ts", "agent/sdk/typescript/src/verifier.ts", "agent/sdk/typescript/src/programs.ts", "agent/sdk/typescript/src/index.ts", "agent/sdk/typescript/test/native-abi5.test.ts", "agent/sdk/typescript/package.json", "agent/sdk/python/layerx_sdk/generated/receipt.py", "agent/sdk/python/layerx_sdk/generated/receipt.pyi", "agent/sdk/python/layerx_sdk/native_program_call.py", "agent/sdk/python/layerx_sdk/native_program_call.pyi", "agent/sdk/python/layerx_sdk/programs.py", "agent/sdk/python/layerx_sdk/program_lifecycle.py", "agent/sdk/python/layerx_sdk/__init__.py", "agent/sdk/python/layerx_sdk/__init__.pyi", "tests/agent/sdk/python/test_native_abi5.py", "platform/sdk/go", "platform/sdk/jvm", "platform/sdk/swift", "platform/sdk/dotnet", "Makefile"]
+build_cmd = "cargo build --manifest-path platform/sdk/generators/Cargo.toml --locked && (cd agent/sdk/typescript && npm run build) && python3 -m compileall -q agent/sdk/python/layerx_sdk"
+verify_cmd = "cargo run --manifest-path platform/sdk/generators/Cargo.toml --locked -- --check . && cargo run --manifest-path platform/sdk/generators/Cargo.toml --locked -- --check-paxai . && node agent/sdk/typescript/dist/test/native-abi5.test.js && node agent/sdk/typescript/dist/test/ai-market.test.js && python3 -m pytest -q tests/agent/sdk/python/test_native_abi5.py tests/agent/sdk/python/test_ai_market.py"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+local_wave = 8
+acceptance_cases = ["AI.F10-A07", "AI.F10-A08"]
+paths = ["agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs", "platform/sdk/pipeline.kvx", "agent/crates/layerx-sdk/src/receipt_generated.rs", "agent/sdk/typescript/src/generated/receipt.ts", "agent/sdk/typescript/src/native-program-call.ts", "agent/sdk/typescript/src/verifier.ts", "agent/sdk/typescript/src/programs.ts", "agent/sdk/typescript/src/index.ts", "agent/sdk/typescript/test/native-abi5.test.ts", "agent/sdk/typescript/package.json", "agent/sdk/python/layerx_sdk/generated/receipt.py", "agent/sdk/python/layerx_sdk/generated/receipt.pyi", "agent/sdk/python/layerx_sdk/native_program_call.py", "agent/sdk/python/layerx_sdk/native_program_call.pyi", "agent/sdk/python/layerx_sdk/programs.py", "agent/sdk/python/layerx_sdk/program_lifecycle.py", "agent/sdk/python/layerx_sdk/__init__.py", "agent/sdk/python/layerx_sdk/__init__.pyi", "tests/agent/sdk/python/test_native_abi5.py", "platform/sdk/go", "platform/sdk/jvm", "platform/sdk/swift", "platform/sdk/dotnet", "Makefile"]
+worker_role_id = "W-F10-SDK"
+
 [task.ai.F08-T02]
 title = "Implement complete pure roster rollover"
 status = "done"
