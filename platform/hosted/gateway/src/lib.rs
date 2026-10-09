@@ -2,6 +2,7 @@
 
 pub use layerx_proof::inclusion::SequencerAuthorization;
 
+pub mod ai_views;
 pub mod authority_evidence;
 pub mod evm;
 pub mod explorer_target;

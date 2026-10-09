@@ -18,6 +18,7 @@ ed25519-dalek.workspace = true
 getrandom.workspace = true
 layerx-proof.workspace = true
 layerx-crypto = { path = "../../../agent/crates/layerx-crypto" }
+layerx-indexer = { path = "../indexer" }
 layerx-types = { path = "../../../agent/crates/layerx-types" }
 layerx-wire = { path = "../../../agent/crates/layerx-wire" }
 layerx-programs-runtime = { path = "../../../programs/crates/layerx-programs-runtime" }

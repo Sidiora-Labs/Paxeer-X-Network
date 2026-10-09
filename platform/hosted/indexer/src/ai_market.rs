@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-use layerx_proof::checkpoint::{verify_certificate, Certificate, GuarantorKey, SettlementDomain};
 use layerx_programs_ai_market::{
     codec,
     errors::{
@@ -21,13 +20,13 @@ use layerx_programs_ai_market::{
     },
     queries::{
         self, CaptureFacts, CursorKey, CursorScope, FinalityEvidence, QueryError, ReadProof,
-        RewardField, ScoreField, ScoreStatus, SnapshotBinding, BINDING_MAX_BYTES,
-        CURSOR_LIFETIME_MS, CURSOR_MAX_BYTES, CURSOR_TOKEN_BYTES, FINALIZED_RANK, PAGE_MAX_BYTES,
-        PAGE_MAX_ROWS,
+        RewardField, ScoreField, BINDING_MAX_BYTES, CURSOR_LIFETIME_MS, CURSOR_MAX_BYTES,
+        CURSOR_TOKEN_BYTES, FINALIZED_RANK, PAGE_MAX_BYTES, PAGE_MAX_ROWS,
     },
-    types::{ChainDomain, Digest32, MarketId, Presence, PrincipalId, ProgramId, StateDigest},
+    types::{ChainDomain, Digest32, MarketId, PrincipalId, ProgramId, StateDigest},
     MAX_STATE_BYTES,
 };
+use layerx_proof::checkpoint::{verify_certificate, Certificate, GuarantorKey, SettlementDomain};
 use layerx_types::verify::VerificationLevel;
 use layerx_wire::hash::program_execution_batch_id;
 use layerx_wire::receipt::decode_batch_header;
@@ -38,8 +37,9 @@ use crate::codec::hex0x;
 
 pub use layerx_programs_ai_market::queries::{
     parse_hex32, parse_limit, Availability, KindFilter, ParticipantKind, ParticipantRow,
-    DEFAULT_LIMIT,
+    ScoreStatus, SnapshotBinding, DEFAULT_LIMIT,
 };
+pub use layerx_programs_ai_market::types::Presence;
 
 /// Canonical publication minimum checkpoint rank.
 pub const MINIMUM_PUBLICATION_RANK: u8 = FINALIZED_RANK;
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS ai_alert (
 );
 ";
 
-/// Projection failures. Capture refusals keep the CAPTURE_FINALIZED_SNAPSHOT names.
+/// Projection failures. Capture refusals keep the `CAPTURE_FINALIZED_SNAPSHOT` names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewError {
     InvalidEncoding,
@@ -388,12 +388,14 @@ pub struct Alert {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Freshness {
     Current,
-    Stale { lag: u64 },
+    Stale {
+        lag: u64,
+    },
     /// No verified authority height was supplied.
     Unknown,
 }
 
-/// GET_MARKET_VIEW result.
+/// `GET_MARKET_VIEW` result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarketView {
     pub snapshot_id: Digest32,
@@ -404,7 +406,7 @@ pub struct MarketView {
     pub freshness: Freshness,
 }
 
-/// LIST_PARTICIPANTS result: rows of one pinned snapshot.
+/// `LIST_PARTICIPANTS` result: rows of one pinned snapshot.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParticipantPage {
     pub snapshot_id: Digest32,
@@ -435,7 +437,7 @@ pub struct EpochEntry {
     pub snapshot_id: Option<Digest32>,
 }
 
-/// GET_HISTORY result. `component` is the epoch index availability; entries are empty
+/// `GET_HISTORY` result. `component` is the epoch index availability; entries are empty
 /// unless it is available.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EpochPage {
@@ -443,7 +445,7 @@ pub struct EpochPage {
     pub entries: Vec<EpochEntry>,
 }
 
-/// PageRequestV1 after strict parsing.
+/// `PageRequestV1` after strict parsing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PageRequest {
     pub market: MarketId,
@@ -463,29 +465,14 @@ impl PageRequest {
     /// `InvalidEncoding` for any noncanonical input, `ResponseTooLarge` for an oversized cursor.
     pub fn parse(market: &str, query: Option<&str>) -> ViewResult<Self> {
         let market = MarketId::new(parse_hex32(market)?)?;
-        let mut snapshot = None;
-        let mut filter = None;
-        let mut active_only = None;
-        let mut limit = None;
-        let mut cursor = None;
-        for pair in query.filter(|q| !q.is_empty()).into_iter().flat_map(|q| q.split('&')) {
-            let (key, value) = pair.split_once('=').ok_or(ViewError::InvalidEncoding)?;
-            let duplicate = match key {
-                "snapshot" => snapshot.replace(value).is_some(),
-                "kind" => filter.replace(value).is_some(),
-                "active_only" => active_only.replace(value).is_some(),
-                "limit" => limit.replace(value).is_some(),
-                "cursor" => {
-                    if value.len() > CURSOR_MAX_BYTES {
-                        return Err(ViewError::ResponseTooLarge);
-                    }
-                    cursor.replace(value).is_some()
-                }
-                _ => return Err(ViewError::InvalidEncoding),
-            };
-            if duplicate {
-                return Err(ViewError::InvalidEncoding);
-            }
+        let [snapshot, filter, active_only, limit, cursor] = query_pairs(
+            query,
+            &["snapshot", "kind", "active_only", "limit", "cursor"],
+        )?[..] else {
+            return Err(ViewError::InvalidEncoding);
+        };
+        if cursor.is_some_and(|c| c.len() > CURSOR_MAX_BYTES) {
+            return Err(ViewError::ResponseTooLarge);
         }
         let filter = match filter {
             None | Some("all") => KindFilter::All,
@@ -512,6 +499,62 @@ impl PageRequest {
             cursor: cursor.map(str::to_owned),
         })
     }
+}
+
+fn query_pairs<'q>(query: Option<&'q str>, keys: &[&str]) -> ViewResult<Vec<Option<&'q str>>> {
+    let mut values = vec![None; keys.len()];
+    for pair in query
+        .filter(|q| !q.is_empty())
+        .into_iter()
+        .flat_map(|q| q.split('&'))
+    {
+        let (key, value) = pair.split_once('=').ok_or(ViewError::InvalidEncoding)?;
+        let slot = keys
+            .iter()
+            .position(|k| *k == key)
+            .and_then(|i| values.get_mut(i))
+            .ok_or(ViewError::InvalidEncoding)?;
+        if slot.replace(value).is_some() {
+            return Err(ViewError::InvalidEncoding);
+        }
+    }
+    Ok(values)
+}
+
+/// Strict `GET_MARKET_VIEW` query: only an optional exact `snapshot`.
+///
+/// # Errors
+/// `InvalidEncoding` for any other key, a repeated key or noncanonical hex.
+pub fn parse_snapshot_query(
+    market: &str,
+    query: Option<&str>,
+) -> ViewResult<(MarketId, Option<Digest32>)> {
+    let market = MarketId::new(parse_hex32(market)?)?;
+    let [snapshot] = query_pairs(query, &["snapshot"])?[..] else {
+        return Err(ViewError::InvalidEncoding);
+    };
+    Ok((
+        market,
+        snapshot
+            .map(|s| Digest32::new(parse_hex32(s)?))
+            .transpose()?,
+    ))
+}
+
+/// Strict `GET_HISTORY` query: canonical decimal `from` (default 0) and `limit` (default 16).
+///
+/// # Errors
+/// `InvalidEncoding` for any other key, a repeated key or a noncanonical decimal or limit.
+pub fn parse_epoch_query(market: &str, query: Option<&str>) -> ViewResult<(MarketId, u64, u8)> {
+    let market = MarketId::new(parse_hex32(market)?)?;
+    let [from, limit] = query_pairs(query, &["from", "limit"])?[..] else {
+        return Err(ViewError::InvalidEncoding);
+    };
+    Ok((
+        market,
+        from.map(codec::decimal_u64).transpose()?.unwrap_or(0),
+        parse_limit(limit)?,
+    ))
 }
 
 /// Authenticated reader. Built only after the current session check succeeded for this
@@ -665,7 +708,7 @@ impl QueryLimiter {
     }
 }
 
-/// Durable AI market projection over one SQLite file.
+/// Durable AI market projection over one `SQLite` file.
 pub struct ProjectionStore {
     connection: Mutex<Connection>,
 }
@@ -693,10 +736,15 @@ fn availability_from(value: u8) -> ViewResult<Availability> {
     })
 }
 
-/// Stable event ID: `0x` + hex SHA256("PAXAI/view-event/v1" || 00 || MarketId32 ||
-/// source_activity_id32 || effect_ordinal:u16 || ai_event_tag:u16).
+/// Stable event ID: `0x` + hex `SHA256("PAXAI/view-event/v1" || 00 || MarketId32 ||
+/// source_activity_id32 || effect_ordinal:u16 || ai_event_tag:u16)`.
 #[must_use]
-pub fn event_id(market: MarketId, source_activity: Digest32, effect_ordinal: u16, tag: u16) -> String {
+pub fn event_id(
+    market: MarketId,
+    source_activity: Digest32,
+    effect_ordinal: u16,
+    tag: u16,
+) -> String {
     let digest: [u8; 32] = Sha256::new()
         .chain_update(b"PAXAI/view-event/v1")
         .chain_update([0])
@@ -869,7 +917,8 @@ impl RawRecord {
             native_state_root: digest(&self.native_root)?,
             revision: unsigned(self.revision)?,
             state_digest: StateDigest::new(array32(&self.state_digest)?).map_err(bad)?,
-            total_bytes: u32::try_from(self.total_bytes).map_err(|_| ViewError::IntegrityFailure)?,
+            total_bytes: u32::try_from(self.total_bytes)
+                .map_err(|_| ViewError::IntegrityFailure)?,
             chunks: usize::try_from(self.chunks).map_err(|_| ViewError::IntegrityFailure)?,
             read: match self.read {
                 1 => ReadVerification::Unverified,
@@ -947,7 +996,12 @@ fn load_stream(tx: &Connection, market: &MarketId) -> ViewResult<Option<StreamCu
     .transpose()
 }
 
-fn record_alert(conn: &Connection, market: &[u8; 32], subject: &[u8; 32], error: &ViewError) -> ViewResult<()> {
+fn record_alert(
+    conn: &Connection,
+    market: &[u8; 32],
+    subject: &[u8; 32],
+    error: &ViewError,
+) -> ViewResult<()> {
     conn.execute(
         "INSERT INTO ai_alert (market, subject, category) VALUES (?1, ?2, ?3)",
         params![market.as_slice(), subject.as_slice(), error.category()],
@@ -957,7 +1011,12 @@ fn record_alert(conn: &Connection, market: &[u8; 32], subject: &[u8; 32], error:
 
 /// Quarantines the market stream in its own transaction: evidence stays, finalized
 /// publication stops, and one alert records IDs and category.
-fn quarantine(conn: &mut Connection, market: &MarketId, subject: &[u8; 32], error: ViewError) -> ViewError {
+fn quarantine(
+    conn: &mut Connection,
+    market: &MarketId,
+    subject: &[u8; 32],
+    error: ViewError,
+) -> ViewError {
     let outcome = (|| -> ViewResult<()> {
         let tx = conn.transaction()?;
         tx.execute(
@@ -986,7 +1045,12 @@ fn refuse_quarantined(stream: Option<&StreamCursor>) -> ViewResult<()> {
 
 /// Moves the oldest finalized, unleased, non-latest bodies out of the recent cache until
 /// one more body fits within both the count and byte bounds.
-fn make_room(tx: &Transaction<'_>, market: &MarketId, incoming: usize, now_ms: u64) -> ViewResult<()> {
+fn make_room(
+    tx: &Transaction<'_>,
+    market: &MarketId,
+    incoming: usize,
+    now_ms: u64,
+) -> ViewResult<()> {
     let market_bytes = market.as_bytes().as_slice();
     loop {
         let (count, bytes): (i64, i64) = tx.query_row(
@@ -1021,6 +1085,72 @@ fn make_room(tx: &Transaction<'_>, market: &MarketId, incoming: usize, now_ms: u
             params![victim],
         )?;
     }
+}
+
+fn insert_rows(
+    tx: &Transaction<'_>,
+    snapshot_id: Digest32,
+    rows: &[ParticipantRow],
+) -> ViewResult<()> {
+    for (ordinal, row) in rows.iter().enumerate() {
+        let mut encoded = [0u8; ROW_BYTES_MAX];
+        let mut w = codec::Writer::new(&mut encoded);
+        row.encode(&mut w)?;
+        let n = w.len();
+        tx.execute(
+            "INSERT INTO ai_participant (snapshot_id, ordinal, kind, participant, row) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                snapshot_id.as_bytes().as_slice(),
+                i64::try_from(ordinal).map_err(|_| ViewError::CapacityExceeded)?,
+                row.kind as u8,
+                row.id.as_slice(),
+                encoded.get(..n).ok_or(ViewError::CapacityExceeded)?,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+/// Writes the snapshot's not-yet-publishable outbox row. A reused event ID is a conflict.
+fn insert_outbox(
+    tx: &Transaction<'_>,
+    market: MarketId,
+    snapshot_id: Digest32,
+    observation: &Observation<'_>,
+    subject: u64,
+) -> ViewResult<()> {
+    let facts = observation.facts;
+    let id = event_id(market, observation.source_activity, 0, SNAPSHOT_EVENT_TAG);
+    let body = event_body(
+        market,
+        snapshot_id,
+        observation.source_activity,
+        subject,
+        &facts,
+    )?;
+    let prior: Option<Vec<u8>> = tx
+        .query_row(
+            "SELECT body FROM ai_outbox WHERE event_id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if prior.is_some() {
+        return Err(ViewError::SnapshotConflict);
+    }
+    tx.execute(
+        "INSERT INTO ai_outbox (event_id, market, subject_sequence, snapshot_id, body) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            id,
+            market.as_bytes().as_slice(),
+            signed(subject)?,
+            snapshot_id.as_bytes().as_slice(),
+            body
+        ],
+    )?;
+    Ok(())
 }
 
 impl ProjectionStore {
@@ -1062,7 +1192,7 @@ impl ProjectionStore {
     /// or a reused event ID with another body quarantines the stream.
     ///
     /// # Errors
-    /// The CAPTURE_FINALIZED_SNAPSHOT refusals; failure commits nothing of the capture.
+    /// The `CAPTURE_FINALIZED_SNAPSHOT` refusals; failure commits nothing of the capture.
     pub fn observe(&self, observation: &Observation<'_>) -> ViewResult<SnapshotRecord> {
         let facts = observation.facts;
         let market = codec::derive_market(facts.proof.chain, facts.proof.program)?;
@@ -1140,7 +1270,9 @@ impl ProjectionStore {
             let stored = load_state(tx, &snapshot_id)?;
             let same_content = existing.facts() == facts
                 && existing.source_activity == observation.source_activity
-                && stored.as_deref().is_none_or(|bytes| bytes == observation.state);
+                && stored
+                    .as_deref()
+                    .is_none_or(|bytes| bytes == observation.state);
             return if same_content {
                 Ok(existing)
             } else {
@@ -1150,14 +1282,22 @@ impl ProjectionStore {
         let at_sequence: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT snapshot_id FROM ai_snapshot WHERE market = ?1 AND observed_sequence = ?2",
-                params![market.as_bytes().as_slice(), signed(proof.observed_sequence)?],
+                params![
+                    market.as_bytes().as_slice(),
+                    signed(proof.observed_sequence)?
+                ],
                 |row| row.get(0),
             )
             .optional()?;
         if at_sequence.is_some() {
             return Err(ViewError::SnapshotConflict);
         }
-        make_room(tx, &market, observation.state.len(), observation.observed_at_ms)?;
+        make_room(
+            tx,
+            &market,
+            observation.state.len(),
+            observation.observed_at_ms,
+        )?;
         let stream = load_stream(tx, &market)?;
         let subject = stream.as_ref().map_or(1, |s| s.next_subject);
         let projection = match observation.read {
@@ -1192,46 +1332,8 @@ impl ProjectionStore {
                 signed(observation.observed_at_ms)?,
             ],
         )?;
-        for (ordinal, row) in rows.iter().enumerate() {
-            let mut encoded = [0u8; ROW_BYTES_MAX];
-            let mut w = codec::Writer::new(&mut encoded);
-            row.encode(&mut w)?;
-            let n = w.len();
-            tx.execute(
-                "INSERT INTO ai_participant (snapshot_id, ordinal, kind, participant, row) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    snapshot_id.as_bytes().as_slice(),
-                    i64::try_from(ordinal).map_err(|_| ViewError::CapacityExceeded)?,
-                    row.kind as u8,
-                    row.id.as_slice(),
-                    encoded.get(..n).ok_or(ViewError::CapacityExceeded)?,
-                ],
-            )?;
-        }
-        let id = event_id(market, observation.source_activity, 0, SNAPSHOT_EVENT_TAG);
-        let body = event_body(market, snapshot_id, observation.source_activity, subject, &facts)?;
-        let prior: Option<Vec<u8>> = tx
-            .query_row(
-                "SELECT body FROM ai_outbox WHERE event_id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if prior.is_some() {
-            return Err(ViewError::SnapshotConflict);
-        }
-        tx.execute(
-            "INSERT INTO ai_outbox (event_id, market, subject_sequence, snapshot_id, body) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                id,
-                market.as_bytes().as_slice(),
-                signed(subject)?,
-                snapshot_id.as_bytes().as_slice(),
-                body
-            ],
-        )?;
+        insert_rows(tx, snapshot_id, rows)?;
+        insert_outbox(tx, market, snapshot_id, observation, subject)?;
         let advance = stream
             .as_ref()
             .is_none_or(|s| proof.observed_sequence > s.observed_sequence);
@@ -1259,8 +1361,7 @@ impl ProjectionStore {
     ///
     /// # Errors
     /// `FinalityUnavailable` for a certificate that does not verify at rank 4, `WrongDomain`
-    /// for another network, `BindingMismatch` for another batch, sequence or root (a
-    /// different root at the same sequence is a finality conflict and quarantines),
+    /// for another network (alerted), `BindingMismatch` for another batch, sequence or root,
     /// `ProjectionUnavailable` for an unknown or archived snapshot.
     pub fn promote(
         &self,
@@ -1302,14 +1403,6 @@ impl ProjectionStore {
         let header = decode_batch_header(proof.certificate.checkpoint().header_bytes())
             .map_err(|_| ViewError::FinalityUnavailable)?;
         let root = record.native_state_root.bytes();
-        if header.last_sequence() == record.observed_sequence && header.resulting_state_root() != root {
-            return Err(quarantine(
-                &mut conn,
-                &record.market,
-                &checkpoint,
-                ViewError::SnapshotConflict,
-            ));
-        }
         let batch = program_execution_batch_id(
             header.previous_state_root(),
             header.activity_merkle_root(),
@@ -1330,7 +1423,8 @@ impl ProjectionStore {
             settlement: Presence::Absent,
             rank: MINIMUM_PUBLICATION_RANK,
         };
-        let binding = queries::bind_snapshot(&state, &record.facts(), &finality, publication_time_ms)?;
+        let binding =
+            queries::bind_snapshot(&state, &record.facts(), &finality, publication_time_ms)?;
         binding.require_finalized()?;
         if binding.snapshot_id()? != *snapshot_id {
             return Err(ViewError::IntegrityFailure);
@@ -1380,10 +1474,13 @@ impl ProjectionStore {
             return Ok(0);
         };
         if stream.finalized_sequence.is_some_and(|f| to_sequence < f) {
-            let subject = stream
-                .finalized_snapshot
-                .map_or([0; 32], Digest32::bytes);
-            return Err(quarantine(&mut conn, market, &subject, ViewError::RollbackRefused));
+            let subject = stream.finalized_snapshot.map_or([0; 32], Digest32::bytes);
+            return Err(quarantine(
+                &mut conn,
+                market,
+                &subject,
+                ViewError::RollbackRefused,
+            ));
         }
         let tx = conn.transaction()?;
         let m = market.as_bytes().as_slice();
@@ -1449,7 +1546,8 @@ impl ProjectionStore {
             let rank = u8::try_from(rank).map_err(|_| ViewError::IntegrityFailure)?;
             let (Some(binding), true) = (
                 binding,
-                ProjectionState::from_db(projection)?.finalized() && rank >= MINIMUM_PUBLICATION_RANK,
+                ProjectionState::from_db(projection)?.finalized()
+                    && rank >= MINIMUM_PUBLICATION_RANK,
             ) else {
                 break;
             };
@@ -1487,11 +1585,11 @@ impl ProjectionStore {
             )
             .optional()?;
         let (stored, published, projection) = row.ok_or(ViewError::ProjectionUnavailable)?;
-        if stored != body {
-            return Err(ViewError::SnapshotConflict);
-        }
         if !ProjectionState::from_db(projection)?.finalized() {
             return Err(ViewError::FinalityUnavailable);
+        }
+        if stored != body {
+            return Err(ViewError::SnapshotConflict);
         }
         if published.is_some() {
             return Ok(false);
@@ -1518,9 +1616,8 @@ impl ProjectionStore {
     /// Store failures.
     pub fn committed_rows(&self, snapshot_id: &Digest32) -> ViewResult<Vec<Vec<u8>>> {
         let conn = self.lock()?;
-        let mut statement = conn.prepare(
-            "SELECT row FROM ai_participant WHERE snapshot_id = ?1 ORDER BY ordinal",
-        )?;
+        let mut statement =
+            conn.prepare("SELECT row FROM ai_participant WHERE snapshot_id = ?1 ORDER BY ordinal")?;
         let rows = statement
             .query_map(params![snapshot_id.as_bytes().as_slice()], |row| row.get(0))?
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
@@ -1572,7 +1669,8 @@ impl ProjectionStore {
         let conn = self.lock()?;
         let record = load_record(&conn, snapshot_id)?.ok_or(ViewError::ProjectionUnavailable)?;
         let latest = load_stream(&conn, &record.market)?.and_then(|s| s.finalized_snapshot);
-        if record.projection != ProjectionState::FinalizedPublishable || latest == Some(*snapshot_id)
+        if record.projection != ProjectionState::FinalizedPublishable
+            || latest == Some(*snapshot_id)
         {
             return Err(ViewError::ProjectionUnavailable);
         }
@@ -1618,7 +1716,12 @@ impl ProjectionStore {
                 ViewError::Store(_) => error,
                 _ => ViewError::IntegrityFailure,
             };
-            record_alert(&conn, record.market.as_bytes(), snapshot_id.as_bytes(), &error)?;
+            record_alert(
+                &conn,
+                record.market.as_bytes(),
+                snapshot_id.as_bytes(),
+                &error,
+            )?;
             return Err(error);
         }
         conn.execute(
@@ -1633,13 +1736,12 @@ impl ProjectionStore {
         market: &MarketId,
         selector: Option<&Digest32>,
     ) -> ViewResult<(SnapshotRecord, Vec<u8>, SnapshotBinding)> {
-        let stream = load_stream(conn, market)?;
+        let stream = load_stream(conn, market)?.ok_or(ViewError::AccessRefused)?;
         let id = match selector {
             Some(id) => *id,
             None => stream
-                .as_ref()
-                .and_then(|s| s.finalized_snapshot)
-                .ok_or(ViewError::AccessRefused)?,
+                .finalized_snapshot
+                .ok_or(ViewError::FinalityUnavailable)?,
         };
         let record = load_record(conn, &id)?
             .filter(|r| r.market == *market)
@@ -1666,7 +1768,7 @@ impl ProjectionStore {
         Ok((record, state, binding))
     }
 
-    /// GET_MARKET_VIEW over one exact snapshot or the latest finalized one. Historical
+    /// `GET_MARKET_VIEW` over one exact snapshot or the latest finalized one. Historical
     /// inspection stays available with an explicit stale label.
     ///
     /// # Errors
@@ -1681,11 +1783,11 @@ impl ProjectionStore {
     ) -> ViewResult<MarketView> {
         let conn = self.lock()?;
         let (record, _, binding) = Self::resolve(&conn, market, selector)?;
-        let freshness = verified_authority_height.map_or(Freshness::Unknown, |height| {
-            match height.saturating_sub(record.execution_height) {
-                lag if lag > AUTHORITY_FRESHNESS_HEIGHTS => Freshness::Stale { lag },
-                _ => Freshness::Current,
-            }
+        let freshness = verified_authority_height.map_or(Freshness::Unknown, |height| match height
+            .saturating_sub(record.execution_height)
+        {
+            lag if lag > AUTHORITY_FRESHNESS_HEIGHTS => Freshness::Stale { lag },
+            _ => Freshness::Current,
         });
         Ok(MarketView {
             snapshot_id: record.snapshot_id,
@@ -1722,7 +1824,7 @@ impl ProjectionStore {
         Ok(record)
     }
 
-    /// LIST_PARTICIPANTS over one pinned immutable rowset. The cursor is authenticated before
+    /// `LIST_PARTICIPANTS` over one pinned immutable rowset. The cursor is authenticated before
     /// any row work and is bound to the viewer, market, snapshot and exact filters.
     ///
     /// # Errors
@@ -1835,7 +1937,7 @@ impl ProjectionStore {
         })
     }
 
-    /// GET_HISTORY in ascending epoch order, default 16 and at most 32 entries. Each entry
+    /// `GET_HISTORY` in ascending epoch order, default 16 and at most 32 entries. Each entry
     /// names its own finalized snapshot; absence is typed, never filled from current policy.
     ///
     /// # Errors
@@ -1917,7 +2019,9 @@ fn rebind(record: &SnapshotRecord, state: &[u8]) -> ViewResult<SnapshotBinding> 
         state,
         &record.facts(),
         &finality,
-        record.publication_time_ms.ok_or(ViewError::FinalityUnavailable)?,
+        record
+            .publication_time_ms
+            .ok_or(ViewError::FinalityUnavailable)?,
     )?;
     let mut encoded = [0u8; BINDING_MAX_BYTES];
     let n = binding.encode(&mut encoded)?;

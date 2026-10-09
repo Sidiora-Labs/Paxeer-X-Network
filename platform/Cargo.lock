@@ -1486,6 +1486,7 @@ version = "0.1.0"
 dependencies = [
  "k256",
  "layerx-client",
+ "layerx-crypto",
  "layerx-paxeer-verifier",
  "layerx-platform-internal",
  "layerx-programs-ai-market",
