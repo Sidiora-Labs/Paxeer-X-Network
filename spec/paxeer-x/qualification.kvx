@@ -901,3 +901,11 @@ exit_code = 0
 log = "private ops record px26-ai-implementation-2026-10-08"
 observed = "Owner directed maximum concurrency; fourteen pending tasks were admitted ahead of their requires edges because every interface they consume is on main (T-C02 router and harness, F03/F04/F05 transitions, F06/F07 codecs, F09 artifact service, F10 schema base) while their producers are held at implemented or run concurrently with disjoint owned paths."
 assumption = "Each task is still gated only by its own verify_cmd; a task whose producer interface proves absent reports implemented-not-qualified naming it and is re-qualified after the producer lands."
+
+[qualification.ai-t-c03-value-boundary-20261009-01]
+revision = "a341e1de7"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test value_boundary"
+exit_code = 0
+log = "private ops log wt/logs/ai.T-C03-verify-1.log"
+observed = "Seven value-boundary cases pass on the real runtime, SDK and registry (account derivation, exact registration payload, grant encodings, owning-Program-only spend admission, fail-closed balance read, conservation and rollback across Fund/Reserve/Terminalize/Claim/Expire/RefundFree); native end-to-end funding, ProgramSpend and BalanceView through the guest need the F06 router arms, harness transfer grants, the ABI 5 registration and a finalized-receipt verifier, and the Program id, reward asset, registration authority and chain domain are deployment inputs."
+assumption = "Held at implemented under ai.P-DEPLOYMENT; F06-T03 calls value_adapter::settle per committed reward mutation and the native custody case is re-qualified once the F06 arms, harness grants and ABI 5 registration land."

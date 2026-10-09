@@ -5169,3 +5169,8 @@ text = "The native programs module registrations (programs_module_registration_v
 area = "ai-market"
 text = "epoch::open_epoch refuses with WRONG_PHASE, not F06_EPOCH_ALREADY_RESERVED, while the previous epoch is still reserved; F05 aggregation::apply (BeginAggregation, ProcessAggregation with an 8-worker cursor, FinalizeAggregation) expects the router to derive AuthorityContext.aggregate_sealed from aggregation::progress(current).phase, to refuse any immediate caller, and to map Outcome::AlreadyApplied to a zero-event unchanged-state result; a retry with a different epoch, config or roster binding returns WRONG_EPOCH, WRONG_CONFIG or WRONG_ROSTER and CONFLICT only on an input digest mismatch; clippy pedantic also denies unused_self and match_wildcard_for_single_variants in test files."
 
+
+[gotcha.1116]
+area = "programs"
+text = "PreparedProgramAccount's derived account hashes only program and seed, not the asset, so a ledger's asset can only be checked against an already-bound RewardsAccount; runtime ProgramSpend and Transfer402 staging and TransferCapability are pub(crate), reachable from a crate test only by executing a guest that calls the host functions; SDK PreparedProgramAccount::spend_grant takes an SDK Amount, not u128; the host-boundary C harness grants fixed capabilities {0,3,3,7,8} with no Transfer402, ProgramSpend or BalanceView grant, so native funding, spend and balance-sight paths need harness grants added."
+
