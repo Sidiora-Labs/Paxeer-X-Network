@@ -1,16 +1,17 @@
 //! F02-R008/R010/R018 signed service transport and the delegate-signed metadata scheme.
 //!
-//! Service envelope: `PAXAIS1` || schema:u16=1 || operation:u16 || chain32 || program32 ||
-//! market32 || actor32 || epoch:u64 || config:u64 || roster32 (zero means absent) ||
-//! sequence:u64 || expiry:u64 || request32 || payload_len:u32 || payload || signer32 ||
-//! signature64. Ed25519 signs `H("PAXAI/service-request/v1", magic..end of payload)`.
+//! Service envelope (roster zero means absent):
+//! `PAXAIS1 || schema:u16=1 || operation:u16 || chain32 || program32 || market32 || actor32 ||
+//! epoch:u64 || config:u64 || roster32 || sequence:u64 || expiry:u64 || request32 ||
+//! payload_len:u32 || payload || signer32 || signature64`.
+//! Ed25519 signs `H("PAXAI/service-request/v1", magic..end of payload)`.
 //!
 //! Signed metadata: the canonical manifest travels in the payload of a native C03
 //! `PublishMetadata` (0x0202) envelope authenticated by the worker delegate
 //! (authentication kind 1, actor = owner principal); the delegate signs the common
-//! `PAXAI/request/v1` digest. The payload is worker32 || expected_revision:u64 ||
-//! revision:u64 || metadata_digest32 || valid_from:u64 || expiry:u64 || manifest_len:u32 ||
-//! manifest, exactly as the native transition reads it.
+//! `PAXAI/request/v1` digest. The payload, exactly as the native transition reads it, is
+//! `worker32 || expected_revision:u64 || revision:u64 || metadata_digest32 || valid_from:u64 ||
+//! expiry:u64 || manifest_len:u32 || manifest`.
 use crate::discovery::{FinalizedAuthority, IdentityEvidence, VerifiedMetadata};
 use crate::metadata::{Capability, Manifest, API_VERSION};
 use ed25519_dalek::{Signer, SigningKey};
@@ -619,7 +620,12 @@ impl WorkerBinding {
             Err(ServiceError::WrongDomain)
         }
     }
-    fn check_versions(&self, generation: u64, key_version: u64, revision: u64) -> Result<(), ServiceError> {
+    fn check_versions(
+        &self,
+        generation: u64,
+        key_version: u64,
+        revision: u64,
+    ) -> Result<(), ServiceError> {
         if generation != self.generation || key_version != self.key_version {
             Err(ServiceError::WrongGeneration)
         } else if revision != self.metadata_revision {
@@ -930,7 +936,11 @@ impl Admission {
     ///
     /// # Errors
     /// `NonCanonical` for sequence 0; `BadSignature` when `key` is not the admitted delegate.
-    pub fn sign_acknowledgment(&self, sequence: u64, key: &SigningKey) -> Result<Vec<u8>, ServiceError> {
+    pub fn sign_acknowledgment(
+        &self,
+        sequence: u64,
+        key: &SigningKey,
+    ) -> Result<Vec<u8>, ServiceError> {
         if sequence == 0 {
             return Err(ServiceError::NonCanonical);
         }
@@ -1160,7 +1170,11 @@ pub fn verify_status(
     }
     let report = StatusReport::decode(&envelope.payload)?;
     binding.check_receiver(report.worker)?;
-    binding.check_versions(report.generation, report.key_version, report.metadata_revision)?;
+    binding.check_versions(
+        report.generation,
+        report.key_version,
+        report.metadata_revision,
+    )?;
     if !(report.min_api..=report.max_api).contains(&API_VERSION) {
         return Err(ServiceError::UnsupportedVersion);
     }
@@ -1223,7 +1237,8 @@ fn publish_payload(
     publication: &MetadataPublication<'_>,
 ) -> Result<Vec<u8>, ServiceError> {
     let (manifest, digest) = Manifest::decode(publication.manifest)?;
-    let length = u32::try_from(publication.manifest.len()).map_err(|_| ServiceError::CapacityExceeded)?;
+    let length =
+        u32::try_from(publication.manifest.len()).map_err(|_| ServiceError::CapacityExceeded)?;
     let mut payload = Vec::with_capacity(PUBLISH_METADATA_FIXED_BYTES + publication.manifest.len());
     payload.extend_from_slice(context.worker.as_bytes());
     payload.extend_from_slice(&publication.expected_revision.to_be_bytes());
@@ -1269,7 +1284,8 @@ pub fn sign_metadata(
             signature: Signature64([0; 64]),
         },
     };
-    let mut out = vec![0; codec::ENVELOPE_PREFIX_BYTES + payload.len() + NATIVE_DELEGATE_SUFFIX_BYTES];
+    let mut out =
+        vec![0; codec::ENVELOPE_PREFIX_BYTES + payload.len() + NATIVE_DELEGATE_SUFFIX_BYTES];
     let n = codec::encode_envelope(&envelope, &mut out)?;
     let digest = codec::decode_envelope(out.get(..n).ok_or(ServiceError::NonCanonical)?)?
         .request_digest()?;
@@ -1310,7 +1326,11 @@ pub fn verify_signed_metadata(
     if key != context.delegate {
         return Err(ServiceError::BadSignature);
     }
-    verify(key, signature, Digest32::new(validated.request_digest()?.bytes())?)?;
+    verify(
+        key,
+        signature,
+        Digest32::new(validated.request_digest()?.bytes())?,
+    )?;
     let mut r = Reader::new(envelope.payload);
     if WorkerId::new(r.fixed()?)? != context.worker {
         return Err(ServiceError::WrongDomain);

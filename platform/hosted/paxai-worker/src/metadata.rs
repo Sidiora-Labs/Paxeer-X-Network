@@ -117,10 +117,7 @@ impl Endpoint {
             .ok_or(ServiceError::NonCanonical)?;
         match authority.split_once(':') {
             None => Ok((authority, DEFAULT_PORT)),
-            Some((host, port)) => Ok((
-                host,
-                port.parse().map_err(|_| ServiceError::NonCanonical)?,
-            )),
+            Some((host, port)) => Ok((host, port.parse().map_err(|_| ServiceError::NonCanonical)?)),
         }
     }
 }

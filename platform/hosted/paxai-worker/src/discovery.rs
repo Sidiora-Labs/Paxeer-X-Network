@@ -307,9 +307,17 @@ impl FinalizedAuthority {
     pub fn bind_metadata(&self, signed: SignedMetadata) -> Result<VerifiedMetadata, ServiceError> {
         let expected = self.metadata_context();
         let context = signed.context;
-        if (context.chain, context.program, context.market, context.worker)
-            != (expected.chain, expected.program, expected.market, expected.worker)
-        {
+        if (
+            context.chain,
+            context.program,
+            context.market,
+            context.worker,
+        ) != (
+            expected.chain,
+            expected.program,
+            expected.market,
+            expected.worker,
+        ) {
             return Err(ServiceError::WrongDomain);
         }
         if context.owner != expected.owner {
@@ -514,7 +522,9 @@ impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsafeEndpoint => f.write_str("endpoint is not a canonical service endpoint"),
-            Self::UnsafeAddress => f.write_str("endpoint resolved to an address outside the profile"),
+            Self::UnsafeAddress => {
+                f.write_str("endpoint resolved to an address outside the profile")
+            }
             Self::Unavailable => f.write_str("endpoint unavailable"),
             Self::Certificate => f.write_str("endpoint certificate refused"),
             Self::PinMismatch => f.write_str("endpoint certificate does not match its pin"),
@@ -537,7 +547,7 @@ pub fn spki_sha256(certificate: &CertificateDer<'_>) -> Result<[u8; 32], rustls:
     Ok(Sha256::digest(parsed.subject_public_key_info().as_ref()).into())
 }
 
-/// WebPKI chain and name validation, then the manifest SPKI pin of the leaf.
+/// `WebPKI` chain and name validation, then the manifest SPKI pin of the leaf.
 #[derive(Debug)]
 struct PinnedVerifier {
     inner: Arc<WebPkiServerVerifier>,
@@ -592,9 +602,9 @@ fn tls_failure(error: &io::Error) -> TransportError {
         .get_ref()
         .and_then(|inner| inner.downcast_ref::<rustls::Error>())
     {
-        Some(rustls::Error::InvalidCertificate(CertificateError::ApplicationVerificationFailure)) => {
-            TransportError::PinMismatch
-        }
+        Some(rustls::Error::InvalidCertificate(
+            CertificateError::ApplicationVerificationFailure,
+        )) => TransportError::PinMismatch,
         Some(rustls::Error::InvalidCertificate(_)) => TransportError::Certificate,
         Some(_) => TransportError::Protocol,
         None => TransportError::Unavailable,
@@ -602,7 +612,7 @@ fn tls_failure(error: &io::Error) -> TransportError {
 }
 
 /// Client for one worker endpoint: one resolution, every answer inside the profile, a TLS
-/// 1.3 handshake validated by WebPKI and the manifest pin before any request byte is sent,
+/// 1.3 handshake validated by `WebPKI` and the manifest pin before any request byte is sent,
 /// and no redirect following.
 #[derive(Clone, Debug)]
 pub struct EndpointClient {
@@ -630,7 +640,9 @@ impl EndpointClient {
                 TcpStream::connect_timeout(&SocketAddr::new(*ip, port), self.timeout).ok()
             })
             .ok_or(TransportError::Unavailable)?;
-        let peer = socket.peer_addr().map_err(|_| TransportError::Unavailable)?;
+        let peer = socket
+            .peer_addr()
+            .map_err(|_| TransportError::Unavailable)?;
         if !self.profile.admits(peer.ip()) {
             return Err(TransportError::UnsafeAddress);
         }
@@ -648,9 +660,10 @@ impl EndpointClient {
         socket: TcpStream,
     ) -> Result<StreamOwned<ClientConnection, TcpStream>, TransportError> {
         let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let inner = WebPkiServerVerifier::builder_with_provider(self.roots.clone(), provider.clone())
-            .build()
-            .map_err(|_| TransportError::Certificate)?;
+        let inner =
+            WebPkiServerVerifier::builder_with_provider(self.roots.clone(), provider.clone())
+                .build()
+                .map_err(|_| TransportError::Certificate)?;
         let config = ClientConfig::builder_with_provider(provider)
             .with_protocol_versions(&[&rustls::version::TLS13])
             .map_err(|_| TransportError::Protocol)?
@@ -660,7 +673,8 @@ impl EndpointClient {
                 pin: endpoint.spki_sha256,
             }))
             .with_no_client_auth();
-        let name = ServerName::try_from(host.to_owned()).map_err(|_| TransportError::UnsafeEndpoint)?;
+        let name =
+            ServerName::try_from(host.to_owned()).map_err(|_| TransportError::UnsafeEndpoint)?;
         let connection =
             ClientConnection::new(Arc::new(config), name).map_err(|_| TransportError::Protocol)?;
         let mut stream = StreamOwned::new(connection, socket);
