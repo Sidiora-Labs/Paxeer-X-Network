@@ -36617,7 +36617,7 @@ worker_role_id = "W-F01-CLOSURE"
 
 [task.ai.F02-T04]
 title = "Qualify real inference and embedding workloads"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F02-T03", "ai.F03-T04", "ai.F10-T03", "ai.P-REAL-SERVICES"]

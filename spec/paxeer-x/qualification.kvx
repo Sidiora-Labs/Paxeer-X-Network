@@ -1093,3 +1093,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F10-T08-SDK-ABI5-verify-2.log (build-2.log exit 0; drift-1.log 22 pass; regenerate-5.log exit 0)"
 observed = "native-abi5 ok, ai-market 21 pass, pytest 31 pass; the gate also re-ran the ai.F10-T04 and ai.F10-T07 suites unchanged, so both flip to done on this evidence; pre-existing generated-catalog drift (operation_generated.rs mcp.invoke; Go, JVM and conformance/jvm.kvx missing tenant.readiness, approval.program.* and journey.page) regenerated through the generator write modes; Go, JVM, .NET and Swift hand-written ABI 5 edits are uncompiled here (toolchains absent), gofmt clean."
 assumption = "FM-CORE owes runtime terminal.rs decode_v5 and schema type.ProgramExecutionV5 allowed_guest_abis admission of ABI 5 (they admit only 3 and 4); no LayerX/program-interface/v5 domain exists so the Go interface-domain switch still admits v1 to v4; the pre-existing generator clippy deny lints (clippy-1.log) are recorded, not repaired."
+
+[qualification.ai-f02-t04-real-workloads-20261009-01]
+revision = "7ffce6b78"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test real_workload -- --test-threads=1"
+exit_code = 101
+log = "private ops logs wt/logs/ai.F02-T04-verify-3.log (build-1.log exit 0; clippy-5.log exit 0)"
+observed = "4 of 10 pass (A11 floor and wrap, A08 bounds, A17 local acknowledgment never dispatches over the pinned-TLS worker binary and durable store, A15 worker self-score refused UNAUTHORIZED at commit and reveal); the 6 real-workload cases fail Unprovisioned because no runner executable, pinned licensed inference or embedding artifacts, durable store root or deterministic expected outputs exist."
+assumption = "Held at implemented until ai.P-REAL-SERVICES provisions the PAXAI_REAL_WORKLOAD pin file; the F06 payout path, a finalized-authority job reader in the worker binary and public-profile TLS credentials stay out of this task."

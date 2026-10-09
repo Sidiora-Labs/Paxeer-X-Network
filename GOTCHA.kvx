@@ -5290,3 +5290,7 @@ text = "lxp_ctx_blob_put is content-addressed: the key must equal sha256(bytes) 
 [gotcha.1142]
 area = "sdk-generators"
 text = "The platform SDK generator needs gofmt on PATH (/usr/local/go/bin) for its Go write and check modes. The layerx-sdk crate is formatted with rustfmt edition 2024; checking it with edition 2021 reports false diffs. compileall in a build_cmd leaves __pycache__ under agent/sdk/python to remove before committing. System python3 has no pytest; the scratch venv under the session scratchpad carries it. Kernel receipt fixtures can be re-signed with the test sequencer seed 0x45, whose public key matches receipt-programs-executed-v4.json. The generator --check modes fail on stale generated catalogs left by earlier hand edits; regenerate with --write and --write-program-contracts, never hand-edit generated output."
+
+[gotcha.1143]
+area = "ai-market-tests"
+text = "The UNAUTHORIZED refusal frame always carries revision 0 (ApplicationResult::failure); every other refusal carries the visible revision. F05 FinalizeAggregation rewrites the F06 reward row inside the settlement section, so only F01/F02 steps leave SettlementClaims byte-identical; with NoEligibleScore the F06 row ends with entry_count 0 and the budget released to free. Clippy pedantic too_many_lines (limit 100) applies to test functions in the paxai-worker crate and no test there uses allow attributes: split long tests into helpers."
