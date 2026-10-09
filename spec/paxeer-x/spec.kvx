@@ -24639,7 +24639,7 @@ evidence = "revision, command, exit code, log path"
 title = "Common application and host integration manager"
 kind = "feature-manager"
 parent = "MAIN-INTEGRATOR"
-tasks = ["ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C03", "ai.T-C04"]
+tasks = ["ai.P-WORKSPACE", "ai.T-C01", "ai.T-C02", "ai.T-C02-ABI5", "ai.T-C03", "ai.T-C04"]
 ownership = "Canonical T-C* paths, Programs workspace/crate manifests, crate entrypoint and centrally owned common codec/types/state/errors/dispatch/access/capability declarations; exact files bound in canonical tasks."
 responsibility = "Assign named specialists; preserve exact canonical admission and authority decisions; deliver shared producer contracts or actual operational readiness evidence to dependent feature managers."
 entry = "Authorized eligible task, approved exact paths and necessary real authority/resources."
@@ -35081,7 +35081,7 @@ evidence = "ee3148237882b732a29ff7c2dca5fb64daabfcd6+source:1200b9f88ff487ece3da
 
 [task.ai.T-C02]
 title = "Qualify bounded shared state on actual native host"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 27
 requires = ["ai.T-C02-STATE", "ai.F01-T02", "ai.F02-T01", "ai.F03-T03", "ai.F01-T03-EPOCH"]
@@ -35301,12 +35301,43 @@ acceptance_cases = ["AI.F09-A26", "AI.F09-A27", "AI.F09-A28", "AI.F09-A29", "AI.
 paths = ["programs/crates/layerx-programs-ai-market/src/evidence.rs", "programs/crates/layerx-programs-ai-market/tests/artifact_contract.rs"]
 worker_role_id = "W-F09-CODEC"
 
+[task.ai.T-C02-ABI5]
+title = "Register the programs module at guest ABI 5 for native host-boundary calls"
+status = "pending"
+mode = "BUILD"
+wave = 28
+requires = ["ai.T-C02"]
+reqs = ["AI.CORE"]
+do_1 = "ai.T-C02 landed the AI market cdylib, the crate router and the native host-boundary harness, but every v5 CALL fails pre-runtime with LXP_ERR_VERSION_UNSUPPORTED because src/modules/programs/call.c refuses a call whose abi_version exceeds the registered programs module abi_version and every shipped registration (programs_module_registration_v4, programs_module_registration_v4_storage_retirement) is LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION. Add a programs module registration whose abi_version is LX_PROGRAMS_GUEST_ABI_V5_VERSION with the complete v4 activity set, declared in include/layerx/programs.h and implemented in src/modules/programs/registration.c, keeping every existing registration, version gate and recorded_module_version semantics intact for genuinely unsupported versions."
+do_2 = "Switch tests/programs/test_ai_host_boundary.c and tests/host_boundary.rs to register the ABI 5 programs module so the eight host-boundary cases execute real v5 CALLs end to end; adjust only the expectations that named the ABI 4 module version. Do not add the registration to the genesis module table or any daemon or genesis-builder path: activation on a live network is a deployment decision recorded under ai.P-DEPLOYMENT."
+do_3 = "Honor named shared writers: FM-STORAGE owns native files; include/layerx/programs.h and src/modules/programs/registration.c are admitted for this task only for the new registration; tests/host_boundary.rs is admitted by FM-CORE handoff. Preserve unrelated owner changes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run build_cmd once and verify_cmd once, allowing at most two relevant repair cycles. Record unrelated failures once without expanding scope."
+manager = "FM-STORAGE"
+worker_role = "native programs module and host ABI specialist"
+worker = "W-T-C02-ABI5"
+deliverables = ["A programs module registration at guest ABI 5 exposing the complete v4 activity set, without genesis or daemon activation.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary with all eight cases passing on the native host.", "Exact revision, command, exit code and private log path."]
+entry_condition = "ai.T-C02 landed at implemented with the host-boundary harness built and the ABI 4 refusal recorded."
+touches = ["include/layerx/programs.h", "src/modules/programs/registration.c", "tests/programs/test_ai_host_boundary.c", "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs"]
+build_cmd = "make paxai-host-boundary-build"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified after two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
+local_wave = 3
+acceptance_cases = ["AI.STORAGE-A01"]
+paths = ["cmd/layerxd/lxp_daemon_process.c", "src/replica/lxp_replay_checkpoint.c", "src/replica/lxp_history.c", "src/state/lxp_snapshot.c", "tests/relay-archive/state_archive_lifecycle.py"]
+worker_role_id = "W-STORAGE-ARCHIVE"
+
 [task.ai.T-C03]
 title = "Qualify real Program accounts and value boundary"
 status = "pending"
 mode = "BUILD"
 wave = 28
-requires = ["ai.T-C02", "ai.P-DEPLOYMENT"]
+requires = ["ai.T-C02", "ai.T-C02-ABI5", "ai.P-DEPLOYMENT"]
 reqs = ["AI.CORE"]
 do_1 = "Integrate actual registered Program-derived rewards account/seed/immutable asset, principal-funded deposit, exact ProgramSpend transfer ceilings and proof-bound balances; verify native grants, rollback, fee/finality evidence and real account custody."
 do_2 = "Create every proposed path/test/command selector named here before qualification; execute real code paths/types and actual admitted processes, preserving refusal/rollback/recovery/bounds."
