@@ -86,4 +86,16 @@ describe('ActivityList', () => {
     expect(methods).toEqual([ 'Custody deposit', 'Token transfer', 'Transaction' ]);
   });
 
+  it('heads the card with a loading title while the page is on its way', () => {
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity } isLoading/>);
+
+    expect(container.querySelector('[data-scan-table-card] [data-title]')?.textContent).toBe('Loading activity entries…');
+  });
+
+  it('counts the entries of the page when the node reports no total', () => {
+    const { container } = render(<ActivityList { ...pagination } items={ paxeerXMock.unifiedAccount.activity } total={ null }/>);
+
+    expect(container.querySelector('[data-scan-table-card] [data-title]')?.textContent).toBe('3 activity entries on this page');
+  });
+
 });

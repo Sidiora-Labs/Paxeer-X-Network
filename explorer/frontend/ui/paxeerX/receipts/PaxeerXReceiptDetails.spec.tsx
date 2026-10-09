@@ -25,6 +25,13 @@ const receipt: PaxeerXReceipt = {
   timestamp: '2023-05-22T18:00:36.000000Z',
 };
 
+const rowValues = (container: HTMLElement) => {
+  const card = container.querySelector('[data-receipt-details-card]') as HTMLElement;
+  const values = Array.from(card.querySelectorAll('[data-scan-value]'));
+
+  return Object.fromEntries(Array.from(card.querySelectorAll('[data-scan-key]')).map((key, index) => [ key.textContent ?? '', values[index] ]));
+};
+
 describe('PaxeerXReceiptDetails', () => {
   it('renders every field the endpoint returns', () => {
     const { container } = render(<PaxeerXReceiptDetails data={ receipt }/>);
@@ -120,6 +127,39 @@ describe('PaxeerXReceiptDetails', () => {
       'Timestamp',
     ]);
     expect(card.querySelectorAll('[data-scan-value]')).toHaveLength(keys.length);
+  });
+
+  it('puts a dash in place of the transaction, block and timestamp the endpoint returns as null', () => {
+    const data = { ...receipt, transaction_hash: null, block_number: null, timestamp: null } as unknown as PaxeerXReceipt;
+    const { container } = render(<PaxeerXReceiptDetails data={ data }/>);
+
+    const values = rowValues(container);
+
+    expect(values.Transaction?.textContent).toBe('—');
+    expect(values.Block?.textContent).toBe('—');
+    expect(values.Timestamp?.textContent).toBe('—');
+    expect(container.querySelector('a[href^="/tx/"]')).toBeNull();
+    expect(container.querySelector('a[href^="/block/"]')).toBeNull();
+  });
+
+  it('keeps the transaction, block and timestamp entities in their own rows when the endpoint reports them', () => {
+    const { container } = render(<PaxeerXReceiptDetails data={ receipt }/>);
+
+    const values = rowValues(container);
+
+    expect(values.Transaction?.querySelector(`a[href="/tx/${ receipt.transaction_hash }"]`)).toBeTruthy();
+    expect(values.Block?.querySelector(`a[href="/block/${ receipt.block_number }"]`)).toBeTruthy();
+    expect(values.Timestamp?.textContent).toContain(dayjs(receipt.timestamp).utc().format('lll'));
+  });
+
+  it('reports a block alone as missing while the transaction and timestamp stay linked', () => {
+    const { container } = render(<PaxeerXReceiptDetails data={{ ...receipt, block_number: null }}/>);
+
+    const values = rowValues(container);
+
+    expect(values.Block?.textContent).toBe('—');
+    expect(values.Transaction?.querySelector(`a[href="/tx/${ receipt.transaction_hash }"]`)).toBeTruthy();
+    expect(values.Timestamp?.textContent).toContain(dayjs(receipt.timestamp).utc().format('lll'));
   });
 
   it('groups the rows with dividers after the account and the payload hash', () => {
