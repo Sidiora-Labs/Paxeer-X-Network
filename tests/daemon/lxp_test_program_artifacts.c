@@ -3,6 +3,7 @@
 #include "layerx/lxp_daemon.h"
 #include "layerx/lxp_crypto.h"
 #include "../../cmd/layerxd/lxp_daemon_deployment.h"
+#include "../../src/modules/programs/storage.h"
 #include <openssl/evp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -666,12 +667,506 @@ done:
     return result;
 }
 
+enum {
+    RESOLUTION_ARENA_BYTES = 8 * 1024 * 1024,
+    RESOLUTION_WIDE_VALUE_BYTES = 300,
+    RESOLUTION_INTERFACE_MAX_BYTES = 1024
+};
+
+typedef struct resolution_fixture {
+    lxp_state_store store;
+    lxp_state_journal journal;
+    lxp_kernel kernel;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_arena arena;
+    uint8_t *arena_bytes;
+    bool ctx_open;
+    lxp_authority_resolved authority;
+    lxp_activity activity;
+    uint8_t call[CALL_FIXED_BYTES + 128U];
+    uint8_t program[2][32];
+    uint8_t code_hash[2][32];
+    uint8_t wasm[2][128];
+    size_t wasm_length[2];
+    uint8_t interface[2][RESOLUTION_INTERFACE_MAX_BYTES];
+    size_t interface_length[2];
+    uint8_t wide[RESOLUTION_WIDE_VALUE_BYTES];
+    lxp_programs_storage_cell own[1];
+    lxp_programs_storage_cell shared[2];
+    lxp_programs_storage_cell foreign[1];
+} resolution_fixture;
+
+static int resolution_failed(int line)
+{
+    (void)fprintf(stderr, "artifact resolution check failed at line %d\n", line);
+    return 1;
+}
+
+#define RESOLUTION_REQUIRE(expression) do { \
+    if (!(expression)) return resolution_failed(__LINE__); } while (0)
+
+static int resolution_ctx_open(resolution_fixture *f, uint64_t sequence)
+{
+    RESOLUTION_REQUIRE(lxp_arena_reset(&f->arena, 0U) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_module_ctx_init(&f->ctx, &f->kernel,
+        LXP_MODULE_PROGRAMS, 1U, 0U, sequence, 1000000U, &f->arena,
+        false) == LXP_OK);
+    f->ctx_open = true;
+    f->ctx.protocol_version = LXP_PROTOCOL_VERSION_LEGACY;
+    f->ctx.batch_number = 1U;
+    RESOLUTION_REQUIRE(lxp_effect_buffer_init(&f->effects) == LXP_OK &&
+        lxp_module_ctx_bind_effects(&f->ctx, &f->effects) == LXP_OK);
+    return 0;
+}
+
+static int resolution_ctx_commit(resolution_fixture *f)
+{
+    RESOLUTION_REQUIRE(lxp_module_ctx_commit(&f->ctx) == LXP_OK);
+    f->ctx_open = false;
+    return 0;
+}
+
+static void resolution_ctx_rollback(resolution_fixture *f)
+{
+    if (!f->ctx_open) return;
+    lxp_module_ctx_rollback(&f->ctx);
+    f->ctx_open = false;
+}
+
+static int resolution_deploy(resolution_fixture *f, size_t which)
+{
+    static uint8_t payload[DEPLOY_FIXED_BYTES + INTERFACE_MAX_FIXTURE_BYTES + 128U];
+    const uint8_t entry[] = {0x41U, (uint8_t)(which + 1U), 0x0bU};
+    const lxp_module_registration *registration;
+    lxp_activity activity;
+    lxp_result module_result = LXP_FATAL_INVARIANT;
+    size_t length;
+    (void)memset(f->program[which], 0x31 + (int)which, 32U);
+    f->wasm_length[which] = candidate_module(f->wasm[which], entry, sizeof(entry));
+    length = deploy_payload(payload, f->program[which], f->authority.principal,
+                            f->wasm[which], f->wasm_length[which],
+                            f->code_hash[which], LX_PROGRAMS_ABI_VERSION,
+                            INTERFACE_CAPABILITIES_NONE);
+    (void)memset(&activity, 0, sizeof(activity));
+    activity.activity_type = LX_PROGRAMS_DEPLOY;
+    activity.payload = (lxp_byte_span){payload, length};
+    if (resolution_ctx_open(f, 1U + which) != 0) return 1;
+    RESOLUTION_REQUIRE(lxp_kernel_module_for_activity(&f->kernel,
+        activity.activity_type, 0U, &registration) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_kernel_dispatch(registration, &f->ctx, &activity,
+        &f->authority, &f->effects, &module_result) == LXP_OK &&
+        module_result == LXP_OK);
+    return resolution_ctx_commit(f);
+}
+
+static void resolution_namespace(const resolution_fixture *f, size_t which,
+                                 uint16_t selector, uint8_t ns[65],
+                                 uint16_t *ns_length)
+{
+    (void)memcpy(ns, f->program[which], 32U);
+    ns[32] = (uint8_t)selector;
+    if (selector == 0U) {
+        (void)memcpy(ns + 33U, f->authority.principal, 32U);
+        *ns_length = 65U;
+    } else *ns_length = 33U;
+}
+
+static void resolution_storage_key(const resolution_fixture *f, size_t which,
+                                   uint16_t selector, uint8_t key[73],
+                                   size_t *key_length)
+{
+    uint16_t ns_length;
+    (void)memcpy(key, "progstor", 8U);
+    resolution_namespace(f, which, selector, key + 8U, &ns_length);
+    *key_length = 8U + ns_length;
+}
+
+static int resolution_seed_storage(resolution_fixture *f)
+{
+    static const struct {
+        size_t which;
+        uint16_t selector;
+    } namespaces[3] = {{0U, 0U}, {0U, 1U}, {1U, 0U}};
+    const lxp_programs_storage_cell *cells[3] = {f->own, f->shared, f->foreign};
+    const uint32_t counts[3] = {1U, 2U, 1U};
+    uint8_t ns[65];
+    uint16_t ns_length;
+    size_t index;
+    for (index = 0U; index < sizeof(f->wide); ++index)
+        f->wide[index] = (uint8_t)(index * 7U + 3U);
+    f->own[0] = (lxp_programs_storage_cell){
+        (const uint8_t *)"own", 3U, (const uint8_t *)"value", 5U};
+    f->shared[0] = (lxp_programs_storage_cell){
+        (const uint8_t *)"alpha", 5U, (const uint8_t *)"one", 3U};
+    f->shared[1] = (lxp_programs_storage_cell){
+        (const uint8_t *)"beta", 4U, (const uint8_t *)"", 0U};
+    f->foreign[0] = (lxp_programs_storage_cell){
+        (const uint8_t *)"wide", 4U, f->wide, sizeof(f->wide)};
+    for (index = 0U; index < 3U; ++index) {
+        if (resolution_ctx_open(f, 3U + index) != 0) return 1;
+        RESOLUTION_REQUIRE(lxp_module_ctx_set_mutable(&f->ctx, true) == LXP_OK);
+        resolution_namespace(f, namespaces[index].which,
+                             namespaces[index].selector, ns, &ns_length);
+        RESOLUTION_REQUIRE(lxp_programs_storage_stage_final(&f->ctx, ns,
+            ns_length, cells[index], counts[index]) == LXP_OK);
+        if (resolution_ctx_commit(f) != 0) return 1;
+    }
+    return 0;
+}
+
+static int resolution_open_call(resolution_fixture *f, uint64_t sequence,
+                                void **decoded, uint64_t *token)
+{
+    static const uint8_t did[] = "did:lxp:artifact-resolution";
+    size_t length = call_payload(f->call, f->program[0]);
+    fill_activity(&f->activity, LX_PROGRAMS_CALL, f->call, length, did,
+                  sizeof(did) - 1U, f->authority.principal);
+    if (resolution_ctx_open(f, sequence) != 0) return 1;
+    f->ctx.call_admission.present = true;
+    RESOLUTION_REQUIRE(lxp_programs_call_decode(&f->ctx, f->call, length,
+                                                decoded) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_programs_call_validate(&f->ctx, &f->activity,
+        &f->authority, *decoded) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_module_ctx_set_mutable(&f->ctx, true) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_programs_call_execute(&f->ctx, &f->activity,
+        &f->authority, *decoded, &f->effects) == LXP_ERR_UNKNOWN_FIELD);
+    *token = (uint64_t)(uintptr_t)*decoded;
+    RESOLUTION_REQUIRE(lxp_ctx_activity_state(&f->ctx) == *decoded &&
+                       layerx_programs_call_catalog_count(*token) == 2);
+    return 0;
+}
+
+static int resolution_catalog_index(uint64_t token, const uint8_t program[32],
+                                    uint32_t *index)
+{
+    uint32_t candidate, offset;
+    for (candidate = 0U; candidate < 2U; ++candidate) {
+        for (offset = 0U; offset < 32U; ++offset)
+            if (layerx_programs_call_catalog_identity_byte(token, candidate, 0U,
+                    offset) != (lxp_result)program[offset]) break;
+        if (offset == 32U) { *index = candidate; return 0; }
+    }
+    return resolution_failed(__LINE__);
+}
+
+static lxp_result resolution_wasm_byte(uint64_t token, bool catalog,
+                                       uint32_t program, uint32_t offset)
+{
+    return catalog ?
+        layerx_programs_call_catalog_wasm_byte(token, program, offset) :
+        layerx_programs_call_activity_byte(token, LX_PROGRAMS_ACTIVITY_BYTES_WASM,
+                                           offset);
+}
+
+static int resolution_wasm_matches(uint64_t token, bool catalog,
+                                   uint32_t program, const uint8_t *wasm,
+                                   size_t length, uint32_t from)
+{
+    uint32_t offset;
+    for (offset = from; offset < length; ++offset)
+        RESOLUTION_REQUIRE(resolution_wasm_byte(token, catalog, program, offset) ==
+                           (lxp_result)wasm[offset]);
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, catalog, program,
+                                            (uint32_t)length) == LXP_ERR_TRUNCATED);
+    return 0;
+}
+
+static int resolution_interface_matches(uint64_t token, uint32_t program,
+                                        const uint8_t *encoding, size_t length)
+{
+    uint32_t offset;
+    RESOLUTION_REQUIRE(layerx_programs_call_catalog_interface_length(token, program) ==
+                       (lxp_result)length);
+    for (offset = 0U; offset < length; ++offset)
+        RESOLUTION_REQUIRE(layerx_programs_call_catalog_interface_byte(
+            token, program, offset) == (lxp_result)encoding[offset]);
+    RESOLUTION_REQUIRE(layerx_programs_call_catalog_interface_byte(
+        token, program, (uint32_t)length) == LXP_ERR_TRUNCATED);
+    return 0;
+}
+
+static lxp_result resolution_cell_count(uint64_t token, bool catalog,
+                                        uint32_t program, uint16_t selector)
+{
+    return catalog ?
+        layerx_programs_call_catalog_storage_cell_count(token, program, selector) :
+        layerx_programs_call_storage_cell_count(token, selector);
+}
+
+static lxp_result resolution_cell_length(uint64_t token, bool catalog,
+                                         uint32_t program, uint16_t selector,
+                                         uint32_t index, uint16_t section)
+{
+    return catalog ?
+        layerx_programs_call_catalog_storage_cell_length(token, program, selector,
+                                                         index, section) :
+        layerx_programs_call_storage_cell_length(token, selector, index, section);
+}
+
+static lxp_result resolution_cell_byte(uint64_t token, bool catalog,
+                                       uint32_t program, uint16_t selector,
+                                       uint32_t index, uint16_t section,
+                                       uint32_t offset)
+{
+    return catalog ?
+        layerx_programs_call_catalog_storage_cell_byte(token, program, selector,
+                                                       index, section, offset) :
+        layerx_programs_call_storage_cell_byte(token, selector, index, section,
+                                               offset);
+}
+
+static int resolution_cells_match(uint64_t token, bool catalog, uint32_t program,
+                                  uint16_t selector,
+                                  const lxp_programs_storage_cell *cells,
+                                  uint32_t count)
+{
+    uint32_t index, offset, length;
+    uint16_t section;
+    const uint8_t *bytes;
+    RESOLUTION_REQUIRE(resolution_cell_count(token, catalog, program, selector) ==
+                       (lxp_result)count);
+    for (index = 0U; index < count; ++index) {
+        for (section = 0U; section < 2U; ++section) {
+            bytes = section == 0U ? cells[index].key : cells[index].value;
+            length = section == 0U ? cells[index].key_length :
+                                     cells[index].value_length;
+            RESOLUTION_REQUIRE(resolution_cell_length(token, catalog, program,
+                selector, index, section) == (lxp_result)length);
+            for (offset = 0U; offset < length; ++offset)
+                RESOLUTION_REQUIRE(resolution_cell_byte(token, catalog, program,
+                    selector, index, section, offset) == (lxp_result)bytes[offset]);
+            RESOLUTION_REQUIRE(resolution_cell_byte(token, catalog, program,
+                selector, index, section, length) == LXP_ERR_TRUNCATED);
+        }
+        RESOLUTION_REQUIRE(resolution_cell_length(token, catalog, program,
+            selector, index, 2U) == LXP_ERR_UNKNOWN_FIELD);
+    }
+    RESOLUTION_REQUIRE(resolution_cell_length(token, catalog, program, selector,
+                                              count, 0U) == LXP_ERR_UNKNOWN_FIELD);
+    return 0;
+}
+
+static int resolution_artifact_blob(resolution_fixture *f, size_t which,
+                                    uint8_t **bytes)
+{
+    const uint8_t *blob;
+    size_t length;
+    RESOLUTION_REQUIRE(lxp_ctx_blob_get(&f->ctx, f->code_hash[which], &blob,
+                                        &length) == LXP_OK &&
+                       length == f->wasm_length[which]);
+    *bytes = (uint8_t *)(uintptr_t)blob;
+    return 0;
+}
+
+static int resolution_withdraw(resolution_fixture *f, size_t which)
+{
+    uint8_t key[73];
+    size_t key_length;
+    const uint8_t *wasm;
+    size_t wasm_length;
+    (void)memcpy(key, "progcode", 8U);
+    (void)memcpy(key + 8U, f->program[which], 32U);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, 40U) == LXP_OK);
+    RESOLUTION_REQUIRE(lxp_programs_artifact_open(&f->ctx, f->program[which],
+        f->code_hash[which], &wasm, &wasm_length) == LXP_ERR_UNKNOWN_FIELD);
+    (void)memset(key, 0, 10U);
+    (void)memcpy(key, "interface", 9U);
+    (void)memcpy(key + 10U, f->program[which], 32U);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, 42U) == LXP_OK);
+    resolution_storage_key(f, which, 0U, key, &key_length);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, key_length) == LXP_OK);
+    resolution_storage_key(f, which, 1U, key, &key_length);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, key_length) == LXP_OK);
+    return 0;
+}
+
+static int resolution_capture_interfaces(resolution_fixture *f)
+{
+    uint8_t key[42] = "interface";
+    const uint8_t *stored;
+    size_t which, stored_length;
+    for (which = 0U; which < 2U; ++which) {
+        (void)memcpy(key + 10U, f->program[which], 32U);
+        RESOLUTION_REQUIRE(lxp_ctx_kv_get(&f->ctx, key, sizeof(key), &stored,
+                                          &stored_length) == LXP_OK &&
+                           stored_length > 72U &&
+                           stored_length - 72U <= sizeof(f->interface[which]));
+        f->interface_length[which] = stored_length - 72U;
+        (void)memcpy(f->interface[which], stored + 72U, f->interface_length[which]);
+    }
+    return 0;
+}
+
+static int resolution_single_walk(resolution_fixture *f)
+{
+    static const uint8_t settled_key[] = "new";
+    static const uint8_t settled_value[] = "ok";
+    const lxp_programs_storage_cell settled = {settled_key, 3U, settled_value, 2U};
+    void *decoded;
+    uint64_t token;
+    uint32_t first, second, offset;
+    uint8_t *blob;
+    if (resolution_open_call(f, 10U, &decoded, &token) != 0 ||
+        resolution_capture_interfaces(f) != 0 ||
+        resolution_catalog_index(token, f->program[0], &first) != 0 ||
+        resolution_catalog_index(token, f->program[1], &second) != 0 ||
+        resolution_artifact_blob(f, 1U, &blob) != 0) return 1;
+    RESOLUTION_REQUIRE(first != second);
+    blob[f->wasm_length[1] - 1U] ^= 1U;
+    RESOLUTION_REQUIRE(layerx_programs_call_catalog_wasm_byte(token, second, 0U) ==
+                           LXP_FATAL_INVARIANT &&
+                       layerx_programs_call_catalog_wasm_byte(token, second, 1U) ==
+                           LXP_FATAL_INVARIANT);
+    blob[f->wasm_length[1] - 1U] ^= 1U;
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, false, 0U, 0U) ==
+                       (lxp_result)f->wasm[0][0]);
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, true, first, 0U) ==
+                       (lxp_result)f->wasm[0][0]);
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, true, second, 0U) ==
+                       (lxp_result)f->wasm[1][0]);
+    RESOLUTION_REQUIRE(layerx_programs_call_catalog_interface_length(token, first) ==
+                       (lxp_result)f->interface_length[0]);
+    RESOLUTION_REQUIRE(layerx_programs_call_catalog_interface_length(token, second) ==
+                       (lxp_result)f->interface_length[1]);
+    RESOLUTION_REQUIRE(resolution_cell_count(token, false, 0U, 0U) == 1 &&
+                       resolution_cell_count(token, false, 0U, 1U) == 2 &&
+                       resolution_cell_count(token, true, first, 1U) == 2 &&
+                       resolution_cell_count(token, true, second, 0U) == 1 &&
+                       resolution_cell_count(token, true, second, 1U) == 0);
+    if (resolution_withdraw(f, 0U) != 0 || resolution_withdraw(f, 1U) != 0 ||
+        resolution_wasm_matches(token, false, 0U, f->wasm[0],
+                                f->wasm_length[0], 1U) != 0 ||
+        resolution_wasm_matches(token, true, first, f->wasm[0],
+                                f->wasm_length[0], 1U) != 0 ||
+        resolution_wasm_matches(token, true, second, f->wasm[1],
+                                f->wasm_length[1], 1U) != 0 ||
+        resolution_interface_matches(token, first, f->interface[0],
+                                     f->interface_length[0]) != 0 ||
+        resolution_interface_matches(token, second, f->interface[1],
+                                     f->interface_length[1]) != 0 ||
+        resolution_cells_match(token, false, 0U, 0U, f->own, 1U) != 0 ||
+        resolution_cells_match(token, false, 0U, 1U, f->shared, 2U) != 0 ||
+        resolution_cells_match(token, true, first, 1U, f->shared, 2U) != 0 ||
+        resolution_cells_match(token, true, second, 0U, f->foreign, 1U) != 0)
+        return 1;
+    RESOLUTION_REQUIRE(layerx_programs_call_storage_final_authorize(token) == LXP_OK);
+    RESOLUTION_REQUIRE(resolution_cell_count(token, false, 0U, 1U) == 0 &&
+                       resolution_cell_count(token, true, first, 1U) == 0 &&
+                       resolution_cell_count(token, true, second, 0U) == 0);
+    RESOLUTION_REQUIRE(layerx_programs_call_storage_final_begin(token, 1U, 1U) == LXP_OK &&
+                       layerx_programs_call_storage_final_cell(token, 1U, 0U, 3U, 2U) ==
+                           LXP_OK);
+    for (offset = 0U; offset < 3U; ++offset)
+        RESOLUTION_REQUIRE(layerx_programs_call_storage_final_byte(token, 1U, 0U, 0U,
+            offset, settled_key[offset]) == LXP_OK);
+    for (offset = 0U; offset < 2U; ++offset)
+        RESOLUTION_REQUIRE(layerx_programs_call_storage_final_byte(token, 1U, 0U, 1U,
+            offset, settled_value[offset]) == LXP_OK);
+    RESOLUTION_REQUIRE(layerx_programs_call_storage_final_apply(token, 1U) == LXP_OK);
+    if (resolution_cells_match(token, false, 0U, 1U, &settled, 1U) != 0 ||
+        resolution_cells_match(token, true, first, 1U, &settled, 1U) != 0 ||
+        resolution_wasm_matches(token, true, first, f->wasm[0],
+                                f->wasm_length[0], 0U) != 0) return 1;
+    resolution_ctx_rollback(f);
+    return 0;
+}
+
+static int resolution_per_call(resolution_fixture *f)
+{
+    uint8_t key[40], manifest[LX_PROGRAMS_ARTIFACT_MANIFEST_BYTES];
+    const uint8_t *stored;
+    size_t stored_length;
+    void *decoded;
+    uint64_t token;
+    uint32_t first;
+    uint8_t *blob;
+    if (resolution_open_call(f, 11U, &decoded, &token) != 0 ||
+        resolution_catalog_index(token, f->program[0], &first) != 0 ||
+        resolution_artifact_blob(f, 0U, &blob) != 0) return 1;
+    blob[0] ^= 1U;
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, false, 0U, 0U) ==
+                           LXP_FATAL_INVARIANT &&
+                       resolution_wasm_byte(token, false, 0U, 1U) ==
+                           LXP_FATAL_INVARIANT &&
+                       resolution_wasm_byte(token, true, first, 0U) ==
+                           LXP_FATAL_INVARIANT);
+    blob[0] ^= 1U;
+    (void)memcpy(key, "progcode", 8U);
+    (void)memcpy(key + 8U, f->program[0], 32U);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_get(&f->ctx, key, sizeof(key), &stored,
+                                      &stored_length) == LXP_OK &&
+                       stored_length == sizeof(manifest));
+    (void)memcpy(manifest, stored, sizeof(manifest));
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, sizeof(key)) == LXP_OK);
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, false, 0U, 0U) ==
+                           LXP_ERR_UNKNOWN_FIELD &&
+                       resolution_wasm_byte(token, true, first, 0U) ==
+                           LXP_ERR_UNKNOWN_FIELD);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_put(&f->ctx, key, sizeof(key), manifest,
+                                      sizeof(manifest)) == LXP_OK);
+    RESOLUTION_REQUIRE(resolution_wasm_byte(token, false, 0U, 0U) ==
+                           (lxp_result)f->wasm[0][0] &&
+                       resolution_wasm_byte(token, true, first, 0U) ==
+                           (lxp_result)f->wasm[0][0]);
+    RESOLUTION_REQUIRE(lxp_ctx_kv_del(&f->ctx, key, sizeof(key)) == LXP_OK);
+    if (resolution_wasm_matches(token, false, 0U, f->wasm[0],
+                                f->wasm_length[0], 1U) != 0 ||
+        resolution_wasm_matches(token, true, first, f->wasm[0],
+                                f->wasm_length[0], 1U) != 0) return 1;
+    resolution_ctx_rollback(f);
+    return 0;
+}
+
+static int artifact_single_resolution_case(void)
+{
+    resolution_fixture *f = calloc(1U, sizeof(*f));
+    uint64_t parameters = 1U;
+    bool store_ready = false;
+    int result = 1;
+    if (f == NULL) return resolution_failed(__LINE__);
+    f->arena_bytes = malloc(RESOLUTION_ARENA_BYTES);
+    (void)memset(f->authority.principal, 0x42, 32U);
+    (void)memset(f->authority.authority_hash, 0x55, 32U);
+    if (f->arena_bytes == NULL ||
+        lxp_arena_init(&f->arena, f->arena_bytes, RESOLUTION_ARENA_BYTES) != LXP_OK ||
+        lxp_state_store_init(&f->store, 0U) != LXP_OK) {
+        result = resolution_failed(__LINE__);
+        goto done;
+    }
+    store_ready = true;
+    if (lxp_kernel_create(&f->kernel, &f->store, &f->journal, &parameters, 0U) !=
+            LXP_OK ||
+        install_metering_v1(&f->kernel) != LXP_OK ||
+        lxp_kernel_register_module(&f->kernel, programs_module_registration()) !=
+            LXP_OK) {
+        result = resolution_failed(__LINE__);
+        goto done;
+    }
+    result = resolution_deploy(f, 0U) != 0 || resolution_deploy(f, 1U) != 0 ||
+             resolution_seed_storage(f) != 0 || resolution_single_walk(f) != 0 ||
+             resolution_per_call(f) != 0 ? 1 : 0;
+done:
+    resolution_ctx_rollback(f);
+    if (store_ready) {
+        while (f->kernel.blob_count != 0U)
+            free(f->kernel.blobs[--f->kernel.blob_count].bytes);
+        if (lxp_state_store_destroy(&f->store) != LXP_OK) result = 1;
+    }
+    free(f->arena_bytes);
+    free(f);
+    return result;
+}
+
+#undef RESOLUTION_REQUIRE
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
         (void)fprintf(stderr, "usage: %s web-reader.wasm\n", argv[0]);
         return 2;
     }
+    if (artifact_single_resolution_case() != 0) return 1;
     if (deploy_and_upgrade_persist_exact_artifacts() != 0) return 1;
     if (deploy_and_upgrade_persist_exact_artifacts_version(
             LXP_PROTOCOL_VERSION_STATE_COMMITMENT) != 0) return 1;

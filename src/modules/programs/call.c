@@ -70,6 +70,29 @@ typedef struct lxp_programs_call_catalog_entry {
     } storage_final[2];
 } lxp_programs_call_catalog_entry;
 
+typedef struct lxp_programs_call_storage_view {
+    lxp_programs_storage_cell *cells;
+    uint32_t count;
+    uint32_t capacity;
+    bool resolved;
+    bool exhausted;
+} lxp_programs_call_storage_view;
+
+typedef struct lxp_programs_call_resolution {
+    const uint8_t *wasm;
+    size_t wasm_length;
+    const uint8_t *interface;
+    size_t interface_length;
+    bool interface_resolved;
+    lxp_programs_call_storage_view storage[2];
+} lxp_programs_call_resolution;
+
+typedef struct lxp_programs_call_resolutions {
+    lxp_programs_call_resolution root;
+    lxp_programs_call_resolution *catalog;
+    uint32_t catalog_count;
+} lxp_programs_call_resolutions;
+
 struct lxp_programs_call_activity {
     lxp_module_ctx *ctx;
     uint32_t network_id;
@@ -107,6 +130,7 @@ struct lxp_programs_call_activity {
     lxp_programs_call_catalog_entry *catalog;
     uint32_t catalog_count;
     uint32_t catalog_cursor;
+    lxp_programs_call_resolutions *resolved;
     bool receipt_view_active;
     lxp_verified_receipt_facts receipt_view;
     bool arbiter_authority_active;
@@ -202,10 +226,34 @@ static lxp_result replay_host_failure(lxp_programs_call_activity *value, uint8_t
 static lxp_result replay_capture_authority(lxp_programs_call_activity *value,
     const lxp_activity *activity, const lxp_authority_resolved *authority);
 
+static void storage_view_clear(lxp_programs_call_storage_view *view)
+{
+    free(view->cells);
+    (void)memset(view, 0, sizeof(*view));
+}
+
+static void call_storage_views_release(lxp_programs_call_resolutions *resolved)
+{
+    uint32_t index;
+    uint16_t selector;
+    for (selector = 0U; selector < 2U; ++selector) {
+        storage_view_clear(&resolved->root.storage[selector]);
+        for (index = 0U; resolved->catalog != NULL &&
+                         index < resolved->catalog_count; ++index)
+            storage_view_clear(&resolved->catalog[index].storage[selector]);
+    }
+}
+
 static void call_activity_release(void *state)
 {
     lxp_programs_call_activity *value = state;
     if (value == NULL) return;
+    if (value->resolved != NULL) {
+        call_storage_views_release(value->resolved);
+        free(value->resolved->catalog);
+        free(value->resolved);
+        value->resolved = NULL;
+    }
     free(value->replay.bytes);
     free(value->replay_runtime);
     free(value->replay_authority);
@@ -249,24 +297,140 @@ static lxp_result call_namespace(const lxp_programs_call_activity *value,
                                       bytes, length);
 }
 
-static lxp_result storage_cell(const lxp_programs_call_activity *value,
+static lxp_programs_call_resolution *call_resolution(
+    lxp_programs_call_activity *value,
+    const lxp_programs_call_catalog_entry *entry)
+{
+    lxp_programs_call_resolutions *resolved;
+    if (value == NULL || lxp_ctx_activity_state(value->ctx) != value)
+        return NULL;
+    if (value->resolved == NULL) {
+        value->resolved = calloc(1U, sizeof(*value->resolved));
+        if (value->resolved == NULL) return NULL;
+    }
+    resolved = value->resolved;
+    if (entry == NULL) return &resolved->root;
+    if (value->catalog == NULL || entry < value->catalog ||
+        entry >= value->catalog + value->catalog_count) return NULL;
+    if (resolved->catalog == NULL) {
+        resolved->catalog = calloc(value->catalog_count,
+                                   sizeof(*resolved->catalog));
+        if (resolved->catalog == NULL) return NULL;
+        resolved->catalog_count = value->catalog_count;
+    }
+    if (resolved->catalog_count != value->catalog_count) return NULL;
+    return &resolved->catalog[entry - value->catalog];
+}
+
+static lxp_result call_artifact(lxp_programs_call_activity *value,
+                                const lxp_programs_call_catalog_entry *entry,
+                                const uint8_t **wasm, size_t *wasm_length)
+{
+    lxp_programs_call_resolution *resolution = call_resolution(value, entry);
+    lxp_result status;
+    if (resolution != NULL && resolution->wasm != NULL) {
+        *wasm = resolution->wasm;
+        *wasm_length = resolution->wasm_length;
+        return LXP_OK;
+    }
+    status = lxp_programs_artifact_open(
+        value->ctx, entry == NULL ? value->program_id : entry->program_id,
+        entry == NULL ? value->code_hash : entry->code_hash, wasm, wasm_length);
+    if (status == LXP_OK && resolution != NULL) {
+        resolution->wasm = *wasm;
+        resolution->wasm_length = *wasm_length;
+    }
+    return status;
+}
+
+static lxp_result storage_view_append(void *user, const uint8_t *key,
+                                      uint16_t key_length,
+                                      const uint8_t *cell_value,
+                                      uint32_t value_length)
+{
+    lxp_programs_call_storage_view *view = user;
+    lxp_programs_storage_cell *cells;
+    uint32_t capacity;
+    if (view->count == view->capacity) {
+        if (view->capacity > UINT32_MAX / 2U) {
+            view->exhausted = true;
+            return LXP_ERR_ARENA_EXHAUSTED;
+        }
+        capacity = view->capacity == 0U ? 8U : view->capacity * 2U;
+        cells = sizeof(*cells) > SIZE_MAX / capacity ? NULL :
+                realloc(view->cells, (size_t)capacity * sizeof(*cells));
+        if (cells == NULL) {
+            view->exhausted = true;
+            return LXP_ERR_ARENA_EXHAUSTED;
+        }
+        view->cells = cells;
+        view->capacity = capacity;
+    }
+    view->cells[view->count].key = key;
+    view->cells[view->count].key_length = key_length;
+    view->cells[view->count].value = cell_value;
+    view->cells[view->count].value_length = value_length;
+    ++view->count;
+    return LXP_OK;
+}
+
+static lxp_result storage_cell_resolved(
+    lxp_programs_call_activity *value,
+    const lxp_programs_call_catalog_entry *entry, uint16_t selector,
+    uint32_t index, const uint8_t **key, uint16_t *key_length,
+    const uint8_t **cell_value, uint32_t *value_length, uint32_t *count)
+{
+    uint8_t ns[65];
+    uint16_t ns_length;
+    lxp_programs_call_resolution *resolution;
+    lxp_programs_call_storage_view *view;
+    lxp_result status = call_namespace_for_program(
+        value, entry == NULL ? value->program_id : entry->program_id,
+        selector, ns, &ns_length);
+    if (status != LXP_OK) return status;
+    resolution = value->storage_settlement_authorized ? NULL :
+                 call_resolution(value, entry);
+    view = resolution == NULL ? NULL : &resolution->storage[selector];
+    if (view != NULL && !view->resolved) {
+        status = lxp_programs_storage_import(value->ctx, ns, ns_length,
+                                             storage_view_append, view);
+        if (view->exhausted) {
+            storage_view_clear(view);
+            view = NULL;
+        } else if (status != LXP_OK) {
+            storage_view_clear(view);
+            return status;
+        } else {
+            view->resolved = true;
+        }
+    }
+    if (view == NULL)
+        return lxp_programs_storage_cell_at(value->ctx, ns, ns_length, index,
+            key, key_length, cell_value, value_length, count);
+    *count = view->count;
+    if (index >= view->count) return LXP_ERR_UNKNOWN_FIELD;
+    *key = view->cells[index].key;
+    *key_length = view->cells[index].key_length;
+    *cell_value = view->cells[index].value;
+    *value_length = view->cells[index].value_length;
+    return LXP_OK;
+}
+
+static lxp_result storage_cell(lxp_programs_call_activity *value,
                                uint16_t selector, uint32_t index,
                                const uint8_t **key, uint16_t *key_length,
                                const uint8_t **cell_value,
                                uint32_t *value_length, uint32_t *count)
 {
-    uint8_t ns[65]; uint16_t ns_length;
-    lxp_result status = call_namespace(value, selector, ns, &ns_length);
-    if (status != LXP_OK) return status;
-    return lxp_programs_storage_cell_at(value->ctx, ns, ns_length, index,
-        key, key_length, cell_value, value_length, count);
+    return storage_cell_resolved(value, NULL, selector, index, key, key_length,
+                                 cell_value, value_length, count);
 }
 
 lxp_result layerx_programs_call_storage_cell_count(uint64_t token,
                                                     uint16_t selector)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value; uint16_t key_length;
     uint32_t value_length, count = 0U;
     lxp_result status = storage_cell(value, selector, 0U, &key, &key_length,
@@ -278,8 +442,8 @@ lxp_result layerx_programs_call_storage_cell_count(uint64_t token,
 lxp_result layerx_programs_call_storage_cell_length(
     uint64_t token, uint16_t selector, uint32_t index, uint16_t section)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value; uint16_t key_length;
     uint32_t value_length, count;
     lxp_result status = storage_cell(value, selector, index, &key, &key_length,
@@ -294,8 +458,8 @@ lxp_result layerx_programs_call_storage_cell_byte(
     uint64_t token, uint16_t selector, uint32_t index, uint16_t section,
     uint32_t offset)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value, *bytes; uint16_t key_length;
     uint32_t value_length, count, length;
     lxp_result status = storage_cell(value, selector, index, &key, &key_length,
@@ -576,6 +740,7 @@ static lxp_result catalog_interface(lxp_programs_call_activity *value,
                                      size_t *length)
 {
     lxp_programs_call_catalog_entry *entry = catalog_entry(value, index);
+    lxp_programs_call_resolution *resolution;
     uint8_t key[42] = "interface";
     uint8_t digest[32];
     const uint8_t *stored;
@@ -583,25 +748,36 @@ static lxp_result catalog_interface(lxp_programs_call_activity *value,
     lxp_result status;
     if (entry == NULL || encoding == NULL || length == NULL)
         return LXP_ERR_NON_CANONICAL;
+    resolution = call_resolution(value, entry);
+    if (resolution != NULL && resolution->interface_resolved) {
+        *encoding = resolution->interface;
+        *length = resolution->interface_length;
+        return LXP_OK;
+    }
     (void)memcpy(key + 10U, entry->program_id, 32U);
     status = lxp_ctx_kv_get(value->ctx, key, sizeof(key), &stored, &stored_length);
     if (status == LXP_ERR_UNKNOWN_FIELD) {
         *encoding = NULL;
         *length = 0U;
-        return LXP_OK;
+    } else {
+        if (status != LXP_OK) return status;
+        if (stored_length <= 72U || stored_length > 1024U ||
+            lxp_ct_memcmp(stored, entry->program_id, 32U) != 0 ||
+            read_u32(stored + 32U) == 0U ||
+            read_u32(stored + 68U) != stored_length - 72U)
+            return LXP_ERR_CONTEXT_MISMATCH;
+        status = lxp_hash_sha256(stored + 72U, stored_length - 72U, digest);
+        if (status != LXP_OK) return status;
+        if (lxp_ct_memcmp(digest, stored + 36U, 32U) != 0)
+            return LXP_ERR_CONTEXT_MISMATCH;
+        *encoding = stored + 72U;
+        *length = stored_length - 72U;
     }
-    if (status != LXP_OK) return status;
-    if (stored_length <= 72U || stored_length > 1024U ||
-        lxp_ct_memcmp(stored, entry->program_id, 32U) != 0 ||
-        read_u32(stored + 32U) == 0U ||
-        read_u32(stored + 68U) != stored_length - 72U)
-        return LXP_ERR_CONTEXT_MISMATCH;
-    status = lxp_hash_sha256(stored + 72U, stored_length - 72U, digest);
-    if (status != LXP_OK) return status;
-    if (lxp_ct_memcmp(digest, stored + 36U, 32U) != 0)
-        return LXP_ERR_CONTEXT_MISMATCH;
-    *encoding = stored + 72U;
-    *length = stored_length - 72U;
+    if (resolution != NULL) {
+        resolution->interface = *encoding;
+        resolution->interface_length = *length;
+        resolution->interface_resolved = true;
+    }
     return LXP_OK;
 }
 
@@ -669,8 +845,7 @@ lxp_result layerx_programs_call_catalog_wasm_byte(uint64_t token,
     size_t wasm_length;
     lxp_result status;
     if (entry == NULL) return LXP_ERR_NON_CANONICAL;
-    status = lxp_programs_artifact_open(value->ctx, entry->program_id,
-                                        entry->code_hash, &wasm, &wasm_length);
+    status = call_artifact(value, entry, &wasm, &wasm_length);
     if (status != LXP_OK) return status;
     if (wasm_length != entry->wasm_length || offset >= wasm_length)
         return LXP_ERR_TRUNCATED;
@@ -1079,32 +1254,24 @@ lxp_result layerx_programs_call_web_view_byte(
     return (lxp_result)bytes[offset];
 }
 
-static lxp_result catalog_storage_cell(const lxp_programs_call_activity *value,
+static lxp_result catalog_storage_cell(lxp_programs_call_activity *value,
                                        uint32_t program_index,
                                        uint16_t selector, uint32_t index,
                                        const uint8_t **key, uint16_t *key_length,
                                        const uint8_t **cell_value,
                                        uint32_t *value_length, uint32_t *count)
 {
-    lxp_programs_call_catalog_entry *entry = catalog_entry(
-        (lxp_programs_call_activity *)value, program_index);
-    uint8_t ns[65];
-    uint16_t ns_length;
-    lxp_result status;
+    lxp_programs_call_catalog_entry *entry = catalog_entry(value, program_index);
     if (entry == NULL) return LXP_ERR_NON_CANONICAL;
-    status = call_namespace_for_program(value, entry->program_id, selector,
-                                        ns, &ns_length);
-    if (status != LXP_OK) return status;
-    return lxp_programs_storage_cell_at(value->ctx, ns, ns_length, index,
-                                        key, key_length, cell_value,
-                                        value_length, count);
+    return storage_cell_resolved(value, entry, selector, index, key,
+                                 key_length, cell_value, value_length, count);
 }
 
 lxp_result layerx_programs_call_catalog_storage_cell_count(
     uint64_t token, uint32_t program_index, uint16_t selector)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value;
     uint16_t key_length;
     uint32_t value_length, count = 0U;
@@ -1119,8 +1286,8 @@ lxp_result layerx_programs_call_catalog_storage_cell_length(
     uint64_t token, uint32_t program_index, uint16_t selector,
     uint32_t index, uint16_t section)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value;
     uint16_t key_length;
     uint32_t value_length, count;
@@ -1137,8 +1304,8 @@ lxp_result layerx_programs_call_catalog_storage_cell_byte(
     uint64_t token, uint32_t program_index, uint16_t selector,
     uint32_t index, uint16_t section, uint32_t offset)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *key, *cell_value, *bytes;
     uint16_t key_length;
     uint32_t value_length, count, length;
@@ -1270,6 +1437,7 @@ lxp_result layerx_programs_call_storage_final_authorize(uint64_t token)
     if (value == NULL || value->ctx == NULL || value->storage_settlement_authorized)
         return LXP_ERR_NON_CANONICAL;
     value->storage_settlement_authorized = true;
+    if (value->resolved != NULL) call_storage_views_release(value->resolved);
     return LXP_OK;
 }
 
@@ -1899,8 +2067,8 @@ static lxp_result call_scalar_begin(const lxp_programs_call_activity *value,
 lxp_result layerx_programs_call_activity_byte(uint64_t token, uint16_t section,
                                               uint32_t offset)
 {
-    const lxp_programs_call_activity *value =
-        (const lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
     const uint8_t *bytes;
     uint32_t length;
     size_t blob_length;
@@ -1908,9 +2076,8 @@ lxp_result layerx_programs_call_activity_byte(uint64_t token, uint16_t section,
     switch (section) {
     case LX_PROGRAMS_ACTIVITY_BYTES_WASM:
         {
-            lxp_result status = lxp_programs_artifact_open(
-                value->ctx, value->program_id, value->code_hash, &bytes,
-                &blob_length);
+            lxp_result status = call_artifact(value, NULL, &bytes,
+                                              &blob_length);
             if (status != LXP_OK) return status;
             if (blob_length > UINT32_MAX) return LXP_ERR_LENGTH_LIMIT;
             length = (uint32_t)blob_length;
