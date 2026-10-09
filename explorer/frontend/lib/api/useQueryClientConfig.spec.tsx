@@ -31,6 +31,11 @@ describe('retry', () => {
     expect(retry(0, { status: 422 })).toBe(false);
   });
 
+  it('does not retry a route the server does not implement', () => {
+    expect(retry(0, { status: 501 })).toBe(false);
+    expect(retry(0, { payload: { status: 501 } })).toBe(false);
+  });
+
   it('retries a server error twice and then gives up', () => {
     expect(retry(0, { status: 500 })).toBe(true);
     expect(retry(1, { status: 500 })).toBe(true);

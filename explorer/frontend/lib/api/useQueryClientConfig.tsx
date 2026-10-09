@@ -65,8 +65,8 @@ export function getResourceStaleTime(resource: ResourceName) {
 export const retry = (failureCount: number, error: unknown) => {
   const errorPayload = getErrorObjPayload<{ status: number }>(error);
   const status = errorPayload?.status || getErrorObjStatusCode(error);
-  if (status && status >= 400 && status < 500) {
-    // don't do retry for client error responses
+  if (status && ((status >= 400 && status < 500) || status === 501)) {
+    // don't do retry for client error responses or for a route the server does not implement
     return false;
   }
   return failureCount < 2;

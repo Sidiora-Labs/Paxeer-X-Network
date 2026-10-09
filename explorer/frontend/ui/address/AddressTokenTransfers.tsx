@@ -40,7 +40,8 @@ const AddressTokenTransfers = ({ shouldRender = true, overloadCount, isQueryEnab
   const hash = getQueryParamString(router.query.hash);
   const tab = getQueryParamString(router.query.tab) as typeof ADDRESS_TOKEN_TRANSFERS_TAB_IDS[number] | 'token_transfers' | undefined;
 
-  const isLocalTab = tab === 'token_transfers_local' || tab === 'token_transfers';
+  const isCrossChainTab = config.features.crossChainTxs.isEnabled && tab === 'token_transfers_cross_chain';
+  const isLocalTab = !isCrossChainTab;
 
   const localQuery = useAddressTokenTransfersQuery({
     currentAddress: hash,
@@ -52,7 +53,7 @@ const AddressTokenTransfers = ({ shouldRender = true, overloadCount, isQueryEnab
     pathParams: { hash },
     options: {
       placeholderData: generateListStub<'interchainIndexer:address_transfers'>(INTERCHAIN_TRANSFER, 50, { next_page_params: undefined }),
-      enabled: isQueryEnabled && !isLocalTab,
+      enabled: isQueryEnabled && isCrossChainTab,
     },
   });
 
