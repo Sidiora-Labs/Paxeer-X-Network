@@ -54,7 +54,7 @@ const AddressTokens = ({ shouldRender = true, isQueryEnabled = true, tokensCount
     filters: { type: tokenTypesFilter },
     scrollRef,
     options: {
-      enabled: isQueryEnabled && (tab === 'tokens' || tab === 'tokens_erc20'),
+      enabled: isQueryEnabled && tab !== 'tokens_nfts',
       refetchOnMount: false,
       placeholderData: generateListStub<'general:address_tokens'>(ADDRESS_TOKEN_BALANCE_ERC_20, 10, { next_page_params: null }),
     },

@@ -5,6 +5,7 @@ import React from 'react';
 import * as addressMock from 'mocks/address/address';
 import { render, routerState } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from 'vitest/lib';
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
@@ -15,6 +16,8 @@ vi.setConfig({ testTimeout: 60_000 });
 import AddressTokens from './AddressTokens';
 
 const HASH = addressMock.hash;
+
+const requestedPaths = () => fetchMock.mock.calls.map((call) => new URL(String(call[0]), 'http://localhost').pathname);
 
 describe('AddressTokens', () => {
   beforeEach(() => {
@@ -54,5 +57,16 @@ describe('AddressTokens', () => {
 
     expect(tabs.some((title) => title?.startsWith('NFTs'))).toBe(true);
     expect(tabs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('asks for the token balances under every tokens tab the page routes here except the NFT one', async() => {
+    routerState.query = { hash: HASH, tab: 'tokens_nfts_list' };
+
+    render(<AddressTokens/>);
+
+    await waitFor(() => {
+      expect(requestedPaths()).toContain(`/api/v2/addresses/${ HASH }/tokens`);
+    });
+    expect(requestedPaths()).not.toContain(`/api/v2/addresses/${ HASH }/nft`);
   });
 });

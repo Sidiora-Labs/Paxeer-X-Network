@@ -5,11 +5,15 @@ import React from 'react';
 import * as addressMock from 'mocks/address/address';
 import { render, routerState } from 'ui/shared/layout/testWrapper';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { waitFor } from 'vitest/lib';
+import flushPromises from 'vitest/utils/flushPromises';
 
 vi.hoisted(() => {
   window.__envs = {
     ...window.__envs,
     NEXT_PUBLIC_RE_CAPTCHA_APP_SITE_KEY: 'test-site-key',
+    NEXT_PUBLIC_CROSS_CHAIN_TXS_ENABLED: 'true',
+    NEXT_PUBLIC_INTERCHAIN_INDEXER_API_HOST: 'http://localhost:8051',
   };
 });
 
@@ -22,6 +26,10 @@ vi.setConfig({ testTimeout: 60_000 });
 import AddressTokenTransfers from './AddressTokenTransfers';
 
 const HASH = addressMock.hash;
+const LOCAL_PATH = `/api/v2/addresses/${ HASH }/token-transfers`;
+const CROSS_CHAIN_PATH = `/api/v1/interchain/transfers:byAddress/${ HASH }`;
+
+const requestedPaths = () => fetchMock.mock.calls.map((call) => decodeURIComponent(new URL(String(call[0]), 'http://localhost').pathname));
 
 describe('AddressTokenTransfers', () => {
   beforeEach(() => {
@@ -66,5 +74,28 @@ describe('AddressTokenTransfers', () => {
     expect(viewAll.textContent).toBe('View all token transfers →');
     expect(Array.from(container.querySelectorAll('[data-csv-export-label]')).map((item) => item.textContent))
       .toEqual([ 'Download Page Data', 'CSV Export' ]);
+  });
+
+  it('asks for the local list when the address page lands without a tab', async() => {
+    routerState.query = { hash: HASH };
+
+    render(<AddressTokenTransfers/>);
+
+    await waitFor(() => {
+      expect(requestedPaths()).toContain(LOCAL_PATH);
+    });
+    expect(requestedPaths()).not.toContain(CROSS_CHAIN_PATH);
+  });
+
+  it('asks for the cross-chain list only once its sub-tab is picked', async() => {
+    routerState.query = { hash: HASH, tab: 'token_transfers_cross_chain' };
+
+    render(<AddressTokenTransfers/>);
+
+    await waitFor(() => {
+      expect(requestedPaths()).toContain(CROSS_CHAIN_PATH);
+    });
+    await flushPromises();
+    expect(requestedPaths()).not.toContain(LOCAL_PATH);
   });
 });

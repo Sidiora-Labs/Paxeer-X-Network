@@ -37,7 +37,8 @@ const AddressTxs = ({ shouldRender = true, isQueryEnabled = true, txsCount }: Pr
   const hash = getQueryParamString(router.query.hash);
   const tab = getQueryParamString(router.query.tab) as typeof ADDRESS_TXS_TAB_IDS[number] | 'txs' | undefined;
 
-  const isLocalTab = tab === 'txs_local' || tab === 'txs';
+  const isCrossChainTab = config.features.crossChainTxs.isEnabled && tab === 'txs_cross_chain';
+  const isLocalTab = !isCrossChainTab;
 
   const localQuery = useAddressTxsQuery({
     addressHash: hash,
@@ -49,7 +50,7 @@ const AddressTxs = ({ shouldRender = true, isQueryEnabled = true, txsCount }: Pr
     pathParams: { hash },
     options: {
       placeholderData: generateListStub<'interchainIndexer:address_messages'>(INTERCHAIN_MESSAGE, 50, { next_page_params: undefined }),
-      enabled: isQueryEnabled && !isLocalTab,
+      enabled: isQueryEnabled && isCrossChainTab,
     },
   });
 
