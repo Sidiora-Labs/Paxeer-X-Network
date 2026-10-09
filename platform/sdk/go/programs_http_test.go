@@ -777,7 +777,7 @@ func TestProgramSDKNativeABIPolicy(t *testing.T) {
 			}
 		}
 	}
-	for _, abi := range []uint16{0, 5, 65535} {
+	for _, abi := range []uint16{0, 6, 65535} {
 		if SupportsProgramGuestAbi(abi) {
 			t.Fatalf("unknown ABI%d admitted", abi)
 		}

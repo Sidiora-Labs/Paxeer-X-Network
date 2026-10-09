@@ -197,14 +197,14 @@ def verify_program_receipt(
     module_version = execution.get("module_version")
     guest_abi = execution.get("guest_abi_version")
     result_code = execution.get("result_code")
-    if not isinstance(activity_id, str) or not _hex32(activity_id) or not programs_module_version_for_protocol(trust.protocol_version, module_version) or type(guest_abi) is not int or not native_guest_abi_for_protocol(guest_abi, trust.protocol_version) or type(result_code) is not int:
+    if not isinstance(activity_id, str) or not _hex32(activity_id) or not programs_module_version_for_protocol(trust.protocol_version, module_version) or type(guest_abi) is not int or not native_guest_abi_for_protocol(guest_abi, trust.protocol_version) or guest_abi > cast(int, module_version) or type(result_code) is not int:
         raise ValueError("invalid program execution evidence")
     receipt = _evidence_bytes(execution, "receipt")
     terminal_payload = _evidence_bytes(execution, "terminal_payload")
     call_graph = _evidence_bytes(execution, "call_graph")
     if authority.sequencer_public_key != trust.sequencer_public_key or _mapping(execution.get("authority")).get("sequencer_public_key") != trust.sequencer_public_key.hex():
         raise ValueError("program sequencer authority mismatch")
-    if guest_abi in (3, 4):
+    if guest_abi in (3, 4, 5):
         retained_v5 = expected_signed_activity
         if retained_v5 is None and "retained_signed_activity" in execution:
             retained_v5 = _evidence_bytes(execution, "retained_signed_activity")
@@ -341,7 +341,7 @@ class ProgramOperations:
         if not _hex32(program_id):
             raise ValueError("invalid program id")
         result = _interface(self._client.agent("program.interface", {"program_id": program_id, "requested_verification_level": "sequencer-signed"}), program_id, self._trust.now_milliseconds(), self._trust.protocol_version)
-        if result.abi_version in (3, 4):
+        if result.abi_version in (3, 4, 5):
             discovered = self.discover(program_id)
             if (not discovered.sequencer_signature_verified or discovered.version != result.version
                     or discovered.code_hash != result.code_hash or discovered.abi_version != result.abi_version
@@ -413,7 +413,7 @@ class ProgramOperations:
         if not native_guest_abi_for_protocol(call.native_call.guest_abi, self._trust.protocol_version):
             raise ValueError("guest ABI does not match selected protocol")
         verify_native_program_call_signature(call.signed_activity, self._signatures, self._trust.network_id)
-        if call.native_call.guest_abi in (3, 4):
+        if call.native_call.guest_abi in (3, 4, 5):
             if self._trust.network_id is None:
                 raise ValueError("account-capable call requires selected network")
             with self._heads_lock:
@@ -514,7 +514,7 @@ def _execution(value: object, expected_state: Literal["executed", "refused", "si
     _hex_field(execution, "call_graph", _MAX_CALLDATA)
     for field in ("global_sequence",):
         _decimal(execution.get(field), (1 << 64) - 1)
-    if not isinstance(execution.get("module_version"), int) or isinstance(execution.get("module_version"), bool) or execution["module_version"] not in (1, 2, 3, 4) or not isinstance(execution.get("guest_abi_version"), int) or isinstance(execution.get("guest_abi_version"), bool) or execution.get("guest_abi_version") not in (1, 2, 3, 4) or not isinstance(execution.get("result_code"), int) or isinstance(execution.get("result_code"), bool):
+    if not isinstance(execution.get("module_version"), int) or isinstance(execution.get("module_version"), bool) or execution["module_version"] not in (1, 2, 3, 4, 5) or not isinstance(execution.get("guest_abi_version"), int) or isinstance(execution.get("guest_abi_version"), bool) or execution.get("guest_abi_version") not in (1, 2, 3, 4, 5) or not isinstance(execution.get("result_code"), int) or isinstance(execution.get("result_code"), bool):
         raise ValueError("invalid program execution metadata")
     if execution.get("verification") != "receipt-terminal-and-call-graph-verified":
         raise ValueError("invalid program verification status")
@@ -617,7 +617,7 @@ def _discovery(value: object, program_id: str, now: int, signatures: LocalSignat
     signed = _verify_discovery_signature(result, documented, signatures, trust)
     deployment = None if "deployment_receipt_digest" not in result else _hex_field(result, "deployment_receipt_digest", 32, exact=True)
     accounts = None if "value_accounts" not in result else dict(_mapping(result["value_accounts"]))
-    if documented.abi_version in (3, 4) and (not signed or deployment is None):
+    if documented.abi_version in (3, 4, 5) and (not signed or deployment is None):
         raise ValueError("account-capable discovery requires pinned signature and deployment binding")
     return ProgramDiscovery(**{**documented.__dict__, "deployment_receipt_digest": deployment,
                               "sequencer_signature_verified": signed, "value_accounts": accounts})

@@ -52,7 +52,7 @@ export function programsModuleVersionForProtocol(
   accountState: boolean,
 ): boolean {
   if (protocolVersion === STATE_COMMITMENT_PROTOCOL_VERSION) {
-    return moduleVersion === 4;
+    return moduleVersion === 4 || moduleVersion === 5;
   }
   if (accountState) {
     return moduleVersion === 2 || moduleVersion === 3;
@@ -1145,7 +1145,8 @@ export async function verifyNativeProgramReceiptOutcomeV5(
   if (!programsModuleVersionForProtocol(receipt.protocolVersion, receipt.moduleVersion, false)) return receiptFailure(ReceiptFailureCode.ModuleVersion);
   const outcome = receipt.programOutcome;
   if (outcome === undefined) return receiptFailure(ReceiptFailureCode.ReceiptShape);
-  if ((outcome.abiVersion !== 3 && outcome.abiVersion !== 4) || outcome.runtimeVersion !== 1 || outcome.encodingVersion !== 4) return receiptFailure(ReceiptFailureCode.ProtocolVersion);
+  if ((outcome.abiVersion !== 3 && outcome.abiVersion !== 4 && outcome.abiVersion !== 5) || outcome.runtimeVersion !== 1 || outcome.encodingVersion !== 4) return receiptFailure(ReceiptFailureCode.ProtocolVersion);
+  if (outcome.abiVersion > receipt.moduleVersion) return receiptFailure(ReceiptFailureCode.ModuleVersion);
   if (allZero(receipt.activityId)) return receiptFailure(ReceiptFailureCode.ActivityId);
   verifyStateChain(receipt, authority);
   const receiptDigest = await sha256(RECEIPT_DOMAIN, unsignedBytes);

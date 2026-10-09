@@ -72,9 +72,10 @@ public static class GeneratedReceiptContract
     public const ushort ProgramAbiV2 = 2;
     public const ushort ProgramAbiV3 = 3;
     public const ushort ProgramAbiV4 = 4;
+    public const ushort ProgramAbiV5 = 5;
     public static bool SupportsProgramGuestAbi(ushort version) => version switch
     {
-        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 => true,
+        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 or ProgramAbiV5 => true,
         _ => false,
     };
 }

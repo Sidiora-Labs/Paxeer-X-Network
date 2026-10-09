@@ -1,3 +1,4 @@
+from . import ai_market as ai_market
 from .agent_http import AgentHttpTransport as AgentHttpTransport
 from .agent_http import LayerXKeyCredential as LayerXKeyCredential
 from .generated.client import (

@@ -14,11 +14,11 @@ capabilities = 5
 interface_bytes = 952
 
 [type.ProgramGuestAbi]
-variants = ["ABI_V1_VERSION","ABI_V2_VERSION","ABI_V3_VERSION","ABI_V4_VERSION"]
-wire_values = ["1","2","3","4"]
+variants = ["ABI_V1_VERSION","ABI_V2_VERSION","ABI_V3_VERSION","ABI_V4_VERSION","ABI_V5_VERSION"]
+wire_values = ["1","2","3","4","5"]
 source_policy = "programs/sdk/rust/src/abi_policy.rs"
 admission = "named_versions_only_reject_every_other_u16"
-capability_encoding = ["V1","V2","V2","V2"]
+capability_encoding = ["V1","V2","V2","V2","V2"]
 
 [type.NativeProgramDeployRequest]
 required = ["signed_activity"]

@@ -40,5 +40,6 @@ PROGRAM_ABI_V1 = 1
 PROGRAM_ABI_V2 = 2
 PROGRAM_ABI_V3 = 3
 PROGRAM_ABI_V4 = 4
+PROGRAM_ABI_V5 = 5
 def supports_program_guest_abi(version: int) -> bool:
-    return type(version) is int and version in (PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4)
+    return type(version) is int and version in (PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4, PROGRAM_ABI_V5)

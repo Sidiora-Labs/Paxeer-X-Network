@@ -200,7 +200,7 @@ struct ReceiptContract {
     program_outcome_tags: [u32; 4],
     required_nonzero: Vec<String>,
     failure_checks: Vec<String>,
-    program_abis: [u16; 4],
+    program_abis: [u16; 5],
 }
 
 fn hex_digest(bytes: &[u8]) -> Result<String, String> {
@@ -493,6 +493,7 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
         "ABI_V2_VERSION",
         "ABI_V3_VERSION",
         "ABI_V4_VERSION",
+        "ABI_V5_VERSION",
     ];
     if names != expected_names.map(str::to_owned) {
         return Err("Programs guest ABI variants must match the canonical named policy".to_owned());
@@ -507,12 +508,12 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
     let values = layerx_platform_kvx::string_list(
         programs.required("type.ProgramGuestAbi", "wire_values")?,
     )?;
-    let program_abis: [u16; 4] = values
+    let program_abis: [u16; 5] = values
         .iter()
         .map(|value| value.parse::<u16>().map_err(|error| error.to_string()))
         .collect::<Result<Vec<_>, _>>()?
         .try_into()
-        .map_err(|_| "Programs ABI policy requires four named versions")?;
+        .map_err(|_| "Programs ABI policy requires five named versions")?;
     for (name, value) in names.iter().zip(program_abis) {
         if !policy
             .lines()
@@ -526,7 +527,7 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
     let encodings = layerx_platform_kvx::string_list(
         programs.required("type.ProgramGuestAbi", "capability_encoding")?,
     )?;
-    if encodings != ["V1", "V2", "V2", "V2"].map(str::to_owned) {
+    if encodings != ["V1", "V2", "V2", "V2", "V2"].map(str::to_owned) {
         return Err(
             "Programs ABI capability encoding differs from the canonical policy".to_owned(),
         );
@@ -657,9 +658,13 @@ pub const PROGRAM_ABI_V1: u16 = {V1};
 pub const PROGRAM_ABI_V2: u16 = {V2};
 pub const PROGRAM_ABI_V3: u16 = {V3};
 pub const PROGRAM_ABI_V4: u16 = {V4};
+pub const PROGRAM_ABI_V5: u16 = {V5};
 #[must_use]
 pub const fn supports_program_guest_abi(version: u16) -> bool {
-    matches!(version, PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4)
+    matches!(
+        version,
+        PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4 | PROGRAM_ABI_V5
+    )
 }
 "#
         }
@@ -669,9 +674,10 @@ export const PROGRAM_ABI_V1 = {V1};
 export const PROGRAM_ABI_V2 = {V2};
 export const PROGRAM_ABI_V3 = {V3};
 export const PROGRAM_ABI_V4 = {V4};
+export const PROGRAM_ABI_V5 = {V5};
 export function supportsProgramGuestAbi(version: number): boolean {
   switch (version) {
-    case PROGRAM_ABI_V1: case PROGRAM_ABI_V2: case PROGRAM_ABI_V3: case PROGRAM_ABI_V4: return true;
+    case PROGRAM_ABI_V1: case PROGRAM_ABI_V2: case PROGRAM_ABI_V3: case PROGRAM_ABI_V4: case PROGRAM_ABI_V5: return true;
     default: return false;
   }
 }
@@ -683,8 +689,9 @@ PROGRAM_ABI_V1 = {V1}
 PROGRAM_ABI_V2 = {V2}
 PROGRAM_ABI_V3 = {V3}
 PROGRAM_ABI_V4 = {V4}
+PROGRAM_ABI_V5 = {V5}
 def supports_program_guest_abi(version: int) -> bool:
-    return type(version) is int and version in (PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4)
+    return type(version) is int and version in (PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4, PROGRAM_ABI_V5)
 "#
         }
         "python-stub" => {
@@ -693,6 +700,7 @@ PROGRAM_ABI_V1: int
 PROGRAM_ABI_V2: int
 PROGRAM_ABI_V3: int
 PROGRAM_ABI_V4: int
+PROGRAM_ABI_V5: int
 def supports_program_guest_abi(version: int) -> bool: ...
 "#
         }
@@ -702,9 +710,10 @@ const ProgramAbiV1 uint16 = {V1}
 const ProgramAbiV2 uint16 = {V2}
 const ProgramAbiV3 uint16 = {V3}
 const ProgramAbiV4 uint16 = {V4}
+const ProgramAbiV5 uint16 = {V5}
 func SupportsProgramGuestAbi(version uint16) bool {
     switch version {
-    case ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4:
+    case ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4, ProgramAbiV5:
         return true
     default:
         return false
@@ -718,9 +727,10 @@ func SupportsProgramGuestAbi(version uint16) bool {
     public static final int PROGRAM_ABI_V2 = {V2};
     public static final int PROGRAM_ABI_V3 = {V3};
     public static final int PROGRAM_ABI_V4 = {V4};
+    public static final int PROGRAM_ABI_V5 = {V5};
     public static boolean supportsProgramGuestAbi(int version) {
         return switch (version) {
-            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4 -> true;
+            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4, PROGRAM_ABI_V5 -> true;
             default -> false;
         };
     }
@@ -732,9 +742,10 @@ let programAbiV1: UInt16 = {V1}
 let programAbiV2: UInt16 = {V2}
 let programAbiV3: UInt16 = {V3}
 let programAbiV4: UInt16 = {V4}
+let programAbiV5: UInt16 = {V5}
 func supportsProgramGuestAbi(_ version: UInt16) -> Bool {
     switch version {
-    case programAbiV1, programAbiV2, programAbiV3, programAbiV4: return true
+    case programAbiV1, programAbiV2, programAbiV3, programAbiV4, programAbiV5: return true
     default: return false
     }
 }
@@ -746,9 +757,10 @@ func supportsProgramGuestAbi(_ version: UInt16) -> Bool {
     public const ushort ProgramAbiV2 = {V2};
     public const ushort ProgramAbiV3 = {V3};
     public const ushort ProgramAbiV4 = {V4};
+    public const ushort ProgramAbiV5 = {V5};
     public static bool SupportsProgramGuestAbi(ushort version) => version switch
     {
-        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 => true,
+        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 or ProgramAbiV5 => true,
         _ => false,
     };
 "#

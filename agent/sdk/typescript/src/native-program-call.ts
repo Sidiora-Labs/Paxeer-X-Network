@@ -11,7 +11,7 @@ export interface NativeProgramCall {
   readonly resources: readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint];
 }
 
-export type NativeProgramCallV1 = Omit<NativeProgramCall, "guestAbi"> & Readonly<{ guestAbi: 1 | 2 | 3 | 4 }>;
+export type NativeProgramCallV1 = Omit<NativeProgramCall, "guestAbi"> & Readonly<{ guestAbi: 1 | 2 | 3 | 4 | 5 }>;
 
 export function encodeNativeProgramCall(call: NativeProgramCall): Uint8Array {
   return encodeCall(call, false);
@@ -61,7 +61,7 @@ function decodeCall(payload: Uint8Array, native: boolean): NativeProgramCallV1 {
   let offset = 106;
   const body = (length: number): Uint8Array => { const result = payload.slice(offset, offset + length); offset += length; return result; };
   const call: NativeProgramCallV1 = {
-    programId: payload.slice(0, 32), guestAbi: view.getUint16(32) as 1 | 2 | 3 | 4,
+    programId: payload.slice(0, 32), guestAbi: view.getUint16(32) as 1 | 2 | 3 | 4 | 5,
     entrypoint: new TextDecoder("utf-8", { fatal: true }).decode(body(lengths[0]!)),
     calldata: body(lengths[1]!), capabilities: body(lengths[2]!), accessDeclaration: body(lengths[3]!),
     responseCapacity: view.getUint32(46),

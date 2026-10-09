@@ -42,9 +42,10 @@ let programAbiV1: UInt16 = 1
 let programAbiV2: UInt16 = 2
 let programAbiV3: UInt16 = 3
 let programAbiV4: UInt16 = 4
+let programAbiV5: UInt16 = 5
 func supportsProgramGuestAbi(_ version: UInt16) -> Bool {
     switch version {
-    case programAbiV1, programAbiV2, programAbiV3, programAbiV4: return true
+    case programAbiV1, programAbiV2, programAbiV3, programAbiV4, programAbiV5: return true
     default: return false
     }
 }

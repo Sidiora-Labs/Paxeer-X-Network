@@ -68,7 +68,11 @@ pub const PROGRAM_ABI_V1: u16 = 1;
 pub const PROGRAM_ABI_V2: u16 = 2;
 pub const PROGRAM_ABI_V3: u16 = 3;
 pub const PROGRAM_ABI_V4: u16 = 4;
+pub const PROGRAM_ABI_V5: u16 = 5;
 #[must_use]
 pub const fn supports_program_guest_abi(version: u16) -> bool {
-    matches!(version, PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4)
+    matches!(
+        version,
+        PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4 | PROGRAM_ABI_V5
+    )
 }

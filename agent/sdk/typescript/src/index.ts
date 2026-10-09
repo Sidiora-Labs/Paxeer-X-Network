@@ -34,3 +34,4 @@ export * from "./perps.js";
 export * from "./spot.js";
 export * from "./web-search.js";
 export * from "./xweb-api.js";
+export * as aiMarket from "./ai_market.js";

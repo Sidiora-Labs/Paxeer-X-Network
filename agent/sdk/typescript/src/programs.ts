@@ -186,7 +186,8 @@ export async function verifyProgramReceiptV5(
   const protocolVersion = trust.protocolVersion();
   if (!HEX32.test(execution.activity_id)
     || !programsModuleVersionForProtocol(protocolVersion, execution.module_version, false)
-    || protocolVersion !== 3 || (execution.guest_abi_version !== 3 && execution.guest_abi_version !== 4)) throw new TypeError("invalid program execution evidence");
+    || protocolVersion !== 3 || (execution.guest_abi_version !== 3 && execution.guest_abi_version !== 4 && execution.guest_abi_version !== 5)
+    || execution.guest_abi_version > execution.module_version) throw new TypeError("invalid program execution evidence");
   const receipt = decodeHex(execution.receipt, 1_048_576);
   const terminalPayload = decodeHex(execution.terminal_payload, 1_048_576);
   const callGraph = decodeHex(execution.call_graph, 1_048_576);
@@ -509,8 +510,8 @@ function executionDocumentV5(candidate: Readonly<Record<string, unknown>>, state
     state,
     activity_id: requiredHex32(candidate, "activity_id"),
     program_id: requiredHex32(candidate, "program_id"),
-    guest_abi_version: exactInteger(candidate.guest_abi_version, 3, 4),
-    module_version: exactInteger(candidate.module_version, 1, 4),
+    guest_abi_version: exactInteger(candidate.guest_abi_version, 3, 5),
+    module_version: exactInteger(candidate.module_version, 1, 5),
     batch_id: requiredHex32(candidate, "batch_id"),
     global_sequence: decimal(candidate.global_sequence),
     result_code: exactInteger(candidate.result_code, -2147483648, 2147483647),
@@ -543,7 +544,7 @@ function executionDocumentV5(candidate: Readonly<Record<string, unknown>>, state
 }
 
 function servedExecutionDocument(candidate: Readonly<Record<string, unknown>>, state: "executed" | "refused" | "simulated"): ProgramExecutionDocument {
-  return candidate.guest_abi_version === 3 || candidate.guest_abi_version === 4
+  return candidate.guest_abi_version === 3 || candidate.guest_abi_version === 4 || candidate.guest_abi_version === 5
     ? executionDocumentV5(candidate, state) : executionDocument(candidate, state);
 }
 
@@ -554,7 +555,7 @@ export function parseProgramExecutionDocumentV5(value: unknown): ProgramExecutio
 }
 
 const verifyServedProgramReceipt: typeof verifyProgramReceipt = (execution, authority, trust, signed, payers) =>
-  execution.guest_abi_version === 3 || execution.guest_abi_version === 4
+  execution.guest_abi_version === 3 || execution.guest_abi_version === 4 || execution.guest_abi_version === 5
     ? verifyProgramReceiptV5(execution, authority, trust, signed, payers)
     : verifyProgramReceipt(execution, authority, trust, signed, payers);
 
@@ -578,7 +579,7 @@ export async function verifyGatewayProgramDiscovery(value: unknown, programId: s
   }
   if ("value_accounts" in candidate) object(candidate.value_accounts);
   const version = exactInteger(candidate.version, 1, 0xffff_ffff);
-  const abi = candidate.abi_version as 1 | 2 | 3 | 4;
+  const abi = candidate.abi_version as 1 | 2 | 3 | 4 | 5;
   const integers = new Uint8Array(7); const view = new DataView(integers.buffer);
   integers[0] = 1; view.setUint32(1, version); view.setUint16(5, abi);
   const codeHash = requiredHex32(candidate, "code_hash"), stateRoot = requiredHex32(candidate, "state_root");

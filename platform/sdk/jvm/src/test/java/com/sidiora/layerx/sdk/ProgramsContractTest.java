@@ -425,7 +425,7 @@ public final class ProgramsContractTest {
                         request.uri().getPath());
                     assertArrayEquals(signed, publishedBody(request));
                 }
-                for (int unsupported : new int[] {0, 5, 65535}) {
+                for (int unsupported : new int[] {0, 6, 65535}) {
                     byte[] invalidPayload = payload.clone();
                     ByteBuffer.wrap(invalidPayload).putShort(32, (short) unsupported);
                     assertThrows(IllegalArgumentException.class, () -> NativeProgramCall.decode(invalidPayload));

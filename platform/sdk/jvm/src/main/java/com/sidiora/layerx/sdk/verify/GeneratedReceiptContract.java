@@ -50,9 +50,10 @@ public final class GeneratedReceiptContract {
     public static final int PROGRAM_ABI_V2 = 2;
     public static final int PROGRAM_ABI_V3 = 3;
     public static final int PROGRAM_ABI_V4 = 4;
+    public static final int PROGRAM_ABI_V5 = 5;
     public static boolean supportsProgramGuestAbi(int version) {
         return switch (version) {
-            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4 -> true;
+            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4, PROGRAM_ABI_V5 -> true;
             default -> false;
         };
     }

@@ -33,4 +33,5 @@ PROGRAM_ABI_V1: int
 PROGRAM_ABI_V2: int
 PROGRAM_ABI_V3: int
 PROGRAM_ABI_V4: int
+PROGRAM_ABI_V5: int
 def supports_program_guest_abi(version: int) -> bool: ...

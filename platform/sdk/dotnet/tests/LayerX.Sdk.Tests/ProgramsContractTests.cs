@@ -160,7 +160,7 @@ public sealed class ProgramsContractTests
             var changedCall = new ProgramCall(changed, call.Budget.FeeLimit, signed);
             Assert.Throws<TargetInvocationException>(() => Invoke("DecodeSignedCall", changedCall));
         }
-        foreach (var abi in new ushort[] { 0, 5, ushort.MaxValue })
+        foreach (var abi in new ushort[] { 0, 6, ushort.MaxValue })
             Assert.Throws<ArgumentException>(() => (native with { GuestAbi = abi }).Encode());
         foreach (var abi in new ushort[] { 3, 4 })
         {
@@ -190,7 +190,7 @@ public sealed class ProgramsContractTests
             Assert.Equal(changed, updated.Encode());
             Assert.Throws<ArgumentException>(() => new NativeProgramLifecycleRequest(updated, FixtureBytes(vector, "signed_activity_hex")));
         }
-        foreach (var abi in new ushort[] { 0, 5, ushort.MaxValue })
+        foreach (var abi in new ushort[] { 0, 6, ushort.MaxValue })
         {
             var changed = payload.ToArray(); BinaryPrimitives.WriteUInt16BigEndian(changed.AsSpan(32), abi);
             Assert.Throws<ArgumentException>(() => ordinal == 1 ? (INativeProgramLifecycle)NativeProgramDeploy.Decode(changed) : NativeProgramUpgrade.Decode(changed));

@@ -80,7 +80,7 @@ fn repo_fixture(label: &str) -> PathBuf {
     place(
         &root,
         "programs/sdk/rust/src/abi_policy.rs",
-        "pub const ABI_V1_VERSION: u16 = 1;\npub const ABI_V2_VERSION: u16 = 2;\npub const ABI_V3_VERSION: u16 = 3;\npub const ABI_V4_VERSION: u16 = 4;\n",
+        "pub const ABI_V1_VERSION: u16 = 1;\npub const ABI_V2_VERSION: u16 = 2;\npub const ABI_V3_VERSION: u16 = 3;\npub const ABI_V4_VERSION: u16 = 4;\npub const ABI_V5_VERSION: u16 = 5;\n",
     );
     place(
         &root,
@@ -112,7 +112,7 @@ fn repo_fixture(label: &str) -> PathBuf {
     place(
         &root,
         "agent/schema/agent-api/programs.kvx",
-        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\n",
+        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\",\"5\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\n",
     );
     place(
         &root,
@@ -543,5 +543,109 @@ fn generator_edit_fails_the_gate_as_stale() {
         "raise SystemExit(1)\n",
     );
     expect_failure(&root, "stale generated SDKs: generator platform-sdkgen");
+    cleanup(&root);
+}
+
+#[test]
+fn receipt_contracts_admit_the_fifth_guest_abi_in_every_language() {
+    let root = repo_fixture("guest-abi-five");
+    generate(&root);
+    for (relative, declaration, mentions) in [
+        (
+            "agent/crates/layerx-sdk/src/receipt_generated.rs",
+            "pub const PROGRAM_ABI_V5: u16 = 5;",
+            2,
+        ),
+        (
+            "agent/sdk/typescript/src/generated/receipt.ts",
+            "export const PROGRAM_ABI_V5 = 5;",
+            2,
+        ),
+        (
+            "agent/sdk/python/layerx_sdk/generated/receipt.py",
+            "PROGRAM_ABI_V5 = 5",
+            2,
+        ),
+        (
+            "agent/sdk/python/layerx_sdk/generated/receipt.pyi",
+            "PROGRAM_ABI_V5: int",
+            1,
+        ),
+        (
+            "platform/sdk/go/receipt_generated.go",
+            "const ProgramAbiV5 uint16 = 5",
+            2,
+        ),
+        (
+            "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/verify/GeneratedReceiptContract.java",
+            "public static final int PROGRAM_ABI_V5 = 5;",
+            2,
+        ),
+        (
+            "platform/sdk/swift/Sources/LayerXSDK/Generated/ReceiptContract.swift",
+            "let programAbiV5: UInt16 = 5",
+            2,
+        ),
+        (
+            "platform/sdk/dotnet/Generated/ReceiptContract.cs",
+            "public const ushort ProgramAbiV5 = 5;",
+            2,
+        ),
+    ] {
+        let generated = fs::read_to_string(root.join(relative))
+            .unwrap_or_else(|error| panic!("read {relative}: {error}"));
+        assert!(
+            generated.lines().any(|line| line.trim() == declaration),
+            "{relative} lacks {declaration}"
+        );
+        let admitted = generated
+            .lines()
+            .filter(|line| line.contains("ABI_V5") || line.contains("AbiV5"))
+            .count();
+        assert_eq!(
+            admitted, mentions,
+            "{relative} must declare and admit the fifth ABI"
+        );
+    }
+    check(&root, &lock_path(&root)).unwrap_or_else(|error| panic!("gate failed: {error}"));
+    cleanup(&root);
+}
+
+#[test]
+fn programs_schema_without_the_fifth_guest_abi_is_refused() {
+    let root = repo_fixture("guest-abi-four");
+    let path = root.join("agent/schema/agent-api/programs.kvx");
+    let schema = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
+    let four = schema
+        .replace(",\"ABI_V5_VERSION\"]", "]")
+        .replace(",\"5\"]", "]")
+        .replace(",\"V2\",\"V2\",\"V2\",\"V2\"]", ",\"V2\",\"V2\",\"V2\"]");
+    assert_ne!(four, schema, "fixture schema must name the fifth ABI");
+    fs::write(&path, four).unwrap_or_else(|error| panic!("write schema: {error}"));
+    let error = write_lock(&root, &lock_path(&root))
+        .err()
+        .unwrap_or_else(|| panic!("a four-version schema must not generate"));
+    assert_eq!(
+        error,
+        "Programs guest ABI variants must match the canonical named policy"
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn programs_schema_value_differing_from_the_canonical_policy_is_refused() {
+    let root = repo_fixture("guest-abi-value");
+    let path = root.join("agent/schema/agent-api/programs.kvx");
+    let schema = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
+    let changed = schema.replace("\"4\",\"5\"]", "\"4\",\"6\"]");
+    assert_ne!(changed, schema, "fixture schema must carry wire value 5");
+    fs::write(&path, changed).unwrap_or_else(|error| panic!("write schema: {error}"));
+    let error = write_lock(&root, &lock_path(&root))
+        .err()
+        .unwrap_or_else(|| panic!("a non-canonical fifth value must not generate"));
+    assert_eq!(
+        error,
+        "Programs ABI ABI_V5_VERSION differs from the canonical policy"
+    );
     cleanup(&root);
 }

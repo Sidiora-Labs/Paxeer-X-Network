@@ -311,7 +311,10 @@ from .x402_rpc import (
     verify_rpc_payment,
 )
 
+from . import ai_market
+
 __all__ = [
+    "ai_market",
     "AGENT_OPERATIONS",
     "APPROVAL_CONTRACT_INTRODUCED",
     "APPROVAL_DECISION_OUTCOMES",
