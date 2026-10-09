@@ -36338,7 +36338,7 @@ worker_role_id = "W-F04-WINDOWS"
 
 [task.ai.F04-T03]
 title = "Recover commitment secrets and uncertain reveals"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F04-T02", "ai.F10-T03"]

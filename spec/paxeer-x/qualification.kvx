@@ -909,3 +909,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.T-C03-verify-1.log"
 observed = "Seven value-boundary cases pass on the real runtime, SDK and registry (account derivation, exact registration payload, grant encodings, owning-Program-only spend admission, fail-closed balance read, conservation and rollback across Fund/Reserve/Terminalize/Claim/Expire/RefundFree); native end-to-end funding, ProgramSpend and BalanceView through the guest need the F06 router arms, harness transfer grants, the ABI 5 registration and a finalized-receipt verifier, and the Program id, reward asset, registration authority and chain domain are deployment inputs."
 assumption = "Held at implemented under ai.P-DEPLOYMENT; F06-T03 calls value_adapter::settle per committed reward mutation and the native custody case is re-qualified once the F06 arms, harness grants and ABI 5 registration land."
+
+[qualification.ai-f04-t03-recovery-20261009-01]
+revision = "26c570330"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_recovery"
+exit_code = 0
+log = "private ops log wt/logs/ai.F04-T03-verify-1.log"
+observed = "Six recovery witnesses pass through dispatch::route and the real F05 settlement (persist-before-send journal, crash and lost-salt recovery, dropped-response reconciliation by slot and admitted row, exact retry frames, pre-seal revocation exclusion, real epoch 7 to 8 rollover with WRONG_EPOCH on historical retries and key v2 commits); finalized is modeled as committed state bytes because the native ABI 5 registration and the F10 client are pending."
+assumption = "The F10-T03 client carries the same OS-CSPRNG, per-report salt and persist-before-send assertions; the native finality witness is re-run under ai.F10-T02-FULL once the host registration lands."

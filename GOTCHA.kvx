@@ -5174,3 +5174,8 @@ text = "epoch::open_epoch refuses with WRONG_PHASE, not F06_EPOCH_ALREADY_RESERV
 area = "programs"
 text = "PreparedProgramAccount's derived account hashes only program and seed, not the asset, so a ledger's asset can only be checked against an already-bound RewardsAccount; runtime ProgramSpend and Transfer402 staging and TransferCapability are pub(crate), reachable from a crate test only by executing a guest that calls the host functions; SDK PreparedProgramAccount::spend_grant takes an SDK Amount, not u128; the host-boundary C harness grants fixed capabilities {0,3,3,7,8} with no Transfer402, ProgramSpend or BalanceView grant, so native funding, spend and balance-sight paths need harness grants added."
 
+
+[gotcha.1117]
+area = "ai-market"
+text = "epoch::open_epoch does not physically clear the previous epoch's F03 rows or commit records in CurrentReports: they read as absent through admitted_report/slot for the new epoch and the first new-epoch reveal rewrites the region, so assert logical absence, not byte retirement; dispatch::route frames a Retained F04 retry as AlreadyApplied whose payload is the 32-byte retained result digest, not the original record/receipt payload; a historical exact retry after rollover returns WRONG_EPOCH (EXPIRED once past expiry), there is no distinct historical-status frame; rustc dead-code analysis ignores derived Debug, so a test error enum wrapping ApplicationError and io::Error needs a manual Debug impl that reads its fields."
+
