@@ -1077,3 +1077,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.F02-T03-verify-1.log"
 observed = "12 of 14 pass on the durable local store, fenced lease, UNKNOWN_EXECUTION reconciliation and late-result refusal; the two real-runner cases fail because no PAXRUN1 model runner executable is provisioned (PAXAI_RUNNER unset)."
 assumption = "ai.P-REAL-SERVICES provisions the runner, shared durable store, tenant and KMS; main.rs routing of Submit/Query/Cancel to JobService and the F01 task-acceptance reader feeding claim/dispatch are owed by the F02-T02 service owner."
+
+[qualification.ai-t-s04-storage-continuity-20261009-01]
+revision = "6cf4061b1"
+command = "make test-paxai-storage-continuity"
+exit_code = 2
+log = "private ops logs wt/logs/ai.T-S04-verify-2.log (verify-1.log: 12 pass 7 fail before the content-addressed blob key repair)"
+observed = "9 of 19 pass; market creation and epoch funding return NON_CANONICAL (-3) under the guest fuel cap, FUND/CLAIM are unrouted, the v5 registration omits STORAGE_RETIREMENT (AUTH_SCOPE), prepare_commit ignores open reservations, NODE_INFO advertises no capacity capability, and after the second repair final_restart fails at primary_pause with the three restart cases behind it (passed in verify-1, cause unresolved, repair budget spent)."
+assumption = "ai.T-C02-FUEL (running) lifts the fuel refusals; FM-STORAGE owes the v5 activity list with STORAGE_RETIREMENT, the prepare_commit reservation re-check and the NODE_INFO capacity capability; FM-CORE owes the F06 FUND/CLAIM route arms and a funded settlement envelope generator; the final_restart regression is re-examined when the gate is re-run on those changes."

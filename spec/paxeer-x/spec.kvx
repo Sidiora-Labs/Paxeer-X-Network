@@ -36680,7 +36680,7 @@ native_acceptance_obligations = "Full original A01 key rotation; A02/A03 genuine
 
 [task.ai.T-S04]
 title = "Qualify real continuous storage and funded recovery"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 33
 requires = ["ai.T-S01", "ai.T-S01-REPLAY", "ai.T-S02", "ai.T-S03", "ai.F06-T03", "ai.F02-T03"]
