@@ -1053,3 +1053,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F01-T04-SERVICE-verify-1.log, verify-worker-1.log"
 observed = "8 admission boundary and 4 worker chain handoff cases pass; restart is covered as decoding the persisted signed ACK against the finalized record because the worker crate still lacks the F02-T03 durable job store, fenced lease and UNKNOWN_EXECUTION reconciliation, F02-R009 ServiceResult and an F01 task lookup seam."
 assumption = "F02-T03 (running) supplies the durable job store and runner seam; the chain handoff test is re-run against it when it lands."
+
+[qualification.ai-f10-t07-python-client-20261009-01]
+revision = "bfd8700c4"
+command = "python3 -m pytest -q tests/agent/sdk/python/test_ai_market.py"
+exit_code = 1
+log = "private ops logs wt/logs/ai.F10-T07-verify-3.log"
+observed = "25 of 26 pass; the A07 full flow fails at sign because the Python native call codec and generated receipt contract refuse guest ABI 5, and the A01/A03/A04 views run against a loopback gateway following the ai_views JSON contract since those routes are not yet wired into the gateway entry."
+assumption = "ABI 5 admission for the Python and TypeScript generated contracts lands through leader task ai.F10-T08-SDK-ABI5, after which this gate is re-run; the consent binder and shared payload codecs are reported as owner-side gaps of that task."

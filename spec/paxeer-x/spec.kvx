@@ -36028,7 +36028,7 @@ worker_role_id = "W-F10-TYPESCRIPT"
 
 [task.ai.F10-T07]
 title = "Implement Python AI market client"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F10-T03"]

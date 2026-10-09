@@ -5262,3 +5262,7 @@ text = "SecretBytes built from a Node Buffer can be used once: Buffer.slice shar
 [gotcha.1135]
 area = "programs-ai-market"
 text = "An F01 ADMIT deadline must be at most height + task_timeout_heights (32 by default) and within the commit window; a deadline past the worker metadata expiry is accepted only while height < expiry, afterwards ADMIT refuses with F02_METADATA_EXPIRED. A refused role step does not consume its replay sequence, so the next accepted step reuses it. Clippy too_many_lines (100) applies to #[test] functions; split long journeys behind a shared setup helper. A worktree rebased onto main after F10-T03 regenerates programs/Cargo.lock with the layerx-programs-ai-market dependency line and fleet-commit.sh stages it."
+
+[gotcha.1136]
+area = "agent-sdk-python"
+text = "layerx_sdk is not importable under pytest unless the test inserts agent/sdk/python into sys.path (no conftest). The frozen paxai schema operations table has 55 rows. compileall writes __pycache__ even with PYTHONDONTWRITEBYTECODE; remove it before committing. No Python formatter is installed for agent/sdk/python. The Python native_program_call codec, generated/receipt.py and programs._execution admit guest ABI 1-4 only, and Python has no owner-consent disclosure binder nor roster, market-header or score payload codecs, so FUND/CLAIM recipient and entitlement previews cannot be checked there yet."
