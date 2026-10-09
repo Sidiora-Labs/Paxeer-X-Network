@@ -35303,7 +35303,7 @@ worker_role_id = "W-F09-CODEC"
 
 [task.ai.T-C02-ABI5]
 title = "Register the programs module at guest ABI 5 for native host-boundary calls"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 28
 requires = ["ai.T-C02"]
@@ -35328,9 +35328,9 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified after two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 3
-acceptance_cases = ["AI.STORAGE-A01"]
+acceptance_cases = ["AI.CORE-A02", "AI.F01-A01"]
 paths = ["include/layerx/programs.h", "src/modules/programs/registration.c", "tests/programs/test_ai_host_boundary.c", "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs"]
-worker_role_id = "W-STORAGE-ARCHIVE"
+worker_role_id = "W-CORE-HOST"
 
 [task.ai.T-C03]
 title = "Qualify real Program accounts and value boundary"

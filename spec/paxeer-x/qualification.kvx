@@ -917,3 +917,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F04-T03-verify-1.log"
 observed = "Six recovery witnesses pass through dispatch::route and the real F05 settlement (persist-before-send journal, crash and lost-salt recovery, dropped-response reconciliation by slot and admitted row, exact retry frames, pre-seal revocation exclusion, real epoch 7 to 8 rollover with WRONG_EPOCH on historical retries and key v2 commits); finalized is modeled as committed state bytes because the native ABI 5 registration and the F10 client are pending."
 assumption = "The F10-T03 client carries the same OS-CSPRNG, per-report salt and persist-before-send assertions; the native finality witness is re-run under ai.F10-T02-FULL once the host registration lands."
+
+[qualification.ai-t-c02-abi5-host-registration-20261009-01]
+revision = "a9107ef39"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary"
+exit_code = 101
+log = "private ops logs wt/logs/ai.T-C02-ABI5-{build-1,build-2,verify-1,verify-2,clippy-1}.log"
+observed = "programs_module_registration_v5 lands and the eight host-boundary cases now reach the runtime at v5, where every CALL fails status -3: the protocol CPU cap (DEFAULT_CPU_FUEL 1_000_000) is below the AI market CREATE cost (~9.64M fuel), accounts.c admits only ABI 2/3/4, and call.c reopens and re-hashes the artifact per byte so each CALL takes ~25 minutes."
+assumption = "Held at implemented; the fuel budget, the ABI 5 account validation and the quadratic artifact read are kernel and runtime defects outside this task's paths and are opened as leader-added tasks ai.T-C02-FUEL, ai.T-C02-ACCOUNTS-V5 and ai.T-C02-ARTIFACT-READ before any native host-boundary gate is re-run."
