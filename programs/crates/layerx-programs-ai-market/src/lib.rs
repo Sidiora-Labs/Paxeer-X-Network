@@ -31,6 +31,7 @@ pub mod roster;
 pub mod state;
 pub mod tasks;
 pub mod types;
+pub mod value_adapter;
 pub mod workers;
 
 #[cfg(target_arch = "wasm32")]
