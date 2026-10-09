@@ -32,6 +32,18 @@ describe('LatestBlocksItem', () => {
     expect(row.querySelector(`a[href="/block/${ blockMock.base.hash }"]`)).not.toBeNull();
   });
 
+  it('adds the time the block took when the list knows it', () => {
+    const { container, rerender } = render(<LatestBlocksItem block={ blockMock.base } duration={ 2 }/>);
+
+    const slot = () => container.querySelector('[data-label="block-hash"]') as HTMLElement;
+
+    expect(slot().textContent).toContain(`${ blockMock.base.transactions_count } txns in 2s`);
+
+    rerender(<LatestBlocksItem block={ blockMock.base } duration={ 0 }/>);
+
+    expect(slot().textContent).toContain(`${ blockMock.base.transactions_count } txns in <1s`);
+  });
+
   it('carries the reward of the block', () => {
     const { container } = render(<LatestBlocksItem block={ blockMock.base }/>);
 

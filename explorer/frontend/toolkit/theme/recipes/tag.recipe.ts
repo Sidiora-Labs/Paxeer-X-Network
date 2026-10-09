@@ -128,7 +128,7 @@ export const recipe = defineSlotRecipe({
           borderWidth: '1px',
           borderStyle: 'solid',
           borderColor: 'border.divider',
-          borderRadius: 'sm',
+          borderRadius: 'full',
           _hover: {
             borderColor: 'border.strong',
           },

@@ -52,12 +52,12 @@ export const recipe = defineSlotRecipe({
         },
         columnHeader: {
           color: 'table.header.fg',
-          backgroundColor: 'bg.sunken',
+          backgroundColor: 'table.header.bg',
           textStyle: 'xs',
-          fontWeight: '600',
+          fontWeight: '500',
           letterSpacing: 'wide',
           borderBottomWidth: '1px',
-          borderColor: 'border.divider',
+          borderColor: 'border.strong',
           _first: {
             borderTopLeftRadius: 'sm',
           },
@@ -73,7 +73,7 @@ export const recipe = defineSlotRecipe({
         row: {
           bg: 'bg.surface',
           _hover: {
-            bg: 'bg.sunken',
+            bg: 'table.row.hover',
           },
           _last: {
             '& td': {

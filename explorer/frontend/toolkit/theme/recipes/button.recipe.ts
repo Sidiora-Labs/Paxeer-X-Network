@@ -4,7 +4,7 @@ export const recipe = defineRecipe({
   base: {
     display: 'flex',
     gap: 0,
-    fontWeight: 600,
+    fontWeight: 500,
     overflow: 'hidden',
     borderRadius: 'full',
     _disabled: {
@@ -50,11 +50,11 @@ export const recipe = defineRecipe({
         },
       },
       outline: {
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         bg: 'transparent',
         color: 'button.outline.fg',
-        borderColor: 'button.outline.fg',
+        borderColor: 'border.strong',
         _hover: {
           bg: 'transparent',
           color: 'hover',
@@ -70,7 +70,7 @@ export const recipe = defineRecipe({
         },
       },
       outline_danger: {
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         bg: 'transparent',
         color: 'red.600',
@@ -90,7 +90,7 @@ export const recipe = defineRecipe({
         },
       },
       dropdown: {
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         bg: 'transparent',
         color: 'button.dropdown.fg',
@@ -135,7 +135,7 @@ export const recipe = defineRecipe({
         bg: 'transparent',
         color: 'button.header.fg',
         borderColor: 'button.header.border',
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         _hover: {
           bg: 'transparent',
@@ -208,7 +208,7 @@ export const recipe = defineRecipe({
         bg: 'transparent',
         color: 'button.segmented.fg',
         borderColor: 'selected.control.bg',
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         borderRadius: 'none',
         _hover: {
@@ -228,7 +228,7 @@ export const recipe = defineRecipe({
         _notLast: {
           borderRightWidth: '0',
           _selected: {
-            borderRightWidth: '2px',
+            borderRightWidth: '1px',
           },
         },
         _first: {
@@ -351,7 +351,7 @@ export const recipe = defineRecipe({
         },
       },
       pagination: {
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderStyle: 'solid',
         bg: 'transparent',
         color: 'button.pagination.fg',
@@ -393,7 +393,7 @@ export const recipe = defineRecipe({
         _icon: { boxSize: 'auto' },
       },
       sm: {
-        px: 3,
+        px: 4,
         h: 8,
         minW: 8,
         textStyle: 'sm',
@@ -402,7 +402,7 @@ export const recipe = defineRecipe({
         _icon: { boxSize: 'auto' },
       },
       md: {
-        px: 3,
+        px: 6,
         h: 10,
         minW: 10,
         textStyle: 'md',

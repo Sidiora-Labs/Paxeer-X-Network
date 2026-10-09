@@ -11,7 +11,7 @@ describe('tag recipe, outlined variant', () => {
       color: 'text.secondary',
       borderWidth: '1px',
       borderColor: 'border.divider',
-      borderRadius: 'sm',
+      borderRadius: 'full',
     });
   });
 

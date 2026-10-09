@@ -6,6 +6,7 @@ import type { RequestInit, Response } from 'node-fetch';
 import nodeFetch from 'node-fetch';
 
 import { httpLogger } from 'nextjs/utils/logger';
+
 import { NAMES } from 'lib/cookies';
 
 export default function fetchFactory(

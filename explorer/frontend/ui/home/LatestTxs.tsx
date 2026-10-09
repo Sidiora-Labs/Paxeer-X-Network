@@ -89,7 +89,7 @@ const LatestTxs = () => {
             ))) }
           </Box>
           <AddressHighlightProvider>
-            <Box display={{ base: 'none', lg: 'block' }} minW="720px">
+            <Box display={{ base: 'none', lg: 'block' }}>
               { data.slice(0, txsCount).map(((tx, index) => (
                 <LatestTxsItem
                   key={ tx.hash + (isPlaceholderData ? index : '') }

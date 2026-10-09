@@ -4,6 +4,9 @@ defmodule Explorer.Chain.PaxeerX.ReceiptTest do
   alias Ecto.Multi
   alias Explorer.Chain.Import.Runner.PaxeerX.Receipts
   alias Explorer.Chain.PaxeerX.Receipt
+  alias Explorer.Chain.PaxeerX.Receipt.KernelCursor
+
+  @cursor_identity String.duplicate("0a", 32)
 
   describe "changeset/2" do
     test "accepts a receipt with an account and a payload hash" do
@@ -122,6 +125,29 @@ defmodule Explorer.Chain.PaxeerX.ReceiptTest do
                |> Receipt.lose_consensus_query()
                |> Repo.update_all(set: [block_consensus: false])
     end
+  end
+
+  describe "KernelCursor.changeset/2" do
+    test "admits a listed refusal code and any relay status code" do
+      for code <- ["native_verification_failed", "cursor_changed", "relay_status_404", "relay_status_503"] do
+        changeset = KernelCursor.changeset(%KernelCursor{}, cursor_attributes(%{refusal_code: code, refused_batch: 3}))
+
+        assert changeset.valid?
+      end
+    end
+
+    test "refuses an unlisted refusal code and a status code outside 100..599" do
+      for code <- ["accepted", "relay_status_600", "relay_status_42", "RELAY_STATUS_404"] do
+        changeset = KernelCursor.changeset(%KernelCursor{}, cursor_attributes(%{refusal_code: code, refused_batch: 3}))
+
+        refute changeset.valid?
+        assert {"is invalid", _} = changeset.errors[:refusal_code]
+      end
+    end
+  end
+
+  defp cursor_attributes(attributes) do
+    Map.merge(%{source: "https://relay.invalid", source_identity: @cursor_identity, last_batch: 2}, attributes)
   end
 
   defp block_with_transaction do

@@ -5,18 +5,18 @@ import { recipe } from './table.recipe';
 const scan = recipe.variants?.variant.scan;
 
 describe('table recipe, scan variant', () => {
-  it('draws the header row on the sunken surface with the divider border', () => {
+  it('draws the header row on the table header surface with the strong table border', () => {
     expect(scan?.columnHeader).toMatchObject({
       color: 'table.header.fg',
-      backgroundColor: 'bg.sunken',
+      backgroundColor: 'table.header.bg',
       borderBottomWidth: '1px',
-      borderColor: 'border.divider',
+      borderColor: 'border.strong',
     });
   });
 
   it('separates every row with the divider border and drops it on the last one', () => {
     expect(scan?.cell).toMatchObject({ borderBottomWidth: '1px', borderColor: 'border.divider' });
-    expect(scan?.row).toMatchObject({ bg: 'bg.surface', _hover: { bg: 'bg.sunken' } });
+    expect(scan?.row).toMatchObject({ bg: 'bg.surface', _hover: { bg: 'table.row.hover' } });
     expect(scan?.row?._last).toEqual({ '& td': { borderBottomWidth: '0' } });
   });
 

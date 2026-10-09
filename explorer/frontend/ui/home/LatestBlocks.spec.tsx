@@ -111,6 +111,21 @@ describe('LatestBlocks', () => {
     }, { timeout: 30_000, interval: 100 });
   });
 
+  it('tells how long each block took after its direct parent', async() => {
+    const { container } = renderCard();
+
+    await screen.findByText('Latest blocks');
+
+    await vi.waitFor(() => {
+      expect(heights(container)).toEqual([ String(blockMock.base.height), String(blockMock.base2.height) ]);
+    }, { timeout: 30_000, interval: 100 });
+
+    const rows = Array.from(container.querySelectorAll('[data-latest-block] [data-label="block-hash"]'));
+
+    expect(rows[0].textContent).toContain(`${ blockMock.base.transactions_count } txns in 810s`);
+    expect(rows[1].textContent).not.toContain(' in ');
+  });
+
   it('closes the card with the link to every block', async() => {
     const { container } = renderCard();
 
@@ -173,6 +188,9 @@ describe('LatestBlocks', () => {
           String(blockMock.base.height + 20),
           String(blockMock.base.height + 19),
           String(blockMock.base.height + 18),
+          String(blockMock.base.height + 17),
+          String(blockMock.base.height + 16),
+          String(blockMock.base.height + 15),
         ]);
       }, { timeout: 30_000, interval: 50 });
 

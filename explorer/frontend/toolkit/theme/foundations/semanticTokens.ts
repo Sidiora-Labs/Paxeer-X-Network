@@ -85,6 +85,14 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
     },
 
     // ELEMENTS
+    header: {
+      sticky: {
+        bg: { value: { _light: 'rgba(255, 255, 255, 0.9)', _dark: 'rgba(18, 19, 23, 0.95)' } },
+      },
+    },
+    card: {
+      border: { value: { _light: 'rgba(47, 48, 52, 0.15)', _dark: '{colors.border.divider}' } },
+    },
     address: {
       highlighted: {
         bg: { value: { _light: '{colors.blue.50}', _dark: '{colors.blue.900}' } },
@@ -333,16 +341,16 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
         error: { value: '{colors.feedback.error.fg}' },
       },
       placeholder: {
-        DEFAULT: { value: { _light: '{colors.gray.400}', _dark: '{colors.gray.500}' } },
+        DEFAULT: { value: '{colors.gray.500}' },
         error: { value: '{colors.red.500}' },
       },
       element: {
-        DEFAULT: { value: { _light: '{colors.gray.400}', _dark: '{colors.gray.500}' } },
+        DEFAULT: { value: '{colors.gray.500}' },
       },
     },
     field: {
       placeholder: {
-        DEFAULT: { value: { _light: '{colors.gray.400}', _dark: '{colors.gray.500}' } },
+        DEFAULT: { value: '{colors.gray.500}' },
         disabled: { value: '{colors.gray.500/20}' },
         error: { value: '{colors.red.500}' },
       },
@@ -368,12 +376,12 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
       },
       indicator: {
         fg: {
-          DEFAULT: { value: { _light: '{colors.gray.400}', _dark: '{colors.gray.500}' } },
+          DEFAULT: { value: '{colors.gray.500}' },
         },
       },
       placeholder: {
         fg: {
-          DEFAULT: { value: { _light: '{colors.gray.400}', _dark: '{colors.gray.500}' } },
+          DEFAULT: { value: '{colors.gray.500}' },
           error: { value: '{colors.red.500}' },
         },
       },
@@ -397,8 +405,8 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
         fg: { value: '{colors.feedback.error.fg}' },
       },
       purple: {
-        bg: { value: { _light: '{colors.purple.50}', _dark: '{colors.purple.800}' } },
-        fg: { value: { _light: '{colors.purple.500}', _dark: '{colors.purple.100}' } },
+        bg: { value: { _light: '{colors.datavis.purple.lowest}', _dark: '{colors.datavis.purple.highest}' } },
+        fg: { value: { _light: '{colors.datavis.purple.high}', _dark: '{colors.datavis.purple.low}' } },
       },
       purple_alt: {
         bg: { value: { _light: '{colors.purple.100}', _dark: '{colors.purple.800}' } },
@@ -417,8 +425,8 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
         fg: { value: { _light: '{colors.blackAlpha.800}', _dark: '{colors.whiteAlpha.800}' } },
       },
       yellow: {
-        bg: { value: { _light: '{colors.yellow.50}', _dark: '{colors.yellow.800}' } },
-        fg: { value: { _light: '{colors.yellow.500}', _dark: '{colors.yellow.100}' } },
+        bg: { value: { _light: '{colors.datavis.yellow.lowest}', _dark: '{colors.feedback.warning.bg}' } },
+        fg: { value: { _light: '{colors.feedback.warning.fg}', _dark: '{colors.datavis.yellow.low}' } },
       },
       teal: {
         bg: { value: { _light: '{colors.teal.50}', _dark: '{colors.teal.800}' } },
@@ -429,8 +437,8 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
         fg: { value: { _light: '{colors.cyan.500}', _dark: '{colors.cyan.100}' } },
       },
       pink: {
-        bg: { value: { _light: '{colors.pink.50}', _dark: '{colors.pink.800}' } },
-        fg: { value: { _light: '{colors.pink.500}', _dark: '{colors.pink.100}' } },
+        bg: { value: { _light: '{colors.datavis.pink.lowest}', _dark: '{colors.datavis.pink.highest}' } },
+        fg: { value: { _light: '{colors.datavis.pink.highest}', _dark: '{colors.datavis.pink.low}' } },
       },
       // bright badges mainly used in other projects (e.g. autoscout, dev portal, etc.)
       bright: {
@@ -502,6 +510,9 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
         bg: { value: { _light: '{colors.theme.table.header.bg._light}', _dark: '{colors.theme.table.header.bg._dark}' } },
         fg: { value: { _light: '{colors.theme.table.header.fg._light}', _dark: '{colors.theme.table.header.fg._dark}' } },
       },
+      row: {
+        hover: { value: { _light: 'rgba(47, 48, 52, 0.1)', _dark: 'rgba(230, 234, 240, 0.06)' } },
+      },
     },
     checkbox: {
       control: {
@@ -523,8 +534,8 @@ const semanticTokens: ThemingConfig['semanticTokens'] = {
     },
     stat: {
       indicator: {
-        up: { value: { _light: '{colors.green.500}', _dark: '{colors.green.400}' } },
-        down: { value: { _light: '{colors.red.600}', _dark: '{colors.red.400}' } },
+        up: { value: { _light: '{colors.datavis.green.high}', _dark: '{colors.datavis.green.low}' } },
+        down: { value: { _light: '{colors.datavis.red.high}', _dark: '{colors.datavis.red.low}' } },
       },
     },
     rating: {

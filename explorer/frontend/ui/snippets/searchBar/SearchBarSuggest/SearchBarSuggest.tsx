@@ -34,9 +34,10 @@ interface Props {
   externalSearchItem: ExternalSearchItemType;
   searchTerm: string;
   onItemClick: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  category?: Category;
 }
 
-const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searchTerm, onItemClick }: Props) => {
+const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searchTerm, onItemClick, category }: Props) => {
   const isMobile = useIsMobile();
 
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -46,6 +47,10 @@ const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searc
   const categoriesRefs = React.useRef<Array<HTMLParagraphElement>>([]);
 
   const [ currentTab, setCurrentTab ] = React.useState<Category | undefined>(undefined);
+
+  const visibleCategories = React.useMemo(() => {
+    return category ? searchCategories.filter((cat) => cat.id === category) : searchCategories;
+  }, [ category ]);
 
   const handleScroll = React.useCallback(() => {
     const container = scrollContainerRef.current;
@@ -127,9 +132,9 @@ const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searc
 
   React.useEffect(() => {
     categoriesRefs.current = Array(Object.keys(itemsGroups).length).fill('').map((_, i) => categoriesRefs.current[i] || React.createRef());
-    const resultCategories = searchCategories.filter(cat => itemsGroups[cat.id]);
+    const resultCategories = visibleCategories.filter(cat => itemsGroups[cat.id]);
     setCurrentTab(resultCategories[0]?.id);
-  }, [ itemsGroups ]);
+  }, [ itemsGroups, visibleCategories ]);
 
   const handleTabsValueChange = React.useCallback(({ value }: { value: string }) => {
     setCurrentTab(value as Category);
@@ -149,13 +154,13 @@ const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searc
   }, []);
 
   const categoryTabs = React.useMemo(() => {
-    return searchCategories.filter(cat => itemsGroups[cat.id]).map(cat => ({
+    return visibleCategories.filter(cat => itemsGroups[cat.id]).map(cat => ({
       id: cat.id,
       value: cat.id,
       title: isMobile ? cat.tabTitle : cat.title,
       component: null,
     }));
-  }, [ itemsGroups, isMobile ]);
+  }, [ itemsGroups, isMobile, visibleCategories ]);
 
   const content = (() => {
     if (query.isPending || marketplaceApps.isPlaceholderData || (config.features.zetachain.isEnabled && zetaChainCCTXQuery.isPending)) {
@@ -166,7 +171,7 @@ const SearchBarSuggest = ({ query, zetaChainCCTXQuery, externalSearchItem, searc
       return <Text>Something went wrong. Try refreshing the page or come back later.</Text>;
     }
 
-    const resultCategories = searchCategories.filter(cat => itemsGroups[cat.id]);
+    const resultCategories = visibleCategories.filter(cat => itemsGroups[cat.id]);
 
     if (resultCategories.length === 0 && !externalSearchItem) {
       if (regexp.BLOCK_HEIGHT.test(searchTerm)) {

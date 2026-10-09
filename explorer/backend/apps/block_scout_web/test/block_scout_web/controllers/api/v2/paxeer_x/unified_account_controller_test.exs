@@ -282,6 +282,43 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.UnifiedAccountControllerTest do
       assert %{"message" => "Invalid activity cursor"} =
                json_response(get(conn, path, %{"cursor" => "malformed"}), 422)
     end
+
+    test "honours a cursor only while its anchor names a block that holds consensus", %{conn: conn} do
+      address = insert(:address)
+      path = "/api/v2/addresses/#{Address.checksum(address.hash)}/unified"
+      refused = "malformed, wrong account, changed binding or reorganized snapshot"
+
+      blocks =
+        for number <- 1..51 do
+          block = insert(:block, number: number)
+          :transaction |> insert(from_address: address) |> with_block(block)
+          block
+        end
+
+      anchor_block = List.last(blocks)
+      first = json_response(get(conn, path), 200)
+
+      cursor = first["next_page_params"]["cursor"]
+      {:ok, state} = Phoenix.Token.verify(@endpoint, "paxeer-x-unified-account-v1", cursor, max_age: 3600)
+
+      assert state.anchor == to_string(anchor_block.hash)
+
+      second = json_response(get(conn, path, first["next_page_params"]), 200)
+
+      assert Enum.map(second["activity"], & &1["block_number"]) == [1]
+
+      unparsable = Phoenix.Token.sign(@endpoint, "paxeer-x-unified-account-v1", %{state | anchor: "not-a-block-hash"})
+
+      assert json_response(get(conn, path, %{"cursor" => unparsable}), 422)["reason"] == refused
+
+      unknown = Phoenix.Token.sign(@endpoint, "paxeer-x-unified-account-v1", %{state | anchor: to_string(block_hash())})
+
+      assert json_response(get(conn, path, %{"cursor" => unknown}), 422)["reason"] == refused
+
+      Repo.update!(Ecto.Changeset.change(anchor_block, consensus: false))
+
+      assert json_response(get(conn, path, first["next_page_params"]), 422)["reason"] == refused
+    end
   end
 
   defp insert_binding(address, options \\ []) do

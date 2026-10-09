@@ -101,7 +101,7 @@ export const recipe = defineSlotRecipe({
           bg: 'bg.surface',
           borderWidth: '1px',
           borderStyle: 'solid',
-          borderColor: 'border.divider',
+          borderColor: 'card.border',
           borderRadius: 'md',
           boxShadow: 'card',
           px: '4',
@@ -110,7 +110,7 @@ export const recipe = defineSlotRecipe({
         label: {
           color: 'text.muted',
           textStyle: 'xs',
-          fontWeight: '600',
+          fontWeight: '500',
           letterSpacing: 'wide',
           textTransform: 'uppercase',
         },

@@ -6,8 +6,8 @@ import type { PaxeerXReceipt } from 'types/api/paxeerXLists';
 
 import { PAXEER_X_RECEIPTS_ITEM } from 'stubs/paxeerXLists';
 import { render, routerState } from 'ui/shared/layout/testWrapper';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from 'vitest/lib';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, screen, waitFor } from 'vitest/lib';
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
@@ -24,6 +24,20 @@ const receipt: PaxeerXReceipt = {
   transaction_hash: '0x8f9e7d6c5b4a39281706f5e4d3c2b1a0998877665544332211ffeeddccbbaa99',
   timestamp: '2023-05-22T18:00:36.000000Z',
 };
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+const setVisibility = (state: DocumentVisibilityState) => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  document.dispatchEvent(new Event('visibilitychange'));
+};
+
+const setOnline = (online: boolean) => {
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+  window.dispatchEvent(new Event(online ? 'online' : 'offline'));
+};
+
+const freshnessOf = (container: HTMLElement) => container.querySelector('[data-receipt-freshness]');
 
 const renderPage = async() => {
   const result = render(<PaxeerXReceiptPage/>);
@@ -68,7 +82,7 @@ describe('PaxeerXReceiptPageContent', () => {
     routerState.pathname = '/paxeer-x/receipts/[id]';
     routerState.query = { id: receipt.id };
     fetchMock.resetMocks();
-    fetchMock.mockResponse(JSON.stringify(receipt), { headers: { 'Content-Type': 'application/json' } });
+    fetchMock.mockResponse(JSON.stringify(receipt), { headers: JSON_HEADERS });
   });
 
   it('heads the page with the receipt label, its identifier and a copy control', async() => {
@@ -129,5 +143,97 @@ describe('PaxeerXReceiptPageContent', () => {
     expect(insets.length).toBeGreaterThan(0);
     expect(spaced.length).toBeGreaterThan(0);
     expect(spaced.every((rule) => isWide(rule.text))).toBe(true);
+  });
+
+  describe('freshness of the evidence', () => {
+    afterEach(() => {
+      Reflect.deleteProperty(document, 'visibilityState');
+      Reflect.deleteProperty(navigator, 'onLine');
+    });
+
+    it('reports the evidence current once the node has answered', async() => {
+      const { container } = await renderPage();
+
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('current');
+      });
+      expect(freshnessOf(container)?.textContent).toContain('Latest indexed response received. Checking for updates.');
+      expect(container.querySelector('[data-receipt-checked-at]')).toBeTruthy();
+    });
+
+    it('reports the evidence complete once the receipt is final and anchored', async() => {
+      fetchMock.mockResponse(
+        JSON.stringify({ ...receipt, status: 'final', verification_status: 'settlement_anchored' }),
+        { headers: JSON_HEADERS },
+      );
+
+      const { container } = await renderPage();
+
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('complete');
+      });
+      expect(freshnessOf(container)?.textContent)
+        .toContain('Final settlement and anchored verification reported. Automatic refresh stopped.');
+    });
+
+    it('reports the refresh paused while the page is hidden', async() => {
+      const { container } = await renderPage();
+
+      act(() => {
+        setVisibility('hidden');
+      });
+
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('paused');
+      });
+      expect(freshnessOf(container)?.textContent).toContain('Refresh paused while this page is hidden.');
+    });
+
+    it('reports a refresh in flight when the page comes back into view', async() => {
+      let receiptRequests = 0;
+      fetchMock.mockResponse((request) => {
+        if (!request.url.includes(`/paxeer-x/receipts/${ receipt.id }`)) {
+          return Promise.resolve({ body: JSON.stringify(receipt), headers: JSON_HEADERS });
+        }
+        receiptRequests += 1;
+        if (receiptRequests === 1) {
+          return Promise.resolve({ body: JSON.stringify(receipt), headers: JSON_HEADERS });
+        }
+        return new Promise<string>(() => undefined);
+      });
+
+      const { container } = await renderPage();
+
+      act(() => {
+        setVisibility('hidden');
+      });
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('paused');
+      });
+
+      act(() => {
+        setVisibility('visible');
+      });
+
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('refreshing');
+      });
+      expect(freshnessOf(container)?.textContent).toContain('Checking for newer indexed evidence.');
+      expect(receiptRequests).toBe(2);
+    });
+
+    it('reports the evidence stale and keeps it when the connection drops', async() => {
+      const { container } = await renderPage();
+
+      act(() => {
+        setOnline(false);
+      });
+
+      await waitFor(() => {
+        expect(freshnessOf(container)?.getAttribute('data-receipt-freshness')).toBe('stale');
+      });
+      expect(freshnessOf(container)?.textContent).toContain('Offline. Retaining the last indexed evidence.');
+      expect(container.querySelector('[data-field="id"]')?.textContent).toBe(receipt.id);
+    });
   });
 });

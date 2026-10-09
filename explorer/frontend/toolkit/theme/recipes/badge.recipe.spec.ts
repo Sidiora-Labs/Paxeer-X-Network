@@ -11,6 +11,7 @@ describe('badge recipe, direction variant', () => {
       textStyle: 'xs',
       textTransform: 'uppercase',
       justifyContent: 'center',
+      fontWeight: '500',
     });
   });
 

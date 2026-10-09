@@ -36,6 +36,10 @@ vi.setConfig({ testTimeout: 60_000 });
 
 const HASH = paxeerXMock.evmAddress;
 
+const SECOND_PAGE = 'fixture-page-two';
+const PREVIOUS_PAGE = 'fixture-page-previous';
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
 const mockApi = (
   account: PaxeerXUnifiedAccount = paxeerXMock.unifiedAccount,
   capabilities: PaxeerXCapabilities = capabilitiesMock.allEnabled,
@@ -89,6 +93,7 @@ describe('PaxeerXAccountPageContent', () => {
     routerState.pathname = '/paxeer-x/account/[hash]';
     routerState.query = { hash: HASH };
     routerSpy.push.mockClear();
+    sessionStorage.clear();
     fetchMock.resetMocks();
     mockApi();
   });
@@ -218,5 +223,97 @@ describe('PaxeerXAccountPageContent', () => {
     expect(insets.length).toBeGreaterThan(0);
     expect(spaced.length).toBeGreaterThan(0);
     expect(spaced.every((rule) => isWide(rule.text))).toBe(true);
+  });
+
+  it('goes back to the cursor the session kept for the page before this one', async() => {
+    routerState.query = { hash: HASH, tab: 'activity', cursor: SECOND_PAGE };
+    sessionStorage.setItem(`paxeer-x-history:${ HASH.toLowerCase() }:${ SECOND_PAGE }`, PREVIOUS_PAGE);
+    fetchMock.resetMocks();
+    mockApi({ ...paxeerXMock.unifiedAccount, page_cursor: SECOND_PAGE, page_number: 2 });
+
+    const { container } = render(<PaxeerXAccount/>);
+
+    await waitFor(() => {
+      expect(container.querySelector<HTMLButtonElement>('[data-control="prev"]')?.disabled).toBe(false);
+    });
+    container.querySelector<HTMLButtonElement>('[data-control="prev"]')?.click();
+
+    await waitFor(() => {
+      expect(routerSpy.push).toHaveBeenCalledWith(
+        { pathname: '/paxeer-x/account/[hash]', query: { hash: HASH, tab: 'activity', cursor: PREVIOUS_PAGE } },
+        undefined,
+        { shallow: true },
+      );
+    });
+  });
+
+  it('returns to the first page cursor of the account from a later page', async() => {
+    routerState.query = { hash: HASH, tab: 'activity', cursor: SECOND_PAGE };
+    fetchMock.resetMocks();
+    mockApi({ ...paxeerXMock.unifiedAccount, page_cursor: SECOND_PAGE, page_number: 2 });
+
+    const { container } = render(<PaxeerXAccount/>);
+
+    await waitFor(() => {
+      expect(container.querySelector<HTMLButtonElement>('[data-control="first"]')?.disabled).toBe(false);
+    });
+    expect(container.querySelector<HTMLButtonElement>('[data-control="prev"]')?.disabled).toBe(true);
+    container.querySelector<HTMLButtonElement>('[data-control="first"]')?.click();
+
+    await waitFor(() => {
+      expect(routerSpy.push).toHaveBeenCalledWith(
+        { pathname: '/paxeer-x/account/[hash]', query: { hash: HASH, tab: 'activity', cursor: paxeerXMock.unifiedAccount.first_page_cursor } },
+        undefined,
+        { shallow: true },
+      );
+    });
+  });
+
+  it('asks the node for the same page again when retry is pressed after a failed answer', async() => {
+    let accountRequests = 0;
+    fetchMock.resetMocks();
+    fetchMock.mockResponse((request) => {
+      if (request.url.includes('/capabilities')) {
+        return Promise.resolve({ body: JSON.stringify(capabilitiesMock.allEnabled), headers: JSON_HEADERS });
+      }
+      accountRequests += 1;
+      if (accountRequests === 1) {
+        return Promise.resolve({ status: 404, body: JSON.stringify({ message: 'Not found' }), headers: JSON_HEADERS });
+      }
+      return Promise.resolve({ body: JSON.stringify(paxeerXMock.unifiedAccount), headers: JSON_HEADERS });
+    });
+
+    render(<PaxeerXAccount/>);
+
+    const retry = await screen.findByRole<HTMLButtonElement>('button', { name: 'Retry this page' });
+
+    await waitFor(() => {
+      expect(retry.disabled).toBe(false);
+    });
+    retry.click();
+
+    await screen.findByText(paxeerXMock.paxAddress);
+    expect(accountRequests).toBe(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(routerSpy.push).not.toHaveBeenCalled();
+  });
+
+  it('starts a new history view without the cursor the route carried', async() => {
+    routerState.query = { hash: HASH, tab: 'activity', cursor: '' };
+
+    render(<PaxeerXAccount/>);
+
+    const startOver = await screen.findByRole<HTMLButtonElement>('button', { name: 'Start a new history view' });
+
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Retry this page' }).disabled).toBe(true);
+    startOver.click();
+
+    await waitFor(() => {
+      expect(routerSpy.push).toHaveBeenCalledWith(
+        { pathname: '/paxeer-x/account/[hash]', query: { hash: HASH, tab: 'activity' } },
+        undefined,
+        { shallow: true },
+      );
+    });
   });
 });

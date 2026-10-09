@@ -46,6 +46,18 @@ describe('HeroBanner', () => {
     expect(container.querySelector('[data-label="hero-search-submit"]')).not.toBeNull();
   });
 
+  it('puts the filter dropdown on the left of the search field, starting on all filters', () => {
+    const { container } = render(<HeroBanner/>);
+
+    const filter = container.querySelector('[data-label="hero-search-filter"]') as HTMLElement;
+    const search = container.querySelector('[data-label="hero-search-desktop"]') as HTMLElement;
+    const submit = container.querySelector('[data-label="hero-search-submit"]') as HTMLElement;
+
+    expect(filter.textContent).toContain('All filters');
+    expect(filter.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(search.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('submits the search form from the submit button', () => {
     const { container } = render(<HeroBanner/>);
 

@@ -125,12 +125,14 @@ const PaxeerXReceiptDetails = ({ data, isLoading, freshness }: Props) => {
             hint="The transaction that emitted the receipt"
             isLoading={ isLoading }
           >
-            { data.transaction_hash === null ? <Text color="text.secondary">—</Text> : <TxEntity
-              hash={ data.transaction_hash }
-              isLoading={ isLoading }
-              truncation="none"
-              noIcon
-            /> }
+            { data.transaction_hash === null ? <Text color="text.secondary">—</Text> : (
+              <TxEntity
+                hash={ data.transaction_hash }
+                isLoading={ isLoading }
+                truncation="none"
+                noIcon
+              />
+            ) }
           </ScanKeyValue>
 
           <ScanKeyValue
@@ -138,12 +140,14 @@ const PaxeerXReceiptDetails = ({ data, isLoading, freshness }: Props) => {
             hint="The block that holds the emitting transaction"
             isLoading={ isLoading }
           >
-            { data.block_number === null ? <Text color="text.secondary">—</Text> : <BlockEntity
-              number={ data.block_number }
-              isLoading={ isLoading }
-              truncation="none"
-              noIcon
-            /> }
+            { data.block_number === null ? <Text color="text.secondary">—</Text> : (
+              <BlockEntity
+                number={ data.block_number }
+                isLoading={ isLoading }
+                truncation="none"
+                noIcon
+              />
+            ) }
           </ScanKeyValue>
 
           <ScanKeyValue
@@ -151,11 +155,13 @@ const PaxeerXReceiptDetails = ({ data, isLoading, freshness }: Props) => {
             hint="The time the block holding the emitting transaction was produced"
             isLoading={ isLoading }
           >
-            { data.timestamp === null ? <Text color="text.secondary">—</Text> : <TimeWithTooltip
-              timestamp={ data.timestamp }
-              isLoading={ isLoading }
-              timeFormat="absolute"
-            /> }
+            { data.timestamp === null ? <Text color="text.secondary">—</Text> : (
+              <TimeWithTooltip
+                timestamp={ data.timestamp }
+                isLoading={ isLoading }
+                timeFormat="absolute"
+              />
+            ) }
           </ScanKeyValue>
         </DetailedInfo.Container>
       </Box>

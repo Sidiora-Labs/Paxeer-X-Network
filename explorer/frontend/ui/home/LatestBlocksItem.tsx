@@ -18,13 +18,15 @@ import SimpleValue from 'ui/shared/value/SimpleValue';
 
 type Props = {
   block: Block;
+  duration?: number;
   isLoading?: boolean;
 };
 
 const hasReward = !config.features.rollup.isEnabled && !config.UI.views.block.hiddenFields?.total_reward;
 
-const LatestBlocksItem = ({ block, isLoading }: Props) => {
+const LatestBlocksItem = ({ block, duration, isLoading }: Props) => {
   const totalReward = getBlockTotalReward(block);
+  const durationText = duration === undefined ? '' : ` in ${ duration < 1 ? '<1' : duration }s`;
 
   return (
     <Flex
@@ -84,7 +86,7 @@ const LatestBlocksItem = ({ block, isLoading }: Props) => {
           </BlockEntityLink>
         </Flex>
         <Skeleton loading={ isLoading } textStyle="xs" color="text.secondary" w="fit-content" mt="2px">
-          <chakra.span>{ block.transactions_count } { block.transactions_count === 1 ? 'txn' : 'txns' }</chakra.span>
+          <chakra.span>{ block.transactions_count } { block.transactions_count === 1 ? 'txn' : 'txns' }{ durationText }</chakra.span>
         </Skeleton>
       </Box>
       { block.celo?.l1_era_finalized_epoch_number && (
@@ -119,6 +121,7 @@ const rewardsKey = (block: Block) => block.rewards?.map(({ type, reward }) => `$
 
 const areRowPropsEqual = (prev: Props, next: Props) => (
   prev.isLoading === next.isLoading &&
+  prev.duration === next.duration &&
   prev.block.height === next.block.height &&
   prev.block.hash === next.block.hash &&
   prev.block.timestamp === next.block.timestamp &&

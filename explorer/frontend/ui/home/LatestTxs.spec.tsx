@@ -67,6 +67,24 @@ describe('LatestTxs', () => {
     }, { timeout: 30_000, interval: 100 });
   });
 
+  it('lets the desktop rows fit the half-width card with the parties and the value as columns', async() => {
+    const { container } = render(<LatestTxs/>);
+
+    await screen.findByText('View all transactions');
+
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll(`[data-latest-tx="${ txMock.base.hash }"]`)).toHaveLength(2);
+    }, { timeout: 30_000, interval: 100 });
+
+    const desktopRow = container.querySelectorAll(`[data-latest-tx="${ txMock.base.hash }"]`)[1] as HTMLElement;
+    const labels = Array.from(desktopRow.children).map((column) => column.getAttribute('data-label'));
+
+    expect(window.getComputedStyle(desktopRow.parentElement as HTMLElement).minWidth).not.toBe('720px');
+    expect(labels).toContain('tx-parties');
+    expect(labels).toContain('tx-value');
+    expect(labels).not.toContain('tx-tags');
+  });
+
   it('closes the list with the link to every transaction', async() => {
     const { container } = render(<LatestTxs/>);
 

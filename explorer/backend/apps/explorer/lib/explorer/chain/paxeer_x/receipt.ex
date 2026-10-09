@@ -329,7 +329,8 @@ defmodule Explorer.Chain.PaxeerX.Receipt.KernelCursor do
     |> validate_number(:refused_batch, greater_than_or_equal_to: 0)
     |> validate_change(:refusal_code, fn :refusal_code, code ->
       if code in @refusal_codes or code =~ ~r/\Arelay_status_[1-5][0-9]{2}\z/,
-        do: [], else: [refusal_code: "is invalid"]
+        do: [],
+        else: [refusal_code: "is invalid"]
     end)
     |> validate_refusal_pair()
   end
