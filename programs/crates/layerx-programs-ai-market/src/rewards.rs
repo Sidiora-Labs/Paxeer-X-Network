@@ -452,24 +452,23 @@ impl<'a> RecipientDictionary<'a> {
     /// # Errors
     /// `NON_CANONICAL` for an index past 255 or a malformed slot.
     pub fn get(&self, index: u16) -> CodecResult<Option<RecipientSlot>> {
+        let start = usize::from(index) * SLOT_BYTES;
         let bytes = self
             .bytes
-            .chunks_exact(SLOT_BYTES)
-            .nth(usize::from(index))
+            .get(start..start + SLOT_BYTES)
             .ok_or(NON_CANONICAL)?;
-        let mut r = Reader::new(bytes);
-        let slot = if r.boolean()? {
-            Some(RecipientSlot {
-                worker: WorkerId::new(r.fixed()?)?,
-                recipient: AccountId::new(r.fixed()?)?,
-                references: r.u16()?,
-            })
-        } else {
-            r.reserved(SLOT_BYTES - 1)?;
-            None
-        };
-        r.finish()?;
-        Ok(slot)
+        match bytes[0] {
+            0 if unused(&bytes[1..]) => Ok(None),
+            1 => {
+                let mut r = Reader::new(&bytes[1..]);
+                Ok(Some(RecipientSlot {
+                    worker: WorkerId::new(r.fixed()?)?,
+                    recipient: AccountId::new(r.fixed()?)?,
+                    references: r.u16()?,
+                }))
+            }
+            _ => Err(NON_CANONICAL),
+        }
     }
     /// # Errors
     /// `NON_CANONICAL` for an index past 255 or a malformed slot, `F06_LEDGER_INVARIANT_VIOLATION` for an unused slot.
@@ -498,32 +497,50 @@ impl<'a> RecipientDictionary<'a> {
     /// Lowest unused slot index.
     #[must_use]
     pub fn first_free(&self) -> Option<u16> {
-        self.raw()
-            .find(|(_, s)| s.iter().all(|b| *b == 0))
-            .map(|(index, _)| index)
+        self.raw().find(|(_, s)| unused(s)).map(|(index, _)| index)
     }
     /// # Errors
     /// `NON_CANONICAL` for a malformed slot, a bad reference count or a duplicate pair, `ACCOUNT_BINDING` for a reserve-account recipient.
     pub fn validate(&self, reserve: AccountId) -> CodecResult<()> {
+        let mut flagged: [&[u8]; MAX_PAYOUT_IDENTITIES] = [&[]; MAX_PAYOUT_IDENTITIES];
+        let mut count = 0;
+        for (_, bytes) in self.raw() {
+            if bytes[0] == 1 {
+                flagged[count] = &bytes[1..65];
+                count += 1;
+            }
+        }
+        let mut seen = 0;
         for (index, bytes) in self.raw() {
             let Some(slot) = self.get(index)? else {
                 continue;
             };
+            seen += 1;
             if slot.recipient == reserve {
                 return Err(ACCOUNT_BINDING);
             }
             if slot.references == 0 || slot.references > MAX_SLOT_REFERENCES {
                 return Err(NON_CANONICAL);
             }
-            if self
-                .raw()
-                .skip(usize::from(index) + 1)
-                .any(|(_, other)| other[0] == 1 && other[1..65] == bytes[1..65])
+            if flagged[seen..count]
+                .iter()
+                .any(|other| *other == &bytes[1..65])
             {
                 return Err(NON_CANONICAL);
             }
         }
         Ok(())
+    }
+    /// Reference count of every slot, zero for an unused one; meaningful only
+    /// on a dictionary that passed `validate`.
+    fn held(&self) -> impl Iterator<Item = u16> + 'a {
+        self.bytes.chunks_exact(SLOT_BYTES).map(|slot| {
+            if slot[0] == 1 {
+                u16::from_be_bytes([slot[SLOT_BYTES - 2], slot[SLOT_BYTES - 1]])
+            } else {
+                0
+            }
+        })
     }
 }
 /// # Errors
@@ -1147,7 +1164,8 @@ const ROWS_AT: usize = DICTIONARY_AT + DICTIONARY_BYTES;
 const LAST_REFUND_AT: usize = ROWS_AT + EPOCH_ROWS_BYTES;
 
 fn unused(bytes: &[u8]) -> bool {
-    bytes.iter().all(|b| *b == 0)
+    let (words, tail) = bytes.as_chunks::<8>();
+    words.iter().all(|word| u64::from_ne_bytes(*word) == 0) && tail.iter().all(|b| *b == 0)
 }
 
 /// Borrowed view over the fixed 33-row epoch region. Row `i` occupies bytes
@@ -1447,10 +1465,8 @@ impl<'a> RewardState<'a> {
                 *count = count.checked_add(1).ok_or(ARITHMETIC)?;
             }
         }
-        for (index, count) in (0u16..).zip(references) {
-            if dictionary.get(index)?.map_or(0, |s| s.references) != count {
-                return Err(F06_LEDGER_INVARIANT_VIOLATION);
-            }
+        if !dictionary.held().eq(references) {
+            return Err(F06_LEDGER_INVARIANT_VIOLATION);
         }
         if let Some(last) = self.last_refund()? {
             let end = last

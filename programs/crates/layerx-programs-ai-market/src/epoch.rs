@@ -353,30 +353,31 @@ fn epoch_budget(policy: &TaskPolicyV1, free: Amount) -> CodecResult<Amount> {
     }
 }
 
-/// F06 `ReserveEpoch` into `out`, carrying any F05 bytes after the reward state unchanged.
-fn reserve(
+/// F06 `ReserveEpoch` of `rewards`, the validated reward state at the head of `section`, into
+/// `out`, carrying any F05 bytes after the reward state unchanged; returns the budget, the
+/// section length and the validated reserved state.
+#[allow(clippy::too_many_arguments)]
+fn reserve<'o>(
     section: &[u8],
+    rewards: Option<RewardState<'_>>,
     policy: &TaskPolicyV1,
     epoch: u64,
     roster: RosterDigest,
     workers: &[WorkerRosterEntry],
     height: u64,
-    out: &mut [u8],
-) -> CodecResult<(Amount, usize)> {
-    if section.is_empty() {
-        return Err(READINESS_BLOCKED);
-    }
-    let rewards = decode_reward_state(section.get(..REWARD_STATE_BYTES).ok_or(NON_CANONICAL)?)?;
+    out: &'o mut [u8],
+) -> CodecResult<(Amount, usize, RewardState<'o>)> {
+    let rewards = rewards.ok_or(READINESS_BLOCKED)?;
     let tail = section.get(REWARD_STATE_BYTES..).ok_or(NON_CANONICAL)?;
     let budget = epoch_budget(policy, rewards.ledger()?.free)?;
     let (head, rest) = out
         .split_at_mut_checked(REWARD_STATE_BYTES)
         .ok_or(CAPACITY)?;
-    rewards.reserve_epoch(epoch, budget, roster, workers, height, head)?;
+    let (reserved, _) = rewards.reserve_epoch(epoch, budget, roster, workers, height, head)?;
     rest.get_mut(..tail.len())
         .ok_or(CAPACITY)?
         .copy_from_slice(tail);
-    Ok((budget, section.len()))
+    Ok((budget, section.len(), reserved))
 }
 
 /// The frozen worker and evaluator rosters of one opening and its core roster digest.
@@ -461,7 +462,7 @@ fn open_reputation(
     selected: &PolicySection<'_>,
     sections: &[&[u8]; 5],
     roster: &[WorkerRosterEntry],
-    rewards: &[u8],
+    rewards: &RewardState<'_>,
     height: u64,
 ) -> CodecResult<Region> {
     // A seal lives only between the F05 seal and completion of the opened epoch, which is
@@ -480,7 +481,6 @@ fn open_reputation(
         departed,
         height,
     )?;
-    let rewards = decode_reward_state(rewards)?;
     let state = prune_released(&opened, |epoch| match rewards.row(epoch) {
         Ok(_) => Ok(true),
         Err(NOT_FOUND) => Ok(false),
@@ -530,12 +530,14 @@ fn compose(
     } else {
         current
     };
-    let opened = roster::rollover_roster(source, height, state.revision, rolled, work)?;
+    let (opened, settlement, rewards) =
+        roster::rollover_roster_with(source, height, state.revision, rolled, work)?;
     let rolled = decode_shared_state(rolled.get(..opened.state_len).ok_or(CAPACITY)?)?;
     let sections = rolled.feature_sections;
     let frozen = freeze(&sections, &selected, epoch, height, identity_out)?;
-    let (budget, settlement_len) = reserve(
-        sections[Section::SettlementClaims.index()],
+    let (budget, settlement_len, reserved) = reserve(
+        settlement,
+        rewards,
         &selected.current,
         epoch,
         frozen.digest,
@@ -552,7 +554,7 @@ fn compose(
                 &selected,
                 &sections,
                 frozen.workers(),
-                settlement_out.get(..REWARD_STATE_BYTES).ok_or(CAPACITY)?,
+                &reserved,
                 height,
             )?;
             let len = encode_joint(&reputation, sections[ADMISSION], joint_out)?;

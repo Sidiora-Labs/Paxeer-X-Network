@@ -594,7 +594,8 @@ fn guest_module() -> Checked<ValidatedModule> {
 }
 
 /// One guest execution of `envelope` by the call's principal under the protocol maximum
-/// budget, through the public budgeted qualification route of the runtime executor.
+/// budget, as the first activity of the batch at the call height, through the public
+/// ABI-v5 budgeted qualification route of the runtime executor.
 fn execute(
     module: &ValidatedModule,
     storage: &mut Storage,
@@ -636,7 +637,7 @@ fn execute(
         binding,
     );
     executor
-        .execute_authorized_v2_budgeted_for_qualification(storage, request)
+        .execute_authorized_v5_budgeted_for_qualification(storage, request, 1, ctx.height)
         .map_err(|e| format!("executor refused: {e}"))
 }
 

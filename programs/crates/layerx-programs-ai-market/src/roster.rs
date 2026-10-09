@@ -338,6 +338,18 @@ pub fn rollover_roster(
     next: &mut [u8],
     scratch: &mut [u8],
 ) -> CodecResult<RosterOpened> {
+    Ok(rollover_roster_with(current, height, expected_revision, next, scratch)?.0)
+}
+
+/// [`rollover_roster`] that also returns the joint F05/F06 section of `current`, which the
+/// next value carries byte for byte, and its validated reward state when initialized.
+pub(crate) fn rollover_roster_with<'c>(
+    current: &'c [u8],
+    height: u64,
+    expected_revision: u64,
+    next: &mut [u8],
+    scratch: &mut [u8],
+) -> CodecResult<(RosterOpened, &'c [u8], Option<RewardState<'c>>)> {
     let state = state::decode_shared_state(current)?;
     if state.revision != expected_revision {
         return Err(F08_STALE_STATE);
@@ -423,7 +435,7 @@ pub fn rollover_roster(
         control,
     };
     let state_len = state::encode_shared_state(&opened, next, control_out)?;
-    Ok(RosterOpened {
+    let roster = RosterOpened {
         rollover,
         previous,
         skipped,
@@ -435,7 +447,8 @@ pub fn rollover_roster(
         preserved_entitlements,
         preserved_amount,
         state_len,
-    })
+    };
+    Ok((roster, sections[Section::SettlementClaims.index()], rewards))
 }
 
 /// Digest over the frozen roster sorted by role then stable participant ID.

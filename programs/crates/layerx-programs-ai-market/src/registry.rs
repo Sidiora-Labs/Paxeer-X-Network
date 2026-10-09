@@ -50,11 +50,32 @@ pub struct MarketHeader {
     pub reserved: [u8; 8],
 }
 
-/// This derives a binding only; it does not register an account or prove custody.
+/// This derives a binding only; it does not register an account or prove custody. A guest
+/// instance serves one call, so the guest build derives the last pair once and reuses it.
 ///
 /// # Errors
 /// Returns `F01_ACCOUNT_BINDING_MISSING` when the SDK refuses the program, asset, or derived account.
 pub fn derive_rewards_account(program: ProgramId, asset: AssetId) -> CodecResult<AccountId> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        static DERIVED: spin::Mutex<Option<(ProgramId, AssetId, AccountId)>> =
+            spin::Mutex::new(None);
+        let mut derived = DERIVED.lock();
+        if let Some((p, a, account)) = *derived {
+            if (p, a) == (program, asset) {
+                return Ok(account);
+            }
+        }
+        let account = prepare_rewards_account(program, asset)?;
+        *derived = Some((program, asset, account));
+        Ok(account)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    prepare_rewards_account(program, asset)
+}
+
+/// The SDK program-account derivation behind [`derive_rewards_account`].
+fn prepare_rewards_account(program: ProgramId, asset: AssetId) -> CodecResult<AccountId> {
     let program = layerx_program_sdk::ProgramId::new(program.bytes())
         .map_err(|_| F01_ACCOUNT_BINDING_MISSING)?;
     let asset =
