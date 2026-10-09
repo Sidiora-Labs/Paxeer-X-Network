@@ -36711,7 +36711,7 @@ worker_role_id = "W-F06-RECOVERY"
 
 [task.ai.F07-T03]
 title = "Project finalized monotonic reputation history"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F07-T02", "ai.T-C03", "ai.F10-T02"]
@@ -36737,7 +36737,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 17
 acceptance_cases = ["AI.F07-A09", "AI.F07-A11"]
-paths = ["platform/hosted/indexer/src/ai_reputation.rs", "platform/hosted/indexer/tests/ai_reputation_finality.rs"]
+paths = ["platform/hosted/indexer/src/ai_reputation.rs", "platform/hosted/indexer/tests/ai_reputation_finality.rs", "platform/hosted/indexer/Cargo.toml"]
 worker_role_id = "W-F07-PROJECTION"
 
 [task.ai.F10-T02-FULL]

@@ -933,3 +933,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F10-T06-verify-1.log"
 observed = "Seven health-privacy cases pass: signed observations (SHA-256 domain PAXAI/health-observation/v1, Ed25519) are refused for stale authority, not-ready, expired, finality-unavailable, authority regression, non-member and binding mismatch, and operator diagnostics are gated by a revocable grant generation; the positive RUNNER_READY route is not asserted because no runner qualification producer has landed, and the roster key and canonical membership rows are narrow seams until ai.F02-T03 and ai.F10-T02 land."
 assumption = "ai.F10-T02 maps its finalized participant row into ai_health::CanonicalMembership and ai.F02-T02/T03 expose the delegate key and emit observations in the schema-1 body layout; the positive route is asserted in ai.F10-T02-FULL."
+
+[qualification.ai-f07-t03-reputation-finality-20261009-01]
+revision = "8efba3af8"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_reputation_finality"
+exit_code = 0
+log = "private ops log wt/logs/ai.F07-T03-verify-1.log"
+observed = "Six finality cases pass: the projection admits reputation history only from certificate-bound ReadProofs (resulting_state_root and batch_number matched to native_state_root and execution_height) at CHECKPOINT_FINALISED rank 4 with monotonic epochs; rank-5 settlement anchoring is not accepted, no admitted interface proves the state bytes hash to native_state_root, and F07 data is read as the leading self-delimiting region of section 4 because no joint F07/F08 split exists."
+assumption = "FM-CORE defines the joint section-4 F07/F08 split (consumed by reputation_region) and the host ProgramRead seam that binds state bytes to native_state_root is added under ai.F10-T02-FULL; the indexer manifest now carries layerx-programs-ai-market and k256 dev-dependency lines that ai.F10-T02 must union."

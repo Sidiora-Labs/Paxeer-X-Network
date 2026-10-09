@@ -5189,3 +5189,8 @@ text = "With programs_module_registration_v5 active, a guest ABI 5 CALL clears c
 area = "indexer"
 text = "layerx-indexer clippy can only isolate findings in owned files with --no-deps -- --cap-lints warn; without it, lint errors in platform/hosted/internal and then the indexer's own pre-existing deny-level findings (lib.rs docs, abi.rs, api.rs, codec.rs, config.rs, layerx.rs, paxeer.rs, existing tests) stop compilation before test targets are linted. The indexer has no ed25519-dalek dependency: verify Ed25519 through the rustls ring provider (default_provider().signature_verification_algorithms.mapping for ED25519) and sign in tests with rustls::crypto::ring::sign::any_eddsa_type on PKCS#8 v1 DER; the raw public key is the last 32 bytes of the SPKI."
 
+
+[gotcha.1120]
+area = "indexer"
+text = "Running rustfmt on a crate's src/lib.rs reformats every child module; platform/hosted/indexer/src/paxeer.rs on main is not rustfmt-clean and gets rewritten, so format only the new files, never lib.rs. In the AI market state, section 4 (ReputationAdmission) on main holds only the F08 AdmissionTable whose decode rejects trailing bytes, so F07 reputation data cannot coexist there until a joint F07/F08 split is defined; the indexer reads the RP07 frame as the self-delimiting leading region through one seam (reputation_region). ReputationState insert/append/prune are pub(crate), so outside the program crate a populated F07 section can only be built by framing RP07 bytes and checking them against decode_section/encode_section."
+
