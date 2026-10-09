@@ -8,6 +8,7 @@
 //! Program activity, where the transfer, the next state and the replay record commit or
 //! refuse together.
 use ed25519_dalek::{Signer, SigningKey};
+use layerx_program_sdk::{Field, HostRefusal, ProgramError, Reason, ValueError};
 use layerx_programs_ai_market::{
     admission::{
         admit_evaluator, Admission, AdmissionContext, AdmissionTable, ApprovalTerms,
@@ -16,30 +17,36 @@ use layerx_programs_ai_market::{
     aggregation_codec::{EpochAggregation, QualityStatus, WorkerAggregate},
     codec::{
         self, decode_envelope, derive_evaluator, derive_market, derive_worker, encode_envelope,
-        ApplicationResult, Envelope, ResultStatus,
+        ApplicationResult, ChunkRequest, Envelope, ResultStatus,
     },
     dispatch::{self, Operation},
     epoch::{self, Frozen, Outcome as Opening, ADVANCE_SCRATCH_BYTES, OPEN_SCRATCH_BYTES},
     errors::{
-        ApplicationError, CodecResult, ARITHMETIC, F06_CLAIM_EXPIRED,
-        F06_CONTRIBUTION_CONSENT_REQUIRED, F06_FUNDING_POLICY_MISMATCH, F06_INVALID_AMOUNT,
-        F06_LEDGER_INVARIANT_VIOLATION, F06_REFUND_RECIPIENT_MISMATCH,
-        F06_UNKNOWN_WORKER_ENTITLEMENT, F06_WRONG_CLAIM_AMOUNT, F06_WRONG_CLAIM_RECIPIENT,
-        INSUFFICIENT_FREE, NON_CANONICAL, NOT_FOUND, REPLAY_CONFLICT, SEQUENCE_GAP, STALE_CURSOR,
-        UNAUTHORIZED, WRONG_CONFIG, WRONG_EPOCH, WRONG_PHASE, WRONG_ROSTER,
+        ApplicationError, CodecResult, ARITHMETIC, CAPACITY, CONFLICT, F01_LIFECYCLE_CLOSED,
+        F06_CLAIM_EXPIRED, F06_CONTRIBUTION_CONSENT_REQUIRED, F06_EPOCH_TERMINAL,
+        F06_FUNDING_POLICY_MISMATCH, F06_INVALID_AMOUNT, F06_LEDGER_INVARIANT_VIOLATION,
+        F06_REFUND_RECIPIENT_MISMATCH, F06_UNKNOWN_WORKER_ENTITLEMENT, F06_WRONG_CLAIM_AMOUNT,
+        F06_WRONG_CLAIM_RECIPIENT, HOST_CAPABILITY, HOST_TRANSFER, INSUFFICIENT_FREE,
+        NON_CANONICAL, NOT_FOUND, READINESS_BLOCKED, REPLAY_CONFLICT, RETENTION_FULL, SEQUENCE_GAP,
+        STALE_CURSOR, UNAUTHORIZED, WRONG_CONFIG, WRONG_EPOCH, WRONG_PHASE, WRONG_ROSTER,
     },
     evaluators::{
         authority::{split_identity_section, EvaluatorRecord, EvaluatorRegion, LastRequest},
         model::{EvaluatorGrant, GrantTerms},
     },
     policy::{PolicyCommitments, TaskPolicyV1, TASK_POLICY_BYTES},
+    queries::{
+        bind_snapshot, read_state_chunk, FinalityEvidence, QueryError, QueryResult, ReadProof,
+        SnapshotBinding, StateCapture, FINALIZED_RANK,
+    },
     registry::{derive_rewards_account, MarketHeader, F01_SECTION_CAP},
     registry_ops::{self, CallContext, PolicySection, ACTIVE, WINDING_DOWN},
     reward_math::allocate,
     rewards::{
-        self, decode_reward_state, entitlement_id, ClaimRequest, EpochStatus, Outcome,
-        RefundRequest, RewardEffect, RewardLedger, CLAIMS_EXPIRED_BYTES, CLAIM_PAID_BYTES,
-        FUNDED_BYTES, FUNDING_POLICY_VERSION, PRUNED_BYTES, REFUNDED_BYTES, REWARD_STATE_BYTES,
+        self, decode_reward_state, entitlement_id, ClaimRequest, Disposition, EpochStatus, Outcome,
+        RecipientSlot, RefundRequest, RewardEffect, RewardLedger, RewardState,
+        CLAIMS_EXPIRED_BYTES, CLAIM_PAID_BYTES, EPOCH_SPAN_HEIGHTS, FUNDED_BYTES,
+        FUNDING_POLICY_VERSION, PRUNED_BYTES, REFUNDED_BYTES, REWARD_STATE_BYTES,
     },
     state::{
         decode_shared_state, encode_shared_state, ActorSlot, Control, ReplayTable, Section,
@@ -48,11 +55,12 @@ use layerx_programs_ai_market::{
     types::{
         AccountId, Amount, AssetId, Authentication, ChainDomain, Digest32, FrozenBinding,
         MetadataDigest, Presence, PrincipalId, ProgramId, PublicKey32, RequestDigest, RequestId,
-        ResultDigest, RosterDigest, RubricDigest, Version, WorkerId, WorkerRosterEntry,
+        ResultDigest, RosterDigest, RubricDigest, StateDigest, Version, WorkerId,
+        WorkerRosterEntry,
     },
     value_adapter::{self, RewardsAccount, ValueAction},
     workers::{WorkerCurrent, WorkerState, WorkerTable, WORKER_TABLE_MAX_BYTES},
-    MAX_EVENT_BYTES, MAX_RESULT_BYTES, MAX_STATE_BYTES,
+    MAX_CHUNK_BYTES, MAX_EVENT_BYTES, MAX_RESULT_BYTES, MAX_STATE_BYTES, MAX_WORKERS,
 };
 use layerx_programs_runtime::terminal::{
     decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDetail,
@@ -91,12 +99,16 @@ const NATIVE_ASSET: [u8; 32] = {
 const NATIVE_EXPIRY: u64 = 1_000_000;
 const EVENTS_DOMAIN: &[u8] = b"LayerX/programs/events/v1\0";
 const PROGRAM_REFUSED: i64 = -736;
+/// An unpinned chunk read: revision 0 with no digest.
+const UNPINNED: (u64, Presence<StateDigest>) = (0, Presence::Absent);
+const PUBLISHED_AT_MS: u64 = 1_000;
 
 enum Failure {
     Application(ApplicationError),
     Conversion(core::num::TryFromIntError),
     Io(std::io::Error),
     Harness(String),
+    Query(QueryError),
 }
 impl core::fmt::Debug for Failure {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -105,6 +117,7 @@ impl core::fmt::Debug for Failure {
             Self::Conversion(error) => write!(f, "integer conversion {error}"),
             Self::Io(error) => write!(f, "native harness io {error}"),
             Self::Harness(what) => write!(f, "native harness {what}"),
+            Self::Query(error) => write!(f, "snapshot query {error:?}"),
         }
     }
 }
@@ -121,6 +134,11 @@ impl From<core::num::TryFromIntError> for Failure {
 impl From<std::io::Error> for Failure {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)
+    }
+}
+impl From<QueryError> for Failure {
+    fn from(error: QueryError) -> Self {
+        Self::Query(error)
     }
 }
 type Checked<T = ()> = Result<T, Failure>;
@@ -477,6 +495,7 @@ struct Applied {
 
 /// One market's committed shared state bytes, its next owner and treasury sequences and the
 /// physical balance of its rewards account.
+#[derive(Clone)]
 struct World {
     bytes: Vec<u8>,
     owner_sequence: u64,
@@ -754,41 +773,11 @@ impl World {
                 config: frozen.config,
                 roster: frozen.roster,
             };
-            let roster: Vec<WorkerRosterEntry> = weights.iter().map(|(entry, _)| *entry).collect();
-            let outputs = weights
-                .iter()
-                .map(|(entry, weight)| {
-                    let status = if *weight == 0 {
-                        QualityStatus::ScoredZero
-                    } else {
-                        QualityStatus::ScoredPositive
-                    };
-                    WorkerAggregate::new(
-                        entry.worker,
-                        entry.generation,
-                        3,
-                        status,
-                        *weight,
-                        *weight,
-                    )
-                })
-                .collect::<CodecResult<Vec<_>>>()?;
-            let allocation = allocate(frozen.budget, &outputs)?;
-            let aggregation =
-                EpochAggregation::structural(binding, Digest32::new([5; 32])?, &roster, &outputs)?;
             let (head, tail) = parts
                 .rewards
                 .split_at_checked(REWARD_STATE_BYTES)
                 .ok_or(NOT_FOUND)?;
-            let mut terminal = vec![0; REWARD_STATE_BYTES];
-            decode_reward_state(head)?.terminalize(
-                &binding,
-                aggregation.root(),
-                &allocation,
-                &roster,
-                at,
-                &mut terminal,
-            )?;
+            let mut terminal = terminalized(head, binding, frozen.budget, weights, at)?;
             terminal.extend_from_slice(tail);
             parts.rewards = terminal;
             Ok(())
@@ -979,6 +968,43 @@ impl World {
         assert_eq!(self.held, held);
         error
     }
+}
+
+/// The reward state after the real `TerminalizeRewards` of the reserved row bound to
+/// `binding`, allocating `budget` by one weight per frozen worker (zero weights are a
+/// scored-zero vote).
+fn terminalized(
+    head: &[u8],
+    binding: FrozenBinding,
+    budget: Amount,
+    weights: &[(WorkerRosterEntry, u32)],
+    at: u64,
+) -> CodecResult<Vec<u8>> {
+    let roster: Vec<WorkerRosterEntry> = weights.iter().map(|(entry, _)| *entry).collect();
+    let outputs = weights
+        .iter()
+        .map(|(entry, weight)| {
+            let status = if *weight == 0 {
+                QualityStatus::ScoredZero
+            } else {
+                QualityStatus::ScoredPositive
+            };
+            WorkerAggregate::new(entry.worker, entry.generation, 3, status, *weight, *weight)
+        })
+        .collect::<CodecResult<Vec<_>>>()?;
+    let allocation = allocate(budget, &outputs)?;
+    let aggregation =
+        EpochAggregation::structural(binding, Digest32::new([5; 32])?, &roster, &outputs)?;
+    let mut terminal = vec![0; REWARD_STATE_BYTES];
+    decode_reward_state(head)?.terminalize(
+        &binding,
+        aggregation.root(),
+        &allocation,
+        &roster,
+        at,
+        &mut terminal,
+    )?;
+    Ok(terminal)
 }
 
 fn funded(actor: PrincipalId, amount: Amount, d: Amount, f: Amount) -> Vec<u8> {
@@ -1457,6 +1483,11 @@ struct Line {
     abi: u16,
     terminal: Vec<u8>,
     state: Vec<u8>,
+    blobs_before: usize,
+    blobs_after: usize,
+    application_blobs: usize,
+    kv_before: usize,
+    kv_after: usize,
     balance_before: u64,
     balance_after: u64,
     fee: u64,
@@ -1475,6 +1506,11 @@ fn parse_line(text: &str) -> Checked<Line> {
         abi: number(t[4])?,
         terminal: unhex(t[5])?,
         state: unhex(t[6])?,
+        blobs_before: number(t[7])?,
+        blobs_after: number(t[8])?,
+        application_blobs: number(t[9])?,
+        kv_before: number(t[10])?,
+        kv_after: number(t[11])?,
         balance_before: number(t[13])?,
         balance_after: number(t[14])?,
         fee: number(t[15])?,
@@ -1519,6 +1555,8 @@ struct Native {
     program: ProgramId,
     principals: [PrincipalId; 3],
     rewards: [u8; 32],
+    /// Kernel blob, staged blob and module KV limits from the bring-up line.
+    limits: [usize; 3],
     state: Option<Vec<u8>>,
 }
 impl Drop for Native {
@@ -1556,6 +1594,7 @@ impl Native {
             program: ProgramId::new(fixed(&unhex(t[1])?)?)?,
             principals: [principal(2)?, principal(3)?, principal(4)?],
             rewards: fixed(&unhex(t[5])?)?,
+            limits: [number(t[6])?, number(t[7])?, number(t[8])?],
             state: None,
         })
     }
@@ -1603,6 +1642,12 @@ impl Native {
         Ok(out)
     }
     fn submit(&mut self, actor: usize, height: u64, envelope: &[u8]) -> Checked<Line> {
+        let line = self.submit_raw(actor, height, envelope)?;
+        assert_eq!(line.status, 0, "native CALL status");
+        Ok(line)
+    }
+    /// One CALL whose kernel status may be a refusal.
+    fn submit_raw(&mut self, actor: usize, height: u64, envelope: &[u8]) -> Checked<Line> {
         let input = self.input.as_mut().ok_or_else(|| harness("closed"))?;
         writeln!(input, "{actor} {height} {}", hex(envelope))?;
         input.flush()?;
@@ -1610,9 +1655,33 @@ impl Native {
         if self.output.read_line(&mut text)? == 0 {
             return Err(harness("native harness stopped"));
         }
-        let line = parse_line(&text)?;
-        assert_eq!(line.status, 0, "native CALL status");
-        Ok(line)
+        parse_line(&text)
+    }
+    /// The in-process outcome of one reward call over `current` and the next state it writes.
+    fn local(
+        &self,
+        actor: usize,
+        height: u64,
+        current: &[u8],
+        envelope: &[u8],
+    ) -> Checked<(Outcome, Vec<u8>)> {
+        let mut next = vec![0; MAX_STATE_BYTES];
+        let mut scratch = vec![0; rewards::SCRATCH_BYTES];
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        let outcome = rewards::apply(
+            &self.context(actor, height),
+            &decode_envelope(envelope)?,
+            current,
+            &mut next,
+            &mut scratch,
+            &mut event,
+        )?;
+        let state_len = match outcome {
+            Outcome::Applied { state_len, .. } => state_len,
+            Outcome::AlreadyApplied { .. } | Outcome::Retained(_) => 0,
+        };
+        next.truncate(state_len);
+        Ok((outcome, next))
     }
     /// Real F01 CREATE through the routed Program; the committed state is the in-process one.
     fn create(&mut self, height: u64) -> Checked {
@@ -1757,4 +1826,820 @@ fn reward_conservation_authority_and_rollback() -> Checked {
     journey()?;
     forged_ledger()?;
     native_fund()
+}
+
+/// The reward state of one committed shared state value.
+fn reward_view(state: &[u8]) -> CodecResult<RewardState<'_>> {
+    let settlement =
+        decode_shared_state(state)?.feature_sections[Section::SettlementClaims.index()];
+    decode_reward_state(settlement.get(..REWARD_STATE_BYTES).ok_or(NOT_FOUND)?)
+}
+/// Disposition and entitlement of `worker` in the retained row of `epoch`.
+fn entitlement_of(
+    state: &[u8],
+    epoch: u64,
+    worker: WorkerId,
+) -> CodecResult<(Disposition, Amount)> {
+    let rewards = reward_view(state)?;
+    let dictionary = rewards.dictionary();
+    for entry in rewards.row(epoch)?.entries() {
+        if dictionary.slot(entry.slot)?.worker == worker {
+            return Ok((entry.disposition, entry.entitlement));
+        }
+    }
+    Err(NOT_FOUND)
+}
+/// Host `ProgramRead` facts of one native state root.
+fn read_proof(root: u8) -> CodecResult<ReadProof> {
+    Ok(ReadProof {
+        chain: ChainDomain::new(CHAIN)?,
+        program: ProgramId::new(PROGRAM)?,
+        native_state_root: Digest32::new([root; 32])?,
+        observed_sequence: u64::from(root),
+        execution_height: 1000 + u64::from(root),
+        batch_id: Digest32::new([root ^ 0x80; 32])?,
+    })
+}
+/// One real `READ_STATE_CHUNK` of `state` at `offset` under `pin`; returns the body length.
+fn chunk(
+    state: &[u8],
+    pin: (u64, Presence<StateDigest>),
+    offset: usize,
+    out: &mut [u8],
+) -> CodecResult<usize> {
+    let mut payload = [0; 46];
+    let n = codec::encode_chunk_request(
+        &ChunkRequest {
+            revision: pin.0,
+            digest: pin.1,
+            offset: u32::try_from(offset).map_err(|_| ARITHMETIC)?,
+            requested: u16::try_from(MAX_CHUNK_BYTES).map_err(|_| ARITHMETIC)?,
+        },
+        &mut payload,
+    )?;
+    read_state_chunk(state, &payload[..n], out)
+}
+/// A whole-state capture of `state` proved by native root `root`, pinned after its first
+/// chunk, then bound to finality evidence of rank `rank` for root `evidenced`.
+fn capture(
+    state: &[u8],
+    root: u8,
+    evidenced: u8,
+    rank: u8,
+) -> QueryResult<(Vec<u8>, SnapshotBinding)> {
+    let proof = read_proof(root)?;
+    let mut buffer = vec![0; MAX_STATE_BYTES];
+    let mut body = vec![0; MAX_RESULT_BYTES];
+    let mut assembly = StateCapture::new(&mut buffer);
+    let (mut pin, mut offset) = (UNPINNED, 0);
+    loop {
+        let n = chunk(state, pin, offset, &mut body)?;
+        assembly.accept(&proof, &body[..n])?;
+        let response = codec::decode_chunk_response(&body[..n])?;
+        pin = (response.revision, Presence::Present(response.digest));
+        offset += response.bytes.len();
+        if offset == usize::try_from(response.total_bytes).map_err(|_| ARITHMETIC)? {
+            break;
+        }
+    }
+    let (bytes, facts) = assembly.finish()?;
+    let binding = bind_snapshot(
+        bytes,
+        &facts,
+        &FinalityEvidence {
+            native_state_root: Digest32::new([evidenced; 32])?,
+            checkpoint: Digest32::new([0x3c; 32])?,
+            settlement: Presence::Absent,
+            rank,
+        },
+        PUBLISHED_AT_MS,
+    )?;
+    Ok((bytes.to_vec(), binding))
+}
+/// A synthetic frozen worker with a distinct (worker, recipient) pair.
+fn pinned_entry(i: u8) -> CodecResult<WorkerRosterEntry> {
+    let distinct = |fill: u8| {
+        let mut bytes = [fill; 32];
+        bytes[0] = i;
+        bytes
+    };
+    Ok(WorkerRosterEntry {
+        worker: WorkerId::new(distinct(0x5c))?,
+        owner: PrincipalId::new(distinct(0x5d))?,
+        recipient: AccountId::new(distinct(0x6d))?,
+        generation: version()?,
+        key_version: version()?,
+        public_key: PublicKey32(distinct(0x5e)),
+        metadata: MetadataDigest::new(METADATA)?,
+    })
+}
+/// The frozen 58/43 weights of `low` and `high` in `WorkerId` order.
+fn allocated(low: WorkerRosterEntry, high: WorkerRosterEntry) -> Vec<(WorkerRosterEntry, u32)> {
+    let mut weights = vec![(low, 58), (high, 43)];
+    weights.sort_by_key(|(entry, _)| entry.worker);
+    weights
+}
+
+/// Recovery and capacity steps over the committed value.
+impl World {
+    /// An `OPEN_EPOCH` of the clock epoch of `at` that both the preview and the real opening
+    /// refuse with the same code; nothing is written.
+    fn open_refused(&self, at: u64) -> CodecResult<ApplicationError> {
+        let mut next = vec![0; MAX_STATE_BYTES];
+        let mut scratch = vec![0; OPEN_SCRATCH_BYTES];
+        let previewed = match epoch::preview_open(&self.bytes, at, &mut next, &mut scratch) {
+            Err(error) => error,
+            Ok(frozen) => panic!("expected a refused opening preview, got {frozen:?}"),
+        };
+        let call = Req {
+            epoch: (at - ORIGIN) / EPOCH_SPAN_HEIGHTS,
+            config: self.section()?.header.active_config_version,
+            roster: Presence::Present(RosterDigest::new([0x5a; 32])?),
+            request: tag(0x61, 0, at),
+            ..req(dispatch::OPEN_EPOCH, principal(KEEPER)?, Vec::new())
+        };
+        let encoded = call.encode()?;
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        let refused = match epoch::open_epoch(
+            &call.context(at)?,
+            &decode_envelope(&encoded)?,
+            &self.bytes,
+            &mut next,
+            &mut scratch,
+            &mut event,
+        ) {
+            Err(error) => error,
+            Ok(outcome) => panic!("expected a refused opening, got {outcome:?}"),
+        };
+        assert_eq!(refused, previewed);
+        Ok(refused)
+    }
+    /// A call run with `next` and scratch buffers of the given sizes; it must refuse.
+    fn refused_sized(
+        &self,
+        call: &Req,
+        at: u64,
+        next: usize,
+        scratch: usize,
+    ) -> CodecResult<ApplicationError> {
+        let encoded = call.encode()?;
+        let mut next = vec![0; next];
+        let mut scratch = vec![0; scratch];
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        match rewards::apply(
+            &call.context(at)?,
+            &decode_envelope(&encoded)?,
+            &self.bytes,
+            &mut next,
+            &mut scratch,
+            &mut event,
+        ) {
+            Err(error) => Ok(error),
+            Ok(outcome) => panic!("expected a buffer refusal, got {outcome:?}"),
+        }
+    }
+    /// A permissionless Claim of `entry`'s exact entitlement in `epoch`.
+    fn claim_call(
+        &self,
+        epoch: u64,
+        n: u8,
+        entry: &WorkerRosterEntry,
+        amount: Amount,
+    ) -> CodecResult<Req> {
+        self.row_call(
+            dispatch::CLAIM,
+            epoch,
+            n,
+            claim_payload(entry.worker, entry.recipient, amount)?,
+        )
+    }
+    /// A permissionless `RefundFree` of `amount` after `expected` already refunded.
+    fn refund_call(&self, n: u8, expected: Amount, amount: Amount) -> CodecResult<Req> {
+        Ok(Req {
+            request: tag(0x50, n, 0),
+            ..self.context_call(
+                dispatch::REFUND_FREE,
+                principal(KEEPER)?,
+                refund_payload(expected, amount)?,
+            )?
+        })
+    }
+    /// Renews every F02 worker manifest at `at` for another 4096 heights.
+    fn renew(&mut self, at: u64) -> TestResult {
+        self.edit(|parts, _| {
+            let records: Vec<WorkerCurrent> = parts.workers.iter().copied().collect();
+            for record in records {
+                parts.workers.replace(&WorkerCurrent {
+                    valid_from: at,
+                    expiry: at + 4096,
+                    last_metadata_height: at,
+                    ..record
+                })?;
+            }
+            Ok(())
+        })
+    }
+    /// Pins all 256 dictionary slots with `real` and 255 synthetic pairs: eight completed
+    /// epochs 1..=8 of 32 members each, every one reserved by the real `ReserveEpoch` and
+    /// allocated one unit per member by the real `TerminalizeRewards` at `at`.
+    fn pin_dictionary(&mut self, real: WorkerRosterEntry, at: u64) -> TestResult {
+        let mut members = (0..=254)
+            .map(pinned_entry)
+            .collect::<CodecResult<Vec<_>>>()?;
+        members.push(real);
+        members.sort_by_key(|entry| entry.worker);
+        self.edit(|parts, market| {
+            let (head, tail) = parts
+                .rewards
+                .split_at_checked(REWARD_STATE_BYTES)
+                .ok_or(NOT_FOUND)?;
+            let tail = tail.to_vec();
+            let mut state = head.to_vec();
+            for (n, roster) in (1u8..).zip(members.chunks(MAX_WORKERS)) {
+                let epoch = u64::from(n);
+                let digest = RosterDigest::new([0xd0 + n; 32])?;
+                let budget = Amount::try_from(roster.len()).map_err(|_| ARITHMETIC)?;
+                let mut reserved = vec![0; REWARD_STATE_BYTES];
+                decode_reward_state(&state)?.reserve_epoch(
+                    epoch,
+                    budget,
+                    digest,
+                    roster,
+                    at,
+                    &mut reserved,
+                )?;
+                let binding = FrozenBinding {
+                    chain: market.deployment_chain_domain,
+                    program: market.program_id,
+                    market: market.market_id,
+                    epoch,
+                    config: version()?,
+                    roster: digest,
+                };
+                let weights: Vec<(WorkerRosterEntry, u32)> =
+                    roster.iter().map(|entry| (*entry, 1)).collect();
+                state = terminalized(&reserved, binding, budget, &weights, at)?;
+            }
+            state.extend_from_slice(&tail);
+            parts.rewards = state;
+            Ok(())
+        })
+    }
+}
+
+/// An active market whose first epoch 6 froze one worker and ended unscored; the second
+/// worker joins in the next enrollment window and both serve epoch 7.
+fn active_market() -> CodecResult<(World, WorkerRosterEntry, WorkerRosterEntry)> {
+    let mut w = World::create(ORIGIN)?;
+    let low = w.enroll(LOW, 130)?;
+    for n in 2..=4 {
+        w.evaluator(n, 129 + u64::from(n))?;
+    }
+    w.schedule(6, 134)?;
+    let fund = w.fund_call(0, fund_payload(120, REFUND, FUNDING_POLICY_VERSION, true))?;
+    w.apply(&fund, 135)?;
+    let first = w.open(896)?;
+    assert_eq!(
+        (first.epoch, first.budget, first.workers),
+        (6, BUDGET_CAP, 1)
+    );
+    w.advance(897)?;
+    let high = w.enroll(LOW + 1, 898)?;
+    w.terminalize(&first, &[(low, 0)], 1000)?;
+    assert_eq!(w.counters()?, [120, 0, 0, 120, 0, 0]);
+    Ok((w, low, high))
+}
+
+/// A funded market whose epoch 7 is open over two workers: `[120, 0, 0, 19, 101, 0]`.
+fn opened_market() -> CodecResult<(World, Frozen, WorkerRosterEntry, WorkerRosterEntry)> {
+    let (mut w, low, high) = active_market()?;
+    let frozen = w.open(1024)?;
+    assert_eq!(
+        (frozen.epoch, frozen.budget, frozen.workers),
+        (7, BUDGET_CAP, 2)
+    );
+    assert_eq!(w.counters()?, [120, 0, 0, 19, 101, 0]);
+    Ok((w, frozen, low, high))
+}
+
+/// A13: with no keeper through the settlement interval the reserve stays whole and no later
+/// epoch opens; the late keeper allocates the sealed epoch once, and closing withdraws
+/// neither R before terminalization nor C after it.
+fn late_settlement_and_close() -> TestResult {
+    let (mut w, frozen, low, high) = opened_market()?;
+    let reserved = w.counters()?;
+    for at in [1152, 1280] {
+        assert_eq!(w.open_refused(at)?, WRONG_PHASE);
+        assert_eq!(w.counters()?, reserved);
+    }
+    let row = reward_view(&w.bytes)?.row(7)?;
+    assert_eq!(
+        (row.status, row.budget),
+        (EpochStatus::Reserved, BUDGET_CAP)
+    );
+    let accepting = w.refund_call(1, 0, 19)?;
+    assert_eq!(w.refused(&accepting, 1281), WRONG_PHASE);
+
+    w.lifecycle(WINDING_DOWN)?;
+    assert_eq!(w.open_refused(1408)?, F01_LIFECYCLE_CLOSED);
+    let reserve = w.refund_call(2, 0, 20)?;
+    assert_eq!(w.refused(&reserve, 1409), INSUFFICIENT_FREE);
+    let free = w.refund_call(3, 0, 19)?;
+    w.apply(&free, 1409)?;
+    assert_eq!(w.counters()?, [120, 0, 19, 0, 101, 0]);
+    assert_eq!(w.held, 101);
+
+    let weights = allocated(low, high);
+    w.terminalize(&frozen, &weights, 1500)?;
+    assert_eq!(w.counters()?, [120, 0, 19, 0, 0, 101]);
+    let row = reward_view(&w.bytes)?.row(7)?;
+    assert_eq!(
+        (row.status, row.terminal_height, row.expiry_height),
+        (EpochStatus::Terminal, 1500, 1500 + 4096)
+    );
+    let terminal = w.bytes.clone();
+    assert_eq!(
+        w.terminalize(&frozen, &weights, 1501),
+        Err(F06_EPOCH_TERMINAL)
+    );
+    assert_eq!(w.bytes, terminal);
+    let liability = w.refund_call(4, 19, 1)?;
+    assert_eq!(w.refused(&liability, 1502), INSUFFICIENT_FREE);
+    let claim = w.claim_call(7, 1, &low, 58)?;
+    w.apply(&claim, 1503)?;
+    assert_eq!(w.counters()?, [120, 58, 19, 0, 0, 43]);
+    Ok(())
+}
+
+/// A18 and the in-process half of A17: a Claim whose response is lost is recovered from a
+/// finalized whole-state capture, never from an unfinalized, misbound, torn or stale one,
+/// and its blind resubmission pays nothing; a payout whose physical cover, host transfer or
+/// buffers are unavailable commits nothing and leaves the claim unpaid, then pays once.
+#[allow(clippy::too_many_lines)]
+fn finality_recovery() -> QueryResult<()> {
+    let (mut w, frozen, low, high) = opened_market()?;
+    w.terminalize(&frozen, &allocated(low, high), 1100)?;
+    assert_eq!(w.counters()?, [120, 0, 0, 19, 0, 101]);
+
+    let before = w.bytes.clone();
+    let paid = w.claim_call(7, 1, &low, 58)?;
+    let lost = w.apply(&paid, 1110)?;
+    let held = w.held;
+    assert_eq!(held, 62);
+
+    let (_, unfinalized) = capture(&w.bytes, 0x31, 0x31, FINALIZED_RANK - 1)?;
+    assert_eq!(
+        unfinalized.require_finalized(),
+        Err(QueryError::FinalityUnavailable)
+    );
+    assert_eq!(
+        capture(&w.bytes, 0x31, 0x32, FINALIZED_RANK).err(),
+        Some(QueryError::BindingMismatch)
+    );
+    let mut buffer = vec![0; MAX_STATE_BYTES];
+    let mut body = vec![0; MAX_RESULT_BYTES];
+    let old = read_proof(0x30)?;
+    let mut torn = StateCapture::new(&mut buffer);
+    let n = chunk(&before, UNPINNED, 0, &mut body)?;
+    torn.accept(&old, &body[..n])?;
+    let n = chunk(&w.bytes, UNPINNED, MAX_CHUNK_BYTES, &mut body)?;
+    assert_eq!(
+        torn.accept(&old, &body[..n]),
+        Err(QueryError::SnapshotConflict)
+    );
+    let n = chunk(&before, UNPINNED, MAX_CHUNK_BYTES, &mut body)?;
+    assert_eq!(
+        torn.accept(&old, &body[..n]),
+        Err(QueryError::IntegrityFailure)
+    );
+    assert_eq!(torn.finish().err(), Some(QueryError::IntegrityFailure));
+    let stale = (
+        decode_shared_state(&before)?.revision,
+        Presence::Present(codec::state_digest(&before)?),
+    );
+    assert_eq!(chunk(&w.bytes, stale, 0, &mut body), Err(CONFLICT));
+
+    let (captured, binding) = capture(&w.bytes, 0x31, 0x31, FINALIZED_RANK)?;
+    binding.require_finalized()?;
+    assert_eq!(captured, w.bytes);
+    assert_eq!(
+        (binding.revision, binding.state_digest),
+        (lost.revision, codec::state_digest(&w.bytes)?)
+    );
+    assert_eq!(
+        entitlement_of(&captured, 7, low.worker)?,
+        (Disposition::Claimed, 58)
+    );
+    let recovered = reward_view(&captured)?;
+    let row = recovered.row(7)?;
+    assert_eq!(row.paid_sum, 58);
+    assert_eq!(recovered.ledger()?.total_claimed, 58);
+    let Presence::Present(allocation) = row.allocation else {
+        panic!("an allocated row carries its allocation digest");
+    };
+    let entitlement = entitlement_id(allocation, low.worker)?;
+    let mut acknowledged = entitlement.bytes().to_vec();
+    acknowledged.extend_from_slice(&ASSET);
+    acknowledged.extend_from_slice(&58u128.to_be_bytes());
+    assert_eq!(acknowledged, lost.response);
+    assert_eq!(w.repeated(&paid, 1111)?, entitlement.bytes());
+    assert_eq!(w.held, held);
+
+    let unpaid = w.bytes.clone();
+    let payout = w.claim_call(7, 2, &high, 43)?;
+    let (outcome, next, _) = w.run(&payout, 1112)?;
+    let Outcome::Applied {
+        effect,
+        before: prev,
+        after,
+        ..
+    } = outcome
+    else {
+        panic!("an unpaid entitlement is payable, got {outcome:?}");
+    };
+    assert_eq!(
+        effect,
+        RewardEffect::Payout {
+            recipient: high.recipient,
+            amount: 43
+        }
+    );
+    let bound = RewardsAccount::for_ledger(ProgramId::new(PROGRAM)?, &prev)?;
+    let action = value_adapter::plan(&bound, &prev, &after, effect)?;
+    assert_eq!(
+        action,
+        ValueAction::Pay {
+            recipient: high.recipient,
+            amount: 43
+        }
+    );
+    assert_eq!(value_adapter::cover(&after, held, action), Ok(0));
+    assert_eq!(
+        value_adapter::cover(&after, held - 1, action),
+        Err(F06_LEDGER_INVARIANT_VIOLATION)
+    );
+    for (error, expected) in [
+        (ProgramError::Host(HostRefusal::Denied), HOST_CAPABILITY),
+        (ProgramError::Host(HostRefusal::Bounds), HOST_TRANSFER),
+        (ProgramError::Host(HostRefusal::Meter), HOST_TRANSFER),
+        (
+            ProgramError::Value(ValueError::new(Field::Amount, Reason::Zero)),
+            F06_INVALID_AMOUNT,
+        ),
+    ] {
+        assert_eq!(value_adapter::transfer_refusal(error), expected);
+    }
+    for (refusal, expected) in [
+        (HostRefusal::Denied, HOST_CAPABILITY),
+        (HostRefusal::Evidence, READINESS_BLOCKED),
+        (HostRefusal::VerificationFailed, READINESS_BLOCKED),
+    ] {
+        assert_eq!(
+            value_adapter::balance_refusal(ProgramError::Host(refusal)),
+            expected
+        );
+    }
+    assert_eq!(
+        w.refused_sized(&payout, 1112, next.len() - 1, rewards::SCRATCH_BYTES)?,
+        CAPACITY
+    );
+    assert_eq!(
+        w.refused_sized(
+            &payout,
+            1112,
+            MAX_STATE_BYTES,
+            Section::PolicyLifecycle.payload_cap()
+        )?,
+        CAPACITY
+    );
+    assert_eq!(w.bytes, unpaid);
+    assert_eq!(w.held, held);
+    let (captured, binding) = capture(&w.bytes, 0x33, 0x33, FINALIZED_RANK)?;
+    binding.require_finalized()?;
+    assert_eq!(captured, unpaid);
+    assert_eq!(
+        entitlement_of(&captured, 7, high.worker)?,
+        (Disposition::Unclaimed, 43)
+    );
+    assert_eq!(reward_view(&captured)?.ledger()?.liability, 43);
+
+    let applied = w.apply(&payout, 1113)?;
+    assert_eq!(applied.effect, effect);
+    assert_eq!(w.held, held - 43);
+    assert_eq!(
+        w.repeated(&payout, 1114)?,
+        entitlement_id(allocation, high.worker)?.bytes()
+    );
+    assert_eq!(w.counters()?, [120, 101, 0, 19, 0, 0]);
+    Ok(())
+}
+
+/// A14 dictionary: with all 256 recipient pairs pinned a reused pair still opens, but a new
+/// frozen recipient refuses the opening before any liability; once the oldest epoch is paid
+/// out and pruned its pairs are free and the same opening reserves.
+fn dictionary_capacity() -> TestResult {
+    let mut w = World::create(ORIGIN)?;
+    let low = w.enroll(LOW, 130)?;
+    for n in 2..=4 {
+        w.evaluator(n, 129 + u64::from(n))?;
+    }
+    w.schedule(9, 134)?;
+    let fund = w.fund_call(0, fund_payload(400, REFUND, FUNDING_POLICY_VERSION, true))?;
+    w.apply(&fund, 135)?;
+    w.pin_dictionary(low, 136)?;
+    assert_eq!(w.counters()?, [400, 0, 0, 144, 0, 256]);
+    let pinned = w.ledger()?;
+    assert_eq!((pinned.recipient_count, pinned.retained_epochs), (256, 8));
+
+    let reused = w.open(1280)?;
+    assert_eq!(
+        (reused.epoch, reused.budget, reused.workers),
+        (9, BUDGET_CAP, 1)
+    );
+    {
+        let rewards = reward_view(&w.bytes)?;
+        let dictionary = rewards.dictionary();
+        let slot = dictionary
+            .find(low.worker, low.recipient)?
+            .ok_or(NOT_FOUND)?;
+        assert_eq!(dictionary.slot(slot)?.references, 2);
+        assert_eq!(dictionary.occupied(), 256);
+    }
+    w.advance(1281)?;
+    w.terminalize(&reused, &[(low, 1)], 1380)?;
+    assert_eq!(w.counters()?, [400, 0, 0, 43, 0, 357]);
+
+    let high = w.enroll(LOW + 1, 1381)?;
+    assert_eq!(w.open_refused(1408)?, CAPACITY);
+    assert_eq!(w.counters()?, [400, 0, 0, 43, 0, 357]);
+    assert_eq!(
+        reward_view(&w.bytes)?
+            .dictionary()
+            .find(high.worker, high.recipient)?,
+        None
+    );
+
+    let oldest: Vec<RecipientSlot> = {
+        let rewards = reward_view(&w.bytes)?;
+        let dictionary = rewards.dictionary();
+        rewards
+            .row(1)?
+            .entries()
+            .iter()
+            .map(|entry| dictionary.slot(entry.slot))
+            .collect::<CodecResult<_>>()?
+    };
+    assert_eq!(oldest.len(), MAX_WORKERS);
+    for (n, member) in (0u8..).zip(&oldest) {
+        let claim = w.row_call(
+            dispatch::CLAIM,
+            1,
+            n,
+            claim_payload(member.worker, member.recipient, 1)?,
+        )?;
+        w.apply(&claim, 1410)?;
+    }
+    assert_eq!(w.counters()?, [400, 32, 0, 43, 0, 325]);
+    let prune = w.row_call(dispatch::PRUNE_EPOCH, 1, 32, Vec::new())?;
+    w.apply(&prune, 1411)?;
+    let freed = oldest
+        .iter()
+        .filter(|member| member.worker != low.worker)
+        .count();
+    assert_eq!(usize::from(w.ledger()?.recipient_count), 256 - freed);
+
+    let opened = w.open(1412)?;
+    assert_eq!((opened.epoch, opened.budget, opened.workers), (10, 43, 2));
+    assert_eq!(w.counters()?, [400, 32, 0, 0, 43, 325]);
+    assert!(reward_view(&w.bytes)?
+        .dictionary()
+        .find(high.worker, high.recipient)?
+        .is_some());
+    Ok(())
+}
+
+/// A14 ring over a sustained funded lifecycle: thirty-two completed epochs fit, the oldest
+/// completed row being pruned by the opening that would exceed them; a full ring whose
+/// oldest row still owes an unexpired claim refuses the next opening without erasing it,
+/// and once that claim is paid, or has expired, the opening prunes the oldest row first.
+fn sustained_retention() -> TestResult {
+    let start = |epoch: u64| ORIGIN + epoch * EPOCH_SPAN_HEIGHTS;
+    let (mut w, low, high) = active_market()?;
+    for epoch in 7..=38 {
+        let s = start(epoch);
+        if epoch > 7 {
+            let fund = w.fund_call(
+                0,
+                fund_payload(BUDGET_CAP, REFUND, FUNDING_POLICY_VERSION, true),
+            )?;
+            w.apply(&fund, s)?;
+        }
+        let frozen = w.open(s + 1)?;
+        assert_eq!(
+            (frozen.epoch, frozen.budget, frozen.workers),
+            (epoch, BUDGET_CAP, 2)
+        );
+        if epoch == 10 {
+            for n in 5..=7 {
+                w.evaluator(n, s + 3)?;
+            }
+        }
+        if epoch == 20 {
+            w.renew(s + 3)?;
+        }
+        w.terminalize(&frozen, &allocated(low, high), s + 100)?;
+        let claim = w.claim_call(epoch, 1, &high, 43)?;
+        w.apply(&claim, s + 101)?;
+        if epoch > 7 {
+            let claim = w.claim_call(epoch, 2, &low, 58)?;
+            w.apply(&claim, s + 102)?;
+        }
+        let k = Amount::from(epoch - 6);
+        assert_eq!(
+            w.counters()?,
+            [
+                120 + BUDGET_CAP * (k - 1),
+                43 * k + 58 * (k - 1),
+                0,
+                19,
+                0,
+                58
+            ]
+        );
+    }
+    assert_eq!(reward_view(&w.bytes)?.row(6), Err(NOT_FOUND));
+    assert_eq!(w.ledger()?.retained_epochs, 32);
+
+    let s = start(39);
+    let fund = w.fund_call(
+        0,
+        fund_payload(BUDGET_CAP, REFUND, FUNDING_POLICY_VERSION, true),
+    )?;
+    w.apply(&fund, s)?;
+    assert_eq!(w.open_refused(s + 1)?, RETENTION_FULL);
+    assert_eq!(w.counters()?, [3352, 3174, 0, 120, 0, 58]);
+    assert_eq!(
+        entitlement_of(&w.bytes, 7, low.worker)?,
+        (Disposition::Unclaimed, 58)
+    );
+    let mut lapsed = w.clone();
+
+    let claim = w.claim_call(7, 2, &low, 58)?;
+    w.apply(&claim, s + 2)?;
+    let pruned = w.open(s + 3)?;
+    assert_eq!(
+        (pruned.epoch, pruned.previous, pruned.skipped, pruned.budget),
+        (39, Some(38), 0, BUDGET_CAP)
+    );
+    assert_eq!(reward_view(&w.bytes)?.row(7), Err(NOT_FOUND));
+    assert_eq!(w.ledger()?.retained_epochs, 31);
+    assert_eq!(w.counters()?, [3352, 3232, 0, 19, 101, 0]);
+
+    let late = start(40);
+    assert_eq!(
+        reward_view(&lapsed.bytes)?.row(7)?.expiry_height,
+        start(7) + 100 + 4096
+    );
+    let expire = lapsed.row_call(dispatch::EXPIRE_EPOCH_CLAIMS, 7, 3, Vec::new())?;
+    let applied = lapsed.apply(&expire, late)?;
+    assert_eq!(applied.effect, RewardEffect::Released(58));
+    let reopened = lapsed.open(late + 1)?;
+    assert_eq!(
+        (
+            reopened.epoch,
+            reopened.previous,
+            reopened.skipped,
+            reopened.budget
+        ),
+        (40, Some(38), 1, BUDGET_CAP)
+    );
+    assert_eq!(reward_view(&lapsed.bytes)?.row(7), Err(NOT_FOUND));
+    assert_eq!(lapsed.counters()?, [3352, 3174, 0, 77, 101, 0]);
+    Ok(())
+}
+
+/// A18 and A17 through the registered Program activity: a Fund whose response is lost is
+/// reconciled from the committed state and replay record alone; its identical resubmission
+/// returns the retained result with no second transfer; repeated deposits then reach the
+/// real kernel blob admission boundary, which refuses with the state, the replay record and
+/// the rewards account balance unchanged.
+#[allow(clippy::too_many_lines)]
+fn native_recovery_and_capacity() -> Checked {
+    let mut n = Native::start()?;
+    n.create(1000)?;
+    let created = n
+        .state
+        .clone()
+        .ok_or_else(|| harness("no committed state"))?;
+    let envelope = n.envelope(
+        dispatch::FUND,
+        NATIVE_OWNER,
+        2,
+        &fund_payload(120, REFUND, FUNDING_POLICY_VERSION, true),
+    )?;
+    let (Outcome::Applied { result, .. }, expected) =
+        n.local(NATIVE_OWNER, 1001, &created, &envelope)?
+    else {
+        return Err(harness("in-process Fund did not apply"));
+    };
+    let line = n.submit(NATIVE_OWNER, 1001, &envelope)?;
+    assert_eq!(line.state, expected);
+    assert_eq!(line.balance_after, line.balance_before - line.fee - 120);
+    assert_eq!(reward_view(&line.state)?.ledger()?.tracked_deposits, 120);
+    let retained = decode_shared_state(&line.state)?
+        .control
+        .replay
+        .actor(ActorSlot::OWNER)
+        .and_then(|actor| actor.last)
+        .ok_or_else(|| harness("no retained owner result"))?;
+    assert_eq!((retained.sequence, retained.result_digest), (2, result));
+    let funded = line.rewards_balance;
+    let mut committed = line.state;
+
+    let Outcome::Retained(repeat) = n.local(NATIVE_OWNER, 1002, &committed, &envelope)?.0 else {
+        return Err(harness(
+            "in-process resubmission is not the retained result",
+        ));
+    };
+    assert_eq!(repeat, retained);
+    let mut frame = vec![0; MAX_RESULT_BYTES];
+    let frame_len = codec::encode_result(
+        &ApplicationResult::success(
+            ResultStatus::AlreadyApplied,
+            decode_envelope(&envelope)?.request_digest()?,
+            repeat.applied_revision,
+            &repeat.result_digest.bytes(),
+        )?,
+        &mut frame,
+    )?;
+    let line = n.submit(NATIVE_OWNER, 1002, &envelope)?;
+    let Terminal::Success(body) = terminal(&line, n.program)? else {
+        return Err(harness("native resubmission was rejected"));
+    };
+    assert_eq!(line.result_code, 0);
+    assert_eq!(body, frame[..frame_len]);
+    assert_eq!(line.state, committed);
+    assert_eq!(line.rewards_balance, funded);
+    assert_eq!(line.balance_after, line.balance_before - line.fee);
+    assert!(line.events.is_empty());
+    assert_eq!(
+        (line.blobs_after, line.kv_after),
+        (line.blobs_before, line.kv_before)
+    );
+
+    let [max_blobs, ..] = n.limits;
+    let mut held = funded;
+    let mut per_commit = None;
+    for sequence in 3..=u64::try_from(max_blobs)? + 2 {
+        let height = 1000 + sequence;
+        let envelope = n.envelope(
+            dispatch::FUND,
+            NATIVE_OWNER,
+            sequence,
+            &fund_payload(1, REFUND, FUNDING_POLICY_VERSION, true),
+        )?;
+        let (Outcome::Applied { .. }, expected) =
+            n.local(NATIVE_OWNER, height, &committed, &envelope)?
+        else {
+            return Err(harness("in-process deposit did not apply"));
+        };
+        let line = n.submit_raw(NATIVE_OWNER, height, &envelope)?;
+        if line.status != 0 || line.result_code != 0 {
+            let needed: usize =
+                per_commit.ok_or_else(|| harness("the first native deposit was refused"))?;
+            assert!(line.blobs_before + needed > max_blobs);
+            assert_eq!(
+                (line.blobs_after, line.kv_after),
+                (line.blobs_before, line.kv_before)
+            );
+            assert_eq!(line.state, committed);
+            assert_eq!(line.rewards_balance, held);
+            assert_eq!(line.balance_before - line.balance_after, line.fee);
+            assert!(line.events.is_empty());
+            return n.finish();
+        }
+        assert_eq!(line.state, expected);
+        assert!((1..=2).contains(&line.application_blobs));
+        assert!(line.blobs_after > line.blobs_before);
+        assert!(line.blobs_after <= max_blobs);
+        assert!(line.kv_after <= line.kv_before + 1);
+        assert_eq!(line.rewards_balance, held + 1);
+        assert_eq!(line.balance_after, line.balance_before - line.fee - 1);
+        assert_eq!(line.events.len(), 1);
+        per_commit = Some(line.blobs_after - line.blobs_before);
+        held = line.rewards_balance;
+        committed = line.state;
+    }
+    Err(harness(format!(
+        "no blob admission boundary within {max_blobs} blobs"
+    )))
+}
+
+#[test]
+fn reward_finality_recovery_and_capacity() -> Checked {
+    late_settlement_and_close()?;
+    finality_recovery()?;
+    dictionary_capacity()?;
+    sustained_retention()?;
+    native_recovery_and_capacity()
 }
