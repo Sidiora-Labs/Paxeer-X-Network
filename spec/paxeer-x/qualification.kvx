@@ -1021,3 +1021,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F02-T02-verify-2.log, build-1.log, clippy-5.log"
 observed = "22 cases pass: signed transport, metadata discovery, pinned TLS identity and in-process admission against a finalized capture of a really opened market; the first run failed only on a test helper that built the SUSPEND payload in the wrong field order."
 assumption = "End to end through the binary every authenticated job is refused StaleAuthority until ai.F10-T03 provides the finalized-authority reader for discovery::FinalizedAuthority::bind; F02-T03 and F08-T03 add their own pub mod lines to the new src/lib.rs."
+
+[qualification.ai-f10-t03-native-client-20261009-01]
+revision = "28e03b4d5"
+command = "cargo test --manifest-path agent/Cargo.toml -p layerx-client --test ai_market_client -- --test-threads=1"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F10-T03-verify-2.log, build-1.log, clippy-6.log, checkpaxai-1.log"
+observed = "13 cases pass: planning, review, submission and journaled recovery of native AI market calls against the shared paxai-v1 schema with a --check-paxai contract check exiting 0; the first run failed on a test helper that sent sequence 1 for the object-local CLAIM."
+assumption = "Receipts bind to a checkpoint by network and sequence range only and ReadProof execution_height/batch_id are caller-supplied until an authenticating adapter exists; pipeline.kvx regeneration and the Makefile/CI wiring for --check-paxai are owed by FM-F10/FM-STORAGE and recorded, not run here."

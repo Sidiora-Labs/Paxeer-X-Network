@@ -5246,3 +5246,7 @@ text = "Four F03 refusal codes in the spec are unreachable or shadowed through t
 [gotcha.1131]
 area = "programs-ai-market"
 text = "F01 SUSPEND and UPDATE_METADATA payloads start with expected_revision:u64 (reason32 follows for SUSPEND; a wrong order is refused F01_STALE_REVISION 0x0103); the trailing optional u64 is the operator grant sequence and an owner sending a nonzero value is refused UNAUTHORIZED. codec::decode_envelope refuses PAXAI service envelopes (PAXAIS1 magic) as NON_CANONICAL and selectors 0x0281..=0x0286 decode natively as UNKNOWN_OPERATION. The largest canonical worker manifest under the grammar is 2366 bytes although the spec text says an 8192-byte admitted manifest; the 8192 figure is the input cap. Clippy pedantic large_types_passed_by_value fires on WorkerCurrent (304 bytes) in test helpers."
+
+[gotcha.1132]
+area = "agent-client"
+text = "In the ai-market envelope an object-local operation (CLAIM and the other per-object selectors) must carry sequence 0 while role operations need a nonzero sequence; encode_envelope refuses the wrong one NON_CANONICAL before any preview runs. Workspace clippy on layerx-client stops at dependency errors (layerx-types program_lifecycle.rs missing # Errors docs) and the crate carries ~160 pre-existing pedantic findings outside the AI client files; lint owned files with --no-deps -- --cap-lints warn. The new platform/sdk/schema/paxai-v1.kvx and the --check-paxai generator arm change the mirror-v2 source and generator digests, so pipeline.kvx needs regeneration before the sdk check gate."
