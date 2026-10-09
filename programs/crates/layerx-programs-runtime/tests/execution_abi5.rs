@@ -24,6 +24,8 @@ const ACTOR: [u8; 32] = [0x52; 32];
 const ACTIVITY: [u8; 32] = [0x53; 32];
 /// Calldata the guest decodes as a market envelope and answers through its own refusal path.
 const CALLDATA: &[u8] = b"PAXAI/abi5-terminal-probe";
+const ACTIVITY_SEQUENCE: u64 = 1;
+const BATCH_HEIGHT: u64 = 1;
 
 type Checked<T = ()> = Result<T, String>;
 
@@ -103,7 +105,12 @@ fn execute(module: &ValidatedModule) -> Checked<(V2AuthorizedExecutionRecord, Ad
         binding,
     );
     let record = executor
-        .execute_authorized_v2_budgeted_for_qualification(&mut Storage::new(), request)
+        .execute_authorized_v5_budgeted_for_qualification(
+            &mut Storage::new(),
+            request,
+            ACTIVITY_SEQUENCE,
+            BATCH_HEIGHT,
+        )
         .map_err(|error| format!("executor refused the ABI 5 guest: {error}"))?;
     Ok((record, admitted))
 }
