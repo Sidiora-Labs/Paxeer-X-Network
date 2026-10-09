@@ -36742,7 +36742,7 @@ worker_role_id = "W-F07-PROJECTION"
 
 [task.ai.F10-T02-FULL]
 title = "Integrate complete finalized market projections"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F10-T02", "ai.F03-T04", "ai.F05-T03", "ai.F06-T03", "ai.F07-T02", "ai.F08-T03", "ai.F09-T02", "ai.F02-T03", "ai.F09-T03", "ai.F09-T04"]
@@ -36768,7 +36768,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 17
 acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15", "AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A20", "AI.F09-A22"]
-paths = ["platform/hosted/indexer/tests/ai_snapshot_projection.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/indexer/src/follower.rs"]
+paths = ["platform/hosted/indexer/tests/ai_snapshot_projection.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/indexer/src/follow.rs", "platform/hosted/indexer/src/main.rs"]
 worker_role_id = "W-F10-PROJECTION"
 
 [task.60.1]
