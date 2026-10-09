@@ -156,7 +156,7 @@ static int initialize(fixture *f)
     size_t i;
     f->parameters = 1U;
     f->height = 10U;
-    f->module_version = LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
+    f->module_version = LX_PROGRAMS_GUEST_ABI_V5_VERSION;
     (void)memset(f->program, 0x71, 32U);
     if (lx_account_registry_init(&f->accounts) != LXP_OK) return 1;
     for (i = 0U; i < 3U; ++i) {
@@ -184,7 +184,7 @@ static int initialize(fixture *f)
         lxp_state_store_bind_accounts(&f->state, &f->accounts) != LXP_OK ||
         lxp_kernel_create(&f->kernel, &f->state, &f->journal, &f->parameters, 0U) != LXP_OK ||
         install_metering_v1(&f->kernel) != LXP_OK ||
-        lxp_kernel_register_module(&f->kernel, programs_module_registration_v4()) != LXP_OK)
+        lxp_kernel_register_module(&f->kernel, programs_module_registration_v5()) != LXP_OK)
         return 1;
     (void)memcpy(f->asset.asset_id, asset_id, 32U);
     f->asset.registered = true;
@@ -476,13 +476,6 @@ static int register_account(fixture *f, const uint8_t *seed, size_t length, uint
         lxp_state_root(&f->kernel, f->kernel.current_state_root) != LXP_OK;
 }
 
-static int register_abi5(fixture *f)
-{
-    f->module_version = LX_PROGRAMS_GUEST_ABI_V5_VERSION;
-    return lxp_kernel_register_module(&f->kernel, programs_module_registration_v5()) != LXP_OK ||
-        lxp_state_root(&f->kernel, f->kernel.current_state_root) != LXP_OK;
-}
-
 static int deploy(fixture *f, const char *path)
 {
     FILE *artifact = fopen(path, "rb");
@@ -520,7 +513,6 @@ static int deploy(fixture *f, const char *path)
         execute(f, 0U, LX_PROGRAMS_DEPLOY, payload, length+104U) != LXP_OK ||
         f->receipt.result_code != LXP_OK ||
         register_account(f, rewards_seed, sizeof(rewards_seed) - 1U, f->rewards) != 0 ||
-        register_abi5(f) != 0 ||
         execute(f, 0U, LX_PROGRAMS_UPGRADE, upgrade, length+106U) != LXP_OK ||
         f->receipt.result_code != LXP_OK;
     free(payload); free(upgrade);

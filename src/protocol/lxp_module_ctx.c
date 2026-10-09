@@ -1640,7 +1640,8 @@ lxp_result lxp_ctx_ledger_execution_sequence(
     status = lxp_kernel_module_by_id(ctx->kernel, ctx->module_id,
                                      ctx->epoch, &registration);
     if (status != LXP_OK) return status;
-    if (registration->abi_version != LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION)
+    if (registration->abi_version != LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION &&
+        registration->abi_version != LX_PROGRAMS_GUEST_ABI_V5_VERSION)
         return LXP_OK;
     facts = &ctx->ledger_admission;
     if (facts->activity_type == LX_PROGRAMS_SANDBOX)

@@ -479,7 +479,8 @@ lxp_result lxp_kernel_bind_ledger_admission(
     status = lxp_kernel_module_by_id(ctx->kernel, ctx->module_id,
                                      ctx->epoch, &registration);
     if (status != LXP_OK) return status;
-    if (registration->abi_version != LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION)
+    if (registration->abi_version != LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION &&
+        registration->abi_version != LX_PROGRAMS_GUEST_ABI_V5_VERSION)
         return LXP_OK;
     ctx->ledger_admission.activity_type = activity_type;
     if (activity_type != LX_PROGRAMS_CALL && activity_type != LX_PROGRAMS_WIND_DOWN)
@@ -4617,7 +4618,8 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
         else {
             if (activity->activity_type == LX_PROGRAMS_CALL &&
                 receipt->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
-                receipt->module_version == LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION &&
+                (receipt->module_version == LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION ||
+                 receipt->module_version == LX_PROGRAMS_GUEST_ABI_V5_VERSION) &&
                 outcome->terminal_kind == LXP_PROGRAM_TERMINAL_SUCCESS)
                 (void)memcpy(receipt->transfer_set_root,
                              outcome->transfer_root, 32U);

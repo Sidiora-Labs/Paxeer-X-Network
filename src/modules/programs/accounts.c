@@ -66,7 +66,8 @@ lxp_result lxp_programs_account_module_validate(lxp_module_ctx *ctx)
     if (status != LXP_OK) return status;
     return registration->abi_version == LX_PROGRAMS_ACCOUNT_ABI_VERSION ||
            registration->abi_version == LX_PROGRAMS_SANDBOX_ABI_VERSION ||
-           (registration->abi_version == LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION &&
+           ((registration->abi_version == LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION ||
+             registration->abi_version == LX_PROGRAMS_GUEST_ABI_V5_VERSION) &&
             ctx->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) ?
            LXP_OK : LXP_ERR_VERSION_UNSUPPORTED;
 }

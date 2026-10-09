@@ -3571,6 +3571,16 @@ $(BUILD_DIR)/tests/lxp_test_blob_lifecycle: tests/programs/test_blob_lifecycle.c
 test-paxai-blob-lifecycle: $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
 
+$(BUILD_DIR)/tests/test_programs_abi5_admission: tests/programs/test_programs_abi5_admission.c \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
+
+.PHONY: test-programs-abi5-admission
+test-programs-abi5-admission: $(BUILD_DIR)/tests/test_programs_abi5_admission
+	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_programs_abi5_admission
+
 PAXAI_CHAIN_DOMAIN ?= 50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e
 PAXAI_HOST_BOUNDARY_DIR := $(BUILD_DIR)/paxai-host-boundary
 
