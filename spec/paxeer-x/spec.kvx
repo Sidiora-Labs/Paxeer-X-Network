@@ -36183,7 +36183,7 @@ worker_role_id = "W-F01-TASKS"
 
 [task.ai.F08-T03]
 title = "Recover finalized membership before worker execution"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F08-T02", "ai.F10-T03", "ai.F01-T03-EPOCH"]
@@ -36214,7 +36214,7 @@ worker_role_id = "W-F08-RECOVERY"
 
 [task.ai.F02-T03]
 title = "Persist and reconcile real worker jobs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 32
 requires = ["ai.F02-T02", "ai.F01-T04", "ai.P-REAL-SERVICES"]
@@ -36276,7 +36276,7 @@ worker_role_id = "W-F09-BINDING"
 
 [task.ai.F01-T04-SERVICE]
 title = "Qualify finalized task handoff to durable workers"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F01-T04", "ai.F02-T03", "ai.F10-T03", "ai.P-REAL-SERVICES"]
@@ -36586,7 +36586,7 @@ worker_role_id = "W-F01-CLOSURE"
 
 [task.ai.F02-T04]
 title = "Qualify real inference and embedding workloads"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F02-T03", "ai.F03-T04", "ai.F10-T03", "ai.P-REAL-SERVICES"]
