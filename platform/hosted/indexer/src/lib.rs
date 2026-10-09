@@ -11,6 +11,7 @@
 //! checkpointed cursors and reorg rollback to a configured finality depth.
 
 pub mod abi;
+pub mod ai_health;
 pub mod api;
 pub mod backfill;
 pub mod blockscout;
