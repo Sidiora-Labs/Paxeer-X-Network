@@ -35391,6 +35391,34 @@ paths = ["programs/crates/layerx-programs-runtime/src/terminal.rs", "programs/cr
 worker_role_id = "W-CORE-ABI5-RUNTIME"
 local_wave = 6
 
+[task.ai.CORE-ROUTE]
+title = "Route every landed AI market transition through dispatch::route and witness the arms on the native host boundary"
+status = "in_progress"
+mode = "BUILD"
+wave = 34
+requires = ["ai.T-C02-FUEL", "ai.F01-T03-CLOSE", "ai.F05-T03", "ai.F06-T03", "ai.F07-T02", "ai.F08-T02", "ai.F10-T01"]
+reqs = ["AI.CORE"]
+do_1 = "dispatch::route in programs/crates/layerx-programs-ai-market/src/dispatch.rs refuses UNKNOWN_OPERATION for selectors whose transitions have landed: F01 REQUEST_CLOSE/ADVANCE_CLOSE 0x010A/0x010B (closure::apply), F05 BeginAggregation/ProcessAggregation/FinalizeAggregation 0x0501-0x0503 (epoch::aggregate, which wraps aggregation::apply and derives aggregate_sealed from aggregation::progress for the evaluator authority arm), F06 FUND/CLAIM/EXPIRE_EPOCH_CLAIMS/REFUND_FREE/PRUNE_EPOCH 0x0601-0x0605 (rewards::apply, staging the Payout effect atomically with the committed state through value_adapter::settle), F07 ResetHistory/SuspendHistory/ResumeHistory 0x0701-0x0703 (epoch::history) and F10 READ_HEADER/READ_STATE_CHUNK 0x0A01/0x0A02 (queries). Add each arm with the exact Step mapping the producing module's Outcome defines, extend the SCRATCH_BYTES union over every routed module, wrap every non-F07 producer with epoch::carry_reputation so the joint F07/F08 section is carried exactly as reputation_transition::split_joint specifies, and allocate the F07 region at CREATE as the F07 feature contract requires. F08 0x0801-0x0809 are routed only if a landed module exposes their transition; otherwise they stay UNKNOWN_OPERATION and the report names the missing module."
+do_2 = "Update programs/crates/layerx-programs-ai-market/tests/host_boundary.rs and tests/programs/test_ai_host_boundary.c so the unknown-selector witness lists only the selectors still unrouted, every newly routed arm is witnessed through the real native host boundary under module 5 (ABI 5) with the harness grants the F06 Fund witness needs, and a funded settlement envelope generator feeds the FUND/CLAIM witnesses. Add tests/dispatch_route.rs exercising every new arm in-process through dispatch::route against real state built by the feature producers: applied, already-applied, retained and refused outcomes per selector, SCRATCH_BYTES sufficiency, and the carry of the joint F07/F08 section across a non-F07 transition."
+do_3 = "Finish the entire implementation first; then format touched files, run build_cmd once and verify_cmd once, at most two task-scoped repair cycles; record unrelated failures once. Keep every ABI 1-4 path, every existing refusal code and every already-routed arm byte-identical."
+manager = "FM-CORE"
+worker_role = "guest dispatch and host boundary specialist"
+worker = "W-CORE-ROUTE"
+deliverables = ["dispatch::route arms for F01 closure, F05 aggregation, F06 rewards, F07 history and F10 reads with the SCRATCH_BYTES union, carry_reputation wrapping and CREATE F07 region allocation.", "Native host-boundary witnesses for every routed arm under ABI 5 with harness grants and the funded settlement envelope generator.", "In-process dispatch_route test and the focused gate passing."]
+entry_condition = "ai.T-C02-FUEL landed every op under the fuel cap with the ABI 5 qualification route; the F01 closure, F05 aggregation, F06 rewards, F07 history and F10 query producers are on main with reported arms; ai.T-C02-ABI5 landed module 5 registration."
+touches = ["programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/src/epoch.rs", "programs/crates/layerx-programs-ai-market/src/registry_ops.rs", "programs/crates/layerx-programs-ai-market/src/host_adapter.rs", "programs/crates/layerx-programs-ai-market/tests/dispatch_route.rs", "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs", "tests/programs/test_ai_host_boundary.c"]
+build_cmd = "cd programs && PAXAI_CHAIN_DOMAIN=50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e cargo build --locked --release --target wasm32-unknown-unknown -p layerx-programs-ai-market && cd .. && make paxai-host-boundary-build"
+verify_cmd = "cd programs && PAXAI_CHAIN_DOMAIN=50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e cargo test -p layerx-programs-ai-market --test dispatch_route --test host_boundary"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+acceptance_cases = ["AI.F01-A12", "AI.F05-A11", "AI.F06-A01", "AI.F07-A01"]
+paths = ["programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/src/epoch.rs", "programs/crates/layerx-programs-ai-market/src/registry_ops.rs", "programs/crates/layerx-programs-ai-market/src/host_adapter.rs", "programs/crates/layerx-programs-ai-market/tests/dispatch_route.rs", "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs", "tests/programs/test_ai_host_boundary.c"]
+worker_role_id = "W-CORE-ROUTE"
+local_wave = 7
+
 [task.ai.T-C02-ACCOUNTS-V5]
 title = "Admit guest ABI 5 across programs account validation and ledger admission"
 status = "done"
