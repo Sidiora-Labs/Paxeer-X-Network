@@ -36680,7 +36680,7 @@ worker_role_id = "W-STORAGE-CONTINUITY"
 
 [task.ai.F06-T04]
 title = "Qualify reward finality recovery and capacity"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 34
 requires = ["ai.F06-T03", "ai.F10-T02", "ai.T-C04", "ai.T-S04"]
