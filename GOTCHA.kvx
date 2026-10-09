@@ -5274,3 +5274,11 @@ text = "RewardState decoding needs exactly REWARD_STATE_BYTES, but after an epoc
 [gotcha.1138]
 area = "paxai-worker"
 text = "Array-repeat patterns such as [0; 32] are not valid match patterns; use a guard (bytes if bytes == [0; 32]). Splicing the transport_identity fixture into a new test collides registry_ops::Outcome with the crate Outcome and a local customer binding shadows the customer() key fn; alias and rename. With fsync on every write the job_recovery gate takes about six minutes (160 durable submits plus 128 MiB queued payload). The ProcessRunner speaks the PAXRUN1 describe/dispatch/lookup/cancel protocol over PAXAI_RUNNER; without a provisioned runner the real-runner cases fail."
+
+[gotcha.1139]
+area = "explorer-frontend"
+text = "yarn is not on PATH on the build boxes; use COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack yarn (1.22.22). pkill -f 'corepack yarn' from a tool shell kills that shell too (exit 144) because the pattern matches its own command line, and a pgrep -f waiter inside bash -c matches itself and never exits. The Paxeer X env presets pin every colors.theme leaf through NEXT_PUBLIC_COLOR_THEME_OVERRIDES, so any theme default change needs the preset line updated or the preset parity spec fails; lib/settings/colorTheme.ts overrides bg.primary at runtime with its own hexes. The Explorer / Build workflow runs on pull_request only, so explorer changes must go up as a PR to be built on GitHub."
+
+[gotcha.1140]
+area = "explorer-backend"
+text = "The backend has no WebSocket JSON-RPC client: ETHEREUM_JSONRPC_TRANSPORT other than http/ipc silently fell through to IPC with no IPC_PATH, a ws(s) URL in an HTTP URL variable broke every eth_call including token metadata, and MICROSERVICE_METADATA_ENABLED without an http(s) URL answered 501 silently; all three now refuse boot with a named variable. Every list endpoint waits synchronously on the metadata tag lookup; its timeout is MICROSERVICE_METADATA_REQUESTS_TIMEOUT (default 1s, was hard-coded 5s). explorer/deploy/tests/config-check.sh needs bash (set -o pipefail). test-ratio.sh does not count config/*.exs as source. The first mix-in-builder run on a fresh worktree builds the image and all deps (>10 min); run it in the background."
