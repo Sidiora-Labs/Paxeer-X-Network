@@ -7,17 +7,21 @@ license.workspace = true
 publish = false
 
 [lib]
-crate-type = ["rlib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 layerx-program-sdk = { path = "../../sdk/rust" }
 sha2.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+spin = { version = "=0.9.9", default-features = false, features = ["spin_mutex"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ed25519-dalek = { version = "=2.2.0", default-features = false }
 
 [dev-dependencies]
 ed25519-dalek = { version = "=2.2.0", default-features = false }
+layerx-programs-runtime = { path = "../layerx-programs-runtime" }
 
 [lints]
 workspace = true

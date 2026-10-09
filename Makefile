@@ -49,7 +49,7 @@ TEST_LIBRARY := $(BUILD_DIR)/liblayerx-testing.a
 
 .PHONY: all build clean reproducible layerxd layerx-genesis-build test \
 	test-harness list-tests \
-	test-paxai-blob-lifecycle \
+	test-paxai-blob-lifecycle paxai-host-boundary-build \
 	test-paxai-blob-admission \
 	test-result test-protocol test-arena test-sanitizer-smoke \
 	test-sanitizer-suite test-codec test-codec-limits test-codec-version \
@@ -3570,6 +3570,21 @@ $(BUILD_DIR)/tests/lxp_test_blob_lifecycle: tests/programs/test_blob_lifecycle.c
 
 test-paxai-blob-lifecycle: $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_blob_lifecycle
+
+PAXAI_CHAIN_DOMAIN ?= 50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e
+PAXAI_HOST_BOUNDARY_DIR := $(BUILD_DIR)/paxai-host-boundary
+
+$(BUILD_DIR)/tests/paxai_host_boundary: tests/programs/test_ai_host_boundary.c \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
+
+paxai-host-boundary-build: $(BUILD_DIR)/tests/paxai_host_boundary
+	cd programs && PAXAI_CHAIN_DOMAIN=$(PAXAI_CHAIN_DOMAIN) $(PROGRAMS_CARGO) build --locked --release --target wasm32-unknown-unknown -p layerx-programs-ai-market
+	@mkdir -p $(PAXAI_HOST_BOUNDARY_DIR)
+	cp $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/target)/wasm32-unknown-unknown/release/layerx_programs_ai_market.wasm $(PAXAI_HOST_BOUNDARY_DIR)/ai_market.wasm
+	printf '%s\n%s\n%s\n' '$(abspath $(PAXAI_HOST_BOUNDARY_DIR)/ai_market.wasm)' '$(abspath $(BUILD_DIR)/tests/paxai_host_boundary)' '$(PAXAI_CHAIN_DOMAIN)' > $(PAXAI_HOST_BOUNDARY_DIR)/manifest
 
 $(BUILD_DIR)/tests/lxp_test_blob_admission: tests/programs/test_blob_admission.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
