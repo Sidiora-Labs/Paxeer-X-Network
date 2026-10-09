@@ -335,7 +335,7 @@ public final class LocalVerifier {
         boolean program = receipt.moduleId() == 9 && (receipt.operation() == 0 || receipt.operation() == 3);
         if (program) {
             long module = receipt.moduleVersion();
-            boolean validModule = receipt.protocolVersion() == 3 ? module == 4
+            boolean validModule = receipt.protocolVersion() == 3 ? module == 4 || module == 5
                 : module == 2 || module == 3 || receipt.operation() == 3 && module == 1;
             if (!validModule) fail(ReceiptCheck.MODULE_VERSION);
             if (receipt.operation() == 0 && receipt.resultCode() != 0) fail(ReceiptCheck.RESULT_CODE);
@@ -345,8 +345,10 @@ public final class LocalVerifier {
                 if (terminalV5) {
                     if (receipt.protocolVersion() != 3 || outcome.runtimeVersion() != 1
                             || (outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V3
-                                && outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V4))
+                                && outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V4
+                                && outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V5))
                         fail(ReceiptCheck.PROTOCOL_VERSION);
+                    if (outcome.abiVersion() > module) fail(ReceiptCheck.MODULE_VERSION);
                 } else {
                     if ((outcome.abiVersion() != 1 && outcome.abiVersion() != 2) || outcome.runtimeVersion() != 1)
                         fail(ReceiptCheck.PROTOCOL_VERSION);

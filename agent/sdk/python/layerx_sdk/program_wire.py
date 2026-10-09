@@ -316,7 +316,7 @@ def decode_and_verify_program_terminal(
     elif inner.startswith((_EXECUTION_V4, _EXECUTION_V5)):
         candidate = True
         if inner.startswith(_EXECUTION_V5):
-            if protocol_version != 3 or receipt.abi_version not in (3, 4):
+            if protocol_version != 3 or receipt.abi_version not in (3, 4, 5):
                 _fail("v5 terminal ABI or protocol")
             decoded = _decode_candidate_v5(inner[len(_EXECUTION_V5):], receipt.abi_version)
             if decoded["kind"] != receipt.terminal_kind or decoded["program"] != expected_program_id:
@@ -537,7 +537,7 @@ def _decode_candidate(encoded: bytes) -> dict[str, object]:
 
 
 def _decode_candidate_v5(encoded: bytes, expected_abi: int) -> dict[str, object]:
-    if type(expected_abi) is not int or expected_abi not in (3, 4):
+    if type(expected_abi) is not int or expected_abi not in (3, 4, 5):
         _fail("v5 expected ABI")
     reader = _Reader(encoded)
     runtime = reader.u16(); fee = reader.u32(); metering = reader.u32()
@@ -557,7 +557,7 @@ def _decode_candidate_v5(encoded: bytes, expected_abi: int) -> dict[str, object]
     elif trace != 0: _fail("candidate trace tag")
     program = reader.fixed(32).hex()
     abi = reader.u16()
-    if abi != expected_abi or abi not in (3, 4):
+    if abi != expected_abi or abi not in (3, 4, 5):
         _fail("candidate ABI")
     tag = reader.byte()
     result: dict[str, object] = {"runtime": runtime, "abi": abi, "fee": fee, "metering": metering, "usage": usage, "program": program}

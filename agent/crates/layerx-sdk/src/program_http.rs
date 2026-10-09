@@ -2604,7 +2604,7 @@ mod source_contract {
                 assert_eq!(decoded.verified.terminal_execution_version(), Some(5));
                 assert!(!decoded.verified.is_standalone_refusal());
             }
-            for changed in [0, 1, 2, if abi == 3 { 4 } else { 3 }, 5, u16::MAX] {
+            for changed in [0, 1, 2, if abi == 3 { 4 } else { 3 }, 6, u16::MAX] {
                 let mut altered = document.clone();
                 altered["guest_abi_version"] = json!(changed);
                 assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());

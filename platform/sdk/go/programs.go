@@ -450,7 +450,7 @@ func VerifyProgramReceipt(execution ProgramExecutionDocument, authority Authoriz
 // the offered occupancy payers, which a state-commitment receipt with a paid
 // occupancy charge requires.
 func VerifyProgramReceiptWithPayers(execution ProgramExecutionDocument, authority AuthorizedBatch, payers []OccupancyPayer, selectedProtocol ...uint16) (VerifiedProgramReceipt, error) {
-	if execution.ActivityID == "" || execution.ModuleVersion < 1 || execution.ModuleVersion > 4 || !SupportsProgramGuestAbi(execution.GuestABIVersion) {
+	if execution.ActivityID == "" || execution.ModuleVersion < 1 || execution.ModuleVersion > 5 || !SupportsProgramGuestAbi(execution.GuestABIVersion) {
 		return VerifiedProgramReceipt{}, verificationFailure()
 	}
 	activity, err := programHex32(execution.ActivityID)
@@ -469,7 +469,10 @@ func VerifyProgramReceiptWithPayers(execution ProgramExecutionDocument, authorit
 	if err != nil {
 		return VerifiedProgramReceipt{}, verificationFailure()
 	}
-	nativeV5 := execution.GuestABIVersion == ProgramAbiV3 || execution.GuestABIVersion == ProgramAbiV4
+	nativeV5 := execution.GuestABIVersion == ProgramAbiV3 || execution.GuestABIVersion == ProgramAbiV4 || execution.GuestABIVersion == ProgramAbiV5
+	if nativeV5 && uint32(execution.GuestABIVersion) > execution.ModuleVersion {
+		return VerifiedProgramReceipt{}, verificationFailure()
+	}
 	verified, err := verifyReceiptOutcomeProfile(receipt, authority, nativeV5, selectedProtocol...)
 	if err != nil {
 		return VerifiedProgramReceipt{}, verificationFailure()
@@ -525,7 +528,7 @@ func verifyProgramTerminal(execution ProgramExecutionDocument, receipt ProtocolR
 	if err != nil {
 		return "", nil, err
 	}
-	nativeV5 := receipt.ProtocolVersion == 3 && receipt.ModuleVersion == 4 && (receiptOutcome.ABIVersion == ProgramAbiV3 || receiptOutcome.ABIVersion == ProgramAbiV4)
+	nativeV5 := receipt.ProtocolVersion == 3 && (receipt.ModuleVersion == 4 || receipt.ModuleVersion == 5) && (receiptOutcome.ABIVersion == ProgramAbiV3 || receiptOutcome.ABIVersion == ProgramAbiV4 || receiptOutcome.ABIVersion == ProgramAbiV5) && uint32(receiptOutcome.ABIVersion) <= receipt.ModuleVersion
 	projection, err := decodeProgramTerminalProfile(receiptOutcome.TerminalKind, receiptOutcome.ABIVersion, inner, programID, receiptOutcome.ResultCode, nativeV5)
 	nativeStandalone := nativeV5 && !projection.Candidate
 	usageMismatch := !nativeStandalone && (projection.RuntimeVersion != receiptOutcome.RuntimeVersion || projection.Candidate && projection.FeeScheduleVersion != receiptOutcome.FeeScheduleVersion || projection.MeteringScheduleVersion != receiptOutcome.MeteringScheduleVersion || projection.CPUFuel != receiptOutcome.CPUFuel || projection.MemoryBytes != receiptOutcome.MemoryBytes || projection.StorageReadBytes != receiptOutcome.StorageReadBytes || projection.StorageWriteBytes != receiptOutcome.StorageWriteBytes || projection.OutputValues != receiptOutcome.OutputValues || projection.OutputBytes != receiptOutcome.OutputBytes || !projection.FeeUnits.Equal(receiptOutcome.FeeUnits))
@@ -700,7 +703,7 @@ func decodeProgramTerminalProfile(kind uint8, abi uint16, encoded []byte, expect
 		return projection, nil
 	case bytes.HasPrefix(inner, candidateV4), bytes.HasPrefix(inner, candidateV5):
 		v5 := bytes.HasPrefix(inner, candidateV5)
-		if v5 && (!nativeV5 || abi != ProgramAbiV3 && abi != ProgramAbiV4) || !v5 && abi != 2 {
+		if v5 && (!nativeV5 || abi != ProgramAbiV3 && abi != ProgramAbiV4 && abi != ProgramAbiV5) || !v5 && abi != 2 {
 			return programTerminalProjection{}, errors.New("Programs terminal profile ABI mismatch")
 		}
 		domain := candidateV4
@@ -775,7 +778,7 @@ func decodeProgramTerminalProfile(kind uint8, abi uint16, encoded []byte, expect
 		}
 		return projection, nil
 	default:
-		if nativeV5 && (abi == ProgramAbiV3 || abi == ProgramAbiV4) {
+		if nativeV5 && (abi == ProgramAbiV3 || abi == ProgramAbiV4 || abi == ProgramAbiV5) {
 			return decodeNativeProgramCallbackSettlement(kind, inner, resultCode, projection)
 		}
 		return decodeProgramFailureTerminal(kind, abi, inner, resultCode, projection)
@@ -1976,7 +1979,7 @@ func (programs *Programs) Interface(ctx context.Context, program [32]byte) (Prog
 			return ProgramInterface{}, newSDKError(ErrorVerificationFailure, RetryNever)
 		}
 		head.Authenticated = true
-	} else if out.ABIVersion == ProgramAbiV3 || out.ABIVersion == ProgramAbiV4 {
+	} else if out.ABIVersion == ProgramAbiV3 || out.ABIVersion == ProgramAbiV4 || out.ABIVersion == ProgramAbiV5 {
 		return ProgramInterface{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
 	if programs.rememberHead(program, head) != nil {
@@ -2034,7 +2037,7 @@ func (programs *Programs) Submit(ctx context.Context, call ProgramCall, key Idem
 	if !canonicalProgramKey(key) || key.String() != hex.EncodeToString(binding.IdempotencyKey[:]) {
 		return ProgramSubmission{}, newSDKError(ErrorIdempotencyRequired, RetryNever)
 	}
-	if call.NativeCall != nil && (call.NativeCall.GuestABI == ProgramAbiV3 || call.NativeCall.GuestABI == ProgramAbiV4) {
+	if call.NativeCall != nil && (call.NativeCall.GuestABI == ProgramAbiV3 || call.NativeCall.GuestABI == ProgramAbiV4 || call.NativeCall.GuestABI == ProgramAbiV5) {
 		head, found := programs.rememberedHead(call.ProgramID)
 		if !found || !programCallHeadAdmitted(call, head) || !validProgramHeadTime(head, programs.clockMilliseconds()) {
 			return ProgramSubmission{}, newSDKError(ErrorVerificationFailure, RetryNever)
@@ -2320,7 +2323,7 @@ func verifyProgramDiscoveryProof(value ProgramDiscovery, trustedSequencerPublicK
 		return false, errors.New("invalid deployment receipt digest")
 	}
 	if value.DiscoveryPublicKey == nil && value.DiscoverySignature == nil {
-		if value.ABIVersion == ProgramAbiV3 || value.ABIVersion == ProgramAbiV4 {
+		if value.ABIVersion == ProgramAbiV3 || value.ABIVersion == ProgramAbiV4 || value.ABIVersion == ProgramAbiV5 {
 			return false, errors.New("signed discovery required for native ABI")
 		}
 		return false, nil

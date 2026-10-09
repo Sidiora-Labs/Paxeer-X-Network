@@ -441,7 +441,7 @@ public final class ProgramsClient {
         LocalVerifier.ProgramReceiptOutcome outcome = receipt.programOutcome();
         if (receipt.protocolVersion() == 0 || receipt.moduleId() != PROGRAMS_RECEIPT_MODULE_ID
                 || receipt.operation() != CALL_OPERATION || receipt.moduleVersion() < 1
-                || receipt.moduleVersion() > 4
+                || receipt.moduleVersion() > 5
                 || !Arrays.equals(receipt.activityId(), exactArgument(expectedActivityId, 32))
                 || outcome == null || outcome.abiVersion() != expectedGuestAbiVersion
                 || callGraph == null || callGraph.length == 0 || callGraph.length > MAX_CALLDATA_BYTES

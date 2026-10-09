@@ -161,7 +161,7 @@ func verifyReceiptOutcomeProfile(canonicalReceipt []byte, authorized AuthorizedB
 	program := receipt.protocol.ModuleID == ProgramsModuleID && (receipt.operation == 0 || receipt.operation == 3)
 	if program {
 		module := receipt.protocol.ModuleVersion
-		validModule := receipt.protocolVersion == 3 && module == 4 || receipt.protocolVersion == 2 && (module == 2 || module == 3 || receipt.operation == 3 && module == 1)
+		validModule := receipt.protocolVersion == 3 && (module == 4 || module == 5) || receipt.protocolVersion == 2 && (module == 2 || module == 3 || receipt.operation == 3 && module == 1)
 		if !validModule {
 			return VerifiedReceipt{}, receiptFailure(ReceiptCheckModuleVersion)
 		}
@@ -173,9 +173,12 @@ func verifyReceiptOutcomeProfile(canonicalReceipt []byte, authorized AuthorizedB
 			if outcome == nil {
 				return VerifiedReceipt{}, receiptFailure(ReceiptCheckReceiptShape)
 			}
-			nativeABI := nativeV5 && receipt.protocolVersion == 3 && module == 4 && (outcome.ABIVersion == ProgramAbiV3 || outcome.ABIVersion == ProgramAbiV4)
+			nativeABI := nativeV5 && receipt.protocolVersion == 3 && (outcome.ABIVersion == ProgramAbiV3 || outcome.ABIVersion == ProgramAbiV4 || outcome.ABIVersion == ProgramAbiV5)
 			if (!nativeABI && outcome.ABIVersion != 1 && outcome.ABIVersion != 2) || outcome.RuntimeVersion != 1 {
 				return VerifiedReceipt{}, receiptFailure(ReceiptCheckProtocolVersion)
+			}
+			if nativeABI && uint32(outcome.ABIVersion) > module {
+				return VerifiedReceipt{}, receiptFailure(ReceiptCheckModuleVersion)
 			}
 		}
 	}

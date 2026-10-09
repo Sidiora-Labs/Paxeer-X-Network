@@ -268,7 +268,7 @@ public sealed class ProgramsClient
         var receipt = verified.Receipt;
         var outcome = receipt.ProgramOutcome;
         if (receipt.ProtocolVersion == 0 || receipt.ModuleId != ReceiptModuleId || receipt.Operation != CallOperation ||
-            receipt.ModuleVersion is < 1 or > 4 || !receipt.ActivityId.SequenceEqual(expectedActivityId) ||
+            receipt.ModuleVersion is < 1 or > 5 || !receipt.ActivityId.SequenceEqual(expectedActivityId) ||
             outcome is null || outcome.AbiVersion != expectedGuestAbiVersion || terminalPayload is null ||
             terminalPayload.Length > MaximumProgramBytes || callGraph is null || callGraph.Length == 0 ||
             callGraph.Length > MaximumCallGraphBytes ||

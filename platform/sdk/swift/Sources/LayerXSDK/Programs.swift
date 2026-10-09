@@ -202,7 +202,7 @@ public struct ProgramsClient: Sendable {
             "requested_verification_level": .string(try level(verificationLevel))]),
             pathParameters: ["program_id": id])
         let result = try verifiedDiscovery(value, programID: id, interface: true, now: nowMilliseconds(), pinnedKey: sequencerPublicKey).interface!
-        if result.abiVersion == ProgramGuestABI.v3.rawValue || result.abiVersion == ProgramGuestABI.v4.rawValue {
+        if result.abiVersion == ProgramGuestABI.v3.rawValue || result.abiVersion == ProgramGuestABI.v4.rawValue || result.abiVersion == ProgramGuestABI.v5.rawValue {
             let head = try await discover(programID: programID, verificationLevel: verificationLevel)
             try bindProgramInterface(result, discovery: head)
         }
@@ -380,7 +380,7 @@ func verifiedExecution(_ object: [String: JSONValue], state: String, idempotent:
           let guestABI = object["guest_abi_version"]?.integerValue,
           let namedABI = UInt16(exactly: guestABI), ProgramGuestABI(rawValue: namedABI) != nil,
           expectedGuestABI == nil || namedABI == expectedGuestABI,
-          let moduleVersion = object["module_version"]?.integerValue, (1...4).contains(moduleVersion),
+          let moduleVersion = object["module_version"]?.integerValue, (1...5).contains(moduleVersion),
           try text(object, "verification") == "receipt-terminal-and-call-graph-verified" else { throw programVerification() }
     let resultCode = try integer32(object, "result_code")
     let globalSequence = try decimalUInt64Field(object, "global_sequence")
@@ -637,7 +637,7 @@ func isProgramTerminalV5(_ encoded: Data, receipt: ProgramReceiptOutcome) -> Boo
 
 func deriveProgramTerminalV5Outcome(_ encoded: Data, receipt: ProgramReceiptOutcome) throws -> [String: JSONValue] {
     guard encoded.count <= 1_048_576, Data(SHA256.hash(data: encoded)) == receipt.terminalPayloadRoot,
-        receipt.encodingVersion == 4, receipt.abiVersion == 3 || receipt.abiVersion == 4 else { throw programVerification() }
+        receipt.encodingVersion == 4, (3...5).contains(receipt.abiVersion) else { throw programVerification() }
     let attachments = try unwrapTerminal(unwrapAppliedTerminal(encoded, receipt: receipt))
     let inner = attachments.inner
     if starts(inner, "LXP/program-execution/v5\0") {
@@ -754,7 +754,7 @@ func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data
             } else { throw programVerification() }
             let graph = try cursor.sized64(); try cursor.finish()
             guard graph.count <= ProgramsClient.maximumCallGraphBytes, graph == availableGraph, program == expectedProgram,
-                  profileV5 ? (abi == 3 || abi == 4) : abi == 2,
+                  profileV5 ? (3...5).contains(abi) : abi == 2,
                   abi == receipt.abiVersion, runtime > 0, feeSchedule > 0, metering > 0,
                   runtime == receipt.runtimeVersion, feeSchedule == receipt.feeScheduleVersion,
                   metering == receipt.meteringScheduleVersion else { throw programVerification() }

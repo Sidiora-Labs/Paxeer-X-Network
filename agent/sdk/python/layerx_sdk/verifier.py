@@ -15,7 +15,7 @@ from .production import PlatformSdkError, SdkErrorCode
 def programs_module_version_for_protocol(protocol: object, module: object, account_state: bool = False) -> bool:
     if type(protocol) is not int or type(module) is not int or type(account_state) is not bool or protocol not in (2, 3):
         return False
-    return module in ((4,) if protocol == 3 else ((2, 3) if account_state else (1, 2, 3)))
+    return module in ((4, 5) if protocol == 3 else ((2, 3) if account_state else (1, 2, 3)))
 
 _MERKLE_LEAF_DOMAIN = b"LXP/v1/merkle-leaf\0"
 _MERKLE_INTERNAL_DOMAIN = b"LXP/v1/merkle-internal\0"
@@ -915,7 +915,7 @@ def verify_program_receipt_outcome_v5(
     receipt, _ = _decode_protocol_receipt(canonical_receipt)
     outcome = receipt.program_outcome
     if (receipt.protocol_version != 3 or receipt.module_id != PROGRAMS_MODULE_ID or receipt.operation != 3
-            or outcome is None or outcome.abi_version not in (3, 4) or outcome.runtime_version != 1):
+            or outcome is None or outcome.abi_version not in (3, 4, 5) or outcome.runtime_version != 1):
         _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
     expected_payload_hash, expected_abi, _ = bind_retained_program_call(
         expected_signed_activity, receipt.activity_id.hex(), program_id, 3)
@@ -955,9 +955,11 @@ def _verify_receipt_outcome(
                 _receipt_failure(ReceiptFailureCode.RECEIPT_SHAPE)
             assert outcome is not None
             if outcome.abi_version not in (1, 2) or outcome.runtime_version != 1:
-                if (protocol_version != 3 or outcome.abi_version not in (3, 4)
+                if (protocol_version != 3 or outcome.abi_version not in (3, 4, 5)
                         or outcome.runtime_version != 1 or validated_v5_outcome != outcome):
                     _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
+            if outcome.abi_version > receipt.module_version:
+                _receipt_failure(ReceiptFailureCode.MODULE_VERSION)
     if not program and receipt.operation == 0:
         _receipt_failure(ReceiptFailureCode.OPERATION)
     if _all_zero(receipt.activity_id):

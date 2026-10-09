@@ -60,6 +60,7 @@ const (
 	AgentOperationSubscriptionList        AgentOperation = "subscription.list"
 	AgentOperationSubscriptionPause       AgentOperation = "subscription.pause"
 	AgentOperationSubscriptionResume      AgentOperation = "subscription.resume"
+	AgentOperationTenantReadiness         AgentOperation = "tenant.readiness"
 	AgentOperationTrack                   AgentOperation = "track"
 	AgentOperationWait                    AgentOperation = "wait"
 )
@@ -116,6 +117,7 @@ func AllAgentOperations() []AgentOperation {
 		AgentOperationSubscriptionList,
 		AgentOperationSubscriptionPause,
 		AgentOperationSubscriptionResume,
+		AgentOperationTenantReadiness,
 		AgentOperationTrack,
 		AgentOperationWait,
 	}
@@ -123,7 +125,7 @@ func AllAgentOperations() []AgentOperation {
 
 func (operation AgentOperation) Valid() bool {
 	switch operation {
-	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationBudgetState, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationPolicyDryRun, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTrack, AgentOperationWait:
+	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationBudgetState, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationPolicyDryRun, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTenantReadiness, AgentOperationTrack, AgentOperationWait:
 		return true
 	default:
 		return false
@@ -163,6 +165,13 @@ const (
 	HumanOperationApprovalApprove               HumanOperation = "approval.approve"
 	HumanOperationApprovalGet                   HumanOperation = "approval.get"
 	HumanOperationApprovalList                  HumanOperation = "approval.list"
+	HumanOperationApprovalProgramApprove        HumanOperation = "approval.program.approve"
+	HumanOperationApprovalProgramBudget         HumanOperation = "approval.program.budget"
+	HumanOperationApprovalProgramDisclosure     HumanOperation = "approval.program.disclosure"
+	HumanOperationApprovalProgramGet            HumanOperation = "approval.program.get"
+	HumanOperationApprovalProgramList           HumanOperation = "approval.program.list"
+	HumanOperationApprovalProgramMaterial       HumanOperation = "approval.program.material"
+	HumanOperationApprovalProgramReject         HumanOperation = "approval.program.reject"
 	HumanOperationApprovalReject                HumanOperation = "approval.reject"
 	HumanOperationAuthenticatorBackupRotate     HumanOperation = "authenticator.backup.rotate"
 	HumanOperationAuthenticatorDisable          HumanOperation = "authenticator.disable"
@@ -184,8 +193,11 @@ const (
 	HumanOperationIntentSubmit                  HumanOperation = "intent.submit"
 	HumanOperationJourneyGet                    HumanOperation = "journey.get"
 	HumanOperationJourneyList                   HumanOperation = "journey.list"
+	HumanOperationJourneyPage                   HumanOperation = "journey.page"
 	HumanOperationMoveCommit                    HumanOperation = "move.commit"
 	HumanOperationMoveQuote                     HumanOperation = "move.quote"
+	HumanOperationNativeSendAccessBegin         HumanOperation = "native.send.access.begin"
+	HumanOperationNativeSendAccessConfirm       HumanOperation = "native.send.access.confirm"
 	HumanOperationNotificationList              HumanOperation = "notification.list"
 	HumanOperationNotificationPreferencesGet    HumanOperation = "notification.preferences.get"
 	HumanOperationNotificationPreferencesSet    HumanOperation = "notification.preferences.set"
@@ -252,6 +264,13 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationApprovalApprove,
 		HumanOperationApprovalGet,
 		HumanOperationApprovalList,
+		HumanOperationApprovalProgramApprove,
+		HumanOperationApprovalProgramBudget,
+		HumanOperationApprovalProgramDisclosure,
+		HumanOperationApprovalProgramGet,
+		HumanOperationApprovalProgramList,
+		HumanOperationApprovalProgramMaterial,
+		HumanOperationApprovalProgramReject,
 		HumanOperationApprovalReject,
 		HumanOperationAuthenticatorBackupRotate,
 		HumanOperationAuthenticatorDisable,
@@ -273,8 +292,11 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationIntentSubmit,
 		HumanOperationJourneyGet,
 		HumanOperationJourneyList,
+		HumanOperationJourneyPage,
 		HumanOperationMoveCommit,
 		HumanOperationMoveQuote,
+		HumanOperationNativeSendAccessBegin,
+		HumanOperationNativeSendAccessConfirm,
 		HumanOperationNotificationList,
 		HumanOperationNotificationPreferencesGet,
 		HumanOperationNotificationPreferencesSet,
@@ -321,7 +343,7 @@ func AllHumanOperations() []HumanOperation {
 
 func (operation HumanOperation) Valid() bool {
 	switch operation {
-	case HumanOperationAccountBalance, HumanOperationAccountCreate, HumanOperationActivityEntry, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationActivityQuery, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentGet, HumanOperationAgentLimit, HumanOperationAgentList, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationDisclosure, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalGet, HumanOperationApprovalList, HumanOperationApprovalReject, HumanOperationAuthenticatorBackupRotate, HumanOperationAuthenticatorDisable, HumanOperationAuthenticatorSetupBegin, HumanOperationAuthenticatorSetupFinish, HumanOperationAuthenticatorStatus, HumanOperationBindingRebind, HumanOperationBindingRebindAction, HumanOperationBindingStatement, HumanOperationBindingStatus, HumanOperationBindingSubmit, HumanOperationDepositConfirm, HumanOperationDepositStart, HumanOperationEvidenceGet, HumanOperationExitEligibility, HumanOperationExitStart, HumanOperationHomeSummary, HumanOperationIntentPlan, HumanOperationIntentSubmit, HumanOperationJourneyGet, HumanOperationJourneyList, HumanOperationMoveCommit, HumanOperationMoveQuote, HumanOperationNotificationList, HumanOperationNotificationPreferencesGet, HumanOperationNotificationPreferencesSet, HumanOperationNotificationRead, HumanOperationOnboardingResume, HumanOperationOnboardingStatus, HumanOperationPasskeyAssertBegin, HumanOperationPasskeyAssertFinish, HumanOperationPasskeyRegisterBegin, HumanOperationPasskeyRegisterFinish, HumanOperationProfileGet, HumanOperationProfileUpdate, HumanOperationSecurityAction, HumanOperationSecurityKeyExportBegin, HumanOperationSecurityKeyExportFinish, HumanOperationSecurityPasskeyList, HumanOperationSecurityPasskeyRegisterBegin, HumanOperationSecurityPasskeyRegisterFinish, HumanOperationSecurityPasskeyRevoke, HumanOperationSecurityRecoveryReveal, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionFeePolicy, HumanOperationSessionList, HumanOperationSessionOpen, HumanOperationSessionRefresh, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationStepupBegin, HumanOperationStepupFinish, HumanOperationStreamNext, HumanOperationStreamOpen, HumanOperationSupportCreate, HumanOperationSupportFeedback, HumanOperationSupportList, HumanOperationSupportRead, HumanOperationSupportReply, HumanOperationSupportStatus, HumanOperationVersion, HumanOperationWithdrawClaim, HumanOperationWithdrawStart:
+	case HumanOperationAccountBalance, HumanOperationAccountCreate, HumanOperationActivityEntry, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationActivityQuery, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentGet, HumanOperationAgentLimit, HumanOperationAgentList, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationDisclosure, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalGet, HumanOperationApprovalList, HumanOperationApprovalProgramApprove, HumanOperationApprovalProgramBudget, HumanOperationApprovalProgramDisclosure, HumanOperationApprovalProgramGet, HumanOperationApprovalProgramList, HumanOperationApprovalProgramMaterial, HumanOperationApprovalProgramReject, HumanOperationApprovalReject, HumanOperationAuthenticatorBackupRotate, HumanOperationAuthenticatorDisable, HumanOperationAuthenticatorSetupBegin, HumanOperationAuthenticatorSetupFinish, HumanOperationAuthenticatorStatus, HumanOperationBindingRebind, HumanOperationBindingRebindAction, HumanOperationBindingStatement, HumanOperationBindingStatus, HumanOperationBindingSubmit, HumanOperationDepositConfirm, HumanOperationDepositStart, HumanOperationEvidenceGet, HumanOperationExitEligibility, HumanOperationExitStart, HumanOperationHomeSummary, HumanOperationIntentPlan, HumanOperationIntentSubmit, HumanOperationJourneyGet, HumanOperationJourneyList, HumanOperationJourneyPage, HumanOperationMoveCommit, HumanOperationMoveQuote, HumanOperationNativeSendAccessBegin, HumanOperationNativeSendAccessConfirm, HumanOperationNotificationList, HumanOperationNotificationPreferencesGet, HumanOperationNotificationPreferencesSet, HumanOperationNotificationRead, HumanOperationOnboardingResume, HumanOperationOnboardingStatus, HumanOperationPasskeyAssertBegin, HumanOperationPasskeyAssertFinish, HumanOperationPasskeyRegisterBegin, HumanOperationPasskeyRegisterFinish, HumanOperationProfileGet, HumanOperationProfileUpdate, HumanOperationSecurityAction, HumanOperationSecurityKeyExportBegin, HumanOperationSecurityKeyExportFinish, HumanOperationSecurityPasskeyList, HumanOperationSecurityPasskeyRegisterBegin, HumanOperationSecurityPasskeyRegisterFinish, HumanOperationSecurityPasskeyRevoke, HumanOperationSecurityRecoveryReveal, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionFeePolicy, HumanOperationSessionList, HumanOperationSessionOpen, HumanOperationSessionRefresh, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationStepupBegin, HumanOperationStepupFinish, HumanOperationStreamNext, HumanOperationStreamOpen, HumanOperationSupportCreate, HumanOperationSupportFeedback, HumanOperationSupportList, HumanOperationSupportRead, HumanOperationSupportReply, HumanOperationSupportStatus, HumanOperationVersion, HumanOperationWithdrawClaim, HumanOperationWithdrawStart:
 		return true
 	default:
 		return false
@@ -330,7 +352,7 @@ func (operation HumanOperation) Valid() bool {
 
 func (operation HumanOperation) RequiresIdempotency() bool {
 	switch operation {
-	case HumanOperationAccountCreate, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentLimit, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalReject, HumanOperationBindingRebind, HumanOperationBindingSubmit, HumanOperationDepositStart, HumanOperationExitStart, HumanOperationIntentSubmit, HumanOperationMoveCommit, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionOpen, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationSupportCreate, HumanOperationSupportReply, HumanOperationWithdrawStart:
+	case HumanOperationAccountCreate, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentLimit, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalProgramApprove, HumanOperationApprovalProgramReject, HumanOperationApprovalReject, HumanOperationBindingRebind, HumanOperationBindingSubmit, HumanOperationDepositStart, HumanOperationExitStart, HumanOperationIntentSubmit, HumanOperationMoveCommit, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionOpen, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationSupportCreate, HumanOperationSupportReply, HumanOperationWithdrawStart:
 		return true
 	default:
 		return false
@@ -388,6 +410,20 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/approvals/{approval_id}", Request: "Empty", Response: "ApprovalDetail"}, true
 	case HumanOperationApprovalList:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/approvals", Request: "Empty", Response: "ApprovalPage"}, true
+	case HumanOperationApprovalProgramApprove:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/program-approvals/{approval_id}/approve", Request: "ProgramApprovalDecisionRequest", Response: "ProgramApprovalDecision"}, true
+	case HumanOperationApprovalProgramBudget:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/program-approvals/{approval_id}/budget", Request: "Empty", Response: "ProgramApprovalBudget"}, true
+	case HumanOperationApprovalProgramDisclosure:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/program-approvals/{approval_id}/disclosure", Request: "ProgramApprovalDisclosureRequest", Response: "ProgramApprovalDisclosure"}, true
+	case HumanOperationApprovalProgramGet:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/program-approvals/{approval_id}", Request: "Empty", Response: "ProgramApprovalDetail"}, true
+	case HumanOperationApprovalProgramList:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/program-approvals/page/{cursor}", Request: "Empty", Response: "ProgramApprovalPage"}, true
+	case HumanOperationApprovalProgramMaterial:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/program-approvals/{approval_id}/material", Request: "Empty", Response: "ProgramApprovalMaterial"}, true
+	case HumanOperationApprovalProgramReject:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/program-approvals/{approval_id}/reject", Request: "ProgramApprovalDecisionRequest", Response: "ProgramApprovalDecision"}, true
 	case HumanOperationApprovalReject:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/approvals/{approval_id}/reject", Request: "Empty", Response: "ApprovalDecision"}, true
 	case HumanOperationAuthenticatorBackupRotate:
@@ -430,10 +466,16 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/journeys/{journey_id}", Request: "Empty", Response: "Journey"}, true
 	case HumanOperationJourneyList:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/journeys", Request: "Empty", Response: "JourneyPage"}, true
+	case HumanOperationJourneyPage:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/journeys/page/{cursor}", Request: "Empty", Response: "JourneyPage"}, true
 	case HumanOperationMoveCommit:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/moves", Request: "MoveCommitRequest", Response: "Journey"}, true
 	case HumanOperationMoveQuote:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/moves/quote", Request: "MoveQuoteRequest", Response: "MoveQuote"}, true
+	case HumanOperationNativeSendAccessBegin:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/native/send/access/begin", Request: "NativeSendAccessRequest", Response: "NativeSendAccessDisclosure"}, true
+	case HumanOperationNativeSendAccessConfirm:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/native/send/access/confirm", Request: "NativeSendAccessConfirmation", Response: "NativeSendAccessResult"}, true
 	case HumanOperationNotificationList:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/notifications", Request: "Empty", Response: "NotificationPage"}, true
 	case HumanOperationNotificationPreferencesGet:
@@ -695,17 +737,21 @@ func (value HumanApprovalState) Valid() bool {
 type HumanStreamEventKind string
 
 const (
-	HumanStreamEventJourneyProgress  HumanStreamEventKind = "journey-progress"
-	HumanStreamEventApprovalCreated  HumanStreamEventKind = "approval-created"
-	HumanStreamEventApprovalApproved HumanStreamEventKind = "approval-approved"
-	HumanStreamEventApprovalRejected HumanStreamEventKind = "approval-rejected"
-	HumanStreamEventApprovalExpired  HumanStreamEventKind = "approval-expired"
-	HumanStreamEventNotification     HumanStreamEventKind = "notification"
+	HumanStreamEventJourneyProgress         HumanStreamEventKind = "journey-progress"
+	HumanStreamEventApprovalCreated         HumanStreamEventKind = "approval-created"
+	HumanStreamEventApprovalApproved        HumanStreamEventKind = "approval-approved"
+	HumanStreamEventApprovalRejected        HumanStreamEventKind = "approval-rejected"
+	HumanStreamEventApprovalExpired         HumanStreamEventKind = "approval-expired"
+	HumanStreamEventNotification            HumanStreamEventKind = "notification"
+	HumanStreamEventProgramApprovalCreated  HumanStreamEventKind = "program-approval-created"
+	HumanStreamEventProgramApprovalApproved HumanStreamEventKind = "program-approval-approved"
+	HumanStreamEventProgramApprovalRejected HumanStreamEventKind = "program-approval-rejected"
+	HumanStreamEventProgramApprovalExpired  HumanStreamEventKind = "program-approval-expired"
 )
 
 func (value HumanStreamEventKind) Valid() bool {
 	switch value {
-	case HumanStreamEventJourneyProgress, HumanStreamEventApprovalCreated, HumanStreamEventApprovalApproved, HumanStreamEventApprovalRejected, HumanStreamEventApprovalExpired, HumanStreamEventNotification:
+	case HumanStreamEventJourneyProgress, HumanStreamEventApprovalCreated, HumanStreamEventApprovalApproved, HumanStreamEventApprovalRejected, HumanStreamEventApprovalExpired, HumanStreamEventNotification, HumanStreamEventProgramApprovalCreated, HumanStreamEventProgramApprovalApproved, HumanStreamEventProgramApprovalRejected, HumanStreamEventProgramApprovalExpired:
 		return true
 	default:
 		return false

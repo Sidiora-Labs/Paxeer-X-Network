@@ -5,6 +5,7 @@ public enum ProgramGuestABI: UInt16, Sendable {
     case v2 = 2
     case v3 = 3
     case v4 = 4
+    case v5 = 5
 
     public var capabilityEncoding: UInt16 { self == .v1 ? 1 : 2 }
     public var accountProfile2Supported: Bool { self != .v1 }

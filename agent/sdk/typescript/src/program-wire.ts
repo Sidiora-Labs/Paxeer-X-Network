@@ -231,7 +231,7 @@ export async function decodeAndVerifyProgramTerminal(
     if (retained.guestAbi !== receipt.abiVersion) fail("v5 request ABI binding");
     candidate = true;
     const decoded = decodeCandidateV5(inner.subarray(EXECUTION_V5.length), receipt.abiVersion);
-    if (decoded.kind !== receipt.terminalKind || (receipt.abiVersion !== 3 && receipt.abiVersion !== 4) || protocolVersion !== 3 || decoded.program !== expectedProgramId) fail("candidate terminal binding");
+    if (decoded.kind !== receipt.terminalKind || (receipt.abiVersion !== 3 && receipt.abiVersion !== 4 && receipt.abiVersion !== 5) || protocolVersion !== 3 || decoded.program !== expectedProgramId) fail("candidate terminal binding");
     bindExecutionMetadata(decoded.runtime, receipt.abiVersion, decoded.fee, decoded.metering, decoded.usage, receipt);
     if (decoded.fee !== receipt.feeScheduleVersion) fail("v5 fee schedule binding");
     if (!equal(decoded.graph, callGraph)) fail("candidate call graph");
@@ -501,7 +501,7 @@ function decodeCandidate(encoded: Uint8Array): Candidate {
 }
 
 function decodeCandidateV5(encoded: Uint8Array, expectedAbi: number): Candidate {
-  if (expectedAbi !== 3 && expectedAbi !== 4) fail("v5 ABI");
+  if (expectedAbi !== 3 && expectedAbi !== 4 && expectedAbi !== 5) fail("v5 ABI");
   const reader = new Reader(encoded);
   const runtime = reader.u16(); const fee = reader.u32(); const metering = reader.u32();
   if (runtime === 0 || fee === 0 || metering === 0) fail("candidate metadata");

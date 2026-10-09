@@ -348,7 +348,7 @@ public static class LocalVerifier
         if (program)
         {
             var module = receipt.ModuleVersion;
-            var validModule = receipt.ProtocolVersion == 3 ? module == 4 : module == 2 || module == 3 || receipt.Operation == 3 && module == 1;
+            var validModule = receipt.ProtocolVersion == 3 ? module is 4 or 5 : module == 2 || module == 3 || receipt.Operation == 3 && module == 1;
             if (!validModule) throw VerificationFailure(ReceiptCheck.ModuleVersion);
             if (receipt.Operation == 0 && receipt.ResultCode != 0) throw VerificationFailure(ReceiptCheck.ResultCode);
             if (receipt.Operation == 3)
@@ -359,7 +359,8 @@ public static class LocalVerifier
                     ? GeneratedReceiptContract.SupportsProgramGuestAbi(outcome.AbiVersion)
                     : outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV1 or GeneratedReceiptContract.ProgramAbiV2;
                 if (!supportedAbi || outcome.RuntimeVersion != 1) throw VerificationFailure(ReceiptCheck.ProtocolVersion);
-                if (receipt.ProtocolVersion == 3 && outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4 &&
+                if (receipt.ProtocolVersion == 3 && outcome.AbiVersion > module) throw VerificationFailure(ReceiptCheck.ModuleVersion);
+                if (receipt.ProtocolVersion == 3 && outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4 or GeneratedReceiptContract.ProgramAbiV5 &&
                     !Equal(receipt.Asset, Exact(authorized.Asset, 32))) throw VerificationFailure(ReceiptCheck.Asset);
             }
         }

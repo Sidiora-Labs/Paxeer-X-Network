@@ -454,18 +454,18 @@ public enum LocalVerifier {
         let program = receipt.moduleID == 9 && (receipt.operation == 0 || receipt.operation == 3)
         if program {
             let module = receipt.moduleVersion
-            let validModule = receipt.protocolVersion == 3 ? module == 4 : module == 2 || module == 3 || receipt.operation == 3 && module == 1
+            let validModule = receipt.protocolVersion == 3 ? module == 4 || module == 5 : module == 2 || module == 3 || receipt.operation == 3 && module == 1
             guard validModule else { throw receiptFailure(.moduleVersion) }
             if receipt.operation == 0 && receipt.resultCode != 0 { throw receiptFailure(.resultCode) }
             if receipt.operation == 3 {
                 guard let outcome = receipt.programOutcome else { throw receiptFailure(.receiptShape) }
                 if let binding = v5 {
-                    guard protocolVersion == 3, receipt.moduleVersion == 4,
-                        binding.abi == 3 || binding.abi == 4, outcome.abiVersion == binding.abi,
+                    guard protocolVersion == 3, (3...5).contains(binding.abi), outcome.abiVersion == binding.abi,
                         outcome.runtimeVersion == 1, outcome.encodingVersion == 4,
                         binding.activity.count == 32, !allZero(binding.activity), receipt.activityID == binding.activity,
                         binding.program.count == 32, !allZero(binding.program)
                     else { throw receiptFailure(.protocolVersion) }
+                    guard UInt32(outcome.abiVersion) <= receipt.moduleVersion else { throw receiptFailure(.moduleVersion) }
                 } else {
                     guard (outcome.abiVersion == 1 || outcome.abiVersion == 2) && outcome.runtimeVersion == 1 else { throw receiptFailure(.protocolVersion) }
                 }

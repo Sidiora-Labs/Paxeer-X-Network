@@ -147,7 +147,7 @@ class ProgramHttp(unittest.TestCase):
             self.operations.simulate(replace(request, fee_limit=request.fee_limit + 1))
         with self.assertRaises(ValueError):
             self.operations.simulate(replace(request, native_call=replace(request.native_call, calldata=request.calldata + b"\0")))
-        for abi in (0, 5, 65535, True, 3.0):
+        for abi in (0, 6, 65535, True, 3.0):
             with self.subTest(abi=abi), self.assertRaises(ValueError):
                 encode_native_program_call(replace(request.native_call, guest_abi=abi))
         wrong_network = ProgramOperations(self.client, self.signatures, replace(self.trust, network_id=self.trust.network_id + 1))

@@ -231,6 +231,7 @@ platform-sdk-check:
 	python3 platform/sdk/generators/generate_portable.py --check $(CURDIR)
 	python3 platform/sdk/generators/generate_jvm.py --check $(CURDIR)
 	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --check
+	$(PLATFORM_CARGO) run --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-sdkgen -- --check-paxai
 
 platform-sdk-generate:
 	cargo run --manifest-path agent/tools/sdk-gen/Cargo.toml --locked -- --write
