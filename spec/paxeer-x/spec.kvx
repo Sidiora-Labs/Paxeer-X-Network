@@ -35334,7 +35334,7 @@ worker_role_id = "W-STORAGE-ARCHIVE"
 
 [task.ai.T-C03]
 title = "Qualify real Program accounts and value boundary"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 28
 requires = ["ai.T-C02", "ai.T-C02-ABI5", "ai.P-DEPLOYMENT"]
@@ -35687,7 +35687,7 @@ evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9dd
 
 [task.ai.F10-T02]
 title = "Project minimal verified finalized market snapshots"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F10-T01", "ai.T-C03"]
@@ -35780,7 +35780,7 @@ worker_role_id = "W-F05-ARITHMETIC"
 
 [task.ai.F10-T03]
 title = "Implement native client planning and outcome recovery"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F10-T02"]
@@ -35811,7 +35811,7 @@ worker_role_id = "W-F10-RUST-CLIENT"
 
 [task.ai.F10-T05]
 title = "Deliver finalized authenticated market events"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F10-T02"]
@@ -35842,7 +35842,7 @@ worker_role_id = "W-F10-WEBHOOKS"
 
 [task.ai.F02-T02]
 title = "Authenticate transport and finalized worker discovery"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F02-T01", "ai.F08-T01", "ai.F09-T01", "ai.F10-T03"]
@@ -36245,7 +36245,7 @@ worker_role_id = "W-F03-ADMISSION"
 
 [task.ai.F09-T04]
 title = "Recover artifact retention and revocation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F09-T03", "ai.F02-T03", "ai.F10-T02"]
@@ -36276,7 +36276,7 @@ worker_role_id = "W-F09-RETENTION"
 
 [task.ai.F10-T06]
 title = "Expose private-safe operational observations"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F10-T02", "ai.F02-T03"]
@@ -36338,7 +36338,7 @@ worker_role_id = "W-F04-WINDOWS"
 
 [task.ai.F04-T03]
 title = "Recover commitment secrets and uncertain reveals"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F04-T02", "ai.F10-T03"]
@@ -36400,7 +36400,7 @@ worker_role_id = "W-F05-FINALIZATION"
 
 [task.ai.F03-T04]
 title = "Qualify evaluator ordering on the real host"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F03-T03", "ai.F05-T03", "ai.T-C03"]
@@ -36431,7 +36431,7 @@ worker_role_id = "W-F03-HOST"
 
 [task.ai.F06-T03]
 title = "Integrate real account funding and reward claims"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F06-T02", "ai.F05-T03", "ai.T-C03"]
@@ -36462,7 +36462,7 @@ worker_role_id = "W-F06-NATIVE"
 
 [task.ai.F01-T03-CLOSE]
 title = "Close markets while preserving all obligations"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F01-T02", "ai.F05-T03", "ai.F06-T03", "ai.F10-T02"]
@@ -36524,7 +36524,7 @@ worker_role_id = "W-F02-WORKLOAD"
 
 [task.ai.F07-T02]
 title = "Integrate reputation lifecycle and identity continuity"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F07-T01", "ai.F05-T03", "ai.F06-T03", "ai.F08-T02", "ai.T-C02"]
@@ -36556,7 +36556,7 @@ native_acceptance_obligations = "Full original A01 key rotation; A02/A03 genuine
 
 [task.ai.T-S04]
 title = "Qualify real continuous storage and funded recovery"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 33
 requires = ["ai.T-S01", "ai.T-S01-REPLAY", "ai.T-S02", "ai.T-S03", "ai.F06-T03", "ai.F02-T03"]
@@ -36618,7 +36618,7 @@ worker_role_id = "W-F06-RECOVERY"
 
 [task.ai.F07-T03]
 title = "Project finalized monotonic reputation history"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F07-T02", "ai.T-C03", "ai.F10-T02"]

@@ -893,3 +893,11 @@ exit_code = 2
 log = "private ops log wt/logs/ai.F05-T03-verify-2.log"
 observed = "Twenty runtime scenarios (23 case lines) pass through the real F01-F04 paths and aggregation::apply; the AI.F05-A16 native fuel refusal during ProcessAggregation is NOT_RUN because the host-boundary harness landed after this branch and native v5 calls still fail until ai.T-C02-ABI5, so the script exits 2 by design; F07 per-worker history and the history_allowed freeze wait for ai.F07-T02 and frozen worker attributes for the F02 follow-up."
 assumption = "Held at implemented; after ai.T-C02-ABI5 lands the same task is re-opened to add the A16 native fuel case through the harness, route the three aggregation selectors in dispatch::route with aggregate_sealed derived from aggregation::progress, and rerun the gate to exit 0."
+
+[qualification.ai-full-throttle-admission-20261009-01]
+revision = "cfc640de9"
+command = "spec admission (no gate run)"
+exit_code = 0
+log = "private ops record px26-ai-implementation-2026-10-08"
+observed = "Owner directed maximum concurrency; fourteen pending tasks were admitted ahead of their requires edges because every interface they consume is on main (T-C02 router and harness, F03/F04/F05 transitions, F06/F07 codecs, F09 artifact service, F10 schema base) while their producers are held at implemented or run concurrently with disjoint owned paths."
+assumption = "Each task is still gated only by its own verify_cmd; a task whose producer interface proves absent reports implemented-not-qualified naming it and is re-qualified after the producer lands."
