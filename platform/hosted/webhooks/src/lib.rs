@@ -11,6 +11,7 @@
 //! is presented above `unverified` without the receipt digest that established
 //! it.
 
+pub mod ai_market;
 mod boundary;
 pub mod deliveries;
 pub mod encoding;
