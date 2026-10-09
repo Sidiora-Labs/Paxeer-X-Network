@@ -95,6 +95,7 @@ typedef struct fixture {
     lx_programs_transfer_runtime runtime;
     lxp_fee_params fees;
     uint64_t parameters, height;
+    uint32_t module_version;
     uint8_t program[32], keys[3][32], principals[3][32], account_ids[3][32];
     uint8_t rewards[32];
     uint8_t sequencer_key[32];
@@ -155,6 +156,7 @@ static int initialize(fixture *f)
     size_t i;
     f->parameters = 1U;
     f->height = 10U;
+    f->module_version = LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
     (void)memset(f->program, 0x71, 32U);
     if (lx_account_registry_init(&f->accounts) != LXP_OK) return 1;
     for (i = 0U; i < 3U; ++i) {
@@ -254,7 +256,7 @@ static lxp_result execute(fixture *f, unsigned actor, uint32_t type,
     execution.batch_timestamp_ms = 10U;
     execution.maximum_timestamp_window = 100U;
     execution.global_sequence = f->state.next_sequence;
-    execution.recorded_module_version = LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
+    execution.recorded_module_version = f->module_version;
     execution.recorded_metering_schedule_version = 1U;
     execution.recorded_fee_schedule_version = 1U;
     execution.parameter_version = 1U;
@@ -299,7 +301,7 @@ static size_t call_payload(const fixture *f, uint8_t *out, const uint8_t *data, 
 {
     static const uint8_t domain[] = "LXP/program-replay-profile/v1";
     static const uint8_t access[] = "LayerX/programs/access-declaration/v1\0";
-    static const uint64_t budget[7] = {100000000U,16777216U,1048576U,1048576U,64U,1048576U,4096U};
+    static const uint64_t budget[7] = {1000000U,16777216U,1048576U,1048576U,64U,1048576U,4096U};
     static const uint8_t capabilities[] = {0U, 3U, 3U, 7U, 8U};
     size_t n = 34U, i, original;
     (void)memset(out, 0, 34U);
@@ -473,6 +475,14 @@ static int register_account(fixture *f, const uint8_t *seed, size_t length, uint
         lxp_module_ctx_commit(&ctx) != LXP_OK ||
         lxp_state_root(&f->kernel, f->kernel.current_state_root) != LXP_OK;
 }
+
+static int register_abi5(fixture *f)
+{
+    f->module_version = LX_PROGRAMS_GUEST_ABI_V5_VERSION;
+    return lxp_kernel_register_module(&f->kernel, programs_module_registration_v5()) != LXP_OK ||
+        lxp_state_root(&f->kernel, f->kernel.current_state_root) != LXP_OK;
+}
+
 static int deploy(fixture *f, const char *path)
 {
     FILE *artifact = fopen(path, "rb");
@@ -510,6 +520,7 @@ static int deploy(fixture *f, const char *path)
         execute(f, 0U, LX_PROGRAMS_DEPLOY, payload, length+104U) != LXP_OK ||
         f->receipt.result_code != LXP_OK ||
         register_account(f, rewards_seed, sizeof(rewards_seed) - 1U, f->rewards) != 0 ||
+        register_abi5(f) != 0 ||
         execute(f, 0U, LX_PROGRAMS_UPGRADE, upgrade, length+106U) != LXP_OK ||
         f->receipt.result_code != LXP_OK;
     free(payload); free(upgrade);

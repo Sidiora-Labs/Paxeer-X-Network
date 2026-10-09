@@ -326,3 +326,14 @@ const lxp_module_iface *programs_module_registration_v4_storage_retirement(void)
     };
     return &iface;
 }
+
+const lxp_module_iface *programs_module_registration_v5(void)
+{
+    static const lxp_module_iface iface = {
+        LXP_MODULE_PROGRAMS, LX_PROGRAMS_GUEST_ABI_V5_VERSION, "programs",
+        activity_types_v4, sizeof(activity_types_v4)/sizeof(activity_types_v4[0]),
+        programs_genesis, programs_decode, programs_validate, programs_execute,
+        programs_epoch_begin, programs_epoch, programs_state_root, NULL
+    };
+    return &iface;
+}
