@@ -5,6 +5,7 @@
 pub mod admission;
 pub mod aggregation;
 pub mod aggregation_codec;
+pub mod closure;
 pub mod codec;
 pub mod commit_reveal;
 pub mod dispatch;
