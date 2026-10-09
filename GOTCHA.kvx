@@ -5209,3 +5209,8 @@ text = "On an unfunded market the F05/F06 settlement section is empty; helpers t
 area = "webhooks"
 text = "Pre-existing clippy denials in webhooks trusted.rs, hosted.rs, boundary.rs and main.rs stop clippy from compiling the test targets; lint new files with --no-deps and those lints passed as -W. codec::state_digest refuses anything that is not a valid encoded PAXAS1 StateFrame, so fixtures must build frames with codec::encode_state. The canonical queries::SnapshotBinding::encode refuses rank above 4, so rank-5 settlement anchoring is refused as InvalidRequest although the F10 contract says rank 5 is shown when achieved. layerx_proof::checkpoint has no public BatchHeader constructor; tests encode the 0x1701 header with the layerx_wire Encoder. libtest prints a child process's verdict on the same line as the test name, so parent tests must search within the line."
 
+
+[gotcha.1124]
+area = "git"
+text = "The stash list is shared across every worktree of a repository. A `git stash` on main around a landing plus a `git rebase --autostash` (or a stash) running concurrently in a worker worktree swap contents on pop: main received a worker's uncommitted module edits and the worker tree received main's local script change. Never stash in a multi-worktree fleet; park a local uncommitted file by copying it aside and restoring it after the landing, and have workers commit before any rebase."
+
