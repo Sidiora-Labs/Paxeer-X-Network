@@ -981,3 +981,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F09-T04-verify-2.log (7 passed), verify-3.log (12 passed), build-2.log, clippy-3.log"
 observed = "The retention ledger is wired into the artifact service: startup recovers the ledger and exits 3 on RestoreNotReady, /v1/tombstone and purge route through the ledger with purge_after equal to the terminal-finality floor plus 30 days, owner-only hold/release/reinstate/binding-intent and observer-only orphan/terminal/binding routes bind snapshots through queries::bind_snapshot, and the service suite's a17/r15 now assert the ledger semantics; finality evidence is trusted from the configured observer allowlist because the service does not verify checkpoint signatures, and a RESULT_COMMITTED task still reads EVIDENCE_UNAVAILABLE without a worker terminal-outcome route."
 assumption = "Checkpoint signature verification at the artifact service and the worker terminal-outcome route arrive with ai.F02-T03 and ai.F10-T02-FULL; the legal early-purge procedure remains the open R26 choice."
+
+[qualification.ai-t-c02-accounts-v5-20261009-01]
+revision = "c1e5f9c3c"
+command = "make test-programs-abi5-admission"
+exit_code = 0
+log = "private ops logs wt/logs/ai.T-C02-ACCOUNTS-V5-verify-1.log (11 passed), build-2.log"
+observed = "Eleven admission cases pass on the real kernel: the ABI 1 to 6 validation matrix under OCCUPANCY and STATE_COMMITMENT for module and guest validation, a v5-first lifecycle (DEPLOY, ACCOUNT register, LXPA2 opt-in, UPGRADE to 5, guest_validate, direct ABI 5 deploy), ABI 6 refused without a program record, the ABI 4 protocol rule preserved, and ledger admission binding under v4 and v5 with CONTEXT_MISMATCH on rebind; the host-boundary harness now registers v5 up front but was not run."
+assumption = "The daemon's hardcoded ABI 4 module version in lxp_daemon_lni.c and lxp_daemon_process.c and the genesis-table registration are deployment activation steps recorded under ai.P-DEPLOYMENT; the host-boundary gate re-runs once ai.T-C02-FUEL and ai.T-C02-ARTIFACT-READ land."

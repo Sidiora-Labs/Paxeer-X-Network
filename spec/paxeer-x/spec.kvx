@@ -35365,7 +35365,7 @@ worker_role_id = "W-CORE-HOST"
 
 [task.ai.T-C02-ACCOUNTS-V5]
 title = "Admit guest ABI 5 across programs account validation and ledger admission"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 28
 requires = ["ai.T-C02-ABI5"]
