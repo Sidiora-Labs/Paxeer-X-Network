@@ -2,6 +2,8 @@
 
 import React from 'react';
 
+import LayoutDefault from 'ui/shared/layout/Layout';
+import { render, routerState } from 'ui/shared/layout/testWrapper';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.hoisted(() => {
@@ -16,8 +18,6 @@ vi.hoisted(() => {
 
 vi.mock('next/router', async() => (await import('ui/shared/layout/testWrapper')).nextRouterModule());
 
-import LayoutDefault from 'ui/shared/layout/Layout';
-import { render, routerState } from 'ui/shared/layout/testWrapper';
 import NavBar from './NavBar';
 
 describe('NavBar', () => {
