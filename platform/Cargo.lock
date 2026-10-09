@@ -1484,9 +1484,11 @@ dependencies = [
 name = "layerx-indexer"
 version = "0.1.0"
 dependencies = [
+ "k256",
  "layerx-client",
  "layerx-paxeer-verifier",
  "layerx-platform-internal",
+ "layerx-programs-ai-market",
  "layerx-proof",
  "layerx-types",
  "layerx-wire",
@@ -1951,6 +1953,16 @@ name = "layerx-program-sdk"
 version = "0.1.0"
 dependencies = [
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "layerx-programs-ai-market"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "layerx-program-sdk",
+ "sha2 0.10.9",
+ "spin",
 ]
 
 [[package]]
