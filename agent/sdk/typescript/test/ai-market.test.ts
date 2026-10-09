@@ -133,7 +133,7 @@ const endpoint = `http://127.0.0.1:${gatewayAddress.port}`;
 const ok = (result: unknown): Served => ({ body: { ok: true, result } });
 const fail = (status: number, error: Record<string, unknown>): Served => ({ status, body: { ok: false, error } });
 const credential = (secret: number): LayerXKeyCredential => new LayerXKeyCredential("key_1",
-  new SecretBytes(Buffer.from(`lxp_live_${secret.toString(16).padStart(2, "0").repeat(32)}`, "ascii")));
+  new SecretBytes(new TextEncoder().encode(`lxp_live_${secret.toString(16).padStart(2, "0").repeat(32)}`)));
 const views = new AiMarketViews({ endpoint, credential: credential(0x22) });
 const market = id(0x03);
 
@@ -479,7 +479,7 @@ try {
     await refuses("UnauthorizedKey", () => review.approve(t, ownerKey).sign({ publicKey: workerKey, sign: (p) => ed25519.sign(p, workerSecret) }, 500n));
     await refuses("Signature", () => review.approve(t, ownerKey).sign({ publicKey: ownerKey, sign: (p) => ed25519.sign(p, workerSecret) }, 500n));
     await refuses("StaleAuthority", () => review.approve(t, ownerKey).sign(owner, 509n));
-    const altered = prepared.canonicalBytes(); altered[altered.length - 1] ^= 1;
+    const altered = prepared.canonicalBytes(); altered[altered.length - 1] = (altered.at(-1) ?? 0) ^ 1;
     await refuses("IntegrityFailure", () => prepared.review(disclosure(altered)));
     await refuses("NotNativeProgramCall", () => prepared.review({ ...disclosure(prepared.canonicalBytes()), activity: { version: "1", module: "9", ordinal: "4" } }));
   });
@@ -498,7 +498,7 @@ try {
     const decoded = OperationRecord.decode(bytes);
     assert(decoded.state === "signed" && decoded.activityId === activityIdOf(recordSigned) && decoded.idempotencyKey === id(0x44)
       && decoded.notAfter === 100n && decoded.intent === id(0x55) && hex(decoded.signedBytes) === hex(recordSigned), "record fields lost");
-    const flipped = bytes.slice(); flipped[flipped.length - 1] ^= 1;
+    const flipped = bytes.slice(); flipped[flipped.length - 1] = (flipped.at(-1) ?? 0) ^ 1;
     await refuses("CorruptRecord", () => OperationRecord.decode(flipped));
     const prepared = bytes.slice(); prepared[8] = 1;
     await refuses("CorruptRecord", () => OperationRecord.decode(prepared));
@@ -508,11 +508,11 @@ try {
     await refuses("CorruptRecord", () => OperationRecord.signed(recordSigned, workerKey, id(0x55)));
   });
 
-  const lost: string[] = [];
+  const lost: { route: string; body: Buffer }[] = [];
   const agent = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("end", () => { lost.push(`${request.method} ${request.url} ${Buffer.concat(chunks).toString("utf8")}`); response.socket?.destroy(); });
+    request.on("end", () => { lost.push({ route: `${request.method} ${request.url}`, body: Buffer.concat(chunks) }); response.socket?.destroy(); });
   });
   agent.listen(0, "127.0.0.1");
   await once(agent, "listening");
@@ -531,8 +531,8 @@ try {
       assert((await journal.load(record.activityId)).state === "unknown", "unknown state not durable");
       const resent = await journal.resendExact(unknown, operations);
       assert(resent.state === "unknown" && resent.attempt === 2, "resend did not stay unknown");
-      const calls = lost.filter((line) => line.startsWith("POST /v1/programs/call"));
-      assert(calls.length === 2 && calls.every((line) => line.includes(hex(recordSigned))), "resend did not carry the exact signed bytes");
+      const calls = lost.filter((sent) => sent.route === "POST /v1/programs/call");
+      assert(calls.length === 2 && calls.every((sent) => hex(sent.body) === hex(recordSigned)), "resend did not carry the exact signed bytes");
       assert((await journal.resolveThrough(resent, operations)).state === "unknown", "a lost lookup changed the state");
       assert((await journal.resolve(resent, null)).state === "unknown", "an absent receipt changed the state");
       assert((await journal.resolve(resent, { state: "unknown", activity_id: resent.activityId, idempotency_key: resent.idempotencyKey })).state === "unknown", "an unknown lookup changed the state");
