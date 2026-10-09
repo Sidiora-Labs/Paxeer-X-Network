@@ -36214,7 +36214,7 @@ worker_role_id = "W-F01-TASKS"
 
 [task.ai.F08-T03]
 title = "Recover finalized membership before worker execution"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F08-T02", "ai.F10-T03", "ai.F01-T03-EPOCH"]

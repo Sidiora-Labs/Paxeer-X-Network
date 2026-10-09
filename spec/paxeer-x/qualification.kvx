@@ -1061,3 +1061,11 @@ exit_code = 1
 log = "private ops logs wt/logs/ai.F10-T07-verify-3.log"
 observed = "25 of 26 pass; the A07 full flow fails at sign because the Python native call codec and generated receipt contract refuse guest ABI 5, and the A01/A03/A04 views run against a loopback gateway following the ai_views JSON contract since those routes are not yet wired into the gateway entry."
 assumption = "ABI 5 admission for the Python and TypeScript generated contracts lands through leader task ai.F10-T08-SDK-ABI5, after which this gate is re-run; the consent binder and shared payload codecs are reported as owner-side gaps of that task."
+
+[qualification.ai-f08-t03-membership-recovery-20261009-01]
+revision = "505d581f3"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test membership_recovery -- --test-threads=1"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F08-T03-verify-1.log"
+observed = "11 membership recovery cases pass against the real F01/F02/F03/F06/F08 transitions and OpenEpoch openings bound through FinalizedAuthority; the durable store is a local fsync'd file with atomic rename and off-chain job reconciliation stays with F02-T03."
+assumption = "F02-T03 wires MembershipObserver::new_work/admitted_work ahead of job admission and runs job-store UNKNOWN reconciliation beside the retained unresolved replay result; a managed durable store waits on ai.P-REAL-SERVICES."

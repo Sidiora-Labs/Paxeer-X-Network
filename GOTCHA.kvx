@@ -5266,3 +5266,7 @@ text = "An F01 ADMIT deadline must be at most height + task_timeout_heights (32 
 [gotcha.1136]
 area = "agent-sdk-python"
 text = "layerx_sdk is not importable under pytest unless the test inserts agent/sdk/python into sys.path (no conftest). The frozen paxai schema operations table has 55 rows. compileall writes __pycache__ even with PYTHONDONTWRITEBYTECODE; remove it before committing. No Python formatter is installed for agent/sdk/python. The Python native_program_call codec, generated/receipt.py and programs._execution admit guest ABI 1-4 only, and Python has no owner-consent disclosure binder nor roster, market-header or score payload codecs, so FUND/CLAIM recipient and entitlement previews cannot be checked there yet."
+
+[gotcha.1137]
+area = "paxai-worker"
+text = "RewardState decoding needs exactly REWARD_STATE_BYTES, but after an epoch opening the F06 section also carries an F05 tail; fixtures must slice ..REWARD_STATE_BYTES and re-append the tail (the transport_identity fund helper decodes the whole section). Clippy pedantic struct_field_names refuses a field that starts with its struct name. The worker crate lacks layerx-proof and layerx-types dev-dependencies, so membership tests bind real FinalityEvidence, Head, IdentityEvidence and roster documents without a signed checkpoint-certificate fixture."
