@@ -30,17 +30,19 @@ use crate::{
         WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_ROSTER,
     },
     evaluators::{
-        admission::{admit_report, Admission, AdmissionReceipt, ReportRegion, RevealAdmission},
+        admission::{
+            admit_report_with, Admission, AdmissionReceipt, ReportRegion, RevealAdmission,
+        },
         authority::{evaluator_region, FrozenEvaluator},
         codec::verify_digest,
         model::{GrantStatus, SignedReport, VerificationError},
     },
     registry::check_f01_capacity,
     registry_ops::{CallContext, PolicySection, SUSPENDED},
-    rewards::{decode_reward_state, REWARD_STATE_BYTES},
+    rewards::RewardState,
     state::{
-        decode_shared_state, encode_shared_state, ActorSlot, HeightWindow, ReplayDecision,
-        ReplayRequest, RetainedResult, Section, SharedState,
+        decode_shared_state, encode_shared_state, settlement_rewards, ActorSlot, HeightWindow,
+        ReplayDecision, ReplayRequest, RetainedResult, Section, SharedState,
     },
     types::{
         Authentication, CommitmentDigest, EvaluatorBinding, EvaluatorId, FrozenBinding, Presence,
@@ -234,6 +236,7 @@ fn committed<'a>(state: &SharedState<'a>) -> CodecResult<PolicySection<'a>> {
 struct Opened<'a> {
     state: SharedState<'a>,
     section: PolicySection<'a>,
+    rewards: RewardState<'a>,
     frozen: FrozenBinding,
     reports: ReportRegion<'a>,
     commits: CommitRegion<'a>,
@@ -246,8 +249,7 @@ fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
     let admission =
         AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?;
     let epoch = admission.current_epoch().ok_or(WRONG_EPOCH)?;
-    let rewards = state.feature_sections[Section::SettlementClaims.index()];
-    let rewards = decode_reward_state(rewards.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)?;
+    let rewards = settlement_rewards(&state, None)?;
     let row = match rewards.row(epoch) {
         Err(NOT_FOUND) => return Err(WRONG_EPOCH),
         row => row?,
@@ -269,6 +271,7 @@ fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
     Ok(Opened {
         state,
         section,
+        rewards,
         frozen,
         reports,
         commits,
@@ -625,7 +628,9 @@ fn reveal_score(
         height: call.ctx.height,
         activity: call.envelope.envelope.sequence,
     };
-    match admit_report(current, &reveal, next, scratch, event).map_err(verification)? {
+    match admit_report_with(current, &reveal, next, scratch, event, Some(opened.rewards))
+        .map_err(verification)?
+    {
         Admission::Applied {
             receipt,
             revision,

@@ -90,6 +90,10 @@ impl<'a> PolicySection<'a> {
     /// Propagates header, grant, and `validate_policy_records` refusals; returns `NON_CANONICAL` when the recent-header count is outside 1..=`MAX_RECENT_POLICY_HEADERS`; `F01_VERSION_MISMATCH` when the active version differs from `current`; `ROLE_CONFLICT` when the operator is the owner or treasury; `F01_PRINCIPAL_MISMATCH` when the pending proposer is not the owner.
     pub fn validate(&self) -> CodecResult<()> {
         self.header.validate()?;
+        self.validate_records()
+    }
+    /// [`Self::validate`] after the header, for a header `MarketHeader::decode` validated.
+    fn validate_records(&self) -> CodecResult<()> {
         if self.recent_len == 0 || self.recent_len > MAX_RECENT_POLICY_HEADERS {
             return Err(NON_CANONICAL);
         }
@@ -226,7 +230,7 @@ impl<'a> PolicySection<'a> {
             history_root,
             task_region,
         };
-        section.validate()?;
+        section.validate_records()?;
         section.encoded_len()?;
         Ok(section)
     }

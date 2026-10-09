@@ -2,8 +2,10 @@ use crate::{
     codec::{self, Reader, StateFrame, Writer},
     errors::{
         CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT, EXPIRED, NON_CANONICAL,
-        NOT_FOUND, REPLAY_CONFLICT, SEQUENCE_CONSUMED, SEQUENCE_GAP, UNAUTHORIZED, WRONG_PHASE,
+        NOT_FOUND, REPLAY_CONFLICT, SEQUENCE_CONSUMED, SEQUENCE_GAP, UNAUTHORIZED, WRONG_EPOCH,
+        WRONG_PHASE,
     },
+    rewards::{decode_reward_state, RewardState, REWARD_STATE_BYTES},
     types::{PrincipalId, RequestDigest, RequestId, ResultDigest, Version},
     MAX_STATE_BYTES, SCHEMA_VERSION,
 };
@@ -667,6 +669,25 @@ pub fn encode_shared_state(
         },
         out,
     )
+}
+/// The validated F06 reward state at the head of the settlement section of `state`. `known` is
+/// a view an earlier step of the same call already validated; it is reused only when it borrows
+/// exactly these bytes, so the result equals a fresh `decode_reward_state`.
+///
+/// # Errors
+/// Returns `WRONG_EPOCH` when the section is shorter than the reward state; propagates
+/// `decode_reward_state` refusals.
+pub fn settlement_rewards<'a>(
+    state: &SharedState<'a>,
+    known: Option<RewardState<'a>>,
+) -> CodecResult<RewardState<'a>> {
+    let bytes = state.feature_sections[Section::SettlementClaims.index()]
+        .get(..REWARD_STATE_BYTES)
+        .ok_or(WRONG_EPOCH)?;
+    match known {
+        Some(rewards) if core::ptr::eq(rewards.bytes(), bytes) => Ok(rewards),
+        _ => decode_reward_state(bytes),
+    }
 }
 /// Strictly decodes a state frame and its control payload.
 ///

@@ -41,13 +41,13 @@ use crate::{
         model::SIGNED_REPORT_MIN_BYTES,
         model::{ReportContext, SignedReport, VerificationError, SIGNED_REPORT_MAX_BYTES},
     },
-    evidence::{sealed_evidence, SealRegion},
+    evidence::{sealed_evidence_with, SealRegion},
     registry::check_f01_capacity,
     registry_ops::{CallContext, PolicySection},
-    rewards::{decode_reward_state, RewardEpoch, REWARD_STATE_BYTES},
+    rewards::{RewardEpoch, RewardState},
     state::{
-        decode_shared_state, encode_shared_state, ReplayDecision, ReplayRequest, RetainedResult,
-        Section, SharedState,
+        decode_shared_state, encode_shared_state, settlement_rewards, ReplayDecision,
+        ReplayRequest, RetainedResult, Section, SharedState,
     },
     types::{
         Digest32, EvaluatorBinding, EvaluatorId, FrozenBinding, Presence, PrincipalId,
@@ -322,7 +322,7 @@ pub fn admitted_report<'a>(
     epoch: u64,
     evaluator: EvaluatorId,
 ) -> CodecResult<Option<AdmittedReport<'a>>> {
-    let opened = view(state)?;
+    let opened = view(state, None)?;
     if opened.frozen.epoch != epoch {
         return Err(WRONG_EPOCH);
     }
@@ -341,19 +341,20 @@ fn committed<'a>(state: &SharedState<'a>) -> CodecResult<PolicySection<'a>> {
 /// Committed views of the currently opened epoch.
 struct Opened<'a> {
     section: PolicySection<'a>,
+    rewards: RewardState<'a>,
     frozen: FrozenBinding,
     row: RewardEpoch,
     reports: ReportRegion<'a>,
 }
 
-/// The opened epoch: F08 epoch presence, F01 domain and config and the F06 frozen roster row.
-fn view<'a>(state: &SharedState<'a>) -> CodecResult<Opened<'a>> {
+/// The opened epoch: F08 epoch presence, F01 domain and config and the F06 frozen roster row,
+/// reusing the reward state `known` when it is the one `state` holds.
+fn view<'a>(state: &SharedState<'a>, known: Option<RewardState<'a>>) -> CodecResult<Opened<'a>> {
     let section = committed(state)?;
     let admission =
         AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?;
     let epoch = admission.current_epoch().ok_or(WRONG_EPOCH)?;
-    let rewards = state.feature_sections[Section::SettlementClaims.index()];
-    let rewards = decode_reward_state(rewards.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)?;
+    let rewards = settlement_rewards(state, known)?;
     let row = match rewards.row(epoch) {
         Err(NOT_FOUND) => return Err(WRONG_EPOCH),
         row => row?,
@@ -373,6 +374,7 @@ fn view<'a>(state: &SharedState<'a>) -> CodecResult<Opened<'a>> {
     }
     Ok(Opened {
         section,
+        rewards,
         frozen,
         row,
         reports,
@@ -383,10 +385,9 @@ fn view<'a>(state: &SharedState<'a>) -> CodecResult<Opened<'a>> {
 /// the F02 identity attributes, sorted by worker.
 fn frozen_workers(
     state: &SharedState<'_>,
+    rewards: &RewardState<'_>,
     row: &RewardEpoch,
 ) -> CodecResult<([WorkerRosterEntry; MAX_WORKERS], usize)> {
-    let rewards = state.feature_sections[Section::SettlementClaims.index()];
-    let rewards = decode_reward_state(rewards.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)?;
     let dictionary = rewards.dictionary();
     let identity = state.feature_sections[Section::IdentityRoster.index()];
     let live = WorkerTable::decode(split_identity_section(identity)?.0)?;
@@ -490,7 +491,7 @@ fn verify(
 ) -> Result<ReportDigest, VerificationError> {
     let evaluator = frozen.entry.evaluator;
     let region = evaluator_region(state.feature_sections[Section::IdentityRoster.index()])?;
-    let (workers, count) = frozen_workers(state, &opened.row)?;
+    let (workers, count) = frozen_workers(state, &opened.rewards, &opened.row)?;
     let context = ReportContext {
         binding: EvaluatorBinding {
             frozen: opened.frozen,
@@ -503,7 +504,12 @@ fn verify(
         approved_rubric: opened.section.current.commitments.rubric,
         market_owner: opened.section.header.owner_principal,
         workers: workers.get(..count).ok_or(CAPACITY)?,
-        evidence: sealed_evidence(state, opened.frozen.epoch, evaluator)?,
+        evidence: sealed_evidence_with(
+            state,
+            opened.frozen.epoch,
+            evaluator,
+            Some(opened.rewards),
+        )?,
     };
     verify_signed_report(report, &context)
 }
@@ -566,12 +572,25 @@ pub fn admit_report(
     scratch: &mut [u8],
     event: &mut [u8],
 ) -> Result<Admission, VerificationError> {
+    admit_report_with(current, reveal, next, scratch, event, None)
+}
+
+/// [`admit_report`] reusing the reward state `known` the caller already validated in
+/// `current`.
+pub(crate) fn admit_report_with<'a>(
+    current: &'a [u8],
+    reveal: &RevealAdmission<'_>,
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+    known: Option<RewardState<'a>>,
+) -> Result<Admission, VerificationError> {
     let mut signed = [0; SIGNED_REPORT_MAX_BYTES];
     let signed_len = encode_signed_report(&reveal.report, &mut signed)?;
     let signed = signed.get(..signed_len).ok_or(CAPACITY)?;
     let body = &reveal.report.body;
     let state = decode_shared_state(current)?;
-    let opened = view(&state)?;
+    let opened = view(&state, known)?;
     let frozen = frozen_evaluator(&state, &opened, &body.binding)?;
     if reveal.request.principal != frozen.entry.owner {
         return Err(UNAUTHORIZED.into());
@@ -1034,7 +1053,7 @@ pub fn apply_challenge(
     let allegation = Allegation::parse(e.payload)?;
     compare_native_principal(e, ctx.principal)?;
     let state = decode_shared_state(current)?;
-    let opened = view(&state)?;
+    let opened = view(&state, None)?;
     check_envelope(ctx, envelope, &opened.frozen)?;
     let id = allegation.identity(&opened.frozen, e.actor)?;
     if e.request.bytes() != id.bytes() {

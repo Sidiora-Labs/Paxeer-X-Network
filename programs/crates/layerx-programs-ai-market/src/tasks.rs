@@ -23,8 +23,6 @@
 //!   `WRONG_PHASE`.
 use core::cmp::Ordering;
 
-use sha2::{Digest as _, Sha256};
-
 use crate::{
     admission::{AdmissionTable, Participant},
     codec::{self, derive_market, domain_hash, Envelope, EventCommon, Reader, Writer},
@@ -49,10 +47,10 @@ use crate::{
         CallContext, PolicySection, ACTIVE, CLOSED, EMPTY_TASK_REGION, RECEIPT_MAX_BYTES,
         WINDING_DOWN,
     },
-    rewards::{decode_reward_state, RewardState, REWARD_STATE_BYTES},
+    rewards::RewardState,
     state::{
-        decode_shared_state, encode_shared_state, ActorSlot, ReplayDecision, ReplayRequest,
-        RetainedResult, Section, SharedState,
+        decode_shared_state, encode_shared_state, settlement_rewards, ActorSlot, ReplayDecision,
+        ReplayRequest, RetainedResult, Section, SharedState,
     },
     types::{
         Authentication, Digest32, EpochPhase, EpochWindows, EvaluatorRosterEntry, MarketId,
@@ -273,17 +271,17 @@ pub struct SetBinding {
 /// Returns `ARITHMETIC` when the count does not fit `u16`; `NON_CANONICAL` for a zero digest.
 pub fn task_set_digest(binding: &SetBinding, set: &TaskSet<'_>) -> CodecResult<Digest32> {
     let count = u16::try_from(set.len()).map_err(|_| ARITHMETIC)?;
-    let mut h = Sha256::new();
-    h.update(TASK_SET_DOMAIN);
-    h.update([0]);
-    h.update(binding.market.as_bytes());
-    h.update(binding.epoch.to_be_bytes());
-    h.update(binding.config.get().to_be_bytes());
-    h.update(binding.policy.as_bytes());
-    h.update(binding.roster.as_bytes());
-    h.update(count.to_be_bytes());
-    h.update(set.records);
-    Digest32::new(h.finalize().into())
+    Digest32::new(codec::sha256([
+        TASK_SET_DOMAIN,
+        &[0],
+        binding.market.as_bytes(),
+        &binding.epoch.to_be_bytes(),
+        &binding.config.get().to_be_bytes(),
+        binding.policy.as_bytes(),
+        binding.roster.as_bytes(),
+        &count.to_be_bytes(),
+        set.records,
+    ])?)
 }
 
 /// The F01 receipt: market, committed revision, request id, action, config and policy digest.
@@ -348,27 +346,29 @@ fn committed<'a>(state: &SharedState<'a>) -> CodecResult<PolicySection<'a>> {
     Ok(section)
 }
 
-fn rewards<'a>(state: &SharedState<'a>) -> CodecResult<RewardState<'a>> {
-    let section = state.feature_sections[Section::SettlementClaims.index()];
-    decode_reward_state(section.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)
-}
-
-/// Binding of the currently opened epoch.
-fn set_binding(state: &SharedState<'_>, section: &PolicySection<'_>) -> CodecResult<SetBinding> {
+/// Binding of the currently opened epoch and the validated reward state recording its roster,
+/// reusing `known` when it is that state.
+fn set_binding<'a>(
+    state: &SharedState<'a>,
+    section: &PolicySection<'_>,
+    known: Option<RewardState<'a>>,
+) -> CodecResult<(SetBinding, RewardState<'a>)> {
     let admission =
         AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?;
     let epoch = admission.current_epoch().ok_or(WRONG_EPOCH)?;
-    let row = match rewards(state)?.row(epoch) {
+    let rewards = settlement_rewards(state, known)?;
+    let row = match rewards.row(epoch) {
         Err(NOT_FOUND) => return Err(WRONG_EPOCH),
         row => row?,
     };
-    Ok(SetBinding {
+    let binding = SetBinding {
         market: section.header.market_id,
         epoch,
         config: Version::new(section.header.active_config_version)?,
         policy: section.current.digest()?,
         roster: row.roster,
-    })
+    };
+    Ok((binding, rewards))
 }
 
 /// Clock epoch of the records of `set`, which must all agree.
@@ -425,9 +425,10 @@ pub fn region_after_open(region: &[u8]) -> CodecResult<&'static [u8]> {
 fn epoch_view<'a>(
     state: &SharedState<'a>,
     epoch: u64,
+    known: Option<RewardState<'a>>,
 ) -> CodecResult<(SetBinding, Option<TaskSet<'a>>)> {
     let section = committed(state)?;
-    let binding = set_binding(state, &section)?;
+    let (binding, _) = set_binding(state, &section, known)?;
     if binding.epoch != epoch {
         return Err(WRONG_EPOCH);
     }
@@ -452,7 +453,16 @@ fn verified_seal(binding: &SetBinding, set: &TaskSet<'_>) -> CodecResult<Option<
 /// `WRONG_EPOCH` for another epoch; `NON_CANONICAL` for an inconsistent state or a stored seal
 /// that does not match its records.
 pub fn sealed_task_set(state: &SharedState<'_>, epoch: u64) -> CodecResult<Digest32> {
-    let (binding, set) = epoch_view(state, epoch)?;
+    sealed_task_set_with(state, epoch, None)
+}
+
+/// [`sealed_task_set`] reusing the reward state `known` the caller already validated.
+pub(crate) fn sealed_task_set_with<'a>(
+    state: &SharedState<'a>,
+    epoch: u64,
+    known: Option<RewardState<'a>>,
+) -> CodecResult<Digest32> {
+    let (binding, set) = epoch_view(state, epoch, known)?;
     let set = set.ok_or(F09_EVIDENCE_TASK_SET_UNSEALED)?;
     verified_seal(&binding, &set)?.ok_or(F09_EVIDENCE_TASK_SET_UNSEALED)
 }
@@ -464,7 +474,7 @@ pub fn sealed_task_set(state: &SharedState<'_>, epoch: u64) -> CodecResult<Diges
 /// Returns `WRONG_PHASE` for a nonempty unsealed set; `WRONG_EPOCH` for another epoch;
 /// `NON_CANONICAL` for an inconsistent state or a stored seal that does not match its records.
 pub fn terminal_task_set(state: &SharedState<'_>, epoch: u64) -> CodecResult<Digest32> {
-    let (binding, set) = epoch_view(state, epoch)?;
+    let (binding, set) = epoch_view(state, epoch, None)?;
     let set = set.ok_or(WRONG_PHASE)?;
     match verified_seal(&binding, &set)? {
         Some(seal) => Ok(seal),
@@ -476,6 +486,7 @@ pub fn terminal_task_set(state: &SharedState<'_>, epoch: u64) -> CodecResult<Dig
 struct Opened<'a> {
     state: SharedState<'a>,
     section: PolicySection<'a>,
+    rewards: RewardState<'a>,
     binding: SetBinding,
     set: TaskSet<'a>,
 }
@@ -488,11 +499,12 @@ impl Opened<'_> {
 fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
     let state = decode_shared_state(current)?;
     let section = committed(&state)?;
-    let binding = set_binding(&state, &section)?;
+    let (binding, rewards) = set_binding(&state, &section, None)?;
     let set = current_view(section.task_region, section.header.origin_height, &binding)?;
     Ok(Opened {
         state,
         section,
+        rewards,
         binding,
         set,
     })
@@ -713,11 +725,11 @@ fn evaluator_roster(
 /// authority is current and unrevoked, and the claimed metadata reproduces the frozen roster.
 fn check_frozen_worker(
     state: &SharedState<'_>,
+    rewards: &RewardState<'_>,
     binding: &SetBinding,
     body: &AdmitBody,
     height: u64,
 ) -> CodecResult<()> {
-    let rewards = rewards(state)?;
     let row = rewards.row(binding.epoch)?;
     let dictionary = rewards.dictionary();
     let mut frozen = None;
@@ -822,7 +834,7 @@ fn admit(call: &Call<'_>, buffers: Buffers<'_>) -> CodecResult<Outcome> {
     }
     let windows = call.check_work()?;
     let height = call.ctx.height;
-    check_frozen_worker(&opened.state, binding, &body, height)?;
+    check_frozen_worker(&opened.state, &opened.rewards, binding, &body, height)?;
     let policy = &opened.section.current;
     if opened.set.len() >= usize::from(policy.max_tasks_per_epoch) {
         return Err(F01_NO_TASK_CAPACITY);

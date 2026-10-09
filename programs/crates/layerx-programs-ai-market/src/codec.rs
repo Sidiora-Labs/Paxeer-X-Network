@@ -130,7 +130,8 @@ impl<'a> Reader<'a> {
     /// # Errors
     /// Returns `NON_CANONICAL` when any reserved byte is nonzero; propagates `take`'s refusals.
     pub fn reserved(&mut self, length: usize) -> CodecResult<()> {
-        if self.take(length)?.iter().any(|b| *b != 0) {
+        let (words, tail) = self.take(length)?.as_chunks::<8>();
+        if words.iter().any(|w| u64::from_ne_bytes(*w) != 0) || tail.iter().any(|b| *b != 0) {
             Err(NON_CANONICAL)
         } else {
             Ok(())
@@ -333,20 +334,48 @@ pub fn domain_hash(domain: &str, bytes: &[u8]) -> CodecResult<Digest32> {
     if domain.is_empty() || !domain.is_ascii() || domain.as_bytes().contains(&0) {
         return Err(NON_CANONICAL);
     }
-    let mut h = Sha256::new();
-    h.update(domain.as_bytes());
-    h.update([0]);
-    h.update(bytes);
-    Digest32::new(h.finalize().into())
+    hash_parts(domain, &[bytes])
 }
 fn hash_parts(domain: &str, parts: &[&[u8]]) -> CodecResult<Digest32> {
+    Digest32::new(sha256(
+        [domain.as_bytes(), &[0]]
+            .into_iter()
+            .chain(parts.iter().copied()),
+    )?)
+}
+
+#[cfg(target_arch = "wasm32")]
+static PREIMAGE: spin::Mutex<[u8; MAX_STATE_BYTES]> = spin::Mutex::new([0; MAX_STATE_BYTES]);
+
+/// SHA-256 of the concatenated `parts`. The guest build hashes a preimage of at most
+/// `MAX_STATE_BYTES` through the host primitive, metered per input byte; a longer preimage
+/// and every native build hash in place. Both produce the same digest.
+///
+/// # Errors
+/// Returns `HOST_CAPABILITY` when the host refuses the hash.
+#[cfg_attr(not(target_arch = "wasm32"), allow(clippy::unnecessary_wraps))]
+pub fn sha256<'p, I>(parts: I) -> CodecResult<[u8; 32]>
+where
+    I: IntoIterator<Item = &'p [u8]>,
+    I::IntoIter: Clone,
+{
+    let parts = parts.into_iter();
+    #[cfg(target_arch = "wasm32")]
+    if let Some(mut preimage) = PREIMAGE.try_lock() {
+        let mut w = Writer::new(&mut preimage[..]);
+        if parts.clone().all(|part| w.put(part).is_ok()) {
+            use layerx_program_sdk::crypto::{hash, HashAlgorithm, HashInput};
+            let n = w.len();
+            return HashInput::new(&preimage[..n])
+                .and_then(|input| hash(HashAlgorithm::Sha256, input))
+                .map_err(|_| crate::errors::HOST_CAPABILITY);
+        }
+    }
     let mut h = Sha256::new();
-    h.update(domain.as_bytes());
-    h.update([0]);
     for part in parts {
         h.update(part);
     }
-    Digest32::new(h.finalize().into())
+    Ok(h.finalize().into())
 }
 /// Derives the market identity from chain and program.
 ///

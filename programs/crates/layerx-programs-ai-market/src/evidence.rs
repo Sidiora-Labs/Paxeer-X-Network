@@ -35,10 +35,10 @@ use crate::{
     },
     registry::check_f01_capacity,
     registry_ops::{CallContext, PolicySection},
-    rewards::{decode_reward_state, REWARD_STATE_BYTES},
+    rewards::RewardState,
     state::{
-        decode_shared_state, encode_shared_state, ActorSlot, HeightWindow, ReplayDecision,
-        ReplayRequest, RetainedResult, Section, SharedState,
+        decode_shared_state, encode_shared_state, settlement_rewards, ActorSlot, HeightWindow,
+        ReplayDecision, ReplayRequest, RetainedResult, Section, SharedState,
     },
     tasks,
     types::{Authentication, EvaluatorId, FrozenBinding, Presence, ResultDigest},
@@ -1784,29 +1784,31 @@ fn committed<'a>(state: &SharedState<'a>) -> CodecResult<PolicySection<'a>> {
     Ok(section)
 }
 
-/// The frozen context of the opened epoch: F08 epoch presence, F01 config and F06 roster.
-fn frozen_binding(
-    state: &SharedState<'_>,
+/// The frozen context of the opened epoch: F08 epoch presence, F01 config and F06 roster, with
+/// the validated reward state recording that roster, reusing `known` when it is that state.
+fn frozen_binding<'a>(
+    state: &SharedState<'a>,
     section: &PolicySection<'_>,
-) -> CodecResult<FrozenBinding> {
+    known: Option<RewardState<'a>>,
+) -> CodecResult<(FrozenBinding, RewardState<'a>)> {
     let admission =
         AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?;
     let epoch = admission.current_epoch().ok_or(WRONG_EPOCH)?;
-    let rewards = state.feature_sections[Section::SettlementClaims.index()];
-    let rewards = decode_reward_state(rewards.get(..REWARD_STATE_BYTES).ok_or(WRONG_EPOCH)?)?;
+    let rewards = settlement_rewards(state, known)?;
     let row = match rewards.row(epoch) {
         Err(NOT_FOUND) => return Err(WRONG_EPOCH),
         row => row?,
     };
     let header = &section.header;
-    Ok(FrozenBinding {
+    let frozen = FrozenBinding {
         chain: header.deployment_chain_domain,
         program: header.program_id,
         market: header.market_id,
         epoch,
         config: Version::new(header.active_config_version)?,
         roster: row.roster,
-    })
+    };
+    Ok((frozen, rewards))
 }
 
 /// The sealed evidence registration of `evaluator` in the opened `epoch`, read from committed
@@ -1821,7 +1823,17 @@ pub fn sealed_evidence(
     epoch: u64,
     evaluator: EvaluatorId,
 ) -> CodecResult<Presence<RegisteredEvidence>> {
-    let frozen = frozen_binding(state, &committed(state)?)?;
+    sealed_evidence_with(state, epoch, evaluator, None)
+}
+
+/// [`sealed_evidence`] reusing the reward state `known` the caller already validated.
+pub(crate) fn sealed_evidence_with<'a>(
+    state: &SharedState<'a>,
+    epoch: u64,
+    evaluator: EvaluatorId,
+    known: Option<RewardState<'a>>,
+) -> CodecResult<Presence<RegisteredEvidence>> {
+    let (frozen, _) = frozen_binding(state, &committed(state)?, known)?;
     if frozen.epoch != epoch {
         return Err(WRONG_EPOCH);
     }
@@ -1883,13 +1895,14 @@ impl SealPayload {
 struct Opened<'a> {
     state: SharedState<'a>,
     section: PolicySection<'a>,
+    rewards: RewardState<'a>,
     frozen: FrozenBinding,
     region: SealRegion<'a>,
 }
 fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
     let state = decode_shared_state(current)?;
     let section = committed(&state)?;
-    let frozen = frozen_binding(&state, &section)?;
+    let (frozen, rewards) = frozen_binding(&state, &section, None)?;
     let region = SealRegion::decode(state.control.feature_bytes)?;
     if region.epoch > frozen.epoch && !region.records.is_empty() {
         return Err(NON_CANONICAL);
@@ -1897,6 +1910,7 @@ fn opened(current: &[u8]) -> CodecResult<Opened<'_>> {
     Ok(Opened {
         state,
         section,
+        rewards,
         frozen,
         region,
     })
@@ -2021,7 +2035,11 @@ impl Call<'_> {
         {
             return Err(EVIDENCE_BINDING);
         }
-        let sealed = tasks::sealed_task_set(&self.opened.state, self.opened.frozen.epoch)?;
+        let sealed = tasks::sealed_task_set_with(
+            &self.opened.state,
+            self.opened.frozen.epoch,
+            Some(self.opened.rewards),
+        )?;
         if payload.task_set != sealed {
             return Err(EVIDENCE_BINDING);
         }
