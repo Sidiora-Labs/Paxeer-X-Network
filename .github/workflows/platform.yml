@@ -88,7 +88,7 @@ jobs:
         run: make platform-test-middleware
       - name: Retain the actual published-package integration line counts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ten-line-counts-${{ github.job }}-${{ github.run_attempt }}
           path: ${{ env.PAXEER_X_EVIDENCE_DIR }}/**/published-measurement/ten-line-counts.json
@@ -414,7 +414,7 @@ jobs:
         run: scripts/ci/release-gate.sh --job programs-acceptance --ordinal 1 -- make programs-test
       - name: Retain the gate record and log
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-gate-programs-acceptance
           path: spec/layerx-beta/evidence
@@ -463,7 +463,7 @@ jobs:
             scripts/ci/release-gate.sh --job agent-sanitizers --ordinal 2 -- make agent-test-sanitize
       - name: Retain the gate record and log
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-gate-agent-sanitizers
           path: spec/layerx-beta/evidence
@@ -488,7 +488,7 @@ jobs:
         run: scripts/ci/release-gate.sh --job agent-fuzz-corpus --ordinal 3 -- make agent-fuzz-long
       - name: Retain the gate record and log
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-gate-agent-fuzz-corpus
           path: spec/layerx-beta/evidence
@@ -523,7 +523,7 @@ jobs:
         run: scripts/ci/release-gate.sh --job replay-matrix-${{ matrix.machine }} --ordinal ${{ matrix.ordinal }} -- make test-replay-golden
       - name: Retain the gate record and log
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-gate-replay-matrix-${{ matrix.machine }}
           path: spec/layerx-beta/evidence
@@ -567,7 +567,7 @@ jobs:
           LAYERX_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sdk-v') && github.ref_name || '' }}
         run: scripts/ci/release-version.py ${LAYERX_RELEASE_TAG:+--tag "$LAYERX_RELEASE_TAG"} | tee build/release/pipeline/version.txt
       - name: Retain the release plan, source digest and version
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-pipeline
           path: build/release/pipeline
@@ -726,7 +726,7 @@ jobs:
           cargo build --offline --manifest-path "$install/Cargo.toml"
           echo install_check=pass >> "$LAYERX_RELEASE_OUTPUT/publication.txt"
       - name: Retain the crates, digests, SBOMs, signatures, attestation, artifact records and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-crates-io
           path: |
@@ -853,7 +853,7 @@ jobs:
           sha256sum --check ../../digests.txt
           echo install_check=pass >> ../../publication.txt
       - name: Retain the tarballs, digests, SBOMs, signatures, artifact records and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-npm
           path: |
@@ -967,7 +967,7 @@ jobs:
           python -c "import layerx_sdk, layerx_fastapi"
           echo install_check=pass >> "$LAYERX_RELEASE_OUTPUT/publication.txt"
       - name: Retain the wheels, digests, SBOMs, signatures, artifact records and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-pypi
           path: |
@@ -1088,7 +1088,7 @@ jobs:
           $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$module" "layerx-go-v$LAYERX_RELEASE_VERSION.zip" registry-bytes tag-signature.txt layerx-go.sbom.spdx.json "go-checksum-database:sum.golang.org $checksum" "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
           echo install_check=pass >> publication.txt
       - name: Retain the archives, digests, SBOM, tag signature, artifact record and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-go-modules
           path: |
@@ -1235,7 +1235,7 @@ jobs:
           sha256sum --check ../install-digests.txt
           echo install_check=pass >> ../publication.txt
       - name: Retain the staging repository, digests, SBOMs, signatures, attestation, artifact records and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-maven-central
           path: |
@@ -1373,7 +1373,7 @@ jobs:
           swift build --package-path .
           echo install_check=pass >> ../publication.txt
       - name: Retain the archive, digest, SBOM, tag signature, attestation, artifact record and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-swiftpm
           path: |
@@ -1503,7 +1503,7 @@ jobs:
           $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerX.Sdk "LayerX.Sdk.$LAYERX_RELEASE_VERSION.registry.nupkg" registry-bytes repository-signature.txt LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
           echo install_check=pass >> publication.txt
       - name: Retain the packages, digests, SBOM, signatures, attestation, artifact record and publication record
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-nuget
           path: |
@@ -1546,7 +1546,7 @@ jobs:
         run: make platform-test-ten-line
       - name: Retain the actual published-package integration line counts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ten-line-counts-${{ github.job }}-${{ github.run_attempt }}
           path: ${{ env.PAXEER_X_EVIDENCE_DIR }}/**/published-measurement/ten-line-counts.json
@@ -1577,7 +1577,7 @@ jobs:
             --fetch build/release/verification \
             --source-revision "$GITHUB_SHA"
       - name: Retain the artifact manifest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-artifact-manifest
           path: build/release/artifact-manifest.json
@@ -1619,7 +1619,7 @@ jobs:
           done
           cat build/release/release-*/publication.txt > build/release/promotion.txt
       - name: Retain the promoted release
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ env.LAYERX_RELEASE_VERSION }}
           path: build/release
