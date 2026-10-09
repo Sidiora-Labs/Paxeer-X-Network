@@ -16,6 +16,8 @@ path = "src/main.rs"
 ed25519-dalek.workspace = true
 getrandom.workspace = true
 layerx-platform-gateway = { path = "../gateway" }
+layerx-programs-ai-market = { path = "../../../programs/crates/layerx-programs-ai-market" }
+layerx-proof.workspace = true
 layerx-wire = { path = "../../../agent/crates/layerx-wire" }
 native-tls.workspace = true
 rustls.workspace = true
@@ -25,6 +27,10 @@ sha2.workspace = true
 subtle.workspace = true
 x509-cert = { version = "0.2.5", default-features = false }
 zeroize.workspace = true
+
+[dev-dependencies]
+k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa", "std"] }
+layerx-crypto.workspace = true
 
 [lints]
 workspace = true

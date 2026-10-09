@@ -1,8 +1,10 @@
 use ed25519_dalek::SigningKey;
+use k256::ecdsa::{Signature, SigningKey as GuarantorSigningKey};
+use layerx_crypto::secp256k1;
 use layerx_platform_webhooks::ai_market::{
-    market_event_id, market_state_digest, Admission, CapturedEvent, Consumed, CursorKeys, Evidence,
+    market_event_id, Admission, CapturedEvent, CheckpointProof, Consumed, CursorKeys, Evidence,
     FinalityPolicy, MarketConsumer, MarketEventError, MarketOutbox, OperatorAlert, ProducerGrant,
-    QuarantineCause, ResumePage, SignedDelivery, SnapshotBinding, UpstreamManifest,
+    QuarantineCause, ResumePage, SignedDelivery, UpstreamManifest,
 };
 use layerx_platform_webhooks::encoding::hex_encode;
 use layerx_platform_webhooks::trusted::{OPERATOR_ROLE, PRODUCER_ROLE};
@@ -10,8 +12,17 @@ use layerx_platform_webhooks::{
     EndpointId, EventKind, Presentation, Principal, ProtocolEvent, SubjectId, Verification,
     WebhookError,
 };
+use layerx_programs_ai_market::codec::{encode_state, state_digest, StateFrame};
+use layerx_programs_ai_market::queries::SnapshotBinding;
+use layerx_programs_ai_market::{
+    ChainDomain, Digest32, MarketId, PolicyDigest, Presence, ProgramId, RosterDigest, Version,
+};
+use layerx_proof::checkpoint::{
+    checkpoint_id, Attestation, Certificate, Checkpoint, GuarantorKey, SettlementDomain,
+};
 use layerx_wire::encode::Encoder;
-use layerx_wire::hash::checkpoint_id;
+use layerx_wire::hash::{checkpoint_attestation_digest, program_execution_batch_id};
+use layerx_wire::limits::PROTOCOL_VERSION;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -28,6 +39,16 @@ const CHAIN: [u8; 32] = [0x11; 32];
 const PROGRAM: [u8; 32] = [0x22; 32];
 const MARKET: [u8; 32] = [0x33; 32];
 const NETWORK: u32 = 42;
+const SETTLEMENT_CHAIN: u64 = 31_337;
+const SETTLEMENT_CONTRACT: [u8; 20] = [0x55; 20];
+const CHECKPOINT_EPOCH: u64 = 7;
+const BATCH_NUMBER: u64 = 8;
+const PREVIOUS_ROOT: [u8; 32] = [0x44; 32];
+const ACTIVITY_ROOT: [u8; 32] = [0x45; 32];
+const AVAILABILITY_ROOT: [u8; 32] = [0x48; 32];
+const BONDED: [u8; 3] = [1, 2, 3];
+const SIGNED: [(u8, u8); 2] = [(1, 1), (2, 2)];
+const THRESHOLD: usize = 2;
 const TAG: u16 = 0x0401;
 const KEY_ID: &str = "whk_paxai";
 const LOCATOR: &str = "locator:private/result/7f3a";
@@ -82,28 +103,33 @@ fn now() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-fn header(network: u32, root: [u8; 32]) -> Vec<u8> {
+fn header(network: u32, root: [u8; 32], last_sequence: u64) -> Vec<u8> {
     let mut encoder = Encoder::new(354);
     ok(
-        encoder.structure_header_version(0x1701, 2),
+        encoder.structure_header_version(0x1701, PROTOCOL_VERSION),
         "header version",
     );
     ok(encoder.u8(15), "header fields");
     ok(encoder.tag(1, 15), "tag");
-    ok(encoder.u16(2), "protocol version");
+    ok(encoder.u16(PROTOCOL_VERSION), "protocol version");
     ok(encoder.tag(2, 15), "tag");
     ok(encoder.u32(network), "network");
-    for (field, value) in [(3_u8, 1_u64), (4, 7), (5, 1), (6, 9)] {
+    for (field, value) in [
+        (3_u8, CHECKPOINT_EPOCH),
+        (4, BATCH_NUMBER),
+        (5, last_sequence),
+        (6, last_sequence),
+    ] {
         ok(encoder.tag(field, 15), "tag");
         ok(encoder.u64(value), "scalar");
     }
     for (field, value) in [
-        (7_u8, [0x44; 32]),
+        (7_u8, PREVIOUS_ROOT),
         (8, root),
-        (9, [0x45; 32]),
+        (9, ACTIVITY_ROOT),
         (10, [0x46; 32]),
         (11, [0x47; 32]),
-        (12, [0x48; 32]),
+        (12, AVAILABILITY_ROOT),
         (13, [0x49; 32]),
     ] {
         ok(encoder.tag(field, 15), "tag");
@@ -116,19 +142,108 @@ fn header(network: u32, root: [u8; 32]) -> Vec<u8> {
     encoder.finish()
 }
 
-fn certificate(network: u32, root: [u8; 32], settlement: &[u8]) -> (Vec<u8>, [u8; 32]) {
-    let header = header(network, root);
-    let proof = b"validity-proof".to_vec();
-    let identifier = ok(checkpoint_id(&header, &proof), "checkpoint id");
-    let mut encoder = Encoder::new(1 << 16);
-    ok(encoder.fixed(&header), "header");
-    ok(encoder.bytes(&proof, 1_048_576), "proof");
-    ok(encoder.sequence_length(1, 32), "signatures");
-    ok(encoder.bytes(&[0x77; 32], 32), "guarantor");
-    ok(encoder.bytes(&[0x78; 64], 64), "signature");
-    ok(encoder.u32(1), "threshold");
-    ok(encoder.bytes(settlement, 1024), "settlement");
-    (encoder.finish(), identifier)
+fn guarantor(value: u8) -> (GuarantorSigningKey, GuarantorKey) {
+    let mut scalar = [0_u8; 32];
+    scalar[31] = value;
+    let signing = ok(
+        GuarantorSigningKey::from_bytes((&scalar).into()),
+        "guarantor key",
+    );
+    let public_key: [u8; 33] = signing
+        .verifying_key()
+        .to_encoded_point(true)
+        .as_bytes()
+        .try_into()
+        .unwrap_or_else(|_| panic!("compressed key width"));
+    let mut identifier = [0_u8; 32];
+    identifier[0] = value;
+    (signing, GuarantorKey::new(identifier, public_key, true))
+}
+
+fn attestation(
+    network: u32,
+    checkpoint: [u8; 32],
+    guarantor_value: u8,
+    key_value: u8,
+) -> Attestation {
+    let (_, record) = guarantor(guarantor_value);
+    let (key, _) = guarantor(key_value);
+    let signer = ok(
+        secp256k1::evm_address(key.verifying_key().to_encoded_point(true).as_bytes()),
+        "signer address",
+    );
+    let build = |signature: [u8; 64], signature_v: u8| {
+        Attestation::new(
+            PROTOCOL_VERSION,
+            network,
+            SETTLEMENT_CHAIN,
+            SETTLEMENT_CONTRACT,
+            CHECKPOINT_EPOCH,
+            checkpoint,
+            checkpoint,
+            record.guarantor_id(),
+            BATCH_NUMBER,
+            AVAILABILITY_ROOT,
+            true,
+            true,
+            0x1f,
+            1_000 + u64::from(guarantor_value),
+            signer,
+            signature,
+            signature_v,
+        )
+    };
+    let digest = ok(
+        checkpoint_attestation_digest(&build([0; 64], 27).canonical_statement()),
+        "attestation digest",
+    );
+    let (signature, recovery): (Signature, _) = ok(
+        key.sign_prehash_recoverable(&digest),
+        "attestation signature",
+    );
+    build(signature.to_bytes().into(), 27 + u8::from(recovery))
+}
+
+/// A certificate over one batch, attested by `(guarantor, signing key)` pairs.
+fn certificate(
+    network: u32,
+    root: [u8; 32],
+    last_sequence: u64,
+    signers: &[(u8, u8)],
+) -> (Certificate, [u8; 32]) {
+    let checkpoint = Checkpoint::new(
+        header(network, root, last_sequence),
+        b"validity-proof".to_vec(),
+    );
+    let identifier = ok(checkpoint_id(&checkpoint), "checkpoint id");
+    let attestations = signers
+        .iter()
+        .map(|(guarantor_value, key_value)| {
+            attestation(network, identifier, *guarantor_value, *key_value)
+        })
+        .collect();
+    (
+        Certificate::new(checkpoint, attestations, THRESHOLD, None),
+        identifier,
+    )
+}
+
+fn market_state(revision: u64, section: &[u8]) -> Vec<u8> {
+    let frame = StateFrame {
+        revision,
+        sections: [section, &[], &[], &[], &[], &[]],
+    };
+    let mut bytes = vec![0; ok(frame.encoded_len(), "state frame length")];
+    ok(encode_state(&frame, &mut bytes), "state frame");
+    bytes
+}
+
+fn digest(bytes: [u8; 32]) -> Digest32 {
+    ok(Digest32::new(bytes), "digest")
+}
+
+fn snapshot(binding: &SnapshotBinding) -> [u8; 32] {
+    ok(binding.snapshot_id(), "snapshot id").bytes()
 }
 
 type Change = fn(&mut Fixture);
@@ -136,19 +251,37 @@ type Change = fn(&mut Fixture);
 struct Fixture {
     row: CapturedEvent,
     state: Vec<u8>,
-    certificate: Vec<u8>,
+    certificate: Certificate,
+    registered: [u8; 32],
 }
 
 impl Fixture {
     fn evidence(&self) -> Evidence<'_> {
         Evidence {
             state: &self.state,
-            checkpoint_certificate: &self.certificate,
+            proof: Some(CheckpointProof {
+                certificate: &self.certificate,
+                registered_checkpoint_id: self.registered,
+                registered_settlement_reference: None,
+            }),
         }
     }
 
     fn reseal(&mut self) {
-        self.row.snapshot_id = self.row.binding.snapshot_id();
+        self.row.snapshot_id = snapshot(&self.row.binding);
+    }
+
+    fn recertify(
+        &mut self,
+        network: u32,
+        root: [u8; 32],
+        last_sequence: u64,
+        signers: &[(u8, u8)],
+    ) {
+        let (certificate, identifier) = certificate(network, root, last_sequence, signers);
+        self.certificate = certificate;
+        self.registered = identifier;
+        self.row.binding.checkpoint = digest(identifier);
     }
 }
 
@@ -158,29 +291,45 @@ fn root(observed: u64) -> [u8; 32] {
     value
 }
 
-fn fixture(observed: u64, ordinal: u16, rank: u8) -> Fixture {
-    let state = format!("market-state-{observed}").into_bytes();
-    let (certificate, checkpoint) = certificate(NETWORK, root(observed), b"");
-    let binding = SnapshotBinding {
-        schema_version: 1,
-        chain_domain: CHAIN,
-        program_id: PROGRAM,
-        market_id: MARKET,
+fn batch(observed: u64) -> [u8; 32] {
+    ok(
+        program_execution_batch_id(
+            PREVIOUS_ROOT,
+            ACTIVITY_ROOT,
+            observed,
+            observed,
+            BATCH_NUMBER,
+        ),
+        "batch id",
+    )
+}
+
+fn binding(observed: u64, state: &[u8], checkpoint: [u8; 32], rank: u8) -> SnapshotBinding {
+    SnapshotBinding {
+        chain: ok(ChainDomain::new(CHAIN), "chain"),
+        program: ok(ProgramId::new(PROGRAM), "program"),
+        market: ok(MarketId::new(MARKET), "market"),
         observed_sequence: observed,
         execution_height: observed + 100,
-        batch_id: [0x99; 32],
-        native_state_root: root(observed),
-        market_state_revision: observed,
-        market_state_digest: market_state_digest(&state),
-        epoch: Some(3),
-        config_version: 2,
-        policy_digest: [0xab; 32],
-        roster_digest: Some([0xcd; 32]),
-        checkpoint_id: checkpoint,
-        settlement_reference: None,
-        achieved_verification_rank: rank,
+        batch_id: digest(batch(observed)),
+        native_state_root: digest(root(observed)),
+        revision: observed,
+        state_digest: ok(state_digest(state), "state digest"),
+        epoch: Presence::Present(3),
+        config: ok(Version::new(2), "config"),
+        policy: ok(PolicyDigest::new([0xab; 32]), "policy"),
+        roster: Presence::Present(ok(RosterDigest::new([0xcd; 32]), "roster")),
+        checkpoint: digest(checkpoint),
+        settlement: Presence::Absent,
+        rank,
         publication_time_ms: 1_700_000_000_000 + observed,
-    };
+    }
+}
+
+fn fixture(observed: u64, ordinal: u16, rank: u8) -> Fixture {
+    let state = market_state(observed, format!("market-state-{observed}").as_bytes());
+    let (certificate, registered) = certificate(NETWORK, root(observed), observed, &SIGNED);
+    let binding = binding(observed, &state, registered, rank);
     let mut activity = [0x5c; 32];
     activity[24..].copy_from_slice(&observed.to_be_bytes());
     let event_id = ok(
@@ -189,7 +338,7 @@ fn fixture(observed: u64, ordinal: u16, rank: u8) -> Fixture {
     );
     Fixture {
         row: CapturedEvent {
-            snapshot_id: binding.snapshot_id(),
+            snapshot_id: snapshot(&binding),
             binding,
             event_id: event_id.as_str().to_owned(),
             decoder_version: 1,
@@ -205,6 +354,7 @@ fn fixture(observed: u64, ordinal: u16, rank: u8) -> Fixture {
         },
         state,
         certificate,
+        registered,
     }
 }
 
@@ -227,6 +377,8 @@ fn policy() -> FinalityPolicy {
     FinalityPolicy {
         chain_domain: CHAIN,
         network_id: NETWORK,
+        settlement: SettlementDomain::new(SETTLEMENT_CHAIN, SETTLEMENT_CONTRACT),
+        guarantors: BONDED.iter().map(|value| guarantor(*value).1).collect(),
     }
 }
 
@@ -325,7 +477,7 @@ fn consume(
     })
 }
 
-fn independent_snapshot_id(binding: &SnapshotBinding) -> [u8; 32] {
+fn independent_snapshot_id(binding: &SnapshotBinding, frame: &[u8]) -> [u8; 32] {
     let mut bytes = b"PAXAI/view/v1".to_vec();
     bytes.push(0);
     bytes.extend_from_slice(&1_u16.to_be_bytes());
@@ -334,10 +486,13 @@ fn independent_snapshot_id(binding: &SnapshotBinding) -> [u8; 32] {
     bytes.extend_from_slice(&MARKET);
     bytes.extend_from_slice(&binding.observed_sequence.to_be_bytes());
     bytes.extend_from_slice(&binding.execution_height.to_be_bytes());
-    bytes.extend_from_slice(&[0x99; 32]);
-    bytes.extend_from_slice(&binding.native_state_root);
-    bytes.extend_from_slice(&binding.market_state_revision.to_be_bytes());
-    bytes.extend_from_slice(&binding.market_state_digest);
+    bytes.extend_from_slice(&batch(binding.observed_sequence));
+    bytes.extend_from_slice(&root(binding.observed_sequence));
+    bytes.extend_from_slice(&binding.revision.to_be_bytes());
+    let mut state = b"PAXAI/view-state/v1".to_vec();
+    state.push(0);
+    state.extend_from_slice(frame);
+    bytes.extend_from_slice(&Sha256::digest(&state));
     bytes.push(1);
     bytes.extend_from_slice(&3_u64.to_be_bytes());
     bytes.extend_from_slice(&2_u64.to_be_bytes());
@@ -369,7 +524,7 @@ fn finalized_event_carries_exact_identity_and_public_content_only() {
     assert_eq!(expected_id.len(), 66);
     assert_eq!(
         fixture.row.snapshot_id,
-        independent_snapshot_id(&fixture.row.binding)
+        independent_snapshot_id(&fixture.row.binding, &fixture.state)
     );
     let event = admit(&outbox, &grant, &fixture);
     assert_eq!(event.id().as_str(), expected_id);
@@ -401,10 +556,7 @@ fn finalized_event_carries_exact_identity_and_public_content_only() {
     assert_eq!(facts["effect_ordinal"], "0");
     assert_eq!(facts["chain_domain"], "11".repeat(32));
     assert_eq!(facts["native_state_root"], hex_encode(&root(10)));
-    assert_eq!(
-        facts["checkpoint_id"],
-        hex_encode(&fixture.row.binding.checkpoint_id)
-    );
+    assert_eq!(facts["checkpoint_id"], hex_encode(&fixture.registered));
     assert_eq!(facts["achieved_rank"], "4");
     let delivery = deliver(&event, now());
     let body = ok(String::from_utf8(delivery.body), "body is UTF-8");
@@ -448,27 +600,64 @@ fn missing_finality_delays_publication_and_retries_are_idempotent() {
     assert_eq!(ok(outbox.pending(&MARKET), "pending"), vec![event, second]);
 }
 
+fn refused_certificate(
+    outbox: &MarketOutbox,
+    grant: &ProducerGrant,
+    label: &str,
+    sample: &Fixture,
+) {
+    let refusal = outbox.admit(grant, &sample.row, &sample.evidence());
+    assert!(
+        matches!(refusal, Err(MarketEventError::CertificateRejected)),
+        "{label}: {refusal:?}"
+    );
+}
+
 #[test]
-fn settlement_rank_requires_its_reference_and_labels_paxeer_finality() {
-    let scratch = scratch("settlement");
+fn bonded_guarantor_signatures_gate_finalized_publication() {
+    let scratch = scratch("signatures");
     let grant = producer(&scratch.0);
-    let outbox = granted(&scratch.0.join("anchored"));
-    let mut anchored = fixture(30, 0, 5);
-    let (certificate, identifier) = certificate(NETWORK, root(30), b"anchor-reference");
-    anchored.certificate = certificate;
-    anchored.row.binding.checkpoint_id = identifier;
-    anchored.row.binding.settlement_reference = Some([0x5e; 32]);
-    anchored.reseal();
-    let event = admit(&outbox, &grant, &anchored);
-    assert_eq!(event.verification(), Verification::PaxeerFinalised);
-    let unanchored_outbox = granted(&scratch.0.join("unanchored"));
-    let unanchored = fixture(31, 0, 5);
-    assert!(matches!(
-        unanchored_outbox.admit(&grant, &unanchored.row, &unanchored.evidence()),
-        Err(MarketEventError::Quarantined(
-            QuarantineCause::FinalityConflict
-        ))
-    ));
+    let outbox = granted(&scratch.0.join("outbox"));
+    let mut unsigned = fixture(30, 0, 4);
+    unsigned.recertify(NETWORK, root(30), 30, &[]);
+    refused_certificate(&outbox, &grant, "unsigned", &unsigned);
+    let mut forged = fixture(30, 0, 4);
+    forged.recertify(NETWORK, root(30), 30, &[(1, 1), (2, 9)]);
+    refused_certificate(&outbox, &grant, "wrong key", &forged);
+    let mut unbonded = fixture(30, 0, 4);
+    unbonded.recertify(NETWORK, root(30), 30, &[(1, 1), (4, 4)]);
+    refused_certificate(
+        &outbox,
+        &grant,
+        "guarantor outside the bonded set",
+        &unbonded,
+    );
+    let mut short = fixture(30, 0, 4);
+    short.recertify(NETWORK, root(30), 30, &[(1, 1)]);
+    refused_certificate(&outbox, &grant, "below threshold", &short);
+    let mut unregistered = fixture(30, 0, 4);
+    unregistered.registered = [0x5a; 32];
+    refused_certificate(&outbox, &grant, "unregistered checkpoint", &unregistered);
+    let mut other_batch = fixture(30, 0, 4);
+    other_batch.recertify(NETWORK, root(30), 31, &SIGNED);
+    refused_certificate(&outbox, &grant, "another batch", &other_batch);
+    let mut malformed = fixture(30, 0, 4);
+    malformed.certificate = Certificate::new(
+        Checkpoint::new(vec![1, 2, 3], b"validity-proof".to_vec()),
+        Vec::new(),
+        THRESHOLD,
+        None,
+    );
+    refused_certificate(&outbox, &grant, "malformed header", &malformed);
+    assert!(ok(outbox.pending(&MARKET), "nothing admitted").is_empty());
+    assert_eq!(ok(outbox.quarantine(&MARKET), "quarantine"), None);
+    assert!(ok(outbox.alerts(), "alerts").is_empty());
+    let signed = fixture(30, 0, 4);
+    assert_eq!(signed.certificate.attestations().len(), 2);
+    let event = admit(&outbox, &grant, &signed);
+    assert_eq!(event.subject_sequence(), 1);
+    assert_eq!(event.verification(), Verification::CheckpointFinalised);
+    assert_eq!(ok(outbox.pending(&MARKET), "published"), vec![event]);
 }
 
 fn publish_three(directory: &Path, grant: &ProducerGrant, first: u64) -> Vec<ProtocolEvent> {
@@ -667,7 +856,7 @@ fn conflicting_artifacts_quarantine_with_identifier_only_alerts() {
         &leaf,
         "state",
         |fixture| {
-            fixture.state = b"market-state-forged".to_vec();
+            fixture.state = market_state(70, b"market-state-forged");
         },
         QuarantineCause::StateDigest,
     );
@@ -685,7 +874,7 @@ fn conflicting_artifacts_quarantine_with_identifier_only_alerts() {
         &leaf,
         "chain",
         |fixture| {
-            fixture.row.binding.chain_domain = [0x12; 32];
+            fixture.row.binding.chain = ok(ChainDomain::new([0x12; 32]), "chain");
             fixture.reseal();
         },
         QuarantineCause::ChainDomain,
@@ -694,24 +883,14 @@ fn conflicting_artifacts_quarantine_with_identifier_only_alerts() {
         root_directory,
         &leaf,
         "network",
-        |fixture| {
-            let (certificate, identifier) = certificate(99, root(70), b"");
-            fixture.certificate = certificate;
-            fixture.row.binding.checkpoint_id = identifier;
-            fixture.reseal();
-        },
+        |fixture| fixture.recertify(99, root(70), 70, &SIGNED),
         QuarantineCause::CheckpointNetwork,
     );
     quarantine_case(
         root_directory,
         &leaf,
         "root",
-        |fixture| {
-            let (certificate, identifier) = certificate(NETWORK, [0x01; 32], b"");
-            fixture.certificate = certificate;
-            fixture.row.binding.checkpoint_id = identifier;
-            fixture.reseal();
-        },
+        |fixture| fixture.recertify(NETWORK, [0x01; 32], 70, &SIGNED),
         QuarantineCause::FinalityConflict,
     );
     quarantine_case(
@@ -731,15 +910,6 @@ fn conflicting_artifacts_quarantine_with_identifier_only_alerts() {
             fixture.row.event_id = format!("0x{}", "00".repeat(32));
         },
         QuarantineCause::EventId,
-    );
-    quarantine_case(
-        root_directory,
-        &leaf,
-        "codec",
-        |fixture| {
-            fixture.certificate = vec![1, 2, 3];
-        },
-        QuarantineCause::CheckpointEvidence,
     );
 }
 
@@ -1107,20 +1277,26 @@ fn bounds_refuse_before_any_quarantine_or_cryptographic_work() {
     let scratch = scratch("bounds");
     let grant = producer(&scratch.0);
     let outbox = granted(&scratch.0.join("outbox"));
-    let cases: [(&str, Change); 6] = [
+    let cases: [(&str, Change); 7] = [
         ("state", |fixture| {
             fixture.state = vec![7; 262_145];
-            fixture.row.binding.market_state_digest = market_state_digest(&fixture.state);
             fixture.reseal();
         }),
         ("evidence", |fixture| {
-            fixture.certificate = vec![0; 1_048_577];
+            fixture.certificate = Certificate::new(
+                Checkpoint::new(
+                    fixture.certificate.checkpoint().header_bytes().to_vec(),
+                    vec![0; 1_048_577],
+                ),
+                Vec::new(),
+                THRESHOLD,
+                None,
+            );
         }),
-        ("empty evidence", |fixture| fixture.certificate.clear()),
         ("action", |fixture| fixture.row.action = "commit".to_owned()),
-        ("rank", |fixture| {
-            fixture.row.binding.achieved_verification_rank = 6;
-        }),
+        ("settlement rank", |fixture| fixture.row.binding.rank = 5),
+        ("rank", |fixture| fixture.row.binding.rank = 6),
+        ("revision", |fixture| fixture.row.binding.revision = 0),
         ("receipt", |fixture| fixture.row.receipt_digest = [0; 32]),
     ];
     for (label, change) in cases {
@@ -1134,6 +1310,18 @@ fn bounds_refuse_before_any_quarantine_or_cryptographic_work() {
             "{label}"
         );
     }
+    let unproven = fixture(99, 0, 4);
+    assert!(matches!(
+        outbox.admit(
+            &grant,
+            &unproven.row,
+            &Evidence {
+                state: &unproven.state,
+                proof: None
+            }
+        ),
+        Err(MarketEventError::InvalidRequest)
+    ));
     for limit in [0, 33] {
         assert!(matches!(
             outbox.resume(&principal(), &endpoint(), &MARKET, None, limit),

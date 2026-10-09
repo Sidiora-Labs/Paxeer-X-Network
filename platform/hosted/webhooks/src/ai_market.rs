@@ -1,8 +1,9 @@
 //! Finality-bound delivery of AI market events.
 //!
-//! The producer side admits one captured market outbox row only after the
-//! matching checkpoint evidence (rank 4 or stronger) binds the exact view root
-//! on the configured chain, maps it onto the existing program event family,
+//! The producer side admits one captured market outbox row only after a
+//! checkpoint certificate signed by the bonded guarantor set reaches rank 4 and
+//! binds the exact view root and batch on the configured chain, maps it onto
+//! the existing program event family,
 //! and keeps a durable per-market outbox whose event identifiers, bodies and
 //! subject sequences survive restart. The receiver side verifies the published
 //! signature scheme and applies each event once, in subject order, durably.
@@ -13,8 +14,12 @@ use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use ed25519_dalek::{Signer, SigningKey};
-use layerx_wire::hash::checkpoint_id;
-use layerx_wire::receipt::{decode_checkpoint, encode_batch_header};
+use layerx_programs_ai_market::codec::state_digest;
+use layerx_programs_ai_market::queries::{SnapshotBinding, BINDING_MAX_BYTES, FINALIZED_RANK};
+use layerx_programs_ai_market::{Digest32, Presence};
+use layerx_proof::checkpoint::{verify_certificate, Certificate, GuarantorKey, SettlementDomain};
+use layerx_wire::hash::program_execution_batch_id;
+use layerx_wire::receipt::decode_batch_header;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,23 +38,17 @@ use crate::trusted::IngressRole;
 
 /// Domain of the stable market event identifier.
 pub const VIEW_EVENT_DOMAIN: &[u8] = b"PAXAI/view-event/v1";
-/// Domain of the immutable snapshot identifier.
-pub const VIEW_DOMAIN: &[u8] = b"PAXAI/view/v1";
-/// Domain of the market state integrity digest.
-pub const VIEW_STATE_DOMAIN: &[u8] = b"PAXAI/view-state/v1";
 /// Prefix of every market event identifier.
 pub const EVENT_ID_PREFIX: &str = "0x";
 /// Prefix of every per-market ordering subject.
 pub const SUBJECT_PREFIX: &str = "paxai_market_";
-/// The only snapshot binding schema this adapter decodes.
-pub const SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 /// The only capture decoder version this adapter admits.
 pub const DECODER_VERSION: u16 = 1;
 /// Weakest verification rank that permits finalized publication.
-pub const MINIMUM_PUBLICATION_RANK: u8 = 4;
+pub const MINIMUM_PUBLICATION_RANK: u8 = FINALIZED_RANK;
 /// Largest exact serialized market state a snapshot binds.
 pub const MAXIMUM_STATE_BYTES: usize = 262_144;
-/// Largest checkpoint evidence object admitted per row.
+/// Largest checkpoint validity proof admitted per row.
 pub const MAXIMUM_EVIDENCE_BYTES: usize = 1_048_576;
 /// Largest registered mutation operation name carried in an event topic.
 pub const MAXIMUM_ACTION_BYTES: usize = 55;
@@ -58,7 +57,6 @@ pub const MAXIMUM_PAGE_ROWS: usize = 32;
 /// Unpublished rows a market stream holds before capture stops.
 pub const MAXIMUM_UNPUBLISHED_ROWS: usize = 4_096;
 
-const MAXIMUM_RANK: u8 = 5;
 const MAXIMUM_ALERTS: usize = 256;
 const MAXIMUM_APPLIED: usize = 4_096;
 const MAXIMUM_SUBJECTS: usize = 1_024;
@@ -69,92 +67,6 @@ const CURSOR_BODY_BYTES: usize = 2 + 16 + 32;
 const STATE_FILE: &str = "state.json";
 const STAGED_FILE: &str = "state.json.staged";
 const LOCK_FILE: &str = "state.lock";
-
-/// The canonical view binding a finalized snapshot row commits to.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SnapshotBinding {
-    pub schema_version: u16,
-    pub chain_domain: [u8; 32],
-    pub program_id: [u8; 32],
-    pub market_id: [u8; 32],
-    pub observed_sequence: u64,
-    pub execution_height: u64,
-    pub batch_id: [u8; 32],
-    pub native_state_root: [u8; 32],
-    pub market_state_revision: u64,
-    pub market_state_digest: [u8; 32],
-    pub epoch: Option<u64>,
-    pub config_version: u64,
-    pub policy_digest: [u8; 32],
-    pub roster_digest: Option<[u8; 32]>,
-    pub checkpoint_id: [u8; 32],
-    pub settlement_reference: Option<[u8; 32]>,
-    pub achieved_verification_rank: u8,
-    pub publication_time_ms: u64,
-}
-
-impl SnapshotBinding {
-    /// Returns the content identity over the binding prefix through the roster
-    /// digest, which excludes evidence strength and observer time.
-    #[must_use]
-    pub fn snapshot_id(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(VIEW_DOMAIN);
-        hasher.update([0]);
-        hasher.update(self.schema_version.to_be_bytes());
-        hasher.update(self.chain_domain);
-        hasher.update(self.program_id);
-        hasher.update(self.market_id);
-        hasher.update(self.observed_sequence.to_be_bytes());
-        hasher.update(self.execution_height.to_be_bytes());
-        hasher.update(self.batch_id);
-        hasher.update(self.native_state_root);
-        hasher.update(self.market_state_revision.to_be_bytes());
-        hasher.update(self.market_state_digest);
-        match self.epoch {
-            Some(epoch) => {
-                hasher.update([1]);
-                hasher.update(epoch.to_be_bytes());
-            }
-            None => hasher.update([0]),
-        }
-        hasher.update(self.config_version.to_be_bytes());
-        hasher.update(self.policy_digest);
-        match self.roster_digest {
-            Some(roster) => {
-                hasher.update([1]);
-                hasher.update(roster);
-            }
-            None => hasher.update([0]),
-        }
-        hasher.finalize().into()
-    }
-
-    fn well_formed(&self) -> bool {
-        self.schema_version == SNAPSHOT_SCHEMA_VERSION
-            && self.achieved_verification_rank <= MAXIMUM_RANK
-            && [
-                &self.chain_domain,
-                &self.program_id,
-                &self.market_id,
-                &self.native_state_root,
-                &self.market_state_digest,
-                &self.checkpoint_id,
-            ]
-            .iter()
-            .all(|value| nonzero(value))
-    }
-}
-
-/// Returns the market state integrity digest over exact serialized state.
-#[must_use]
-pub fn market_state_digest(state: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(VIEW_STATE_DOMAIN);
-    hasher.update([0]);
-    hasher.update(state);
-    hasher.finalize().into()
-}
 
 /// Returns the stable event identifier of one market effect.
 ///
@@ -187,14 +99,14 @@ pub fn market_subject(market_id: &[u8; 32]) -> Result<SubjectId, WebhookError> {
 }
 
 /// Upstream manifest material that rides with a capture but is never public.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UpstreamManifest {
     pub display_name: Option<String>,
     pub result_locator: Option<String>,
 }
 
-/// One durable capture outbox row written with its snapshot and cursor.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// One durable capture outbox row written with its canonical snapshot binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapturedEvent {
     pub binding: SnapshotBinding,
     pub snapshot_id: [u8; 32],
@@ -208,18 +120,31 @@ pub struct CapturedEvent {
     pub manifest: UpstreamManifest,
 }
 
-/// The exact bytes the capture row binds.
+/// The exact state bytes a capture row binds and, once the binding claims
+/// finalized rank, the checkpoint proof for its root.
 #[derive(Clone, Copy, Debug)]
 pub struct Evidence<'a> {
     pub state: &'a [u8],
-    pub checkpoint_certificate: &'a [u8],
+    pub proof: Option<CheckpointProof<'a>>,
 }
 
-/// The deployment a publisher is pinned to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// A checkpoint certificate with the identifier and settlement reference
+/// registered for it on the settlement chain.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckpointProof<'a> {
+    pub certificate: &'a Certificate,
+    pub registered_checkpoint_id: [u8; 32],
+    pub registered_settlement_reference: Option<&'a [u8]>,
+}
+
+/// The deployment a publisher is pinned to: chain, network, settlement domain
+/// and the bonded guarantor set that signs its checkpoints.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FinalityPolicy {
     pub chain_domain: [u8; 32],
     pub network_id: u32,
+    pub settlement: SettlementDomain,
+    pub guarantors: Vec<GuarantorKey>,
 }
 
 /// Proof that the caller presented a verified internal producer leaf.
@@ -248,7 +173,6 @@ pub enum QuarantineCause {
     StateDigest,
     SnapshotId,
     EventId,
-    CheckpointEvidence,
     CheckpointNetwork,
     FinalityConflict,
     EventConflict,
@@ -265,7 +189,6 @@ impl QuarantineCause {
             Self::StateDigest => "state_digest_mismatch",
             Self::SnapshotId => "snapshot_id_mismatch",
             Self::EventId => "event_id_mismatch",
-            Self::CheckpointEvidence => "checkpoint_evidence_invalid",
             Self::CheckpointNetwork => "checkpoint_network_mismatch",
             Self::FinalityConflict => "finality_conflict",
             Self::EventConflict => "event_conflict",
@@ -290,6 +213,9 @@ pub enum MarketEventError {
     InvalidRequest,
     /// The caller does not hold the internal producer role.
     ProducerRoleRequired,
+    /// The checkpoint certificate did not verify against the bonded guarantor
+    /// set or proves another checkpoint or batch; nothing was admitted.
+    CertificateRejected,
     /// This call quarantined the market stream.
     Quarantined(QuarantineCause),
     /// The market stream is quarantined and refuses finalized publication.
@@ -678,6 +604,8 @@ impl MarketOutbox {
     /// malformed row, [`MarketEventError::Revoked`] without a current grant,
     /// [`MarketEventError::Quarantined`] for the quarantining cause,
     /// [`MarketEventError::StreamQuarantined`] once quarantined,
+    /// [`MarketEventError::CertificateRejected`] for a certificate that does
+    /// not verify or proves another checkpoint or batch,
     /// [`MarketEventError::CaptureStopped`] when unpublished rows are full, and
     /// store failures.
     pub fn admit(
@@ -688,7 +616,7 @@ impl MarketOutbox {
     ) -> Result<Admission, MarketEventError> {
         well_formed(row, evidence)?;
         let examined = examine(&self.policy, row, evidence);
-        let market = hex_encode(&row.binding.market_id);
+        let market = hex_encode(row.binding.market.as_bytes());
         self.store.transact(|state: &mut OutboxState| {
             let stream = state.streams.entry(market.clone()).or_default();
             let outcome = admit_into(stream, &self.principal, row, examined);
@@ -908,11 +836,13 @@ fn nonzero(value: &[u8; 32]) -> bool {
 }
 
 fn well_formed(row: &CapturedEvent, evidence: &Evidence<'_>) -> Result<(), MarketEventError> {
-    let finalized = row.binding.achieved_verification_rank >= MINIMUM_PUBLICATION_RANK;
-    let shaped = row.binding.well_formed()
+    let mut canonical = [0_u8; BINDING_MAX_BYTES];
+    let finalized = row.binding.rank >= MINIMUM_PUBLICATION_RANK;
+    let shaped = row.binding.encode(&mut canonical).is_ok()
         && evidence.state.len() <= MAXIMUM_STATE_BYTES
-        && evidence.checkpoint_certificate.len() <= MAXIMUM_EVIDENCE_BYTES
-        && (!finalized || !evidence.checkpoint_certificate.is_empty())
+        && evidence.proof.map_or(!finalized, |proof| {
+            proof.certificate.checkpoint().validity_proof().len() <= MAXIMUM_EVIDENCE_BYTES
+        })
         && nonzero(&row.source_activity_id)
         && nonzero(&row.receipt_digest)
         && !row.action.is_empty()
@@ -937,59 +867,90 @@ fn examine(
     policy: &FinalityPolicy,
     row: &CapturedEvent,
     evidence: &Evidence<'_>,
-) -> Result<Examined, QuarantineCause> {
+) -> Result<Examined, Stop> {
     let binding = &row.binding;
     if row.decoder_version != DECODER_VERSION {
-        return Err(QuarantineCause::DecoderVersion);
+        return Err(Stop::Quarantine(QuarantineCause::DecoderVersion));
     }
-    if binding.chain_domain != policy.chain_domain {
-        return Err(QuarantineCause::ChainDomain);
+    if binding.chain.bytes() != policy.chain_domain {
+        return Err(Stop::Quarantine(QuarantineCause::ChainDomain));
     }
-    if market_state_digest(evidence.state) != binding.market_state_digest {
-        return Err(QuarantineCause::StateDigest);
+    if state_digest(evidence.state).ok() != Some(binding.state_digest) {
+        return Err(Stop::Quarantine(QuarantineCause::StateDigest));
     }
-    if binding.snapshot_id() != row.snapshot_id {
-        return Err(QuarantineCause::SnapshotId);
+    if binding.snapshot_id().ok().map(Digest32::bytes) != Some(row.snapshot_id) {
+        return Err(Stop::Quarantine(QuarantineCause::SnapshotId));
     }
     let expected = market_event_id(
-        &binding.market_id,
+        binding.market.as_bytes(),
         &row.source_activity_id,
         row.effect_ordinal,
         row.ai_event_tag,
     )
-    .map_err(|_| QuarantineCause::EventId)?;
+    .map_err(|_| Stop::Quarantine(QuarantineCause::EventId))?;
     if expected.as_str() != row.event_id {
-        return Err(QuarantineCause::EventId);
+        return Err(Stop::Quarantine(QuarantineCause::EventId));
     }
     let identity = identity(row);
-    if binding.achieved_verification_rank < MINIMUM_PUBLICATION_RANK {
-        return Ok(Examined {
+    match evidence.proof {
+        Some(proof) if binding.rank >= MINIMUM_PUBLICATION_RANK => {
+            certify(policy, binding, &proof)?;
+            Ok(Examined {
+                identity,
+                finalized: true,
+            })
+        }
+        _ => Ok(Examined {
             identity,
             finalized: false,
-        });
+        }),
     }
-    let certificate = decode_checkpoint(evidence.checkpoint_certificate)
-        .map_err(|_| QuarantineCause::CheckpointEvidence)?;
-    if certificate.header().network_id() != policy.network_id {
-        return Err(QuarantineCause::CheckpointNetwork);
+}
+
+fn certify(
+    policy: &FinalityPolicy,
+    binding: &SnapshotBinding,
+    proof: &CheckpointProof<'_>,
+) -> Result<(), Stop> {
+    let rejected = || Stop::Refuse(MarketEventError::CertificateRejected);
+    let header = decode_batch_header(proof.certificate.checkpoint().header_bytes())
+        .map_err(|_| rejected())?;
+    if header.network_id() != policy.network_id {
+        return Err(Stop::Quarantine(QuarantineCause::CheckpointNetwork));
     }
-    let header = encode_batch_header(certificate.header())
-        .map_err(|_| QuarantineCause::CheckpointEvidence)?;
-    let certified = checkpoint_id(&header, certificate.validity_proof())
-        .map_err(|_| QuarantineCause::CheckpointEvidence)?;
-    let settled = binding.achieved_verification_rank < MAXIMUM_RANK
-        || (binding.settlement_reference.is_some()
-            && !certificate.settlement_reference().is_empty());
-    if certified != binding.checkpoint_id
-        || certificate.header().resulting_state_root() != binding.native_state_root
-        || !settled
+    let report = verify_certificate(
+        proof.certificate,
+        &policy.guarantors,
+        &proof.registered_checkpoint_id,
+        policy.settlement,
+        proof.registered_settlement_reference,
+    )
+    .map_err(|_| rejected())?;
+    if report.level().wire_rank() < MINIMUM_PUBLICATION_RANK
+        || report.evidence().checkpoint_id() != Some(binding.checkpoint.bytes())
     {
-        return Err(QuarantineCause::FinalityConflict);
+        return Err(rejected());
     }
-    Ok(Examined {
-        identity,
-        finalized: true,
-    })
+    let root = binding.native_state_root.bytes();
+    if header.last_sequence() == binding.observed_sequence && report.resulting_state_root() != root
+    {
+        return Err(Stop::Quarantine(QuarantineCause::FinalityConflict));
+    }
+    let batch = program_execution_batch_id(
+        header.previous_state_root(),
+        header.activity_merkle_root(),
+        header.first_sequence(),
+        header.last_sequence(),
+        header.batch_number(),
+    )
+    .map_err(|_| rejected())?;
+    if header.last_sequence() != binding.observed_sequence
+        || report.resulting_state_root() != root
+        || batch != binding.batch_id.bytes()
+    {
+        return Err(rejected());
+    }
+    Ok(())
 }
 
 fn identity(row: &CapturedEvent) -> [u8; 32] {
@@ -1005,7 +966,7 @@ fn identity(row: &CapturedEvent) -> [u8; 32] {
     hasher.update(row.source_activity_id);
     hasher.update(row.effect_ordinal.to_be_bytes());
     hasher.update(row.receipt_digest);
-    hasher.update(binding.checkpoint_id);
+    hasher.update(binding.checkpoint.bytes());
     hasher.finalize().into()
 }
 
@@ -1013,7 +974,7 @@ fn admit_into(
     stream: &mut MarketStream,
     principal: &Principal,
     row: &CapturedEvent,
-    examined: Result<Examined, QuarantineCause>,
+    examined: Result<Examined, Stop>,
 ) -> Result<Admission, Stop> {
     if !stream.granted {
         return Err(Stop::Refuse(MarketEventError::Revoked));
@@ -1021,7 +982,7 @@ fn admit_into(
     if stream.quarantine.is_some() {
         return Err(Stop::Refuse(MarketEventError::StreamQuarantined));
     }
-    let examined = examined.map_err(Stop::Quarantine)?;
+    let examined = examined?;
     if let Some(admitted) = stream.admitted.get(&row.event_id) {
         if admitted.identity != examined.identity {
             return Err(Stop::Quarantine(QuarantineCause::EventConflict));
@@ -1101,37 +1062,33 @@ fn market_event(
     sequence: u64,
 ) -> Result<ProtocolEvent, WebhookError> {
     let binding = &row.binding;
-    let label = Verification::from_wire_rank(binding.achieved_verification_rank);
+    let label = Verification::from_wire_rank(binding.rank);
     let receipt = hex_encode(&row.receipt_digest);
+    let epoch = match binding.epoch {
+        Presence::Present(epoch) => epoch.to_string(),
+        Presence::Absent => "absent".to_owned(),
+    };
     let values = [
         ("ai_action", row.action.clone()),
         ("ai_event_tag", row.ai_event_tag.to_string()),
-        ("market_id", hex_encode(&binding.market_id)),
+        ("market_id", hex_encode(binding.market.as_bytes())),
         ("snapshot_id", hex_encode(&row.snapshot_id)),
-        (
-            "epoch",
-            binding
-                .epoch
-                .map_or_else(|| "absent".to_owned(), |epoch| epoch.to_string()),
-        ),
-        ("config_version", binding.config_version.to_string()),
-        (
-            "market_state_revision",
-            binding.market_state_revision.to_string(),
-        ),
+        ("epoch", epoch),
+        ("config_version", binding.config.get().to_string()),
+        ("market_state_revision", binding.revision.to_string()),
         ("source_activity_id", hex_encode(&row.source_activity_id)),
         ("effect_ordinal", row.effect_ordinal.to_string()),
-        ("chain_domain", hex_encode(&binding.chain_domain)),
-        ("program_id", hex_encode(&binding.program_id)),
+        ("chain_domain", hex_encode(binding.chain.as_bytes())),
+        ("program_id", hex_encode(binding.program.as_bytes())),
         ("observed_sequence", binding.observed_sequence.to_string()),
         ("execution_height", binding.execution_height.to_string()),
-        ("batch_id", hex_encode(&binding.batch_id)),
-        ("native_state_root", hex_encode(&binding.native_state_root)),
-        ("checkpoint_id", hex_encode(&binding.checkpoint_id)),
+        ("batch_id", hex_encode(binding.batch_id.as_bytes())),
         (
-            "achieved_rank",
-            binding.achieved_verification_rank.to_string(),
+            "native_state_root",
+            hex_encode(binding.native_state_root.as_bytes()),
         ),
+        ("checkpoint_id", hex_encode(binding.checkpoint.as_bytes())),
+        ("achieved_rank", binding.rank.to_string()),
     ];
     let facts = values
         .into_iter()
@@ -1141,7 +1098,7 @@ fn market_event(
         id: EventId::new(row.event_id.as_str())?,
         kind: EventKind::Program,
         principal: principal.clone(),
-        subject: market_subject(&binding.market_id)?,
+        subject: market_subject(binding.market.as_bytes())?,
         subject_sequence: sequence,
         occurred_at: binding.publication_time_ms / 1_000,
         facts,
