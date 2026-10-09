@@ -12,7 +12,7 @@ defmodule Explorer.MicroserviceInterfaces.Metadata do
   import Explorer.Chain.SmartContract.Proxy.Models.Implementation, only: [proxy_implementations_association: 0]
 
   require Logger
-  @request_timeout :timer.seconds(5)
+  @default_requests_timeout :timer.seconds(1)
 
   @tags_per_address_limit 5
   @page_size 50
@@ -102,7 +102,10 @@ defmodule Explorer.MicroserviceInterfaces.Metadata do
   defp http_get_request(url, params, parsing_function \\ &decode_meta/1) do
     headers = []
 
-    case HttpClient.get(url, headers, params: params, recv_timeout: @request_timeout) do
+    case HttpClient.get(url, headers,
+           params: params,
+           recv_timeout: config()[:requests_timeout] || @default_requests_timeout
+         ) do
       {:ok, %{body: body, status_code: 200}} ->
         body |> Jason.decode() |> parsing_function.()
 
@@ -135,11 +138,18 @@ defmodule Explorer.MicroserviceInterfaces.Metadata do
         end)
 
         Logger.configure(truncate: old_truncate)
-        {:ok, response_json} = Jason.decode(body)
-        {status_code, response_json}
+
+        case Jason.decode(body) do
+          {:ok, response_json} -> {status_code, response_json}
+          {:error, _} -> {status_code, %{error: @request_error_msg}}
+        end
 
       {:error, reason} ->
-        {500, %{error: reason}}
+        Logger.error(fn ->
+          ["Error while sending request to Metadata microservice url: #{url}: ", inspect(reason)]
+        end)
+
+        {500, %{error: @request_error_msg}}
     end
   end
 

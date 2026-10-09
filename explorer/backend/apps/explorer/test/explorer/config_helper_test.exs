@@ -6,6 +6,7 @@ defmodule ConfigHelperTest do
     clear_env_variables()
 
     on_exit(fn ->
+      clear_env_variables()
       System.put_env(current_env_vars)
     end)
   end
@@ -37,6 +38,91 @@ defmodule ConfigHelperTest do
       refute System.get_env("ETHEREUM_JSONRPC_FALLBACK_TRACE_URL")
 
       assert ConfigHelper.parse_urls_list(:fallback_trace) == ["test"]
+    end
+
+    test "accepts http and https node endpoints" do
+      System.put_env("ETHEREUM_JSONRPC_HTTP_URLS", "https://node.example:8545,http://other.example:8545")
+
+      assert ConfigHelper.parse_urls_list(:http) == ["https://node.example:8545", "http://other.example:8545"]
+    end
+
+    test "rejects a wss endpoint in ETHEREUM_JSONRPC_HTTP_URL without echoing the URL" do
+      System.put_env("ETHEREUM_JSONRPC_HTTP_URL", "wss://node.example/secret-key")
+
+      error = assert_raise ArgumentError, fn -> ConfigHelper.parse_urls_list(:http) end
+
+      assert error.message =~ "ETHEREUM_JSONRPC_HTTP_URL holds a wss:// URL"
+      assert error.message =~ "ETHEREUM_JSONRPC_WS_URL"
+      refute error.message =~ "secret-key"
+    end
+
+    test "rejects a ws endpoint in a list" do
+      System.put_env("ETHEREUM_JSONRPC_ETH_CALL_URLS", "https://node.example,ws://node.example:8546")
+
+      assert_raise ArgumentError, ~r/ETHEREUM_JSONRPC_ETH_CALL_URLS holds a ws:\/\/ URL/, fn ->
+        ConfigHelper.parse_urls_list(:eth_call)
+      end
+    end
+
+    test "rejects a wss endpoint inherited by the eth_call and fallback lists" do
+      System.put_env("ETHEREUM_JSONRPC_HTTP_URL", "WSS://node.example")
+
+      assert_raise ArgumentError, fn -> ConfigHelper.parse_urls_list(:eth_call) end
+      assert_raise ArgumentError, fn -> ConfigHelper.parse_urls_list(:fallback_trace) end
+    end
+  end
+
+  describe "parse_json_rpc_transport/0" do
+    test "defaults to http" do
+      assert ConfigHelper.parse_json_rpc_transport() == :http
+    end
+
+    test "accepts http and ipc" do
+      System.put_env("ETHEREUM_JSONRPC_TRANSPORT", "http")
+      assert ConfigHelper.parse_json_rpc_transport() == :http
+
+      System.put_env("ETHEREUM_JSONRPC_TRANSPORT", "ipc")
+      assert ConfigHelper.parse_json_rpc_transport() == :ipc
+    end
+
+    test "rejects a websocket scheme instead of selecting ipc" do
+      for value <- ["wss", "ws", ""] do
+        System.put_env("ETHEREUM_JSONRPC_TRANSPORT", value)
+
+        assert_raise ArgumentError, ~r/Invalid value "#{value}" of ETHEREUM_JSONRPC_TRANSPORT/, fn ->
+          ConfigHelper.parse_json_rpc_transport()
+        end
+      end
+    end
+  end
+
+  describe "parse_microservice_url/2" do
+    test "returns nil when the service is disabled and no URL is set" do
+      assert ConfigHelper.parse_microservice_url("MICROSERVICE_METADATA_URL", "MICROSERVICE_METADATA_ENABLED") == nil
+    end
+
+    test "returns the URL of an enabled service" do
+      System.put_env("MICROSERVICE_METADATA_ENABLED", "true")
+      System.put_env("MICROSERVICE_METADATA_URL", "https://metadata.example/")
+
+      assert ConfigHelper.parse_microservice_url("MICROSERVICE_METADATA_URL", "MICROSERVICE_METADATA_ENABLED") ==
+               "https://metadata.example"
+    end
+
+    test "raises when an enabled service has no usable URL" do
+      System.put_env("MICROSERVICE_METADATA_ENABLED", "true")
+
+      for url <- [nil, "", "metadata.example", "wss://metadata.example"] do
+        if url,
+          do: System.put_env("MICROSERVICE_METADATA_URL", url),
+          else: System.delete_env("MICROSERVICE_METADATA_URL")
+
+        assert_raise ArgumentError,
+                     "MICROSERVICE_METADATA_ENABLED=true requires MICROSERVICE_METADATA_URL to be the service's http:// or https:// base URL",
+                     fn ->
+                       ConfigHelper.parse_microservice_url("MICROSERVICE_METADATA_URL", "MICROSERVICE_METADATA_ENABLED")
+                     end
+      end
     end
   end
 
@@ -106,5 +192,8 @@ defmodule ConfigHelperTest do
     System.delete_env("ETHEREUM_JSONRPC_FALLBACK_TRACE_URL")
     System.delete_env("ETHEREUM_JSONRPC_FALLBACK_ETH_CALL_URLS")
     System.delete_env("ETHEREUM_JSONRPC_FALLBACK_ETH_CALL_URL")
+    System.delete_env("ETHEREUM_JSONRPC_TRANSPORT")
+    System.delete_env("MICROSERVICE_METADATA_URL")
+    System.delete_env("MICROSERVICE_METADATA_ENABLED")
   end
 end

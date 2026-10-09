@@ -261,7 +261,7 @@ trace_url_missing? =
     System.get_env("ETHEREUM_JSONRPC_TRACE_URLS") in ["", nil]
 
 config :ethereum_jsonrpc,
-  rpc_transport: if(System.get_env("ETHEREUM_JSONRPC_TRANSPORT", "http") == "http", do: :http, else: :ipc),
+  rpc_transport: ConfigHelper.parse_json_rpc_transport(),
   ipc_path: System.get_env("IPC_PATH"),
   disable_archive_balances?:
     trace_url_missing? or
@@ -785,8 +785,9 @@ config :explorer, Explorer.MicroserviceInterfaces.AccountAbstraction,
   enabled: ConfigHelper.parse_bool_env_var("MICROSERVICE_ACCOUNT_ABSTRACTION_ENABLED")
 
 config :explorer, Explorer.MicroserviceInterfaces.Metadata,
-  service_url: ConfigHelper.parse_url_env_var("MICROSERVICE_METADATA_URL"),
+  service_url: ConfigHelper.parse_microservice_url("MICROSERVICE_METADATA_URL", "MICROSERVICE_METADATA_ENABLED"),
   enabled: ConfigHelper.parse_bool_env_var("MICROSERVICE_METADATA_ENABLED"),
+  requests_timeout: ConfigHelper.parse_time_env_var("MICROSERVICE_METADATA_REQUESTS_TIMEOUT", "1s"),
   proxy_requests_timeout: ConfigHelper.parse_time_env_var("MICROSERVICE_METADATA_PROXY_REQUESTS_TIMEOUT", "30s")
 
 config :explorer, Explorer.SmartContract.StylusVerifierInterface,

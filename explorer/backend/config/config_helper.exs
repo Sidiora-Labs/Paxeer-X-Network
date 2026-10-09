@@ -536,9 +536,63 @@ defmodule ConfigHelper do
           parse_urls_list(new_urls_type)
       end
     else
-      urls when is_list(urls) -> urls
-      url -> [url]
+      urls when is_list(urls) -> reject_websocket_urls(urls, urls_var)
+      url -> reject_websocket_urls([url], url_var)
     end
+  end
+
+  # EthereumJSONRPC.HTTP speaks plain HTTP POST only, so a ws:// or wss:// endpoint in one of the
+  # HTTP url lists makes every request on that list fail at runtime. The scheme alone is named in
+  # the error because node URLs often carry an API key.
+  defp reject_websocket_urls(urls, env_var) do
+    case urls |> Enum.map(&URI.parse(&1).scheme) |> Enum.find(&(&1 in ["ws", "wss"])) do
+      nil ->
+        urls
+
+      scheme ->
+        raise ArgumentError,
+              "#{env_var} holds a #{scheme}:// URL, but JSON-RPC requests are sent over HTTP. " <>
+                "Set #{env_var} to the node's http:// or https:// endpoint and put the #{scheme}:// endpoint " <>
+                "in ETHEREUM_JSONRPC_WS_URL"
+    end
+  end
+
+  @doc """
+  Parses ETHEREUM_JSONRPC_TRANSPORT, which selects how JSON-RPC requests reach the node:
+  "http" (the default) or "ipc". Any other value raises instead of silently selecting IPC.
+  """
+  @spec parse_json_rpc_transport() :: :http | :ipc
+  def parse_json_rpc_transport do
+    case safe_get_env("ETHEREUM_JSONRPC_TRANSPORT", "http") do
+      "http" ->
+        :http
+
+      "ipc" ->
+        :ipc
+
+      value ->
+        raise ArgumentError,
+              "Invalid value #{inspect(value)} of ETHEREUM_JSONRPC_TRANSPORT: supported values are \"http\" and \"ipc\". " <>
+                "A ws:// or wss:// node is not a transport: keep ETHEREUM_JSONRPC_TRANSPORT=http, set " <>
+                "ETHEREUM_JSONRPC_HTTP_URL to the node's http(s) endpoint and ETHEREUM_JSONRPC_WS_URL to its ws(s) endpoint"
+    end
+  end
+
+  @doc """
+  Parses the base URL of a microservice that `enabled_env_var` switches on. When the service is
+  enabled, the URL must be an http:// or https:// URL, otherwise this raises instead of leaving
+  the service silently disabled.
+  """
+  @spec parse_microservice_url(String.t(), String.t()) :: String.t() | nil
+  def parse_microservice_url(url_env_var, enabled_env_var) do
+    url = parse_url_env_var(url_env_var)
+
+    if parse_bool_env_var(enabled_env_var) and URI.parse(url || "").scheme not in ["http", "https"] do
+      raise ArgumentError,
+            "#{enabled_env_var}=true requires #{url_env_var} to be the service's http:// or https:// base URL"
+    end
+
+    url
   end
 
   # Validates if the given string is a valid URL by checking if it has both scheme (like http,
