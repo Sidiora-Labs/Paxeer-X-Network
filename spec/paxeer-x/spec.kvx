@@ -35935,7 +35935,7 @@ worker_role_id = "W-F10-WEBHOOKS"
 
 [task.ai.F02-T02]
 title = "Authenticate transport and finalized worker discovery"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 31
 requires = ["ai.F02-T01", "ai.F08-T01", "ai.F09-T01", "ai.F10-T03"]

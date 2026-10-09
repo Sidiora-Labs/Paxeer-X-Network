@@ -1013,3 +1013,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.F03-T04-verify-1.log, clippy-2.log, mk-1.log"
 observed = "12 of 17 pass through the real router (A01/A02/A04 bounds/A05 chain/A07/A08/A09/A10/A12/A14 retransmit/A15/A16); 4 fail on spec-versus-code refusal codes (780 vs 2, 778 unreachable behind payload_min, 3 vs 4/5, 775 vs 20) left intact in both code and test; the native CREATE returns -3 after ~40 minutes under the CPU fuel cap."
 assumption = "The four code conflicts need a spec ruling, not a repair; the native case re-runs after ai.T-C02-FUEL lands and the evaluator arm's aggregate_sealed derivation goes into the FM-CORE router task."
+
+[qualification.ai-f02-t02-worker-transport-20261009-01]
+revision = "0ae313d2f"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test transport_identity"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F02-T02-verify-2.log, build-1.log, clippy-5.log"
+observed = "22 cases pass: signed transport, metadata discovery, pinned TLS identity and in-process admission against a finalized capture of a really opened market; the first run failed only on a test helper that built the SUSPEND payload in the wrong field order."
+assumption = "End to end through the binary every authenticated job is refused StaleAuthority until ai.F10-T03 provides the finalized-authority reader for discovery::FinalizedAuthority::bind; F02-T03 and F08-T03 add their own pub mod lines to the new src/lib.rs."
