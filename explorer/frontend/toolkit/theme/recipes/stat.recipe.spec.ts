@@ -5,13 +5,13 @@ import { recipe } from './stat.recipe';
 const scan = recipe.variants?.variant.scan;
 
 describe('stat recipe, scan variant', () => {
-  it('stacks the card on the surface inside the divider border', () => {
+  it('stacks the card on the surface inside the card border', () => {
     expect(scan?.root).toMatchObject({
       flexDirection: 'column',
       alignItems: 'flex-start',
       bg: 'bg.surface',
       borderWidth: '1px',
-      borderColor: 'border.divider',
+      borderColor: 'card.border',
       borderRadius: 'md',
       boxShadow: 'card',
     });

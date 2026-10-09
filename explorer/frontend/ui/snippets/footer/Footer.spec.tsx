@@ -66,6 +66,7 @@ describe('Footer', () => {
 
     const brand = container.querySelector('[data-label="footer-brand"]') as HTMLElement;
 
+    expect(brand.querySelector('a[aria-label="Link to main page"]')?.getAttribute('href')).toBe('/');
     expect(within(brand).getByText('Paxeer X Network')).toBeTruthy();
     expect(within(brand).getByText(/^The block explorer for Paxeer X Network/)).toBeTruthy();
     expect(within(brand).getByText('Frontend v1.0.11').closest('a')).toBeNull();

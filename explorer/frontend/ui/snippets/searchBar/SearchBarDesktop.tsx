@@ -13,6 +13,7 @@ import { getRecentSearchKeywords, saveToRecentKeywords } from 'lib/recentSearchK
 import { Link } from 'toolkit/chakra/link';
 import { PopoverBody, PopoverContent, PopoverFooter, PopoverRoot, PopoverTrigger } from 'toolkit/chakra/popover';
 import { useDisclosure } from 'toolkit/hooks/useDisclosure';
+import type { Category } from 'ui/shared/search/utils';
 
 import SearchBarBackdrop from './SearchBarBackdrop';
 import SearchBarInput from './SearchBarInput';
@@ -25,9 +26,10 @@ const paxeerXFeature = config.features.paxeerXLists;
 
 type Props = {
   isHeroBanner?: boolean;
+  category?: Category;
 };
 
-const SearchBarDesktop = ({ isHeroBanner }: Props) => {
+const SearchBarDesktop = ({ isHeroBanner, category }: Props) => {
   const inputRef = React.useRef<HTMLFormElement>(null);
   const menuWidth = React.useRef<number>(0);
 
@@ -219,6 +221,7 @@ const SearchBarDesktop = ({ isHeroBanner }: Props) => {
                 onItemClick={ handleItemClick }
                 zetaChainCCTXQuery={ zetaChainCCTXQuery }
                 externalSearchItem={ externalSearchItem }
+                category={ category }
               />
             ) }
           </PopoverBody>

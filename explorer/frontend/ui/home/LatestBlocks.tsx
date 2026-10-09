@@ -10,6 +10,7 @@ import { route } from 'nextjs-routes';
 
 import config from 'configs/app';
 import useApiQuery, { getResourceKey } from 'lib/api/useApiQuery';
+import dayjs from 'lib/date/dayjs';
 import useIsMobile from 'lib/hooks/useIsMobile';
 import getNetworkUtilizationParams from 'lib/networks/getNetworkUtilizationParams';
 import useSocketBuffer from 'lib/socket/useSocketBuffer';
@@ -29,13 +30,31 @@ import LatestBlocksDegraded from './fallbacks/LatestBlocksDegraded';
 import { useHomeRpcDataContext } from './fallbacks/rpcDataContext';
 import LatestBlocksItem from './LatestBlocksItem';
 
+const BLOCKS_MAX_COUNT_DESKTOP = 6;
+
+function getBlockDurations(blocks: Array<Block>): Array<number | undefined> {
+  return blocks.map((block, index) => {
+    const parent = blocks[index + 1];
+
+    if (!parent || parent.height !== block.height - 1) {
+      return undefined;
+    }
+
+    const seconds = dayjs(block.timestamp).diff(dayjs(parent.timestamp), 'second');
+
+    return seconds >= 0 ? seconds : undefined;
+  });
+}
+
 const LatestBlocks = () => {
   const isMobile = useIsMobile();
   let blocksMaxCount: number;
-  if (config.features.rollup.isEnabled || config.UI.views.block.hiddenFields?.total_reward) {
-    blocksMaxCount = isMobile ? 4 : 5;
+  if (!isMobile) {
+    blocksMaxCount = BLOCKS_MAX_COUNT_DESKTOP;
+  } else if (config.features.rollup.isEnabled || config.UI.views.block.hiddenFields?.total_reward) {
+    blocksMaxCount = 4;
   } else {
-    blocksMaxCount = isMobile ? 2 : 3;
+    blocksMaxCount = 2;
   }
   const { data, isPlaceholderData, isError } = useApiQuery('general:homepage_blocks', {
     queryOptions: {
@@ -96,6 +115,9 @@ const LatestBlocks = () => {
     handler: handleNewBlockMessage,
   });
 
+  const dataToShow = React.useMemo(() => data?.slice(0, blocksMaxCount) ?? [], [ data, blocksMaxCount ]);
+  const durations = React.useMemo(() => isPlaceholderData ? [] : getBlockDurations(dataToShow), [ dataToShow, isPlaceholderData ]);
+
   const networkUtilization = getNetworkUtilizationParams(statsQueryResult.data?.network_utilization_percentage ?? 0);
 
   const note = (
@@ -126,9 +148,7 @@ const LatestBlocks = () => {
       return <Box px={{ base: 3, lg: 4 }} py={ 3 }><LatestBlocksDegraded maxNum={ blocksMaxCount }/></Box>;
     }
 
-    if (data && data.length > 0) {
-      const dataToShow = data.slice(0, blocksMaxCount);
-
+    if (dataToShow.length > 0) {
       return (
         <>
           <Box data-label="latest-blocks-rows" { ...hoverProps }>
@@ -136,6 +156,7 @@ const LatestBlocks = () => {
               <LatestBlocksItem
                 key={ String(block.height) + (isPlaceholderData ? String(index) : '') }
                 block={ block }
+                duration={ durations[index] }
                 isLoading={ isPlaceholderData }
               />
             ))) }

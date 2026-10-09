@@ -49,7 +49,7 @@ const LatestTxsItem = ({ tx, isLoading }: Props) => {
       >
         <IconSvg name="transactions" boxSize={ 5 } color="icon.secondary" isLoading={ isLoading }/>
       </Center>
-      <Box minW={ 0 } w={{ lg: '180px', xl: '210px' }} flexShrink={ 0 }>
+      <Box minW={ 0 } w={{ lg: '150px', xl: '170px' }} flexShrink={ 0 }>
         <TxEntity
           isLoading={ isLoading }
           hash={ tx.hash }
@@ -57,16 +57,23 @@ const LatestTxsItem = ({ tx, isLoading }: Props) => {
           textStyle="sm"
           fontWeight="500"
         />
-        <TimeWithTooltip
-          timestamp={ tx.timestamp }
-          enableIncrement={ !isLoading }
-          timeFormat="relative"
-          isLoading={ isLoading }
-          color="text.secondary"
-          textStyle="xs"
-          display="block"
-          mt="2px"
-        />
+        <Flex alignItems="center" flexWrap="wrap" columnGap={ 2 } rowGap={ 1 } mt="2px" minW={ 0 }>
+          <TimeWithTooltip
+            timestamp={ tx.timestamp }
+            enableIncrement={ !isLoading }
+            timeFormat="relative"
+            isLoading={ isLoading }
+            color="text.secondary"
+            textStyle="xs"
+            display="block"
+          />
+          <HStack gap={ 1 } minW={ 0 } data-label="tx-tags" _empty={{ display: 'none' }}>
+            <TxType types={ tx.transaction_types } isLoading={ isLoading }/>
+            { tx.status !== 'ok' && <TxStatus status={ tx.status } errorText={ tx.status === 'error' ? tx.result : undefined } isLoading={ isLoading }/> }
+            <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
+            { protocolTag && <EntityTag data={ protocolTag } isLoading={ isLoading } minW="0" noColors/> }
+          </HStack>
+        </Flex>
       </Box>
       <Box minW={ 0 } flexGrow={ 1 } data-label="tx-parties">
         <Flex alignItems="center" columnGap={ 1 } minW={ 0 }>
@@ -80,12 +87,6 @@ const LatestTxsItem = ({ tx, isLoading }: Props) => {
           </Flex>
         ) }
       </Box>
-      <HStack flexShrink={ 0 } gap={ 2 } data-label="tx-tags">
-        <TxType types={ tx.transaction_types } isLoading={ isLoading }/>
-        { tx.status !== 'ok' && <TxStatus status={ tx.status } errorText={ tx.status === 'error' ? tx.result : undefined } isLoading={ isLoading }/> }
-        <TxWatchListTags tx={ tx } isLoading={ isLoading }/>
-        { protocolTag && <EntityTag data={ protocolTag } isLoading={ isLoading } minW="0" noColors/> }
-      </HStack>
       { !(config.UI.views.tx.hiddenFields?.value && config.UI.views.tx.hiddenFields?.tx_fee) && (
         <Box flexShrink={ 0 } textAlign="right" data-label="tx-value">
           { !config.UI.views.tx.hiddenFields?.value && (

@@ -48,7 +48,7 @@ export const recipe = defineRecipe({
     variant: {
       outline: {
         bg: 'input.bg',
-        borderWidth: '2px',
+        borderWidth: '1px',
         borderColor: 'input.border.filled',
         focusVisibleRing: 'none',
         _placeholder: {
@@ -68,7 +68,7 @@ export const recipe = defineRecipe({
         },
         _focus: {
           borderColor: 'input.border.focus',
-          boxShadow: 'card',
+          boxShadow: 'overlay',
           _hover: {
             borderColor: 'input.border.focus',
           },

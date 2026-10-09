@@ -145,7 +145,7 @@ export const recipe = defineSlotRecipe({
     variant: {
       outline: {
         trigger: {
-          borderWidth: '2px',
+          borderWidth: '1px',
           bg: 'input.bg',
           color: 'select.trigger.outline.fg',
           borderColor: 'input.border.filled',

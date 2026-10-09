@@ -19,6 +19,7 @@ import type { IconName } from 'ui/shared/IconSvg';
 import IconSvg from 'ui/shared/IconSvg';
 import { CONTENT_MAX_WIDTH } from 'ui/shared/layout/utils';
 import NetworkAddToWallet from 'ui/shared/NetworkAddToWallet';
+import NetworkLogo from 'ui/snippets/networkLogo/NetworkLogo';
 
 import FooterLinkItem from './FooterLinkItem';
 import IntTxsIndexingStatus from './IntTxsIndexingStatus';
@@ -167,7 +168,8 @@ const Footer = () => {
 
         <Grid { ...columnsProps }>
           <Box data-label="footer-brand">
-            <Text textStyle="sm" fontWeight={ 600 } color="heading">{ config.chain.name }</Text>
+            <NetworkLogo display="inline-block" mb={ 3 }/>
+            <Text textStyle="sm" fontWeight={ 500 } color="heading">{ config.chain.name }</Text>
             <Text mt={ 3 } textStyle="xs" color="text.secondary">
               The block explorer for { config.chain.name }: search blocks, transactions, addresses, tokens
               and kernel activity across the network.
