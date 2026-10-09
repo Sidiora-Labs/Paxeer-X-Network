@@ -35334,7 +35334,7 @@ worker_role_id = "W-CORE-HOST"
 
 [task.ai.T-C02-FUEL]
 title = "Bring AI market guest execution under the protocol CPU fuel cap"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 28
 requires = ["ai.T-C02-ABI5"]
@@ -35349,8 +35349,8 @@ worker = "W-T-C02-FUEL"
 deliverables = ["Every routed AI market operation measured under the genesis fuel schedule at or below DEFAULT_CPU_FUEL, with the per-operation table in the report.", "Complete owned paths and runnable focused gate: cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test fuel_budget.", "Exact revision, command, exit code and private log path."]
 entry_condition = "ai.T-C02-ABI5 landed at implemented with the BudgetExceeded measurement recorded."
 touches = ["programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/src/host_adapter.rs", "programs/crates/layerx-programs-ai-market/src/commitment.rs", "programs/crates/layerx-programs-ai-market/src/state.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/registry_ops.rs", "programs/crates/layerx-programs-ai-market/src/tasks.rs", "programs/crates/layerx-programs-ai-market/src/workers.rs", "programs/crates/layerx-programs-ai-market/src/queries.rs", "programs/crates/layerx-programs-ai-market/src/commit_reveal.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/authority.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/admission.rs", "programs/crates/layerx-programs-ai-market/src/evidence.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/tests/fuel_budget.rs"]
-build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --target wasm32-unknown-unknown --release"
-verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test fuel_budget"
+build_cmd = "cd programs && PAXAI_CHAIN_DOMAIN=50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e cargo build --locked --release --target wasm32-unknown-unknown -p layerx-programs-ai-market"
+verify_cmd = "cd programs && PAXAI_CHAIN_DOMAIN=50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e cargo test -p layerx-programs-ai-market --test fuel_budget"
 gate_kind = "planned"
 qualification = "UNRUN"
 max_builds = 1

@@ -1101,3 +1101,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.F02-T04-verify-3.log (build-1.log exit 0; clippy-5.log exit 0)"
 observed = "4 of 10 pass (A11 floor and wrap, A08 bounds, A17 local acknowledgment never dispatches over the pinned-TLS worker binary and durable store, A15 worker self-score refused UNAUTHORIZED at commit and reveal); the 6 real-workload cases fail Unprovisioned because no runner executable, pinned licensed inference or embedding artifacts, durable store root or deterministic expected outputs exist."
 assumption = "Held at implemented until ai.P-REAL-SERVICES provisions the PAXAI_REAL_WORKLOAD pin file; the F06 payout path, a finalized-authority job reader in the worker binary and public-profile TLS credentials stay out of this task."
+
+[qualification.ai-t-c02-fuel-20261009-01]
+revision = "c98ee8351"
+command = "cd programs && PAXAI_CHAIN_DOMAIN=50415841492f686f73742d626f756e646172792f636861696e2d646f6d61696e cargo test -p layerx-programs-ai-market --test fuel_budget"
+exit_code = 0
+log = "private ops logs wt/logs/ai.T-C02-FUEL-verify-2.log (build-2-guest.log and build-2.log exit 0; clippy-6.log ai-market exit 0)"
+observed = "All 44 table rows run through the real ABI 5 guest under the 1,000,000 fuel cap with byte-identical results, events and state to the in-process route; highest rows OPEN_EPOCH at 930,486 and RevealScore at 877,879 (before: 23 rows over the cap, OPEN_EPOCH 3.7M)."
+assumption = "Pre-existing pedantic clippy sites in the runtime crate (about 130, clippy-7.log and clippy-8.log) are recorded, not repaired; the spec build and verify commands now carry the cwd and PAXAI_CHAIN_DOMAIN the Makefile sets."
