@@ -4,12 +4,15 @@
 //! generation revocation, locator admission, pinned TLS locator import and
 //! delivery reconciliation, served over TLS unless the config explicitly names
 //! a plaintext listener. Key releases are durable intents before any byte is
-//! sent; tombstoned payloads are purged at their retention deadline; a restore
-//! below the live revocation high-water mark never becomes ready.
+//! sent; tombstones, holds, finality-observed retention timers, bindings and
+//! reinstatement go through the retention ledger, and payloads are purged only
+//! at its deletion deadline; a restore below the live revocation or retention
+//! high-water mark never becomes ready.
 //! Nothing here is a protocol receipt.
 mod authority;
 mod crypto;
 mod resolver;
+mod retention;
 mod store;
 
 use authority::{Config, Listener, Tenant};
@@ -20,7 +23,15 @@ use layerx_programs_ai_market::evidence::{
     VerificationFailure, CHUNK_BYTES, MAX_ENVELOPE_BYTES, MAX_MANIFEST_BYTES, MAX_OBJECT_BYTES,
     MAX_RECORD_BYTES,
 };
-use layerx_programs_ai_market::types::{ChainDomain, MarketId, PolicyDigest, ProgramId};
+use layerx_programs_ai_market::queries::{
+    bind_snapshot, CaptureFacts, FinalityEvidence, QueryError, ReadProof, SnapshotBinding,
+};
+use layerx_programs_ai_market::state::decode_shared_state;
+use layerx_programs_ai_market::types::{
+    ChainDomain, Digest32, MarketId, PolicyDigest, Presence, ProgramId,
+};
+use layerx_programs_ai_market::{codec, MAX_CHUNK_BYTES, MAX_STATE_BYTES};
+use retention::{Ledger, PurgeReport, Refusal};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
@@ -34,10 +45,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use store::{
     Delivery, DeliveryState, Disposition, Grant, ObjectRecord, ObjectState, Session, SessionState,
-    Store, Transition, RETENTION_SECS, STAGING_SECS,
+    Store, Transition, STAGING_SECS,
 };
 
 const MAX_API_REQUEST: usize = 65_536;
+/// A finality observation carries the whole hex-encoded market state.
+const MAX_OBSERVATION_REQUEST: usize = 2 * MAX_STATE_BYTES + 4_096;
 const MAX_HEAD: usize = 8_192;
 const MAX_LEASE_SECS: u64 = 365 * 86_400;
 const DELIVERY_DEADLINE: Duration = Duration::from_secs(10);
@@ -55,6 +68,8 @@ struct Service {
     // ponytail: one global lock serializes every mutation (and makes publication
     // compare-and-set trivially atomic); shard per tenant/root if throughput matters.
     store: Mutex<Store>,
+    /// Always locked after `store`, never alone before it.
+    ledger: Mutex<Ledger>,
 }
 
 struct Request {
@@ -138,10 +153,36 @@ fn error_body(error: ArtifactError, extra: Value) -> Value {
     body
 }
 
-fn reply(result: Op) -> (u16, Value) {
-    match result {
+fn reply<E: Into<Refusal>>(result: Result<Value, E>) -> (u16, Value) {
+    match result.map_err(Into::into) {
         Ok(value) => (200, value),
-        Err(error) => (http_status(error), error_body(error, json!({}))),
+        Err(Refusal::Artifact(error)) => (http_status(error), error_body(error, json!({}))),
+        Err(Refusal::RestoreNotReady) => (503, json!({ "error": Refusal::RestoreNotReady.name() })),
+        Err(refusal @ (Refusal::RetentionActive { until } | Refusal::HoldActive { until })) => {
+            (409, json!({ "error": refusal.name(), "until": until }))
+        }
+        Err(refusal) => (409, json!({ "error": refusal.name() })),
+    }
+}
+
+fn query_refusal(error: QueryError) -> Refusal {
+    match error {
+        QueryError::Application(e) => Refusal::Artifact(e.into()),
+        QueryError::FinalityUnavailable => Refusal::FinalityUnavailable,
+        QueryError::BindingMismatch
+        | QueryError::SnapshotConflict
+        | QueryError::IntegrityFailure => ArtifactError::IntegrityConflict.into(),
+        _ => ArtifactError::Malformed.into(),
+    }
+}
+
+fn digest(text: &str) -> Result<Digest32, ArtifactError> {
+    Ok(Digest32::new(unhex::<32>(text)?)?)
+}
+
+fn alert(report: &PurgeReport) {
+    for root in &report.pending {
+        eprintln!("purge alert: root {root} stays TOMBSTONED_PENDING_PURGE");
     }
 }
 
@@ -263,6 +304,44 @@ struct RootReq {
 }
 
 #[derive(Deserialize)]
+struct HoldReq {
+    request_id: String,
+    root: String,
+    hold: String,
+    until: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct ReinstateReq {
+    request_id: String,
+    root: String,
+    grant_id: String,
+    decision: String,
+}
+
+/// One market state read and the finality evidence for its native root; the
+/// chain and program come from the artifact's own manifest context.
+#[derive(Deserialize)]
+struct ObserveReq {
+    request_id: String,
+    root: String,
+    state: String,
+    native_state_root: String,
+    observed_sequence: u64,
+    execution_height: u64,
+    batch_id: String,
+    checkpoint: String,
+    settlement: Option<String>,
+    rank: u8,
+    publication_time_ms: u64,
+}
+
+#[derive(Deserialize)]
+struct ProjectionReq {
+    root: String,
+}
+
+#[derive(Deserialize)]
 struct PublisherRevokeReq {
     request_id: String,
     principal: String,
@@ -290,15 +369,19 @@ impl Service {
         self.store.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    fn ledger(&self) -> MutexGuard<'_, Ledger> {
+        self.ledger.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     /// Records exactly one durable disposition per tenant request identity before
     /// acknowledging; a reused identity with different bytes is IdempotencyConflict.
-    fn idempotent(
+    fn idempotent<E: Into<Refusal>>(
         &self,
         tenant: &Tenant,
         route: &str,
         body: &[u8],
         id: &str,
-        op: impl FnOnce(&mut Store) -> Op,
+        op: impl FnOnce(&mut Store) -> Result<Value, E>,
     ) -> (u16, Value) {
         let mut store = self.lock();
         let key = format!("{}:{id}", tenant.id);
@@ -350,7 +433,7 @@ impl Service {
             return json_reply(reply(self.upload(tenant, rest, &req.body)));
         }
         if req.method == "GET" && path == "/v1/usage" {
-            return json_reply(reply(Ok(self.usage(tenant))));
+            return json_reply((200, self.usage(tenant)));
         }
         if req.method != "POST" {
             return json_reply(reply(Err(ArtifactError::Malformed)));
@@ -358,7 +441,7 @@ impl Service {
         let body = &req.body;
         let result = match path {
             "/v1/prepare" => {
-                let prepared = self.with_id::<PrepareReq>(
+                let prepared = self.with_id::<PrepareReq, _>(
                     tenant,
                     path,
                     body,
@@ -368,48 +451,98 @@ impl Service {
                 self.attach_object_key(prepared)
             }
             "/v1/import" => reply(self.import(tenant, body)),
-            "/v1/finalize" => self.with_id::<FinalizeReq>(
+            "/v1/finalize" => self.with_id::<FinalizeReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.finalize(s, tenant, r),
             ),
-            "/v1/grants" => self.with_id::<GrantReq>(
+            "/v1/grants" => self.with_id::<GrantReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.grant(s, tenant, r),
             ),
-            "/v1/revoke" => self.with_id::<RevokeReq>(
+            "/v1/revoke" => self.with_id::<RevokeReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.revoke(s, tenant, r),
             ),
-            "/v1/rotate" => self.with_id::<RootReq>(
+            "/v1/rotate" => self.with_id::<RootReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.rotate(s, tenant, r),
             ),
-            "/v1/tombstone" => self.with_id::<RootReq>(
+            "/v1/tombstone" => self.with_id::<RootReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
-                |s, r| self.tombstone(s, tenant, r),
+                |s, r| self.tombstone(s, tenant, &r),
             ),
-            "/v1/publishers/revoke" => self.with_id::<PublisherRevokeReq>(
+            "/v1/publishers/revoke" => self.with_id::<PublisherRevokeReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.revoke_publisher(s, tenant, r),
             ),
+            "/v1/retention/hold" => self.with_id::<HoldReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.place_hold(s, tenant, &r),
+            ),
+            "/v1/retention/release" => self.with_id::<HoldReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.release_hold(s, tenant, &r),
+            ),
+            "/v1/retention/reinstate" => self.with_id::<ReinstateReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.reinstate(s, tenant, &r),
+            ),
+            "/v1/retention/binding-intent" => self.with_id::<RootReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.binding_intent(s, tenant, &r),
+            ),
+            "/v1/retention/orphan" => self.with_id::<RootReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.orphan_binding(s, tenant, &r),
+            ),
+            "/v1/retention/terminal" => self.with_id::<ObserveReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.observe_terminal(s, tenant, &r),
+            ),
+            "/v1/retention/binding" => self.with_id::<ObserveReq, _>(
+                tenant,
+                path,
+                body,
+                |r| &r.request_id,
+                |s, r| self.observe_binding(s, tenant, &r),
+            ),
+            "/v1/retention/projection" => reply(self.projection(body)),
             "/v1/content" => return self.content(tenant, body),
             "/v1/deliveries" => self.delivery_status(tenant, body),
             "/v1/locators/check" => reply(parse::<LocatorReq>(body).and_then(|r| {
@@ -425,13 +558,13 @@ impl Service {
         json_reply(result)
     }
 
-    fn with_id<T: for<'a> Deserialize<'a>>(
+    fn with_id<T: for<'a> Deserialize<'a>, E: Into<Refusal>>(
         &self,
         tenant: &Tenant,
         route: &str,
         body: &[u8],
         id: impl Fn(&T) -> &String,
-        op: impl FnOnce(&mut Store, T) -> Op,
+        op: impl FnOnce(&mut Store, T) -> Result<Value, E>,
     ) -> (u16, Value) {
         let parsed: T = match parse(body) {
             Ok(v) => v,
@@ -819,32 +952,132 @@ impl Service {
         Ok(json!({ "root": root, "access_generation": generation }))
     }
 
-    fn tombstone(&self, store: &mut Store, tenant: &Tenant, r: RootReq) -> Op {
-        let reason = r
-            .reason
-            .filter(|v| (1..=4).contains(v))
-            .ok_or(ArtifactError::Malformed)?;
+    /// `TombstoneArtifact` through the retention ledger: the deletion deadline
+    /// is the ledger's (terminal finality floor raised by holds), never a fixed
+    /// offset from the request.
+    fn tombstone(&self, store: &mut Store, tenant: &Tenant, r: &RootReq) -> Result<Value, Refusal> {
+        let reason = r.reason.ok_or(ArtifactError::Malformed)?;
         let root = hex::encode(unhex::<32>(&r.root)?);
-        let object = Self::owned(store, tenant, &root)?;
-        if !matches!(
-            object.state,
-            ObjectState::Available | ObjectState::Quarantined
-        ) {
-            return Err(ArtifactError::Tombstoned);
-        }
-        let at = now();
-        let retention_until = at + RETENTION_SECS;
-        object.transition(ObjectState::Tombstoned, at);
-        object.tombstone_reason = Some(reason);
-        object.retention_until = Some(retention_until);
-        store.state.revocation_mark += 1;
-        store.event(&format!("tombstone root={root} reason={reason}"))?;
+        let t = self
+            .ledger()
+            .tombstone(store, &tenant.id, &root, reason, now())?;
         Ok(json!({
             "root": root,
             "state": "TOMBSTONED",
-            "reason": reason,
-            "tombstoned_at": at,
-            "retention_until": retention_until,
+            "reason": t.reason,
+            "version": t.version,
+            "tombstoned_at": t.at,
+            "purge_after": t.purge_after,
+        }))
+    }
+
+    fn place_hold(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &HoldReq,
+    ) -> Result<Value, Refusal> {
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        let hold = unhex::<32>(&r.hold)?;
+        let until = r.until.ok_or(ArtifactError::Malformed)?;
+        let until = self
+            .ledger()
+            .place_hold(store, &tenant.id, &root, hold, until, now())?;
+        Ok(json!({ "root": root, "hold": hex::encode(hold), "until": until }))
+    }
+
+    fn release_hold(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &HoldReq,
+    ) -> Result<Value, Refusal> {
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        let hold = unhex::<32>(&r.hold)?;
+        self.ledger().release_hold(store, &tenant.id, &root, hold)?;
+        Ok(json!({ "root": root, "hold": hex::encode(hold), "released": true }))
+    }
+
+    fn reinstate(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &ReinstateReq,
+    ) -> Result<Value, Refusal> {
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        let grant = hex::encode(unhex::<32>(&r.grant_id)?);
+        let decision = unhex::<32>(&r.decision)?;
+        self.ledger()
+            .reinstate(store, &tenant.id, &root, &grant, decision, now())?;
+        Ok(json!({ "root": root, "state": "AVAILABLE" }))
+    }
+
+    /// The owner submitted a binding transaction; its outcome is unknown.
+    fn binding_intent(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &RootReq,
+    ) -> Result<Value, Refusal> {
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        Self::owned(store, tenant, &root)?;
+        let binding = self.ledger().binding_intent(store, &root)?;
+        Ok(json!({ "root": root, "binding": binding.name() }))
+    }
+
+    fn orphan_binding(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &RootReq,
+    ) -> Result<Value, Refusal> {
+        self.config.observer(tenant)?;
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        let binding = self.ledger().orphan_binding(store, &root)?;
+        Ok(json!({ "root": root, "binding": binding.name() }))
+    }
+
+    fn observe_terminal(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &ObserveReq,
+    ) -> Result<Value, Refusal> {
+        self.config.observer(tenant)?;
+        let (root, snapshot, state) = observed(store, r)?;
+        let until = self
+            .ledger()
+            .observe_terminal(store, &root, &snapshot, &state, now())?;
+        Ok(json!({ "root": root, "retain_until": until }))
+    }
+
+    fn observe_binding(
+        &self,
+        store: &mut Store,
+        tenant: &Tenant,
+        r: &ObserveReq,
+    ) -> Result<Value, Refusal> {
+        self.config.observer(tenant)?;
+        let (root, snapshot, state) = observed(store, r)?;
+        let binding = self
+            .ledger()
+            .observe_binding(store, &root, &snapshot, &state)?;
+        Ok(json!({ "root": root, "binding": binding.name() }))
+    }
+
+    fn projection(&self, body: &[u8]) -> Result<Value, Refusal> {
+        let r: ProjectionReq = parse(body)?;
+        let root = hex::encode(unhex::<32>(&r.root)?);
+        let store = self.lock();
+        let p = self.ledger().projection(&store, &root)?;
+        Ok(json!({
+            "root": root,
+            "state": p.state,
+            "availability": p.availability,
+            "binding": p.binding,
+            "tombstone_reason": p.tombstone_reason,
+            "tombstone_version": p.tombstone_version,
+            "retain_until": p.retain_until,
         }))
     }
 
@@ -1212,10 +1445,55 @@ impl Service {
     }
 }
 
+/// Captures the observed state's identity and binds it to the finality
+/// evidence with `queries::bind_snapshot`; the ledger then checks the subject
+/// task record in that exact state.
+fn observed(store: &Store, r: &ObserveReq) -> Result<(String, SnapshotBinding, Vec<u8>), Refusal> {
+    let root = hex::encode(unhex::<32>(&r.root)?);
+    let record = store
+        .state
+        .objects
+        .get(&root)
+        .ok_or(ArtifactError::ContentUnavailable)?;
+    let manifest = unhex_vec(&record.manifest, MAX_MANIFEST_BYTES)?;
+    let context = decode_manifest(&manifest)?.context;
+    let state = unhex_vec(&r.state, MAX_STATE_BYTES)?;
+    let proof = ReadProof {
+        chain: context.chain,
+        program: context.program,
+        native_state_root: digest(&r.native_state_root)?,
+        observed_sequence: r.observed_sequence,
+        execution_height: r.execution_height,
+        batch_id: digest(&r.batch_id)?,
+    };
+    let facts = CaptureFacts {
+        proof,
+        revision: decode_shared_state(&state)
+            .map_err(ArtifactError::from)?
+            .revision,
+        digest: codec::state_digest(&state).map_err(ArtifactError::from)?,
+        total_bytes: u32::try_from(state.len()).map_err(|_| ArtifactError::Malformed)?,
+        chunks: state.len().div_ceil(MAX_CHUNK_BYTES),
+    };
+    let finality = FinalityEvidence {
+        native_state_root: proof.native_state_root,
+        checkpoint: digest(&r.checkpoint)?,
+        settlement: match &r.settlement {
+            Some(text) => Presence::Present(digest(text)?),
+            None => Presence::Absent,
+        },
+        rank: r.rank,
+    };
+    let snapshot =
+        bind_snapshot(&state, &facts, &finality, r.publication_time_ms).map_err(query_refusal)?;
+    Ok((root, snapshot, state))
+}
+
 /// Restart recovery: a publication intent completes only when every durable
 /// chunk re-verifies, otherwise the staging disposition is durably failed;
-/// unacknowledged deliveries become unknown; due purges run.
-fn reconcile(store: &mut Store, at: u64) -> Result<(), ArtifactError> {
+/// unacknowledged deliveries become unknown; due purges run on the ledger's
+/// deadlines and a failed one stays pending with an alert.
+fn reconcile(store: &mut Store, ledger: &mut Ledger, at: u64) -> Result<(), Refusal> {
     let pending: Vec<String> = store
         .state
         .objects
@@ -1253,21 +1531,29 @@ fn reconcile(store: &mut Store, at: u64) -> Result<(), ArtifactError> {
     }
     store.expire_staging(at);
     store.persist()?;
-    store.purge_due(at).map(|_| ())
+    alert(&ledger.purge(store, at)?);
+    Ok(())
 }
 
 /// Periodic pass on the service clock: staging expiry and retention purge.
 fn maintain(service: &Service) {
     let mut store = service.lock();
+    let mut ledger = service.ledger();
     let at = now();
     let durable = if store.expire_staging(at) > 0 {
         store.persist()
     } else {
         Ok(())
     };
-    if durable.and_then(|()| store.purge_due(at)).is_err() {
-        eprintln!("maintenance pass failed; retrying next interval");
-        let _ = store.reload();
+    match durable
+        .map_err(Refusal::from)
+        .and_then(|()| ledger.purge(&mut store, at))
+    {
+        Ok(report) => alert(&report),
+        Err(_) => {
+            eprintln!("maintenance pass failed; retrying next interval");
+            let _ = store.reload();
+        }
     }
 }
 
@@ -1292,6 +1578,8 @@ fn read_request(stream: &mut impl Read) -> Result<Request, ArtifactError> {
         .map(str::to_string);
     let limit = if path.starts_with("/v1/upload/") {
         CHUNK_BYTES as usize
+    } else if path == "/v1/retention/terminal" || path == "/v1/retention/binding" {
+        MAX_OBSERVATION_REQUEST
     } else {
         MAX_API_REQUEST
     };
@@ -1394,9 +1682,26 @@ fn handle<S: Read + Write + Send + 'static>(service: &Service, mut stream: S) {
     drop(delivered);
 }
 
-fn die(what: &str, e: ArtifactError) -> ! {
-    eprintln!("startup refused: {what}: {}", e.name());
+fn die(what: &str, e: impl Into<Refusal>) -> ! {
+    eprintln!("startup refused: {what}: {}", e.into().name());
     std::process::exit(1);
+}
+
+/// The mark must not live in the restorable data dir, or a restore would roll
+/// it back with the ledger it guards; an unresolvable path is refused.
+fn outside(dir: &Path, mark: &Path) -> bool {
+    let (Ok(dir), Some(parent), Some(name)) = (dir.canonicalize(), mark.parent(), mark.file_name())
+    else {
+        return false;
+    };
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    parent
+        .canonicalize()
+        .is_ok_and(|p| !p.join(name).starts_with(&dir))
 }
 
 fn main() {
@@ -1415,8 +1720,8 @@ fn main() {
         .unwrap_or_else(|e| die("config", e));
     let kms = LocalFileKeyProvider::load(&PathBuf::from(key_file))
         .unwrap_or_else(|e| die("key provider", e));
-    let mut store = Store::open(&PathBuf::from(dir), &config.revocation_mark)
-        .unwrap_or_else(|e| die("store", e));
+    let dir = PathBuf::from(dir);
+    let mut store = Store::open(&dir, &config.revocation_mark).unwrap_or_else(|e| die("store", e));
     if !store.restore_ready() {
         eprintln!(
             "startup refused: restore not ready: revocation mark {} below live mark {}",
@@ -1425,7 +1730,24 @@ fn main() {
         );
         std::process::exit(3);
     }
-    reconcile(&mut store, now()).unwrap_or_else(|e| die("reconcile", e));
+    let retention_mark = config.retention_mark();
+    if !outside(&dir, &retention_mark) {
+        die(
+            "retention mark inside the data dir",
+            ArtifactError::Malformed,
+        );
+    }
+    let mut ledger =
+        Ledger::open(&dir, &retention_mark).unwrap_or_else(|e| die("retention ledger", e));
+    match ledger.recover(&mut store) {
+        Ok(_) => {}
+        Err(Refusal::RestoreNotReady) => {
+            eprintln!("startup refused: restore not ready: retention ledger below its live mark");
+            std::process::exit(3);
+        }
+        Err(e) => die("retention recovery", e),
+    }
+    reconcile(&mut store, &mut ledger, now()).unwrap_or_else(|e| die("reconcile", e));
     let tls = match &config.listener {
         Listener::Plaintext => None,
         Listener::Tls {
@@ -1444,6 +1766,7 @@ fn main() {
         config,
         kms: Box::new(kms),
         store: Mutex::new(store),
+        ledger: Mutex::new(ledger),
     });
     let maintenance = Arc::clone(&service);
     std::thread::spawn(move || loop {

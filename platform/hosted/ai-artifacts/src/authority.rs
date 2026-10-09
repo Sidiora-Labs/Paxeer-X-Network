@@ -18,6 +18,14 @@ pub struct Config {
     pub listener: Listener,
     /// Live revocation high-water mark file, kept off the restorable data dir.
     pub revocation_mark: PathBuf,
+    /// Live retention-ledger high-water mark file, also kept off the data dir;
+    /// absent, it sits beside `revocation_mark`.
+    #[serde(default)]
+    pub retention_mark: Option<PathBuf>,
+    /// Tenants whose finality observations the retention ledger accepts; none
+    /// by default, so no caller-asserted finality starts or binds anything.
+    #[serde(default)]
+    pub finality_observers: Vec<String>,
     pub tenants: Vec<Tenant>,
     pub publishers: Vec<Publisher>,
 }
@@ -66,6 +74,22 @@ impl Config {
             .iter()
             .find(|t| ct_eq(t.token_sha256.as_bytes(), digest.as_bytes()))
             .ok_or(ArtifactError::Unauthorized)
+    }
+
+    pub fn retention_mark(&self) -> PathBuf {
+        self.retention_mark.clone().unwrap_or_else(|| {
+            let mut path = self.revocation_mark.clone().into_os_string();
+            path.push(".retention");
+            path.into()
+        })
+    }
+
+    pub fn observer(&self, tenant: &Tenant) -> Result<(), ArtifactError> {
+        if self.finality_observers.contains(&tenant.id) {
+            Ok(())
+        } else {
+            Err(ArtifactError::Unauthorized)
+        }
     }
 
     pub fn tenant(&self, id: &str) -> Option<&Tenant> {

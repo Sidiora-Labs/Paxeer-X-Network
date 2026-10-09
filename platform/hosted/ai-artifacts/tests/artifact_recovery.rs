@@ -1,6 +1,7 @@
 //! AI.F09-A14, A15, A16, A19, A21 and the R16/R20 retention and recovery paths
 //! against the actual service binary over real TLS on loopback, its real
-//! on-disk store, the retention ledger in src/retention.rs, real Ed25519
+//! on-disk store, the retention ledger in src/retention.rs (directly and
+//! through the service's startup recovery and retention routes), real Ed25519
 //! publisher envelopes and market state built by the real F01 CREATE whose
 //! task region carries canonical task records, captured chunk by chunk and
 //! bound to finality evidence by `queries::bind_snapshot`.
@@ -60,6 +61,7 @@ use store::{ObjectState, SessionState, Store};
 
 const TOKEN_A: &str = "tenant-a-publisher-token";
 const TOKEN_B: &str = "tenant-b-consumer-token";
+const TOKEN_O: &str = "finality-observer-token";
 const TENANT_A: &str = "tenant-a";
 const P1: [u8; 32] = [0x55; 32];
 const CHAIN: [u8; 32] = [0x11; 32];
@@ -215,6 +217,9 @@ fn start(dir: &Path, capacity: u64) -> Svc {
 /// Starts the binary with the given storage capacity; a refused startup
 /// returns its exit status.
 fn try_start(dir: &Path, capacity: u64) -> Result<Svc, ExitStatus> {
+    try_start_with(dir, capacity, &dir.join("retention.mark"))
+}
+fn try_start_with(dir: &Path, capacity: u64, retention_mark: &Path) -> Result<Svc, ExitStatus> {
     let config = dir.join("config.json");
     fs::write(dir.join("cert.pem"), &cert().cert_pem).unwrap();
     fs::write(dir.join("key.pem"), &cert().key_pem).unwrap();
@@ -222,9 +227,12 @@ fn try_start(dir: &Path, capacity: u64) -> Result<Svc, ExitStatus> {
         "capacity_bytes": capacity,
         "listener": {"tls": {"certificate": dir.join("cert.pem"), "private_key": dir.join("key.pem")}},
         "revocation_mark": mark_file(dir),
+        "retention_mark": retention_mark,
+        "finality_observers": ["observer"],
         "tenants": [
             {"id": TENANT_A, "token_sha256": hex::encode(sha(TOKEN_A.as_bytes())), "quota_bytes": 8u64 << 20},
             {"id": "tenant-b", "token_sha256": hex::encode(sha(TOKEN_B.as_bytes())), "quota_bytes": 1u64 << 20},
+            {"id": "observer", "token_sha256": hex::encode(sha(TOKEN_O.as_bytes())), "quota_bytes": 0},
         ],
         "publishers": [
             {"tenant": TENANT_A, "principal": hex::encode(P1), "generation": 1, "key": hex::encode(key1().verifying_key().to_bytes())},
@@ -592,6 +600,14 @@ fn snapshot(state_bytes: &[u8], rank: u8) -> SnapshotBinding {
     };
     bind_snapshot(state_bytes, &facts, &finality, 1_700_000_000_000).unwrap()
 }
+/// The same read and finality evidence as `snapshot`, as a route body.
+fn observation(request: String, root: &str, state_bytes: &[u8], rank: u8) -> Value {
+    json!({"request_id": request, "root": root, "state": hex::encode(state_bytes),
+           "native_state_root": hex::encode(digest(0x5a).bytes()), "observed_sequence": 77,
+           "execution_height": 1010, "batch_id": hex::encode(digest(0xbb).bytes()),
+           "checkpoint": hex::encode(digest(0xcc).bytes()), "rank": rank,
+           "publication_time_ms": 1_700_000_000_000u64})
+}
 
 #[test]
 fn a14_kill_after_chunk_persistence_reconciles_to_one_publication_or_failed_staging() {
@@ -796,6 +812,11 @@ fn a15_old_backup_with_generation_seven_grant_stays_not_ready_until_revocation_r
     );
     assert_eq!(ledger.entry(&root).unwrap().holds.len(), 1);
     drop((store, ledger));
+    match try_start(&dir, CAPACITY) {
+        Ok(_) => panic!("a stale retention ledger became ready"),
+        Err(status) => assert_eq!(status.code(), Some(3)),
+    }
+    assert!(!open_ledger(&dir).ready());
 
     fs::copy(
         dir.join("current-retention.json"),
@@ -1430,4 +1451,251 @@ fn r16_r20_pending_purge_reinstatement_and_tombstone_intent_recovery() {
     let svc = start(&dir, CAPACITY);
     let (status, r) = resolve_public(&svc, &root_q);
     assert_eq!((status, r["status"].as_str()), (410, Some("TOMBSTONED")));
+}
+
+#[test]
+fn a15_a16_a19_retention_routes_and_startup_drive_the_ledger_in_the_service() {
+    let dir = data_dir("routes");
+    let svc = start(&dir, CAPACITY);
+    let t = input(
+        b"input of a task cancelled under the service",
+        0x61,
+        Privacy::Public,
+    );
+    let u = input(
+        b"input of a task still accepted under the service",
+        0x62,
+        Privacy::Public,
+    );
+    let root_t = publish(&svc, 0x61, &t);
+    let root_u = publish(&svc, 0x62, &u);
+    let grant_t = grant(&svc, 0x61, &root_t, t.subject)["grant_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let state = with_tasks(
+        &created_state(),
+        &[
+            task(0x61, TaskStatus::Cancelled, root_digest(&root_t)),
+            task(0x62, TaskStatus::Accepted, root_digest(&root_u)),
+        ],
+    );
+    let refused = |(status, r): (u16, Value)| (status, r["error"].as_str().map(str::to_string));
+    let error = |status: u16, name: &str| (status, Some(name.to_string()));
+    let unauthorized = ArtifactError::Unauthorized.name();
+    let tombstone = |n: u8, root: &str, reason: u8| {
+        post(
+            &svc,
+            "/v1/tombstone",
+            TOKEN_A,
+            &json!({"request_id": rid(0x63, n), "root": root, "reason": reason}),
+        )
+    };
+    let terminal = |token: &str, n: u8, root: &str, rank: u8| {
+        post(
+            &svc,
+            "/v1/retention/terminal",
+            token,
+            &observation(rid(0x64, n), root, &state, rank),
+        )
+    };
+    let projection = |root: &str| {
+        post(
+            &svc,
+            "/v1/retention/projection",
+            TOKEN_B,
+            &json!({ "root": root }),
+        )
+    };
+
+    assert_eq!(
+        refused(tombstone(1, &root_t, EXPIRED)),
+        error(409, "EVIDENCE_UNAVAILABLE")
+    );
+    assert_eq!(resolve_public(&svc, &root_t).0, 200);
+    assert_eq!(
+        refused(terminal(TOKEN_A, 1, &root_t, 4)),
+        error(401, unauthorized)
+    );
+    assert_eq!(
+        refused(terminal(TOKEN_O, 2, &root_t, 3)),
+        error(409, "FINALITY_UNAVAILABLE")
+    );
+    let before = now_secs();
+    let (status, r) = terminal(TOKEN_O, 3, &root_t, 4);
+    let after = now_secs();
+    assert_eq!(status, 200, "{r}");
+    let floor = r["retain_until"].as_u64().unwrap();
+    assert!((before + 30 * DAY..=after + 30 * DAY).contains(&floor));
+    assert_eq!(
+        terminal(TOKEN_O, 5, &root_t, 4),
+        (200, json!({"root": root_t, "retain_until": floor}))
+    );
+    assert_eq!(
+        refused(terminal(TOKEN_O, 4, &root_u, 4)),
+        error(409, "UNRESOLVED_EXECUTION")
+    );
+    let (status, r) = tombstone(2, &root_t, EXPIRED);
+    assert_eq!(
+        (status, r["error"].as_str(), r["until"].as_u64()),
+        (409, Some("RETENTION_ACTIVE"), Some(floor))
+    );
+
+    let hold = hex::encode([0x65; 32]);
+    let until = now_secs() + 40 * DAY;
+    let place = |n: u8, token: &str| {
+        post(
+            &svc,
+            "/v1/retention/hold",
+            token,
+            &json!({"request_id": rid(0x65, n), "root": root_t, "hold": hold, "until": until}),
+        )
+    };
+    assert_eq!(refused(place(1, TOKEN_B)), error(401, unauthorized));
+    assert_eq!(
+        place(2, TOKEN_A),
+        (200, json!({"root": root_t, "hold": hold, "until": until}))
+    );
+    let request = json!({"request_id": rid(0x63, 3), "root": root_t, "reason": POLICY_RESTRICTED});
+    let (status, tombstoned) = post(&svc, "/v1/tombstone", TOKEN_A, &request);
+    assert_eq!(status, 200, "{tombstoned}");
+    assert_eq!(
+        (
+            tombstoned["state"].as_str(),
+            tombstoned["reason"].as_u64(),
+            tombstoned["version"].as_u64(),
+            tombstoned["purge_after"].as_u64(),
+        ),
+        (Some("TOMBSTONED"), Some(3), Some(1), Some(until))
+    );
+    assert!(tombstoned.get("retention_until").is_none());
+    assert_eq!(
+        post(&svc, "/v1/tombstone", TOKEN_A, &request),
+        (200, tombstoned.clone())
+    );
+    let (status, r) = resolve_public(&svc, &root_t);
+    assert_eq!((status, r["status"].as_str()), (410, Some("TOMBSTONED")));
+    assert_eq!(
+        projection(&root_t),
+        (
+            200,
+            json!({"root": root_t, "state": "TOMBSTONED", "availability": "EVIDENCE_UNAVAILABLE",
+                   "binding": "UPLOADED_UNBOUND", "tombstone_reason": "POLICY_RESTRICTED",
+                   "tombstone_version": 1, "retain_until": until})
+        )
+    );
+
+    let root_req = |tag: u8, n: u8| json!({"request_id": rid(tag, n), "root": root_u});
+    let intent = |token: &str, n: u8| {
+        post(
+            &svc,
+            "/v1/retention/binding-intent",
+            token,
+            &root_req(0x66, n),
+        )
+    };
+    let orphan = |n: u8| post(&svc, "/v1/retention/orphan", TOKEN_O, &root_req(0x66, n));
+    assert_eq!(refused(intent(TOKEN_B, 1)), error(401, unauthorized));
+    assert_eq!(
+        intent(TOKEN_A, 2),
+        (200, json!({"root": root_u, "binding": "BINDING_PENDING"}))
+    );
+    assert_eq!(
+        refused(tombstone(4, &root_u, OWNER_WITHDRAWN)),
+        error(409, "BINDING_PENDING")
+    );
+    assert_eq!(
+        refused(post(
+            &svc,
+            "/v1/retention/orphan",
+            TOKEN_A,
+            &root_req(0x66, 3)
+        )),
+        error(401, unauthorized)
+    );
+    assert_eq!(
+        orphan(4),
+        (200, json!({"root": root_u, "binding": "UPLOADED_UNBOUND"}))
+    );
+    assert_eq!(
+        post(
+            &svc,
+            "/v1/retention/binding",
+            TOKEN_O,
+            &observation(rid(0x66, 5), &root_u, &state, 4)
+        ),
+        (200, json!({"root": root_u, "binding": "FINALIZED"}))
+    );
+    assert_eq!(
+        refused(orphan(6)),
+        error(409, ArtifactError::IntegrityConflict.name())
+    );
+    assert_eq!(resolve_public(&svc, &root_u).0, 200);
+
+    assert_eq!(
+        post(
+            &svc,
+            "/v1/retention/release",
+            TOKEN_A,
+            &json!({"request_id": rid(0x65, 3), "root": root_t, "hold": hold})
+        ),
+        (200, json!({"root": root_t, "hold": hold, "released": true}))
+    );
+    let decision = hex::encode([0xd6; 32]);
+    let reinstate = |token: &str, n: u8| {
+        post(
+            &svc,
+            "/v1/retention/reinstate",
+            token,
+            &json!({"request_id": rid(0x67, n), "root": root_t, "grant_id": grant_t,
+                    "decision": decision}),
+        )
+    };
+    assert_eq!(refused(reinstate(TOKEN_B, 1)), error(401, unauthorized));
+    assert_eq!(
+        reinstate(TOKEN_A, 2),
+        (200, json!({"root": root_t, "state": "AVAILABLE"}))
+    );
+    let (status, r) = resolve_public(&svc, &root_t);
+    assert_eq!(
+        (status, r["status"].as_str()),
+        (200, Some("AVAILABLE_PUBLIC"))
+    );
+    assert_eq!(
+        projection(&root_t),
+        (
+            200,
+            json!({"root": root_t, "state": "AVAILABLE", "availability": "AVAILABLE",
+                   "binding": "UPLOADED_UNBOUND", "tombstone_reason": null,
+                   "tombstone_version": 1, "retain_until": floor})
+        )
+    );
+    drop(svc);
+
+    let ledger = open_ledger(&dir);
+    let entry = ledger.entry(&root_t).unwrap();
+    assert_eq!(
+        entry.terminal.as_ref().unwrap().snapshot,
+        hex::encode(snapshot(&state, 4).snapshot_id().unwrap().bytes())
+    );
+    assert!(matches!(
+        entry.history.as_slice(),
+        [
+            Event::Tombstoned {
+                version: 1,
+                reason: POLICY_RESTRICTED,
+                ..
+            },
+            Event::Reinstated { .. },
+        ]
+    ));
+    assert_eq!(ledger.entry(&root_u).unwrap().binding, Binding::Finalized);
+    drop(ledger);
+
+    match try_start_with(&dir, CAPACITY, &dir.join("store").join("retention.mark")) {
+        Ok(_) => panic!("a retention mark inside the data dir was accepted"),
+        Err(status) => assert_eq!(status.code(), Some(1)),
+    }
+    let svc = start(&dir, CAPACITY);
+    assert_eq!(resolve_public(&svc, &root_t).0, 200);
 }
