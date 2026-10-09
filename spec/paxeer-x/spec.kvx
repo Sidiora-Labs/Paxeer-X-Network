@@ -35780,7 +35780,7 @@ evidence = "42a376c59a58fca4bf5d8590797e195249d25ec8+source:d1dd572a2092f6c8c9dd
 
 [task.ai.F10-T02]
 title = "Project minimal verified finalized market snapshots"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 29
 requires = ["ai.F10-T01", "ai.T-C03"]
@@ -35806,7 +35806,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 5
 acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15"]
-paths = ["platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs", "platform/hosted/indexer/tests/ai_snapshot_minimal.rs"]
+paths = ["platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs", "platform/hosted/indexer/tests/ai_snapshot_minimal.rs", "platform/hosted/indexer/Cargo.toml", "platform/hosted/gateway/Cargo.toml"]
 worker_role_id = "W-F10-PROJECTION"
 
 [task.ai.T-C04]
@@ -36768,7 +36768,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 17
 acceptance_cases = ["AI.F10-A01", "AI.F10-A02", "AI.F10-A03", "AI.F10-A04", "AI.F10-A05", "AI.F10-A06", "AI.F10-A09", "AI.F10-A14", "AI.F10-A15", "AI.F09-A01", "AI.F09-A02", "AI.F09-A03", "AI.F09-A04", "AI.F09-A05", "AI.F09-A06", "AI.F09-A20", "AI.F09-A22"]
-paths = ["platform/hosted/indexer/tests/ai_snapshot_projection.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs"]
+paths = ["platform/hosted/indexer/tests/ai_snapshot_projection.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/gateway/src/ai_views.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/indexer/src/follower.rs"]
 worker_role_id = "W-F10-PROJECTION"
 
 [task.60.1]

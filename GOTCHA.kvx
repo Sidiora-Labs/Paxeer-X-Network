@@ -5214,3 +5214,8 @@ text = "Pre-existing clippy denials in webhooks trusted.rs, hosted.rs, boundary.
 area = "git"
 text = "The stash list is shared across every worktree of a repository. A `git stash` on main around a landing plus a `git rebase --autostash` (or a stash) running concurrently in a worker worktree swap contents on pop: main received a worker's uncommitted module edits and the worker tree received main's local script change. Never stash in a multi-worktree fleet; park a local uncommitted file by copying it aside and restoring it after the landing, and have workers commit before any rebase."
 
+
+[gotcha.1125]
+area = "indexer"
+text = "Plain clippy on layerx-indexer stops at 72 pre-existing errors in store.rs, paxeer.rs, settlement.rs, config.rs, layerx.rs, api.rs, abi.rs, paxscan.rs, transport.rs, codec.rs and lib.rs, so dependent crates and tests are never linted; lint new files with `-- --cap-lints warn` and filter by file. Platform integration tests can use CARGO_TARGET_TMPDIR for file-backed SQLite scratch dirs. The layerx-programs-ai-market path dependency from the programs workspace resolves inside the platform workspace. The AI snapshot projection lives in indexer ai_market.rs (tables ai_stream, ai_snapshot, ai_participant, ai_outbox, ai_lease, ai_alert; SNAPSHOT_EVENT_TAG 0x0A10) and gateway ai_views.rs; neither the gateway entry nor the indexer follower calls them yet, and a certificate for another root at the same sequence is refused with BindingMismatch without quarantine."
+

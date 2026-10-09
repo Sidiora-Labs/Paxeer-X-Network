@@ -965,3 +965,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F10-T05-verify-{1,2,3,4}.log, build-2.log, clippy-9.log"
 observed = "Fourteen delivery cases pass: rank-4 admission decodes the batch header, verifies the checkpoint certificate against the bonded guarantor set with real secp256k1 attestations (unsigned, wrong key, outsider, below threshold, unregistered id, foreign batch and malformed header all refused without quarantine or persistence), binds checkpoint id and recomputed batch id, quarantines finality conflicts, and delivers through a durable file outbox with an HMAC resume cursor and Ed25519 signing; rank 5 cannot be displayed because the canonical SnapshotBinding refuses rank above 4."
 assumption = "Rank-5 settlement display waits on a SnapshotBinding rank extension owned by FM-CORE; the hosted outbox and cursor seams are reconciled with the indexer rows under ai.F10-T02-FULL."
+
+[qualification.ai-f10-t02-snapshot-minimal-20261009-01]
+revision = "6e9af39dc"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_snapshot_minimal -- --test-threads=1"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F10-T02-verify-1.log, build-1.log, clippy-3.log"
+observed = "Ten snapshot cases pass: verified ProgramRead captures project into durable SQLite rows with checkpoint promotion under real signed certificates, stream cursors, outbox events, leases and alerts, and gateway views compile clippy-clean; epoch and evaluator pages report NotYetProduced because no epoch or frozen-roster producer feeds the projection, settlement reference stays Absent so rank 5 is unreachable, and the gateway entry and indexer follower are not wired to ai_views::respond and ProjectionStore::observe."
+assumption = "ai.F10-T02-FULL wires gateway main.rs and the indexer follower, maps the epoch and evaluator producers now on main, and ai.F10-T05 consumes pending_events/mark_published; the indexer manifest union (k256 with std, layerx-crypto dev-dependency) was resolved at landing."
