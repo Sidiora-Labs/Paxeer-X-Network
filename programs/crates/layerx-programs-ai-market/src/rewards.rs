@@ -1,23 +1,52 @@
 //! F06 reward ledger, recipient dictionary and epoch records with strict
-//! big-endian encodings. These records move no funds; native transfer, grant
-//! and finality authority stay with the real Program activity.
+//! big-endian encodings, and the F06 runtime ([`apply`]) over the complete
+//! committed shared state value. These records move no funds; [`apply`] binds
+//! every applied transition to the current Program's registered rewards
+//! account and immutable asset and, inside the Program activity, stages its one
+//! value action through the value adapter under the proof-bound sight balance,
+//! so the transfer, the next state and the replay record commit or discard
+//! together.
+//!
+//! Readings chosen where producers are silent:
+//! - An empty joint F05/F06 section is the initial reward state of the header's
+//!   immutable asset, rewards account and refund recipient; only an applied
+//!   transition writes it, any F05 bytes after it are carried unchanged.
+//! - Fund and `RefundFree` bind the ledger context: epoch 0 and no roster before
+//!   any opening, afterwards the latest opened epoch, the active config and the
+//!   roster of its retained row. Claim, `ExpireEpochClaims` and `PruneEpoch` bind
+//!   their own retained row under the active config.
+//! - `REGISTERED`, `ACTIVE` and `SUSPENDED` accept funding; `WINDING_DOWN` and
+//!   `CLOSED` are closing.
+//! - `PruneEpoch` never removes the latest opened epoch's row, which carries the
+//!   ledger context roster.
 use crate::{
-    codec::{domain_hash, Reader, Writer},
+    admission::AdmissionTable,
+    codec::{self, domain_hash, Envelope, EventCommon, Reader, ValidatedEnvelope, Writer},
+    dispatch,
     errors::{
         CodecResult, ACCOUNT_BINDING, ARITHMETIC, CAPACITY, F06_AGGREGATION_MISMATCH,
         F06_CLAIM_EXPIRED, F06_CLAIM_NOT_READY, F06_CONTRIBUTION_CONSENT_REQUIRED,
         F06_EPOCH_ALREADY_RESERVED, F06_EPOCH_NOT_RESERVED, F06_EPOCH_TERMINAL,
         F06_FUNDING_POLICY_MISMATCH, F06_INVALID_AMOUNT, F06_LEDGER_INVARIANT_VIOLATION,
         F06_NOTHING_TO_CLAIM, F06_REFUND_RECIPIENT_MISMATCH, F06_UNKNOWN_WORKER_ENTITLEMENT,
-        F06_WRONG_CLAIM_AMOUNT, F06_WRONG_CLAIM_RECIPIENT, INSUFFICIENT_FREE, NON_CANONICAL,
-        NOT_FOUND, RETENTION_FULL, STALE_CURSOR, UNAUTHORIZED, WRONG_PHASE, WRONG_ROSTER,
+        F06_WRONG_ASSET, F06_WRONG_CLAIM_AMOUNT, F06_WRONG_CLAIM_RECIPIENT, INSUFFICIENT_FREE,
+        NON_CANONICAL, NOT_FOUND, RETENTION_FULL, STALE_CURSOR, UNAUTHORIZED, UNKNOWN_OPERATION,
+        WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE, WRONG_ROSTER,
+    },
+    registry::{check_f01_capacity, MarketHeader},
+    registry_ops::{
+        CallContext, PolicySection, ACTIVE, CLOSED, REGISTERED, SUSPENDED, WINDING_DOWN,
     },
     reward_math::{claim_expiry, conservation_holds, Allocation},
-    state::{ActorSlot, ReplayDecision, ReplayRequest, ReplayTable},
+    state::{
+        decode_shared_state, encode_shared_state, ActorSlot, Control, ReplayDecision,
+        ReplayRequest, ReplayTable, RetainedResult, Section, SharedState,
+    },
     types::{
         AccountId, Amount, AssetId, Digest32, FrozenBinding, Presence, PrincipalId, RequestDigest,
-        ResultDigest, RosterDigest, WorkerId, WorkerRosterEntry,
+        ResultDigest, RosterDigest, Version, WorkerId, WorkerRosterEntry,
     },
+    value_adapter::{self, RewardsAccount},
     MAX_PAYOUT_IDENTITIES, MAX_RETAINED_EPOCHS, MAX_WORKERS, SCHEMA_VERSION,
 };
 
@@ -1827,5 +1856,540 @@ impl<'a> RewardState<'a> {
         let mut draft = Draft::start(self, next)?;
         let digest = draft.remove_oldest()?;
         draft.commit(RewardEffect::Pruned(digest))
+    }
+}
+
+const POLICY_CAP: usize = Section::PolicyLifecycle.payload_cap();
+const SETTLEMENT_CAP: usize = Section::SettlementClaims.payload_cap();
+const CONTROL_CAP: usize = Section::Control.payload_cap();
+/// Caller scratch for [`apply`]: the next F01 section, the next joint F05/F06
+/// settlement section, the control encoding and the initial reward state of an
+/// unfunded market.
+pub const SCRATCH_BYTES: usize = POLICY_CAP + SETTLEMENT_CAP + CONTROL_CAP + REWARD_STATE_BYTES;
+/// `Funded`: `principal32 || amount:u128 || D:u128 || F:u128 || refund_recipient32`.
+pub const FUNDED_BYTES: usize = 112;
+/// `RewardClaimPaid`: `entitlement32 || asset32 || amount:u128`.
+pub const CLAIM_PAID_BYTES: usize = 80;
+/// `RewardClaimsExpired`: `count:u16 || released:u128`.
+pub const CLAIMS_EXPIRED_BYTES: usize = 18;
+/// `FreeReserveRefunded`: `prior_refunded:u128 || amount:u128 || refund_recipient32`.
+pub const REFUNDED_BYTES: usize = 64;
+/// `RewardEpochPruned`: `allocation32`.
+pub const PRUNED_BYTES: usize = 32;
+
+/// The compact result payload of one applied F06 operation; it is also the
+/// operation event suffix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Response {
+    bytes: [u8; FUNDED_BYTES],
+    len: usize,
+}
+impl Response {
+    fn write(fill: impl FnOnce(&mut Writer<'_>) -> CodecResult<()>) -> CodecResult<Self> {
+        let mut bytes = [0; FUNDED_BYTES];
+        let mut w = Writer::new(&mut bytes);
+        fill(&mut w)?;
+        let len = w.len();
+        Ok(Self { bytes, len })
+    }
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes.get(..self.len).unwrap_or(&[])
+    }
+    /// `H('PAXAI/result/v1', payload)`.
+    ///
+    /// # Errors
+    /// Propagates result-digest refusals.
+    pub fn result(&self) -> CodecResult<ResultDigest> {
+        codec::result_digest(self.as_bytes())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "no_std without alloc: Box is unavailable, and Applied is the primary result"
+)]
+pub enum Outcome {
+    /// One semantic mutation: one revision increment composed into `next` and
+    /// the operation event into `event`. `effect` is the single value action
+    /// between the committed ledger `before` and the next ledger `after`,
+    /// planned against the current Program's rewards account and, inside the
+    /// Program activity, already staged with them.
+    Applied {
+        effect: RewardEffect,
+        before: RewardLedger,
+        after: RewardLedger,
+        response: Response,
+        revision: u64,
+        result: ResultDigest,
+        state_len: usize,
+        event_len: usize,
+    },
+    /// Exact repetition of an applied claim, expiry or refund: nothing was
+    /// written; `subject` is the entitlement identity, the allocation digest or
+    /// the retained refund result.
+    AlreadyApplied { subject: [u8; 32] },
+    /// Exact retry of a Fund already applied under its role sequence.
+    Retained(RetainedResult),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind {
+    Fund,
+    Claim,
+    Expire,
+    Refund,
+    Prune,
+}
+impl Kind {
+    fn of(operation: dispatch::Operation) -> CodecResult<Self> {
+        match operation.selector() {
+            0x0601 => Ok(Self::Fund),
+            0x0602 => Ok(Self::Claim),
+            0x0603 => Ok(Self::Expire),
+            0x0604 => Ok(Self::Refund),
+            0x0605 => Ok(Self::Prune),
+            _ => Err(UNKNOWN_OPERATION),
+        }
+    }
+}
+
+fn phase(header: &MarketHeader) -> CodecResult<FundingPhase> {
+    match header.lifecycle {
+        REGISTERED | ACTIVE | SUSPENDED => Ok(FundingPhase::Accepting),
+        WINDING_DOWN | CLOSED => Ok(FundingPhase::Closing),
+        _ => Err(NON_CANONICAL),
+    }
+}
+
+/// The committed shared state, its F01 section and the latest opened epoch.
+struct View<'a> {
+    state: SharedState<'a>,
+    section: PolicySection<'a>,
+    opened: Option<u64>,
+}
+
+fn view(current: &[u8]) -> CodecResult<View<'_>> {
+    let state = decode_shared_state(current)?;
+    let section = PolicySection::decode(state.feature_sections[Section::PolicyLifecycle.index()])?;
+    if section.header.state_revision != state.revision {
+        return Err(NON_CANONICAL);
+    }
+    let opened =
+        AdmissionTable::decode(state.feature_sections[Section::ReputationAdmission.index()])?
+            .current_epoch();
+    Ok(View {
+        state,
+        section,
+        opened,
+    })
+}
+
+/// Native principal, domain, expiry and market.
+fn authenticate(ctx: &CallContext, e: &Envelope<'_>, header: &MarketHeader) -> CodecResult<()> {
+    codec::compare_native_principal(e, ctx.principal)?;
+    let market = codec::derive_market(ctx.chain, ctx.program)?;
+    e.check_domain(ctx.chain, ctx.program, market)?;
+    e.check_expiry(ctx.height)?;
+    if header.market_id != market {
+        return Err(WRONG_MARKET);
+    }
+    Ok(())
+}
+
+/// The ledger's immutable asset, account and refund recipient are the header's.
+fn check_bindings(ledger: &RewardLedger, header: &MarketHeader) -> CodecResult<()> {
+    if ledger.asset != header.funding_asset {
+        return Err(F06_WRONG_ASSET);
+    }
+    if ledger.account != header.rewards_account {
+        return Err(ACCOUNT_BINDING);
+    }
+    if ledger.refund_recipient != header.refund_recipient_account {
+        return Err(F06_REFUND_RECIPIENT_MISMATCH);
+    }
+    Ok(())
+}
+
+/// The exact epoch, config and roster the envelope must bind; returns the epoch.
+fn bind(
+    kind: Kind,
+    e: &Envelope<'_>,
+    view: &View<'_>,
+    rewards: &RewardState<'_>,
+) -> CodecResult<u64> {
+    let (epoch, roster) = match kind {
+        Kind::Fund | Kind::Refund => match view.opened {
+            None => (0, Presence::Absent),
+            Some(epoch) => match rewards.row(epoch) {
+                Ok(row) => (epoch, Presence::Present(row.roster)),
+                Err(NOT_FOUND) => return Err(WRONG_EPOCH),
+                Err(error) => return Err(error),
+            },
+        },
+        Kind::Claim | Kind::Expire | Kind::Prune => {
+            (e.epoch, Presence::Present(rewards.row(e.epoch)?.roster))
+        }
+    };
+    if e.epoch != epoch {
+        return Err(WRONG_EPOCH);
+    }
+    if e.config != view.section.header.active_config_version {
+        return Err(WRONG_CONFIG);
+    }
+    if e.roster != roster {
+        return Err(WRONG_ROSTER);
+    }
+    Ok(epoch)
+}
+
+/// Binds the transition to the current Program's rewards account and asset and
+/// checks the counters move by exactly the effect; inside the Program activity
+/// it also reads the sight balance, checks cover and stages the one transfer.
+fn stage_value(
+    ctx: &CallContext,
+    before: &RewardLedger,
+    after: &RewardLedger,
+    effect: RewardEffect,
+) -> CodecResult<()> {
+    let bound = RewardsAccount::for_ledger(ctx.program, before)?;
+    #[cfg(target_arch = "wasm32")]
+    value_adapter::settle(&bound, before, after, effect)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    value_adapter::plan(&bound, before, after, effect)?;
+    Ok(())
+}
+
+/// The caller outputs of one mutation besides the settlement section.
+struct Out<'o> {
+    policy: &'o mut [u8],
+    control: &'o mut [u8],
+    next: &'o mut [u8],
+    event: &'o mut [u8],
+}
+
+struct Call<'c> {
+    ctx: &'c CallContext,
+    envelope: &'c ValidatedEnvelope<'c>,
+    view: &'c View<'c>,
+    rewards: RewardState<'c>,
+    before: RewardLedger,
+    epoch: u64,
+    tail: &'c [u8],
+}
+impl Call<'_> {
+    /// Writes the next reward state (already in `settlement`) with the carried
+    /// F05 tail, the next F01 revision and `replay` into `next`, then the event.
+    fn commit(
+        &self,
+        settlement: &mut [u8],
+        after: RewardLedger,
+        replay: Option<(ReplayTable, u64)>,
+        out: Out<'_>,
+        effect: RewardEffect,
+        response: Response,
+    ) -> CodecResult<Outcome> {
+        let Out {
+            policy,
+            control,
+            next,
+            event,
+        } = out;
+        let state = &self.view.state;
+        let total = REWARD_STATE_BYTES
+            .checked_add(self.tail.len())
+            .ok_or(ARITHMETIC)?;
+        settlement
+            .get_mut(REWARD_STATE_BYTES..total)
+            .ok_or(CAPACITY)?
+            .copy_from_slice(self.tail);
+        let (replay, revision) = match replay {
+            Some(applied) => applied,
+            None => (
+                state.control.replay.clone(),
+                state.revision.checked_add(1).ok_or(ARITHMETIC)?,
+            ),
+        };
+        let mut section = self.view.section;
+        section.header.state_revision = revision;
+        let policy_len = section.encode(policy)?;
+        let mut feature_sections: [&[u8]; 5] = state.feature_sections;
+        feature_sections[Section::PolicyLifecycle.index()] =
+            policy.get(..policy_len).ok_or(CAPACITY)?;
+        feature_sections[Section::SettlementClaims.index()] =
+            settlement.get(..total).ok_or(CAPACITY)?;
+        let candidate = SharedState {
+            revision,
+            feature_sections,
+            control: Control {
+                replay,
+                feature_bytes: state.control.feature_bytes,
+            },
+        };
+        check_f01_capacity(policy_len, candidate.encoded_len()?)?;
+        let state_len = encode_shared_state(&candidate, next, control)?;
+        let result = response.result()?;
+        let header = &self.view.section.header;
+        let event_len = codec::encode_event_frame(
+            self.envelope.envelope.operation,
+            &EventCommon {
+                market: header.market_id,
+                epoch: self.epoch,
+                config: Version::new(header.active_config_version)?,
+                revision,
+                request: self.envelope.request_digest()?,
+                result,
+            },
+            response.as_bytes(),
+            event,
+        )?;
+        stage_value(self.ctx, &self.before, &after, effect)?;
+        Ok(Outcome::Applied {
+            effect,
+            before: self.before,
+            after,
+            response,
+            revision,
+            result,
+            state_len,
+            event_len,
+        })
+    }
+
+    /// Fund (0x0601) under the owner or treasury role sequence.
+    fn fund(&self, settlement: &mut [u8], out: Out<'_>) -> CodecResult<Outcome> {
+        let e = &self.envelope.envelope;
+        let request = FundRequest::decode(e.payload)?;
+        let header = &self.view.section.header;
+        let slot = if e.actor == header.owner_principal {
+            ActorSlot::OWNER
+        } else if header.treasury_principal == Presence::Present(e.actor) {
+            ActorSlot::TREASURY
+        } else {
+            return Err(UNAUTHORIZED);
+        };
+        let table = &self.view.state.control.replay;
+        let version = table.actor(slot).ok_or(UNAUTHORIZED)?.authority_version;
+        let replay = ReplayRequest::from_envelope(slot, version, self.envelope)?;
+        let funded = self.before.deposit(request.amount).unwrap_or(self.before);
+        let response = Response::write(|w| {
+            w.put(e.actor.as_bytes())?;
+            w.u128(request.amount)?;
+            w.u128(funded.tracked_deposits)?;
+            w.u128(funded.free)?;
+            w.put(funded.refund_recipient.as_bytes())
+        })?;
+        let mut next_table = table.clone();
+        let mut revision = self.view.state.revision;
+        let head = settlement.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        let (next_state, effect) = self.rewards.fund(
+            &FundingAuthority {
+                owner: header.owner_principal,
+                treasury: header.treasury_principal,
+            },
+            phase(header)?,
+            &request,
+            &mut FundReplay {
+                table: &mut next_table,
+                request: &replay,
+                height: self.ctx.height,
+                revision: &mut revision,
+                result: response.result()?,
+            },
+            head,
+        )?;
+        if matches!(effect, RewardEffect::ReplayedFund(_)) {
+            return match table.check(&replay, self.ctx.height)? {
+                ReplayDecision::AlreadyApplied(retained) => Ok(Outcome::Retained(retained)),
+                ReplayDecision::Apply => Err(F06_LEDGER_INVARIANT_VIOLATION),
+            };
+        }
+        let after = next_state.ledger()?;
+        self.commit(
+            settlement,
+            after,
+            Some((next_table, revision)),
+            out,
+            effect,
+            response,
+        )
+    }
+
+    /// Claim (0x0602) of one fixed entitlement of the bound retained epoch.
+    fn claim(&self, settlement: &mut [u8], out: Out<'_>) -> CodecResult<Outcome> {
+        let request = ClaimRequest::decode(self.envelope.envelope.payload)?;
+        let row = self.rewards.row(self.epoch)?;
+        let head = settlement.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        let (next_state, effect) =
+            self.rewards
+                .claim(self.epoch, &request, self.ctx.height, head)?;
+        match effect {
+            RewardEffect::AlreadyApplied(id) => Ok(Outcome::AlreadyApplied {
+                subject: id.bytes(),
+            }),
+            RewardEffect::Payout { amount, .. } => {
+                let Presence::Present(allocation) = row.allocation else {
+                    return Err(F06_LEDGER_INVARIANT_VIOLATION);
+                };
+                let entitlement = entitlement_id(allocation, request.worker)?;
+                let response = Response::write(|w| {
+                    w.put(entitlement.as_bytes())?;
+                    w.put(self.before.asset.as_bytes())?;
+                    w.u128(amount)
+                })?;
+                let after = next_state.ledger()?;
+                self.commit(settlement, after, None, out, effect, response)
+            }
+            _ => Err(F06_LEDGER_INVARIANT_VIOLATION),
+        }
+    }
+
+    /// `ExpireEpochClaims` (0x0603) of the bound retained epoch.
+    fn expire(&self, settlement: &mut [u8], out: Out<'_>) -> CodecResult<Outcome> {
+        let row = self.rewards.row(self.epoch)?;
+        let head = settlement.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        let (next_state, effect) =
+            self.rewards
+                .expire_epoch_claims(self.epoch, self.ctx.height, head)?;
+        match effect {
+            RewardEffect::AlreadyApplied(allocation) => Ok(Outcome::AlreadyApplied {
+                subject: allocation.bytes(),
+            }),
+            RewardEffect::Released(released) => {
+                let count = row
+                    .entries()
+                    .iter()
+                    .filter(|entry| entry.disposition == Disposition::Unclaimed)
+                    .count();
+                let count = u16::try_from(count).map_err(|_| ARITHMETIC)?;
+                let response = Response::write(|w| {
+                    w.u16(count)?;
+                    w.u128(released)
+                })?;
+                let after = next_state.ledger()?;
+                self.commit(settlement, after, None, out, effect, response)
+            }
+            _ => Err(F06_LEDGER_INVARIANT_VIOLATION),
+        }
+    }
+
+    /// `RefundFree` (0x0604) of Free to the immutable refund recipient.
+    fn refund(&self, settlement: &mut [u8], out: Out<'_>) -> CodecResult<Outcome> {
+        let request = RefundRequest::decode(self.envelope.envelope.payload)?;
+        let response = Response::write(|w| {
+            w.u128(request.expected_refunded)?;
+            w.u128(request.amount)?;
+            w.put(request.recipient.as_bytes())
+        })?;
+        let head = settlement.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        let (next_state, effect) = self.rewards.refund_free(
+            phase(&self.view.section.header)?,
+            &request,
+            self.envelope.request_digest()?,
+            response.result()?,
+            head,
+        )?;
+        match effect {
+            RewardEffect::RepeatedRefund(result) => Ok(Outcome::AlreadyApplied {
+                subject: result.bytes(),
+            }),
+            RewardEffect::Payout { .. } => {
+                let after = next_state.ledger()?;
+                self.commit(settlement, after, None, out, effect, response)
+            }
+            _ => Err(F06_LEDGER_INVARIANT_VIOLATION),
+        }
+    }
+
+    /// `PruneEpoch` (0x0605) of the oldest completed row.
+    fn prune(&self, settlement: &mut [u8], out: Out<'_>) -> CodecResult<Outcome> {
+        if self.view.opened == Some(self.epoch) {
+            return Err(WRONG_PHASE);
+        }
+        let head = settlement.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        let (next_state, effect) = self.rewards.prune_epoch(self.epoch, head)?;
+        let RewardEffect::Pruned(allocation) = effect else {
+            return Err(F06_LEDGER_INVARIANT_VIOLATION);
+        };
+        let response = Response::write(|w| w.put(&digest_bytes(allocation)))?;
+        let after = next_state.ledger()?;
+        self.commit(settlement, after, None, out, effect, response)
+    }
+}
+
+/// F06 runtime over the complete committed `paxai/state/v1` value: Fund (0x0601),
+/// Claim (0x0602), `ExpireEpochClaims` (0x0603), `RefundFree` (0x0604) and
+/// `PruneEpoch` (0x0605). Writes the whole next state into `next` (at least
+/// `MAX_STATE_BYTES`) and its event into `event`; `scratch` holds at least
+/// [`SCRATCH_BYTES`]. An applied transition returns the one value effect the
+/// Program activity must stage atomically with them.
+///
+/// # Errors
+/// `UNKNOWN_OPERATION`; `NON_CANONICAL` for an inconsistent committed state or
+/// payload; envelope principal, domain and expiry refusals; `WRONG_MARKET`;
+/// `F06_WRONG_ASSET`, `ACCOUNT_BINDING` or `F06_REFUND_RECIPIENT_MISMATCH` when
+/// the ledger bindings differ from the header; `WRONG_EPOCH`, `WRONG_CONFIG`
+/// and `WRONG_ROSTER` for an envelope not binding the exact ledger or row
+/// context; `NOT_FOUND` for an unknown or pruned epoch; `WRONG_PHASE` for
+/// pruning the latest opened epoch; every refusal of the underlying F06
+/// transition and of the replay table; `CAPACITY`, `ARITHMETIC` and
+/// `F01_CAPACITY_UNAVAILABLE`. On any error `current` is unchanged and the
+/// outputs must be discarded.
+pub fn apply(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Outcome> {
+    let e = &envelope.envelope;
+    let kind = Kind::of(e.operation)?;
+    let view = view(current)?;
+    let header = &view.section.header;
+    authenticate(ctx, e, header)?;
+    let (policy, rest) = scratch.split_at_mut_checked(POLICY_CAP).ok_or(CAPACITY)?;
+    let (settlement, rest) = rest.split_at_mut_checked(SETTLEMENT_CAP).ok_or(CAPACITY)?;
+    let (control, initial) = rest.split_at_mut_checked(CONTROL_CAP).ok_or(CAPACITY)?;
+    let committed = view.state.feature_sections[Section::SettlementClaims.index()];
+    let (rewards, tail) = if committed.is_empty() {
+        let ledger = RewardLedger::new(
+            header.funding_asset,
+            header.rewards_account,
+            header.refund_recipient_account,
+        )?;
+        let initial = initial.get_mut(..REWARD_STATE_BYTES).ok_or(CAPACITY)?;
+        (RewardState::init(&ledger, initial)?, &[][..])
+    } else {
+        let (head, tail) = committed
+            .split_at_checked(REWARD_STATE_BYTES)
+            .ok_or(NON_CANONICAL)?;
+        (decode_reward_state(head)?, tail)
+    };
+    let before = rewards.ledger()?;
+    check_bindings(&before, header)?;
+    let epoch = bind(kind, e, &view, &rewards)?;
+    let call = Call {
+        ctx,
+        envelope,
+        view: &view,
+        rewards,
+        before,
+        epoch,
+        tail,
+    };
+    let out = Out {
+        policy,
+        control,
+        next,
+        event,
+    };
+    match kind {
+        Kind::Fund => call.fund(settlement, out),
+        Kind::Claim => call.claim(settlement, out),
+        Kind::Expire => call.expire(settlement, out),
+        Kind::Refund => call.refund(settlement, out),
+        Kind::Prune => call.prune(settlement, out),
     }
 }
