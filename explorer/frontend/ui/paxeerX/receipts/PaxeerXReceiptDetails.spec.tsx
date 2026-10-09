@@ -153,7 +153,8 @@ describe('PaxeerXReceiptDetails', () => {
   });
 
   it('reports a block alone as missing while the transaction and timestamp stay linked', () => {
-    const { container } = render(<PaxeerXReceiptDetails data={{ ...receipt, block_number: null }}/>);
+    const data = { ...receipt, block_number: null } as unknown as PaxeerXReceipt;
+    const { container } = render(<PaxeerXReceiptDetails data={ data }/>);
 
     const values = rowValues(container);
 

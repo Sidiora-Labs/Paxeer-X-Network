@@ -28,8 +28,8 @@ const createRequest = (headers: IncomingHttpHeaders, cookies: Record<string, str
 describe('fetchProxy', () => {
   beforeAll(async() => {
     server = createServer((request, response) => {
-      const chunks: Array<Buffer> = [];
-      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      const chunks: Array<Uint8Array> = [];
+      request.on('data', (chunk: Uint8Array) => chunks.push(chunk));
       request.on('end', () => {
         received.push({ method: request.method, headers: request.headers, body: Buffer.concat(chunks).toString() });
         response.writeHead(201, { 'content-type': 'application/json' });
