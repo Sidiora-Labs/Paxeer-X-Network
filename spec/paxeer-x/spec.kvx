@@ -36767,7 +36767,7 @@ worker_role_id = "W-STORAGE-CONTINUITY"
 
 [task.ai.T-S05-NATIVE-GAPS]
 title = "Close the native storage gaps the continuity harness exposed: v5 retirement scope, reservation-aware prepare_commit, capacity capability in node info, daemon module pin"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 33
 requires = ["ai.T-S04", "ai.T-C02-ABI5"]

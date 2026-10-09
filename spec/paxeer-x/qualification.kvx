@@ -1117,3 +1117,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.T-C02-ABI5-RUNTIME-verify-2.log (build-2.log exit 0; verify-1.log exit 101 before the rebase onto the ABI 5 qualification route)"
 observed = "32 pass: terminal 7, execution_abi5 2 (a real ABI 5 AI market guest executed through execute_authorized_v5_budgeted_for_qualification, its v5 terminal decoded under expected_abi 5 and refused under 4), drift 23, generator --check clean; the unit test that expected ABI 5 refused on the v5 path now refuses ABI 6."
 assumption = "Pre-existing runtime clippy errors (about 239 in calls.rs, replay.rs, execute.rs and others) are recorded, not repaired."
+
+[qualification.ai-t-s05-native-gaps-20261009-01]
+revision = "23ce2725c"
+command = "make test-paxai-native-gaps"
+exit_code = 0
+log = "private ops logs wt/logs/ai.T-S05-NATIVE-GAPS-verify-1.log (build-1.log exit 0)"
+observed = "4 pass, 0 repairs: module-5 retirement activity resolves and applies, a commit above open reservations is refused with LXP_ERR_ARENA_EXHAUSTED and staged slots survive, NODE_INFO carries capacity:granted=<blobs>,<bytes>,<kv>, lxp_programs_module_version(kernel) pins the highest registered module across six registration orders."
+assumption = "The daemon pin is asserted through the shared resolver both daemon sites call, not through a full batch or simulate call, which needs sealed-epoch, receipt, governance and fee state; the production genesis registers v4 only so its pin stays 4."
