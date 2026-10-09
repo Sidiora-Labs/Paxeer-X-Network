@@ -35930,7 +35930,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 6
 acceptance_cases = ["AI.F10-A05", "AI.F10-A06", "AI.F10-A11", "AI.F10-A12", "AI.F10-A15"]
-paths = ["platform/hosted/webhooks/src/ai_market.rs", "platform/hosted/webhooks/tests/ai_finalized_delivery.rs"]
+paths = ["platform/hosted/webhooks/src/ai_market.rs", "platform/hosted/webhooks/tests/ai_finalized_delivery.rs", "platform/hosted/webhooks/Cargo.toml"]
 worker_role_id = "W-F10-WEBHOOKS"
 
 [task.ai.F02-T02]
