@@ -877,3 +877,11 @@ exit_code = 0
 log = "private ops log wt/logs/ai.F04-T02-verify-1.log"
 observed = "Fourteen window cases pass; evaluator replay slots are bound as a test fixture because no F08 producer binds ActorSlot::evaluator(i) yet, and the F05 aggregate-sealed signal to RevokeEvaluator is the AuthorityContext stand-in until ai.F05-T03 lands."
 assumption = "Fixture bindings are replaced by the real F08 and F05 producers in ai.F05-T03 and the F08 roster tasks without changing F04 behaviour."
+
+[qualification.ai-t-c02-host-abi-20261009-01]
+revision = "19d5fdb08"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary"
+exit_code = 101
+log = "private ops log wt/logs/ai.T-C02-verify-2.log"
+observed = "Build passes and the router, cdylib entry and native harness are complete, but all eight host-boundary cases fail pre-runtime with -101 because every shipped programs module registration is ABI 4 and the host refuses the guest's ABI 5 CALLs; wasm32 clippy also reports pre-existing findings in host_adapter.rs and commit_reveal/commitment.rs."
+assumption = "Held at implemented; ai.T-C02-ABI5 adds the ABI 5 programs module registration for the harness without genesis activation, and the wasm32 clippy debt is a wave-level lint item."
