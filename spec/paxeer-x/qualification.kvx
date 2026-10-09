@@ -885,3 +885,11 @@ exit_code = 101
 log = "private ops log wt/logs/ai.T-C02-verify-2.log"
 observed = "Build passes and the router, cdylib entry and native harness are complete, but all eight host-boundary cases fail pre-runtime with -101 because every shipped programs module registration is ABI 4 and the host refuses the guest's ABI 5 CALLs; wasm32 clippy also reports pre-existing findings in host_adapter.rs and commit_reveal/commitment.rs."
 assumption = "Held at implemented; ai.T-C02-ABI5 adds the ABI 5 programs module registration for the harness without genesis activation, and the wasm32 clippy debt is a wave-level lint item."
+
+[qualification.ai-f05-t03-aggregation-runtime-20261009-01]
+revision = "7ba79b92a"
+command = "programs/tests/ai-market/run-aggregation-runtime.sh"
+exit_code = 2
+log = "private ops log wt/logs/ai.F05-T03-verify-2.log"
+observed = "Twenty runtime scenarios (23 case lines) pass through the real F01-F04 paths and aggregation::apply; the AI.F05-A16 native fuel refusal during ProcessAggregation is NOT_RUN because the host-boundary harness landed after this branch and native v5 calls still fail until ai.T-C02-ABI5, so the script exits 2 by design; F07 per-worker history and the history_allowed freeze wait for ai.F07-T02 and frozen worker attributes for the F02 follow-up."
+assumption = "Held at implemented; after ai.T-C02-ABI5 lands the same task is re-opened to add the A16 native fuel case through the harness, route the three aggregation selectors in dispatch::route with aggregate_sealed derived from aggregation::progress, and rerun the gate to exit 0."

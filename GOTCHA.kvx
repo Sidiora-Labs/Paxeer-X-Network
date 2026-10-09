@@ -5164,3 +5164,8 @@ text = "F04 commit/reveal: SealEvidence consumes evaluator sequence 1, so the fi
 area = "programs"
 text = "The native programs module registrations (programs_module_registration_v4 and the v4 storage-retirement variant, also the genesis module table) carry abi_version 4, and src/modules/programs/call.c refuses any CALL whose abi_version exceeds the registered module's, so a guest ABI 5 program fails pre-runtime with -101 on every host. Guests at ABI != 2 need an LXPA2 account profile before lxp_programs_account_register (else -101) and the LXPA2 opt-in needs runtime->state_feed plus a commit observer (else -103); a harness can deploy at ABI 2, register, then UPGRADE to ABI 5 with the same code hash. decode_envelope returns WRONG_ROSTER before UNKNOWN_OPERATION for selectors that require a roster. rustfmt on lib.rs walks every module, so format per file."
 
+
+[gotcha.1115]
+area = "ai-market"
+text = "epoch::open_epoch refuses with WRONG_PHASE, not F06_EPOCH_ALREADY_RESERVED, while the previous epoch is still reserved; F05 aggregation::apply (BeginAggregation, ProcessAggregation with an 8-worker cursor, FinalizeAggregation) expects the router to derive AuthorityContext.aggregate_sealed from aggregation::progress(current).phase, to refuse any immediate caller, and to map Outcome::AlreadyApplied to a zero-event unchanged-state result; a retry with a different epoch, config or roster binding returns WRONG_EPOCH, WRONG_CONFIG or WRONG_ROSTER and CONFLICT only on an input digest mismatch; clippy pedantic also denies unused_self and match_wildcard_for_single_variants in test files."
+

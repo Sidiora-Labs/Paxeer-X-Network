@@ -36369,7 +36369,7 @@ worker_role_id = "W-F04-RECOVERY"
 
 [task.ai.F05-T03]
 title = "Wire atomic aggregation and epoch completion"
-status = "in_progress"
+status = "implemented"
 mode = "BUILD"
 wave = 28
 requires = ["ai.F05-T02", "ai.F06-T02", "ai.F07-T01", "ai.F04-T02", "ai.F01-T03-EPOCH"]
