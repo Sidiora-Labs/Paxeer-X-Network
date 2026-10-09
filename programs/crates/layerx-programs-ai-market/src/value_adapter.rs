@@ -91,11 +91,6 @@ impl RewardsAccount {
         self.asset
     }
 
-    #[must_use]
-    pub const fn seed(&self) -> &'static [u8] {
-        REWARDS_ACCOUNT_SEED
-    }
-
     /// Native `ProgramAccount` registration payload; submitting it requires the
     /// deployment's registration authority.
     ///
@@ -165,8 +160,8 @@ impl RewardsAccount {
         if recipient == self.account {
             return Err(ACCOUNT_BINDING);
         }
-        let to = layerx_program_sdk::AccountId::new(recipient.bytes())
-            .map_err(|_| ACCOUNT_BINDING)?;
+        let to =
+            layerx_program_sdk::AccountId::new(recipient.bytes()).map_err(|_| ACCOUNT_BINDING)?;
         self.prepared
             .payment(to, sdk_amount(amount)?)
             .map_err(|_| F06_INVALID_AMOUNT)
@@ -185,8 +180,13 @@ fn sdk_amount(amount: Amount) -> CodecResult<layerx_program_sdk::Amount> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValueAction {
     None,
-    Fund { amount: Amount },
-    Pay { recipient: AccountId, amount: Amount },
+    Fund {
+        amount: Amount,
+    },
+    Pay {
+        recipient: AccountId,
+        amount: Amount,
+    },
 }
 
 impl ValueAction {
@@ -319,12 +319,10 @@ pub fn settle(
     effect: RewardEffect,
 ) -> CodecResult<Amount> {
     let action = plan(bound, prev, next, effect)?;
-    let observed = layerx_program_sdk::balance::read(
-        bound.prepared.account(),
-        bound.prepared.asset(),
-    )
-    .map_err(balance_refusal)?
-    .value();
+    let observed =
+        layerx_program_sdk::balance::read(bound.prepared.account(), bound.prepared.asset())
+            .map_err(balance_refusal)?
+            .value();
     let surplus = cover(next, observed, action)?;
     match action {
         ValueAction::None => {}
