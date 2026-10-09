@@ -51,6 +51,7 @@ TEST_LIBRARY := $(BUILD_DIR)/liblayerx-testing.a
 	test-harness list-tests \
 	test-paxai-blob-lifecycle paxai-host-boundary-build \
 	test-paxai-blob-admission \
+	test-paxai-storage-continuity \
 	test-result test-protocol test-arena test-sanitizer-smoke \
 	test-sanitizer-suite test-codec test-codec-limits test-codec-version \
 	test-codec-vectors fuzz-codec-smoke test-crypto-hash test-crypto-ed25519 \
@@ -3607,6 +3608,21 @@ test-paxai-blob-admission: $(BUILD_DIR)/tests/lxp_test_blob_admission
 	cargo build --locked --manifest-path platform/hosted/paxai-storage-keeper/Cargo.toml
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_blob_admission \
 		platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper
+
+PAXAI_FUNDED_SCRIPT ?=
+
+$(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity: tests/programs/test_paxai_storage_continuity.c \
+		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LAYERXD_SOURCES) \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+
+test-paxai-storage-continuity: $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity paxai-host-boundary-build
+	cargo build --locked --manifest-path platform/hosted/paxai-storage-keeper/Cargo.toml
+	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity \
+		$(PAXAI_HOST_BOUNDARY_DIR)/ai_market.wasm $(PAXAI_CHAIN_DOMAIN) \
+		platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper $(PAXAI_FUNDED_SCRIPT)
 
 programs-core-test: $(BUILD_DIR)/tests/programs_registration \
 		$(BUILD_DIR)/tests/programs_lifecycle \
