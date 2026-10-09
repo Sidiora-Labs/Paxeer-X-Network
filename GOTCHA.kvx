@@ -5258,3 +5258,7 @@ text = "F06 terminalize for a no-score epoch clears the row's entries and releas
 [gotcha.1134]
 area = "agent-sdk-typescript"
 text = "SecretBytes built from a Node Buffer can be used once: Buffer.slice shares memory and withBytes zeroes the stored secret after the first use, so pass a plain Uint8Array. native-v1 program.call posts the signed activity as a raw binary body, not JSON hex, and the activity signature is ed25519 over sha256(\"LXP/v1/signature-preimage\\0\"||unsigned). encodeNativeProgramCallV1, decodeNativeProgramCallV1, the NativeProgramRequestV1 constructor and the generated supportsProgramGuestAbi all refuse guest ABI 5 although the PAXAI schema requires it; the gateway serves AI market JSON ids with a 0x prefix where the spec says plain hex."
+
+[gotcha.1135]
+area = "programs-ai-market"
+text = "An F01 ADMIT deadline must be at most height + task_timeout_heights (32 by default) and within the commit window; a deadline past the worker metadata expiry is accepted only while height < expiry, afterwards ADMIT refuses with F02_METADATA_EXPIRED. A refused role step does not consume its replay sequence, so the next accepted step reuses it. Clippy too_many_lines (100) applies to #[test] functions; split long journeys behind a shared setup helper. A worktree rebased onto main after F10-T03 regenerates programs/Cargo.lock with the layerx-programs-ai-market dependency line and fleet-commit.sh stages it."

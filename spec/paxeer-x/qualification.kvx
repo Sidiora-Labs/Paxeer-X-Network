@@ -1045,3 +1045,11 @@ exit_code = 1
 log = "private ops logs wt/logs/ai.F10-T04-verify-2.log, build-3.log"
 observed = "19 of 21 pass on the real ProgramOperations and transport path (snapshots, pagination, absence, lost ack to unknown, exact resend, interrupted submit, expiry, corrupt records, no re-signing); the two A07 flows fail at prepare because the SDK native call codec and generated supportsProgramGuestAbi refuse guest ABI 5."
 assumption = "ABI 5 admission belongs to the generated contracts and verifiers across TS and Python (leader task ai.F10-T08-SDK-ABI5); the A08 executed and finalized branches wait on an ABI 5 sequencer-signed receipt and checkpoint fixture; FUND and CLAIM recipient previews wait on the gateway serving funding asset, rewards account, owner and refund principals."
+
+[qualification.ai-f01-t04-service-task-handoff-20261009-01]
+revision = "52342c0f0"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_admission_boundary; cargo test --manifest-path platform/Cargo.toml -p layerx-paxai-worker --test task_chain_handoff"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F01-T04-SERVICE-verify-1.log, verify-worker-1.log"
+observed = "8 admission boundary and 4 worker chain handoff cases pass; restart is covered as decoding the persisted signed ACK against the finalized record because the worker crate still lacks the F02-T03 durable job store, fenced lease and UNKNOWN_EXECUTION reconciliation, F02-R009 ServiceResult and an F01 task lookup seam."
+assumption = "F02-T03 (running) supplies the durable job store and runner seam; the chain handoff test is re-run against it when it lands."
