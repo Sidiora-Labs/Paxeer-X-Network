@@ -298,16 +298,16 @@ compatibility = "existing_ABI2_bytes_and_all_positive_negative_assertions_unchan
 encoding_version = 5
 domain = "LXP/program-execution/v5"
 domain_terminator_hex = "00"
-allowed_guest_abis = ["ABI_V3_VERSION","ABI_V4_VERSION"]
+allowed_guest_abis = ["ABI_V3_VERSION","ABI_V4_VERSION","ABI_V5_VERSION"]
 layout = "execution_v4_field_order_widths_bounds_and_canonical_outcome_grammar_with_distinct_domain_only"
 abi_binding = "embedded_terminal_expected_request_signed_receipt_and_deployed_module_guest_ABI_all_equal_exactly"
 outcomes = ["success","guest_failure","resource"]
 usage_binding = "all_seven_metered_resource_classes_exactly_match_signed_receipt_usage_and_declared_budget"
 graph_binding = "canonical_graph_bytes_and_digest_bound_to_signed_receipt_and_authenticated_terminal"
 attachment_binding = "unchanged_occupancy_transfer_authority_applied_leg_commitments_required_without_missing_proof_fallback"
-failure_binding = "existing_callback_and_settlement_failure_domains_and_typed_refusals_with_exact_native_protocol3_guest_ABI3_or4"
-historical_compatibility = "ABI3_or4_under_execution_v4_remains_refused_never_relabel_or_reinterpret"
-unsupported = "ABI0_ABI1_ABI2_ABI5_and_every_other_u16_refused_under_execution_v5"
+failure_binding = "existing_callback_and_settlement_failure_domains_and_typed_refusals_with_exact_native_protocol3_guest_ABI3_ABI4_or_ABI5"
+historical_compatibility = "ABI3_ABI4_or_ABI5_under_execution_v4_remains_refused_never_relabel_or_reinterpret"
+unsupported = "ABI0_ABI1_ABI2_and_every_u16_above_ABI5_refused_under_execution_v5"
 
 [type.ProgramExecutionEvidence]
 required = ["activity_id","receipt","terminal_payload","call_graph","authority"]

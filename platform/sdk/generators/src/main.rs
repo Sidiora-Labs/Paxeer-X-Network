@@ -545,7 +545,11 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
         (
             "type.ProgramExecutionV5",
             5,
-            vec!["ABI_V3_VERSION".to_owned(), "ABI_V4_VERSION".to_owned()],
+            vec![
+                "ABI_V3_VERSION".to_owned(),
+                "ABI_V4_VERSION".to_owned(),
+                "ABI_V5_VERSION".to_owned(),
+            ],
         ),
     ] {
         let domain = layerx_platform_kvx::unquote(programs.required(section, "domain")?)?;

@@ -545,7 +545,7 @@ fn decode_v5(encoded: &[u8], expected_abi: u16) -> Result<ExecutionTerminal, Ter
     let program = c.array()?;
     let abi_version = c.u16()?;
     if abi_version != expected_abi
-        || !matches!(abi_version, 3 | 4)
+        || !matches!(abi_version, 3..=5)
         || runtime_version == 0
         || fee_schedule_version == 0
         || metering_schedule_version == 0
@@ -951,8 +951,12 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod source_vectors {
     use super::{
-        decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDetail,
-        EXECUTION_V4, EXECUTION_V5,
+        decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDecodeError,
+        TerminalDetail, EXECUTION_V4, EXECUTION_V5,
+    };
+    use crate::{
+        BudgetMeterRefusal, BudgetResourceKind, MeteredUsage, ProgramFailure, ProgramId,
+        RefusalClass, RefusalReason,
     };
 
     #[test]
@@ -1009,12 +1013,12 @@ mod source_vectors {
 
     #[test]
     fn execution_v5_closed_profile_and_abi_binding() {
-        for abi in [3, 4] {
+        for abi in [3, 4, 5] {
             let bytes = execution_v5_codec_vector(abi);
             let terminal =
                 decode_terminal_payload(1, abi, &bytes).unwrap_or_else(|error| panic!("{error:?}"));
             assert_eq!(terminal.execution_encoding_version(), Some(5));
-            for other in [0, 1, 2, 3, 4, 5, u16::MAX] {
+            for other in [0, 1, 2, 3, 4, 5, 6, u16::MAX] {
                 if other != abi {
                     assert!(decode_terminal_payload(1, other, &bytes).is_err());
                 }
@@ -1031,7 +1035,7 @@ mod source_vectors {
             old_profile[..EXECUTION_V4.len()].copy_from_slice(EXECUTION_V4);
             assert!(decode_terminal_payload(1, abi, &old_profile).is_err());
         }
-        for abi in [0, 1, 2, 5, u16::MAX] {
+        for abi in [0, 1, 2, 6, u16::MAX] {
             assert!(decode_terminal_payload(1, abi, &execution_v5_codec_vector(abi)).is_err());
         }
         let mut v4 = execution_v5_codec_vector(2);
@@ -1041,6 +1045,139 @@ mod source_vectors {
                 .unwrap_or_else(|error| panic!("{error:?}"))
                 .execution_encoding_version(),
             Some(4)
+        );
+    }
+
+    /// The success vector with its outcome replaced, keeping the empty call graph.
+    fn execution_v5_outcome_vector(abi: u16, outcome: &[u8]) -> Vec<u8> {
+        let mut bytes = execution_v5_codec_vector(abi);
+        bytes.truncate(bytes.len() - 23);
+        bytes.extend_from_slice(outcome);
+        bytes.extend_from_slice(&0_u64.to_be_bytes());
+        bytes
+    }
+
+    fn execution_v5_expected(
+        abi_version: u16,
+        outcome: CandidateTerminalOutcome,
+    ) -> TerminalDetail {
+        TerminalDetail::Execution(ExecutionTerminal::CandidateV4 {
+            runtime_version: 1,
+            fee_schedule_version: 1,
+            metering_schedule_version: 1,
+            program: [7; 32],
+            abi_version,
+            values: Vec::new(),
+            usage: MeteredUsage {
+                cpu_fuel: 1,
+                memory_bytes: 2,
+                storage_read_bytes: 3,
+                storage_write_bytes: 4,
+                output_values: 0,
+                output_bytes: 2,
+                occupancy_byte_batches: 0,
+                occupancy_fee_units: 0,
+                fee_units: 10,
+            },
+            trace: None,
+            graph: Vec::new(),
+            outcome,
+        })
+    }
+
+    #[test]
+    fn execution_v5_fifth_guest_abi_shares_the_v5_layout_exactly() {
+        let five = execution_v5_codec_vector(5);
+        let four = execution_v5_codec_vector(4);
+        assert_eq!(five.len(), four.len());
+        let differing: Vec<usize> = (0..five.len()).filter(|&i| five[i] != four[i]).collect();
+        let abi_at = five.len() - 25;
+        assert_eq!(differing, [abi_at + 1]);
+        assert_eq!(five[abi_at..abi_at + 2], 5_u16.to_be_bytes());
+        let decoded =
+            decode_terminal_payload(1, 5, &five).unwrap_or_else(|error| panic!("{error:?}"));
+        assert_eq!(decoded.execution_encoding_version(), Some(5));
+        assert!(decoded.attachments.is_empty());
+        assert_eq!(
+            decoded.detail,
+            execution_v5_expected(
+                5,
+                CandidateTerminalOutcome::Success {
+                    code: 0,
+                    response: vec![0xaa, 0xbb],
+                },
+            )
+        );
+        assert_eq!(
+            decode_terminal_payload(1, 4, &five),
+            Err(TerminalDecodeError::MismatchedAbi)
+        );
+        assert_eq!(
+            decode_terminal_payload(1, 5, &four),
+            Err(TerminalDecodeError::MismatchedAbi)
+        );
+        assert_eq!(
+            decode_terminal_payload(1, 6, &execution_v5_codec_vector(6)),
+            Err(TerminalDecodeError::MismatchedAbi)
+        );
+        let mut relabelled = five;
+        relabelled[..EXECUTION_V4.len()].copy_from_slice(EXECUTION_V4);
+        for expected in [2, 4, 5] {
+            assert_eq!(
+                decode_terminal_payload(1, expected, &relabelled),
+                Err(TerminalDecodeError::MismatchedAbi)
+            );
+        }
+    }
+
+    #[test]
+    fn execution_v5_fifth_guest_abi_failure_and_resource_outcomes_decode_exactly() {
+        let program = ProgramId::new([7; 32]).unwrap_or_else(|error| panic!("{error}"));
+        let reason = RefusalReason::new(b"abi5").unwrap_or_else(|error| panic!("{error:?}"));
+        let failure = ProgramFailure::new(program, RefusalClass::Rejected, reason)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        let encoded = failure.canonical_encode();
+        let mut outcome = vec![1];
+        outcome.extend_from_slice(&(encoded.len() as u64).to_be_bytes());
+        outcome.extend_from_slice(&encoded);
+        let failed = execution_v5_outcome_vector(5, &outcome);
+        assert_eq!(
+            decode_terminal_payload(2, 5, &failed).map(|decoded| decoded.detail),
+            Ok(execution_v5_expected(
+                5,
+                CandidateTerminalOutcome::Failure(failure)
+            ))
+        );
+        assert_eq!(
+            decode_terminal_payload(2, 4, &failed),
+            Err(TerminalDecodeError::MismatchedAbi)
+        );
+        assert_eq!(
+            decode_terminal_payload(1, 5, &failed),
+            Err(TerminalDecodeError::MismatchedKind)
+        );
+        let mut outcome = vec![2, 0, 0];
+        outcome.extend_from_slice(&1_u64.to_be_bytes());
+        outcome.extend_from_slice(&2_u64.to_be_bytes());
+        let exhausted = execution_v5_outcome_vector(5, &outcome);
+        assert_eq!(
+            decode_terminal_payload(3, 5, &exhausted).map(|decoded| decoded.detail),
+            Ok(execution_v5_expected(
+                5,
+                CandidateTerminalOutcome::Resource(BudgetMeterRefusal::BudgetExceeded {
+                    resource: BudgetResourceKind::Cpu,
+                    limit: 1,
+                    attempted: 2,
+                })
+            ))
+        );
+        assert_eq!(
+            decode_terminal_payload(3, 4, &exhausted),
+            Err(TerminalDecodeError::MismatchedAbi)
+        );
+        assert_eq!(
+            decode_terminal_payload(2, 5, &exhausted),
+            Err(TerminalDecodeError::MismatchedKind)
         );
     }
 

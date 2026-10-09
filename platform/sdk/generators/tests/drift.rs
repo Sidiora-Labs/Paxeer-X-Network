@@ -112,7 +112,7 @@ fn repo_fixture(label: &str) -> PathBuf {
     place(
         &root,
         "agent/schema/agent-api/programs.kvx",
-        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\",\"5\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\n",
+        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\",\"5\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]\n",
     );
     place(
         &root,
@@ -648,4 +648,44 @@ fn programs_schema_value_differing_from_the_canonical_policy_is_refused() {
         "Programs ABI ABI_V5_VERSION differs from the canonical policy"
     );
     cleanup(&root);
+}
+
+#[test]
+fn execution_v5_profile_must_admit_exactly_the_third_to_fifth_guest_abis() {
+    let admitted =
+        "allowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]";
+    for (label, profile) in [
+        (
+            "execution-v5-without-five",
+            "allowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]",
+        ),
+        (
+            "execution-v5-with-two",
+            "allowed_guest_abis = [\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\",\"ABI_V5_VERSION\"]",
+        ),
+        (
+            "execution-v5-reordered",
+            "allowed_guest_abis = [\"ABI_V5_VERSION\",\"ABI_V4_VERSION\",\"ABI_V3_VERSION\"]",
+        ),
+    ] {
+        let root = repo_fixture(label);
+        let path = root.join("agent/schema/agent-api/programs.kvx");
+        let schema =
+            fs::read_to_string(&path).unwrap_or_else(|error| panic!("read schema: {error}"));
+        assert_eq!(
+            schema.matches(admitted).count(),
+            1,
+            "fixture schema must admit ABI 3, 4 and 5 under execution v5"
+        );
+        fs::write(&path, schema.replace(admitted, profile))
+            .unwrap_or_else(|error| panic!("write schema: {error}"));
+        let error = write_lock(&root, &lock_path(&root))
+            .err()
+            .unwrap_or_else(|| panic!("{label} must not generate"));
+        assert_eq!(
+            error,
+            "type.ProgramExecutionV5 violates the frozen execution profile"
+        );
+        cleanup(&root);
+    }
 }

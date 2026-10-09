@@ -5,7 +5,7 @@ outputs = ["agent-api-rust", "agent-rust", "agent-typescript", "agent-python", "
 
 [source.agent-api]
 root = "agent/schema/agent-api"
-digest = "475ff4e0fcbd0a24a9ae4becf3e7cb5986e19e76821a4070b217c98411fa1297"
+digest = "c21428eb0885c020e69895c5ba4a5138e3d4a022ffe09a0d9581d8c4107bae74"
 
 [source.human-api]
 root = "human/schema/human-api"
@@ -17,7 +17,7 @@ digest = "a1235902a2e119ece32f923bdc2fbf5f72f1e1b4ba32b5354915c47f5773f52b"
 
 [generator.platform-sdkgen]
 root = "platform/sdk/generators"
-digest = "35e697118552e52325532258a195cbdb02e52e141b06600b43b8a6e0a0949565"
+digest = "19bcbf8eaa58707cef9144281235b0e5dec6d8a92260ddc42e62277221cc29bb"
 
 [generator.agent-sdk-gen]
 root = "agent/tools/sdk-gen"
