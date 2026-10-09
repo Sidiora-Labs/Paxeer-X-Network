@@ -36276,7 +36276,7 @@ worker_role_id = "W-F09-RETENTION"
 
 [task.ai.F10-T06]
 title = "Expose private-safe operational observations"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F10-T02", "ai.F02-T03"]

@@ -925,3 +925,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.T-C02-ABI5-{build-1,build-2,verify-1,verify-2,clippy-1}.log"
 observed = "programs_module_registration_v5 lands and the eight host-boundary cases now reach the runtime at v5, where every CALL fails status -3: the protocol CPU cap (DEFAULT_CPU_FUEL 1_000_000) is below the AI market CREATE cost (~9.64M fuel), accounts.c admits only ABI 2/3/4, and call.c reopens and re-hashes the artifact per byte so each CALL takes ~25 minutes."
 assumption = "Held at implemented; the fuel budget, the ABI 5 account validation and the quadratic artifact read are kernel and runtime defects outside this task's paths and are opened as leader-added tasks ai.T-C02-FUEL, ai.T-C02-ACCOUNTS-V5 and ai.T-C02-ARTIFACT-READ before any native host-boundary gate is re-run."
+
+[qualification.ai-f10-t06-health-privacy-20261009-01]
+revision = "0901cb5c2"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-indexer --test ai_health_privacy"
+exit_code = 0
+log = "private ops log wt/logs/ai.F10-T06-verify-1.log"
+observed = "Seven health-privacy cases pass: signed observations (SHA-256 domain PAXAI/health-observation/v1, Ed25519) are refused for stale authority, not-ready, expired, finality-unavailable, authority regression, non-member and binding mismatch, and operator diagnostics are gated by a revocable grant generation; the positive RUNNER_READY route is not asserted because no runner qualification producer has landed, and the roster key and canonical membership rows are narrow seams until ai.F02-T03 and ai.F10-T02 land."
+assumption = "ai.F10-T02 maps its finalized participant row into ai_health::CanonicalMembership and ai.F02-T02/T03 expose the delegate key and emit observations in the schema-1 body layout; the positive route is asserted in ai.F10-T02-FULL."

@@ -5184,3 +5184,8 @@ text = "epoch::open_epoch does not physically clear the previous epoch's F03 row
 area = "programs-host"
 text = "With programs_module_registration_v5 active, a guest ABI 5 CALL clears call.c's -101 version gate and then fails NON_CANONICAL (-3) inside layerx_programs_call_begin: first DeclaredBudget refuses cpu_fuel above DEFAULT_CPU_FUEL 1_000_000 (runtime meter.rs), then the AI market CREATE itself exhausts the cap (BudgetExceeded Cpu, attempted ~9.64M under the genesis WASMI_0_31_2 schedule); both map to -3. accounts.c lxp_programs_account_module_validate admits only ABI 2/3/4, so register v5 only after DEPLOY and ACCOUNT bring-up and track recorded_module_version per active registration. call.c's per-byte WASM callbacks (activity_byte, catalog_wasm_byte) reopen the artifact and re-hash the whole blob per byte, quadratic in guest size: a 385 KB guest costs ~25 min per CALL. After the Rust static lib rebuilds, make does not relink build/tests/paxai_host_boundary (order-only prerequisite); delete the binary to force the relink."
 
+
+[gotcha.1119]
+area = "indexer"
+text = "layerx-indexer clippy can only isolate findings in owned files with --no-deps -- --cap-lints warn; without it, lint errors in platform/hosted/internal and then the indexer's own pre-existing deny-level findings (lib.rs docs, abi.rs, api.rs, codec.rs, config.rs, layerx.rs, paxeer.rs, existing tests) stop compilation before test targets are linted. The indexer has no ed25519-dalek dependency: verify Ed25519 through the rustls ring provider (default_provider().signature_verification_algorithms.mapping for ED25519) and sign in tests with rustls::crypto::ring::sign::any_eddsa_type on PKCS#8 v1 DER; the raw public key is the last 32 bytes of the SPKI."
+
