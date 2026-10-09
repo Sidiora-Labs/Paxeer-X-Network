@@ -1716,8 +1716,9 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
                                   sequencer_capabilities) :
             (evidence_available ? evidence_reader_capabilities :
                                   reader_capabilities);
-    const char *capabilities[24];
-    uint8_t payload[512];
+    const char *capabilities[25];
+    char capacity_capability[65];
+    uint8_t payload[640];
     lxp_sequencer_authorization authorization;
     uint64_t head;
     uint64_t batch;
@@ -1741,6 +1742,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
     bool program_read = simulation_available(server);
     bool program_head_attest = program_read;
     bool simulate = program_read;
+    bool capacity_served = program_read;
     bool execution_prestate = requested_minor >= LNI_EXECUTION_PRESTATE_MINOR &&
         execution_prestate_available(server);
     bool asset_execution_prestate = requested_minor >= LNI_EXECUTION_PRESTATE_MINOR &&
@@ -1755,8 +1757,36 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
     lni_reply_minor = arbiter_admission_prestate ? LNI_ARBITER_ADMISSION_PRESTATE_MINOR :
         arbiter_prestate ? LNI_ARBITER_PRESTATE_MINOR :
         (execution_prestate || asset_execution_prestate || replay_catalogue) ? LNI_EXECUTION_PRESTATE_MINOR : LNI_VERSION_MINOR;
-    if (base_count + 9U > sizeof(capabilities) / sizeof(capabilities[0]))
+    if (base_count + 10U > sizeof(capabilities) / sizeof(capabilities[0]))
         return LXP_ERR_LENGTH_LIMIT;
+    if (capacity_served) {
+        lxp_capacity_observation observation;
+        int written;
+        (void)memset(&observation, 0, sizeof(observation));
+        status = lni_read_lock(server->owner);
+        if (status != LXP_OK) return status;
+        if (server->owner->kernel != NULL &&
+            server->owner->kernel->capacity != NULL)
+            status = lxp_kernel_capacity_observe(
+                server->owner->kernel, server->owner->kernel->capacity,
+                &observation);
+        status = lni_read_unlock(server->owner, status);
+        if (status == LXP_ERR_MODULE_DISABLED) status = LXP_OK;
+        capacity_served = status == LXP_OK;
+        if (status == LXP_ERR_PROJECTION_STALE) status = LXP_OK;
+        if (status != LXP_OK) return status;
+        written = capacity_served ? snprintf(
+            capacity_capability, sizeof(capacity_capability),
+            "capacity:granted=%llu,%llu,%llu",
+            (unsigned long long)observation.obligations.blobs +
+                observation.work.blobs,
+            (unsigned long long)observation.obligations.bytes +
+                observation.work.bytes,
+            (unsigned long long)observation.obligations.kv +
+                observation.work.kv) : 0;
+        if (written < 0 || (size_t)written >= sizeof(capacity_capability))
+            return LXP_ERR_LENGTH_LIMIT;
+    }
     for (index = 0U; index < base_count; ++index) {
         if (server->owner->protocol_version !=
                 LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
@@ -1791,6 +1821,16 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
             --at;
         }
         capabilities[at] = "availability_fetch";
+        ++capability_count;
+    }
+    if (capacity_served) {
+        size_t at = capability_count;
+        while (at != 0U &&
+               strcmp(capabilities[at - 1U], capacity_capability) > 0) {
+            capabilities[at] = capabilities[at - 1U];
+            --at;
+        }
+        capabilities[at] = capacity_capability;
         ++capability_count;
     }
     if (evidence_available && server->owner->receipt_authority != NULL &&
@@ -3705,7 +3745,7 @@ static lxp_result lni_program_read_execute(
         execution.epoch = owner->kernel->epoch;
         execution.global_sequence = global_sequence;
         execution.recorded_module_version =
-            LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
+            lxp_programs_module_version(owner->kernel);
         execution.recorded_metering_schedule_version = 0U;
         execution.recorded_fee_schedule_version = 0U;
         execution.parameter_version = parameter_version;

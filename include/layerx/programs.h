@@ -477,6 +477,7 @@ const lxp_module_iface *programs_module_registration_v3(void);
 const lxp_module_iface *programs_module_registration_v4(void);
 const lxp_module_iface *programs_module_registration_v4_storage_retirement(void);
 const lxp_module_iface *programs_module_registration_v5(void);
+uint32_t lxp_programs_module_version(const lxp_kernel *kernel);
 const lxp_module_iface *lx_programs_module_iface(void);
 
 lxp_result lxp_programs_lifecycle_decode(lxp_module_ctx *ctx,

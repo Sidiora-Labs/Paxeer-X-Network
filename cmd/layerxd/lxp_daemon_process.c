@@ -1298,7 +1298,7 @@ static uint32_t recorded_module_version_for(
                        lxp_governance_activity(activity_type)) ? 1U :
                       (asset_activity_supported(activity_type) ?
                        lx_asset_module_iface()->abi_version :
-                       LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION));
+                       lxp_programs_module_version(&process->kernel)));
 }
 
 static lxp_result persist_prepared_batch_checkpoint(

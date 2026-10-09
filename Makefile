@@ -52,6 +52,7 @@ TEST_LIBRARY := $(BUILD_DIR)/liblayerx-testing.a
 	test-paxai-blob-lifecycle paxai-host-boundary-build \
 	test-paxai-blob-admission \
 	test-paxai-storage-continuity \
+	test-paxai-native-gaps \
 	test-result test-protocol test-arena test-sanitizer-smoke \
 	test-sanitizer-suite test-codec test-codec-limits test-codec-version \
 	test-codec-vectors fuzz-codec-smoke test-crypto-hash test-crypto-ed25519 \
@@ -3623,6 +3624,16 @@ test-paxai-storage-continuity: $(BUILD_DIR)/tests/lxp_test_paxai_storage_continu
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_paxai_storage_continuity \
 		$(PAXAI_HOST_BOUNDARY_DIR)/ai_market.wasm $(PAXAI_CHAIN_DOMAIN) \
 		platform/hosted/paxai-storage-keeper/target/debug/paxai-storage-keeper $(PAXAI_FUNDED_SCRIPT)
+
+$(BUILD_DIR)/tests/lxp_test_paxai_native_gaps: tests/programs/test_paxai_native_gaps.c \
+		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LAYERXD_SOURCES) \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+
+test-paxai-native-gaps: $(BUILD_DIR)/tests/lxp_test_paxai_native_gaps
+	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_paxai_native_gaps
 
 programs-core-test: $(BUILD_DIR)/tests/programs_registration \
 		$(BUILD_DIR)/tests/programs_lifecycle \

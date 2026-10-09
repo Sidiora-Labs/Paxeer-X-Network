@@ -58,6 +58,13 @@ static const uint32_t activity_types_v4_storage_retirement[] = {
     LX_PROGRAMS_SANDBOX, LX_PROGRAMS_SANDBOX_DESTROY,
     LX_PROGRAMS_STORAGE_RETIREMENT
 };
+static const uint32_t activity_types_v5[] = {
+    LX_PROGRAMS_DEPLOY, LX_PROGRAMS_UPGRADE, LX_PROGRAMS_CALL,
+    LX_PROGRAMS_REGISTRY, LX_PROGRAMS_TRANSFER, LX_PROGRAMS_ACCOUNT,
+    LX_PROGRAMS_WIND_DOWN, LX_PROGRAMS_FEE_GOVERNANCE,
+    LX_PROGRAMS_SANDBOX, LX_PROGRAMS_SANDBOX_DESTROY,
+    LX_PROGRAMS_STORAGE_RETIREMENT
+};
 
 static lxp_result programs_genesis(lxp_module_ctx *ctx,
                                    const uint8_t *manifest, size_t length)
@@ -331,9 +338,19 @@ const lxp_module_iface *programs_module_registration_v5(void)
 {
     static const lxp_module_iface iface = {
         LXP_MODULE_PROGRAMS, LX_PROGRAMS_GUEST_ABI_V5_VERSION, "programs",
-        activity_types_v4, sizeof(activity_types_v4)/sizeof(activity_types_v4[0]),
+        activity_types_v5, sizeof(activity_types_v5)/sizeof(activity_types_v5[0]),
         programs_genesis, programs_decode, programs_validate, programs_execute,
         programs_epoch_begin, programs_epoch, programs_state_root, NULL
     };
     return &iface;
+}
+
+uint32_t lxp_programs_module_version(const lxp_kernel *kernel)
+{
+    const lxp_module_registration *registration;
+    if (kernel == NULL ||
+        lxp_kernel_module_by_id(kernel, LXP_MODULE_PROGRAMS, kernel->epoch,
+                                &registration) != LXP_OK)
+        return LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
+    return registration->abi_version;
 }
