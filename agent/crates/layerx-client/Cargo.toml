@@ -12,6 +12,7 @@ layerx-types = { path = "../layerx-types" }
 layerx-wire = { path = "../layerx-wire" }
 layerx-proof = { path = "../layerx-proof" }
 layerx-paxeer-verifier = { path = "../layerx-paxeer-verifier" }
+layerx-programs-ai-market = { path = "../../../programs/crates/layerx-programs-ai-market" }
 sha2 = "=0.10.9"
 rustls = { version = "0.23.32", default-features = false, features = ["ring", "std", "tls12"] }
 

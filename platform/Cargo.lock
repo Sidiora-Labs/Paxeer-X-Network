@@ -1503,6 +1503,7 @@ dependencies = [
  "ed25519-dalek",
  "layerx-crypto",
  "layerx-paxeer-verifier",
+ "layerx-programs-ai-market",
  "layerx-proof",
  "layerx-types",
  "layerx-wire",

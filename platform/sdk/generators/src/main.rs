@@ -2282,6 +2282,251 @@ fn programs_contracts(repo_root: &Path, lock_path: &Path, write: bool) -> Result
     }
 }
 
+const PAXAI_SCHEMA_PATH: &str = "platform/sdk/schema/paxai-v1.kvx";
+const PAXAI_SECTIONS: [&str; 21] = [
+    "meta",
+    "limits",
+    "encoding",
+    "binding",
+    "projection_state",
+    "freshness",
+    "epoch_status",
+    "epoch_source",
+    "availability",
+    "participant_kind",
+    "score_status",
+    "kind_filter",
+    "pagination",
+    "approval",
+    "native_call",
+    "sdk_state",
+    "sdk_transition",
+    "domain_status",
+    "recovery",
+    "errors",
+    "operations",
+];
+const PAXAI_CODE_SECTIONS: [&str; 9] = [
+    "projection_state",
+    "freshness",
+    "epoch_status",
+    "availability",
+    "participant_kind",
+    "score_status",
+    "kind_filter",
+    "sdk_state",
+    "domain_status",
+];
+const PAXAI_FIXED_LIMITS: [(&str, u64); 18] = [
+    ("finalized_rank", 4),
+    ("settlement_rank", 5),
+    ("default_page_rows", 16),
+    ("max_page_rows", 32),
+    ("page_max_bytes", 65_536),
+    ("cursor_ttl_ms", 900_000),
+    ("cached_snapshots", 64),
+    ("epoch_headers", 4_096),
+    ("worker_rows", 32),
+    ("evaluator_rows", 8),
+    ("task_rows", 64),
+    ("authority_freshness_heights", 8),
+    ("epoch_span_heights", 128),
+    ("envelope_max_bytes", 16_384),
+    ("payload_max_bytes", 15_965),
+    ("state_max_bytes", 196_608),
+    ("readiness_seconds", 30),
+    ("public_aggregate_min_samples", 20),
+];
+const PAXAI_WINDOWS: [&str; 4] = [
+    "work_heights",
+    "commit_heights",
+    "reveal_heights",
+    "settlement_heights",
+];
+
+fn paxai_number(value: &str, what: &str) -> Result<u64, String> {
+    value.parse::<u64>().map_err(|_| {
+        format!("{PAXAI_SCHEMA_PATH}: {what} must be an unsigned integer, got {value}")
+    })
+}
+
+fn paxai_codes(
+    document: &layerx_platform_kvx::Document,
+    section: &str,
+) -> Result<BTreeMap<String, u64>, String> {
+    let mut codes = BTreeMap::new();
+    for (key, value) in document.section_entries(section) {
+        codes.insert(
+            key.to_owned(),
+            paxai_number(value, &format!("{section}.{key}"))?,
+        );
+    }
+    let mut values = codes.values().copied().collect::<Vec<_>>();
+    values.sort_unstable();
+    let contiguous = values.first().is_some_and(|first| *first <= 1)
+        && values.windows(2).all(|pair| pair[1] == pair[0] + 1);
+    if !contiguous {
+        return Err(format!(
+            "{PAXAI_SCHEMA_PATH}: [{section}] codes must be unique and contiguous from 0 or 1"
+        ));
+    }
+    Ok(codes)
+}
+
+fn paxai_limits(document: &layerx_platform_kvx::Document) -> Result<(), String> {
+    for (key, expected) in PAXAI_FIXED_LIMITS {
+        let actual = paxai_number(document.required("limits", key)?, &format!("limits.{key}"))?;
+        if actual != expected {
+            return Err(format!(
+                "{PAXAI_SCHEMA_PATH}: limits.{key} is fixed at {expected}, got {actual}"
+            ));
+        }
+    }
+    let mut span = 0_u64;
+    for key in PAXAI_WINDOWS {
+        span += paxai_number(document.required("limits", key)?, &format!("limits.{key}"))?;
+    }
+    if span != 128 {
+        return Err(format!(
+            "{PAXAI_SCHEMA_PATH}: epoch windows must cover exactly 128 heights, got {span}"
+        ));
+    }
+    Ok(())
+}
+
+fn paxai_transitions(document: &layerx_platform_kvx::Document) -> Result<(), String> {
+    let states = paxai_codes(document, "sdk_state")?;
+    let mut targets = BTreeSet::new();
+    for (target, sources) in document.section_entries("sdk_transition") {
+        let sources = layerx_platform_kvx::string_list(sources)?;
+        if !states.contains_key(target)
+            || sources.is_empty()
+            || sources
+                .iter()
+                .any(|source| source == target || !states.contains_key(source))
+        {
+            return Err(format!(
+                "{PAXAI_SCHEMA_PATH}: sdk_transition.{target} must name defined distinct source states"
+            ));
+        }
+        targets.insert(target.to_owned());
+    }
+    let unreachable = states
+        .keys()
+        .filter(|state| state.as_str() != "prepared" && !targets.contains(*state))
+        .collect::<Vec<_>>();
+    if !unreachable.is_empty() {
+        return Err(format!(
+            "{PAXAI_SCHEMA_PATH}: sdk states without an incoming transition: {unreachable:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn paxai_binding(document: &layerx_platform_kvx::Document) -> Result<(), String> {
+    let fields = layerx_platform_kvx::string_list(document.required("binding", "fields")?)?;
+    for key in ["optional", "snapshot_id_excludes"] {
+        let subset = layerx_platform_kvx::string_list(document.required("binding", key)?)?;
+        if let Some(unknown) = subset.iter().find(|field| !fields.contains(field)) {
+            return Err(format!(
+                "{PAXAI_SCHEMA_PATH}: binding.{key} names unknown field {unknown}"
+            ));
+        }
+    }
+    let domain = layerx_platform_kvx::unquote(document.required("binding", "snapshot_id_domain")?)?;
+    if domain != "PAXAI/view/v1" {
+        return Err(format!(
+            "{PAXAI_SCHEMA_PATH}: binding.snapshot_id_domain must be PAXAI/view/v1, got {domain}"
+        ));
+    }
+    Ok(())
+}
+
+fn paxai_operation(name: &str, value: &str, payload_max: u64) -> Result<u16, String> {
+    let invalid = |detail: &str| format!("{PAXAI_SCHEMA_PATH}: operations.{name} {detail}");
+    let fields = layerx_platform_kvx::string_list(value)?;
+    let [selector, feature, boundary, sequence, delegation, minimum, maximum] = fields.as_slice()
+    else {
+        return Err(invalid("must have exactly seven fields"));
+    };
+    let selector = selector
+        .strip_prefix("0x")
+        .filter(|digits| {
+            digits.len() == 4
+                && digits
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .and_then(|digits| u16::from_str_radix(digits, 16).ok())
+        .ok_or_else(|| invalid("selector must be 0x followed by four lower-case hex digits"))?;
+    let feature = paxai_number(feature, &format!("operations.{name} feature"))?;
+    if !(1..=10).contains(&feature) || u64::from(selector >> 8) != feature {
+        return Err(invalid(
+            "feature must be 1..=10 and equal the selector high byte",
+        ));
+    }
+    if !matches!(boundary.as_str(), "mutation" | "program-read")
+        || !matches!(sequence.as_str(), "role" | "object-local")
+        || !matches!(delegation.as_str(), "delegate" | "native-only")
+    {
+        return Err(invalid(
+            "has an undefined boundary, sequence or delegation value",
+        ));
+    }
+    let minimum = paxai_number(minimum, &format!("operations.{name} payload minimum"))?;
+    let maximum = paxai_number(maximum, &format!("operations.{name} payload maximum"))?;
+    if minimum > maximum || maximum > payload_max {
+        return Err(invalid(
+            "payload bounds must satisfy min <= max <= payload_max_bytes",
+        ));
+    }
+    Ok(selector)
+}
+
+fn paxai_operations(document: &layerx_platform_kvx::Document) -> Result<(), String> {
+    let payload_max = paxai_number(
+        document.required("limits", "payload_max_bytes")?,
+        "limits.payload_max_bytes",
+    )?;
+    let operations = document.section_entries("operations");
+    if operations.is_empty() {
+        return Err(format!("{PAXAI_SCHEMA_PATH}: [operations] is empty"));
+    }
+    let mut selectors = BTreeSet::new();
+    for (name, value) in operations {
+        if !selectors.insert(paxai_operation(name, value, payload_max)?) {
+            return Err(format!(
+                "{PAXAI_SCHEMA_PATH}: operations.{name} repeats a selector"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_paxai_contract(repo_root: &Path) -> Result<(), String> {
+    let path = repo_root.join(PAXAI_SCHEMA_PATH);
+    let source =
+        fs::read_to_string(&path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    let document = layerx_platform_kvx::parse(&source)?;
+    let sections = document.sections();
+    if sections.len() != PAXAI_SECTIONS.len()
+        || PAXAI_SECTIONS
+            .iter()
+            .any(|section| !sections.contains(section))
+    {
+        return Err(format!(
+            "{PAXAI_SCHEMA_PATH}: sections must be exactly {PAXAI_SECTIONS:?}, got {sections:?}"
+        ));
+    }
+    for section in PAXAI_CODE_SECTIONS {
+        paxai_codes(&document, section)?;
+    }
+    paxai_limits(&document)?;
+    paxai_transitions(&document)?;
+    paxai_binding(&document)?;
+    paxai_operations(&document)
+}
+
 fn run() -> Result<(), String> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let mode = arguments.first().map_or("--check", String::as_str);
@@ -2304,8 +2549,15 @@ fn run() -> Result<(), String> {
         "--check-program-contracts" => programs_contracts(&repo_root, &lock_path, false),
         "--write" => write_lock(&repo_root, &lock_path),
         "--check" => check(&repo_root, &lock_path),
+        "--check-paxai" => {
+            if arguments.len() > 2 {
+                return Err("usage: layerx-platform-sdkgen --check-paxai [repo-root]".to_owned());
+            }
+            check_paxai_contract(&repo_root)
+        }
         _ => Err(
-            "usage: layerx-platform-sdkgen [--write|--check] [repo-root] [lock-path]".to_owned(),
+            "usage: layerx-platform-sdkgen [--write|--check|--check-paxai] [repo-root] [lock-path]"
+                .to_owned(),
         ),
     }
 }

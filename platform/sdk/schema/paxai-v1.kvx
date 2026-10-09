@@ -1,0 +1,224 @@
+# PAXAI client contract v1. Single source for the Rust, TypeScript and Python AI market clients.
+# Checked by `layerx-platform-sdkgen --check-paxai`; the Rust client test pins it to the program codecs.
+
+[meta]
+name = "paxai"
+version = 1
+program_crate = "programs/crates/layerx-programs-ai-market"
+selector_table = "programs/crates/layerx-programs-ai-market/src/dispatch.rs"
+envelope_codec = "programs/crates/layerx-programs-ai-market/src/codec.rs"
+view_codec = "programs/crates/layerx-programs-ai-market/src/queries.rs"
+rust_client = "agent/crates/layerx-client/src/ai_market.rs"
+consumers = ["agent/sdk/typescript","agent/sdk/python"]
+
+[limits]
+finalized_rank = 4
+settlement_rank = 5
+default_page_rows = 16
+max_page_rows = 32
+page_max_bytes = 65536
+cursor_ttl_ms = 900000
+cursor_max_bytes = 1024
+cached_snapshots = 64
+epoch_headers = 4096
+worker_rows = 32
+evaluator_rows = 8
+task_rows = 64
+authority_freshness_heights = 8
+epoch_span_heights = 128
+work_heights = 64
+commit_heights = 16
+reveal_heights = 16
+settlement_heights = 32
+envelope_max_bytes = 16384
+payload_max_bytes = 15965
+state_max_bytes = 196608
+chunk_max_bytes = 8192
+readiness_seconds = 30
+public_aggregate_min_samples = 20
+
+[encoding]
+integers = "unsigned-big-endian"
+identifiers = "32-byte-nonzero"
+digests = "lowercase-hex-64"
+amounts = "u128-decimal-string"
+heights = "u64-decimal-string"
+selectors = "u16-hex"
+absence = "explicit-null-never-zero"
+trailing_bytes = "refuse"
+unknown_enum_codes = "refuse"
+
+[binding]
+fields = ["chain","program","market","observed_sequence","execution_height","batch_id","native_state_root","revision","state_digest","epoch","config","policy","roster","checkpoint","settlement","rank","publication_time_ms"]
+optional = ["epoch","roster","settlement"]
+snapshot_id_domain = "PAXAI/view/v1"
+snapshot_id_excludes = ["checkpoint","settlement","rank","publication_time_ms"]
+finality_source = "checkpoint-certificate-same-root-covering-observed-sequence"
+
+[projection_state]
+observed_unverified = 1
+evidence_verified_unfinalized = 2
+finalized_publishable = 3
+archived = 4
+quarantined = 5
+
+[freshness]
+current = 1
+stale = 2
+unknown = 3
+
+[epoch_status]
+retained = 1
+never_opened = 2
+retained_terminal = 3
+archive_required = 4
+archive_unavailable = 5
+unsupported_version = 6
+
+[epoch_source]
+fields = ["snapshot","config","policy","roster"]
+absent_for = ["never_opened","unsupported_version"]
+content_check = "exact-length-decode-reencode-digest"
+current_policy_substitution = "forbidden"
+
+[availability]
+available = 1
+not_enabled = 2
+not_yet_produced = 3
+content_unavailable = 4
+unsupported_version = 5
+
+[participant_kind]
+worker = 1
+evaluator = 2
+
+[score_status]
+present = 1
+no_admissible_score = 2
+insufficient_coverage = 3
+not_produced = 4
+unavailable = 5
+unsupported = 6
+
+[kind_filter]
+all = 0
+worker = 1
+evaluator = 2
+
+[pagination]
+order = "worker-id-ascending-then-evaluator-id-ascending"
+cursor = "opaque-lowercase-hex"
+cursor_binding = "snapshot-id-filter-ordinal-expiry"
+refusals = ["CursorExpired","CursorMismatch","ResponseTooLarge"]
+
+[approval]
+terms = ["action","chain","program","market","actor","epoch","config","roster","policy","snapshot","effect","capabilities","access_declaration","response_capacity","resources","fee_limit","validity","expiry","idempotency_key","authority","commitment"]
+effect_fields = ["amount","asset","payee","worker"]
+mismatch_fields = ["action","chain","program","market","actor","epoch","config","roster","policy","snapshot","amount","asset","payee","worker","capabilities","access_declaration","response_capacity","resources","fee_limit","validity","expiry","idempotency_key","authority","commitment"]
+source = "owner-consent-disclosure-of-exact-canonical-bytes"
+approver = "activity-owner-authority"
+freshness_gate = "authority-freshness-heights"
+
+[native_call]
+protocol_version = 3
+module = 9
+activity_ordinal = 3
+guest_abi = 5
+entrypoint = "layerx_call"
+calldata = "paxai-envelope"
+authentication = "native"
+
+[sdk_state]
+prepared = 1
+reviewed = 2
+signed = 3
+submitting = 4
+pending = 5
+executed = 6
+finalized = 7
+failed = 8
+unknown = 9
+
+[sdk_transition]
+reviewed = ["prepared"]
+signed = ["reviewed"]
+submitting = ["signed","unknown"]
+pending = ["submitting"]
+executed = ["pending","unknown"]
+finalized = ["executed"]
+failed = ["signed","submitting","pending","unknown"]
+unknown = ["submitting"]
+
+[domain_status]
+pending = 1
+completed = 2
+
+[recovery]
+journal = "fsync-before-transmission"
+interrupted_submitting = "unknown"
+resend = "exact-bytes-separately-authorized"
+fresh_signing_on_unknown = "forbidden"
+receipt_absence = "unchanged"
+failure_by_elapsed_time = "signed-only"
+finality = "checkpoint-network-and-sequence-range"
+
+[errors]
+query = ["BindingMismatch","FinalityUnavailable","SnapshotConflict","IntegrityFailure","CursorExpired","CursorMismatch","ResponseTooLarge"]
+client = ["StaleAuthority","NotNativeProgramCall","NotMutation","ReviewMismatch","UnauthorizedKey","InvalidTransition","ReceiptMismatch","FinalityMismatch","HistoryUnavailable","CorruptRecord"]
+
+[operations]
+CREATE = ["0x0101", "1", "mutation", "role", "native-only", "0", "15965"]
+STAGE_POLICY = ["0x0102", "1", "mutation", "role", "native-only", "0", "15965"]
+CANCEL_POLICY = ["0x0103", "1", "mutation", "role", "native-only", "16", "16"]
+SCHEDULE_ACTIVATION = ["0x0104", "1", "mutation", "role", "native-only", "16", "16"]
+ADVANCE_ACTIVATION = ["0x0105", "1", "mutation", "object-local", "native-only", "16", "16"]
+SUSPEND = ["0x0106", "1", "mutation", "role", "native-only", "40", "48"]
+UPDATE_METADATA = ["0x0107", "1", "mutation", "role", "native-only", "40", "48"]
+APPOINT_OPERATOR = ["0x0108", "1", "mutation", "role", "native-only", "49", "49"]
+REVOKE_OPERATOR = ["0x0109", "1", "mutation", "role", "native-only", "16", "16"]
+REQUEST_CLOSE = ["0x010a", "1", "mutation", "role", "native-only", "40", "40"]
+ADVANCE_CLOSE = ["0x010b", "1", "mutation", "object-local", "native-only", "11", "11"]
+ADMIT_TASK = ["0x010c", "1", "mutation", "object-local", "native-only", "248", "248"]
+ACCEPT_TASK = ["0x010d", "1", "mutation", "role", "delegate", "72", "72"]
+CANCEL_TASK = ["0x010e", "1", "mutation", "object-local", "native-only", "32", "32"]
+COMMIT_TASK_RESULT = ["0x010f", "1", "mutation", "role", "delegate", "72", "72"]
+SEAL_TASK_SET = ["0x0110", "1", "mutation", "object-local", "native-only", "48", "48"]
+OPEN_EPOCH = ["0x0111", "1", "mutation", "object-local", "native-only", "0", "15965"]
+EnrollWorker = ["0x0201", "2", "mutation", "role", "native-only", "136", "136"]
+PublishMetadata = ["0x0202", "2", "mutation", "role", "delegate", "0", "15965"]
+SetDraining = ["0x0203", "2", "mutation", "role", "native-only", "0", "15965"]
+UndoDrain = ["0x0204", "2", "mutation", "role", "native-only", "0", "15965"]
+RotateDelegate = ["0x0205", "2", "mutation", "role", "native-only", "0", "15965"]
+RevokeDelegate = ["0x0206", "2", "mutation", "role", "native-only", "0", "15965"]
+RetireWorker = ["0x0207", "2", "mutation", "role", "native-only", "0", "15965"]
+AcceptEnrollment = ["0x0209", "2", "mutation", "role", "native-only", "144", "144"]
+ExpireEnrollment = ["0x020a", "2", "mutation", "role", "native-only", "72", "72"]
+ScheduleEvaluator = ["0x0301", "3", "mutation", "role", "native-only", "160", "160"]
+RotateEvaluatorKey = ["0x0302", "3", "mutation", "role", "native-only", "88", "88"]
+RevokeEvaluator = ["0x0303", "3", "mutation", "role", "native-only", "74", "74"]
+ChallengeAssessment = ["0x0304", "3", "mutation", "object-local", "native-only", "97", "97"]
+CommitScore = ["0x0401", "4", "mutation", "role", "delegate", "224", "224"]
+RevealScore = ["0x0402", "4", "mutation", "role", "delegate", "364", "1480"]
+BeginAggregation = ["0x0501", "5", "mutation", "object-local", "native-only", "0", "0"]
+ProcessAggregation = ["0x0502", "5", "mutation", "object-local", "native-only", "34", "34"]
+FinalizeAggregation = ["0x0503", "5", "mutation", "object-local", "native-only", "32", "32"]
+FUND = ["0x0601", "6", "mutation", "role", "native-only", "57", "57"]
+CLAIM = ["0x0602", "6", "mutation", "object-local", "native-only", "80", "80"]
+EXPIRE_EPOCH_CLAIMS = ["0x0603", "6", "mutation", "object-local", "native-only", "0", "0"]
+REFUND_FREE = ["0x0604", "6", "mutation", "object-local", "native-only", "64", "64"]
+PRUNE_EPOCH = ["0x0605", "6", "mutation", "object-local", "native-only", "0", "0"]
+ResetHistory = ["0x0701", "7", "mutation", "role", "native-only", "73", "73"]
+SuspendHistory = ["0x0702", "7", "mutation", "role", "native-only", "73", "73"]
+ResumeHistory = ["0x0703", "7", "mutation", "role", "native-only", "73", "73"]
+ApproveAdmission = ["0x0801", "8", "mutation", "role", "native-only", "0", "15965"]
+RevokeAdmissionApproval = ["0x0802", "8", "mutation", "role", "native-only", "0", "15965"]
+AdmitWorker = ["0x0803", "8", "mutation", "role", "native-only", "0", "15965"]
+AdmitEvaluator = ["0x0804", "8", "mutation", "role", "native-only", "0", "15965"]
+Heartbeat = ["0x0805", "8", "mutation", "role", "delegate", "0", "15965"]
+RequestExit = ["0x0806", "8", "mutation", "role", "native-only", "0", "15965"]
+CancelExit = ["0x0807", "8", "mutation", "role", "native-only", "0", "15965"]
+PruneInactive = ["0x0808", "8", "mutation", "object-local", "native-only", "0", "15965"]
+AdministrativeRemove = ["0x0809", "8", "mutation", "role", "native-only", "0", "15965"]
+SealEvidence = ["0x0901", "9", "mutation", "role", "delegate", "131", "131"]
+READ_HEADER = ["0x0a01", "10", "program-read", "object-local", "native-only", "0", "0"]
+READ_STATE_CHUNK = ["0x0a02", "10", "program-read", "object-local", "native-only", "46", "46"]
