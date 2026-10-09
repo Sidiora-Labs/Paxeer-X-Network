@@ -36338,7 +36338,7 @@ worker_role_id = "W-F03-ADMISSION"
 
 [task.ai.F09-T04]
 title = "Recover artifact retention and revocation"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 33
 requires = ["ai.F09-T03", "ai.F02-T03", "ai.F10-T02"]
@@ -36364,7 +36364,7 @@ time_limit_minutes = 30
 stop_condition = "Pass the single declared focused gate and retain revision/command/exit/private log, or stop implemented-not-qualified on missing real authority/interface/resources, 30-minute cap or two failed task-scoped repair cycles; no weakened checks or neighboring repairs."
 local_wave = 12
 acceptance_cases = ["AI.F09-A14", "AI.F09-A15", "AI.F09-A16", "AI.F09-A19", "AI.F09-A21"]
-paths = ["platform/hosted/ai-artifacts/src/retention.rs", "platform/hosted/ai-artifacts/tests/artifact_recovery.rs", "platform/hosted/ai-artifacts/src/main.rs", "platform/hosted/ai-artifacts/src/authority.rs"]
+paths = ["platform/hosted/ai-artifacts/src/retention.rs", "platform/hosted/ai-artifacts/tests/artifact_recovery.rs", "platform/hosted/ai-artifacts/src/main.rs", "platform/hosted/ai-artifacts/src/authority.rs", "platform/hosted/ai-artifacts/tests/artifact_service.rs"]
 worker_role_id = "W-F09-RETENTION"
 
 [task.ai.F10-T06]

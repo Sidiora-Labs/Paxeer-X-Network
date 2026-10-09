@@ -973,3 +973,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.F10-T02-verify-1.log, build-1.log, clippy-3.log"
 observed = "Ten snapshot cases pass: verified ProgramRead captures project into durable SQLite rows with checkpoint promotion under real signed certificates, stream cursors, outbox events, leases and alerts, and gateway views compile clippy-clean; epoch and evaluator pages report NotYetProduced because no epoch or frozen-roster producer feeds the projection, settlement reference stays Absent so rank 5 is unreachable, and the gateway entry and indexer follower are not wired to ai_views::respond and ProjectionStore::observe."
 assumption = "ai.F10-T02-FULL wires gateway main.rs and the indexer follower, maps the epoch and evaluator producers now on main, and ai.F10-T05 consumes pending_events/mark_published; the indexer manifest union (k256 with std, layerx-crypto dev-dependency) was resolved at landing."
+
+[qualification.ai-f09-t04-artifact-recovery-20261009-01]
+revision = "dc7970d46"
+command = "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_recovery; cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_service"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F09-T04-verify-2.log (7 passed), verify-3.log (12 passed), build-2.log, clippy-3.log"
+observed = "The retention ledger is wired into the artifact service: startup recovers the ledger and exits 3 on RestoreNotReady, /v1/tombstone and purge route through the ledger with purge_after equal to the terminal-finality floor plus 30 days, owner-only hold/release/reinstate/binding-intent and observer-only orphan/terminal/binding routes bind snapshots through queries::bind_snapshot, and the service suite's a17/r15 now assert the ledger semantics; finality evidence is trusted from the configured observer allowlist because the service does not verify checkpoint signatures, and a RESULT_COMMITTED task still reads EVIDENCE_UNAVAILABLE without a worker terminal-outcome route."
+assumption = "Checkpoint signature verification at the artifact service and the worker terminal-outcome route arrive with ai.F02-T03 and ai.F10-T02-FULL; the legal early-purge procedure remains the open R26 choice."
