@@ -35365,7 +35365,7 @@ worker_role_id = "W-CORE-HOST"
 
 [task.ai.T-C02-ABI5-RUNTIME]
 title = "Admit guest ABI 5 on the runtime v5 execution terminal and the frozen execution profile"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 31
 requires = ["ai.T-C02-ABI5", "ai.F10-T08-SDK-ABI5"]
@@ -35387,7 +35387,7 @@ max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 acceptance_cases = ["AI.F10-A07"]
-paths = ["programs/crates/layerx-programs-runtime/src/terminal.rs", "programs/crates/layerx-programs-runtime/tests/execution_abi5.rs", "agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs"]
+paths = ["programs/crates/layerx-programs-runtime/src/terminal.rs", "programs/crates/layerx-programs-runtime/tests/execution_abi5.rs", "agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs", "platform/sdk/pipeline.kvx"]
 worker_role_id = "W-CORE-ABI5-RUNTIME"
 local_wave = 6
 

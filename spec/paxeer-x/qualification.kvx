@@ -1109,3 +1109,11 @@ exit_code = 0
 log = "private ops logs wt/logs/ai.T-C02-FUEL-verify-2.log (build-2-guest.log and build-2.log exit 0; clippy-6.log ai-market exit 0)"
 observed = "All 44 table rows run through the real ABI 5 guest under the 1,000,000 fuel cap with byte-identical results, events and state to the in-process route; highest rows OPEN_EPOCH at 930,486 and RevealScore at 877,879 (before: 23 rows over the cap, OPEN_EPOCH 3.7M)."
 assumption = "Pre-existing pedantic clippy sites in the runtime crate (about 130, clippy-7.log and clippy-8.log) are recorded, not repaired; the spec build and verify commands now carry the cwd and PAXAI_CHAIN_DOMAIN the Makefile sets."
+
+[qualification.ai-t-c02-abi5-runtime-20261009-01]
+revision = "3cf86d52b"
+command = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib terminal && cargo test --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test execution_abi5 && cargo run --manifest-path platform/sdk/generators/Cargo.toml --locked -- --check . && cargo test --manifest-path platform/sdk/generators/Cargo.toml --locked --test drift"
+exit_code = 0
+log = "private ops logs wt/logs/ai.T-C02-ABI5-RUNTIME-verify-2.log (build-2.log exit 0; verify-1.log exit 101 before the rebase onto the ABI 5 qualification route)"
+observed = "32 pass: terminal 7, execution_abi5 2 (a real ABI 5 AI market guest executed through execute_authorized_v5_budgeted_for_qualification, its v5 terminal decoded under expected_abi 5 and refused under 4), drift 23, generator --check clean; the unit test that expected ABI 5 refused on the v5 path now refuses ABI 6."
+assumption = "Pre-existing runtime clippy errors (about 239 in calls.rs, replay.rs, execute.rs and others) are recorded, not repaired."
