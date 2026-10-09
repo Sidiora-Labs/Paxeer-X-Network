@@ -35904,7 +35904,7 @@ worker_role_id = "W-F10-RUST-CLIENT"
 
 [task.ai.F10-T05]
 title = "Deliver finalized authenticated market events"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 30
 requires = ["ai.F10-T02"]

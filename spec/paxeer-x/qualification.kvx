@@ -957,3 +957,11 @@ exit_code = 101
 log = "private ops logs wt/logs/ai.F06-T03-verify-{1,2,3}.log, build-1.log, clippy-5.log"
 observed = "The in-process reward journey (fund, allocate 58/43, claim, expiry release, closing refunds to D=P+X, prune) and the forged-ledger A15 refusal pass with conservation F+R+C == held and cover 0 at every step; the single native Fund part stops at the missing host-boundary manifest in this worktree and would next refuse UNKNOWN_OPERATION because 0x0601-0x0605 are unrouted, then need ABI 5 admission and the Transfer402/ProgramSpend/BalanceView grants."
 assumption = "Held at implemented; the FM-CORE router task adds the reported arm and removes 0x0601-0x0605 from the host_boundary unknown-selector list, and the native Fund witness re-runs once ai.T-C02-FUEL, ai.T-C02-ACCOUNTS-V5 and ai.T-C02-ARTIFACT-READ clear the host path."
+
+[qualification.ai-f10-t05-finalized-delivery-20261009-01]
+revision = "85bd21524"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-webhooks --test ai_finalized_delivery -- --test-threads=1"
+exit_code = 0
+log = "private ops logs wt/logs/ai.F10-T05-verify-{1,2,3,4}.log, build-2.log, clippy-9.log"
+observed = "Fourteen delivery cases pass: rank-4 admission decodes the batch header, verifies the checkpoint certificate against the bonded guarantor set with real secp256k1 attestations (unsigned, wrong key, outsider, below threshold, unregistered id, foreign batch and malformed header all refused without quarantine or persistence), binds checkpoint id and recomputed batch id, quarantines finality conflicts, and delivers through a durable file outbox with an HMAC resume cursor and Ed25519 signing; rank 5 cannot be displayed because the canonical SnapshotBinding refuses rank above 4."
+assumption = "Rank-5 settlement display waits on a SnapshotBinding rank extension owned by FM-CORE; the hosted outbox and cursor seams are reconciled with the indexer rows under ai.F10-T02-FULL."
