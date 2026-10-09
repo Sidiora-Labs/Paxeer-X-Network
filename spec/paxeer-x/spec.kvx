@@ -35363,6 +35363,34 @@ acceptance_cases = ["AI.CORE-A02", "AI.F01-A01"]
 paths = ["programs/crates/layerx-programs-ai-market/src/lib.rs", "programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/src/host_adapter.rs", "programs/crates/layerx-programs-ai-market/src/commitment.rs", "programs/crates/layerx-programs-ai-market/src/state.rs", "programs/crates/layerx-programs-ai-market/src/codec.rs", "programs/crates/layerx-programs-ai-market/src/registry_ops.rs", "programs/crates/layerx-programs-ai-market/src/tasks.rs", "programs/crates/layerx-programs-ai-market/src/workers.rs", "programs/crates/layerx-programs-ai-market/src/queries.rs", "programs/crates/layerx-programs-ai-market/src/commit_reveal.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/authority.rs", "programs/crates/layerx-programs-ai-market/src/evaluators/admission.rs", "programs/crates/layerx-programs-ai-market/src/evidence.rs", "programs/crates/layerx-programs-ai-market/Cargo.toml", "programs/crates/layerx-programs-ai-market/tests/fuel_budget.rs"]
 worker_role_id = "W-CORE-HOST"
 
+[task.ai.T-C02-ABI5-RUNTIME]
+title = "Admit guest ABI 5 on the runtime v5 execution terminal and the frozen execution profile"
+status = "in_progress"
+mode = "BUILD"
+wave = 31
+requires = ["ai.T-C02-ABI5", "ai.F10-T08-SDK-ABI5"]
+reqs = ["AI.CORE"]
+do_1 = "programs/crates/layerx-programs-runtime/src/terminal.rs decode_v5 refuses every abi_version outside 3 | 4 with MismatchedAbi, and the failure-field and response-failure tag arms at the same path branch on 3 | 4, while execute.rs already emits v5 terminals for AbiRevision::V5 and the SDK verifiers (ai.F10-T08-SDK-ABI5) admit ABI 3, 4 or 5 on the v5 path. Admit ABI 5 in decode_v5 and in every arm on the v5 terminal path with the real ABI 5 failure and response layout taken from the canonical policy programs/sdk/rust/src/abi_policy.rs, src/modules/programs/call.c and the ABI 5 host path; keep v2, v3 and v4 decoding and every existing positive and negative assertion byte-identical; no widening of ABI 1-4."
+do_2 = "agent/schema/agent-api/programs.kvx and golden/programs.kvx type.ProgramExecutionV5 allowed_guest_abis admit ABI_V3_VERSION and ABI_V4_VERSION only, and platform/sdk/generators/src/main.rs pins the same frozen list for the v5 profile. Extend both to the three versions, regenerate whatever generated output carries the list through the generator write modes (never hand-edit generated files), and keep the drift and provenance checks exact."
+do_3 = "Add programs/crates/layerx-programs-runtime/tests/execution_abi5.rs that executes a genuine ABI 5 guest (the AI market guest built from programs/ with PAXAI_CHAIN_DOMAIN as its Makefile sets it, or an ABI 5 fixture under tests/support if one exists) through the real executor, decodes the emitted v5 terminal with expected_abi 5, checks the usage binding, and refuses the same terminal under expected_abi 4 and an ABI 4 terminal under expected_abi 5. Extend the terminal.rs unit tests for the fifth version. Finish the entire implementation first; then format touched files, run build_cmd once and verify_cmd once, at most two task-scoped repair cycles; record unrelated failures once."
+manager = "FM-CORE"
+worker_role = "runtime terminal and ABI policy specialist"
+worker = "W-CORE-ABI5-RUNTIME"
+deliverables = ["decode_v5 and the v5 terminal arms admitting ABI 5 with the real layout and ABI 1-4 unchanged.", "Schema, golden and generator frozen profile admitting ABI 5 with regenerated outputs and exact drift checks.", "A real ABI 5 execution test and extended terminal unit tests with the focused gate passing."]
+entry_condition = "ai.T-C02-ABI5 landed programs_module_registration_v5; ai.F10-T08-SDK-ABI5 landed the SDK side; ai.T-C02-FUEL (running) owns execute.rs budgeting and the qualification route and does not touch terminal.rs or the schema."
+touches = ["programs/crates/layerx-programs-runtime/src/terminal.rs", "programs/crates/layerx-programs-runtime/tests/execution_abi5.rs", "agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs"]
+build_cmd = "cargo build --manifest-path programs/Cargo.toml -p layerx-programs-runtime --tests && cargo build --manifest-path platform/sdk/generators/Cargo.toml --locked"
+verify_cmd = "cargo test --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib terminal && cargo test --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test execution_abi5 && cargo run --manifest-path platform/sdk/generators/Cargo.toml --locked -- --check . && cargo test --manifest-path platform/sdk/generators/Cargo.toml --locked --test drift"
+gate_kind = "planned"
+qualification = "UNRUN"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+acceptance_cases = ["AI.F10-A07"]
+paths = ["programs/crates/layerx-programs-runtime/src/terminal.rs", "programs/crates/layerx-programs-runtime/tests/execution_abi5.rs", "agent/schema/agent-api/programs.kvx", "agent/schema/agent-api/golden/programs.kvx", "platform/sdk/generators/src/main.rs", "platform/sdk/generators/tests/drift.rs"]
+worker_role_id = "W-CORE-ABI5-RUNTIME"
+local_wave = 6
+
 [task.ai.T-C02-ACCOUNTS-V5]
 title = "Admit guest ABI 5 across programs account validation and ledger admission"
 status = "done"
