@@ -9,7 +9,7 @@ import (
 // MaxMarkets bounds the params list scanned per intent.
 const MaxMarkets = 256
 
-func DefaultParams() Params { return Params{} }
+func DefaultParams() Params { return Params{Paused: false, TimeInForce: false} }
 
 // Validate checks one market listing.
 func (m Market) Validate() error {

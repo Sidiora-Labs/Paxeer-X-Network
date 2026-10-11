@@ -26,4 +26,6 @@ message Params {
   string authority = 1;
   // markets are the markets placeOrder accepts. Matching happens on LayerX.
   repeated Market markets = 2 [(gogoproto.nullable) = false];
+  bool paused = 3;
+  bool time_in_force = 4;
 }
