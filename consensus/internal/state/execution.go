@@ -28,6 +28,53 @@ var logger = paxlog.NewLogger("tendermint", "internal", "state")
 // hashes across validators and detect ProposerPriority divergence.
 const proposerPriorityHashInterval = 1024
 
+var (
+	// ErrSequenceBatchMissing is returned when a sealed block carries no
+	// MsgSequenceBatch for tx 0.
+	ErrSequenceBatchMissing = errors.New("sealed block has no sequence batch")
+	// ErrOpenTimeMissing is returned when a sealed block carries no open time.
+	ErrOpenTimeMissing = errors.New("sealed block has no open time")
+	// ErrSealedBlockTooLarge is returned when the sequence batch and the sealed
+	// slice do not fit the block data bytes.
+	ErrSealedBlockTooLarge = errors.New("sealed block exceeds the block data bytes")
+)
+
+// SequencerSource supplies the sealed pending block a leader proposes in
+// sequencer mode.
+type SequencerSource interface {
+	// Sequenced reports whether the block at height is built from the sealed
+	// slice; it is false below the activation height.
+	Sequenced(height int64) bool
+	// Seal closes the pending block for height and returns it.
+	Seal(ctx context.Context, height int64) (SealedBlock, error)
+}
+
+// SealedBlock is a sealed pending block: the encoded MsgSequenceBatch, the
+// executed transactions in seq order and the time Open fixed for the height.
+type SealedBlock struct {
+	Batch    types.Tx
+	Txs      types.Txs
+	OpenTime time.Time
+}
+
+// proposalTxs returns the block transactions: the batch at tx 0 followed by
+// the sealed slice in seq order.
+func (sb SealedBlock) proposalTxs(maxDataBytes int64) ([]types.Tx, error) {
+	if len(sb.Batch) == 0 {
+		return nil, ErrSequenceBatchMissing
+	}
+	if sb.OpenTime.IsZero() {
+		return nil, ErrOpenTimeMissing
+	}
+	txs := make([]types.Tx, 0, len(sb.Txs)+1)
+	txs = append(txs, sb.Batch)
+	txs = append(txs, sb.Txs...)
+	if size := types.ComputeProtoSizeForTxs(txs); size > maxDataBytes {
+		return nil, fmt.Errorf("%w: %d > %d", ErrSealedBlockTooLarge, size, maxDataBytes)
+	}
+	return txs, nil
+}
+
 //-----------------------------------------------------------------------------
 // BlockExecutor handles block execution and state updates.
 // It exposes ApplyBlock(), which validates & executes the block, updates state w/ ABCI responses,
@@ -51,6 +98,9 @@ type BlockExecutor struct {
 	// and update both with block results after commit.
 	mempool *mempool.TxMempool
 	evpool  EvidencePool
+
+	// sequencer supplies the proposal in sequencer mode; nil otherwise.
+	sequencer SequencerSource
 
 	metrics *Metrics
 
@@ -92,8 +142,16 @@ func (blockExec *BlockExecutor) Store() Store {
 	return blockExec.store
 }
 
+// SetSequencerSource makes CreateProposalBlock take the sealed slice from src
+// at the heights src sequences.
+func (blockExec *BlockExecutor) SetSequencerSource(src SequencerSource) {
+	blockExec.sequencer = src
+}
+
 // CreateProposalBlock calls state.MakeBlock with evidence from the evpool
-// and txs from the mempool. The max bytes must be big enough to fit the commit.
+// and txs from the mempool, or, at a height the sequencer source sequences,
+// with the sealed slice behind its sequence batch and the open time as the
+// header time. The max bytes must be big enough to fit the commit.
 // Up to 1/10th of the block space is allcoated for maximum sized evidence.
 // The rest is given to txs, up to the max gas.
 //
@@ -122,6 +180,18 @@ func (blockExec *BlockExecutor) CreateProposalBlock(
 
 	// Fetch a limited amount of valid txs
 	maxDataBytes := types.MaxDataBytes(maxBytes, evSize, state.Validators.Size())
+
+	if blockExec.sequencer != nil && blockExec.sequencer.Sequenced(height) {
+		sealed, err := blockExec.sequencer.Seal(ctx, height)
+		if err != nil {
+			return nil, fmt.Errorf("seal height %d: %w", height, err)
+		}
+		txs, err := sealed.proposalTxs(maxDataBytes)
+		if err != nil {
+			return nil, fmt.Errorf("sealed block at height %d: %w", height, err)
+		}
+		return state.MakeBlockAt(height, txs, lastCommit, evidence, proposerAddr, sealed.OpenTime), nil
+	}
 
 	txs, _ := blockExec.mempool.ReapTxs(mempool.ReapLimits{
 		MaxBytes:        utils.Some(maxDataBytes),

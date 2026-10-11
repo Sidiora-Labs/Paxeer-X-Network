@@ -269,6 +269,19 @@ func (state State) MakeBlock(
 	evidence []types.Evidence,
 	proposerAddress []byte,
 ) *types.Block {
+	return state.MakeBlockAt(height, txs, commit, evidence, proposerAddress, tmtime.Now())
+}
+
+// MakeBlockAt builds a block like MakeBlock with headerTime as the header
+// time; in sequencer mode it is the open time of the pending block.
+func (state State) MakeBlockAt(
+	height int64,
+	txs []types.Tx,
+	commit *types.Commit,
+	evidence []types.Evidence,
+	proposerAddress []byte,
+	headerTime time.Time,
+) *types.Block {
 
 	// Build base block with block data.
 	block := types.MakeBlock(height, txs, commit, evidence)
@@ -276,7 +289,7 @@ func (state State) MakeBlock(
 	// Fill rest of header with state data.
 	block.Populate(
 		state.Version.Consensus, state.ChainID,
-		tmtime.Now(), state.LastBlockID,
+		tmtime.Canonical(headerTime), state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		state.ConsensusParams.HashConsensusParams(), state.AppHash, state.LastResultsHash,
 		proposerAddress,
