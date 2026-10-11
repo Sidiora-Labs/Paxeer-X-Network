@@ -1246,7 +1246,9 @@ dependencies = [
  "layerx-wire",
  "rustix",
  "rustls",
+ "serde_json",
  "sha2 0.10.9",
+ "ureq",
 ]
 
 [[package]]

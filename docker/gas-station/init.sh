@@ -66,6 +66,35 @@ for url in $GAS_STATION_ENDPOINTS; do
 	endpoints="$endpoints${endpoints:+,}\"$url\""
 done
 
+# The pinned sequencer ReceiptKeys list the publisher verifies receipts
+# against: GAS_STATION_RECEIPT_KEYS when set, otherwise the list
+# px_getReceiptKeys returns from the first configured endpoint, written
+# unchanged. Entries hold only strings and numbers, so the list is the one
+# bracketed run after "result".
+refuse_receipt_keys() {
+	echo "gas-station-init: sequencer_receipt_keys $1" >&2
+	exit 2
+}
+receipt_keys_list='^[[:space:]]*(\[[[:space:]]*\{[^][]*\}[[:space:]]*\])[[:space:]]*$'
+if [ -n "${GAS_STATION_RECEIPT_KEYS:-}" ]; then
+	answer="$GAS_STATION_RECEIPT_KEYS"
+else
+	command -v curl >/dev/null ||
+		refuse_receipt_keys "cannot be fetched without curl; set GAS_STATION_RECEIPT_KEYS"
+	set -- $GAS_STATION_ENDPOINTS
+	answer=$(curl --silent --show-error --fail --max-time 30 \
+		--header 'Content-Type: application/json' \
+		--data '{"jsonrpc":"2.0","id":1,"method":"px_getReceiptKeys","params":[]}' "$1") ||
+		refuse_receipt_keys "px_getReceiptKeys request to $1 failed"
+	answer_pattern='"result"[[:space:]]*:[[:space:]]*(\[[^][]*\])'
+	[[ $answer =~ $answer_pattern ]] ||
+		refuse_receipt_keys "px_getReceiptKeys answer from $1 is unreadable"
+	answer="${BASH_REMATCH[1]}"
+fi
+[[ $answer =~ $receipt_keys_list ]] ||
+	refuse_receipt_keys "list is empty or unreadable"
+receipt_keys="${BASH_REMATCH[1]}"
+
 mkdir -p "$dir"
 printf '{"listen":"%s","gas_limit":%s,"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster":"%s","token":"%s","decimals":%s,"max_rate_age":%s,"spread_bps":%s,"margin_bps":%s,"per_account_limit":%s,"per_interval_limit":%s,"per_quote_limit":%s,"interval_seconds":%s,"balance_floor":%s,"relayer_key_env":"%s"}\n' \
 	"$GAS_STATION_LISTEN" "$GAS_STATION_GAS_LIMIT" "$GAS_STATION_MAX_PRIORITY_FEE_PER_GAS" \
@@ -76,7 +105,7 @@ printf '{"listen":"%s","gas_limit":%s,"max_priority_fee_per_gas":%s,"chain_id":%
 	"$GAS_STATION_RELAYER_KEY_ENV" >"$config.new"
 mv "$config.new" "$config"
 chmod 0644 "$config"
-printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster":"%s","token":"%s","decimals":%s,"max_rate_age":%s,"spread_bps":%s,"margin_bps":%s,"per_account_limit":%s,"per_interval_limit":%s,"per_quote_limit":%s,"interval_seconds":%s,"balance_floor":%s,"relayer_key_env":"%s","rate_owner_key_env":"%s","rate_cadence_seconds":%s,"rate_gas_budget_per_day":%s,"rate_balance_floor":%s,"rate_max_fee_per_gas":%s,"rate_confirmation_retry_seconds":%s}\n' \
+printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster":"%s","token":"%s","decimals":%s,"max_rate_age":%s,"spread_bps":%s,"margin_bps":%s,"per_account_limit":%s,"per_interval_limit":%s,"per_quote_limit":%s,"interval_seconds":%s,"balance_floor":%s,"relayer_key_env":"%s","rate_owner_key_env":"%s","rate_cadence_seconds":%s,"rate_gas_budget_per_day":%s,"rate_balance_floor":%s,"rate_max_fee_per_gas":%s,"rate_confirmation_retry_seconds":%s,"sequencer_receipt_keys":%s}\n' \
 	"$GAS_STATION_MAX_PRIORITY_FEE_PER_GAS" \
 	"$GAS_STATION_CHAIN_ID" "$endpoints" "$GAS_STATION_PAYMASTER" "$GAS_STATION_TOKEN" \
 	"$GAS_STATION_DECIMALS" "$GAS_STATION_MAX_RATE_AGE" "$GAS_STATION_SPREAD_BPS" \
@@ -84,7 +113,8 @@ printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster
 	"$GAS_STATION_PER_QUOTE_LIMIT" "$GAS_STATION_INTERVAL_SECONDS" "$GAS_STATION_BALANCE_FLOOR" \
     "$GAS_STATION_RELAYER_KEY_ENV" "$GAS_STATION_RATE_OWNER_KEY_ENV" "$GAS_STATION_RATE_CADENCE_SECONDS" \
 	"$GAS_STATION_RATE_GAS_BUDGET_PER_DAY" "$GAS_STATION_RATE_BALANCE_FLOOR" \
-    "$GAS_STATION_RATE_MAX_FEE_PER_GAS" "$GAS_STATION_RATE_CONFIRMATION_RETRY_SECONDS" >"$dir/rate.json.new"
+    "$GAS_STATION_RATE_MAX_FEE_PER_GAS" "$GAS_STATION_RATE_CONFIRMATION_RETRY_SECONDS" \
+	"$receipt_keys" >"$dir/rate.json.new"
 mv "$dir/rate.json.new" "$dir/rate.json"
 chmod 0644 "$dir/rate.json"
 chown -R 4020:4020 "$dir"
