@@ -175,6 +175,9 @@ impl QuotePolicy {
         self.finalized_spend
     }
 
+    /// # Errors
+    /// Refuses fees whose gas cost overflows, and names the budget or balance floor
+    /// that would be exceeded. Failed checks consume no budget.
     pub fn reserve_for_did(
         &mut self,
         did: &str,
@@ -193,6 +196,9 @@ impl QuotePolicy {
         Ok(())
     }
 
+    /// # Errors
+    /// Refuses an invalid request, an unpriceable or above-maximum amount, a policy
+    /// refusal or a signer failure. Failed quotes consume no budget.
     pub fn quote_for_did(
         &mut self,
         request: &crate::QuoteRequest,

@@ -1275,46 +1275,35 @@ fn recovery_deadline_bounds_real_stalled_tls() -> TestResult {
     Ok(())
 }
 
-#[test]
-fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() -> TestResult {
-    use std::io::{Read as _, Write as _};
-    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
-    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+fn read_private_material(path: &std::path::Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use std::io::Read as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
-    let material_path = PathBuf::from(std::env::var("PAXEER_X_STATION_RECOVERY_MATERIAL")?);
-    let read_private = |path: &std::path::Path| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        if !path.is_absolute()
-            || path.components().any(|part| {
-                part.as_os_str()
-                    .to_str()
-                    .is_some_and(|name| name == ".env" || name.starts_with(".env."))
-            })
-        {
-            return Err("absolute non-environment recovery material required".into());
-        }
-        let metadata = std::fs::symlink_metadata(path)?;
-        if !metadata.file_type().is_file() || metadata.permissions().mode() & 0o077 != 0 {
-            return Err("private regular recovery material required".into());
-        }
-        let mut bytes = Vec::new();
-        std::fs::File::open(path)?
-            .take(16_777_217)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() > 16_777_216 {
-            return Err("recovery material exceeds bound".into());
-        }
-        Ok(bytes)
-    };
-    let material: Value = serde_json::from_slice(&read_private(&material_path)?)?;
-    let scenario = &material["scenarios"]["unreachable"];
-    let configuration = PathBuf::from(
-        scenario["config"]
-            .as_str()
-            .ok_or("real configuration missing")?,
-    );
-    read_private(&configuration)?;
-    let config = layerx_gas_station::config::ServiceConfig::load(&configuration)?;
-    for endpoint in &config.station.endpoints {
+    if !path.is_absolute()
+        || path.components().any(|part| {
+            part.as_os_str()
+                .to_str()
+                .is_some_and(|name| name == ".env" || name.starts_with(".env."))
+        })
+    {
+        return Err("absolute non-environment recovery material required".into());
+    }
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.permissions().mode() & 0o077 != 0 {
+        return Err("private regular recovery material required".into());
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(16_777_217)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > 16_777_216 {
+        return Err("recovery material exceeds bound".into());
+    }
+    Ok(bytes)
+}
+
+fn require_loopback_endpoints(endpoints: &[String]) -> TestResult {
+    for endpoint in endpoints {
         let authority = endpoint
             .strip_prefix("https://")
             .ok_or("HTTPS required")?
@@ -1326,13 +1315,14 @@ fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() ->
             return Err("isolated loopback RPC required".into());
         }
     }
-    let snapshot = PathBuf::from(
-        scenario["journal"]
-            .as_str()
-            .ok_or("genuine journal missing")?,
-    );
-    let durable = read_private(&snapshot)?;
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    Ok(())
+}
+
+fn private_journal_copy(durable: &[u8]) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let directory = std::env::temp_dir().join(format!(
         "station-authenticated-retry-{}-{stamp}",
@@ -1346,9 +1336,35 @@ fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() ->
         .create_new(true)
         .mode(0o600)
         .open(&path)?;
-    file.write_all(&durable)?;
+    file.write_all(durable)?;
     file.sync_all()?;
     drop(file);
+    Ok((directory, path))
+}
+
+#[test]
+fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() -> TestResult {
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+    let material_path = PathBuf::from(std::env::var("PAXEER_X_STATION_RECOVERY_MATERIAL")?);
+    let material: Value = serde_json::from_slice(&read_private_material(&material_path)?)?;
+    let scenario = &material["scenarios"]["unreachable"];
+    let configuration = PathBuf::from(
+        scenario["config"]
+            .as_str()
+            .ok_or("real configuration missing")?,
+    );
+    read_private_material(&configuration)?;
+    let config = layerx_gas_station::config::ServiceConfig::load(&configuration)?;
+    require_loopback_endpoints(&config.station.endpoints)?;
+    let snapshot = PathBuf::from(
+        scenario["journal"]
+            .as_str()
+            .ok_or("genuine journal missing")?,
+    );
+    let durable = read_private_material(&snapshot)?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let (directory, path) = private_journal_copy(&durable)?;
     let count = Rc::new(Cell::new(0));
     let signer = CountedSigner {
         inner: LocalSigner::from_config(&config.station)?,

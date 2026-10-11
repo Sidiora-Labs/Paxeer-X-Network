@@ -41,6 +41,8 @@ pub enum SendOutcome {
 }
 
 pub trait JsonRpc {
+    /// # Errors
+    /// Refuses a deadline when the transport cannot bound its requests by one.
     fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), RpcFault> {
         if deadline.is_some() {
             Err(RpcFault::Configuration)
@@ -140,6 +142,9 @@ pub fn quantity(text: &str) -> Result<u128, RpcFault> {
 }
 
 pub trait Exchange {
+    /// # Errors
+    /// Returns a sanitized fault; refuses the request when the transport cannot
+    /// bound it by `deadline`.
     fn request_until(
         &self,
         endpoint: &str,

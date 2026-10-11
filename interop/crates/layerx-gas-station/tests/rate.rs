@@ -65,7 +65,7 @@ fn account(address: &Address) -> Word {
     word
 }
 
-/// The ProtocolReceipt v2 the sequencer signs for an EVM transaction
+/// The `ProtocolReceipt` v2 the sequencer signs for an EVM transaction
 /// (contracts/sequencer.md a1), encoded by the canonical wire encoder and
 /// signed by the pinned receipt key unless `tamper` corrupts it.
 fn signed_receipt(
@@ -91,7 +91,7 @@ fn signed_receipt(
         encoder.bytes(&[0x21; 32], 32)?;
         encoder.bytes(&[0x22; 32], 32)?;
         encoder.bytes(&[0x23; 32], 32)?;
-        encoder.i32(if status == 1 { 0 } else { 1 })?;
+        encoder.i32(i32::from(status != 1))?;
         encoder.sequence_length(0, 512)?;
         encoder.u128(1_500_000_000 * 35_000)?;
         let mut batch_id = [0; 32];
@@ -151,6 +151,51 @@ struct Chain {
     tamper: Tamper,
 }
 impl Chain {
+    fn sequencer_receipt(&self, hash: &Word) -> Result<Value, RpcFault> {
+        let Some(nonce) = self.nonce_of(hash) else {
+            return Ok(Value::Null);
+        };
+        Ok(match self.rung {
+            "submitted" => json!({"rung": "submitted", "txHash": hex(hash),
+                "nonce": quantity(nonce.into())}),
+            rung => {
+                let raw = self
+                    .sent
+                    .iter()
+                    .find(|raw| keccak(raw) == *hash)
+                    .ok_or(RpcFault::Malformed)?;
+                let (to, rate, from) = published_rate(raw).map_err(|_| RpcFault::Malformed)?;
+                let logs = if self.status == 1 {
+                    json!([{"address": hex(&to),
+                        "topics": [hex(&keccak(b"RateUpdated(uint256,uint256)"))],
+                        "data": hex(&[rate, word(NOW.into())].concat()),
+                        "logIndex": "0x0"}])
+                } else {
+                    json!([])
+                };
+                let mut receipt = json!({"rung": rung, "txHash": hex(hash),
+                    "seq": quantity(nonce.into()), "height": quantity(BLOCK.into()),
+                    "index": "0x1", "timestamp": quantity(NOW.into()),
+                    "status": quantity(self.status.into()), "returnData": "0x",
+                    "logs": logs, "gasUsed": quantity(self.gas_used.into()),
+                    "cumulativeGasUsed": quantity(self.gas_used.into()),
+                    "effectiveGasPrice": quantity(self.effective_gas_price),
+                    "from": hex(&from), "to": hex(&to), "contractAddress": Value::Null,
+                    "nonce": quantity(nonce.into()), "vmError": ""});
+                if rung == "committed" {
+                    receipt["blockHash"] = Value::String(hex(&BLOCK_HASH));
+                }
+                if !matches!(self.tamper, Tamper::Missing) {
+                    let signed = signed_receipt(self.tamper, *hash, nonce, from, to, self.status)
+                        .map_err(|_| RpcFault::Malformed)?;
+                    receipt["keyId"] = Value::String(hex(&RECEIPT_KEY_ID));
+                    receipt["receipt"] = Value::String(hex(&signed));
+                }
+                receipt
+            }
+        })
+    }
+
     fn executed(&self) -> Option<u64> {
         matches!(self.rung, "receipted" | "committed")
             .then(|| self.nonces.iter().map(|(_, n)| n + 1).max())
@@ -162,6 +207,10 @@ impl Chain {
             .find_map(|(h, n)| (h == hash).then_some(*n))
     }
 }
+fn quantity(v: u128) -> Value {
+    Value::String(format!("{v:#x}"))
+}
+
 struct ChainExchange(Rc<RefCell<Chain>>);
 impl Exchange for ChainExchange {
     fn request_until(
@@ -176,7 +225,6 @@ impl Exchange for ChainExchange {
 
     fn request(&self, _: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
         let mut chain = self.0.borrow_mut();
-        let quantity = |v: u128| Value::String(format!("{v:#x}"));
         let hash_param = || -> Result<Word, RpcFault> {
             bytes(params[0].as_str().ok_or(RpcFault::Malformed)?)?
                 .try_into()
@@ -233,53 +281,7 @@ impl Exchange for ChainExchange {
                 }
                 Value::String(hex(&hash))
             }
-            "pax_sequencerReceipt" => {
-                let hash = hash_param()?;
-                let Some(nonce) = chain.nonce_of(&hash) else {
-                    return Ok(Value::Null);
-                };
-                match chain.rung {
-                    "submitted" => json!({"rung": "submitted", "txHash": hex(&hash),
-                        "nonce": quantity(nonce.into())}),
-                    rung => {
-                        let raw = chain
-                            .sent
-                            .iter()
-                            .find(|raw| keccak(raw) == hash)
-                            .ok_or(RpcFault::Malformed)?;
-                        let (to, rate, from) =
-                            published_rate(raw).map_err(|_| RpcFault::Malformed)?;
-                        let logs = if chain.status == 1 {
-                            json!([{"address": hex(&to),
-                                "topics": [hex(&keccak(b"RateUpdated(uint256,uint256)"))],
-                                "data": hex(&[rate, word(NOW.into())].concat()),
-                                "logIndex": "0x0"}])
-                        } else {
-                            json!([])
-                        };
-                        let mut receipt = json!({"rung": rung, "txHash": hex(&hash),
-                            "seq": quantity(nonce.into()), "height": quantity(BLOCK.into()),
-                            "index": "0x1", "timestamp": quantity(NOW.into()),
-                            "status": quantity(chain.status.into()), "returnData": "0x",
-                            "logs": logs, "gasUsed": quantity(chain.gas_used.into()),
-                            "cumulativeGasUsed": quantity(chain.gas_used.into()),
-                            "effectiveGasPrice": quantity(chain.effective_gas_price),
-                            "from": hex(&from), "to": hex(&to), "contractAddress": Value::Null,
-                            "nonce": quantity(nonce.into()), "vmError": ""});
-                        if rung == "committed" {
-                            receipt["blockHash"] = Value::String(hex(&BLOCK_HASH));
-                        }
-                        if !matches!(chain.tamper, Tamper::Missing) {
-                            let signed =
-                                signed_receipt(chain.tamper, hash, nonce, from, to, chain.status)
-                                    .map_err(|_| RpcFault::Malformed)?;
-                            receipt["keyId"] = Value::String(hex(&RECEIPT_KEY_ID));
-                            receipt["receipt"] = Value::String(hex(&signed));
-                        }
-                        receipt
-                    }
-                }
-            }
+            "pax_sequencerReceipt" => chain.sequencer_receipt(&hash_param()?)?,
             "eth_getTransactionReceipt" => {
                 let hash = hash_param()?;
                 if chain.rung != "committed" || chain.nonce_of(&hash).is_none() {
@@ -553,13 +555,12 @@ fn refusals_never_publish() -> TestResult {
             RateRefusal::Unchanged { age: 119 },
         ),
     ] {
-        let path = match text {
-            Some(text) => lane.rate_file(text)?,
-            None => {
-                let path = lane.dir.join("rate.toml");
-                let _ = std::fs::remove_file(&path);
-                path
-            }
+        let path = if let Some(text) = text {
+            lane.rate_file(text)?
+        } else {
+            let path = lane.dir.join("rate.toml");
+            let _ = std::fs::remove_file(&path);
+            path
         };
         if refusal == (RateRefusal::Unchanged { age: 119 }) {
             lane.chain.borrow_mut().updated_at = NOW - 119;

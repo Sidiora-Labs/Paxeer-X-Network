@@ -128,11 +128,11 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
                 cadence
             }
             Err(RateRefusal::Unchanged { age }) => cadence.saturating_sub(age).max(1),
-            Err(error @ RateRefusal::Journal(_)) => {
-                eprintln!("{error}");
-                return ExitCode::FAILURE;
-            }
-            Err(error @ (RateRefusal::LegacyUnresolved | RateRefusal::NotOwner)) => {
+            Err(
+                error @ (RateRefusal::Journal(_)
+                | RateRefusal::LegacyUnresolved
+                | RateRefusal::NotOwner),
+            ) => {
                 eprintln!("{error}");
                 return ExitCode::FAILURE;
             }

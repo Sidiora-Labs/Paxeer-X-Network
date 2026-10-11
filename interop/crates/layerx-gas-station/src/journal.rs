@@ -475,371 +475,449 @@ impl State {
 
     fn apply(&mut self, entry: &Entry) -> Result<(), JournalError> {
         match entry {
-            Entry::QuoteReserved { quote } => {
-                self.apply(&Entry::Quoted {
-                    quote: quote.clone(),
-                })?;
-                self.tracked_quotes.insert(quote.key);
-            }
+            Entry::QuoteReserved { quote } => self.apply_quote_reserved(quote),
             Entry::SigningIntent { key, nonce, digest } => {
-                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if *digest == [0; 32]
-                    || !self.tracked_quotes.contains(key)
-                    || self.signing_intents.contains_key(key)
-                    || self.liability_releases.contains_key(key)
-                    || item.completion.is_some()
-                    || item.submission.is_some()
-                    || self.holds(key.sponsor, *nonce)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.signing_intents.insert(*key, *nonce);
+                self.apply_signing_intent(key, *nonce, digest)
             }
-            Entry::Refused { key, hash } => {
-                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if item.quote.is_none()
-                    || item.completion.is_some()
-                    || item.submission.as_ref().is_none_or(|s| s.hash != *hash)
-                    || self.liability_releases.contains_key(key)
-                    || self.receipts.contains_key(hash)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.liability_releases
-                    .insert(*key, LiabilityRelease::Refused { hash: *hash });
-            }
+            Entry::Refused { key, hash } => self.apply_refused(key, hash),
             Entry::QuoteAdmitted { quote, admission } => {
-                if admission.identity
-                    != Admission::identity(quote.account, admission.batch_nonce, admission.interval)
-                    || admission.request_digest == [0; 32]
-                    || self.admissions.contains_key(&admission.identity)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.apply(&Entry::Quoted {
-                    quote: quote.clone(),
-                })?;
-                self.admissions
-                    .insert(admission.identity, (*admission, quote.key));
-                self.tracked_quotes.insert(quote.key);
+                self.apply_quote_admitted(quote, admission)
             }
-            Entry::LiabilityReleased { key, proof } => {
-                if self.liability_releases.contains_key(key) {
-                    return Err(JournalError::Conflict);
-                }
-                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                let quote = item.quote.as_ref().ok_or(JournalError::Conflict)?;
-                match proof {
-                    LiabilityRelease::Settled { hash } => {
-                        self.settlement_cost(*key, *hash)?;
-                    }
-                    LiabilityRelease::Refused { .. } => return Err(JournalError::Conflict),
-                    LiabilityRelease::Consumed {
-                        chain_id,
-                        account,
-                        paymaster,
-                        quote_nonce,
-                        canonical,
-                        finalized,
-                        code,
-                        params,
-                        result,
-                    } => {
-                        if !self.tracked_quotes.contains(key)
-                            || self.signing_intents.contains_key(key)
-                            || item.submission.is_some()
-                            || item.completion != Some(Completion::Consumed)
-                            || *chain_id != quote.chain_id
-                            || *account != quote.account
-                            || *paymaster != quote.paymaster
-                            || *quote_nonce != key.quote_nonce
-                        {
-                            return Err(JournalError::Conflict);
-                        }
-                        validate_consumed_proof(
-                            key, quote, canonical, finalized, code, params, result,
-                        )?;
-                    }
-                    LiabilityRelease::Expired {
-                        canonical,
-                        finalized,
-                    } => {
-                        let number = |value: &serde_json::Value, field: &str| {
-                            crate::rpc::quantity(
-                                value[field].as_str().ok_or(JournalError::Corrupt)?,
-                            )
-                            .map_err(|_| JournalError::Corrupt)
-                        };
-                        let hash = crate::rpc::bytes(
-                            finalized["hash"].as_str().ok_or(JournalError::Corrupt)?,
-                        )
-                        .map_err(|_| JournalError::Corrupt)?;
-                        if !self.tracked_quotes.contains(key)
-                            || self.signing_intents.contains_key(key)
-                            || item.submission.is_some()
-                            || hash.len() != 32
-                            || hash.iter().all(|byte| *byte == 0)
-                            || canonical["hash"] != finalized["hash"]
-                            || number(canonical, "number")? != number(finalized, "number")?
-                            || number(canonical, "timestamp")? != number(finalized, "timestamp")?
-                            || number(finalized, "timestamp")? <= u128::from(quote.deadline)
-                        {
-                            return Err(JournalError::Conflict);
-                        }
-                    }
-                }
-                self.liability_releases.insert(*key, proof.clone());
-            }
-            Entry::Quoted { quote } => {
-                quote.signed_quote()?;
-                if self.items.contains_key(&quote.key) {
-                    return Err(JournalError::Conflict);
-                }
-                self.items.insert(
-                    quote.key,
-                    Item {
-                        account: quote.account,
-                        quote: Some(*quote.clone()),
-                        submission: None,
-                        completion: None,
-                    },
-                );
-            }
-            Entry::Prepared { key, submission } => {
-                if self.liability_releases.contains_key(key) {
-                    return Err(JournalError::Conflict);
-                }
-                let quote = self
-                    .items
-                    .get(key)
-                    .and_then(|item| item.quote.as_ref())
-                    .ok_or(JournalError::Conflict)?;
-                if submission.did != quote.did || submission.batch_nonce != quote.batch_nonce {
-                    return Err(JournalError::Conflict);
-                }
-                if submission.raw.first() != Some(&4) || keccak(&submission.raw) != submission.hash
-                {
-                    return Err(JournalError::Corrupt);
-                }
-                if self
-                    .signing_intents
-                    .get(key)
-                    .is_some_and(|nonce| *nonce != submission.nonce)
-                    || (self.tracked_quotes.contains(key)
-                        && !self.signing_intents.contains_key(key))
-                    || self.items.keys().any(|other| {
-                        other != key
-                            && other.sponsor == key.sponsor
-                            && !self.refused(other)
-                            && (self
-                                .signing_intents
-                                .get(other)
-                                .is_some_and(|nonce| *nonce == submission.nonce)
-                                || self.items[other]
-                                    .submission
-                                    .as_ref()
-                                    .is_some_and(|saved| saved.nonce == submission.nonce))
-                    })
-                {
-                    return Err(JournalError::Conflict);
-                }
-                let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
-                if item.quote.is_none() || item.submission.is_some() || item.completion.is_some() {
-                    return Err(JournalError::Conflict);
-                }
-                item.submission = Some(submission.clone());
-            }
+            Entry::LiabilityReleased { key, proof } => self.apply_liability_released(key, proof),
+            Entry::Quoted { quote } => self.apply_quoted(quote),
+            Entry::Prepared { key, submission } => self.apply_prepared(key, submission),
             Entry::Completed {
                 key,
                 account,
                 completion,
-            } => {
-                let item = self.items.entry(*key).or_insert(Item {
-                    account: *account,
-                    quote: None,
-                    submission: None,
-                    completion: None,
-                });
-                if item.account != *account
-                    || item.completion.is_some()
-                    || matches!(
-                        self.liability_releases.get(key),
-                        Some(LiabilityRelease::Refused { .. })
-                    )
-                {
-                    return Err(JournalError::Conflict);
-                }
-                match completion {
-                    Completion::Consumed => (),
-                    Completion::Included {
-                        hash,
-                        sid_collected,
-                        ..
-                    } => {
-                        if item.submission.as_ref().is_none_or(|s| s.hash != *hash)
-                            || item
-                                .quote
-                                .as_ref()
-                                .is_none_or(|q| q.amount != *sid_collected)
-                        {
-                            return Err(JournalError::Conflict);
-                        }
-                    }
-                    Completion::Reverted { hash } => {
-                        if item.submission.as_ref().is_none_or(|s| s.hash != *hash) {
-                            return Err(JournalError::Conflict);
-                        }
-                    }
-                    Completion::Cancelled { .. } => return Err(JournalError::Conflict),
-                }
-                item.completion = Some(*completion);
-            }
+            } => self.apply_completed(key, account, completion),
             Entry::ReceiptObserved {
                 key,
                 hash,
                 receipt,
                 canonical,
                 finalized,
-            } => {
-                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if item.submission.as_ref().is_none_or(|s| s.hash != *hash) || self.refused(key) {
-                    return Err(JournalError::Conflict);
-                }
-                crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
-                    .map_err(|_| JournalError::Corrupt)?;
-                if self.receipts.contains_key(hash) {
-                    return Err(JournalError::Conflict);
-                }
-                self.receipts.insert(*hash, receipt.clone());
-            }
-            Entry::RatePublished { publication } => {
-                if publication.hash == [0; 32]
-                    || publication.rate == [0; 32]
-                    || publication.gas_limit == 0
-                    || publication.max_fee_per_gas == 0
-                {
-                    return Err(JournalError::Corrupt);
-                }
-                if self.publications.contains_key(&publication.hash) {
-                    return Err(JournalError::Conflict);
-                }
-                self.publications
-                    .insert(publication.hash, (*publication, None));
-            }
-            Entry::RateSettled { hash, settlement } => {
-                if self.rate_transactions.contains_key(hash) {
-                    return Err(JournalError::Conflict);
-                }
-                let (publication, settled) = self
-                    .publications
-                    .get_mut(hash)
-                    .ok_or(JournalError::Conflict)?;
-                if settled.is_some()
-                    || settlement.gas_used > publication.gas_limit
-                    || publication
-                        .max_fee_per_gas
-                        .checked_mul(u128::from(settlement.gas_used))
-                        .is_none_or(|most| settlement.cost_wei > most)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                *settled = Some(*settlement);
-            }
-            Entry::RatePrepared { transaction } => {
-                crate::rate::validate_publication_transaction(transaction)?;
-                let p = transaction.publication;
-                if transaction.cancellation
-                    || self.rate_active.contains_key(&(p.owner, p.nonce))
-                    || self
-                        .publications
-                        .values()
-                        .any(|(saved, _)| saved.owner == p.owner && saved.nonce == p.nonce)
-                    || self.publications.contains_key(&p.hash)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.publications.insert(p.hash, (p, None));
-                self.rate_transactions.insert(p.hash, transaction.clone());
-                self.rate_active.insert((p.owner, p.nonce), p.hash);
-            }
-            Entry::RateBroadcast { hash } => {
-                let tx = self
-                    .rate_transactions
-                    .get(hash)
-                    .ok_or(JournalError::Conflict)?;
-                if self
-                    .rate_active
-                    .get(&(tx.publication.owner, tx.publication.nonce))
-                    != Some(hash)
-                    || self.publications[hash].1.is_some()
-                    || !self.rate_broadcast.insert(*hash)
-                {
-                    return Err(JournalError::Conflict);
-                }
-            }
+            } => self.apply_receipt_observed(key, hash, receipt, canonical, finalized),
+            Entry::RatePublished { publication } => self.apply_rate_published(publication),
+            Entry::RateSettled { hash, settlement } => self.apply_rate_settled(hash, settlement),
+            Entry::RatePrepared { transaction } => self.apply_rate_prepared(transaction),
+            Entry::RateBroadcast { hash } => self.apply_rate_broadcast(hash),
             Entry::RateReplaced {
                 previous,
                 transaction,
-            } => {
-                crate::rate::validate_publication_transaction(transaction)?;
-                let old = self
-                    .rate_transactions
-                    .get(previous)
-                    .ok_or(JournalError::Conflict)?;
-                let p = transaction.publication;
-                let q = old.publication;
-                let bump = |fee: u128| fee.checked_mul(110).map(|n| n.div_ceil(100));
-                if p.owner != q.owner
-                    || p.nonce != q.nonce
-                    || p.rate != q.rate
-                    || p.signed_at != q.signed_at
-                    || transaction.chain_id != old.chain_id
-                    || transaction.paymaster != old.paymaster
-                    || self.publications[previous].1.is_some()
-                    || self.rate_active.get(&(q.owner, q.nonce)) != Some(previous)
-                    || self.publications.contains_key(&p.hash)
-                    || bump(q.max_fee_per_gas).is_none_or(|fee| p.max_fee_per_gas < fee)
-                    || bump(old.max_priority_fee_per_gas)
-                        .is_none_or(|fee| transaction.max_priority_fee_per_gas < fee)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.publications.insert(p.hash, (p, None));
-                self.rate_transactions.insert(p.hash, transaction.clone());
-                self.rate_active.insert((p.owner, p.nonce), p.hash);
-            }
+            } => self.apply_rate_replaced(previous, transaction),
             Entry::RateFinalized {
                 hash,
                 settlement,
                 receipt,
                 canonical,
                 finalized,
+            } => self.apply_rate_finalized(hash, settlement, receipt, canonical, finalized),
+        }
+    }
+
+    fn apply_quote_reserved(&mut self, quote: &QuoteRecord) -> Result<(), JournalError> {
+        self.apply_quoted(quote)?;
+        self.tracked_quotes.insert(quote.key);
+        Ok(())
+    }
+
+    fn apply_signing_intent(
+        &mut self,
+        key: &Key,
+        nonce: u64,
+        digest: &Word,
+    ) -> Result<(), JournalError> {
+        let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+        if *digest == [0; 32]
+            || !self.tracked_quotes.contains(key)
+            || self.signing_intents.contains_key(key)
+            || self.liability_releases.contains_key(key)
+            || item.completion.is_some()
+            || item.submission.is_some()
+            || self.holds(key.sponsor, nonce)
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.signing_intents.insert(*key, nonce);
+        Ok(())
+    }
+
+    fn apply_refused(&mut self, key: &Key, hash: &Word) -> Result<(), JournalError> {
+        let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+        if item.quote.is_none()
+            || item.completion.is_some()
+            || item.submission.as_ref().is_none_or(|s| s.hash != *hash)
+            || self.liability_releases.contains_key(key)
+            || self.receipts.contains_key(hash)
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.liability_releases
+            .insert(*key, LiabilityRelease::Refused { hash: *hash });
+        Ok(())
+    }
+
+    fn apply_quote_admitted(
+        &mut self,
+        quote: &QuoteRecord,
+        admission: &Admission,
+    ) -> Result<(), JournalError> {
+        if admission.identity
+            != Admission::identity(quote.account, admission.batch_nonce, admission.interval)
+            || admission.request_digest == [0; 32]
+            || self.admissions.contains_key(&admission.identity)
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.apply_quoted(quote)?;
+        self.admissions
+            .insert(admission.identity, (*admission, quote.key));
+        self.tracked_quotes.insert(quote.key);
+        Ok(())
+    }
+
+    fn apply_liability_released(
+        &mut self,
+        key: &Key,
+        proof: &LiabilityRelease,
+    ) -> Result<(), JournalError> {
+        if self.liability_releases.contains_key(key) {
+            return Err(JournalError::Conflict);
+        }
+        let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+        let quote = item.quote.as_ref().ok_or(JournalError::Conflict)?;
+        match proof {
+            LiabilityRelease::Settled { hash } => {
+                self.settlement_cost(*key, *hash)?;
+            }
+            LiabilityRelease::Refused { .. } => return Err(JournalError::Conflict),
+            LiabilityRelease::Consumed {
+                chain_id,
+                account,
+                paymaster,
+                quote_nonce,
+                canonical,
+                finalized,
+                code,
+                params,
+                result,
             } => {
-                let tx = self
-                    .rate_transactions
-                    .get(hash)
-                    .ok_or(JournalError::Conflict)?;
-                crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
-                    .map_err(|_| JournalError::Corrupt)?;
-                let observed = crate::rate::publication_settlement(tx, receipt)
-                    .map_err(|_| JournalError::Corrupt)?;
-                if *settlement != observed
-                    || self.publications.values().any(|(p, s)| {
-                        p.owner == tx.publication.owner
-                            && p.nonce == tx.publication.nonce
-                            && s.is_some()
-                    })
+                if !self.tracked_quotes.contains(key)
+                    || self.signing_intents.contains_key(key)
+                    || item.submission.is_some()
+                    || item.completion != Some(Completion::Consumed)
+                    || *chain_id != quote.chain_id
+                    || *account != quote.account
+                    || *paymaster != quote.paymaster
+                    || *quote_nonce != key.quote_nonce
                 {
                     return Err(JournalError::Conflict);
                 }
-                self.publications
-                    .get_mut(hash)
-                    .ok_or(JournalError::Conflict)?
-                    .1 = Some(*settlement);
-                self.rate_active
-                    .remove(&(tx.publication.owner, tx.publication.nonce));
+                validate_consumed_proof(key, quote, canonical, finalized, code, params, result)?;
+            }
+            LiabilityRelease::Expired {
+                canonical,
+                finalized,
+            } => {
+                let number = |value: &serde_json::Value, field: &str| {
+                    crate::rpc::quantity(value[field].as_str().ok_or(JournalError::Corrupt)?)
+                        .map_err(|_| JournalError::Corrupt)
+                };
+                let hash =
+                    crate::rpc::bytes(finalized["hash"].as_str().ok_or(JournalError::Corrupt)?)
+                        .map_err(|_| JournalError::Corrupt)?;
+                if !self.tracked_quotes.contains(key)
+                    || self.signing_intents.contains_key(key)
+                    || item.submission.is_some()
+                    || hash.len() != 32
+                    || hash.iter().all(|byte| *byte == 0)
+                    || canonical["hash"] != finalized["hash"]
+                    || number(canonical, "number")? != number(finalized, "number")?
+                    || number(canonical, "timestamp")? != number(finalized, "timestamp")?
+                    || number(finalized, "timestamp")? <= u128::from(quote.deadline)
+                {
+                    return Err(JournalError::Conflict);
+                }
             }
         }
+        self.liability_releases.insert(*key, proof.clone());
+        Ok(())
+    }
+
+    fn apply_quoted(&mut self, quote: &QuoteRecord) -> Result<(), JournalError> {
+        quote.signed_quote()?;
+        if self.items.contains_key(&quote.key) {
+            return Err(JournalError::Conflict);
+        }
+        self.items.insert(
+            quote.key,
+            Item {
+                account: quote.account,
+                quote: Some(quote.clone()),
+                submission: None,
+                completion: None,
+            },
+        );
+        Ok(())
+    }
+
+    fn apply_prepared(&mut self, key: &Key, submission: &Submission) -> Result<(), JournalError> {
+        if self.liability_releases.contains_key(key) {
+            return Err(JournalError::Conflict);
+        }
+        let quote = self
+            .items
+            .get(key)
+            .and_then(|item| item.quote.as_ref())
+            .ok_or(JournalError::Conflict)?;
+        if submission.did != quote.did || submission.batch_nonce != quote.batch_nonce {
+            return Err(JournalError::Conflict);
+        }
+        if submission.raw.first() != Some(&4) || keccak(&submission.raw) != submission.hash {
+            return Err(JournalError::Corrupt);
+        }
+        if self
+            .signing_intents
+            .get(key)
+            .is_some_and(|nonce| *nonce != submission.nonce)
+            || (self.tracked_quotes.contains(key) && !self.signing_intents.contains_key(key))
+            || self.items.keys().any(|other| {
+                other != key
+                    && other.sponsor == key.sponsor
+                    && !self.refused(other)
+                    && (self
+                        .signing_intents
+                        .get(other)
+                        .is_some_and(|nonce| *nonce == submission.nonce)
+                        || self.items[other]
+                            .submission
+                            .as_ref()
+                            .is_some_and(|saved| saved.nonce == submission.nonce))
+            })
+        {
+            return Err(JournalError::Conflict);
+        }
+        let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
+        if item.quote.is_none() || item.submission.is_some() || item.completion.is_some() {
+            return Err(JournalError::Conflict);
+        }
+        item.submission = Some(submission.clone());
+        Ok(())
+    }
+
+    fn apply_completed(
+        &mut self,
+        key: &Key,
+        account: &Address,
+        completion: &Completion,
+    ) -> Result<(), JournalError> {
+        let item = self.items.entry(*key).or_insert(Item {
+            account: *account,
+            quote: None,
+            submission: None,
+            completion: None,
+        });
+        if item.account != *account
+            || item.completion.is_some()
+            || matches!(
+                self.liability_releases.get(key),
+                Some(LiabilityRelease::Refused { .. })
+            )
+        {
+            return Err(JournalError::Conflict);
+        }
+        match completion {
+            Completion::Consumed => (),
+            Completion::Included {
+                hash,
+                sid_collected,
+                ..
+            } => {
+                if item.submission.as_ref().is_none_or(|s| s.hash != *hash)
+                    || item
+                        .quote
+                        .as_ref()
+                        .is_none_or(|q| q.amount != *sid_collected)
+                {
+                    return Err(JournalError::Conflict);
+                }
+            }
+            Completion::Reverted { hash } => {
+                if item.submission.as_ref().is_none_or(|s| s.hash != *hash) {
+                    return Err(JournalError::Conflict);
+                }
+            }
+            Completion::Cancelled { .. } => return Err(JournalError::Conflict),
+        }
+        item.completion = Some(*completion);
+        Ok(())
+    }
+
+    fn apply_receipt_observed(
+        &mut self,
+        key: &Key,
+        hash: &Word,
+        receipt: &serde_json::Value,
+        canonical: &serde_json::Value,
+        finalized: &serde_json::Value,
+    ) -> Result<(), JournalError> {
+        let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+        if item.submission.as_ref().is_none_or(|s| s.hash != *hash) || self.refused(key) {
+            return Err(JournalError::Conflict);
+        }
+        crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
+            .map_err(|_| JournalError::Corrupt)?;
+        if self.receipts.contains_key(hash) {
+            return Err(JournalError::Conflict);
+        }
+        self.receipts.insert(*hash, receipt.clone());
+        Ok(())
+    }
+
+    fn apply_rate_published(&mut self, publication: &Publication) -> Result<(), JournalError> {
+        if publication.hash == [0; 32]
+            || publication.rate == [0; 32]
+            || publication.gas_limit == 0
+            || publication.max_fee_per_gas == 0
+        {
+            return Err(JournalError::Corrupt);
+        }
+        if self.publications.contains_key(&publication.hash) {
+            return Err(JournalError::Conflict);
+        }
+        self.publications
+            .insert(publication.hash, (*publication, None));
+        Ok(())
+    }
+
+    fn apply_rate_settled(
+        &mut self,
+        hash: &Word,
+        settlement: &Settlement,
+    ) -> Result<(), JournalError> {
+        if self.rate_transactions.contains_key(hash) {
+            return Err(JournalError::Conflict);
+        }
+        let (publication, settled) = self
+            .publications
+            .get_mut(hash)
+            .ok_or(JournalError::Conflict)?;
+        if settled.is_some()
+            || settlement.gas_used > publication.gas_limit
+            || publication
+                .max_fee_per_gas
+                .checked_mul(u128::from(settlement.gas_used))
+                .is_none_or(|most| settlement.cost_wei > most)
+        {
+            return Err(JournalError::Conflict);
+        }
+        *settled = Some(*settlement);
+        Ok(())
+    }
+
+    fn apply_rate_prepared(
+        &mut self,
+        transaction: &PublicationTransaction,
+    ) -> Result<(), JournalError> {
+        crate::rate::validate_publication_transaction(transaction)?;
+        let p = transaction.publication;
+        if transaction.cancellation
+            || self.rate_active.contains_key(&(p.owner, p.nonce))
+            || self
+                .publications
+                .values()
+                .any(|(saved, _)| saved.owner == p.owner && saved.nonce == p.nonce)
+            || self.publications.contains_key(&p.hash)
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.publications.insert(p.hash, (p, None));
+        self.rate_transactions.insert(p.hash, transaction.clone());
+        self.rate_active.insert((p.owner, p.nonce), p.hash);
+        Ok(())
+    }
+
+    fn apply_rate_broadcast(&mut self, hash: &Word) -> Result<(), JournalError> {
+        let tx = self
+            .rate_transactions
+            .get(hash)
+            .ok_or(JournalError::Conflict)?;
+        if self
+            .rate_active
+            .get(&(tx.publication.owner, tx.publication.nonce))
+            != Some(hash)
+            || self.publications[hash].1.is_some()
+            || !self.rate_broadcast.insert(*hash)
+        {
+            return Err(JournalError::Conflict);
+        }
+        Ok(())
+    }
+
+    fn apply_rate_replaced(
+        &mut self,
+        previous: &Word,
+        transaction: &PublicationTransaction,
+    ) -> Result<(), JournalError> {
+        crate::rate::validate_publication_transaction(transaction)?;
+        let old = self
+            .rate_transactions
+            .get(previous)
+            .ok_or(JournalError::Conflict)?;
+        let p = transaction.publication;
+        let q = old.publication;
+        let bump = |fee: u128| fee.checked_mul(110).map(|n| n.div_ceil(100));
+        if p.owner != q.owner
+            || p.nonce != q.nonce
+            || p.rate != q.rate
+            || p.signed_at != q.signed_at
+            || transaction.chain_id != old.chain_id
+            || transaction.paymaster != old.paymaster
+            || self.publications[previous].1.is_some()
+            || self.rate_active.get(&(q.owner, q.nonce)) != Some(previous)
+            || self.publications.contains_key(&p.hash)
+            || bump(q.max_fee_per_gas).is_none_or(|fee| p.max_fee_per_gas < fee)
+            || bump(old.max_priority_fee_per_gas)
+                .is_none_or(|fee| transaction.max_priority_fee_per_gas < fee)
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.publications.insert(p.hash, (p, None));
+        self.rate_transactions.insert(p.hash, transaction.clone());
+        self.rate_active.insert((p.owner, p.nonce), p.hash);
+        Ok(())
+    }
+
+    fn apply_rate_finalized(
+        &mut self,
+        hash: &Word,
+        settlement: &Settlement,
+        receipt: &serde_json::Value,
+        canonical: &serde_json::Value,
+        finalized: &serde_json::Value,
+    ) -> Result<(), JournalError> {
+        let tx = self
+            .rate_transactions
+            .get(hash)
+            .ok_or(JournalError::Conflict)?;
+        crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
+            .map_err(|_| JournalError::Corrupt)?;
+        let observed =
+            crate::rate::publication_settlement(tx, receipt).map_err(|_| JournalError::Corrupt)?;
+        if *settlement != observed
+            || self.publications.values().any(|(p, s)| {
+                p.owner == tx.publication.owner && p.nonce == tx.publication.nonce && s.is_some()
+            })
+        {
+            return Err(JournalError::Conflict);
+        }
+        self.publications
+            .get_mut(hash)
+            .ok_or(JournalError::Conflict)?
+            .1 = Some(*settlement);
+        self.rate_active
+            .remove(&(tx.publication.owner, tx.publication.nonce));
         Ok(())
     }
 }

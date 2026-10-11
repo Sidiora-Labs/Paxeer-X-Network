@@ -7,7 +7,9 @@ use k256::elliptic_curve::rand_core::OsRng;
 use layerx_gas_station::config::{
     ConfigError, DidGasLimit, PaymasterRequired, ServiceConfig, StationConfig,
 };
-use layerx_gas_station::journal::{Completion, Entry, Journal, JournalError, Key, QuoteRecord};
+use layerx_gas_station::journal::{
+    Completion, Entry, Journal, JournalError, Key, QuoteRecord, Submission,
+};
 use layerx_gas_station::policy::{DidBudget, PolicyRefusal, QuotePolicy};
 use layerx_gas_station::price::{GovernedRate, PAX_BASE_UNITS};
 use layerx_gas_station::quote::{address_word, keccak, word, Address, Quote, Word, SIDIORA};
@@ -549,6 +551,64 @@ fn journal_carries_did() -> TestResult {
     remove_journal(&path)
 }
 
+fn assert_retired_kinds_refused(path: &Path, bytes: &[u8], key: Key) -> TestResult {
+    for retired in [
+        serde_json::json!({"kind": "replacement_signing_intent", "key": key, "nonce": 5}),
+        serde_json::json!({"kind": "replaced", "key": key}),
+        serde_json::json!({"kind": "cancelled", "key": key, "block_number": 17}),
+        serde_json::json!({"kind": "released", "key": key, "nonce": 5}),
+    ] {
+        let mut legacy = bytes.to_vec();
+        serde_json::to_writer(&mut legacy, &retired)?;
+        legacy.push(b'\n');
+        std::fs::write(path, &legacy)?;
+        assert!(matches!(Journal::open(path), Err(JournalError::Version)));
+    }
+    Ok(())
+}
+
+fn assert_refusal_is_final(
+    journal: &mut Journal,
+    path: &Path,
+    batch: &Batch,
+    original: &Submission,
+    sponsor: &CountedSigner,
+) -> TestResult {
+    let key = batch.record.key;
+    let refused = journal.state().clone();
+    let refused_bytes = std::fs::read(path)?;
+    let refusal = Entry::Refused {
+        key,
+        hash: original.hash,
+    };
+    assert_eq!(journal.append(&refusal), Err(JournalError::Conflict));
+    assert_eq!(
+        journal.append(&Entry::Prepared {
+            key,
+            submission: original.clone()
+        }),
+        Err(JournalError::Conflict)
+    );
+    assert_eq!(
+        journal.append(&Entry::Completed {
+            key,
+            account: batch.record.account,
+            completion: Completion::Reverted {
+                hash: original.hash
+            },
+        }),
+        Err(JournalError::Conflict)
+    );
+    assert!(matches!(
+        prepare_submission(journal, batch.request(5), &batch.record.did, sponsor),
+        Err(StationError::Conflict)
+    ));
+    assert_eq!(sponsor.calls.get(), 1);
+    assert_eq!(journal.state(), &refused);
+    assert_eq!(std::fs::read(path)?, refused_bytes);
+    Ok(())
+}
+
 #[test]
 fn no_same_nonce_replacement() -> TestResult {
     let sponsor = signer()?;
@@ -592,18 +652,7 @@ fn no_same_nonce_replacement() -> TestResult {
     assert_eq!(journal.state(), &before);
     assert_eq!(std::fs::read(&path)?, bytes);
     drop(journal);
-    for retired in [
-        serde_json::json!({"kind": "replacement_signing_intent", "key": key, "nonce": 5}),
-        serde_json::json!({"kind": "replaced", "key": key}),
-        serde_json::json!({"kind": "cancelled", "key": key, "block_number": 17}),
-        serde_json::json!({"kind": "released", "key": key, "nonce": 5}),
-    ] {
-        let mut legacy = bytes.clone();
-        serde_json::to_writer(&mut legacy, &retired)?;
-        legacy.push(b'\n');
-        std::fs::write(&path, &legacy)?;
-        assert!(matches!(Journal::open(&path), Err(JournalError::Version)));
-    }
+    assert_retired_kinds_refused(&path, &bytes, key)?;
     std::fs::write(&path, &bytes)?;
     let mut journal = Journal::open(&path)?;
     assert_eq!(journal.state(), &before);
@@ -629,33 +678,7 @@ fn no_same_nonce_replacement() -> TestResult {
     assert!(!journal.state().holds(sponsor.address(), 5));
     assert_eq!(journal.state().next_nonce(sponsor.address(), 5), Some(5));
     assert_eq!(journal.state().liability(key)?, 0);
-    let refused = journal.state().clone();
-    let refused_bytes = std::fs::read(&path)?;
-    assert_eq!(journal.append(&refusal), Err(JournalError::Conflict));
-    assert_eq!(
-        journal.append(&Entry::Prepared {
-            key,
-            submission: original.clone()
-        }),
-        Err(JournalError::Conflict)
-    );
-    assert_eq!(
-        journal.append(&Entry::Completed {
-            key,
-            account: batch.record.account,
-            completion: Completion::Reverted {
-                hash: original.hash
-            },
-        }),
-        Err(JournalError::Conflict)
-    );
-    assert!(matches!(
-        prepare_submission(&mut journal, batch.request(5), &batch.record.did, &sponsor),
-        Err(StationError::Conflict)
-    ));
-    assert_eq!(sponsor.calls.get(), 1);
-    assert_eq!(journal.state(), &refused);
-    assert_eq!(std::fs::read(&path)?, refused_bytes);
+    assert_refusal_is_final(&mut journal, &path, &batch, &original, &sponsor)?;
     assert_eq!(
         journal.state().items[&key].submission.as_ref(),
         Some(&original)

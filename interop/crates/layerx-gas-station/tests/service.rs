@@ -913,7 +913,7 @@ fn a_receipt_naming_another_sponsor_is_refused_as_unavailable() -> TestResult {
 
 /// A served configuration matching `station_config`, with `registered` as its
 /// registered senders.
-fn service_json(registered: Value) -> Value {
+fn service_json(registered: &Value) -> Value {
     json!({"listen": "127.0.0.1:8545", "gas_limit": 200_000,
         "max_priority_fee_per_gas": 1_000_000_000, "chain_id": CHAIN_ID,
         "endpoints": ["https://paxeer.app"], "paymaster": hex(&PAYMASTER), "token": hex(&SIDIORA),
@@ -927,7 +927,7 @@ fn service_json(registered: Value) -> Value {
 fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestResult {
     let feeder = [0x0f; 20];
     let config = ServiceConfig::parse(
-        &service_json(json!([{"address": hex(&feeder), "budget": 5_000_000}])).to_string(),
+        &service_json(&json!([{"address": hex(&feeder), "budget": 5_000_000}])).to_string(),
     )?;
     assert_eq!(
         config.registered_senders,
@@ -938,7 +938,7 @@ fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestRes
     );
     assert_eq!(config.account_budget(&feeder), 5_000_000);
     assert_eq!(config.account_budget(&[0x0e; 20]), 8_000_000);
-    let mut unregistered = service_json(json!([]));
+    let mut unregistered = service_json(&json!([]));
     assert!(ServiceConfig::parse(&unregistered.to_string())?
         .registered_senders
         .is_empty());
@@ -950,7 +950,7 @@ fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestRes
         .is_empty());
     assert_eq!(
         ServiceConfig::parse(
-            &service_json(json!([{"address": hex(&feeder), "budget": 15_999_999}])).to_string()
+            &service_json(&json!([{"address": hex(&feeder), "budget": 15_999_999}])).to_string()
         )?
         .account_budget(&feeder),
         15_999_999
@@ -969,7 +969,7 @@ fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestRes
         json!(null),
     ] {
         assert_eq!(
-            ServiceConfig::parse(&service_json(refused).to_string()).err(),
+            ServiceConfig::parse(&service_json(&refused).to_string()).err(),
             Some(ConfigError {
                 field: "registered_senders"
             })
@@ -993,9 +993,9 @@ fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestRes
 }
 
 #[test]
-fn an_empty_or_sidiora_paymaster_is_refused_at_start() -> TestResult {
+fn an_empty_or_sidiora_paymaster_is_refused_at_start() {
     for paymaster in [hex(&[0; 20]), hex(&SIDIORA)] {
-        let mut value = service_json(json!([]));
+        let mut value = service_json(&json!([]));
         value["paymaster"] = json!(paymaster);
         assert_eq!(
             ServiceConfig::parse(&value.to_string()).err(),
@@ -1022,7 +1022,6 @@ fn an_empty_or_sidiora_paymaster_is_refused_at_start() -> TestResult {
         let refused = start_configured(name, |config, _| config.station.paymaster = paymaster);
         assert!(refused.is_err());
     }
-    Ok(())
 }
 
 #[test]
@@ -1053,19 +1052,10 @@ fn sequencer_receipt_is_requested_by_transaction_hash() -> TestResult {
     harness.finish()
 }
 
-/// Starts the real service from exactly the inputs
-/// interop/deploy/gas-station/railway.env.example documents: every key it
-/// lists is set, the blanks and the sequencer endpoint reference with test
-/// values, the configuration is rendered the way docker/gas-station/init.sh
-/// renders it, and the relayer key comes from the variable the file names.
-/// Without `GAS_STATION_DID_GAS_LIMIT` the same station refuses to start.
-#[test]
-fn documented_deploy_inputs_start_service() -> TestResult {
-    let _did_env = DID_GAS_LIMIT_ENV
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let relayer_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
-    let owner_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
+fn set_documented_env(
+    relayer_secret: &str,
+    owner_secret: &str,
+) -> Result<Vec<&'static str>, Box<dyn std::error::Error>> {
     let mut fills: BTreeMap<&str, String> = [
         ("GAS_STATION_ENDPOINTS", "https://sequencer.test".to_owned()),
         ("GAS_STATION_PAYMASTER", hex(&PAYMASTER)),
@@ -1085,8 +1075,8 @@ fn documented_deploy_inputs_start_service() -> TestResult {
         ("GAS_STATION_RATE_GAS_BUDGET_PER_DAY", "2000000".to_owned()),
         ("GAS_STATION_RATE_BALANCE_FLOOR", "100".to_owned()),
         ("GAS_STATION_BROWSER_ORIGINS", "https://app.test".to_owned()),
-        ("GAS_STATION_RELAYER_KEY", relayer_secret.clone()),
-        ("GAS_STATION_RATE_OWNER_KEY", owner_secret.clone()),
+        ("GAS_STATION_RELAYER_KEY", relayer_secret.to_owned()),
+        ("GAS_STATION_RATE_OWNER_KEY", owner_secret.to_owned()),
     ]
     .into_iter()
     .collect();
@@ -1108,14 +1098,17 @@ fn documented_deploy_inputs_start_service() -> TestResult {
     }
     assert_eq!(fills.into_keys().collect::<Vec<_>>(), Vec::<&str>::new());
     assert!(listed.contains(&"GAS_STATION_DID_GAS_LIMIT"));
+    Ok(listed)
+}
 
+fn render_documented_config() -> Result<String, std::env::VarError> {
     let var = |key: &str| std::env::var(key);
     let endpoints = var("GAS_STATION_ENDPOINTS")?
         .split(' ')
         .map(|url| format!("\"{url}\""))
         .collect::<Vec<_>>()
         .join(",");
-    let rendered = format!(
+    Ok(format!(
         r#"{{"listen":"{}","gas_limit":{},"max_priority_fee_per_gas":{},"chain_id":{},"endpoints":[{}],"paymaster":"{}","token":"{}","decimals":{},"max_rate_age":{},"spread_bps":{},"margin_bps":{},"per_account_limit":{},"per_interval_limit":{},"per_quote_limit":{},"interval_seconds":{},"balance_floor":{},"relayer_key_env":"{}"}}"#,
         var("GAS_STATION_LISTEN")?,
         var("GAS_STATION_GAS_LIMIT")?,
@@ -1134,7 +1127,26 @@ fn documented_deploy_inputs_start_service() -> TestResult {
         var("GAS_STATION_INTERVAL_SECONDS")?,
         var("GAS_STATION_BALANCE_FLOOR")?,
         var("GAS_STATION_RELAYER_KEY_ENV")?,
-    );
+    ))
+}
+
+/// Starts the real service from exactly the inputs
+/// interop/deploy/gas-station/railway.env.example documents: every key it
+/// lists is set, the blanks and the sequencer endpoint reference with test
+/// values, the configuration is rendered the way docker/gas-station/init.sh
+/// renders it, and the relayer key comes from the variable the file names.
+/// Without `GAS_STATION_DID_GAS_LIMIT` the same station refuses to start.
+#[test]
+fn documented_deploy_inputs_start_service() -> TestResult {
+    let _did_env = DID_GAS_LIMIT_ENV
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let relayer_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
+    let owner_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
+    let listed = set_documented_env(&relayer_secret, &owner_secret)?;
+
+    let var = |key: &str| std::env::var(key);
+    let rendered = render_documented_config()?;
     let config = ServiceConfig::parse(&rendered)?;
     assert_eq!(config.station.relayer_key_env, "GAS_STATION_RELAYER_KEY");
 

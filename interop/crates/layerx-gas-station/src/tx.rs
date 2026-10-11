@@ -521,18 +521,18 @@ mod tests {
             sign_cancellation(0, 5, fees, &signer),
             Err(TxError::Invalid)
         );
-        let signed = sign_cancellation(1325, 5, fees, &signer)?;
-        assert_eq!(signed.hash, keccak(&signed.raw));
-        assert_eq!(&signed.raw[..2], &[2, 0xf8]);
-        assert_eq!(usize::from(signed.raw[2]), signed.raw.len() - 3);
+        let cancellation = sign_cancellation(1325, 5, fees, &signer)?;
+        assert_eq!(cancellation.hash, keccak(&cancellation.raw));
+        assert_eq!(&cancellation.raw[..2], &[2, 0xf8]);
+        assert_eq!(usize::from(cancellation.raw[2]), cancellation.raw.len() - 3);
         let mut fields = vec![
             0x82, 0x05, 0x2d, 0x05, 0x84, 0x41, 0x90, 0xab, 0x00, 0x86, 0x05, 0x00, 0x91, 0x8b,
             0xd8, 0x00, 0x82, 0x52, 0x08, 0x94,
         ];
         fields.extend_from_slice(&signer.address());
         fields.extend_from_slice(&[0x80, 0x80, 0xc0]);
-        assert_eq!(&signed.raw[3..3 + fields.len()], fields.as_slice());
-        let tail = &signed.raw[3 + fields.len()..];
+        assert_eq!(&cancellation.raw[3..3 + fields.len()], fields.as_slice());
+        let tail = &cancellation.raw[3 + fields.len()..];
         let parity = match tail[0] {
             0x80 => 0,
             1 => 1,
