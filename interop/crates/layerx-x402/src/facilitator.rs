@@ -19,7 +19,7 @@ use sha2::{Digest as _, Sha256};
 use crate::model::{
     PaymentPayload, PaymentRequirements, SettlementResponse, X402Error, X402_VERSION,
 };
-use crate::seller::ExecutedPayment;
+use crate::seller::{payment_matches, validate_network, validate_transaction, ExecutedPayment};
 
 const ADAPTER_ID: &str = "x402";
 const VERIFY_DIGEST_DOMAIN: &[u8] = b"LayerX/x402/v2/facilitator/verify/digest\0";
@@ -44,6 +44,8 @@ impl FacilitatorRequest {
         }
         self.payment_payload.validate()?;
         self.payment_requirements.validate()?;
+        validate_network(&self.payment_requirements.network)?;
+        self.payment_requirements.layerx_terms()?;
         if self.payment_payload.accepted != self.payment_requirements {
             return Err(X402Error::RequirementsMismatch);
         }
@@ -398,6 +400,13 @@ fn render_pending(
     requirements: &PaymentRequirements,
     transaction: String,
 ) -> Result<SettlementResponse, X402Error> {
+    validate_network(&requirements.network)?;
+    validate_transaction(&transaction)?;
+    let mut extensions = BTreeMap::new();
+    extensions.insert(
+        "layerx".to_owned(),
+        json!({"verificationLevel": "submitted"}),
+    );
     let response = SettlementResponse {
         success: false,
         error_reason: Some("settlement_pending".to_owned()),
@@ -405,7 +414,7 @@ fn render_pending(
         transaction,
         network: requirements.network.clone(),
         amount: None,
-        extensions: BTreeMap::new(),
+        extensions,
     };
     response.validate_wire()?;
     Ok(response)
@@ -416,6 +425,7 @@ fn render_refused(
     reason: &str,
     payer: Option<String>,
 ) -> Result<SettlementResponse, X402Error> {
+    validate_network(&requirements.network)?;
     let response = SettlementResponse {
         success: false,
         error_reason: Some(safe_reason(reason)),
@@ -445,13 +455,12 @@ fn settle_executed(
         .receipt()
         .protocol()
         .ok_or(X402Error::EvidenceMismatch)?;
-    let (asset, recipient) = requirements.layerx_facts()?;
-    if protocol.asset() != asset
-        || protocol.to() != recipient
-        || protocol.amount() != requirements.amount.value()
-    {
-        return Err(X402Error::EvidenceMismatch);
-    }
+    payment_matches(
+        requirements,
+        protocol.asset(),
+        protocol.to(),
+        protocol.amount(),
+    )?;
     let status = gateway
         .settle_with_receipt(
             principal,
@@ -472,14 +481,14 @@ fn settle_executed(
         json!({
             "receipt": STANDARD.encode(&executed.canonical_receipt),
             "receiptDigest": digest_text,
-            "verificationLevel": "sequencer-signed"
+            "verificationLevel": "receipted"
         }),
     );
     let response = SettlementResponse {
         success: true,
         error_reason: None,
         payer: Some(hex(&protocol.from())),
-        transaction: format!("lxp:{digest_text}"),
+        transaction: format!("0x{}", hex(&protocol.activity_id())),
         network: requirements.network.clone(),
         amount: Some(requirements.amount),
         extensions,
@@ -519,7 +528,7 @@ pub(crate) fn validate_supported(response: &SupportedResponse) -> Result<(), X40
     for (index, kind) in response.kinds.iter().enumerate() {
         if kind.x402_version != X402_VERSION
             || !identifier(&kind.scheme, 32)
-            || !caip2(&kind.network)
+            || validate_network(&kind.network).is_err()
             || kind.extra.as_ref().is_some_and(|extra| !extra.is_object())
             || response.kinds[..index].iter().any(|prior| {
                 prior.x402_version == kind.x402_version
@@ -548,17 +557,7 @@ pub(crate) fn validate_supported(response: &SupportedResponse) -> Result<(), X40
 }
 
 fn network_pattern(value: &str) -> bool {
-    let Some((namespace, reference)) = value.split_once(':') else {
-        return false;
-    };
-    identifier(namespace, 32) && (reference == "*" || identifier(reference, 64))
-}
-
-fn caip2(value: &str) -> bool {
-    let Some((namespace, reference)) = value.split_once(':') else {
-        return false;
-    };
-    identifier(namespace, 32) && identifier(reference, 64)
+    value == "eip155:*" || validate_network(value).is_ok()
 }
 
 fn identifier(value: &str, limit: usize) -> bool {
@@ -602,4 +601,86 @@ fn hex(bytes: &[u8; 32]) -> String {
         output.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::seller::tests::{executed, opened_gateway, required};
+
+    #[test]
+    fn settlement_transaction_is_tx_hash() {
+        let required = required();
+        let accepted = &required.accepts[0];
+        let executed = executed(accepted);
+        let (mut gateway, principal, trace) = opened_gateway();
+        let response = settle_executed(
+            &mut gateway,
+            &principal,
+            [0x74; 32],
+            accepted,
+            &executed,
+            &trace,
+            1,
+        )
+        .unwrap_or_else(|error| panic!("settlement: {error}"));
+        assert_eq!(response.transaction, format!("0x{}", "61".repeat(32)));
+        assert_eq!(response.network, "eip155:125");
+        assert_eq!(
+            response.extensions["layerx"]["verificationLevel"],
+            "receipted"
+        );
+        assert_eq!(response.validate_wire(), Ok(()));
+    }
+
+    #[test]
+    fn pending_transaction_carries_submitted_rung() {
+        let required = required();
+        let accepted = &required.accepts[0];
+        let transaction = format!("0x{}", "61".repeat(32));
+        let response = render_pending(accepted, transaction.clone())
+            .unwrap_or_else(|error| panic!("pending: {error}"));
+        assert!(!response.success);
+        assert_eq!(response.error_reason.as_deref(), Some("settlement_pending"));
+        assert_eq!(response.transaction, transaction);
+        assert_eq!(response.network, "eip155:125");
+        assert_eq!(
+            response.extensions["layerx"]["verificationLevel"],
+            "submitted"
+        );
+        for transaction in ["lxp:abc", "0xabc", "", &format!("0x{}", "00".repeat(32))] {
+            assert_eq!(
+                render_pending(accepted, transaction.to_owned()),
+                Err(X402Error::InvalidPayload)
+            );
+        }
+    }
+
+    #[test]
+    fn supported_networks_are_eip155() {
+        let supported = SupportedResponse {
+            kinds: vec![FacilitatorKind {
+                x402_version: X402_VERSION,
+                scheme: "exact".to_owned(),
+                network: "eip155:125".to_owned(),
+                extra: None,
+            }],
+            extensions: Vec::new(),
+            signers: BTreeMap::from([("eip155:*".to_owned(), vec!["receipt-key".to_owned()])]),
+        };
+        assert_eq!(validate_supported(&supported), Ok(()));
+        let mut legacy = supported.clone();
+        legacy.kinds[0].network = "layerx:beta".to_owned();
+        assert_eq!(
+            validate_supported(&legacy),
+            Err(X402Error::UnsupportedOffer)
+        );
+        let mut legacy_signers = supported;
+        legacy_signers.signers =
+            BTreeMap::from([("layerx:*".to_owned(), vec!["receipt-key".to_owned()])]);
+        assert_eq!(
+            validate_supported(&legacy_signers),
+            Err(X402Error::UnsupportedOffer)
+        );
+    }
 }
