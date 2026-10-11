@@ -30,4 +30,5 @@ message LayerXScopeAuthorization {
   string max_total = 6;
   uint64 revocation_epoch = 7;
   bytes grant_id = 8;
+  string msg_type_url = 9;
 }

@@ -37,21 +37,25 @@ func WithGrantorRevocation(ctx sdk.Context, grantor sdk.AccAddress, sequence uin
 }
 
 // MsgTypeURL implements Authorization.MsgTypeURL. A LayerX-scope grant from
-// one grantor to one grantee occupies the authz slot named by this type.
+// one grantor to one grantee authorizes exactly the message type it names.
 func (a LayerXScopeAuthorization) MsgTypeURL() string {
-	return "/" + proto.MessageName(&a)
+	return a.MsgTypeUrl
 }
 
 // Accept implements Authorization.Accept. It refuses every layerxledger
 // message, since the kernel ledger requires the account-holder authority kind,
-// and a grant whose revocation epoch differs from the grantor's current
-// REVOCATION sequence, as lxp_authority_is_live does.
+// a message of any type other than the one the grant names, and a grant whose
+// revocation epoch differs from the grantor's current REVOCATION sequence, as
+// lxp_authority_is_live does.
 func (a LayerXScopeAuthorization) Accept(ctx sdk.Context, msg sdk.Msg) (authz.AcceptResponse, error) {
 	if msg == nil {
 		return authz.AcceptResponse{}, ErrAuthScope.Wrap("nil message")
 	}
 	if err := refuseLayerXLedger(msg); err != nil {
 		return authz.AcceptResponse{}, err
+	}
+	if msgType := sdk.MsgTypeURL(msg); msgType != a.MsgTypeUrl {
+		return authz.AcceptResponse{}, ErrAuthScope.Wrapf("message type %s, grant authorizes %s", msgType, a.MsgTypeUrl)
 	}
 	signers := msg.GetSigners()
 	if len(signers) != 1 {
@@ -70,6 +74,12 @@ func (a LayerXScopeAuthorization) Accept(ctx sdk.Context, msg sdk.Msg) (authz.Ac
 // ValidateBasic implements Authorization.ValidateBasic with the stateless
 // bounds of lxp_authority_scope that grant_scope_validate enforces.
 func (a LayerXScopeAuthorization) ValidateBasic() error {
+	if a.MsgTypeUrl == "" {
+		return ErrAuthScope.Wrap("empty message type url")
+	}
+	if err := refuseLayerXLedgerName(strings.TrimPrefix(a.MsgTypeUrl, "/")); err != nil {
+		return err
+	}
 	if a.ModuleMask == 0 {
 		return ErrAuthScope.Wrap("zero module mask")
 	}
@@ -105,7 +115,12 @@ func (a LayerXScopeAuthorization) ValidateBasic() error {
 // refuseLayerXLedger refuses every layerxledger message with
 // LXP_UNAUTHORIZED_DEBIT (src/modules/asset/lx_asset_registry.c:147).
 func refuseLayerXLedger(msg proto.Message) error {
-	name := proto.MessageName(msg)
+	return refuseLayerXLedgerName(proto.MessageName(msg))
+}
+
+// refuseLayerXLedgerName refuses a full message name in the layerxledger
+// package.
+func refuseLayerXLedgerName(name string) error {
 	if strings.HasPrefix(name, layerXLedgerProtoPackage) {
 		return ErrUnauthorizedDebit.Wrapf("%s requires the account-holder authority", name)
 	}

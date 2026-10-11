@@ -3,24 +3,36 @@ package types
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	dbm "github.com/tendermint/tm-db"
 
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	ledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/testutil"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	authkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/keeper"
+	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz"
 	authzkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/authz/keeper"
+	bankkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/keeper"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	paramskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/keeper"
 )
 
-const layerXScopeTestEveryModuleMask = uint64(0xffe)
+const (
+	layerXScopeTestEveryModuleMask = uint64(0xffe)
+	layerXScopeTestSendTypeURL     = "/cosmos.bank.v1beta1.MsgSend"
+	layerXScopeTestOwnTypeURL      = "/paxprotocol.paxchain.layerxauth.LayerXScopeAuthorization"
+)
 
 func layerXScopeTestAuthorization() LayerXScopeAuthorization {
 	return LayerXScopeAuthorization{
@@ -32,6 +44,7 @@ func layerXScopeTestAuthorization() LayerXScopeAuthorization {
 		MaxTotal:        "340282366920938463463374607431768211455",
 		RevocationEpoch: 4,
 		GrantId:         bytes.Repeat([]byte{0xc7}, 32),
+		MsgTypeUrl:      layerXScopeTestSendTypeURL,
 	}
 }
 
@@ -41,6 +54,14 @@ func layerXScopeTestAddress(fill byte) sdk.AccAddress {
 
 func layerXScopeTestSend(from sdk.AccAddress) sdk.Msg {
 	return banktypes.NewMsgSend(from, layerXScopeTestAddress(0x0e), sdk.NewCoins(sdk.NewInt64Coin("upax", 1)))
+}
+
+func layerXScopeTestMultiSend(from sdk.AccAddress) sdk.Msg {
+	coins := sdk.NewCoins(sdk.NewInt64Coin("upax", 1))
+	return banktypes.NewMsgMultiSend(
+		[]banktypes.Input{banktypes.NewInput(from, coins)},
+		[]banktypes.Output{banktypes.NewOutput(layerXScopeTestAddress(0x0e), coins)},
+	)
 }
 
 func TestLayerXScopeValidateBasic(t *testing.T) {
@@ -70,6 +91,10 @@ func TestLayerXScopeValidateBasic(t *testing.T) {
 		{"amount_leading_zero", func(a *LayerXScopeAuthorization) { a.MaxPerActivity = "01" }, ErrNonCanonical},
 		{"amount_sign", func(a *LayerXScopeAuthorization) { a.MaxTotal = "-1" }, ErrNonCanonical},
 		{"amount_above_u128", func(a *LayerXScopeAuthorization) { a.MaxTotal = "340282366920938463463374607431768211456" }, ErrNonCanonical},
+		{"msg_type_url_empty", func(a *LayerXScopeAuthorization) { a.MsgTypeUrl = "" }, ErrAuthScope},
+		{"msg_type_url_ledger", func(a *LayerXScopeAuthorization) {
+			a.MsgTypeUrl = sdk.MsgTypeURL(&ledgertypes.MsgUpdateParams{})
+		}, ErrUnauthorizedDebit},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,7 +118,7 @@ func TestLayerXScopeValidateBasic(t *testing.T) {
 		granter, grantee := layerXScopeTestAddress(0xd0), layerXScopeTestAddress(0xe0)
 		auth := layerXScopeTestAuthorization()
 		msgType := auth.MsgTypeURL()
-		if msgType != "/paxprotocol.paxchain.layerxauth.LayerXScopeAuthorization" {
+		if msgType != layerXScopeTestSendTypeURL {
 			t.Fatalf("MsgTypeURL = %q", msgType)
 		}
 
@@ -177,6 +202,14 @@ func TestLayerXScopeRevocationEpoch(t *testing.T) {
 	if _, err := auth.Accept(WithGrantorRevocation(ctx, grantor, 4), nil); !errors.Is(err, ErrAuthScope) {
 		t.Fatalf("Accept nil message = %v, want %v", err, ErrAuthScope)
 	}
+	multiSend := layerXScopeTestMultiSend(grantor)
+	resp, err = auth.Accept(WithGrantorRevocation(ctx, grantor, 4), multiSend)
+	if !errors.Is(err, ErrAuthScope) {
+		t.Fatalf("Accept %s under a MsgSend grant = %v, want %v", sdk.MsgTypeURL(multiSend), err, ErrAuthScope)
+	}
+	if resp.Accept || resp.Delete || resp.Updated != nil {
+		t.Fatalf("refused Accept response = %+v, want zero", resp)
+	}
 }
 
 func TestLayerXScopeRefusesLedger(t *testing.T) {
@@ -211,5 +244,108 @@ func TestLayerXScopeRefusesLedger(t *testing.T) {
 	resp, err := auth.Accept(WithGrantorRevocation(ctx, grantor, auth.RevocationEpoch), layerXScopeTestSend(grantor))
 	if err != nil || !resp.Accept {
 		t.Fatalf("every-module scope on a non-ledger message = %+v, %v; want accept", resp, err)
+	}
+}
+
+func TestLayerXScopeGrantAndExec(t *testing.T) {
+	registry := cdctypes.NewInterfaceRegistry()
+	authtypes.RegisterInterfaces(registry)
+	banktypes.RegisterInterfaces(registry)
+	authz.RegisterInterfaces(registry)
+	RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+
+	authzKey := sdk.NewKVStoreKey(authzkeeper.StoreKey)
+	accountKey := sdk.NewKVStoreKey(authtypes.StoreKey)
+	bankKey := sdk.NewKVStoreKey(banktypes.StoreKey)
+	paramsKey := sdk.NewKVStoreKey("params")
+	paramsTransientKey := sdk.NewTransientStoreKey("transient_params")
+	db := dbm.NewMemDB()
+	cms := store.NewCommitMultiStore(db)
+	for _, key := range []sdk.StoreKey{authzKey, accountKey, bankKey, paramsKey} {
+		cms.MountStoreWithDB(key, sdk.StoreTypeIAVL, db)
+	}
+	cms.MountStoreWithDB(paramsTransientKey, sdk.StoreTypeTransient, db)
+	if err := cms.LoadLatestVersion(); err != nil {
+		t.Fatal(err)
+	}
+	expiration := time.Unix(1_900_000_000, 0).UTC()
+	ctx := sdk.NewContext(cms, tmproto.Header{Time: expiration.Add(-time.Hour)}, false)
+
+	params := paramskeeper.NewKeeper(cdc, codec.NewLegacyAmino(), paramsKey, paramsTransientKey)
+	const fundingModule = "layerx_scope_funding"
+	accountKeeper := authkeeper.NewAccountKeeper(cdc, accountKey, params.Subspace(authtypes.ModuleName), authtypes.ProtoBaseAccount,
+		map[string][]string{fundingModule: {authtypes.Minter}})
+	accountKeeper.SetParams(ctx, authtypes.DefaultParams())
+	bankKeeper := bankkeeper.NewBaseKeeper(cdc, bankKey, accountKeeper, params.Subspace(banktypes.ModuleName), nil)
+	bankKeeper.SetParams(ctx, banktypes.DefaultParams())
+
+	router := baseapp.NewMsgServiceRouter()
+	router.SetInterfaceRegistry(registry)
+	banktypes.RegisterMsgServer(router, bankkeeper.NewMsgServerImpl(bankKeeper))
+	keeper := authzkeeper.NewKeeper(authzKey, cdc, router)
+	goCtx := sdk.WrapSDKContext(ctx)
+
+	granter, grantee := layerXScopeTestAddress(0xd4), layerXScopeTestAddress(0xe4)
+	recipient := layerXScopeTestAddress(0x0e)
+	funds := sdk.NewCoins(sdk.NewInt64Coin("upax", 100))
+	if err := bankKeeper.MintCoins(ctx, fundingModule, funds); err != nil {
+		t.Fatalf("MintCoins: %v", err)
+	}
+	if err := bankKeeper.SendCoinsFromModuleToAccount(ctx, fundingModule, granter, funds); err != nil {
+		t.Fatalf("SendCoinsFromModuleToAccount: %v", err)
+	}
+
+	auth := layerXScopeTestAuthorization()
+	grantMsg, err := authz.NewMsgGrant(granter, grantee, &auth, expiration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keeper.Grant(goCtx, grantMsg); err != nil {
+		t.Fatalf("Grant naming %s: %v", layerXScopeTestSendTypeURL, err)
+	}
+	stored, storedExpiration := keeper.GetCleanAuthorization(ctx, grantee, granter, layerXScopeTestSendTypeURL)
+	if got, ok := stored.(*LayerXScopeAuthorization); !ok || !proto.Equal(got, &auth) {
+		t.Fatalf("stored authorization = %v, want %v", stored, &auth)
+	}
+	if !storedExpiration.Equal(expiration) {
+		t.Fatalf("expiration = %v, want %v", storedExpiration, expiration)
+	}
+
+	own := layerXScopeTestAuthorization()
+	own.MsgTypeUrl = layerXScopeTestOwnTypeURL
+	ownGrant, err := authz.NewMsgGrant(granter, grantee, &own, expiration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keeper.Grant(goCtx, ownGrant); !errors.Is(err, sdkerrors.ErrInvalidType) {
+		t.Fatalf("Grant naming %s = %v, want %v", layerXScopeTestOwnTypeURL, err, sdkerrors.ErrInvalidType)
+	}
+	if stored, _ := keeper.GetCleanAuthorization(ctx, grantee, granter, layerXScopeTestOwnTypeURL); stored != nil {
+		t.Fatalf("authorization under %s = %v, want nil", layerXScopeTestOwnTypeURL, stored)
+	}
+
+	execCtx := sdk.WrapSDKContext(WithGrantorRevocation(ctx, granter, auth.RevocationEpoch))
+	send := authz.NewMsgExec(grantee, []sdk.Msg{layerXScopeTestSend(granter)})
+	resp, err := keeper.Exec(execCtx, &send)
+	if err != nil {
+		t.Fatalf("Exec MsgSend under the grant: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("Exec results = %d, want 1", len(resp.Results))
+	}
+	if got := bankKeeper.GetBalance(ctx, granter, "upax"); !got.IsEqual(sdk.NewInt64Coin("upax", 99)) {
+		t.Fatalf("granter balance = %v, want 99upax", got)
+	}
+	if got := bankKeeper.GetBalance(ctx, recipient, "upax"); !got.IsEqual(sdk.NewInt64Coin("upax", 1)) {
+		t.Fatalf("recipient balance = %v, want 1upax", got)
+	}
+
+	multiSend := authz.NewMsgExec(grantee, []sdk.Msg{layerXScopeTestMultiSend(granter)})
+	if _, err := keeper.Exec(execCtx, &multiSend); !errors.Is(err, sdkerrors.ErrUnauthorized) || !strings.Contains(err.Error(), "authorization not found") {
+		t.Fatalf("Exec MsgMultiSend under a MsgSend grant = %v, want %v: authorization not found", err, sdkerrors.ErrUnauthorized)
+	}
+	if got := bankKeeper.GetBalance(ctx, granter, "upax"); !got.IsEqual(sdk.NewInt64Coin("upax", 99)) {
+		t.Fatalf("granter balance after refused exec = %v, want 99upax", got)
 	}
 }
