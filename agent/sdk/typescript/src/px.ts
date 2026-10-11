@@ -35,6 +35,7 @@ export const PX_METHODS = [
   "px_getBalances",
   "px_listAssets",
   "px_getNetwork",
+  "px_getReceiptKeys",
   "px_getHistory",
   "px_getUnifiedHistory",
 ] as const;
@@ -119,7 +120,14 @@ export interface PxNetworkHead {
   readonly networkId: string;
   readonly paxeer: PxPaxeerHead;
   readonly layerx: Readonly<Record<string, unknown>> | null;
-  readonly anchor: PxAnchorHead | null;
+  readonly latestCommittedHeight: bigint;
+}
+
+export interface PxReceiptKeyEntry {
+  readonly keyId: string;
+  readonly publicKey: string;
+  readonly firstHeight: bigint;
+  readonly lastHeight: bigint;
 }
 
 export interface PxClientOptions {
@@ -141,20 +149,29 @@ export class PxClient {
     this.#endpoint = validateEndpoint(options.endpoint);
     this.#credential = options.credential;
     this.#timeoutMs = exactPositive(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    this.#maximumResponseBytes = exactPositive(options.maximumResponseBytes ?? MAX_RESPONSE_BYTES);
-    if (this.#maximumResponseBytes > MAX_RESPONSE_BYTES) throw new Error("Invalid gateway response bound");
+    this.#maximumResponseBytes = exactPositive(
+      options.maximumResponseBytes ?? MAX_RESPONSE_BYTES,
+    );
+    if (this.#maximumResponseBytes > MAX_RESPONSE_BYTES)
+      throw new Error("Invalid gateway response bound");
   }
 
   public async resolveAccount(account: string): Promise<PxResolvedIdentities> {
-    return decodePxResolvedIdentities(await this.call("px_resolveAccount", [pxAccountKey(account)]));
+    return decodePxResolvedIdentities(
+      await this.call("px_resolveAccount", [pxAccountKey(account)]),
+    );
   }
 
   public async getAccount(account: string): Promise<PxAccountJoin> {
-    return decodePxAccountJoin(await this.call("px_getAccount", [pxAccountKey(account)]));
+    return decodePxAccountJoin(
+      await this.call("px_getAccount", [pxAccountKey(account)]),
+    );
   }
 
   public async getBalances(account: string): Promise<PxAccountBalances> {
-    return decodePxAccountBalances(await this.call("px_getBalances", [pxAccountKey(account)]));
+    return decodePxAccountBalances(
+      await this.call("px_getBalances", [pxAccountKey(account)]),
+    );
   }
 
   public async listAssets(): Promise<PxAssetTable> {
@@ -165,56 +182,106 @@ export class PxClient {
     return decodePxNetworkHead(await this.call("px_getNetwork", []));
   }
 
+  public async getReceiptKeys(): Promise<readonly PxReceiptKeyEntry[]> {
+    return decodePxReceiptKeys((await this.call("px_getReceiptKeys", [])).keys);
+  }
+
   /** The indexed history of one Paxeer EVM address, newest first. */
-  public async getHistory(account: string, options: HistoryOptions = {}): Promise<HistoryPage> {
+  public async getHistory(
+    account: string,
+    options: HistoryOptions = {},
+  ): Promise<HistoryPage> {
     const params = historyParams(paxeerHistoryAccount(account), options);
-    return decodePaxeerHistoryPage(await this.call("px_getHistory", params), options.limit ?? HISTORY_DEFAULT_LIMIT);
+    return decodePaxeerHistoryPage(
+      await this.call("px_getHistory", params),
+      options.limit ?? HISTORY_DEFAULT_LIMIT,
+    );
   }
 
   /** Both halves of one unified account merged newest first, each row tagged with its side. */
-  public async getUnifiedHistory(account: string, options: HistoryOptions = {}): Promise<UnifiedHistoryPage> {
+  public async getUnifiedHistory(
+    account: string,
+    options: HistoryOptions = {},
+  ): Promise<UnifiedHistoryPage> {
     const params = historyParams(unifiedHistoryAccount(account), options);
-    return decodeUnifiedHistoryPage(await this.call("px_getUnifiedHistory", params), options.limit ?? HISTORY_DEFAULT_LIMIT);
+    return decodeUnifiedHistoryPage(
+      await this.call("px_getUnifiedHistory", params),
+      options.limit ?? HISTORY_DEFAULT_LIMIT,
+    );
   }
 
-  private async call(method: PxMethod, params: readonly RpcParam[]): Promise<Record<string, unknown>> {
+  private async call(
+    method: PxMethod,
+    params: readonly RpcParam[],
+  ): Promise<Record<string, unknown>> {
     const id = (++this.#id).toString();
-    const body = Buffer.from(JSON.stringify({ jsonrpc: "2.0", id, method, params }), "utf8");
-    if (body.length > MAX_REQUEST_BYTES) throw new Error("Gateway request too large");
+    const body = Buffer.from(
+      JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      "utf8",
+    );
+    if (body.length > MAX_REQUEST_BYTES)
+      throw new Error("Gateway request too large");
     const headers: Record<string, string> = {
       accept: "application/json",
       "content-type": "application/json",
       "content-length": String(body.length),
       "user-agent": "layerx-typescript/0.1.0",
     };
-    this.#credential?.use((authorization) => { headers.authorization = authorization; });
+    this.#credential?.use((authorization) => {
+      headers.authorization = authorization;
+    });
     const bytes = await this.send(headers, body);
-    return decodeJsonRpcResponse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown, id);
+    const answer: unknown = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    );
+    if (
+      method === "px_getReceiptKeys" &&
+      answer !== null &&
+      typeof answer === "object" &&
+      !Array.isArray(answer) &&
+      "result" in answer
+    ) {
+      return decodeJsonRpcResponse(
+        { ...answer, result: { keys: answer.result } },
+        id,
+      );
+    }
+    return decodeJsonRpcResponse(answer, id);
   }
 
   private send(headers: Record<string, string>, body: Buffer): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       const driver = this.#endpoint.protocol === "https:" ? https : http;
-      const request = driver.request(this.#endpoint, { method: "POST", headers, timeout: this.#timeoutMs }, (response) => {
-        const chunks: Buffer[] = [];
-        let received = 0;
-        if (response.statusCode !== 200 || response.headers["content-type"]?.split(";")[0]?.trim() !== "application/json") {
-          response.destroy();
-          reject(new Error("Invalid gateway HTTP answer"));
-          return;
-        }
-        response.on("data", (chunk: Buffer) => {
-          received += chunk.length;
-          if (received > this.#maximumResponseBytes) {
-            request.destroy(new Error("Gateway answer too large"));
+      const request = driver.request(
+        this.#endpoint,
+        { method: "POST", headers, timeout: this.#timeoutMs },
+        (response) => {
+          const chunks: Buffer[] = [];
+          let received = 0;
+          if (
+            response.statusCode !== 200 ||
+            response.headers["content-type"]?.split(";")[0]?.trim() !==
+              "application/json"
+          ) {
+            response.destroy();
+            reject(new Error("Invalid gateway HTTP answer"));
             return;
           }
-          chunks.push(Buffer.from(chunk));
-        });
-        response.on("error", reject);
-        response.on("end", () => resolve(Buffer.concat(chunks)));
-      });
-      request.on("timeout", () => request.destroy(new Error("Gateway deadline exceeded")));
+          response.on("data", (chunk: Buffer) => {
+            received += chunk.length;
+            if (received > this.#maximumResponseBytes) {
+              request.destroy(new Error("Gateway answer too large"));
+              return;
+            }
+            chunks.push(Buffer.from(chunk));
+          });
+          response.on("error", reject);
+          response.on("end", () => resolve(Buffer.concat(chunks)));
+        },
+      );
+      request.on("timeout", () =>
+        request.destroy(new Error("Gateway deadline exceeded")),
+      );
       request.on("error", reject);
       request.end(body);
     });
@@ -223,22 +290,30 @@ export class PxClient {
 
 /** Normalises the three public account spellings the gateway addresses. */
 export function pxAccountKey(account: string): string {
-  if (typeof account !== "string") throw new Error("Invalid account identifier");
+  if (typeof account !== "string")
+    throw new Error("Invalid account identifier");
   const lowered = account.trim().toLowerCase();
-  if (EVM_ADDRESS.test(lowered) || DID.test(lowered) || HEX32.test(lowered)) return lowered;
+  if (EVM_ADDRESS.test(lowered) || DID.test(lowered) || HEX32.test(lowered))
+    return lowered;
   throw new Error("Invalid account identifier");
 }
 
 /** Decodes a gateway quantity: an unsigned decimal string, a `0x` quantity or a JSON integer. */
 export function pxQuantity(value: unknown): bigint {
   if (typeof value === "number") {
-    if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid gateway quantity");
+    if (!Number.isSafeInteger(value) || value < 0)
+      throw new Error("Invalid gateway quantity");
     return BigInt(value);
   }
   if (typeof value !== "string") throw new Error("Invalid gateway quantity");
   const text = value.trim().toLowerCase();
-  const parsed = HEX_QUANTITY.test(text) ? BigInt(text) : DECIMAL.test(text) ? BigInt(text) : null;
-  if (parsed === null || parsed > MAX_U128) throw new Error("Invalid gateway quantity");
+  const parsed = HEX_QUANTITY.test(text)
+    ? BigInt(text)
+    : DECIMAL.test(text)
+      ? BigInt(text)
+      : null;
+  if (parsed === null || parsed > MAX_U128)
+    throw new Error("Invalid gateway quantity");
   return parsed;
 }
 
@@ -257,9 +332,17 @@ function pxOptionalCounted(value: unknown): bigint | null {
   return value === null ? null : pxCounted(value);
 }
 
-export function decodePxResolvedIdentities(value: unknown): PxResolvedIdentities {
+export function decodePxResolvedIdentities(
+  value: unknown,
+): PxResolvedIdentities {
   const document = object(value);
-  present(document, ["evm_address", "pax_address", "layerx_did", "layerx_account", "bound"]);
+  present(document, [
+    "evm_address",
+    "pax_address",
+    "layerx_did",
+    "layerx_account",
+    "bound",
+  ]);
   const bound = document.bound;
   if (typeof bound !== "boolean") throw new Error("Invalid gateway identities");
   return Object.freeze({
@@ -286,7 +369,8 @@ export function decodePxAccountBalances(value: unknown): PxAccountBalances {
   const document = object(value);
   present(document, ["account", "balances", "joined_limit"]);
   const rows = document.balances;
-  if (!Array.isArray(rows) || rows.length > PX_MAXIMUM_JOINED_ASSETS) throw new Error("Invalid gateway balances");
+  if (!Array.isArray(rows) || rows.length > PX_MAXIMUM_JOINED_ASSETS)
+    throw new Error("Invalid gateway balances");
   return Object.freeze({
     account: decodePxResolvedIdentities(document.account),
     balances: Object.freeze(rows.map(decodePxAssetBalance)),
@@ -302,7 +386,10 @@ export function decodePxAssetBalance(value: unknown): PxAssetBalance {
   if (paxeer !== null) {
     const half = object(paxeer);
     present(half, ["denom", "amount"]);
-    balance = Object.freeze({ denom: text(half.denom, 128), amount: pxQuantity(half.amount) });
+    balance = Object.freeze({
+      denom: text(half.denom, 128),
+      amount: pxQuantity(half.amount),
+    });
   }
   return Object.freeze({
     assetId: pattern(row.asset_id, HEX32),
@@ -316,10 +403,22 @@ export function decodePxAssetBalance(value: unknown): PxAssetBalance {
 export function decodePxCustodyAsset(value: unknown): PxCustodyAsset | null {
   if (value === null) return null;
   const custody = object(value);
-  present(custody, ["asset_id", "denom", "pointer", "enabled", "paused", "minimum_deposit", "custody_cap", "custodied", "released", "pending"]);
+  present(custody, [
+    "asset_id",
+    "denom",
+    "pointer",
+    "enabled",
+    "paused",
+    "minimum_deposit",
+    "custody_cap",
+    "custodied",
+    "released",
+    "pending",
+  ]);
   const enabled = custody.enabled;
   const paused = custody.paused;
-  if (typeof enabled !== "boolean" || typeof paused !== "boolean") throw new Error("Invalid custody asset");
+  if (typeof enabled !== "boolean" || typeof paused !== "boolean")
+    throw new Error("Invalid custody asset");
   return Object.freeze({
     assetId: pattern(custody.asset_id, HEX32),
     denom: text(custody.denom, 128),
@@ -338,7 +437,8 @@ export function decodePxAssetTable(value: unknown): PxAssetTable {
   const document = object(value);
   present(document, ["assets", "joined_limit"]);
   const rows = document.assets;
-  if (!Array.isArray(rows) || rows.length > PX_MAXIMUM_JOINED_ASSETS) throw new Error("Invalid gateway asset map");
+  if (!Array.isArray(rows) || rows.length > PX_MAXIMUM_JOINED_ASSETS)
+    throw new Error("Invalid gateway asset map");
   const assets = rows.map((row): PxAssetEntry => {
     const entry = object(row);
     present(entry, ["asset_id", "layerx", "paxeer"]);
@@ -348,31 +448,87 @@ export function decodePxAssetTable(value: unknown): PxAssetTable {
       paxeer: decodePxCustodyAsset(entry.paxeer),
     });
   });
-  return Object.freeze({ assets: Object.freeze(assets), joinedLimit: pxCounted(document.joined_limit) });
+  return Object.freeze({
+    assets: Object.freeze(assets),
+    joinedLimit: pxCounted(document.joined_limit),
+  });
 }
 
 export function decodePxNetworkHead(value: unknown): PxNetworkHead {
   const document = object(value);
-  present(document, ["network_id", "paxeer", "layerx", "anchor"]);
+  present(document, [
+    "network_id",
+    "paxeer",
+    "layerx",
+    "latest_committed_height",
+  ]);
+  if ("anchor" in document) throw new Error("Invalid gateway finality");
   const paxeer = object(document.paxeer);
   present(paxeer, ["chain_id", "latest_block"]);
-  const anchor = document.anchor;
+  const latestBlock = pxCounted(paxeer.latest_block);
+  const latestCommittedHeight = pxCounted(document.latest_committed_height);
+  if (latestCommittedHeight > latestBlock)
+    throw new Error("Invalid gateway finality");
   return Object.freeze({
     networkId: text(document.network_id, 128),
-    paxeer: Object.freeze({ chainId: pxCounted(paxeer.chain_id), latestBlock: pxCounted(paxeer.latest_block) }),
+    paxeer: Object.freeze({ chainId: pxCounted(paxeer.chain_id), latestBlock }),
     layerx: objectOrNull(document.layerx),
-    anchor: anchor === null ? null : decodePxAnchorHead(anchor),
+    latestCommittedHeight,
   });
+}
+
+export function decodePxReceiptKeys(
+  value: unknown,
+): readonly PxReceiptKeyEntry[] {
+  if (!Array.isArray(value)) throw new Error("Invalid gateway receipt keys");
+  const seen = new Set<string>();
+  const keys = value.map((value): PxReceiptKeyEntry => {
+    const entry = object(value);
+    present(entry, ["keyId", "publicKey", "firstHeight", "lastHeight"]);
+    if (Object.keys(entry).length !== 4)
+      throw new Error("Invalid gateway receipt key");
+    const keyId = receiptKeyBytes(entry.keyId);
+    const publicKey = receiptKeyBytes(entry.publicKey);
+    const firstHeight = pxCounted(entry.firstHeight);
+    const lastHeight = pxCounted(entry.lastHeight);
+    if (
+      keyId === "00".repeat(32) ||
+      publicKey === "00".repeat(32) ||
+      seen.has(keyId)
+    )
+      throw new Error("Invalid gateway receipt key");
+    if (firstHeight > lastHeight)
+      throw new Error("Invalid gateway receipt key range");
+    seen.add(keyId);
+    return Object.freeze({ keyId, publicKey, firstHeight, lastHeight });
+  });
+  return Object.freeze(keys);
+}
+
+function receiptKeyBytes(value: unknown): string {
+  if (typeof value !== "string" || value.length !== 44)
+    throw new Error("Invalid gateway receipt key bytes");
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length !== 32 || bytes.toString("base64") !== value)
+    throw new Error("Invalid gateway receipt key bytes");
+  return bytes.toString("hex");
 }
 
 export function decodePxAnchorHead(value: unknown): PxAnchorHead {
   const anchor = object(value);
-  present(anchor, ["latest_finalized_batch", "status", "status_name", "status_ladder"]);
+  present(anchor, [
+    "latest_finalized_batch",
+    "status",
+    "status_name",
+    "status_ladder",
+  ]);
   const ladder = anchor.status_ladder;
   let statusLadder: Readonly<Record<string, string>> | null = null;
   if (ladder !== null) {
     const rungs = object(ladder);
-    for (const rung of Object.values(rungs)) if (typeof rung !== "string" || rung.length === 0 || rung.length > 64) throw new Error("Invalid anchor ladder");
+    for (const rung of Object.values(rungs))
+      if (typeof rung !== "string" || rung.length === 0 || rung.length > 64)
+        throw new Error("Invalid anchor ladder");
     statusLadder = Object.freeze({ ...rungs } as Record<string, string>);
   }
   return Object.freeze({
@@ -394,20 +550,28 @@ function decodePaxeerAccount(value: unknown): PxPaxeerAccount {
 }
 
 function object(value: unknown): Readonly<Record<string, unknown>> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid gateway document");
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Invalid gateway document");
   return value as Readonly<Record<string, unknown>>;
 }
 
-function objectOrNull(value: unknown): Readonly<Record<string, unknown>> | null {
+function objectOrNull(
+  value: unknown,
+): Readonly<Record<string, unknown>> | null {
   return value === null ? null : object(value);
 }
 
-function present(value: Readonly<Record<string, unknown>>, required: readonly string[]): void {
-  if (required.some((key) => !(key in value))) throw new Error("Incomplete gateway document");
+function present(
+  value: Readonly<Record<string, unknown>>,
+  required: readonly string[],
+): void {
+  if (required.some((key) => !(key in value)))
+    throw new Error("Incomplete gateway document");
 }
 
 function pattern(value: unknown, expected: RegExp): string {
-  if (typeof value !== "string" || !expected.test(value.toLowerCase())) throw new Error("Invalid gateway field");
+  if (typeof value !== "string" || !expected.test(value.toLowerCase()))
+    throw new Error("Invalid gateway field");
   return value.toLowerCase();
 }
 
@@ -416,7 +580,8 @@ function optionalPattern(value: unknown, expected: RegExp): string | null {
 }
 
 function text(value: unknown, maximum: number): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maximum) throw new Error("Invalid gateway text");
+  if (typeof value !== "string" || value.length === 0 || value.length > maximum)
+    throw new Error("Invalid gateway text");
   return value;
 }
 
@@ -426,19 +591,34 @@ function optionalText(value: unknown, maximum: number): string | null {
 
 function validateEndpoint(value: URL | string): URL {
   let endpoint: URL;
-  try { endpoint = new URL(value); } catch { throw new Error("Invalid gateway endpoint"); }
-  if ((endpoint.protocol !== "https:" && endpoint.protocol !== "http:")
-    || endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "") {
+  try {
+    endpoint = new URL(value);
+  } catch {
+    throw new Error("Invalid gateway endpoint");
+  }
+  if (
+    (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== ""
+  ) {
     throw new Error("Invalid gateway endpoint");
   }
   const host = endpoint.hostname.toLowerCase();
-  if (endpoint.protocol === "http:" && host !== "localhost" && host !== "[::1]" && !/^127(?:\.[0-9]{1,3}){3}$/u.test(host)) {
+  if (
+    endpoint.protocol === "http:" &&
+    host !== "localhost" &&
+    host !== "[::1]" &&
+    !/^127(?:\.[0-9]{1,3}){3}$/u.test(host)
+  ) {
     throw new Error("Invalid gateway endpoint");
   }
   return endpoint;
 }
 
 function exactPositive(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Invalid gateway bound");
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error("Invalid gateway bound");
   return value;
 }

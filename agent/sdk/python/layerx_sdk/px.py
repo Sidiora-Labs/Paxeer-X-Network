@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 import urllib.parse
@@ -34,12 +36,24 @@ HISTORY_MAXIMUM_LIMIT = 100
 HISTORY_MAXIMUM_ACCOUNTS = 16
 
 PxMethod = Literal[
-    "px_resolveAccount", "px_getAccount", "px_getBalances", "px_listAssets", "px_getNetwork",
-    "px_getHistory", "px_getUnifiedHistory",
+    "px_resolveAccount",
+    "px_getAccount",
+    "px_getBalances",
+    "px_listAssets",
+    "px_getNetwork",
+    "px_getReceiptKeys",
+    "px_getHistory",
+    "px_getUnifiedHistory",
 ]
 PX_METHODS: tuple[PxMethod, ...] = (
-    "px_resolveAccount", "px_getAccount", "px_getBalances", "px_listAssets", "px_getNetwork",
-    "px_getHistory", "px_getUnifiedHistory",
+    "px_resolveAccount",
+    "px_getAccount",
+    "px_getBalances",
+    "px_listAssets",
+    "px_getNetwork",
+    "px_getReceiptKeys",
+    "px_getHistory",
+    "px_getUnifiedHistory",
 )
 _GATEWAY_METHODS = (*PX_METHODS, "lx_getHistory")
 
@@ -135,7 +149,15 @@ class PxNetworkHead:
     network_id: str
     paxeer: PxPaxeerHead
     layerx: Mapping[str, object] | None
-    anchor: PxAnchorHead | None
+    latest_committed_height: int
+
+
+@dataclass(frozen=True)
+class PxReceiptKeyEntry:
+    key_id: str
+    public_key: str
+    first_height: int
+    last_height: int
 
 
 @dataclass(frozen=True)
@@ -233,9 +255,16 @@ class PxClient:
             )
         ):
             raise ValueError("invalid-px-endpoint")
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+        if (
+            not isinstance(timeout, (int, float))
+            or isinstance(timeout, bool)
+            or timeout <= 0
+        ):
             raise ValueError("invalid-px-timeout")
-        if type(maximum_response_bytes) is not int or not 0 < maximum_response_bytes <= _MAX_RESPONSE_BYTES:
+        if (
+            type(maximum_response_bytes) is not int
+            or not 0 < maximum_response_bytes <= _MAX_RESPONSE_BYTES
+        ):
             raise ValueError("invalid-px-response-bound")
         self.endpoint = endpoint
         self._credential = credential
@@ -245,13 +274,19 @@ class PxClient:
         self._opener = urllib.request.build_opener(_NoRedirect())
 
     def resolve_account(self, account: str) -> PxResolvedIdentities:
-        return decode_px_resolved_identities(self.call("px_resolveAccount", [px_account_key(account)]))
+        return decode_px_resolved_identities(
+            self.call("px_resolveAccount", [px_account_key(account)])
+        )
 
     def get_account(self, account: str) -> PxAccountJoin:
-        return decode_px_account_join(self.call("px_getAccount", [px_account_key(account)]))
+        return decode_px_account_join(
+            self.call("px_getAccount", [px_account_key(account)])
+        )
 
     def get_balances(self, account: str) -> PxAccountBalances:
-        return decode_px_account_balances(self.call("px_getBalances", [px_account_key(account)]))
+        return decode_px_account_balances(
+            self.call("px_getBalances", [px_account_key(account)])
+        )
 
     def list_assets(self) -> PxAssetTable:
         return decode_px_asset_table(self.call("px_listAssets", []))
@@ -259,25 +294,57 @@ class PxClient:
     def get_network(self) -> PxNetworkHead:
         return decode_px_network_head(self.call("px_getNetwork", []))
 
+    def get_receipt_keys(self) -> tuple[PxReceiptKeyEntry, ...]:
+        return decode_px_receipt_keys(self.call("px_getReceiptKeys", []))
+
     def get_history(
-        self, account: str, *, cursor: str | None = None, limit: int | None = None, kind: str | None = None,
+        self,
+        account: str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        kind: str | None = None,
     ) -> HistoryPage:
-        params = history_params(paxeer_history_account(account), cursor=cursor, limit=limit, kind=kind)
-        return decode_paxeer_history_page(self.call("px_getHistory", params), limit or HISTORY_DEFAULT_LIMIT)
+        params = history_params(
+            paxeer_history_account(account), cursor=cursor, limit=limit, kind=kind
+        )
+        return decode_paxeer_history_page(
+            self.call("px_getHistory", params), limit or HISTORY_DEFAULT_LIMIT
+        )
 
     def get_unified_history(
-        self, account: str, *, cursor: str | None = None, limit: int | None = None, kind: str | None = None,
+        self,
+        account: str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        kind: str | None = None,
     ) -> UnifiedHistoryPage:
-        params = history_params(px_account_key(account), cursor=cursor, limit=limit, kind=kind)
-        return decode_unified_history_page(self.call("px_getUnifiedHistory", params), limit or HISTORY_DEFAULT_LIMIT)
+        params = history_params(
+            px_account_key(account), cursor=cursor, limit=limit, kind=kind
+        )
+        return decode_unified_history_page(
+            self.call("px_getUnifiedHistory", params), limit or HISTORY_DEFAULT_LIMIT
+        )
 
     def get_layerx_history(
-        self, account: str, *, cursor: str | None = None, limit: int | None = None, kind: str | None = None,
+        self,
+        account: str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        kind: str | None = None,
     ) -> HistoryPage:
-        params = history_params(layerx_history_account(account), cursor=cursor, limit=limit, kind=kind)
-        return decode_layerx_history_page(self.call("lx_getHistory", params), limit or HISTORY_DEFAULT_LIMIT)
+        params = history_params(
+            layerx_history_account(account), cursor=cursor, limit=limit, kind=kind
+        )
+        return decode_layerx_history_page(
+            self.call("lx_getHistory", params), limit or HISTORY_DEFAULT_LIMIT
+        )
 
-    def call(self, method: str, params: list[object]) -> Mapping[str, object]:
+    def call(
+        self, method: str, params: list[object]
+    ) -> Mapping[str, object] | list[object]:
         if method not in _GATEWAY_METHODS or not isinstance(params, list):
             raise ValueError("invalid-px-method")
         self._id += 1
@@ -298,9 +365,14 @@ class PxClient:
         }
         if self._credential is not None:
             headers["Authorization"] = self._credential.use()
-        request = urllib.request.Request(self.endpoint, method="POST", headers=headers, data=body)
+        request = urllib.request.Request(
+            self.endpoint, method="POST", headers=headers, data=body
+        )
         with self._opener.open(request, timeout=self._timeout) as response:
-            if response.status != 200 or response.headers.get_content_type() != "application/json":
+            if (
+                response.status != 200
+                or response.headers.get_content_type() != "application/json"
+            ):
                 raise ValueError("invalid-px-http-answer")
             raw = response.read(self._maximum_response_bytes + 1)
         if len(raw) > self._maximum_response_bytes:
@@ -324,7 +396,13 @@ class PxClient:
                 raise ValueError("invalid-px-error")
             raise PxRpcError(error["code"], error["message"], error.get("data"))
         result = answer["result"]
-        if not isinstance(result, dict) or any(not isinstance(key, str) for key in result):
+        if method == "px_getReceiptKeys":
+            if not isinstance(result, list):
+                raise ValueError("invalid-px-result")
+            return result
+        if not isinstance(result, dict) or any(
+            not isinstance(key, str) for key in result
+        ):
             raise ValueError("invalid-px-result")
         return result
 
@@ -378,7 +456,10 @@ def _px_optional_counted(value: object) -> int | None:
 
 def decode_px_resolved_identities(value: object) -> PxResolvedIdentities:
     document = _document(value)
-    _present(document, ("evm_address", "pax_address", "layerx_did", "layerx_account", "bound"))
+    _present(
+        document,
+        ("evm_address", "pax_address", "layerx_did", "layerx_account", "bound"),
+    )
     bound = document["bound"]
     if type(bound) is not bool:
         raise ValueError("invalid-px-identities")
@@ -423,7 +504,9 @@ def decode_px_asset_balance(value: object) -> PxAssetBalance:
     if paxeer is not None:
         half = _document(paxeer)
         _present(half, ("denom", "amount"))
-        balance = PxPaxeerAssetBalance(_text(half["denom"], 128), px_quantity(half["amount"]))
+        balance = PxPaxeerAssetBalance(
+            _text(half["denom"], 128), px_quantity(half["amount"])
+        )
     return PxAssetBalance(
         _pattern(row["asset_id"], _HEX32),
         _optional_text(row["denom"], 128),
@@ -437,10 +520,21 @@ def decode_px_custody_asset(value: object) -> PxCustodyAsset | None:
     if value is None:
         return None
     custody = _document(value)
-    _present(custody, (
-        "asset_id", "denom", "pointer", "enabled", "paused",
-        "minimum_deposit", "custody_cap", "custodied", "released", "pending",
-    ))
+    _present(
+        custody,
+        (
+            "asset_id",
+            "denom",
+            "pointer",
+            "enabled",
+            "paused",
+            "minimum_deposit",
+            "custody_cap",
+            "custodied",
+            "released",
+            "pending",
+        ),
+    )
     enabled = custody["enabled"]
     paused = custody["paused"]
     if type(enabled) is not bool or type(paused) is not bool:
@@ -469,31 +563,75 @@ def decode_px_asset_table(value: object) -> PxAssetTable:
     for row in rows:
         entry = _document(row)
         _present(entry, ("asset_id", "layerx", "paxeer"))
-        assets.append(PxAssetEntry(
-            _pattern(entry["asset_id"], _HEX32),
-            _document_or_none(entry["layerx"]),
-            decode_px_custody_asset(entry["paxeer"]),
-        ))
+        assets.append(
+            PxAssetEntry(
+                _pattern(entry["asset_id"], _HEX32),
+                _document_or_none(entry["layerx"]),
+                decode_px_custody_asset(entry["paxeer"]),
+            )
+        )
     return PxAssetTable(tuple(assets), _px_counted(document["joined_limit"]))
 
 
 def decode_px_network_head(value: object) -> PxNetworkHead:
     document = _document(value)
-    _present(document, ("network_id", "paxeer", "layerx", "anchor"))
+    _present(document, ("network_id", "paxeer", "layerx", "latest_committed_height"))
+    if "anchor" in document:
+        raise ValueError("invalid-px-finality")
     paxeer = _document(document["paxeer"])
     _present(paxeer, ("chain_id", "latest_block"))
-    anchor = document["anchor"]
+    latest_block = _px_counted(paxeer["latest_block"])
+    latest_committed_height = _px_counted(document["latest_committed_height"])
+    if latest_committed_height > latest_block:
+        raise ValueError("invalid-px-finality")
     return PxNetworkHead(
         _text(document["network_id"], 128),
-        PxPaxeerHead(_px_counted(paxeer["chain_id"]), _px_counted(paxeer["latest_block"])),
+        PxPaxeerHead(_px_counted(paxeer["chain_id"]), latest_block),
         _document_or_none(document["layerx"]),
-        None if anchor is None else decode_px_anchor_head(anchor),
+        latest_committed_height,
     )
+
+
+def decode_px_receipt_keys(value: object) -> tuple[PxReceiptKeyEntry, ...]:
+    if not isinstance(value, list):
+        raise ValueError("invalid-px-receipt-keys")
+    keys: list[PxReceiptKeyEntry] = []
+    seen: set[str] = set()
+    for value in value:
+        entry = _document(value)
+        _present(entry, ("keyId", "publicKey", "firstHeight", "lastHeight"))
+        if len(entry) != 4:
+            raise ValueError("invalid-px-receipt-key")
+        key_id = _receipt_key_bytes(entry["keyId"])
+        public_key = _receipt_key_bytes(entry["publicKey"])
+        first_height = _px_counted(entry["firstHeight"])
+        last_height = _px_counted(entry["lastHeight"])
+        if key_id == "00" * 32 or public_key == "00" * 32 or key_id in seen:
+            raise ValueError("invalid-px-receipt-key")
+        if first_height > last_height:
+            raise ValueError("invalid-px-receipt-key-range")
+        seen.add(key_id)
+        keys.append(PxReceiptKeyEntry(key_id, public_key, first_height, last_height))
+    return tuple(keys)
+
+
+def _receipt_key_bytes(value: object) -> str:
+    if not isinstance(value, str) or len(value) != 44:
+        raise ValueError("invalid-px-receipt-key-bytes")
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("invalid-px-receipt-key-bytes") from error
+    if len(decoded) != 32 or base64.b64encode(decoded).decode("ascii") != value:
+        raise ValueError("invalid-px-receipt-key-bytes")
+    return decoded.hex()
 
 
 def decode_px_anchor_head(value: object) -> PxAnchorHead:
     anchor = _document(value)
-    _present(anchor, ("latest_finalized_batch", "status", "status_name", "status_ladder"))
+    _present(
+        anchor, ("latest_finalized_batch", "status", "status_name", "status_ladder")
+    )
     ladder = anchor["status_ladder"]
     status_ladder: Mapping[str, str] | None = None
     if ladder is not None:
@@ -501,7 +639,9 @@ def decode_px_anchor_head(value: object) -> PxAnchorHead:
         for rung in rungs.values():
             if not isinstance(rung, str) or not 0 < len(rung) <= 64:
                 raise ValueError("invalid-px-anchor-ladder")
-        status_ladder = MappingProxyType({key: str(rung) for key, rung in rungs.items()})
+        status_ladder = MappingProxyType(
+            {key: str(rung) for key, rung in rungs.items()}
+        )
     return PxAnchorHead(
         _px_optional_counted(anchor["latest_finalized_batch"]),
         _px_optional_counted(anchor["status"]),
@@ -511,13 +651,23 @@ def decode_px_anchor_head(value: object) -> PxAnchorHead:
 
 
 def history_params(
-    account: str, *, cursor: str | None = None, limit: int | None = None, kind: str | None = None,
+    account: str,
+    *,
+    cursor: str | None = None,
+    limit: int | None = None,
+    kind: str | None = None,
 ) -> list[object]:
-    if cursor is not None and (not isinstance(cursor, str) or _CURSOR.fullmatch(cursor) is None):
+    if cursor is not None and (
+        not isinstance(cursor, str) or _CURSOR.fullmatch(cursor) is None
+    ):
         raise ValueError("invalid-history-cursor")
-    if limit is not None and (type(limit) is not int or not 1 <= limit <= HISTORY_MAXIMUM_LIMIT):
+    if limit is not None and (
+        type(limit) is not int or not 1 <= limit <= HISTORY_MAXIMUM_LIMIT
+    ):
         raise ValueError("invalid-history-limit")
-    if kind is not None and (not isinstance(kind, str) or _KIND.fullmatch(kind) is None):
+    if kind is not None and (
+        not isinstance(kind, str) or _KIND.fullmatch(kind) is None
+    ):
         raise ValueError("invalid-history-kind")
     return [account, cursor, limit, kind]
 
@@ -536,15 +686,21 @@ def paxeer_history_account(account: str) -> str:
     return lowered
 
 
-def decode_layerx_history_page(value: object, limit: int = HISTORY_MAXIMUM_LIMIT) -> HistoryPage:
+def decode_layerx_history_page(
+    value: object, limit: int = HISTORY_MAXIMUM_LIMIT
+) -> HistoryPage:
     return _decode_history_page(value, _HEX32, limit)
 
 
-def decode_paxeer_history_page(value: object, limit: int = HISTORY_MAXIMUM_LIMIT) -> HistoryPage:
+def decode_paxeer_history_page(
+    value: object, limit: int = HISTORY_MAXIMUM_LIMIT
+) -> HistoryPage:
     return _decode_history_page(value, _EVM_ADDRESS, limit)
 
 
-def decode_unified_history_page(value: object, limit: int = HISTORY_MAXIMUM_LIMIT) -> UnifiedHistoryPage:
+def decode_unified_history_page(
+    value: object, limit: int = HISTORY_MAXIMUM_LIMIT
+) -> UnifiedHistoryPage:
     document = _document(value)
     _present(document, ("account", "accounts", "items", "next_cursor"))
     sides = document["accounts"]
@@ -574,10 +730,25 @@ def decode_unified_history_page(value: object, limit: int = HISTORY_MAXIMUM_LIMI
 
 def decode_history_row(value: object, unified: bool = False) -> HistoryRow:
     row = _document(value)
-    _present(row, (
-        "id", "height_or_seq", "chain", "kind", "direction", "account", "counterparty",
-        "asset", "amount", "tx_id", "ordinal", "final", "decoded", "asset_metadata",
-    ))
+    _present(
+        row,
+        (
+            "id",
+            "height_or_seq",
+            "chain",
+            "kind",
+            "direction",
+            "account",
+            "counterparty",
+            "asset",
+            "amount",
+            "tx_id",
+            "ordinal",
+            "final",
+            "decoded",
+            "asset_metadata",
+        ),
+    )
     direction = row["direction"]
     if direction not in ("in", "out"):
         raise ValueError("invalid-history-direction")
@@ -612,13 +783,27 @@ def decode_history_row(value: object, unified: bool = False) -> HistoryRow:
     )
 
 
-def decode_history_asset_metadata(value: object, asset: str | None = None) -> HistoryAssetMetadata | None:
+def decode_history_asset_metadata(
+    value: object, asset: str | None = None
+) -> HistoryAssetMetadata | None:
     if value is None:
         return None
     document = _document(value)
-    _present(document, (
-        "asset", "chain", "kind", "address", "denom", "symbol", "decimals", "native_id", "pointer", "metadata",
-    ))
+    _present(
+        document,
+        (
+            "asset",
+            "chain",
+            "kind",
+            "address",
+            "denom",
+            "symbol",
+            "decimals",
+            "native_id",
+            "pointer",
+            "metadata",
+        ),
+    )
     label = _text(document["asset"], 256)
     if asset is not None and label != asset:
         raise ValueError("mismatched-history-asset")
@@ -639,7 +824,9 @@ def decode_history_asset_metadata(value: object, asset: str | None = None) -> Hi
     )
 
 
-def _decode_history_page(value: object, expected: re.Pattern[str], limit: int) -> HistoryPage:
+def _decode_history_page(
+    value: object, expected: re.Pattern[str], limit: int
+) -> HistoryPage:
     document = _document(value)
     _present(document, ("account", "items", "next_cursor"))
     account = document["account"]
@@ -697,7 +884,11 @@ def _decode_paxeer_account(value: object) -> PxPaxeerAccount:
 
 
 def _document(value: object) -> Mapping[str, object]:
-    if not isinstance(value, Mapping) or isinstance(value, (str, bytes)) or any(not isinstance(key, str) for key in value):
+    if (
+        not isinstance(value, Mapping)
+        or isinstance(value, (str, bytes))
+        or any(not isinstance(key, str) for key in value)
+    ):
         raise ValueError("invalid-px-document")
     return value
 
