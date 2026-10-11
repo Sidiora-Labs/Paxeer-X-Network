@@ -18,6 +18,12 @@ var (
 	authority = types.DefaultAuthority()
 	signer    = types.Address20{0x01, 0x02}
 	payout    = sdk.AccAddress(append([]byte{0xb0}, make([]byte, 19)...)).String()
+
+	// kernelNetworkID and programFeeDenoms are the program-origin pair every
+	// MsgSetParams carries.
+	kernelNetworkID  = uint32(1)
+	programFeeDenoms = []string{types.ProgramFeeDenomPAX, types.ProgramFeeDenomSID, types.ProgramFeeDenomUSDC,
+		types.ProgramFeeDenomUSDL}
 )
 
 func TestMsgValidateBasic(t *testing.T) {
@@ -36,24 +42,41 @@ func TestMsgValidateBasic(t *testing.T) {
 	require.NoError(t, types.MsgSetThreshold{Authority: authority, Threshold: 1}.ValidateBasic())
 	require.ErrorIs(t, types.MsgSetThreshold{Authority: authority}.ValidateBasic(), types.ErrInvalidThreshold)
 
-	valid := types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(5), MaxPayloadBytes: 100, MaxCallbackGas: 100, TimeoutBlocks: 10}
+	valid := types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(5), MaxPayloadBytes: 100, MaxCallbackGas: 100, TimeoutBlocks: 10, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}
 	require.NoError(t, valid.ValidateBasic())
 	for name, mutate := range map[string]func(*types.MsgSetParams){
-		"zero fee":          func(m *types.MsgSetParams) { m.Fee = sdk.ZeroInt() },
-		"nil fee":           func(m *types.MsgSetParams) { m.Fee = sdk.Int{} },
-		"zero payload cap":  func(m *types.MsgSetParams) { m.MaxPayloadBytes = 0 },
-		"payload cap limit": func(m *types.MsgSetParams) { m.MaxPayloadBytes = types.PayloadBytesLimit + 1 },
-		"zero callback cap": func(m *types.MsgSetParams) { m.MaxCallbackGas = 0 },
-		"callback limit":    func(m *types.MsgSetParams) { m.MaxCallbackGas = types.CallbackGasLimit + 1 },
-		"zero timeout":      func(m *types.MsgSetParams) { m.TimeoutBlocks = 0 },
+		"zero fee":               func(m *types.MsgSetParams) { m.Fee = sdk.ZeroInt() },
+		"nil fee":                func(m *types.MsgSetParams) { m.Fee = sdk.Int{} },
+		"zero payload cap":       func(m *types.MsgSetParams) { m.MaxPayloadBytes = 0 },
+		"payload cap limit":      func(m *types.MsgSetParams) { m.MaxPayloadBytes = types.PayloadBytesLimit + 1 },
+		"zero callback cap":      func(m *types.MsgSetParams) { m.MaxCallbackGas = 0 },
+		"callback limit":         func(m *types.MsgSetParams) { m.MaxCallbackGas = types.CallbackGasLimit + 1 },
+		"zero timeout":           func(m *types.MsgSetParams) { m.TimeoutBlocks = 0 },
+		"zero kernel network id": func(m *types.MsgSetParams) { m.KernelNetworkId = 0 },
+		"no program fee denom":   func(m *types.MsgSetParams) { m.ProgramFeeDenoms = nil },
+		"unmapped program fee denom": func(m *types.MsgSetParams) {
+			m.ProgramFeeDenoms = []string{"uatom"}
+		},
+		"duplicate program fee denom": func(m *types.MsgSetParams) {
+			m.ProgramFeeDenoms = []string{types.ProgramFeeDenomSID, types.ProgramFeeDenomSID}
+		},
 	} {
 		msg := valid
 		mutate(&msg)
 		require.ErrorIs(t, msg.ValidateBasic(), types.ErrInvalidParams, name)
+		code, mapped := types.LXPName(msg.ValidateBasic())
+		require.True(t, mapped, name)
+		require.Equal(t, "LXP_XWEB_INVALID_PARAMS", code, name)
 	}
+	single := valid
+	single.ProgramFeeDenoms = []string{types.ProgramFeeDenomUSDL}
+	require.NoError(t, single.ValidateBasic())
 	bad := valid
 	bad.Authority = ""
 	require.ErrorIs(t, bad.ValidateBasic(), types.ErrUnauthorized)
+	bad.KernelNetworkId = 0
+	bad.ProgramFeeDenoms = nil
+	require.ErrorIs(t, bad.ValidateBasic(), types.ErrUnauthorized, "the authority is checked first")
 
 	require.NoError(t, types.MsgPause{Authority: authority}.ValidateBasic())
 	require.ErrorIs(t, types.MsgPause{}.ValidateBasic(), types.ErrUnauthorized)
@@ -250,7 +273,7 @@ func TestGovernanceMessagesSignAndRoundTripUnderTheirTypeURL(t *testing.T) {
 		{types.TypeMsgRemoveAttestor, &types.MsgRemoveAttestor{Authority: authority, Signer: signer}},
 		{types.TypeMsgSetThreshold, &types.MsgSetThreshold{Authority: authority, Threshold: 1}},
 		{types.TypeMsgSetParams, &types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(5),
-			MaxPayloadBytes: 100, MaxCallbackGas: 100, TimeoutBlocks: 10}},
+			MaxPayloadBytes: 100, MaxCallbackGas: 100, TimeoutBlocks: 10, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}},
 		{types.TypeMsgPause, &types.MsgPause{Authority: authority}},
 		{types.TypeMsgUnpause, &types.MsgUnpause{Authority: authority}},
 	} {

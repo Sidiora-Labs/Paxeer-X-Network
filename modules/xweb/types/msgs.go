@@ -113,7 +113,10 @@ func (m MsgSetParams) ValidateBasic() error {
 	if err := validateAuthority(m.Authority); err != nil {
 		return err
 	}
-	return ValidateSettings(m.Fee, m.MaxPayloadBytes, m.MaxCallbackGas, m.TimeoutBlocks)
+	if err := ValidateSettings(m.Fee, m.MaxPayloadBytes, m.MaxCallbackGas, m.TimeoutBlocks); err != nil {
+		return err
+	}
+	return ValidateProgramSettings(m.KernelNetworkId, m.ProgramFeeDenoms)
 }
 
 func (m MsgPause) ValidateBasic() error { return validateAuthority(m.Authority) }

@@ -51,6 +51,12 @@ var (
 	response   = []byte("Paxeer X Network")
 	fullLength = uint32(4096)
 
+	// kernelNetworkID and programFeeDenoms are the program-origin pair every
+	// MsgSetParams carries.
+	kernelNetworkID  = uint32(1)
+	programFeeDenoms = []string{types.ProgramFeeDenomPAX, types.ProgramFeeDenomSID, types.ProgramFeeDenomUSDC,
+		types.ProgramFeeDenomUSDL}
+
 	// recorder stores the request id in slot 0, its caller in slot 1 and the
 	// content digest in slot 2, then stops.
 	recorderCode = common.FromHex("6004356000553360015560243560025500")
@@ -94,7 +100,7 @@ func newHarness(t *testing.T) *harness {
 			Attestor: attestor.Registration()}))
 	}
 	require.NoError(t, k.UpdateParams(ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, k.Unpause(ctx, types.MsgUnpause{Authority: authority}))
 	var err error
 	h.precompile, err = xweb.NewPrecompile(keepers{Keepers: app.GetPrecompileKeepers(), xweb: &k})
@@ -498,7 +504,7 @@ func TestFulfilBoundsTheCallbackByTheModuleMaximum(t *testing.T) {
 	id := h.request(burner, callbackGas)
 	lowered := uint64(50_000)
 	require.NoError(t, h.keeper.UpdateParams(h.ctx(), types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: payloadCap, MaxCallbackGas: lowered, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: lowered, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	outcome, used, _ := h.fulfil(id, supplied)
 	require.Equal(t, types.CallbackOutOfGas, outcome)
 	require.Equal(t, lowered, used)
@@ -649,7 +655,7 @@ func TestViews(t *testing.T) {
 		}
 		require.NoError(t, h.keeper.SetThreshold(h.ctx(), types.MsgSetThreshold{Authority: authority, Threshold: 3}))
 		require.NoError(t, h.keeper.UpdateParams(h.ctx(), types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(75),
-			MaxPayloadBytes: 8192, MaxCallbackGas: 500000, TimeoutBlocks: 3600}))
+			MaxPayloadBytes: 8192, MaxCallbackGas: 500000, TimeoutBlocks: 3600, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 		require.Equal(t, uint32(3), h.keeper.GetAttestorSet(h.ctx()).Threshold)
 		require.Equal(t, uint32(3), h.keeper.Threshold(h.ctx()))
 		requireAmount(t, sdk.NewInt(75), h.keeper.Fee(h.ctx()))
@@ -864,7 +870,7 @@ func solidityArguments(t *testing.T, declaration string, structs map[string][]ab
 func TestApiRequestAtTheSingleLevel(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, h.keeper.UpdateParams(h.ctx(), types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: types.DefaultMaxPayloadBytes, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: types.DefaultMaxPayloadBytes, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	var named xwebtestutil.Attestor
 	for _, candidate := range xwebtestutil.Attestors(4) {
 		if !h.keeper.GetAttestorSet(h.ctx()).Has(candidate.Signer) {

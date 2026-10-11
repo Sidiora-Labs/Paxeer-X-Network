@@ -49,10 +49,32 @@ func (s *suite) register(attestor xwebtestutil.Attestor) error {
 	return s.k.RegisterAttestor(s.ctx, types.MsgRegisterAttestor{Authority: authority, Attestor: attestor.Registration()})
 }
 
+// TestGovernanceMessagesRequireTheAuthority sends every governance message
+// from an account other than the module authority and asserts each one is
+// refused with LXP_XWEB_UNAUTHORIZED and leaves the state and events unchanged.
 func TestGovernanceMessagesRequireTheAuthority(t *testing.T) {
 	s := newSuite(t, false)
 	stranger := sdk.AccAddress(make([]byte, 20)).String()
+	require.NotEqual(t, authority, stranger)
 	attestor := s.attestors[0]
+	server := keeper.NewMsgServerImpl(s.k)
+	goCtx := sdk.WrapSDKContext(s.ctx)
+	requireUnchanged := func(t *testing.T, run func() error) {
+		t.Helper()
+		params := s.k.GetParams(s.ctx)
+		set := s.k.GetAttestorSet(s.ctx)
+		paused := s.k.IsPaused(s.ctx)
+		events := s.ctx.EventManager().Events()
+		requireXWebError(t, run(), types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
+		require.Equal(t, params, s.k.GetParams(s.ctx))
+		require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
+		require.Equal(t, paused, s.k.IsPaused(s.ctx))
+		require.Equal(t, events, s.ctx.EventManager().Events())
+	}
+	setParams := types.MsgSetParams{Authority: stranger, Fee: sdk.NewInt(75), MaxPayloadBytes: 1, MaxCallbackGas: 1,
+		TimeoutBlocks: 1, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}
+	require.NoError(t, setParams.ValidateBasic(), "only the authority makes the message unacceptable")
+
 	require.ErrorIs(t, s.k.RegisterAttestor(s.ctx, types.MsgRegisterAttestor{Authority: stranger,
 		Attestor: attestor.Registration()}), types.ErrUnauthorized)
 	require.NoError(t, s.register(attestor))
@@ -60,12 +82,183 @@ func TestGovernanceMessagesRequireTheAuthority(t *testing.T) {
 		types.ErrUnauthorized)
 	require.ErrorIs(t, s.k.SetThreshold(s.ctx, types.MsgSetThreshold{Authority: stranger, Threshold: 1}), types.ErrUnauthorized)
 	require.ErrorIs(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: stranger, Fee: sdk.NewInt(1),
-		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1}), types.ErrUnauthorized)
+		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}), types.ErrUnauthorized)
 	require.ErrorIs(t, s.k.Pause(s.ctx, types.MsgPause{Authority: stranger}), types.ErrUnauthorized)
 	require.ErrorIs(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: stranger}), types.ErrUnauthorized)
 	require.ErrorIs(t, s.k.Unpause(s.ctx, types.MsgUnpause{}), types.ErrUnauthorized)
 	require.True(t, s.k.IsPaused(s.ctx))
 	require.Len(t, s.k.GetAttestorSet(s.ctx).Attestors, 1)
+
+	for name, run := range map[string]func() error{
+		"set params keeper": func() error { return s.k.UpdateParams(s.ctx, setParams) },
+		"set params service": func() error {
+			_, err := server.SetParams(goCtx, &setParams)
+			return err
+		},
+		"register attestor": func() error {
+			_, err := server.RegisterAttestor(goCtx, &types.MsgRegisterAttestor{Authority: stranger,
+				Attestor: s.attestors[1].Registration()})
+			return err
+		},
+		"set threshold": func() error {
+			_, err := server.SetThreshold(goCtx, &types.MsgSetThreshold{Authority: stranger, Threshold: 1})
+			return err
+		},
+		"pause": func() error {
+			_, err := server.Pause(goCtx, &types.MsgPause{Authority: stranger})
+			return err
+		},
+		"unpause": func() error {
+			_, err := server.Unpause(goCtx, &types.MsgUnpause{Authority: stranger})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) { requireUnchanged(t, run) })
+	}
+
+	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID,
+		ProgramFeeDenoms: programFeeDenoms}))
+	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
+	t.Run("pause while active", func(t *testing.T) {
+		requireUnchanged(t, func() error {
+			_, err := server.Pause(goCtx, &types.MsgPause{Authority: stranger})
+			return err
+		})
+		require.False(t, s.k.IsPaused(s.ctx))
+	})
+}
+
+// TestUpdateParamsOriginTwoFields sets the program-origin pair through the Msg
+// service over the real keeper and asserts the stored params and the event,
+// then asserts each invalid pair is refused with LXP_XWEB_INVALID_PARAMS and
+// writes nothing.
+func TestUpdateParamsOriginTwoFields(t *testing.T) {
+	s := newSuite(t, false)
+	server := keeper.NewMsgServerImpl(s.k)
+	goCtx := sdk.WrapSDKContext(s.ctx)
+	msg := types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(75), MaxPayloadBytes: payloadCap,
+		MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: 1,
+		ProgramFeeDenoms: []string{"uhpx", "usid", "uusdc", "uusdl"}}
+	written, err := server.SetParams(goCtx, &msg)
+	require.NoError(t, err)
+	require.NotNil(t, written)
+	want := types.Params{Authority: authority, Fee: sdk.NewInt(75), MaxPayloadBytes: payloadCap,
+		MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: 1,
+		ProgramFeeDenoms: []string{types.ProgramFeeDenomPAX, types.ProgramFeeDenomSID, types.ProgramFeeDenomUSDC,
+			types.ProgramFeeDenomUSDL}}
+	require.Equal(t, want, s.k.GetParams(s.ctx))
+	require.NoError(t, s.k.GetParams(s.ctx).Validate())
+	require.Equal(t, sdk.NewInt(75), s.k.Fee(s.ctx))
+	msg.ProgramFeeDenoms[0] = "uatom"
+	require.Equal(t, want, s.k.GetParams(s.ctx), "the stored denoms do not alias the message")
+	require.Equal(t, []sdk.Event{sdk.NewEvent(types.EventParamsSet,
+		sdk.NewAttribute(types.AttributeFee, "75"),
+		sdk.NewAttribute(types.AttributePayloadCap, "256"),
+		sdk.NewAttribute(types.AttributeCallbackCap, "300000"),
+		sdk.NewAttribute(types.AttributeTimeoutBlocks, "100"),
+		sdk.NewAttribute("kernel_network_id", "1"),
+		sdk.NewAttribute("program_fee_denoms", "uhpx,usid,uusdc,uusdl"))}, s.events(types.EventParamsSet))
+
+	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(75),
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: 7,
+		ProgramFeeDenoms: []string{types.ProgramFeeDenomUSDC}}))
+	want.KernelNetworkId = 7
+	want.ProgramFeeDenoms = []string{types.ProgramFeeDenomUSDC}
+	require.Equal(t, want, s.k.GetParams(s.ctx), "a single mapped denom is a valid subset")
+	events := s.events(types.EventParamsSet)
+	require.Len(t, events, 2)
+	require.Equal(t, "7", attribute(events[1], "kernel_network_id"))
+	require.Equal(t, types.ProgramFeeDenomUSDC, attribute(events[1], "program_fee_denoms"))
+
+	for _, tc := range []struct {
+		name    string
+		network uint32
+		denoms  []string
+		err     error
+	}{
+		{"zero kernel network id", 0, programFeeDenoms, types.ErrInvalidParams.Wrap("kernel network id is zero")},
+		{"empty program fee denoms", 1, []string{}, types.ErrInvalidParams.Wrap("no program fee denom")},
+		{"unset program fee denoms", 1, nil, types.ErrInvalidParams.Wrap("no program fee denom")},
+		{"unset pair", 0, nil, types.ErrInvalidParams.Wrap("kernel network id is zero")},
+		{"unmapped denom", 1, []string{"uatom"}, types.ErrInvalidParams.Wrapf(
+			"program fee denom %q is not one of uhpx, usid, uusdc, uusdl", "uatom")},
+		{"unmapped among mapped", 1, []string{types.ProgramFeeDenomPAX, "uatom"}, types.ErrInvalidParams.Wrapf(
+			"program fee denom %q is not one of uhpx, usid, uusdc, uusdl", "uatom")},
+		{"duplicate denom", 1, []string{types.ProgramFeeDenomSID, types.ProgramFeeDenomSID},
+			types.ErrInvalidParams.Wrap("duplicate program fee denom usid")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := s.k.GetParams(s.ctx)
+			before := s.ctx.EventManager().Events()
+			bad := types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(99), MaxPayloadBytes: payloadCap,
+				MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: tc.network, ProgramFeeDenoms: tc.denoms}
+			err := bad.ValidateBasic()
+			requireXWebError(t, err, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS")
+			require.EqualError(t, err, tc.err.Error())
+			err = s.k.UpdateParams(s.ctx, bad)
+			requireXWebError(t, err, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS")
+			require.EqualError(t, err, tc.err.Error())
+			_, err = server.SetParams(goCtx, &bad)
+			requireXWebError(t, err, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS")
+			require.EqualError(t, err, tc.err.Error())
+			require.Equal(t, params, s.k.GetParams(s.ctx))
+			require.Equal(t, before, s.ctx.EventManager().Events())
+		})
+	}
+}
+
+// TestProgramPairRequiredWhileActive asserts the unset program-origin pair is
+// accepted only while the module is dormant: Unpause refuses it and leaves the
+// module paused, and an unpaused genesis carrying it panics, while the default
+// dormant genesis loads and exports unchanged.
+func TestProgramPairRequiredWhileActive(t *testing.T) {
+	s := newSuite(t, false)
+	unset := s.k.GetParams(s.ctx)
+	require.Zero(t, unset.KernelNetworkId)
+	require.Empty(t, unset.ProgramFeeDenoms)
+	require.NoError(t, unset.Validate(), "the unset pair is valid params while dormant")
+	require.True(t, s.k.IsPaused(s.ctx))
+
+	events := s.ctx.EventManager().Events()
+	err := s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority})
+	requireXWebError(t, err, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS")
+	require.EqualError(t, err, types.ErrInvalidParams.Wrap("kernel network id is zero").Error())
+	_, err = keeper.NewMsgServerImpl(s.k).Unpause(sdk.WrapSDKContext(s.ctx), &types.MsgUnpause{Authority: authority})
+	requireXWebError(t, err, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS")
+	require.True(t, s.k.IsPaused(s.ctx), "the module stays paused")
+	require.Equal(t, events, s.ctx.EventManager().Events())
+	require.Empty(t, s.events(types.EventUnpaused))
+	_, err = s.k.Request(s.ctx, requester, types.KindFetch, payload, callbackGas, types.DefaultFee())
+	requireXWebError(t, err, types.ErrPaused, "LXP_XWEB_PAUSED")
+
+	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: types.DefaultFee(),
+		MaxPayloadBytes: types.DefaultMaxPayloadBytes, MaxCallbackGas: types.DefaultMaxCallbackGas,
+		TimeoutBlocks: types.DefaultTimeoutBlocks, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
+	require.True(t, s.k.IsPaused(s.ctx), "setting the pair does not unpause")
+	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
+	require.False(t, s.k.IsPaused(s.ctx))
+	require.Equal(t, []sdk.Event{sdk.NewEvent(types.EventUnpaused)}, s.events(types.EventUnpaused))
+
+	fresh := newSuite(t, false)
+	dormant := *types.DefaultGenesis()
+	require.True(t, dormant.Paused)
+	require.Equal(t, dormant, fresh.k.ExportGenesis(fresh.ctx), "the default dormant genesis loads")
+	active := dormant
+	active.Paused = false
+	require.NoError(t, active.Validate(), "params validation alone cannot see the module is active")
+	panicErr := requireXWebPanic(t, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS",
+		func() { fresh.k.InitGenesis(fresh.ctx, active) })
+	require.EqualError(t, panicErr, types.ErrInvalidParams.Wrap("kernel network id is zero").Error())
+	require.Equal(t, dormant, fresh.k.ExportGenesis(fresh.ctx), "a refused genesis writes nothing")
+	fresh.k.InitGenesis(fresh.ctx, dormant)
+	require.Equal(t, dormant, fresh.k.ExportGenesis(fresh.ctx))
+
+	active.Params.KernelNetworkId = kernelNetworkID
+	active.Params.ProgramFeeDenoms = programFeeDenoms
+	fresh.k.InitGenesis(fresh.ctx, active)
+	require.False(t, fresh.k.IsPaused(fresh.ctx))
+	require.Equal(t, active, fresh.k.ExportGenesis(fresh.ctx))
 }
 
 func TestRegisterAttestorRaisesTheThresholdToTheMajority(t *testing.T) {
@@ -217,10 +410,10 @@ func TestSetThresholdMajorityRule(t *testing.T) {
 func TestUpdateParams(t *testing.T) {
 	s := newSuite(t, false)
 	msg := types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(42), MaxPayloadBytes: 64, MaxCallbackGas: 90_000,
-		TimeoutBlocks: 7}
+		TimeoutBlocks: 7, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}
 	require.NoError(t, s.k.UpdateParams(s.ctx, msg))
 	require.Equal(t, types.Params{Authority: authority, Fee: sdk.NewInt(42), MaxPayloadBytes: 64, MaxCallbackGas: 90_000,
-		TimeoutBlocks: 7}, s.k.GetParams(s.ctx))
+		TimeoutBlocks: 7, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}, s.k.GetParams(s.ctx))
 	require.Equal(t, sdk.NewInt(42), s.k.Fee(s.ctx))
 	require.Len(t, s.events(types.EventParamsSet), 1)
 
@@ -392,7 +585,7 @@ func TestRegisterAttestorWithDerivedPayoutAccounts(t *testing.T) {
 		require.Equal(t, sdk.ZeroInt(), s.balance(decoded))
 	}
 	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
 	s.fund(requester, requesterBal)
 	id := s.request()
@@ -454,7 +647,7 @@ func TestProgramOriginUsesTheXWebSet(t *testing.T) {
 	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
 
 	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
 	s.fund(requester, requesterBal)
 	id := s.request()
@@ -528,11 +721,12 @@ func TestMsgServerExecutesEveryAuthorityMessage(t *testing.T) {
 	require.Equal(t, uint32(1), s.k.Threshold(s.ctx))
 
 	written, err := server.SetParams(goCtx, &types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(77),
-		MaxPayloadBytes: 128, MaxCallbackGas: 120_000, TimeoutBlocks: 11})
+		MaxPayloadBytes: 128, MaxCallbackGas: 120_000, TimeoutBlocks: 11, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms})
 	require.NoError(t, err)
 	require.NotNil(t, written)
 	require.Equal(t, types.Params{Authority: authority, Fee: sdk.NewInt(77), MaxPayloadBytes: 128,
-		MaxCallbackGas: 120_000, TimeoutBlocks: 11}, s.k.GetParams(s.ctx))
+		MaxCallbackGas: 120_000, TimeoutBlocks: 11, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms},
+		s.k.GetParams(s.ctx))
 
 	unpaused, err := server.Unpause(goCtx, &types.MsgUnpause{Authority: authority})
 	require.NoError(t, err)
@@ -566,7 +760,7 @@ func TestMsgServerRefusesAnAuthorityOtherThanTheModules(t *testing.T) {
 	_, err = server.SetThreshold(goCtx, &types.MsgSetThreshold{Authority: stranger, Threshold: 3})
 	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.SetParams(goCtx, &types.MsgSetParams{Authority: stranger, Fee: sdk.NewInt(1),
-		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1})
+		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms})
 	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.Pause(goCtx, &types.MsgPause{Authority: stranger})
 	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")

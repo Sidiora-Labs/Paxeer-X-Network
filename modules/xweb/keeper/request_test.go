@@ -141,7 +141,7 @@ func (s *suite) apiPayload(named types.Address20, sealedTo ...xwebtestutil.Attes
 func (s *suite) allowApi() {
 	s.t.Helper()
 	require.NoError(s.t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: apiPayloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: apiPayloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 }
 
 func TestApiRequestStoresTheLevelAndTheNamedAttestor(t *testing.T) {
@@ -229,7 +229,7 @@ func TestApiRequestRefusals(t *testing.T) {
 	few := newSuite(t, false)
 	require.NoError(t, few.register(few.attestors[0]))
 	require.NoError(t, few.k.UpdateParams(few.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: apiPayloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+		MaxPayloadBytes: apiPayloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, few.k.Unpause(few.ctx, types.MsgUnpause{Authority: authority}))
 	few.fund(requester, requesterBal)
 	_, err = few.k.Request(few.ctx, requester, types.KindApi, few.apiPayload(types.Address20{}, few.attestors[0],

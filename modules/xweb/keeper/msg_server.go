@@ -6,9 +6,16 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+)
+
+// The xweb_params_set attributes that carry the program-origin parameters.
+const (
+	attributeKernelNetworkID  = "kernel_network_id"
+	attributeProgramFeeDenoms = "program_fee_denoms"
 )
 
 type msgServer struct {
@@ -155,9 +162,10 @@ func (k Keeper) SetThreshold(ctx sdk.Context, msg types.MsgSetThreshold) error {
 	return nil
 }
 
-// UpdateParams sets the fee, the payload and callback caps and the timeout.
-// The authority is unchanged. Pending requests keep the fee and timeout
-// height they were stored with.
+// UpdateParams sets the fee, the payload and callback caps, the timeout, the
+// kernel network id program-origin observations name and the denoms a
+// program-origin request may pay in. The authority is unchanged. Pending
+// requests keep the fee and timeout height they were stored with.
 func (k Keeper) UpdateParams(ctx sdk.Context, msg types.MsgSetParams) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -170,6 +178,8 @@ func (k Keeper) UpdateParams(ctx sdk.Context, msg types.MsgSetParams) error {
 	params.MaxPayloadBytes = msg.MaxPayloadBytes
 	params.MaxCallbackGas = msg.MaxCallbackGas
 	params.TimeoutBlocks = msg.TimeoutBlocks
+	params.KernelNetworkId = msg.KernelNetworkId
+	params.ProgramFeeDenoms = append([]string(nil), msg.ProgramFeeDenoms...)
 	if err := k.SetParams(ctx, params); err != nil {
 		return err
 	}
@@ -177,7 +187,9 @@ func (k Keeper) UpdateParams(ctx sdk.Context, msg types.MsgSetParams) error {
 		sdk.NewAttribute(types.AttributeFee, msg.Fee.String()),
 		sdk.NewAttribute(types.AttributePayloadCap, fmt.Sprint(msg.MaxPayloadBytes)),
 		sdk.NewAttribute(types.AttributeCallbackCap, fmt.Sprint(msg.MaxCallbackGas)),
-		sdk.NewAttribute(types.AttributeTimeoutBlocks, fmt.Sprint(msg.TimeoutBlocks))))
+		sdk.NewAttribute(types.AttributeTimeoutBlocks, fmt.Sprint(msg.TimeoutBlocks)),
+		sdk.NewAttribute(attributeKernelNetworkID, fmt.Sprint(msg.KernelNetworkId)),
+		sdk.NewAttribute(attributeProgramFeeDenoms, strings.Join(msg.ProgramFeeDenoms, ","))))
 	return nil
 }
 
@@ -194,11 +206,18 @@ func (k Keeper) Pause(ctx sdk.Context, msg types.MsgPause) error {
 	return nil
 }
 
+// Unpause lifts the pause. The unset program-origin pair is valid only while
+// the module is dormant, so the module stays paused until governance has set
+// a kernel network id and the program fee denoms.
 func (k Keeper) Unpause(ctx sdk.Context, msg types.MsgUnpause) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 	if err := k.requireAuthority(ctx, msg.Authority); err != nil {
+		return err
+	}
+	params := k.GetParams(ctx)
+	if err := types.ValidateProgramSettings(params.KernelNetworkId, params.ProgramFeeDenoms); err != nil {
 		return err
 	}
 	k.setPaused(ctx, false)

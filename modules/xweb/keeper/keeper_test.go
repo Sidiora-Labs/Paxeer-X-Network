@@ -29,6 +29,12 @@ var (
 	payload   = []byte("https://paxeer.app/")
 	digest    = types.Hash32{0x22, 0x22, 0x22}
 	response  = []byte("Paxeer X Network")
+
+	// kernelNetworkID and programFeeDenoms are the program-origin pair every
+	// MsgSetParams carries.
+	kernelNetworkID  = uint32(1)
+	programFeeDenoms = []string{types.ProgramFeeDenomPAX, types.ProgramFeeDenomSID, types.ProgramFeeDenomUSDC,
+		types.ProgramFeeDenomUSDL}
 )
 
 type suite struct {
@@ -55,7 +61,7 @@ func newSuite(t *testing.T, activate bool) *suite {
 				Attestor: attestor.Registration()}))
 		}
 		require.NoError(t, k.UpdateParams(ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-			MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+			MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 		require.NoError(t, k.Unpause(ctx, types.MsgUnpause{Authority: authority}))
 		s.fund(requester, requesterBal)
 	}
@@ -139,6 +145,9 @@ func TestDefaultGenesisIsDormant(t *testing.T) {
 	_, _, err = s.k.Fulfil(s.ctx, 1, response, digest, uint32(len(response)), nil)
 	require.ErrorIs(t, err, types.ErrPaused)
 
+	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: types.DefaultFee(),
+		MaxPayloadBytes: types.DefaultMaxPayloadBytes, MaxCallbackGas: types.DefaultMaxCallbackGas,
+		TimeoutBlocks: types.DefaultTimeoutBlocks, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
 	s.fund(requester, requesterBal)
 	id, err := s.k.Request(s.ctx, requester, types.KindFetch, payload, callbackGas, types.DefaultFee())
@@ -159,6 +168,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	exported := s.k.ExportGenesis(s.ctx)
 	require.NoError(t, exported.Validate())
 	require.False(t, exported.Paused)
+	require.Equal(t, uint32(1), exported.Params.KernelNetworkId)
+	require.Equal(t, []string{types.ProgramFeeDenomPAX, types.ProgramFeeDenomSID, types.ProgramFeeDenomUSDC,
+		types.ProgramFeeDenomUSDL}, exported.Params.ProgramFeeDenoms)
 	require.Equal(t, uint64(2), exported.Nonce)
 	require.Len(t, exported.Requests, 2)
 	require.Len(t, exported.Results, 1)
@@ -168,6 +180,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	fresh := newSuite(t, false)
 	fresh.k.InitGenesis(fresh.ctx, exported)
 	require.Equal(t, exported, fresh.k.ExportGenesis(fresh.ctx))
+	require.Equal(t, exported.Params, fresh.k.GetParams(fresh.ctx))
+	require.Equal(t, s.k.GetParams(s.ctx), fresh.k.GetParams(fresh.ctx))
 	result, found := fresh.k.GetResult(fresh.ctx, fulfilled)
 	require.True(t, found)
 	require.Equal(t, response, result.Response)

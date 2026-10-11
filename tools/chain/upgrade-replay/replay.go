@@ -461,6 +461,10 @@ func assertGovernanceRoute(c *checks, a *app.App, ctx sdk.Context) {
 	if before.Web.Fee.Equal(web.Fee) {
 		web.Fee = sdk.NewInt(2)
 	}
+	if web.KernelNetworkId == 0 && len(web.ProgramFeeDenoms) == 0 {
+		web.KernelNetworkId = 1
+		web.ProgramFeeDenoms = []string{xwebtypes.ProgramFeeDenomPAX, xwebtypes.ProgramFeeDenomSID, xwebtypes.ProgramFeeDenomUSDC, xwebtypes.ProgramFeeDenomUSDL}
+	}
 	var bridge sdk.Msg = &layerxbridgetypes.MsgPause{Authority: authority}
 	if before.BridgePaused {
 		bridge = &layerxbridgetypes.MsgUnpause{Authority: authority}
@@ -471,7 +475,7 @@ func assertGovernanceRoute(c *checks, a *app.App, ctx sdk.Context) {
 		&layerxexchangetypes.MsgUpdateParams{Authority: authority, Params: exchange},
 		bridge,
 		&launchpadtypes.MsgUpdateParams{Authority: authority, Params: launchpad},
-		&xwebtypes.MsgSetParams{Authority: authority, Fee: web.Fee, MaxPayloadBytes: web.MaxPayloadBytes, MaxCallbackGas: web.MaxCallbackGas, TimeoutBlocks: web.TimeoutBlocks},
+		&xwebtypes.MsgSetParams{Authority: authority, Fee: web.Fee, MaxPayloadBytes: web.MaxPayloadBytes, MaxCallbackGas: web.MaxCallbackGas, TimeoutBlocks: web.TimeoutBlocks, KernelNetworkId: web.KernelNetworkId, ProgramFeeDenoms: web.ProgramFeeDenoms},
 	}
 	proposal, err := layerxgovtypes.NewLayerXProposal("Replay six authority messages", "Execute every fork module through the application router", messages...)
 	if !c.assert(err == nil, "six-module proposal construction succeeds: %v", err) {

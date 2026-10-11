@@ -60,7 +60,7 @@ func TestRefundKeepsTheStoredTimeoutAndWorksWhilePaused(t *testing.T) {
 	s := newSuite(t, true)
 	id := s.request()
 	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
-		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout * 10}))
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout * 10, KernelNetworkId: kernelNetworkID, ProgramFeeDenoms: programFeeDenoms}))
 	require.NoError(t, s.k.Pause(s.ctx, types.MsgPause{Authority: authority}))
 	_, err := s.k.Refund(s.ctx.WithBlockHeight(startHeight+int64(timeout)), id)
 	require.NoError(t, err)
