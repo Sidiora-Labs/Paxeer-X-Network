@@ -41399,7 +41399,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.102]
 title = "Python EIP-1559 type-2 transaction codec and signer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41507,7 +41507,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.106]
 title = "Store key constants for the layerxledger, layerxauth, layerxpay, layerxprograms and sequencer stores"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41533,7 +41533,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.107]
 title = "Hosted internal crate passes its clippy deny level in events.rs, producer.rs and tls.rs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41559,7 +41559,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.94]
 title = "Python binding-preflight regression fixture models the signed raw bind transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.91", "10.5.17"]
