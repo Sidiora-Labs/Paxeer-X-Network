@@ -366,7 +366,7 @@ fn classify(repo_root: &Path, outputs: &mut [OutputState]) -> Result<(), String>
 
 type Sections = BTreeMap<String, BTreeMap<String, String>>;
 
-fn schema_sections(root: &Path) -> Result<Sections, String> {
+pub(crate) fn schema_sections(root: &Path) -> Result<Sections, String> {
     let version_path = root.join("v1.kvx");
     let version_source = fs::read_to_string(&version_path)
         .map_err(|error| format!("read {}: {error}", version_path.display()))?;
@@ -1323,7 +1323,7 @@ fn schema_agent_operations(agent: &Sections) -> (Vec<String>, BTreeSet<String>) 
     (operations, mutations)
 }
 
-fn generate_rust_operation_catalog(repo_root: &Path) -> Result<String, String> {
+pub(crate) fn generate_rust_operation_catalog(repo_root: &Path) -> Result<String, String> {
     let agent = schema_sections(&repo_root.join(SOURCES[0].1))?;
     let (operations, mutations) = schema_agent_operations(&agent);
     if operations.is_empty() {

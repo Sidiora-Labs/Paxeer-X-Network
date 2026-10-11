@@ -12,12 +12,15 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case agentBudgetList = "agent:budget.list"
     case agentBudgetReconciliation = "agent:budget.reconciliation"
     case agentBudgetRevoke = "agent:budget.revoke"
+    case agentBudgetState = "agent:budget.state"
     case agentCapabilityAttenuate = "agent:capability.attenuate"
     case agentCapabilityCreate = "agent:capability.create"
     case agentCapabilityList = "agent:capability.list"
     case agentCapabilityRevoke = "agent:capability.revoke"
     case agentExportOffline = "agent:export.offline"
     case agentFaucetClaim = "agent:faucet.claim"
+    case agentMcpInvoke = "agent:mcp.invoke"
+    case agentPolicyDryRun = "agent:policy.dry_run"
     case agentPrepare = "agent:prepare"
     case agentProgramActivity = "agent:program.activity"
     case agentProgramCall = "agent:program.call"
@@ -49,6 +52,7 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case agentSubscriptionList = "agent:subscription.list"
     case agentSubscriptionPause = "agent:subscription.pause"
     case agentSubscriptionResume = "agent:subscription.resume"
+    case agentTenantReadiness = "agent:tenant.readiness"
     case agentTrack = "agent:track"
     case agentWait = "agent:wait"
     case humanAccountBalance = "human:account.balance"
@@ -67,9 +71,18 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case humanAgentRecover = "human:agent.recover"
     case humanAgentResume = "human:agent.resume"
     case humanAgentRotate = "human:agent.rotate"
+    case humanAgentRotationDisclosure = "human:agent.rotation.disclosure"
+    case humanAgentRotationStart = "human:agent.rotation.start"
     case humanApprovalApprove = "human:approval.approve"
     case humanApprovalGet = "human:approval.get"
     case humanApprovalList = "human:approval.list"
+    case humanApprovalProgramApprove = "human:approval.program.approve"
+    case humanApprovalProgramBudget = "human:approval.program.budget"
+    case humanApprovalProgramDisclosure = "human:approval.program.disclosure"
+    case humanApprovalProgramGet = "human:approval.program.get"
+    case humanApprovalProgramList = "human:approval.program.list"
+    case humanApprovalProgramMaterial = "human:approval.program.material"
+    case humanApprovalProgramReject = "human:approval.program.reject"
     case humanApprovalReject = "human:approval.reject"
     case humanAuthenticatorBackupRotate = "human:authenticator.backup.rotate"
     case humanAuthenticatorDisable = "human:authenticator.disable"
@@ -87,10 +100,15 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case humanExitEligibility = "human:exit.eligibility"
     case humanExitStart = "human:exit.start"
     case humanHomeSummary = "human:home.summary"
+    case humanIntentPlan = "human:intent.plan"
+    case humanIntentSubmit = "human:intent.submit"
     case humanJourneyGet = "human:journey.get"
     case humanJourneyList = "human:journey.list"
+    case humanJourneyPage = "human:journey.page"
     case humanMoveCommit = "human:move.commit"
     case humanMoveQuote = "human:move.quote"
+    case humanNativeSendAccessBegin = "human:native.send.access.begin"
+    case humanNativeSendAccessConfirm = "human:native.send.access.confirm"
     case humanNotificationList = "human:notification.list"
     case humanNotificationPreferencesGet = "human:notification.preferences.get"
     case humanNotificationPreferencesSet = "human:notification.preferences.set"
@@ -104,6 +122,8 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case humanProfileGet = "human:profile.get"
     case humanProfileUpdate = "human:profile.update"
     case humanSecurityAction = "human:security.action"
+    case humanSecurityKeyExportBegin = "human:security.key-export.begin"
+    case humanSecurityKeyExportFinish = "human:security.key-export.finish"
     case humanSecurityPasskeyList = "human:security.passkey.list"
     case humanSecurityPasskeyRegisterBegin = "human:security.passkey.register.begin"
     case humanSecurityPasskeyRegisterFinish = "human:security.passkey.register.finish"
@@ -111,6 +131,7 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
     case humanSecurityRecoveryReveal = "human:security.recovery.reveal"
     case humanSecuritySessionRevoke = "human:security.session.revoke"
     case humanSecuritySessionRevokeAll = "human:security.session.revoke-all"
+    case humanSessionFeePolicy = "human:session.fee-policy"
     case humanSessionList = "human:session.list"
     case humanSessionOpen = "human:session.open"
     case humanSessionRefresh = "human:session.refresh"
@@ -143,12 +164,15 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .agentBudgetList: return OperationDescriptor(plane: .agent, name: "budget.list", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<BudgetRecords>", requiresIdempotency: false, bodyless: false)
         case .agentBudgetReconciliation: return OperationDescriptor(plane: .agent, name: "budget.reconciliation", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<BudgetReconciliation>", requiresIdempotency: false, bodyless: false)
         case .agentBudgetRevoke: return OperationDescriptor(plane: .agent, name: "budget.revoke", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<BudgetRecord>", requiresIdempotency: true, bodyless: false)
+        case .agentBudgetState: return OperationDescriptor(plane: .agent, name: "budget.state", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<BudgetState>", requiresIdempotency: false, bodyless: false)
         case .agentCapabilityAttenuate: return OperationDescriptor(plane: .agent, name: "capability.attenuate", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<CapabilityRecord>", requiresIdempotency: true, bodyless: false)
         case .agentCapabilityCreate: return OperationDescriptor(plane: .agent, name: "capability.create", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<CapabilityRecord>", requiresIdempotency: true, bodyless: false)
         case .agentCapabilityList: return OperationDescriptor(plane: .agent, name: "capability.list", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<CapabilityRecords>", requiresIdempotency: false, bodyless: false)
         case .agentCapabilityRevoke: return OperationDescriptor(plane: .agent, name: "capability.revoke", method: .post, path: "", requestType: "object", responseType: "AuthorityResponse<CapabilityRecord>", requiresIdempotency: true, bodyless: false)
         case .agentExportOffline: return OperationDescriptor(plane: .agent, name: "export.offline", method: .post, path: "", requestType: "object", responseType: "VerifiedRead<OfflineExport>", requiresIdempotency: false, bodyless: false)
         case .agentFaucetClaim: return OperationDescriptor(plane: .agent, name: "faucet.claim", method: .post, path: "", requestType: "object", responseType: "FaucetGrant", requiresIdempotency: false, bodyless: false)
+        case .agentMcpInvoke: return OperationDescriptor(plane: .agent, name: "mcp.invoke", method: .post, path: "", requestType: "McpInvokeRequest", responseType: "object", requiresIdempotency: true, bodyless: false)
+        case .agentPolicyDryRun: return OperationDescriptor(plane: .agent, name: "policy.dry_run", method: .post, path: "", requestType: "object", responseType: "PolicyDryRunResult", requiresIdempotency: false, bodyless: false)
         case .agentPrepare: return OperationDescriptor(plane: .agent, name: "prepare", method: .post, path: "", requestType: "PrepareRequest", responseType: "Prepared", requiresIdempotency: true, bodyless: false)
         case .agentProgramActivity: return OperationDescriptor(plane: .agent, name: "program.activity", method: .get, path: "/v1/programs/activities/{activity_id}", requestType: "ProgramActivitySelector", responseType: "ProgramSubmission", requiresIdempotency: false, bodyless: false)
         case .agentProgramCall: return OperationDescriptor(plane: .agent, name: "program.call", method: .post, path: "/v1/programs/call", requestType: "ProgramCallRequest", responseType: "ProgramSubmission", requiresIdempotency: true, bodyless: false)
@@ -159,7 +183,7 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .agentProgramSimulate: return OperationDescriptor(plane: .agent, name: "program.simulate", method: .post, path: "/v1/programs/simulate", requestType: "ProgramCallRequest", responseType: "ProgramSimulation", requiresIdempotency: false, bodyless: false)
         case .agentProgramUpgrade: return OperationDescriptor(plane: .agent, name: "program.upgrade", method: .post, path: "/v1/programs/upgrade", requestType: "NativeProgramUpgradeRequest", responseType: "ProgramLifecycleResponse", requiresIdempotency: true, bodyless: false)
         case .agentProgramWindDown: return OperationDescriptor(plane: .agent, name: "program.wind-down", method: .post, path: "/v1/programs/wind-down", requestType: "NativeProgramWindDownRequest", responseType: "ProgramLifecycleResponse", requiresIdempotency: true, bodyless: false)
-        case .agentProject: return OperationDescriptor(plane: .agent, name: "project", method: .post, path: "", requestType: "object", responseType: "ProjectionResult", requiresIdempotency: false, bodyless: false)
+        case .agentProject: return OperationDescriptor(plane: .agent, name: "project", method: .post, path: "", requestType: "FeeProjectionRequest", responseType: "ProjectionResult", requiresIdempotency: false, bodyless: false)
         case .agentReadAccount: return OperationDescriptor(plane: .agent, name: "read.account", method: .post, path: "", requestType: "object", responseType: "VerifiedRead<AccountValue>", requiresIdempotency: false, bodyless: false)
         case .agentReadBalance: return OperationDescriptor(plane: .agent, name: "read.balance", method: .post, path: "", requestType: "object", responseType: "VerifiedRead<BalanceValue>", requiresIdempotency: false, bodyless: false)
         case .agentReadBatch: return OperationDescriptor(plane: .agent, name: "read.batch", method: .post, path: "", requestType: "object", responseType: "VerifiedRead<BatchValue>", requiresIdempotency: false, bodyless: false)
@@ -174,12 +198,13 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .agentSign: return OperationDescriptor(plane: .agent, name: "sign", method: .post, path: "", requestType: "SignRequest", responseType: "Signed", requiresIdempotency: true, bodyless: false)
         case .agentSubmit: return OperationDescriptor(plane: .agent, name: "submit", method: .post, path: "", requestType: "SubmitRequest", responseType: "TrackedSubmission", requiresIdempotency: true, bodyless: false)
         case .agentSubscriptionAcknowledge: return OperationDescriptor(plane: .agent, name: "subscription.acknowledge", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: true, bodyless: false)
-        case .agentSubscriptionCreate: return OperationDescriptor(plane: .agent, name: "subscription.create", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: true, bodyless: false)
+        case .agentSubscriptionCreate: return OperationDescriptor(plane: .agent, name: "subscription.create", method: .post, path: "", requestType: "object", responseType: "SubscriptionRecord", requiresIdempotency: true, bodyless: false)
         case .agentSubscriptionDelete: return OperationDescriptor(plane: .agent, name: "subscription.delete", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: true, bodyless: false)
-        case .agentSubscriptionHealth: return OperationDescriptor(plane: .agent, name: "subscription.health", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: false, bodyless: false)
-        case .agentSubscriptionList: return OperationDescriptor(plane: .agent, name: "subscription.list", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: false, bodyless: false)
+        case .agentSubscriptionHealth: return OperationDescriptor(plane: .agent, name: "subscription.health", method: .post, path: "", requestType: "object", responseType: "SubscriptionHealth", requiresIdempotency: false, bodyless: false)
+        case .agentSubscriptionList: return OperationDescriptor(plane: .agent, name: "subscription.list", method: .post, path: "", requestType: "object", responseType: "SubscriptionRecord[]", requiresIdempotency: false, bodyless: false)
         case .agentSubscriptionPause: return OperationDescriptor(plane: .agent, name: "subscription.pause", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: true, bodyless: false)
         case .agentSubscriptionResume: return OperationDescriptor(plane: .agent, name: "subscription.resume", method: .post, path: "", requestType: "object", responseType: "object", requiresIdempotency: true, bodyless: false)
+        case .agentTenantReadiness: return OperationDescriptor(plane: .agent, name: "tenant.readiness", method: .post, path: "", requestType: "TenantReadinessRequest", responseType: "TenantReadiness", requiresIdempotency: false, bodyless: false)
         case .agentTrack: return OperationDescriptor(plane: .agent, name: "track", method: .post, path: "", requestType: "TrackRequest", responseType: "TrackedSubmission", requiresIdempotency: false, bodyless: false)
         case .agentWait: return OperationDescriptor(plane: .agent, name: "wait", method: .post, path: "", requestType: "WaitRequest", responseType: "WaitResult", requiresIdempotency: false, bodyless: false)
         case .humanAccountBalance: return OperationDescriptor(plane: .human, name: "account.balance", method: .get, path: "/v1/account/balance", requestType: "Empty", responseType: "AccountBalance", requiresIdempotency: false, bodyless: true)
@@ -198,9 +223,18 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .humanAgentRecover: return OperationDescriptor(plane: .human, name: "agent.recover", method: .post, path: "/v1/agents/{agent_id}/recover", requestType: "Empty", responseType: "KeyChallenge", requiresIdempotency: true, bodyless: true)
         case .humanAgentResume: return OperationDescriptor(plane: .human, name: "agent.resume", method: .post, path: "/v1/agents/{agent_id}/resume", requestType: "Empty", responseType: "Agent", requiresIdempotency: true, bodyless: true)
         case .humanAgentRotate: return OperationDescriptor(plane: .human, name: "agent.rotate", method: .post, path: "/v1/agents/{agent_id}/rotate", requestType: "Empty", responseType: "KeyChallenge", requiresIdempotency: true, bodyless: true)
+        case .humanAgentRotationDisclosure: return OperationDescriptor(plane: .human, name: "agent.rotation.disclosure", method: .post, path: "/v1/agents/{agent_id}/rotation/disclosure", requestType: "OwnerRotationDisclosureRequest", responseType: "SecurityAction", requiresIdempotency: false, bodyless: false)
+        case .humanAgentRotationStart: return OperationDescriptor(plane: .human, name: "agent.rotation.start", method: .post, path: "/v1/agents/{agent_id}/rotation", requestType: "OwnerRotationRequest", responseType: "KeyChallenge", requiresIdempotency: true, bodyless: false)
         case .humanApprovalApprove: return OperationDescriptor(plane: .human, name: "approval.approve", method: .post, path: "/v1/approvals/{approval_id}/approve", requestType: "ApprovalApproveRequest", responseType: "ApprovalDecision", requiresIdempotency: true, bodyless: false)
         case .humanApprovalGet: return OperationDescriptor(plane: .human, name: "approval.get", method: .get, path: "/v1/approvals/{approval_id}", requestType: "Empty", responseType: "ApprovalDetail", requiresIdempotency: false, bodyless: true)
         case .humanApprovalList: return OperationDescriptor(plane: .human, name: "approval.list", method: .get, path: "/v1/approvals", requestType: "Empty", responseType: "ApprovalPage", requiresIdempotency: false, bodyless: true)
+        case .humanApprovalProgramApprove: return OperationDescriptor(plane: .human, name: "approval.program.approve", method: .post, path: "/v1/program-approvals/{approval_id}/approve", requestType: "ProgramApprovalDecisionRequest", responseType: "ProgramApprovalDecision", requiresIdempotency: true, bodyless: false)
+        case .humanApprovalProgramBudget: return OperationDescriptor(plane: .human, name: "approval.program.budget", method: .get, path: "/v1/program-approvals/{approval_id}/budget", requestType: "Empty", responseType: "ProgramApprovalBudget", requiresIdempotency: false, bodyless: true)
+        case .humanApprovalProgramDisclosure: return OperationDescriptor(plane: .human, name: "approval.program.disclosure", method: .post, path: "/v1/program-approvals/{approval_id}/disclosure", requestType: "ProgramApprovalDisclosureRequest", responseType: "ProgramApprovalDisclosure", requiresIdempotency: false, bodyless: false)
+        case .humanApprovalProgramGet: return OperationDescriptor(plane: .human, name: "approval.program.get", method: .get, path: "/v1/program-approvals/{approval_id}", requestType: "Empty", responseType: "ProgramApprovalDetail", requiresIdempotency: false, bodyless: true)
+        case .humanApprovalProgramList: return OperationDescriptor(plane: .human, name: "approval.program.list", method: .get, path: "/v1/program-approvals/page/{cursor}", requestType: "Empty", responseType: "ProgramApprovalPage", requiresIdempotency: false, bodyless: true)
+        case .humanApprovalProgramMaterial: return OperationDescriptor(plane: .human, name: "approval.program.material", method: .get, path: "/v1/program-approvals/{approval_id}/material", requestType: "Empty", responseType: "ProgramApprovalMaterial", requiresIdempotency: false, bodyless: true)
+        case .humanApprovalProgramReject: return OperationDescriptor(plane: .human, name: "approval.program.reject", method: .post, path: "/v1/program-approvals/{approval_id}/reject", requestType: "ProgramApprovalDecisionRequest", responseType: "ProgramApprovalDecision", requiresIdempotency: true, bodyless: false)
         case .humanApprovalReject: return OperationDescriptor(plane: .human, name: "approval.reject", method: .post, path: "/v1/approvals/{approval_id}/reject", requestType: "Empty", responseType: "ApprovalDecision", requiresIdempotency: true, bodyless: true)
         case .humanAuthenticatorBackupRotate: return OperationDescriptor(plane: .human, name: "authenticator.backup.rotate", method: .post, path: "/v1/security/authenticators/backup-codes", requestType: "BackupCodeRotation", responseType: "BackupCodeSet", requiresIdempotency: false, bodyless: false)
         case .humanAuthenticatorDisable: return OperationDescriptor(plane: .human, name: "authenticator.disable", method: .post, path: "/v1/security/authenticators/{authenticator_id}/disable", requestType: "AuthenticatorDisable", responseType: "AuthenticatorStatus", requiresIdempotency: false, bodyless: false)
@@ -218,10 +252,15 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .humanExitEligibility: return OperationDescriptor(plane: .human, name: "exit.eligibility", method: .get, path: "/v1/exit/eligibility", requestType: "Empty", responseType: "ExitEligibility", requiresIdempotency: false, bodyless: true)
         case .humanExitStart: return OperationDescriptor(plane: .human, name: "exit.start", method: .post, path: "/v1/exit", requestType: "ExitStartRequest", responseType: "Journey", requiresIdempotency: true, bodyless: false)
         case .humanHomeSummary: return OperationDescriptor(plane: .human, name: "home.summary", method: .get, path: "/v1/home", requestType: "Empty", responseType: "HomeSummary", requiresIdempotency: false, bodyless: true)
+        case .humanIntentPlan: return OperationDescriptor(plane: .human, name: "intent.plan", method: .post, path: "/v1/intents/plan", requestType: "PlanIntentRequest", responseType: "IntentPlan", requiresIdempotency: false, bodyless: false)
+        case .humanIntentSubmit: return OperationDescriptor(plane: .human, name: "intent.submit", method: .post, path: "/v1/intents/submit", requestType: "SubmitPlanRequest", responseType: "IntentSubmission", requiresIdempotency: true, bodyless: false)
         case .humanJourneyGet: return OperationDescriptor(plane: .human, name: "journey.get", method: .get, path: "/v1/journeys/{journey_id}", requestType: "Empty", responseType: "Journey", requiresIdempotency: false, bodyless: true)
         case .humanJourneyList: return OperationDescriptor(plane: .human, name: "journey.list", method: .get, path: "/v1/journeys", requestType: "Empty", responseType: "JourneyPage", requiresIdempotency: false, bodyless: true)
+        case .humanJourneyPage: return OperationDescriptor(plane: .human, name: "journey.page", method: .get, path: "/v1/journeys/page/{cursor}", requestType: "Empty", responseType: "JourneyPage", requiresIdempotency: false, bodyless: true)
         case .humanMoveCommit: return OperationDescriptor(plane: .human, name: "move.commit", method: .post, path: "/v1/moves", requestType: "MoveCommitRequest", responseType: "Journey", requiresIdempotency: true, bodyless: false)
         case .humanMoveQuote: return OperationDescriptor(plane: .human, name: "move.quote", method: .post, path: "/v1/moves/quote", requestType: "MoveQuoteRequest", responseType: "MoveQuote", requiresIdempotency: false, bodyless: false)
+        case .humanNativeSendAccessBegin: return OperationDescriptor(plane: .human, name: "native.send.access.begin", method: .post, path: "/v1/native/send/access/begin", requestType: "NativeSendAccessRequest", responseType: "NativeSendAccessDisclosure", requiresIdempotency: false, bodyless: false)
+        case .humanNativeSendAccessConfirm: return OperationDescriptor(plane: .human, name: "native.send.access.confirm", method: .post, path: "/v1/native/send/access/confirm", requestType: "NativeSendAccessConfirmation", responseType: "NativeSendAccessResult", requiresIdempotency: false, bodyless: false)
         case .humanNotificationList: return OperationDescriptor(plane: .human, name: "notification.list", method: .get, path: "/v1/notifications", requestType: "Empty", responseType: "NotificationPage", requiresIdempotency: false, bodyless: true)
         case .humanNotificationPreferencesGet: return OperationDescriptor(plane: .human, name: "notification.preferences.get", method: .get, path: "/v1/notifications/preferences", requestType: "Empty", responseType: "NotificationPreferences", requiresIdempotency: false, bodyless: true)
         case .humanNotificationPreferencesSet: return OperationDescriptor(plane: .human, name: "notification.preferences.set", method: .post, path: "/v1/notifications/preferences", requestType: "NotificationPreferences", responseType: "NotificationPreferences", requiresIdempotency: false, bodyless: false)
@@ -235,6 +274,8 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .humanProfileGet: return OperationDescriptor(plane: .human, name: "profile.get", method: .get, path: "/v1/profile", requestType: "Empty", responseType: "Profile", requiresIdempotency: false, bodyless: true)
         case .humanProfileUpdate: return OperationDescriptor(plane: .human, name: "profile.update", method: .patch, path: "/v1/profile", requestType: "ProfileUpdate", responseType: "Profile", requiresIdempotency: false, bodyless: false)
         case .humanSecurityAction: return OperationDescriptor(plane: .human, name: "security.action", method: .post, path: "/v1/security/actions", requestType: "SecurityActionRequest", responseType: "SecurityAction", requiresIdempotency: false, bodyless: false)
+        case .humanSecurityKeyExportBegin: return OperationDescriptor(plane: .human, name: "security.key-export.begin", method: .post, path: "/v1/security/key-export/begin", requestType: "KeyExportBegin", responseType: "KeyExportChallenge", requiresIdempotency: false, bodyless: false)
+        case .humanSecurityKeyExportFinish: return OperationDescriptor(plane: .human, name: "security.key-export.finish", method: .post, path: "/v1/security/key-export/finish", requestType: "KeyExportFinish", responseType: "ExportedPrimaryKey", requiresIdempotency: false, bodyless: false)
         case .humanSecurityPasskeyList: return OperationDescriptor(plane: .human, name: "security.passkey.list", method: .get, path: "/v1/security/passkeys", requestType: "Empty", responseType: "PasskeyList", requiresIdempotency: false, bodyless: true)
         case .humanSecurityPasskeyRegisterBegin: return OperationDescriptor(plane: .human, name: "security.passkey.register.begin", method: .post, path: "/v1/security/passkeys/registrations", requestType: "SecurityPasskeyRegistrationBegin", responseType: "PasskeyRegistrationChallenge", requiresIdempotency: false, bodyless: false)
         case .humanSecurityPasskeyRegisterFinish: return OperationDescriptor(plane: .human, name: "security.passkey.register.finish", method: .post, path: "/v1/security/passkeys/registrations/{registration_id}", requestType: "SecurityPasskeyRegistrationFinish", responseType: "Passkey", requiresIdempotency: false, bodyless: false)
@@ -242,6 +283,7 @@ public enum PlatformOperation: String, CaseIterable, Sendable {
         case .humanSecurityRecoveryReveal: return OperationDescriptor(plane: .human, name: "security.recovery.reveal", method: .post, path: "/v1/security/recovery/evidence", requestType: "SecurityRecoveryReveal", responseType: "TimedSecret", requiresIdempotency: false, bodyless: false)
         case .humanSecuritySessionRevoke: return OperationDescriptor(plane: .human, name: "security.session.revoke", method: .post, path: "/v1/security/sessions/{session_id}/revoke", requestType: "SecuritySessionRevocation", responseType: "SessionRevocation", requiresIdempotency: true, bodyless: false)
         case .humanSecuritySessionRevokeAll: return OperationDescriptor(plane: .human, name: "security.session.revoke-all", method: .post, path: "/v1/security/sessions/revoke-all", requestType: "SecuritySessionRevocation", responseType: "SessionRevocation", requiresIdempotency: true, bodyless: false)
+        case .humanSessionFeePolicy: return OperationDescriptor(plane: .human, name: "session.fee-policy", method: .get, path: "/v1/sessions/fee-policy", requestType: "Empty", responseType: "NativeFeeAsset", requiresIdempotency: false, bodyless: true)
         case .humanSessionList: return OperationDescriptor(plane: .human, name: "session.list", method: .get, path: "/v1/sessions", requestType: "Empty", responseType: "SessionList", requiresIdempotency: false, bodyless: true)
         case .humanSessionOpen: return OperationDescriptor(plane: .human, name: "session.open", method: .post, path: "/v1/sessions", requestType: "SessionOpenRequest", responseType: "Session", requiresIdempotency: true, bodyless: false)
         case .humanSessionRefresh: return OperationDescriptor(plane: .human, name: "session.refresh", method: .post, path: "/v1/sessions/refresh", requestType: "Empty", responseType: "Session", requiresIdempotency: false, bodyless: true)
@@ -298,6 +340,9 @@ public extension PlatformClient {
     func agentBudgetRevoke(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.agentBudgetRevoke, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
+    func agentBudgetState(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.agentBudgetState, request: request, pathParameters: pathParameters)
+    }
     func agentCapabilityAttenuate(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.agentCapabilityAttenuate, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
@@ -315,6 +360,12 @@ public extension PlatformClient {
     }
     func agentFaucetClaim(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.agentFaucetClaim, request: request, pathParameters: pathParameters)
+    }
+    func agentMcpInvoke(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await mutate(.agentMcpInvoke, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
+    }
+    func agentPolicyDryRun(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.agentPolicyDryRun, request: request, pathParameters: pathParameters)
     }
     func agentPrepare(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.agentPrepare, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
@@ -409,6 +460,9 @@ public extension PlatformClient {
     func agentSubscriptionResume(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.agentSubscriptionResume, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
+    func agentTenantReadiness(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.agentTenantReadiness, request: request, pathParameters: pathParameters)
+    }
     func agentTrack(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.agentTrack, request: request, pathParameters: pathParameters)
     }
@@ -463,6 +517,12 @@ public extension PlatformClient {
     func humanAgentRotate(idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.humanAgentRotate, request: .emptyObject, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
+    func humanAgentRotationDisclosure(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanAgentRotationDisclosure, request: request, pathParameters: pathParameters)
+    }
+    func humanAgentRotationStart(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await mutate(.humanAgentRotationStart, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
+    }
     func humanApprovalApprove(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.humanApprovalApprove, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
@@ -471,6 +531,27 @@ public extension PlatformClient {
     }
     func humanApprovalList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanApprovalList, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramApprove(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await mutate(.humanApprovalProgramApprove, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramBudget(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanApprovalProgramBudget, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramDisclosure(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanApprovalProgramDisclosure, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramGet(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanApprovalProgramGet, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanApprovalProgramList, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramMaterial(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanApprovalProgramMaterial, request: request, pathParameters: pathParameters)
+    }
+    func humanApprovalProgramReject(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await mutate(.humanApprovalProgramReject, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
     func humanApprovalReject(idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.humanApprovalReject, request: .emptyObject, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
@@ -523,17 +604,32 @@ public extension PlatformClient {
     func humanHomeSummary(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanHomeSummary, request: request, pathParameters: pathParameters)
     }
+    func humanIntentPlan(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanIntentPlan, request: request, pathParameters: pathParameters)
+    }
+    func humanIntentSubmit(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await mutate(.humanIntentSubmit, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
+    }
     func humanJourneyGet(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanJourneyGet, request: request, pathParameters: pathParameters)
     }
     func humanJourneyList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanJourneyList, request: request, pathParameters: pathParameters)
     }
+    func humanJourneyPage(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanJourneyPage, request: request, pathParameters: pathParameters)
+    }
     func humanMoveCommit(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.humanMoveCommit, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
     }
     func humanMoveQuote(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanMoveQuote, request: request, pathParameters: pathParameters)
+    }
+    func humanNativeSendAccessBegin(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanNativeSendAccessBegin, request: request, pathParameters: pathParameters)
+    }
+    func humanNativeSendAccessConfirm(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanNativeSendAccessConfirm, request: request, pathParameters: pathParameters)
     }
     func humanNotificationList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanNotificationList, request: request, pathParameters: pathParameters)
@@ -574,6 +670,12 @@ public extension PlatformClient {
     func humanSecurityAction(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanSecurityAction, request: request, pathParameters: pathParameters)
     }
+    func humanSecurityKeyExportBegin(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanSecurityKeyExportBegin, request: request, pathParameters: pathParameters)
+    }
+    func humanSecurityKeyExportFinish(_ request: JSONValue, pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanSecurityKeyExportFinish, request: request, pathParameters: pathParameters)
+    }
     func humanSecurityPasskeyList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanSecurityPasskeyList, request: request, pathParameters: pathParameters)
     }
@@ -594,6 +696,9 @@ public extension PlatformClient {
     }
     func humanSecuritySessionRevokeAll(_ request: JSONValue, idempotencyKey: IdempotencyKey, pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await mutate(.humanSecuritySessionRevokeAll, request: request, idempotencyKey: idempotencyKey, pathParameters: pathParameters)
+    }
+    func humanSessionFeePolicy(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
+        try await read(.humanSessionFeePolicy, request: request, pathParameters: pathParameters)
     }
     func humanSessionList(_ request: JSONValue = .object([:]), pathParameters: [String: String] = [:]) async throws -> JSONValue {
         try await read(.humanSessionList, request: request, pathParameters: pathParameters)
@@ -651,6 +756,6 @@ public extension PlatformClient {
     }
 }
 
-private let sdkMetadata = SDKMetadata(name: "LayerXSDK", version: "0.1.0", agentOperations: 50, humanOperations: 78)
+private let sdkMetadata = SDKMetadata(name: "LayerXSDK", version: "0.1.0", agentOperations: 54, humanOperations: 95)
 
 public func platform_sdk_swift() -> SDKMetadata { sdkMetadata }

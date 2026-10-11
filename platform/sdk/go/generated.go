@@ -28,6 +28,7 @@ const (
 	AgentOperationCapabilityRevoke        AgentOperation = "capability.revoke"
 	AgentOperationExportOffline           AgentOperation = "export.offline"
 	AgentOperationFaucetClaim             AgentOperation = "faucet.claim"
+	AgentOperationMcpInvoke               AgentOperation = "mcp.invoke"
 	AgentOperationPolicyDryRun            AgentOperation = "policy.dry_run"
 	AgentOperationPrepare                 AgentOperation = "prepare"
 	AgentOperationProgramActivity         AgentOperation = "program.activity"
@@ -85,6 +86,7 @@ func AllAgentOperations() []AgentOperation {
 		AgentOperationCapabilityRevoke,
 		AgentOperationExportOffline,
 		AgentOperationFaucetClaim,
+		AgentOperationMcpInvoke,
 		AgentOperationPolicyDryRun,
 		AgentOperationPrepare,
 		AgentOperationProgramActivity,
@@ -125,7 +127,7 @@ func AllAgentOperations() []AgentOperation {
 
 func (operation AgentOperation) Valid() bool {
 	switch operation {
-	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationBudgetState, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationPolicyDryRun, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTenantReadiness, AgentOperationTrack, AgentOperationWait:
+	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationBudgetState, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationMcpInvoke, AgentOperationPolicyDryRun, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTenantReadiness, AgentOperationTrack, AgentOperationWait:
 		return true
 	default:
 		return false
@@ -134,7 +136,7 @@ func (operation AgentOperation) Valid() bool {
 
 func (operation AgentOperation) RequiresIdempotency() bool {
 	switch operation {
-	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalReject, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetRevoke, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityRevoke, AgentOperationPrepare, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationSessionClose, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume:
+	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalReject, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetRevoke, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityRevoke, AgentOperationMcpInvoke, AgentOperationPrepare, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationSessionClose, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume:
 		return true
 	default:
 		return false

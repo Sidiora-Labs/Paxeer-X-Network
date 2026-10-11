@@ -113,6 +113,16 @@
     },
     {
       "plane": "agent",
+      "name": "budget.state",
+      "method": "POST",
+      "path": "",
+      "request": "object",
+      "response": "AuthorityResponse<BudgetState>",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "agent",
       "name": "capability.attenuate",
       "method": "POST",
       "path": "",
@@ -168,6 +178,26 @@
       "path": "",
       "request": "object",
       "response": "FaucetGrant",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "agent",
+      "name": "mcp.invoke",
+      "method": "POST",
+      "path": "",
+      "request": "McpInvokeRequest",
+      "response": "object",
+      "idempotency": true,
+      "bodyless": false
+    },
+    {
+      "plane": "agent",
+      "name": "policy.dry_run",
+      "method": "POST",
+      "path": "",
+      "request": "object",
+      "response": "PolicyDryRunResult",
       "idempotency": false,
       "bodyless": false
     },
@@ -276,7 +306,7 @@
       "name": "project",
       "method": "POST",
       "path": "",
-      "request": "object",
+      "request": "FeeProjectionRequest",
       "response": "ProjectionResult",
       "idempotency": false,
       "bodyless": false
@@ -427,7 +457,7 @@
       "method": "POST",
       "path": "",
       "request": "object",
-      "response": "object",
+      "response": "SubscriptionRecord",
       "idempotency": true,
       "bodyless": false
     },
@@ -447,7 +477,7 @@
       "method": "POST",
       "path": "",
       "request": "object",
-      "response": "object",
+      "response": "SubscriptionHealth",
       "idempotency": false,
       "bodyless": false
     },
@@ -457,7 +487,7 @@
       "method": "POST",
       "path": "",
       "request": "object",
-      "response": "object",
+      "response": "SubscriptionRecord[]",
       "idempotency": false,
       "bodyless": false
     },
@@ -479,6 +509,16 @@
       "request": "object",
       "response": "object",
       "idempotency": true,
+      "bodyless": false
+    },
+    {
+      "plane": "agent",
+      "name": "tenant.readiness",
+      "method": "POST",
+      "path": "",
+      "request": "TenantReadinessRequest",
+      "response": "TenantReadiness",
+      "idempotency": false,
       "bodyless": false
     },
     {
@@ -663,6 +703,26 @@
     },
     {
       "plane": "human",
+      "name": "agent.rotation.disclosure",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/rotation/disclosure",
+      "request": "OwnerRotationDisclosureRequest",
+      "response": "SecurityAction",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "agent.rotation.start",
+      "method": "POST",
+      "path": "/v1/agents/{agent_id}/rotation",
+      "request": "OwnerRotationRequest",
+      "response": "KeyChallenge",
+      "idempotency": true,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
       "name": "approval.approve",
       "method": "POST",
       "path": "/v1/approvals/{approval_id}/approve",
@@ -690,6 +750,76 @@
       "response": "ApprovalPage",
       "idempotency": false,
       "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.approve",
+      "method": "POST",
+      "path": "/v1/program-approvals/{approval_id}/approve",
+      "request": "ProgramApprovalDecisionRequest",
+      "response": "ProgramApprovalDecision",
+      "idempotency": true,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.budget",
+      "method": "GET",
+      "path": "/v1/program-approvals/{approval_id}/budget",
+      "request": "Empty",
+      "response": "ProgramApprovalBudget",
+      "idempotency": false,
+      "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.disclosure",
+      "method": "POST",
+      "path": "/v1/program-approvals/{approval_id}/disclosure",
+      "request": "ProgramApprovalDisclosureRequest",
+      "response": "ProgramApprovalDisclosure",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.get",
+      "method": "GET",
+      "path": "/v1/program-approvals/{approval_id}",
+      "request": "Empty",
+      "response": "ProgramApprovalDetail",
+      "idempotency": false,
+      "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.list",
+      "method": "GET",
+      "path": "/v1/program-approvals/page/{cursor}",
+      "request": "Empty",
+      "response": "ProgramApprovalPage",
+      "idempotency": false,
+      "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.material",
+      "method": "GET",
+      "path": "/v1/program-approvals/{approval_id}/material",
+      "request": "Empty",
+      "response": "ProgramApprovalMaterial",
+      "idempotency": false,
+      "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "approval.program.reject",
+      "method": "POST",
+      "path": "/v1/program-approvals/{approval_id}/reject",
+      "request": "ProgramApprovalDecisionRequest",
+      "response": "ProgramApprovalDecision",
+      "idempotency": true,
+      "bodyless": false
     },
     {
       "plane": "human",
@@ -863,6 +993,26 @@
     },
     {
       "plane": "human",
+      "name": "intent.plan",
+      "method": "POST",
+      "path": "/v1/intents/plan",
+      "request": "PlanIntentRequest",
+      "response": "IntentPlan",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "intent.submit",
+      "method": "POST",
+      "path": "/v1/intents/submit",
+      "request": "SubmitPlanRequest",
+      "response": "IntentSubmission",
+      "idempotency": true,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
       "name": "journey.get",
       "method": "GET",
       "path": "/v1/journeys/{journey_id}",
@@ -876,6 +1026,16 @@
       "name": "journey.list",
       "method": "GET",
       "path": "/v1/journeys",
+      "request": "Empty",
+      "response": "JourneyPage",
+      "idempotency": false,
+      "bodyless": true
+    },
+    {
+      "plane": "human",
+      "name": "journey.page",
+      "method": "GET",
+      "path": "/v1/journeys/page/{cursor}",
       "request": "Empty",
       "response": "JourneyPage",
       "idempotency": false,
@@ -898,6 +1058,26 @@
       "path": "/v1/moves/quote",
       "request": "MoveQuoteRequest",
       "response": "MoveQuote",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "native.send.access.begin",
+      "method": "POST",
+      "path": "/v1/native/send/access/begin",
+      "request": "NativeSendAccessRequest",
+      "response": "NativeSendAccessDisclosure",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "native.send.access.confirm",
+      "method": "POST",
+      "path": "/v1/native/send/access/confirm",
+      "request": "NativeSendAccessConfirmation",
+      "response": "NativeSendAccessResult",
       "idempotency": false,
       "bodyless": false
     },
@@ -1033,6 +1213,26 @@
     },
     {
       "plane": "human",
+      "name": "security.key-export.begin",
+      "method": "POST",
+      "path": "/v1/security/key-export/begin",
+      "request": "KeyExportBegin",
+      "response": "KeyExportChallenge",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "security.key-export.finish",
+      "method": "POST",
+      "path": "/v1/security/key-export/finish",
+      "request": "KeyExportFinish",
+      "response": "ExportedPrimaryKey",
+      "idempotency": false,
+      "bodyless": false
+    },
+    {
+      "plane": "human",
       "name": "security.passkey.list",
       "method": "GET",
       "path": "/v1/security/passkeys",
@@ -1100,6 +1300,16 @@
       "response": "SessionRevocation",
       "idempotency": true,
       "bodyless": false
+    },
+    {
+      "plane": "human",
+      "name": "session.fee-policy",
+      "method": "GET",
+      "path": "/v1/sessions/fee-policy",
+      "request": "Empty",
+      "response": "NativeFeeAsset",
+      "idempotency": false,
+      "bodyless": true
     },
     {
       "plane": "human",

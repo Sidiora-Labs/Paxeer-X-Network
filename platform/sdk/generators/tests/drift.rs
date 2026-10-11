@@ -2,12 +2,16 @@
 #[path = "../src/main.rs"]
 mod pipeline;
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use pipeline::{capture, check, parse_lock, render, write_lock};
+use pipeline::{
+    capture, check, generate_rust_operation_catalog, parse_lock, render, schema_sections,
+    write_lock,
+};
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
@@ -688,4 +692,50 @@ fn execution_v5_profile_must_admit_exactly_the_third_to_fifth_guest_abis() {
         );
         cleanup(&root);
     }
+}
+
+#[test]
+fn rust_operation_catalogue_matches_the_repository_schema() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let generated = generate_rust_operation_catalog(&root)
+        .unwrap_or_else(|error| panic!("generate Rust operation catalogue: {error}"));
+    let committed_path = root.join("agent/crates/layerx-agent-api/src/operation_generated.rs");
+    let committed = fs::read_to_string(&committed_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", committed_path.display()));
+    assert_eq!(
+        generated, committed,
+        "committed Rust operation catalogue differs from the schema"
+    );
+    assert!(
+        generated.contains("            Self::McpInvoke => \"mcp.invoke\",\n"),
+        "catalogue must name Self::McpInvoke as mcp.invoke"
+    );
+    let Some((_, after)) = generated.split_once("pub const fn mutating(self) -> bool {") else {
+        panic!("catalogue has no mutating()");
+    };
+    let Some((mutating, _)) = after.split_once("\n    }\n") else {
+        panic!("catalogue mutating() is not closed");
+    };
+    assert!(
+        mutating
+            .lines()
+            .any(|line| matches!(line.trim(), "Self::McpInvoke" | "| Self::McpInvoke")),
+        "mutating() must list Self::McpInvoke"
+    );
+
+    let sections = schema_sections(&root.join("agent/schema/agent-api"))
+        .unwrap_or_else(|error| panic!("read agent schema: {error}"));
+    let transport = sections
+        .keys()
+        .filter_map(|section| section.strip_prefix("transport.agent_http.operation."))
+        .collect::<BTreeSet<_>>();
+    let declared = sections
+        .keys()
+        .filter_map(|section| section.strip_prefix("operation."))
+        .collect::<BTreeSet<_>>();
+    assert!(transport.contains("mcp.invoke"));
+    assert_eq!(
+        transport, declared,
+        "every agent transport operation needs an [operation.<name>] module declaration"
+    );
 }

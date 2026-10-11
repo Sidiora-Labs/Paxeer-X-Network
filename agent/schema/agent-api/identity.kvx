@@ -175,6 +175,15 @@ network_scope = "test_network_only"
 signer_binding = "The signer key must be one the calling session already authorises. A key the session does not name is refused before any grant is reserved."
 idempotency_binding = "The claim key is derived by the funding boundary from the principal, the DID and the signer key, so a repeated claim settles onto the reservation it already made instead of consuming a second grant."
 
+[operation.mcp.invoke]
+request = "McpInvokeRequest"
+request_required = ["tool","arguments"]
+required = ["idempotency_key"]
+response = "object"
+
+[type.McpInvokeRequest]
+required = ["tool","arguments"]
+
 [type.BudgetAuthorization]
 required = ["preparation_ref","signature"]
 optional = ["signer_public_key"]
