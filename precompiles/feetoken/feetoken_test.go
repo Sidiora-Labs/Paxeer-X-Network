@@ -1,6 +1,7 @@
 package feetoken_test
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
@@ -124,6 +125,67 @@ func TestFeeDenomRefusalsPreservePreference(t *testing.T) {
 			require.Contains(t, reason, tc.reason)
 			require.Equal(t, before, h.store())
 			require.Equal(t, "usid", h.denom(h.caller))
+		})
+	}
+}
+
+func TestFeeDenomRefusalsCarryRegistryCodesAtMergeHeight(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		method   string
+		args     []interface{}
+		disabled bool
+		readOnly bool
+		delegate bool
+		value    *big.Int
+		legacy   string
+		lxp      string
+		code     string
+		detail   string
+	}{
+		{name: "disallowed", method: feetoken.SetFeeDenomMethod, args: []interface{}{"unknown"}, legacy: "fee token preference: denom \"unknown\" is not allowed", lxp: "LXP_FEETOKEN_DENOM_NOT_ALLOWED: fee token preference: denom is not allowed; \"unknown\"", code: "LXP_FEETOKEN_DENOM_NOT_ALLOWED", detail: "\"unknown\""},
+		{name: "empty", method: feetoken.SetFeeDenomMethod, args: []interface{}{""}, legacy: "fee token preference: denom \"\" is not allowed", lxp: "LXP_FEETOKEN_DENOM_NOT_ALLOWED: fee token preference: denom is not allowed; \"\"", code: "LXP_FEETOKEN_DENOM_NOT_ALLOWED", detail: "\"\""},
+		{name: "network coin", method: feetoken.SetFeeDenomMethod, args: []interface{}{"uhpx"}, legacy: "fee token preference: denom \"uhpx\" is not allowed", lxp: "LXP_FEETOKEN_DENOM_NOT_ALLOWED: fee token preference: denom is not allowed; \"uhpx\"", code: "LXP_FEETOKEN_DENOM_NOT_ALLOWED", detail: "\"uhpx\""},
+		{name: "disabled", method: feetoken.SetFeeDenomMethod, args: []interface{}{"uasset"}, disabled: true, legacy: "fee token preference: fee-token switch is off", lxp: "LXP_FEETOKEN_SWITCH_OFF: fee token preference: fee-token switch is off", code: "LXP_FEETOKEN_SWITCH_OFF", detail: ""},
+		{name: "staticcall set", method: feetoken.SetFeeDenomMethod, args: []interface{}{"uasset"}, readOnly: true, legacy: "cannot call a feeToken state change from staticcall", lxp: "LXP_FEETOKEN_STATICCALL: cannot call a feeToken state change from staticcall", code: "LXP_FEETOKEN_STATICCALL", detail: ""},
+		{name: "staticcall clear", method: feetoken.ClearFeeDenomMethod, readOnly: true, legacy: "cannot call a feeToken state change from staticcall", lxp: "LXP_FEETOKEN_STATICCALL: cannot call a feeToken state change from staticcall", code: "LXP_FEETOKEN_STATICCALL", detail: ""},
+		{name: "delegatecall", method: feetoken.SetFeeDenomMethod, args: []interface{}{"uasset"}, delegate: true, legacy: "cannot delegatecall feeToken", lxp: "LXP_FEETOKEN_DELEGATECALL: cannot delegatecall feeToken", code: "LXP_FEETOKEN_DELEGATECALL", detail: ""},
+		{name: "payment", method: feetoken.SetFeeDenomMethod, args: []interface{}{"uasset"}, value: big.NewInt(1), legacy: "sending funds to a non-payable function", lxp: "LXP_PRECOMPILE_NON_PAYABLE: sending funds to a non-payable function", code: "LXP_PRECOMPILE_NON_PAYABLE", detail: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.call(feetoken.SetFeeDenomMethod, "usid")
+			if tc.disabled {
+				testkeeper.EVMTestApp.EvmKeeper.Paramstore.Set(h.db.Ctx(), types.KeyFeeTokenEnabled, false)
+			}
+			input := h.input(tc.method, tc.args...)
+			upgrades := testkeeper.EVMTestApp.EvmKeeper.UpgradeKeeper()
+			for _, step := range []struct {
+				doneHeight int64
+				reason     string
+			}{
+				{doneHeight: 0, reason: tc.legacy},
+				{doneHeight: h.db.Ctx().BlockHeight() + 1, reason: tc.legacy},
+				{doneHeight: h.db.Ctx().BlockHeight(), reason: tc.lxp},
+			} {
+				if step.doneHeight > 0 {
+					upgrades.SetDone(h.db.Ctx().WithBlockHeight(step.doneHeight), pcommon.MergeUpgrade)
+				}
+				before := h.store()
+				result, err := h.precompile.Run(h.evm, h.caller, h.caller, input, tc.value, tc.readOnly, tc.delegate, nil)
+				require.ErrorIs(t, err, vm.ErrExecutionReverted)
+				require.Equal(t, []byte{0x08, 0xc3, 0x79, 0xa0}, result[:4])
+				reason, err := abi.UnpackRevert(result)
+				require.NoError(t, err)
+				require.Equal(t, step.reason, reason)
+				if step.reason == tc.lxp {
+					require.Equal(t, pcommon.LXPRevert(tc.code, tc.detail), result)
+				} else {
+					require.Equal(t, pcommon.RevertReason(errors.New(tc.legacy)), result)
+				}
+				require.Equal(t, before, h.store())
+				require.Equal(t, "usid", h.denom(h.caller))
+			}
 		})
 	}
 }
@@ -273,5 +335,5 @@ func TestFeeDenomStoreOutOfGasPropagates(t *testing.T) {
 
 func TestFeeDenomMissingKeeper(t *testing.T) {
 	_, err := feetoken.NewPrecompile(&utils.EmptyKeepers{})
-	require.ErrorContains(t, err, "fee-token EVM keeper")
+	require.EqualError(t, err, "LXP_FEETOKEN_KEEPER_MISSING: feetoken: fee-token EVM keeper is unavailable")
 }
