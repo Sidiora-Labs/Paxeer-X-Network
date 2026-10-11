@@ -60037,7 +60037,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.182]
 title = "Re-target config.example.json off the finality authority, evidence register, receipt authority, authority replica and sequencer handover"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -60177,7 +60177,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.187]
 title = "Re-target terminal-v4.test.py off the human-authority authorized-batch facts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61036,7 +61036,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.217]
 title = "Re-target check.sh off the replica, authority replica and relay archive"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61064,7 +61064,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.218]
 title = "Re-target ai_evidence.py off the replica, authority replica and relay archive"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61092,7 +61092,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.219]
 title = "Re-target 103.6.10.sh, 103.6.11.sh, 103.6.13.sh off the layerxAnchor 0x1014 checkpoint and guarantor surface and 3 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61120,7 +61120,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.220]
 title = "Re-target 103.6.3.sh, 103.6.4.sh, 103.6.9.sh off the finality authority, evidence register, receipt authority, authority replica and sequencer handover and 1 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61176,7 +61176,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.222]
 title = "Re-target 104.38.2.sh, 106.4.3.sh, 106.4.9.sh off the layerxAnchor 0x1014 checkpoint and guarantor surface and 1 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61232,7 +61232,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.224]
 title = "Re-target 24.18.sh, 24.20.sh off the guarantor runtime and 1 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]

@@ -1502,3 +1502,66 @@ command = "go test -count=1 ./precompiles/layerxagent/teeattestor/ -run TestReso
 exit_code = 0
 log_path = "logs/13.3.11-rebase-verify-2.log"
 observed_and_assumption = "verify passed (2 passed, 0 failed). Gaps: 13014.1: the node binary does not import the teeattestor package, so its init registration runs only where the package is linked (tests); a blank import in node/ is outside touches"
+
+[finding.11.5.217]
+revision = "7abc033dc"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component replica --path tools/containers/check.sh"
+exit_code = 0
+log_path = "logs/11.5.217-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped caller scan))."
+
+[finding.11.5.218]
+revision = "cd93e63ed"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component replica --path tools/paxeer-x/ai_evidence.py"
+exit_code = 0
+log_path = "logs/11.5.218-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (path scan))."
+
+[finding.11.5.219]
+revision = "cf9dbb0e3"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component anchor --component finality-authority --component settlement-domain --component checkpoint-evidence --path tools/paxeer-x/gates/103.6.10.sh --path tools/paxeer-x/gates/103.6.11.sh --path tools/paxeer-x/gates/103.6.13.sh"
+exit_code = 0
+log_path = "logs/11.5.219-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (source scan; runtime gates unrun))."
+
+[finding.11.5.220]
+revision = "920101bc3"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --component lni --path tools/paxeer-x/gates/103.6.3.sh --path tools/paxeer-x/gates/103.6.4.sh --path tools/paxeer-x/gates/103.6.9.sh"
+exit_code = 0
+log_path = "logs/11.5.220-verify-1.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed (file scans; runtime suites unrun))."
+
+[finding.11.5.222]
+revision = "2f0ae5d8b"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component anchor --component lni --path tools/paxeer-x/gates/104.38.2.sh --path tools/paxeer-x/gates/106.4.3.sh --path tools/paxeer-x/gates/106.4.9.sh"
+exit_code = 0
+log_path = "logs/11.5.222-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (scan mode; no behavior tests run))."
+
+[finding.11.5.224]
+revision = "23c9b896c"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component finality-authority --path tools/paxeer-x/gates/24.18.sh --path tools/paxeer-x/gates/24.20.sh"
+exit_code = 0
+log_path = "logs/11.5.224-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped scan; no unit-test count emitted)). Gaps: acceptance.11.9.2: platform/hosted/core/tests/receipt_retention.py:112-113 and platform/hosted/node/tests/reset_recovery.py:26 still require the retired handover artifact; replacement harnesses are outside touches."
+
+[finding.11.5.182]
+revision = "7f6cc8fcf"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --path platform/ramps/config.example.json"
+exit_code = 0
+log_path = "logs/11.5.182-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped file scan)). Gaps: 11009.2 / acceptance.11.9.2: platform/ramps/toolkit/src/clients.rs:876 still requires the removed authority settings and exposes no chain-governed receipt-key or custodyproof verifier configuration interface; runnable replacement requires an out-of-scope loader change."
+
+[finding.11.5.187]
+revision = ""
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component authorized-batch --path platform/sdk/conformance/terminal-v4.test.py"
+exit_code = 0
+log_path = "logs/11.5.187-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed; target excluded). Gaps: 11026.4: tools/paxeer-x/tests/retired_callers_test.py excludes .test.py even with --path, so the declared gate does not inspect the target or prove retirement. Unrelated: fleet-commit.sh exited 1 because no task changes were staged; logs/11.5.187-commit-1.log. NOADD=1 preserved prior dependency symlinks; no commit created."
+
+[finding.11.5.212]
+revision = ""
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component replica --path src/sequencer/lxp_eligibility.c"
+exit_code = 0
+log_path = "logs/11.5.212-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (static scan passed; no behavioral tests run)). Unrelated: Programs vendors serde_json 1.0.151 while layerx-client requires =1.0.149; make build stops at Makefile:3426 with Cargo exit 101."
