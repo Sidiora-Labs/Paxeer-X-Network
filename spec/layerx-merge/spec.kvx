@@ -2764,7 +2764,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.5]
 title = "cgo C-module host shim with the global_sequence source"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2904,7 +2904,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.1]
 title = "Module-context preview bound and C retention vectors"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.1"]
@@ -2932,7 +2932,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.2]
 title = "Governance sub-op 6 revocation execute case"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -2960,7 +2960,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.3]
 title = "Kernel account map: ids, names, bank address and holder DID"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -2988,7 +2988,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.4]
 title = "Kernel asset map between asset ids and bank denoms"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -3072,7 +3072,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.7]
 title = "MsgSetDenomPaused validation and codec registration"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.6"]
@@ -3100,7 +3100,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.8]
 title = "tokenfactory pause store"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.6"]
@@ -3128,7 +3128,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.9]
 title = "layerxledger store keys and Paused params"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.8"]
@@ -3156,7 +3156,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.10]
 title = "layerxauth store keys, Paused and IdempotencyRetention params"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.9"]
@@ -3184,7 +3184,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.11]
 title = "LayerXScopeAuthorization on authz"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.9"]
@@ -3212,7 +3212,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.12]
 title = "Shim execute bridge: authority, activity and LXP error text"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.5"]
@@ -3240,7 +3240,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.13]
 title = "Shim read bridge over exported C read helpers"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["1.0.2", "1.0.3", "1.0.5"]
@@ -3268,7 +3268,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.1]
 title = "tokenfactory SetDenomPaused handler and paused mint and burn"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["1.1.7", "1.1.8"]
@@ -3324,7 +3324,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.3]
 title = "Issuer DID binding and ChangeAdmin preservation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.7"]
@@ -3352,7 +3352,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.4]
 title = "layerxledger codec and message validation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.8", "1.1.9"]
@@ -3380,7 +3380,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.5]
 title = "layerxauth message validation for grant payloads"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.9", "1.1.10"]
@@ -6505,7 +6505,7 @@ invariants = "Stream ids and keys are chain-derived nonzero bytes32 values (src/
 
 [task.2.2.1]
 title = "Budget delegate-spend and pull activity types, payloads and decode"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6534,7 +6534,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.2]
 title = "Stream rate-change activity type, payload and decode"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6563,7 +6563,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.3]
 title = "Kernel result codes for the service dispute arbiter rule"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6591,7 +6591,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.4]
 title = "Exported stream accrued read helper"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6620,7 +6620,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.5]
 title = "layerxpay module types: keys, params and genesis"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6648,7 +6648,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.6]
 title = "Revert text from kernel result names"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6676,7 +6676,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.7]
 title = "Escrow payload encoders"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -6704,7 +6704,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.8]
 title = "Service payload encoders"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10479,7 +10479,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.3]
 title = "Store-backed oracle committed read in lx_oracle_read.c"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10506,7 +10506,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.4]
 title = "Store-backed asset state for spot validation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10560,7 +10560,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.6]
 title = "Exchange Params gain Paused and the time-in-force flag"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10614,7 +10614,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.8]
 title = "Kernel result codes mapped to Error(string) LXP_ text"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10641,7 +10641,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.9]
 title = "Typed Cosmos events for the v2 exchange"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10668,7 +10668,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.10]
 title = "Launchpad PriceHistory query over the snapshot ring"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10696,7 +10696,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.11]
 title = "Per-market launchpad protocol fee counters"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10751,7 +10751,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.13]
 title = "Launchpad errors carry LXP_LAUNCHPAD_ text"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14599,7 +14599,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.2]
 title = "Focused C tests for sandbox execute and lease destroy"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14653,7 +14653,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.4]
 title = "AI market dispatch arms for closure and F05 to F08"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14680,7 +14680,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.5]
 title = "AI admission envelope apply"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14707,7 +14707,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.6]
 title = "AI commit and reveal windows by execution height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14734,7 +14734,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.7]
 title = "AI chain domain, epoch heights and aggregation bounds"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14761,7 +14761,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.8]
 title = "AI snapshot binding v2 with block-commit finality"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14788,7 +14788,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.9]
 title = "AI task lifecycle and worker identity by execution height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14815,7 +14815,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.10]
 title = "AI evaluator authority and challenge"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14842,7 +14842,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.11]
 title = "AI rewards on native bank balances"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14869,7 +14869,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.12]
 title = "AI worker history bounded per worker"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14923,7 +14923,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.14]
 title = "Sandbox crate drops the kernel proof dependency"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -15004,7 +15004,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.17]
 title = "layerxprograms proto: tx, query and genesis"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -18996,10 +18996,10 @@ submit = "The sidecar submits fulfilProgram in place of lx_sendActivity (interop
 
 [task.5.0.1]
 title = "Keep the origin-1 request path and give its refusals stable LXP_XWEB codes"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 3
+requires = ["5.0.7", "10.0.3"]
 reqs = ["5001.1", "5001.2", "5001.3", "5001.4", "5001.5"]
 capabilities = ["5.1.1"]
 do_1 = "Keep Keeper.Request (modules/xweb/keeper/request.go:18-90) as the only origin-1 entry: the exact fee comparison (modules/xweb/keeper/request.go:44-45), the escrow leg into the module account (modules/xweb/keeper/request.go:52-55) and the nonce step (modules/xweb/keeper/request.go:56) stay unchanged."
@@ -19025,10 +19025,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.2]
 title = "Keep origin-1 fulfil and move its refusals to LXP_XWEB codes"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 3
+requires = ["5.0.7", "10.0.3"]
 reqs = ["5002.1", "5002.2", "5002.3", "5002.4", "5002.5"]
 capabilities = ["5.1.2"]
 do_1 = "Keep verifySignatures (modules/xweb/keeper/fulfil.go:17-43) and verifySingle (modules/xweb/keeper/fulfil.go:48-64) for origin 1; signatures recover through RecoverSigner (modules/layerxbridge/types/attestation.go:115-134) with v 27 or 28 and low s."
@@ -19054,10 +19054,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.3]
 title = "Keep refund for origin 1 and prove origin-2 ids never reach it"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 3
+requires = ["5.0.7", "10.0.3"]
 reqs = ["5003.1", "5003.2", "5003.3", "5003.4"]
 capabilities = ["5.1.3"]
 do_1 = "Keep Keeper.Refund (modules/xweb/keeper/refund.go:17-48): the unknown check (modules/xweb/keeper/refund.go:19-20), fulfilled and refunded checks (modules/xweb/keeper/refund.go:23-26), the timeout check (modules/xweb/keeper/refund.go:28-30) and the return leg (modules/xweb/keeper/refund.go:35)."
@@ -19116,7 +19116,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.5]
 title = "Port lx_web_observation_decode to Go byte for byte"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19145,7 +19145,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.6]
 title = "Keep the preimage vectors as the single cross-language check"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19173,7 +19173,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.7]
 title = "Map every xweb error to its LXP name"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19259,7 +19259,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.1]
 title = "Keep one attestor engine keyed by origin"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.6"]
@@ -19287,7 +19287,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.2]
 title = "Keep the origin-1 views and the ABI parity check"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.7"]
@@ -19344,7 +19344,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.4]
 title = "Verify origin-2 signatures with the kernel order of checks"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.5"]
@@ -24736,7 +24736,7 @@ agentd = "agentd keeps its daemon role: prepare, sign, outbox, idempotency and f
 
 [task.6.2.1]
 title = "layerxagent common package: error codes, write guards, height gate and gas table"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -25033,7 +25033,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.12]
 title = "Bind tool-execution attestation to the activity in the kernel service module"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -29523,7 +29523,7 @@ qualification = "UNRUN"
 
 [task.7.0.1]
 title = "Monitoring rules: sequencer readiness, receipt-order divergence, sponsor floor and rate age"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29579,7 +29579,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.3]
 title = "Rollout units for sequencer primary and hot standby"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.2", "0.3"]
@@ -29661,7 +29661,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.6]
 title = "SID rate publisher on the sequencer with cadence below max_rate_age"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -29689,7 +29689,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.7]
 title = "Gas station deployment template on the sequencer and paymaster contract check"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29799,7 +29799,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.3]
 title = "Rollout units for the archive node and the AI evaluator"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.3"]
@@ -29854,7 +29854,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.5]
 title = "Monitoring: archive lag and standby takeover alerts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.1"]
@@ -29909,7 +29909,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.2]
 title = "Portable receipt v2 verifying sequencer receipts against ReceiptKeys"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.3"]
@@ -39694,7 +39694,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.3]
 title = "Signed sequencer receipt returned immediately"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.2"]
@@ -39750,7 +39750,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.4]
 title = "Send path returns the signed receipt on the sequencer and forwards elsewhere"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -39778,7 +39778,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.5]
 title = "pax_sequencerReceipt with rungs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -39806,10 +39806,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.4]
 title = "Reads from pending state on the sequencer"
-status = "pending"
+status = "done"
 mode = "BUILD"
-wave = 0
-requires = ["0.2"]
+wave = 2
+requires = ["0.2", "0.5"]
 reqs = ["3.2", "11.8", "9003.1", "9003.2", "9003.3", "9003.4", "9003.5", "9027.1", "9027.2", "9027.3", "9027.4"]
 capabilities = ["9.3.2"]
 do_1 = "Resolve the pending tag to the open height on the sequencer and standby at rpc/utils.go:41, :51, :63, :66 and rpc/watermark_manager.go:169, :196; other nodes answer -32000 \"pending served by sequencer\" (rpc/utils.go:90, :99)."
@@ -39832,9 +39832,140 @@ stop_condition = "Stop on the bounded gate result; record exact revision, comman
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+[task.0.5]
+title = "Point-in-time pending snapshot in the sequencer executor"
+status = "done"
+wave = 1
+requires = ["0.2", "9.0.2"]
+reqs = ["9003.4"]
+capabilities = ["9.3.2"]
+do_1 = "Make the open layer a stack of cache branches in node/sequencer/executor.go: every Accept writes into a fresh branch pushed over the previous ones under the executor lock, so a branch handed out before an Accept is never written again; Seal flattens the stack into L_open in order."
+do_2 = "Replace OpenContext with Snapshot(): under the lock it returns the current top branch wrapped read-only (a context whose MultiStore is a CacheMultiStore over the top branch) and pushes a new writable branch for the next Accept; a snapshot taken between two Accepts reads exactly the state after the first and never the second."
+do_3 = "Keep Accept non-blocking for readers: Snapshot holds the lock only to swap branches; readers never hold the executor lock while reading."
+do_4 = "Add TestExecutorSnapshotIsPointInTime to node/sequencer/executor_test.go: open, accept one transfer, take a snapshot, accept a second transfer, assert the snapshot balance equals the balance after the first transfer and the open layer balance equals the balance after the second; and TestExecutorSnapshotDoesNotBlockAccept asserting an Accept completes while a snapshot context is held."
+do_5 = "Task 0.4 consumes Snapshot through the RPC context provider; its TestPendingStateSnapshotDoesNotBlockAccept passes once this lands. Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles."
+symbols = ["Snapshot", "layerStack", "TestExecutorSnapshotIsPointInTime", "TestExecutorSnapshotDoesNotBlockAccept"]
+touches = ["node/sequencer/executor.go", "node/sequencer/executor_test.go"]
+build_cmd = "go build ./node/sequencer/..."
+verify_cmd = "go test -count=1 ./node/sequencer/ -run 'TestExecutor'"
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.6]
+title = "Go receipt decoder effect bound for the sequencer layout"
+status = "done"
+wave = 1
+requires = ["0.3", "9.0.3"]
+reqs = ["9022.4"]
+capabilities = ["9.2.2"]
+do_1 = "Mirror effect_bound (agent/crates/layerx-wire/src/receipt.rs:484-502) in layerxproof/codec/receipt.go: when the receipt has no supply binding, carries the supported protocol version, a module id above the eleven kernel modules and module version 1, the effect sequence bound is MaxSequencerEffects = MaxMessageBytes / 48 (agent/crates/layerx-wire/src/limits.rs:11-15); every other layout keeps MaxEffects 512. The bound is chosen after module_version is read and before the effect sequence length (layerxproof/codec/receipt.go:380)."
+do_2 = "Add MaxSequencerEffects beside MaxEffects (layerxproof/codec/receipt.go:6-7) with the same derivation as the Rust constant so both decoders refuse at the same count."
+do_3 = "Extend the existing large fixture in node/sequencer/receipt_equality_test.go: sign the 600-log ReceiptInput with ReceiptKey.SignReceipt and pass the bytes to verify.ReceiptSignature under the matching public key; assert success and the 601 decoded effects, assert 512 logs (513 effects, the first count MaxEffects refuses) also verify, and assert a legacy-layout receipt with 513 effects is still refused with codec.ErrLengthLimit in layerxproof/codec/codec_test.go TestReceiptDecodeRefusals."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["MaxSequencerEffects", "effectBound", "TestReceiptLargeFixtureVerifies"]
+touches = ["layerxproof/codec/receipt.go", "layerxproof/codec/codec_test.go", "node/sequencer/receipt_equality_test.go"]
+build_cmd = "go build ./layerxproof/... ./node/sequencer/..."
+verify_cmd = "go test -count=1 ./layerxproof/codec/ ./layerxproof/verify/ ./node/sequencer/ -run 'TestReceipt'"
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.7]
+title = "Go account codec accepts the agent asset sub-account kind"
+status = "done"
+wave = 1
+requires = []
+reqs = ["1003.2", "1003.4"]
+capabilities = ["1.3.1"]
+do_1 = "Add the agent asset sub-account to codec.AccountKind (layerxproof/codec/state.go:323-357) as kind 14 (LX_ACCOUNT_AGENT_ASSET, include/layerx/lxp_ledger.h:34) with the exact shape lx_account_name_parse accepts (src/ledger/lx_account_id.c:50-61, :166-167): prefix agent:, suffix :asset: followed by exactly 64 lowercase hex characters, total length above 77; the check runs after :main and before the :budget: shape as in the C order."
+do_2 = "DeriveAccountID (layerxproof/codec/state.go:360) derives the agent asset name through the same H(\"LX:ACCOUNT:v1\" || u32be(len) || name) path as every other kind, so it equals lx_account_id_from_string (src/ledger/lx_account_id.c:196-226)."
+do_3 = "Add TestAccountKindAgentAsset to layerxproof/codec/account_kind_test.go: a fixed agent:<did>:asset:<hex64> vector reports kind 14 and derives to the id the kernel computes for the same bytes (computed once with the C function or the documented formula and pinned as a constant), an uppercase hex digest and a 63-character digest are refused, and the existing kinds keep their numbers."
+do_4 = "Task 1.1.3 TestAccountMapAssetVectors and TestAccountMapBankAddress pass unchanged once this lands. Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles."
+symbols = ["AccountKind", "agentAssetShape", "TestAccountKindAgentAsset"]
+touches = ["layerxproof/codec/state.go", "layerxproof/codec/account_kind_test.go"]
+build_cmd = "go build ./layerxproof/..."
+verify_cmd = "go test -count=1 ./layerxproof/codec/ -run 'TestAccountKind|TestDeriveAccountID'"
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.8]
+title = "Executor pending transaction lookup by hash for sequencer reads"
+status = "in_progress"
+wave = 1
+requires = ["0.4"]
+reqs = ["9029.3"]
+capabilities = ["9.2.2"]
+do_1 = "Add PendingTx(hash [32]byte) (PendingTx, bool) to the sequencer Executor interface (node/sequencer/executor.go:39-60) and implement it on sequential: under s.mu, when a layer is open, scan open.evmMsgs (node/sequencer/executor.go:127, filled at node/sequencer/accept.go:64-66) and return the entry whose AsTransaction().Hash() equals hash; when no layer is open or no entry matches, return false. The PendingTx value carries TxBytes (the matching open.txs entry), Height (open.height), TxIndex (the block index Accept assigned, the same value Accepted.TxIndex reports at node/sequencer/accept.go:75; derive it from the position in open.txs the way Accept computes txIndex) and Result (the matching open.results entry)."
+do_2 = "Extend rpc.PendingSnapshot (rpc/utils.go:52-58) with the same PendingTx method so rpc/tx.go can serve eth_getTransactionByHash for a receipted open-block transaction on the sequencer without importing node/sequencer; keep the Snapshot method unchanged. Task 9.0.7 owns rpc/tx.go and reruns on top of this task."
+do_3 = "Add TestExecutorPendingTxByHash to node/sequencer/executor_pending_tx_test.go using the real executor harness the sibling tests use: open a layer, accept one signed EVM transaction, assert PendingTx returns its bytes, open height, the TxIndex Accept reported and the same result pointer; assert an unknown hash returns false; assert false after Seal; prefix every helper with executorPendingTx because sibling test files share one package namespace."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["PendingTx", "sequential.PendingTx", "TestExecutorPendingTxByHash"]
+touches = ["node/sequencer/executor.go", "node/sequencer/executor_pending_tx_test.go", "rpc/utils.go"]
+build_cmd = "go build ./node/... ./rpc/..."
+verify_cmd = "go test -count=1 ./node/sequencer/ -run 'TestExecutorPendingTx'"
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.9]
+title = "Replicator resends the retained window on a fresh link before pruning"
+status = "in_progress"
+wave = 1
+requires = ["9.0.17"]
+reqs = ["9017.1"]
+capabilities = ["9.2.2"]
+do_1 = "In Replicator.replicate (node/sequencer/standby.go:255-290) send the whole retained window instead of only the new frames whenever the link is fresh (r.conn == nil after dropConn or before the first dial), because a failed Release leaves records that are durable locally but never acknowledged, and the standby admission (node/sequencer/standby.go:380-424) already skips entries it holds. Release (node/sequencer/standby.go:228-252) keeps appending every entry to r.retained before replicating, so the window already contains the new group."
+do_2 = "pruneRetained (node/sequencer/standby.go:323-330) keeps its contract, dropping through the last retained COMMITTED, and is still called only after an acknowledged Release; with do_1 that COMMITTED has been sent and acknowledged on the same link, so no unacknowledged checkpoint is pruned. Update the pruneRetained and retainedFrame comments (standby.go:186, :322) to say the window is resent on every fresh link."
+do_3 = "Add TestReplicatorResendsAfterLostCommitted to node/sequencer/standby_test.go with the real Replicator, WAL and Standby used by the sibling tests: acknowledge OPEN(2), ACCEPT(seq 42, height 2) and SEAL(2, 42); cut the link so Release(COMMITTED(2, 42)) returns ErrNoAck while the record stays retained; restore the link and Release(LEASE(1)); assert the standby now holds committed height 2 and the lease, that the retained window is pruned only after that acknowledgement, and that a standby recovery from its WAL after the exchange replays to height 3 without ErrOpenHeight. Prefix new helpers with replicatorResend because sibling test files share one package namespace."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["Replicator.replicate", "pruneRetained", "TestReplicatorResendsAfterLostCommitted"]
+touches = ["node/sequencer/standby.go", "node/sequencer/standby_test.go"]
+build_cmd = "go build ./node/sequencer/..."
+verify_cmd = "go test -count=1 ./node/sequencer/ -run 'TestReplicator|TestStandby'"
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
 [task.9.0.6]
 title = "Pending state, call and estimate"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.4"]
@@ -39862,7 +39993,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.7]
 title = "Pending nonce and pending transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.4", "9.0.1"]
@@ -39890,7 +40021,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.8]
 title = "Pending logs and filters from receipts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.4"]
@@ -39918,7 +40049,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.9]
 title = "Subscriptions fed from receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.4"]
@@ -39946,7 +40077,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.10]
 title = "Pending block and fee views"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.4"]
@@ -39974,7 +40105,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.11]
 title = "Sequencer contexts in node/app.go"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.2"]
@@ -40142,7 +40273,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.17]
 title = "Standby replication with ack before release"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["9.0.16"]
@@ -40198,7 +40329,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.19]
 title = "modules/sequencer keeper and genesis"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["9.0.18"]
@@ -40226,7 +40357,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.20]
 title = "ReceiptKeys param with governed rotation"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["9.0.18"]
@@ -40254,7 +40385,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.21]
 title = "Node floor and fee checks before Accept"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.2"]
@@ -40338,7 +40469,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.23]
 title = "Gas station: sequencer nonce and no replacement"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -40366,7 +40497,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.24]
 title = "Gas station service: sequencer endpoint and journal Replacement removal"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -40394,7 +40525,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.1]
 title = "Background prune after Commit"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40478,7 +40609,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.4]
 title = "paxd sequencer config"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.2"]
@@ -40506,7 +40637,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.5]
 title = "Receipt authority service loads ReceiptKeys and records equivocation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["9.0.20"]
@@ -40534,7 +40665,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.6]
 title = "Settle endpoint loads ReceiptKeys and the router refuses lx_* ingress"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["9.0.20"]
@@ -40590,7 +40721,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.8]
 title = "Pinned proposer checks in the consensus state machine"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["9.0.13"]
@@ -40618,7 +40749,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.1]
 title = "MicroBatch executor mode"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "9.1.4"]
@@ -40646,7 +40777,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.2]
 title = "OCC validator agreement with the sequencer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -40674,7 +40805,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.3]
 title = "Optimistic adoption of the sealed block"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.2"]
@@ -40702,7 +40833,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.4]
 title = "Sealed block fits the block gas limit"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.2"]
@@ -40730,7 +40861,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.6]
 title = "SID fee token through the sequencer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.21", "9.0.22"]
@@ -40758,7 +40889,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.7]
 title = "Ante chain in deliver mode on the open block"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.11"]
@@ -40786,7 +40917,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.8]
 title = "Planned handover with a lease"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.17"]
@@ -40814,7 +40945,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.9]
 title = "Unplanned failover with lease fencing"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.17"]
@@ -48099,10 +48230,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.1]
 title = "Merge plan constant, knownUpgradePlans entry and the merge precompile activation entry"
-status = "pending"
+status = "done"
 mode = "BUILD"
-wave = 1
-requires = ["10.0.2"]
+wave = 0
+requires = []
 reqs = ["8.1", "10001.1", "10001.2", "10001.3", "10001.4", "10002.1", "10002.2", "10002.3", "10003.1", "10003.2", "10003.3", "10004.1", "10004.2", "10004.3", "10004.4", "10005.1", "10005.2", "10005.3", "10005.4", "10006.1", "10006.2", "10006.3", "10007.1", "10007.2", "10007.3", "10008.1", "10008.2", "10008.3", "10009.1", "10009.2", "10009.3", "10010.1", "10010.2", "10010.3", "10011.1", "10011.2", "10011.3", "10012.1", "10012.2", "10012.3", "10016.1", "10016.2", "10016.3", "10016.4", "10016.5"]
 capabilities = ["10.1.1", "10.1.2", "10.1.3", "10.1.4", "10.1.5", "10.1.6", "10.1.7", "10.1.8", "10.1.9", "10.1.10", "10.1.11", "10.1.12", "10.3.1"]
 do_1 = "Add the merge plan constant MergeUpgrade beside ActivationUpgrade (node/upgrades.go:88), V610Upgrade (node/upgrades.go:97) and V611Upgrade (node/upgrades.go:107), with no entry in the embedded tag list (pattern documented at node/upgrades.go:82); the plan name is set at activation rehearsal and the plan height equals the sequencer activation height H_act."
@@ -48110,7 +48241,7 @@ do_2 = "Append MergeUpgrade to knownUpgradePlans (node/upgrades.go:416-418) so t
 do_3 = "Add mergePrecompileGate beside activationPrecompileGate (node/upgrades.go:398-411): the entry names MergeUpgrade and the address set 0x101A-0x101D and 0x0901-0x0908; the activation entry keeps its modules map (node/upgrades.go:401) and exchange address (node/upgrades.go:405) unchanged."
 do_4 = "Add TestMergePlanIsRegisteredBesideTheTagList to node/upgrades_activation_test.go following TestActivationUpgradeIsRegisteredBesideTheTagList (node/upgrades_activation_test.go:97): MergeUpgrade is in knownUpgradePlans, absent from the tag list, and mergePrecompileGate lists exactly the twelve merge addresses."
 do_5 = "Keep the handler body out of this task: RegisterUpgradeHandlers (node/upgrades.go:117) gains the merge handler in task 10.6.1, after the constructs it initialises exist."
-do_6 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251), so the precompile set and revert bytes below H stay byte-identical to today."
+do_6 = "Declare mergePrecompileGate as data only, using the existing CustomPrecompileActivation record type as activationPrecompileGate does; the list-based lookup in latestCustomPrecompilesAtHeight is task 10.0.2 and the installation of the merge entry is task 10.6.1, so nothing in this task changes what the keeper serves."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["MergeUpgrade", "knownUpgradePlans", "mergePrecompileGate", "activationPrecompileGate"]
 do_8 = "MergeUpgrade carries the provisional plan name "v7.0" following the v6.9, v6.10, v6.11 constants; the activation rehearsal may rename it, and every gate reads the constant rather than the literal."
@@ -48129,7 +48260,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.2]
 title = "Evm keeper precompile activation becomes a list of (plan name, address set) entries"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["10.0.1"]
@@ -48158,9 +48289,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.3]
 title = "Opt-in LXP_ reason path in the dynamic-gas precompile base"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
-wave = 2
+wave = 1
 requires = ["10.0.1"]
 reqs = ["4.7", "10002.1", "10002.2", "10002.3", "10017.1", "10017.2", "10017.3", "10017.4", "10017.5", "10018.1", "10018.2", "10018.3", "10018.4", "10018.5", "10018.6", "10018.7", "10018.8"]
 capabilities = ["10.1.2", "10.4.1", "10.4.2"]
@@ -78575,10 +78706,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.5]
 title = "Re-target receipt_translation_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12005.1", "12005.2", "12005.3", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestSyntheticReceiptUint256Validation` at node/receipt_translation_test.go:14 at the sequencer block path on the merged chain and keep its assertion `require.ErrorIs(t, validateUint256('amount', nil), ErrSyntheticReceiptTranslation)` unchanged"
@@ -78603,10 +78734,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.6]
 title = "Re-target check_total_block_gas_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12006.1", "12006.2", "12006.3", "12006.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestCheckTotalBlockGas_MultipleEVMUnderLimit` at node/check_total_block_gas_test.go:106 at the sequencer block path on the merged chain and keep its assertion `require.True(t, a.checkTotalBlockGas(ctx, txs))` unchanged"
@@ -78632,10 +78763,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.7]
 title = "Re-target app_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12007.1", "12007.2", "12007.3", "12007.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestEmptyBlockIdempotency` at node/app_test.go:63 at the sequencer block path on the merged chain and keep its assertion `require.Equal(t, len(referenceData), len(data))` unchanged"
@@ -78661,10 +78792,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.8]
 title = "Re-target ante_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12008.1", "12008.2", "12008.3", "12008.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestKeeperTestSuite` at node/ante_test.go:103 at the sequencer block path on the merged chain and keep its assertion `suite.Require().NoError(err)` unchanged"
@@ -78690,10 +78821,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.9]
 title = "Re-target app_feetoken_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12009.1", "12009.2", "12009.3", "12009.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestFeeTokenGigaBlockDebitsAndRefundsInFeeDenom` at node/app_feetoken_test.go:147 at the sequencer block path on the merged chain and keep its assertion `require.Equal(t, uint32(0), results[0].Code, results[0].Log)` unchanged"
@@ -78719,10 +78850,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.10]
 title = "Re-target state_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12010.1", "12010.2", "12010.3", "12010.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestGetBalance` at rpc/state_test.go:74 at the sequencer block path on the merged chain and keep its assertion `require.Nil(t, err)` unchanged"
@@ -78748,10 +78879,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.11]
 title = "Re-target tx_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12011.1", "12011.2", "12011.3", "12011.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestGetTransactionCount` at rpc/tx_test.go:78 at the sequencer block path on the merged chain and keep its assertion `require.Nil(t, err)` unchanged"
@@ -78777,10 +78908,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.12]
 title = "Re-target simulate_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12012.1", "12012.2", "12012.3", "12012.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestEstimateGas` at rpc/simulate_test.go:81 at the sequencer block path on the merged chain and keep its assertion `require.Nil(t, resObj['error'], 'estimate gas refused: %v', resObj['error'])` unchanged"
@@ -78806,10 +78937,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.13]
 title = "Re-target subscribe_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12013.1", "12013.2", "12013.3", "12013.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestSubscribeNewHeads` at rpc/subscribe_test.go:47 at the sequencer block path on the merged chain and keep its assertion `t.Fatal('Received error:', resObj['error'])` unchanged"
@@ -78835,10 +78966,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.14]
 title = "Re-target wal_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12014.1", "12014.2", "12014.3", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestWAL_AppendRead` at consensus/internal/consensus/wal_test.go:18 at the sequencer block path on the merged chain and keep its assertion `require.NoError(t, err)` unchanged"
@@ -78863,10 +78994,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.15]
 title = "Re-target the consensus/test/e2e suite at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12015.1", "12015.2", "12015.3", "12015.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `check` at consensus/test/e2e/run-multiple.sh:13 at the sequencer block path on the merged chain and keep its assertion `if [[ $# == 0 ]]; then` unchanged"
@@ -78895,8 +79026,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Create the hot-standby replay test"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12016.1", "12016.2", "12016.3", "12016.4", "12016.5", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Write accepted sequences with the record discipline of `Append` (consensus/internal/consensus/wal.go:244) and stop the primary after the third record"
@@ -78925,8 +79056,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Create the out-of-order block refusal test in modules/sequencer"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12017.1", "12017.2", "12017.3", "12017.4", "12017.5", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Feed a proposal whose transaction order differs from the MsgSequenceBatch commitment to `ProcessProposalHandler` (node/app.go:1457) and require the reject response"
@@ -78955,8 +79086,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target lxp_test_admission.c at the merged chain as admission_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12018.1", "12018.2", "12018.3", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `LXP_OK` from tests/sequencer/lxp_test_admission.c:26 into TestParityAdmission: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `if (lxp_hash_payload(payload, sizeof(payload), activity.payload_hash) != LXP_OK)` on both sides"
@@ -78986,8 +79117,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target lxp_test_receipts.c at the merged chain as receipts_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12019.1", "12019.2", "12019.3", "12019.4", "12019.5", "12019.6", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `LXP_OK` from tests/protocol/lxp_test_receipts.c:37 into TestParityReceipts: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `if (lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||` on both sides"
@@ -79017,8 +79148,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target test_receipt.c at the merged chain as receipt_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12020.1", "12020.2", "12020.3", "12020.4", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `LXP_OK` from tests/ledger/test_receipt.c:90 into TestParityReceipt: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||` on both sides"
@@ -79048,8 +79179,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target lxp_test_fee_gate.c at the merged chain as fee_gate_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12021.1", "12021.2", "12021.3", "12021.4", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `LXP_OK` from tests/protocol/lxp_test_fee_gate.c:26 into TestParityFeeGate: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `if (lxp_fee_compute(&parameters, 2U, meter, &fee) != LXP_OK ||` on both sides"
@@ -79079,8 +79210,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target paxeer_x_rejection_policy.py at the merged chain as rejection_policy_qual_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12022.1", "12022.2", "12022.3", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `assertion` from tests/protocol/paxeer_x_rejection_policy.py:4 into TestParityRejectionPolicyQual: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `Runs the prebuilt terminal rejection program, which exercises the production` on both sides"
@@ -79109,8 +79240,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target lxp_test_terminal_rejection.c at the merged chain as terminal_rejection_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12023.1", "12023.2", "12023.3", "12023.4", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "Port `LXP_OK` from tests/protocol/lxp_test_terminal_rejection.c:79 into TestParityTerminalRejection: run the same inputs through liblayerx and as the EVM transaction to the sequencer receipt path, and require `CHECK(lxp_arena_init(&f->arena, f->storage, 4U * LXP_MAX_BATCH_BODY_BYTES) == LXP_OK);` on both sides"
@@ -79140,8 +79271,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Create the accept-to-receipt equality test"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12024.1", "12024.2", "12024.3", "12024.4", "12024.5", "12024.6", "3.1", "10.1"]
 capabilities = ["12.2.1", "12.2.2", "12.2.3", "12.2.4"]
 do_1 = "After the block commits, read `GetTransactionReceipt` (rpc/tx.go:106) for each accepted transaction and require status, gas used and log list equal to the signed receipt"
@@ -79172,8 +79303,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target test_fees.c at the merged chain as fees_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12025.1", "12025.2", "12025.3", "12025.4", "12025.5", "12025.6", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Port `LXP_OK` from tests/test_fees.c:12 into TestParityFees: run the same inputs through liblayerx and as the EVM transaction to the node ante fee path and feeToken 0x1018, and require `0U, UINT32_MAX, value, 1U) == LXP_OK ? 0 : 1;` on both sides"
@@ -79203,8 +79334,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target test_fee_replay.c at the merged chain as fee_replay_parity_test.go"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = ["12.0.1"]
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12026.1", "12026.2", "12026.3", "12026.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Port `LXP_OK` from tests/test_fee_replay.c:99 into TestParityFeeReplay: run the same inputs through liblayerx and as the EVM transaction to the node ante fee path and feeToken 0x1018, and require `if (lxp_u128_from_be(bytes + 36U, &wire->fee_limit) != LXP_OK)` on both sides"
@@ -79232,10 +79363,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.27]
 title = "Re-target gas-station.test.ts at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12027.1", "12027.2", "12027.3", "12027.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `assertion` at agent/sdk/typescript/test/gas-station.test.ts:26 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assert.equal(result.ok, true, JSON.stringify(result, (_key, item: unknown) => typeof item === 'bigint' ? item.toString()` unchanged"
@@ -79261,10 +79392,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.28]
 title = "Re-target station.rs at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12028.1", "12028.2", "12028.3", "12028.4", "12028.5", "12028.6", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `quote_submit_collect_restart_and_consumed_nonce` at interop/crates/layerx-gas-station/tests/station.rs:508 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assert_eq!(replacements.len(), 1);` unchanged"
@@ -79291,10 +79422,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.29]
 title = "Re-target service.rs at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12029.1", "12029.2", "12029.3", "12029.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `quote_and_sponsored_submission_over_a_socket` at interop/crates/layerx-gas-station/tests/service.rs:470 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assert_eq!(status, 200);` unchanged"
@@ -79320,10 +79451,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.30]
 title = "Re-target rate.rs at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12030.1", "12030.2", "12030.3", "12030.4", "12030.5", "12030.6", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `publishes_the_owner_rate_with_set_rate_and_journals_it` at interop/crates/layerx-gas-station/tests/rate.rs:234 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assert_eq!(publication.nonce, 7);` unchanged"
@@ -79350,10 +79481,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.31]
 title = "Re-target BatchCallAndSponsorTest.t.sol at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12031.1", "12031.2", "12031.3", "12031.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `testSponsoredBatchRepaysSponsorAndEmitsEvents` at contracts/test/BatchCallAndSponsorTest.t.sol:104 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assertEq(token.balanceOf(sponsor), quote.tokenAmount);` unchanged"
@@ -79379,10 +79510,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.32]
 title = "Re-target gas-station.test.ts at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12032.1", "12032.2", "12032.3", "12032.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `quote consent presents six decimals, the maximum and expiry before signing` at human/apps/web/e2e/gas-station.test.ts:71 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `assert.ok(review);` unchanged"
@@ -79408,10 +79539,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.33]
 title = "Re-target feetoken_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12033.1", "12033.2", "12033.3", "12033.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `TestFeeDenomRoundTripAndCallerIsolation` at precompiles/feetoken/feetoken_test.go:81 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `require.Equal(t, 'uhpx', h.denom(h.caller))` unchanged"
@@ -79437,10 +79568,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.34]
 title = "Re-target feetoken_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12034.1", "12034.2", "12034.3", "12034.4", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Point `TestAccountFeeDenomStoreRoundTrip` at modules/evm/keeper/feetoken_test.go:22 at the node ante fee path and feeToken 0x1018 on the merged chain and keep its assertion `require.Equal(t, k.GetBaseDenom(ctx), k.GetAccountFeeDenom(ctx, account))` unchanged"
@@ -79466,10 +79597,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.35]
 title = "Create the gas-station DID budget test"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12035.1", "12035.2", "12035.3", "12035.4", "12035.5", "7.1", "12.1"]
 capabilities = ["12.3.1", "12.3.2", "12.3.3", "12.3.4"]
 do_1 = "Start the station with `serve` (interop/crates/layerx-gas-station/src/service.rs:693) and a per-DID sponsorship budget of 3 transactions"
@@ -79498,8 +79629,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Re-target rules_test.yml at the merged chain"
 status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2", "7.0.1"]
 reqs = ["12036.1", "12036.2", "12036.3", "12036.4", "9.1"]
 capabilities = ["12.4.1", "12.4.2", "12.4.3", "12.4.4"]
 do_1 = "Point `rule` at tools/ops/monitoring/rules_test.yml:16 at the sequencer and committed blocks on the merged chain and keep its assertion `- eval_time: 30s` unchanged"
@@ -79525,10 +79656,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.37]
 title = "Re-target rollout.test.sh at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12037.1", "12037.2", "12037.3", "12037.4", "9.1"]
 capabilities = ["12.4.1", "12.4.2", "12.4.3", "12.4.4"]
 do_1 = "Point `check` at tools/rollout/tests/rollout.test.sh:15 at the sequencer and committed blocks on the merged chain and keep its assertion `fail() {` unchanged"
@@ -94060,7 +94191,7 @@ qualification = "UNRUN"
 
 [task.13.1.1]
 title = "Sequencer resolutions: receipt module id, batch injection, nonce queue, read context, standby replay and activation height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -94089,7 +94220,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1.2]
 title = "Fee floor, fee-token rate age and governance-only rate changes"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -94116,7 +94247,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1.3]
 title = "Gas-station policy: one paymaster nonce, DID budgets, no replacement, paymaster required"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -94144,7 +94275,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1.4]
 title = "Receipt verification against pinned keys by height range"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []

@@ -35,3 +35,101 @@ command = "sh -n tools/bringup/xweb-config.sh"
 exit_code = 2
 log_path = "logs/5.0.9-build-1.log"
 observed_and_assumption = "sh -n rejects the unchanged Bash array at tools/bringup/xweb-config.sh:94; taken to mean the declared build_cmd should be bash -n, amended in the task."
+
+[finding.5.0.4]
+revision = "b1eec354b"
+command = "go test -count=1 ./modules/xweb/keeper/ ./modules/xweb/types/ -run 'TestRegisterAttestor|TestRemoveAttestor|TestAttestorSetMajorityRule'"
+exit_code = 1
+log_path = "logs/5.0.4-verify-1.log"
+observed_and_assumption = "19 of 20 cases pass; the genesis case expects the exact ErrInvalidAttestors refusal for 17 members but modules/xweb/types/genesis.go (outside touches) wraps it as ErrInvalidGenesis; taken as a planning gap, the assertion stays intact and the branch is held unlanded until the genesis file is owned by a task."
+
+[finding.5.0.8]
+revision = "9fb40b2b8"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test search --test content"
+exit_code = 101
+log_path = "logs/5.0.8-verify-2.log"
+observed_and_assumption = "22 of 23 cases pass; unpaid binary content returns 503 service_not_ready before the 200 path because readiness interception lives in x-websearch src/server.rs and src/main.rs (outside touches); taken as a planning gap, the assertion stays intact and the branch is held unlanded."
+
+[finding.7.0.8]
+revision = "79bbb49f0"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal --lib evm_sender::"
+exit_code = 0
+log_path = "logs/7.0.8-verify-1.log"
+observed_and_assumption = "verify passes with 9 cases but acceptance 7.34.3 (EVM sender signing through the KMS) is unmet because the hosted KMS exposes only Ed25519 keys; taken as needing a secp256k1 KMS interface decision before the task can be marked done."
+
+[finding.1.1.3]
+revision = "759709249"
+command = "make build && go test -count=1 ./modules/lxphost/ -run TestAccountMap -v"
+exit_code = 1
+log_path = "logs/1.1.3-verify-1.log"
+observed_and_assumption = "3 of 5 cases pass; the asset sub-account vectors fail because codec.AccountKind (layerxproof/codec/state.go:323-357) has no agent asset kind while the kernel accepts it (src/ledger/lx_account_id.c:50-61); taken as a codec gap, repaired by task 0.7, after which the two cases rerun unchanged."
+
+[finding.1.1.4]
+revision = "e0a427b94"
+command = "make build && go test -count=1 ./modules/lxphost/ -run TestAssetMap"
+exit_code = 1
+log_path = "logs/1.1.4-verify-2.log"
+observed_and_assumption = "2 of 3 cases pass; the FeeOrdinal kernel parity check fails because registry_asset (src/modules/bridge/lxp_bridge_credit.c:76-83) hashes the symbol without the second colon so its asset ids differ from genesis (src/protocol/lxp_genesis.c:455-466) and custodyproof/light.go:357, and that file is scheduled for deletion with the custody credit; taken as needing a ruling on which asset id derivation the fee ordinal parity check should use."
+
+[finding.13.1.3]
+revision = "709fd23d6"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test resolution_policy"
+exit_code = 0
+log_path = "logs/13.1.3-verify-1.log"
+observed_and_assumption = "the task gate passes with 5 cases, but the existing journal cancellation and station expired-rebroadcast assertions in the same crate contradict the no-replacement resolution policy the task requires; both are left intact and the crate-wide test run is a wave gate, taken as a policy ruling for the gas station tests."
+
+[finding.5.1.2]
+revision = "b00f5308e"
+command = "go test -count=1 ./precompiles/xweb/ -run 'TestViews|TestABIMatchesTheSolidityInterface'"
+exit_code = 1
+log_path = "logs/5.1.2-verify-1.log"
+observed_and_assumption = "32 of 36 cases pass; the ABI parity gate also checks contracts/src/precompiles/IXWeb.sol and contracts/test/XWebConsumer.t.sol, which lack the fulfilProgram, getProgramResult and getKernelNetworkId declarations that task 5.6.3 owns, so the branch is held until that task lands."
+
+[finding.5.1.4]
+revision = "187059dc6"
+command = "go test -count=1 -run 'TestFulfilProgramThreshold|TestFulfilProgramSignature' ./modules/xweb/keeper/"
+exit_code = 0
+log_path = "logs/5.1.4-verify-1.log"
+observed_and_assumption = "the gate passes with 41 subcases on the real verifier and keeper state, but acceptance 5.13.1 to 5.13.3 full-fulfilment refusals cannot be driven through Keeper.FulfilProgram because that entry point belongs to task 5.4.1; taken as covered once 5.4.1 lands and its gate runs."
+
+[finding.7.1.5]
+revision = "53b6eb541"
+command = "bash tools/ops/monitoring/test.sh"
+exit_code = 0
+log_path = "logs/7.1.5-verify-1.log"
+observed_and_assumption = "no change was possible inside touches: ArchiveLagging needs an archive identity and lag bound that render.sh does not export, ReceiptKeyWindowChanged needs a receipt-key cardinality metric that no component emits, and rules.yml still defines KernelReadyzDown; taken as a planning gap needing a metric emitter task before this one can proceed."
+
+[finding.10.0.2]
+revision = "fba791645"
+command = "go test -count=1 ./modules/evm/keeper/ -run 'TestSetCustomPrecompileActivation|TestCustomPrecompilesWithheld'"
+exit_code = 0
+log_path = "logs/10.0.2-verify-1.log"
+observed_and_assumption = "the gate passes; the only caller in node/app.go was updated to the slice signature although that file is outside touches, and mergePrecompileGate in node/upgrades.go lists 0x0901, 0x0902, 0x0904 and 0x0908 with empty module lists, which SetCustomPrecompileActivation refuses, so task 10.6.1 must name a module for each before appending that gate."
+
+[finding.9.0.9]
+revision = "677e9668f"
+command = "go test -count=1 ./rpc/ -run TestSubscribe"
+exit_code = 1
+log_path = "logs/9.0.9-verify-2.log"
+observed_and_assumption = "the receipt-fed logs and newPendingTransactions cases pass; the one failure is TestSubscribeNewHeadsAutobahn, which fails on main because encodeCommittedBlock refuses every committed head, and task 12.0.13 owns that case, so the branch is held until 12.0.13 lands and the gate reruns."
+
+[finding.0.1]
+revision = "b1fa27b0c"
+command = "go build ./precompiles/..."
+exit_code = 0
+log_path = "logs/worktrees-b6.log"
+observed_and_assumption = "the task registers twelve LayerX executors but none of the precompiles/layerxledger, layerxpay, layerxauth, layerxprograms or layerxagent packages exist yet, and requires lists only 10.0.1 and 10.0.2; taken as a planning gap, the task stays pending until the executor packages land and its requires are corrected."
+
+[finding.9.0.23]
+revision = "283495300"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station"
+exit_code = 101
+log_path = "logs/9.0.23-verify-3.log"
+observed_and_assumption = "the three task cases and four harness cases pass; two failures need private recovery and first-use material from the environment and one real-TLS deadline case failed once under machine load after passing twice, so the branch is held until the gate reruns with that material present."
+
+[finding.7.0.6]
+revision = "e43eac342"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate"
+exit_code = 101
+log_path = "logs/7.0.6-verify-2.log"
+observed_and_assumption = "11 of 13 cases pass; one needs a private signed publication file from the environment and cadence_must_stay_below_max_rate_age asserts that cadence 299 with max_rate_age 300 parses while validate requires cadence plus the 60 s confirmation retry below max_rate_age, both left as written, so the branch is held pending the rate-age ruling and the private material."
