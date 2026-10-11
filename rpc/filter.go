@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
@@ -171,6 +174,7 @@ const (
 	UnknownSubscription FilterType = iota
 	LogsSubscription
 	BlocksSubscription
+	PendingTransactionsSubscription
 )
 
 type filter struct {
@@ -184,6 +188,222 @@ type filter struct {
 
 	// LogsSubscription
 	lastToHeight int64
+
+	// Pending logs filters and PendingTransactionsSubscription. pendingBase is
+	// the committed height when the filter was installed: every transaction
+	// above it reaches the filter through pending and never through the
+	// committed store.
+	pending     *pendingTxFilter
+	pendingBase int64
+}
+
+// maxPendingFilterTxs bounds the receipted transactions a pending filter holds
+// between two polls; a filter that falls further behind is refused.
+const maxPendingFilterTxs = 10000
+
+var (
+	errPendingFilterOverflow = errors.New("pending filter fell behind the receipted transactions; uninstall it and install a new one")
+	errPendingFromBlock      = errors.New("fromBlock pending requires toBlock pending")
+)
+
+// ReceiptLogFeed holds the transactions the sequencer has receipted into the
+// sealed block L_N and the open block L_open and that are not committed yet,
+// in seq order. The sequencer and standby feed it from Accept and from commit;
+// the filter API serves pending logs and pending transaction hashes from it.
+type ReceiptLogFeed struct {
+	mu        sync.Mutex
+	committed int64
+	lastSeq   uint64
+	logHeight int64
+	logIndex  uint
+	txs       []receiptedTx
+	filters   map[*pendingTxFilter]struct{}
+}
+
+type receiptedTx struct {
+	seq       uint64
+	height    int64
+	hash      common.Hash
+	synthetic bool
+	logs      []*ethtypes.Log
+}
+
+// pendingTxFilter buffers, for one installed filter, the transactions
+// receipted since its last poll. The feed's lock guards it.
+type pendingTxFilter struct {
+	txs      []receiptedTx
+	overflow bool
+}
+
+// NewReceiptLogFeed starts an empty feed above the committed height.
+func NewReceiptLogFeed(committedHeight int64) *ReceiptLogFeed {
+	return &ReceiptLogFeed{committed: committedHeight, filters: make(map[*pendingTxFilter]struct{})}
+}
+
+// Receipted records the execution receipt of the transaction at seq in the
+// block at height. seq must exceed every seq recorded before, and height must
+// be above the committed height and not below the previous transaction's.
+func (f *ReceiptLogFeed) Receipted(seq uint64, height int64, txHash common.Hash, rcpt *evmtypes.Receipt) error {
+	if rcpt == nil {
+		return errors.New("receipt log feed: nil receipt")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if seq <= f.lastSeq {
+		return fmt.Errorf("receipt log feed: seq %d does not follow seq %d", seq, f.lastSeq)
+	}
+	if height < 1 || height <= f.committed {
+		return fmt.Errorf("receipt log feed: height %d is not above committed height %d", height, f.committed)
+	}
+	if n := len(f.txs); n > 0 && height < f.txs[n-1].height {
+		return fmt.Errorf("receipt log feed: height %d is below the previous receipted height %d", height, f.txs[n-1].height)
+	}
+	if height != f.logHeight {
+		f.logHeight, f.logIndex = height, 0
+	}
+	tx := receiptedTx{
+		seq:       seq,
+		height:    height,
+		hash:      txHash,
+		synthetic: rcpt.TxType == evmtypes.ShellEVMTxType,
+		logs:      make([]*ethtypes.Log, 0, len(rcpt.Logs)),
+	}
+	for _, l := range rcpt.Logs {
+		topics := make([]common.Hash, len(l.Topics))
+		for i, topic := range l.Topics {
+			topics[i] = common.HexToHash(topic)
+		}
+		// #nosec G115 -- height is checked positive above
+		tx.logs = append(tx.logs, &ethtypes.Log{
+			Address:     common.HexToAddress(l.Address),
+			Topics:      topics,
+			Data:        l.Data,
+			BlockNumber: uint64(height),
+			TxHash:      txHash,
+			TxIndex:     uint(rcpt.TransactionIndex),
+			Index:       f.logIndex,
+		})
+		f.logIndex++
+	}
+	f.lastSeq = seq
+	f.txs = append(f.txs, tx)
+	for sub := range f.filters {
+		if sub.overflow {
+			continue
+		}
+		if len(sub.txs) >= maxPendingFilterTxs {
+			sub.txs, sub.overflow = nil, true
+			continue
+		}
+		sub.txs = append(sub.txs, tx)
+	}
+	return nil
+}
+
+// Committed drops the transactions of every block up to height, which the
+// committed store now serves.
+func (f *ReceiptLogFeed) Committed(height int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if height < f.committed {
+		return fmt.Errorf("receipt log feed: committed height %d is below %d", height, f.committed)
+	}
+	i := 0
+	for i < len(f.txs) && f.txs[i].height <= height {
+		i++
+	}
+	f.txs = slices.Clone(f.txs[i:])
+	f.committed = height
+	return nil
+}
+
+func (f *ReceiptLogFeed) snapshot() ([]receiptedTx, int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.txs), f.committed
+}
+
+// subscribe installs a filter buffer and returns it with the committed height.
+// withUncommitted seeds it with every transaction above that height.
+func (f *ReceiptLogFeed) subscribe(withUncommitted bool) (*pendingTxFilter, int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sub := &pendingTxFilter{}
+	if withUncommitted {
+		sub.txs = slices.Clone(f.txs)
+	}
+	f.filters[sub] = struct{}{}
+	return sub, f.committed
+}
+
+func (f *ReceiptLogFeed) unsubscribe(sub *pendingTxFilter) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.filters, sub)
+}
+
+// drain returns the transactions buffered for sub since its last poll.
+func (f *ReceiptLogFeed) drain(sub *pendingTxFilter) ([]receiptedTx, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if sub.overflow {
+		return nil, errPendingFilterOverflow
+	}
+	txs := sub.txs
+	sub.txs = nil
+	return txs, nil
+}
+
+// FilterLog is a log the filter API returns. Seq is set on a log of a
+// transaction the sequencer has receipted and not committed yet; such a log
+// has no block hash.
+type FilterLog struct {
+	*ethtypes.Log
+	Seq *uint64
+}
+
+func (l FilterLog) MarshalJSON() ([]byte, error) {
+	if l.Log == nil {
+		return []byte("null"), nil
+	}
+	enc, err := l.Log.MarshalJSON()
+	if err != nil || l.Seq == nil {
+		return enc, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(enc, &fields); err != nil {
+		return nil, err
+	}
+	seq, err := json.Marshal(hexutil.Uint64(*l.Seq))
+	if err != nil {
+		return nil, err
+	}
+	fields["seq"] = seq
+	fields["blockHash"] = json.RawMessage("null")
+	return json.Marshal(fields)
+}
+
+func toFilterLogs(logs []*ethtypes.Log) []*FilterLog {
+	res := make([]*FilterLog, len(logs))
+	for i, l := range logs {
+		res[i] = &FilterLog{Log: l}
+	}
+	return res
+}
+
+func isPendingTag(b *big.Int) bool {
+	return b != nil && b.IsInt64() && b.Int64() == ethrpc.PendingBlockNumber.Int64()
+}
+
+// pendingOnly reports whether a pending query starts above the committed
+// height, so the committed store has nothing for it.
+func pendingOnly(crit filters.FilterCriteria, committed int64) bool {
+	return isPendingTag(crit.FromBlock) || (crit.FromBlock != nil && crit.FromBlock.Sign() >= 0 && crit.FromBlock.Cmp(big.NewInt(committed)) > 0)
+}
+
+func withToBlock(crit filters.FilterCriteria, height int64) filters.FilterCriteria {
+	crit.ToBlock = big.NewInt(height)
+	return crit
 }
 
 // Log slice pool to reduce allocations in batch processing
@@ -253,12 +473,61 @@ type FilterAPI struct {
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
 	globalRPSLimiter *rate.Limiter
+	receiptLogs      *ReceiptLogFeed
+}
+
+// SetReceiptLogFeed makes this API serve pending logs and pending transaction
+// filters from feed. Only the sequencer and standby set it, before the server
+// serves requests; every other node refuses them.
+func (a *FilterAPI) SetReceiptLogFeed(feed *ReceiptLogFeed) {
+	a.receiptLogs = feed
+}
+
+// pendingServed refuses a pending query on a node without receipts and a
+// query that starts at pending without ending there.
+func (a *FilterAPI) pendingServed(crit filters.FilterCriteria) error {
+	if a.receiptLogs == nil {
+		return ErrPendingServedBySequencer
+	}
+	if !isPendingTag(crit.ToBlock) {
+		return errPendingFromBlock
+	}
+	return nil
+}
+
+// receiptedLogs returns the logs of txs above crit's numeric fromBlock that
+// match crit, in seq order.
+func (a *FilterAPI) receiptedLogs(txs []receiptedTx, crit filters.FilterCriteria) []*FilterLog {
+	var from int64
+	if crit.FromBlock != nil && crit.FromBlock.Sign() >= 0 && crit.FromBlock.IsInt64() {
+		from = crit.FromBlock.Int64()
+	}
+	res := []*FilterLog{}
+	for _, tx := range txs {
+		if tx.height < from || (tx.synthetic && !a.logFetcher.includeSyntheticReceipts) {
+			continue
+		}
+		for _, l := range tx.logs {
+			if !MatchesCriteria(l, crit) {
+				continue
+			}
+			seq := tx.seq
+			res = append(res, &FilterLog{Log: l, Seq: &seq})
+		}
+	}
+	return res
 }
 
 type FilterConfig struct {
 	timeout  time.Duration
 	maxLog   int64
 	maxBlock int64
+}
+
+// NewFilterConfig sets how long an unpolled filter lives and the log and block
+// range limits; a limit of zero takes its default.
+func NewFilterConfig(timeout time.Duration, maxLog, maxBlock int64) *FilterConfig {
+	return &FilterConfig{timeout: timeout, maxLog: maxLog, maxBlock: maxBlock}
 }
 
 type EventItemDataWrapper struct {
@@ -404,18 +673,32 @@ func (a *FilterAPI) NewFilter(
 	}()
 
 	_, cancel := context.WithCancel(a.shutdownCtx)
-
-	a.filtersMu.Lock()
-	defer a.filtersMu.Unlock()
-
-	curFilterID := ethrpc.NewID()
-	a.filters[curFilterID] = filter{
+	f := filter{
 		typ:          LogsSubscription,
 		fc:           crit,
 		cancelFunc:   cancel,
 		lastAccess:   time.Now(),
 		lastToHeight: 0,
 	}
+	if isPendingTag(crit.ToBlock) || isPendingTag(crit.FromBlock) {
+		if err := a.pendingServed(crit); err != nil {
+			cancel()
+			return "", err
+		}
+		feed := a.receiptLogs
+		sub, base := feed.subscribe(true)
+		f.pending, f.pendingBase = sub, base
+		f.cancelFunc = func() {
+			cancel()
+			feed.unsubscribe(sub)
+		}
+	}
+
+	a.filtersMu.Lock()
+	defer a.filtersMu.Unlock()
+
+	curFilterID := ethrpc.NewID()
+	a.filters[curFilterID] = f
 	return curFilterID, nil
 }
 
@@ -442,15 +725,41 @@ func (a *FilterAPI) NewBlockFilter(
 	return curFilterID, nil
 }
 
+// NewPendingTransactionFilter returns, on the sequencer and standby, a filter
+// whose changes are the hashes of the transactions receipted since the last
+// poll, in seq order. Every other node does not support it.
 func (a *FilterAPI) NewPendingTransactionFilter(
 	ctx context.Context,
-	_ *bool,
+	fullTx *bool,
 ) (id ethrpc.ID, err error) {
 	startTime := time.Now()
 	defer func() {
 		recordMetricsWithError(ctx, fmt.Sprintf("%s_newPendingTransactionFilter", a.namespace), a.connectionType, startTime, err, recover())
 	}()
-	return "", &ErrEVMNotSupported{Msg: "eth_newPendingTransactionFilter is not supported on Pax EVM RPC"}
+	feed := a.receiptLogs
+	if feed == nil {
+		return "", &ErrEVMNotSupported{Msg: "eth_newPendingTransactionFilter is not supported on Pax EVM RPC"}
+	}
+	if fullTx != nil && *fullTx {
+		return "", &ErrEVMNotSupported{Msg: "eth_newPendingTransactionFilter serves transaction hashes only"}
+	}
+	_, cancel := context.WithCancel(a.shutdownCtx)
+	sub, _ := feed.subscribe(false)
+
+	a.filtersMu.Lock()
+	defer a.filtersMu.Unlock()
+
+	curFilterID := ethrpc.NewID()
+	a.filters[curFilterID] = filter{
+		typ: PendingTransactionsSubscription,
+		cancelFunc: func() {
+			cancel()
+			feed.unsubscribe(sub)
+		},
+		lastAccess: time.Now(),
+		pending:    sub,
+	}
+	return curFilterID, nil
 }
 
 const GetFilterChangesMethod = "getFilterChanges"
@@ -493,7 +802,20 @@ func (a *FilterAPI) GetFilterChanges(
 		a.filtersMu.Unlock()
 
 		return hashes, nil
+	case PendingTransactionsSubscription:
+		txs, err := a.receiptLogs.drain(filter.pending)
+		if err != nil {
+			return nil, err
+		}
+		hashes := make([]common.Hash, len(txs))
+		for i, tx := range txs {
+			hashes[i] = tx.hash
+		}
+		return hashes, nil
 	case LogsSubscription:
+		if filter.pending != nil {
+			return a.pendingFilterChanges(ctx, filterID, filter)
+		}
 		// filter by hash would have no updates if it has previously queried for this crit
 		if filter.fc.BlockHash != nil && filter.lastToHeight > 0 {
 			return result, nil
@@ -524,12 +846,41 @@ func (a *FilterAPI) GetFilterChanges(
 	}
 }
 
+// pendingFilterChanges returns the committed logs up to the filter's base
+// height not returned yet, then the logs of the transactions receipted since
+// the last poll. Transactions above the base height come only from receipts,
+// so a log returned at receipt is not returned again after commit.
+func (a *FilterAPI) pendingFilterChanges(ctx context.Context, filterID ethrpc.ID, f filter) ([]*FilterLog, error) {
+	var committed []*ethtypes.Log
+	lastToHeight := f.lastToHeight
+	if !pendingOnly(f.fc, f.pendingBase) && f.lastToHeight <= f.pendingBase {
+		logs, end, err := a.logFetcher.GetLogsByFilters(ctx, withToBlock(f.fc, f.pendingBase), f.lastToHeight)
+		if err != nil {
+			return nil, err
+		}
+		committed, lastToHeight = logs, end+1
+	}
+	txs, err := a.receiptLogs.drain(f.pending)
+	if err != nil {
+		return nil, err
+	}
+
+	a.filtersMu.Lock()
+	if updatedFilter, exists := a.filters[filterID]; exists {
+		updatedFilter.lastToHeight = lastToHeight
+		a.filters[filterID] = updatedFilter
+	}
+	a.filtersMu.Unlock()
+
+	return append(toFilterLogs(committed), a.receiptedLogs(txs, f.fc)...), nil
+}
+
 const GetFilterLogsMethod = "getFilterLogs"
 
 func (a *FilterAPI) GetFilterLogs(
 	ctx context.Context,
 	filterID ethrpc.ID,
-) (res []*ethtypes.Log, err error) {
+) (res []*FilterLog, err error) {
 	startTime := time.Now()
 	defer func() {
 		recordMetricsWithError(ctx, fmt.Sprintf("%s_getFilterLogs", a.namespace), a.connectionType, startTime, err, recover())
@@ -547,12 +898,25 @@ func (a *FilterAPI) GetFilterLogs(
 	// Update access time
 	a.updateFilterAccess(filterID)
 
+	switch {
+	case filter.typ == PendingTransactionsSubscription:
+		return nil, errors.New("pending transaction filter has no logs")
+	case filter.pending != nil:
+		// One snapshot: committed logs up to its committed height, receipted
+		// logs above it, so no log appears twice.
+		txs, committed := a.receiptLogs.snapshot()
+		var logs []*ethtypes.Log
+		if !pendingOnly(filter.fc, committed) {
+			if logs, _, err = a.logFetcher.GetLogsByFilters(ctx, withToBlock(filter.fc, committed), 0); err != nil {
+				return nil, err
+			}
+		}
+		return append(toFilterLogs(logs), a.receiptedLogs(txs, filter.fc)...), nil
+	}
+
 	logs, lastToHeight, err := a.logFetcher.GetLogsByFilters(ctx, filter.fc, 0)
 	if err != nil {
 		return nil, err
-	}
-	if logs == nil {
-		logs = []*ethtypes.Log{}
 	}
 
 	// Update filter with write lock
@@ -563,15 +927,39 @@ func (a *FilterAPI) GetFilterLogs(
 	}
 	a.filtersMu.Unlock()
 
-	return logs, nil
+	return toFilterLogs(logs), nil
 }
 
-func (a *FilterAPI) GetLogs(ctx context.Context, crit filters.FilterCriteria) (res []*ethtypes.Log, err error) {
+// GetLogs returns the committed logs matching crit. With toBlock pending the
+// sequencer and standby add the logs of the transactions receipted into L_N
+// and L_open, in seq order; every other node refuses it.
+func (a *FilterAPI) GetLogs(ctx context.Context, crit filters.FilterCriteria) (res []*FilterLog, err error) {
 	startTime := time.Now()
 	defer func() {
 		recordMetricsWithError(ctx, fmt.Sprintf("%s_getLogs", a.namespace), a.connectionType, startTime, err, recover())
 	}()
 
+	if !isPendingTag(crit.ToBlock) && !isPendingTag(crit.FromBlock) {
+		logs, err := a.committedLogs(ctx, startTime, crit)
+		if err != nil {
+			return nil, err
+		}
+		return toFilterLogs(logs), nil
+	}
+	if err := a.pendingServed(crit); err != nil {
+		return nil, err
+	}
+	txs, committed := a.receiptLogs.snapshot()
+	var logs []*ethtypes.Log
+	if !pendingOnly(crit, committed) {
+		if logs, err = a.committedLogs(ctx, startTime, withToBlock(crit, committed)); err != nil {
+			return nil, err
+		}
+	}
+	return append(toFilterLogs(logs), a.receiptedLogs(txs, crit)...), nil
+}
+
+func (a *FilterAPI) committedLogs(ctx context.Context, startTime time.Time, crit filters.FilterCriteria) (res []*ethtypes.Log, err error) {
 	latest, err := a.logFetcher.latestHeight(ctx)
 	if err != nil {
 		return nil, err
