@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -177,12 +178,35 @@ def apply_box(svc, sha, hosts, log):
     if not hosts.get(key):
         log.write(f"{key} is not set in the host map\n")
         return "blocked"
+    token_file = os.environ.get("REGISTRY_TOKEN_FILE")
+    if not token_file or not Path(token_file).is_absolute():
+        log.write("REGISTRY_TOKEN_FILE must reference an absolute box-local file\n")
+        return "blocked"
+    registry_user = os.environ.get("GHCR_ACTOR", "")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", registry_user):
+        log.write("GHCR_ACTOR must be a registry username\n")
+        return "blocked"
     script = (HERE / "box-apply.sh").read_bytes()
+    command = shlex.join(
+        [
+            "bash",
+            "-s",
+            "--",
+            svc["box_role"],
+            f"{svc['image']}:{sha[:12]}",
+            svc["box_unit"],
+            svc["health"],
+            token_file,
+            registry_user,
+        ]
+    )
     proc = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", hosts[key], "bash", "-s", "--",
-         svc["box_role"], f"{svc['image']}:{sha[:12]}", svc["box_unit"], svc["health"]],
-        input=script, stdout=log, stderr=subprocess.STDOUT,
-        timeout=int(os.environ.get("ROLLOUT_TIMEOUT", "1800")))
+        ["ssh", "-o", "BatchMode=yes", hosts[key], command],
+        input=script,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        timeout=int(os.environ.get("ROLLOUT_TIMEOUT", "1800")),
+    )
     log.write(f"box-apply exit {proc.returncode}\n")
     return "pass" if proc.returncode == 0 else "fail"
 
