@@ -2206,9 +2206,9 @@ $(BUILD_DIR)/tests/lxp_test_identity: tests/state/lxp_test_identity.c $(LIBRARY)
 test-identity: $(BUILD_DIR)/tests/lxp_test_identity
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_identity
 
-$(BUILD_DIR)/tests/lxp_test_grants: tests/state/lxp_test_grants.c $(LIBRARY)
+$(BUILD_DIR)/tests/lxp_test_grants: tests/state/lxp_test_grants.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-grants: $(BUILD_DIR)/tests/lxp_test_grants
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_grants
