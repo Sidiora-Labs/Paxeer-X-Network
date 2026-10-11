@@ -392,3 +392,10 @@ command = "make test-budget-delegate"
 exit_code = 0
 log_path = "logs/2.3.1-verify-3.log"
 observed_and_assumption = "the gate passes and the task is landed; acceptance 2.9.1 says ten activity entries ending at 0x0003000a while the landed list has eleven ending at LX_BUDGET_PULL 0x0003000b, no activity issues a delegate capability yet (the test seeds it through lxp_ctx_kv_put), and tests/ledger/lxp_check_sole_writer.sh needs a real rg binary on PATH under /bin/sh."
+
+[finding.0.19]
+revision = "66891a598"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station --test resolution_policy --test service -- --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage --skip recovery_deadline_bounds_real_stalled_tls"
+exit_code = 0
+log_path = "logs/0.19-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed together with 7.1.1; src/tx.rs still carries sign_cancellation, Fees::replacement, Fees::replaces and REPLACEMENT_BUMP_PERCENT with their unit test because nothing in the refusal rule needs them removed, and the crate's pedantic clippy already fails in rate.rs, rpc.rs and policy.rs before any integration target is linted."

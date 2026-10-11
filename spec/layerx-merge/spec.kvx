@@ -29744,7 +29744,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.1]
 title = "Gas station submits without replacement and recovers by sequencer receipt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.5", "0.3"]
@@ -40090,7 +40090,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.16]
 title = "Replica restore returns a missing-chunk quarantined artifact to Available"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["7042.1", "7042.2"]
@@ -40125,9 +40125,9 @@ do_2 = "Config gains sequencer.microbatch-window and sequencer.microbatch-max-co
 do_3 = "NewExecutor's ModeMicroBatch case calls NewMicroBatch with the configured MicroBatchOptions and returns an error when the host is not a BatchHost."
 do_4 = "Add TestSequencerConfigSelectsMicroBatch to node/sequencer/config_test.go: ReadConfig with sequencer.mode=microbatch, Validate, NewExecutor on a real BatchHost asserts Mode()==ModeMicroBatch; sequential stays the default; an unknown mode is refused."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-touches = ["node/sequencer/config.go", "node/sequencer/executor.go", "node/sequencer/config_test.go"]
+touches = ["node/sequencer/config.go", "node/sequencer/executor.go", "node/sequencer/config_test.go", "node/sequencer/executor_test.go"]
 build_cmd = "go build ./node/sequencer/ ./daemon/paxd/..."
-verify_cmd = "go test -count=1 ./node/sequencer/ -run TestSequencerConfigSelectsMicroBatch"
+verify_cmd = "go test -count=1 ./node/sequencer/"
 symbols = []
 planned_paths = []
 mode = "BUILD"
@@ -40141,7 +40141,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.18]
 title = "Gas station deployment templates carry the mandatory DID gas budget"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["7024.1", "7023.1"]
@@ -40165,7 +40165,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.19]
 title = "Gas station sibling tests, report and docs follow the no-replacement refusal rule"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["7.5", "9011.1", "9011.2"]
