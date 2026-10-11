@@ -15,6 +15,7 @@ typedef struct lxphost_read_state {
     lxp_kernel kernel;
     lxp_state_store store;
     lxp_state_journal journal;
+    lx_account_registry accounts;
     uint64_t parameters;
 } lxphost_read_state;
 
@@ -32,10 +33,17 @@ static lxphost_read_state *lxphost_read_new(uint64_t sequence, uint64_t epoch,
         return NULL;
     }
     state->parameters = 1U;
-    *status = lxp_kernel_create(&state->kernel, &state->store, &state->journal,
+    *status = lx_account_registry_init(&state->accounts);
+    if (*status == LXP_OK)
+        *status = lxp_state_store_bind_accounts(&state->store, &state->accounts);
+    if (*status == LXP_OK)
+        *status = lxp_state_store_require_account_root(&state->store);
+    if (*status == LXP_OK)
+        *status = lxp_kernel_create(&state->kernel, &state->store, &state->journal,
                                 &state->parameters, epoch);
     if (*status != LXP_OK) {
         (void)lxp_state_store_destroy(&state->store);
+        lx_account_registry_release(&state->accounts);
         free(state);
         return NULL;
     }
@@ -45,6 +53,7 @@ static lxphost_read_state *lxphost_read_new(uint64_t sequence, uint64_t epoch,
 static int32_t lxphost_read_free(lxphost_read_state *state)
 {
     int32_t status = lxp_state_store_destroy(&state->store);
+    lx_account_registry_release(&state->accounts);
     free(state);
     return status;
 }
@@ -277,7 +286,7 @@ func loadReadState(store sdk.KVStore, state *C.lxphost_read_state) error {
 			return codeFatalInvariant
 		}
 	}
-	return nil
+	return loadCommittedAccounts(store, unsafe.Pointer(&state.accounts))
 }
 
 func (h *Host) ReadAsset(ctx sdk.Context, id [32]byte) (AssetRecord, error) {
