@@ -1191,3 +1191,17 @@ command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-p
 exit_code = 0
 log_path = "logs/0.107-verify-1.log"
 observed_and_assumption = "verify passed (35 passed, 0 failed)."
+
+[finding.0.45]
+revision = "b62e4dee3"
+command = "go test -count=1 ./tools/paxeer-x/commitfixture/ && explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/comet_commit_test.exs"
+exit_code = 0
+log_path = "logs/0.45-verify-1.log"
+observed_and_assumption = "verify passed (go 1 passed; mix 6 passed, 0 failed)."
+
+[finding.0.70]
+revision = "f925f1321"
+command = "make build && make test-asset-registry && go test -count=1 ./modules/lxphost/ -run 'TestHost'"
+exit_code = 0
+log_path = "logs/0.70-verify-1.log"
+observed_and_assumption = "verify passed (test_asset_registry ok, lxphost TestHost* 8 passed, 0 failed). Gaps: lx_asset.h, lxp_ledger.h, lx_asset_execution.h, lx_asset_registry.c, lxp_send.c, lxp_receive.c, test_asset_registry.c unchanged for the same reason"
