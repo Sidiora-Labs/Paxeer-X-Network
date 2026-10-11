@@ -72,6 +72,10 @@ macro_rules! protocol_result_codes {
             const fn from_raw(raw: i32) -> Option<Self> {
                 match raw { $( $raw => Some(Self::$variant), )+ _ => None }
             }
+
+            const fn name(self) -> &'static str {
+                match self { $( Self::$variant => stringify!($variant), )+ }
+            }
         }
     };
 }
@@ -205,6 +209,47 @@ protocol_result_codes! {
     FatalInvariant = -1001, Terminal;
     FatalReplayDivergence = -1002, Terminal;
     FatalSupplyMismatch = -1003, Terminal;
+}
+
+impl KnownResult {
+    /// Parses the registry wire form `LXP_<code>: <message>` of an ABI
+    /// `Error(string)` revert, where `<code>` is the header name without its
+    /// `LXP_ERR_` or `LXP_` prefix. Success and fatal values never travel as a
+    /// revert, so neither parses; an unknown or malformed reason is `None`.
+    #[must_use]
+    pub fn from_revert_reason(text: &str) -> Option<Self> {
+        let (code, _message) = text.split_once(": ")?;
+        let wire = code.strip_prefix("LXP_")?;
+        Self::ALL.iter().copied().find(|known| {
+            !matches!(
+                ResultCode::from(*known).domain(),
+                ResultDomain::Success | ResultDomain::Fatal
+            ) && wire_name_matches(known.name(), wire)
+        })
+    }
+}
+
+impl Retriability {
+    /// Classifies the revert reason of a submitted transaction through the
+    /// mirror table; an unknown or malformed reason fails closed as terminal.
+    #[must_use]
+    pub fn of_revert_reason(text: &str) -> Self {
+        KnownResult::from_revert_reason(text).map_or(Self::Terminal, KnownResult::retriability)
+    }
+}
+
+/// Compares a mirror variant name with its upper snake case header word list.
+fn wire_name_matches(variant: &str, wire: &str) -> bool {
+    let mut wire = wire.bytes();
+    for (index, byte) in variant.bytes().enumerate() {
+        if index > 0 && byte.is_ascii_uppercase() && wire.next() != Some(b'_') {
+            return false;
+        }
+        if wire.next() != Some(byte.to_ascii_uppercase()) {
+            return false;
+        }
+    }
+    wire.next().is_none()
 }
 
 /// A lossless protocol result code. Future unknown numbers survive unchanged.
