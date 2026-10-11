@@ -3,6 +3,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
+use ed25519_dalek::Signer as _;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
 use layerx_gas_station::config::ConfigError;
@@ -14,6 +17,10 @@ use layerx_gas_station::rate::{
 use layerx_gas_station::rpc::{bytes, hex, ConfiguredRpc, Exchange, RpcFault};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
 use layerx_gas_station::tx::recover;
+use layerx_wire::encode::Encoder;
+use layerx_wire::hash::receipt_digest;
+use layerx_wire::receipt::{decode, encode};
+use layerx_wire::WireError;
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -26,6 +33,103 @@ const BLOCK_HASH: Word = [0x77; 32];
 const FEE_TOKEN: Address = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x18,
 ];
+/// The pinned sequencer receipt key: its keyId, ed25519 seed and the
+/// inclusive height range it signs for.
+const RECEIPT_KEY_ID: Word = [0x5a; 32];
+const RECEIPT_KEY_SEED: [u8; 32] = [0x42; 32];
+const RECEIPT_FIRST_HEIGHT: u64 = 1;
+const RECEIPT_LAST_HEIGHT: u64 = 0x100;
+
+/// How the sequencer corrupts the signed receipt it serves.
+#[derive(Clone, Copy, Debug)]
+enum Tamper {
+    None,
+    Signature,
+    UnpinnedKeyId,
+    HeightOutsideRange,
+    OtherActivity,
+    Missing,
+}
+
+fn receipt_key() -> ed25519_dalek::SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(&RECEIPT_KEY_SEED)
+}
+
+fn wire<T>(result: Result<T, WireError>) -> Result<T, Box<dyn std::error::Error>> {
+    result.map_err(|error| format!("{error:?}").into())
+}
+
+fn account(address: &Address) -> Word {
+    let mut word = [0; 32];
+    word[12..].copy_from_slice(address);
+    word
+}
+
+/// The ProtocolReceipt v2 the sequencer signs for an EVM transaction
+/// (contracts/sequencer.md a1), encoded by the canonical wire encoder and
+/// signed by the pinned receipt key unless `tamper` corrupts it.
+fn signed_receipt(
+    tamper: Tamper,
+    activity_id: Word,
+    nonce: u64,
+    from: Address,
+    to: Address,
+    status: u64,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let (key_id, height, activity_id) = match tamper {
+        Tamper::UnpinnedKeyId => ([0x5b; 32], BLOCK, activity_id),
+        Tamper::HeightOutsideRange => (RECEIPT_KEY_ID, RECEIPT_LAST_HEIGHT + 1, activity_id),
+        Tamper::OtherActivity => (RECEIPT_KEY_ID, BLOCK, word(0xbad)),
+        Tamper::None | Tamper::Signature | Tamper::Missing => (RECEIPT_KEY_ID, BLOCK, activity_id),
+    };
+    let fields = |signature: Option<[u8; 64]>| -> Result<Vec<u8>, WireError> {
+        let mut encoder = Encoder::new(4096);
+        encoder.structure_header_version(0x5201, layerx_wire::limits::PROTOCOL_VERSION)?;
+        encoder.u16(layerx_wire::limits::PROTOCOL_VERSION)?;
+        encoder.bytes(&activity_id, 32)?;
+        encoder.u64(nonce + 1)?;
+        encoder.bytes(&[0x21; 32], 32)?;
+        encoder.bytes(&[0x22; 32], 32)?;
+        encoder.bytes(&[0x23; 32], 32)?;
+        encoder.i32(if status == 1 { 0 } else { 1 })?;
+        encoder.sequence_length(0, 512)?;
+        encoder.u128(1_500_000_000 * 35_000)?;
+        let mut batch_id = [0; 32];
+        batch_id[24..].copy_from_slice(&height.to_be_bytes());
+        encoder.bytes(&batch_id, 32)?;
+        encoder.u16(12)?;
+        encoder.u32(1)?;
+        encoder.u32(0)?;
+        encoder.u8(2)?;
+        encoder.bytes(&[0x24; 32], 32)?;
+        encoder.u128(0)?;
+        encoder.bytes(&account(&from), 32)?;
+        encoder.u128(10_u128.pow(18))?;
+        encoder.u128(10_u128.pow(18) - 1_500_000_000 * 35_000)?;
+        encoder.u64(nonce)?;
+        encoder.bytes(&account(&to), 32)?;
+        encoder.u128(0)?;
+        encoder.u128(0)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(&key_id, 32)?;
+        encoder.u64(NOW * 1_000)?;
+        encoder.u8(u8::from(signature.is_some()))?;
+        if let Some(signature) = signature {
+            encoder.bytes(&signature, 64)?;
+        }
+        Ok(encoder.finish())
+    };
+    let digest = wire(receipt_digest(&wire(fields(None))?))?;
+    let mut signature = receipt_key().sign(&digest).to_bytes();
+    if matches!(tamper, Tamper::Signature) {
+        signature[0] ^= 1;
+    }
+    let signed = wire(fields(Some(signature)))?;
+    let canonical = wire(encode(&wire(decode(&signed))?))?;
+    assert_eq!(canonical, signed);
+    Ok(canonical)
+}
 
 /// The paymaster, the owner account and the sequencer as the node reports
 /// them: `rung` is how far the sequencer has taken every sent transaction
@@ -44,6 +148,7 @@ struct Chain {
     rung: &'static str,
     sent: Vec<Vec<u8>>,
     nonces: Vec<(Word, u64)>,
+    tamper: Tamper,
 }
 impl Chain {
     fn executed(&self) -> Option<u64> {
@@ -164,6 +269,13 @@ impl Exchange for ChainExchange {
                         if rung == "committed" {
                             receipt["blockHash"] = Value::String(hex(&BLOCK_HASH));
                         }
+                        if !matches!(chain.tamper, Tamper::Missing) {
+                            let signed =
+                                signed_receipt(chain.tamper, hash, nonce, from, to, chain.status)
+                                    .map_err(|_| RpcFault::Malformed)?;
+                            receipt["keyId"] = Value::String(hex(&RECEIPT_KEY_ID));
+                            receipt["receipt"] = Value::String(hex(&signed));
+                        }
                         receipt
                     }
                 }
@@ -214,6 +326,7 @@ impl Lane {
                 rung: "committed",
                 sent: Vec::new(),
                 nonces: Vec::new(),
+                tamper: Tamper::None,
             })),
             owner,
             key,
@@ -303,7 +416,15 @@ fn config_json() -> Value {
         "max_priority_fee_per_gas":1_000_000_000,"rate_owner_key_env":"GAS_STATION_RATE_OWNER_KEY",
         "rate_cadence_seconds":120,"rate_gas_budget_per_day":1_000_000,
         "rate_balance_floor":10_u64.pow(15),"rate_max_fee_per_gas":5_000_000_000_u64,
-        "rate_confirmation_retry_seconds":60})
+        "rate_confirmation_retry_seconds":60,
+        "sequencer_receipt_keys":[receipt_key_entry(RECEIPT_KEY_ID, RECEIPT_FIRST_HEIGHT, RECEIPT_LAST_HEIGHT)]})
+}
+
+/// One pinned key in the shape `px_getReceiptKeys` returns.
+fn receipt_key_entry(key_id: Word, first: u64, last: u64) -> Value {
+    json!({"keyId": STANDARD.encode(key_id),
+        "publicKey": STANDARD.encode(receipt_key().verifying_key().to_bytes()),
+        "firstHeight": first.to_string(), "lastHeight": last.to_string()})
 }
 
 /// The paymaster, the rate and the recovered signer of a type-2 setRate
@@ -855,5 +976,104 @@ fn real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption() 
     assert_eq!(Journal::open(&path)?.state(), &state);
     std::fs::remove_file(path)?;
     std::fs::remove_dir(directory)?;
+    Ok(())
+}
+
+#[test]
+fn receipt_signature_is_verified_against_pinned_receipt_keys() -> TestResult {
+    let refused = Some(ConfigError {
+        field: "sequencer_receipt_keys",
+    });
+    let mut identity = [0_u8; 32];
+    identity[0] = 1;
+    let mut above_prime = [0xff_u8; 32];
+    above_prime[0] = 0xef;
+    above_prime[31] = 0x7f;
+    let pinned = receipt_key_entry(RECEIPT_KEY_ID, 1, 256);
+    let with = |name: &str, value: Value| {
+        let mut entry = pinned.clone();
+        entry[name] = value;
+        entry
+    };
+    for keys in [
+        json!([]),
+        json!({}),
+        json!([pinned.clone(), receipt_key_entry(RECEIPT_KEY_ID, 300, 400)]),
+        json!([receipt_key_entry(RECEIPT_KEY_ID, 257, 256)]),
+        json!([receipt_key_entry([0; 32], 1, 256)]),
+        json!([with("publicKey", json!(STANDARD.encode(identity)))]),
+        json!([with("publicKey", json!(STANDARD.encode(above_prime)))]),
+        json!([with("publicKey", json!(STANDARD.encode([0x42_u8; 31])))]),
+        json!([with("keyId", json!(hex(&RECEIPT_KEY_ID)))]),
+        json!([with("firstHeight", json!("01"))]),
+        json!([with("lastHeight", json!(-1))]),
+        json!([with("sequencerId", json!(STANDARD.encode(RECEIPT_KEY_ID)))]),
+    ] {
+        let mut value = config_json();
+        value["sequencer_receipt_keys"] = keys.clone();
+        assert_eq!(
+            PublisherConfig::parse(&value.to_string()).err(),
+            refused,
+            "{keys}"
+        );
+    }
+    let mut rotated = config_json();
+    rotated["sequencer_receipt_keys"] = json!([
+        receipt_key_entry([0x5b; 32], 1, 15),
+        receipt_key_entry(RECEIPT_KEY_ID, 16, 256)
+    ]);
+    let keys = PublisherConfig::parse(&rotated.to_string())?.sequencer_receipt_keys;
+    assert_eq!(
+        keys.iter()
+            .map(|key| (
+                key.sequencer_id(),
+                key.public_key(),
+                key.first_batch_number(),
+                key.last_batch_number()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ([0x5b; 32], receipt_key().verifying_key().to_bytes(), 1, 15),
+            (
+                RECEIPT_KEY_ID,
+                receipt_key().verifying_key().to_bytes(),
+                16,
+                256
+            )
+        ]
+    );
+
+    let lane = Lane::new("receipt-keys")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    lane.chain.borrow_mut().rung = "receipted";
+    let mut publisher = lane.publisher(1_000_000)?;
+    for tamper in [
+        Tamper::Signature,
+        Tamper::UnpinnedKeyId,
+        Tamper::HeightOutsideRange,
+        Tamper::OtherActivity,
+        Tamper::Missing,
+    ] {
+        lane.chain.borrow_mut().tamper = tamper;
+        assert_eq!(
+            publisher.publish(&file),
+            Err(RateRefusal::Rpc(RpcFault::Malformed)),
+            "{tamper:?}"
+        );
+        assert_eq!(lane.sent(), 1, "{tamper:?}");
+        let hash = keccak(&lane.chain.borrow().sent[0]);
+        let state = publisher.journal().state();
+        assert_eq!(state.rate_active.get(&(lane.owner, 7)), Some(&hash));
+        assert_eq!(state.unsettled().len(), 1);
+        assert_eq!(state.publications[&hash].1, None);
+    }
+    lane.chain.borrow_mut().tamper = Tamper::None;
+    let publication = publisher.publish(&file)?;
+    assert_eq!(lane.sent(), 1);
+    assert_eq!(
+        (publication.nonce, publication.hash),
+        (7, keccak(&lane.chain.borrow().sent[0]))
+    );
+    assert_eq!(publisher.journal().state().unsettled(), vec![publication]);
     Ok(())
 }

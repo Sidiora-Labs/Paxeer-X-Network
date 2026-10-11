@@ -3,6 +3,10 @@ use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
+use layerx_proof::inclusion::SequencerAuthorization;
+use layerx_proof::receipt::verify_sequencer_signature;
 use serde_json::{json, Map, Value};
 
 use crate::config::{field, object, read_text, ConfigError, StationConfig};
@@ -169,7 +173,10 @@ fn integer(text: &str) -> Option<u128> {
 /// variable holding the paymaster owner's key, the publication cadence
 /// (strictly below `max_rate_age`), the daily gas budget of publications, the
 /// owner balance floor in PAX base units, the priority fee per gas and the
-/// ceiling on the fee per gas of a publication, in wei.
+/// ceiling on the fee per gas of a publication, in wei. The sequencer receipt
+/// keys are the pinned `ReceiptKeys` list, in the shape `px_getReceiptKeys`
+/// returns, that every sequencer receipt confirming a publication must verify
+/// against.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublisherConfig {
     pub station: StationConfig,
@@ -180,6 +187,7 @@ pub struct PublisherConfig {
     pub max_priority_fee_per_gas: u128,
     pub max_fee_per_gas: u128,
     pub confirmation_retry_seconds: u64,
+    pub sequencer_receipt_keys: Vec<SequencerAuthorization>,
 }
 impl PublisherConfig {
     /// # Errors
@@ -193,6 +201,7 @@ impl PublisherConfig {
         let max_priority_fee_per_gas: u128 = field(&mut map, "max_priority_fee_per_gas")?;
         let max_fee_per_gas: u128 = field(&mut map, "rate_max_fee_per_gas")?;
         let confirmation_retry_seconds: u64 = field(&mut map, "rate_confirmation_retry_seconds")?;
+        let sequencer_receipt_keys = receipt_keys(field(&mut map, "sequencer_receipt_keys")?)?;
         let config = Self {
             station: StationConfig::from_map(map)?,
             owner_key_env,
@@ -202,6 +211,7 @@ impl PublisherConfig {
             max_priority_fee_per_gas,
             max_fee_per_gas,
             confirmation_retry_seconds,
+            sequencer_receipt_keys,
         };
         config.validate()?;
         Ok(config)
@@ -221,7 +231,9 @@ impl PublisherConfig {
     /// paymaster in the precompile range (the fee token at 0x1018 and every
     /// other system address, whose rates move only by governance), a fee
     /// ceiling not above the priority fee or whose daily worst case overflows,
-    /// or an owner key env that is invalid or the sponsor's.
+    /// an owner key env that is invalid or the sponsor's, or a sequencer
+    /// receipt key list that is empty, repeats a keyId, holds a zero keyId, a
+    /// weak or non-canonical ed25519 key, or an inverted height range.
     pub fn validate(&self) -> Result<(), ConfigError> {
         self.station.validate()?;
         let checks = [
@@ -256,6 +268,20 @@ impl PublisherConfig {
                 self.max_fee_per_gas > self.max_priority_fee_per_gas
                     && self.daily_wei_ceiling().is_some(),
             ),
+            (
+                "sequencer_receipt_keys",
+                !self.sequencer_receipt_keys.is_empty()
+                    && self
+                        .sequencer_receipt_keys
+                        .iter()
+                        .enumerate()
+                        .all(|(index, key)| {
+                            receipt_key_valid(key)
+                                && self.sequencer_receipt_keys[..index]
+                                    .iter()
+                                    .all(|earlier| earlier.sequencer_id() != key.sequencer_id())
+                        }),
+            ),
         ];
         for (field, valid) in checks {
             if !valid {
@@ -271,6 +297,73 @@ impl PublisherConfig {
     pub fn daily_wei_ceiling(&self) -> Option<u128> {
         self.max_fee_per_gas.checked_mul(self.gas_budget_per_day)
     }
+}
+
+/// Decodes the pinned `ReceiptKeys` list: entries of exactly `keyId` and
+/// `publicKey` (canonical padded base64 of 32 bytes each) and `firstHeight` and
+/// `lastHeight` (a u64 as a JSON number or a canonical decimal string).
+fn receipt_keys(value: Value) -> Result<Vec<SequencerAuthorization>, ConfigError> {
+    const FIELD: ConfigError = ConfigError {
+        field: "sequencer_receipt_keys",
+    };
+    let Value::Array(entries) = value else {
+        return Err(FIELD);
+    };
+    entries
+        .into_iter()
+        .map(|entry| {
+            let Value::Object(mut entry) = entry else {
+                return Err(FIELD);
+            };
+            let mut take = |name: &str| entry.remove(name).ok_or(FIELD);
+            let key_id = key_bytes(&take("keyId")?).ok_or(FIELD)?;
+            let public_key = key_bytes(&take("publicKey")?).ok_or(FIELD)?;
+            let first = height(&take("firstHeight")?).ok_or(FIELD)?;
+            let last = height(&take("lastHeight")?).ok_or(FIELD)?;
+            if !entry.is_empty() {
+                return Err(FIELD);
+            }
+            Ok(SequencerAuthorization::new(key_id, public_key, first, last))
+        })
+        .collect()
+}
+
+fn key_bytes(value: &Value) -> Option<[u8; 32]> {
+    let text = value.as_str()?;
+    if text.len() != 44 {
+        return None;
+    }
+    STANDARD.decode(text).ok()?.try_into().ok()
+}
+
+fn height(value: &Value) -> Option<u64> {
+    match value {
+        Value::Number(number) => number.as_u64(),
+        Value::String(text)
+            if !text.is_empty()
+                && text.bytes().all(|b| b.is_ascii_digit())
+                && (text.len() == 1 || !text.starts_with('0')) =>
+        {
+            text.parse().ok()
+        }
+        _ => None,
+    }
+}
+
+/// A pinned receipt key with a non-zero keyId, an ordered height range and a
+/// public key that is a canonical encoding of a point outside the small-order
+/// subgroup, as the strict receipt verifier requires.
+fn receipt_key_valid(key: &SequencerAuthorization) -> bool {
+    let bytes = key.public_key();
+    let mut y = bytes;
+    y[31] &= 0x7f;
+    let mut prime = [0xff; 32];
+    prime[0] = 0xed;
+    prime[31] = 0x7f;
+    key.sequencer_id() != [0; 32]
+        && key.first_batch_number() <= key.last_batch_number()
+        && y.iter().rev().lt(prime.iter().rev())
+        && ed25519_dalek::VerifyingKey::from_bytes(&bytes).is_ok_and(|point| !point.is_weak())
 }
 
 /// Publishes the owner's rate to the paymaster with setRate, signed by the
@@ -600,12 +693,15 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
     /// receipt the publication: `pax_sequencerReceipt` at rung receipted or
     /// committed, from the owner to the paymaster at the publication's nonce,
     /// within its gas limit and fee ceiling, and on success carrying the
-    /// paymaster's `RateUpdated` event with the published rate. An unknown or
+    /// paymaster's `RateUpdated` event with the published rate, and its signed
+    /// receipt verified against the pinned sequencer receipt keys. An unknown or
     /// submitted publication is waited on, never resent or replaced. A
     /// confirmed publication whose committed receipt the node has finalized is
     /// settled in the journal.
     /// # Errors
-    /// Refuses a reverted publication, a receipt that does not match it, a
+    /// Refuses a reverted publication, a receipt that does not match it or
+    /// whose signed receipt is missing, undecodable, unsigned, under an
+    /// unpinned key or for another activity, a
     /// publication still unreceipted at the deadline, a committed receipt
     /// that disagrees with the sequencer's, and node or journal failures.
     pub fn confirm_by_receipt(
@@ -637,6 +733,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
                 match receipt["rung"].as_str() {
                     Some("submitted") => {}
                     Some("receipted" | "committed") => {
+                        self.verify_signed_receipt(transaction, &receipt)?;
                         if !sequencer_outcome(transaction, &receipt)? {
                             return Err(RateRefusal::Reverted);
                         }
@@ -653,6 +750,29 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             }
             std::thread::sleep(self.poll);
         }
+    }
+
+    /// Verifies the receipt bytes of a receipted or committed answer: the
+    /// sequencer signature under the pinned key whose keyId is the receipt's
+    /// context hash and whose height range holds its batch height, and an
+    /// activity id equal to the publication hash, keccak256 of the raw
+    /// transaction.
+    fn verify_signed_receipt(
+        &self,
+        transaction: &PublicationTransaction,
+        receipt: &Value,
+    ) -> Result<(), RpcFault> {
+        let signed = bytes(receipt["receipt"].as_str().ok_or(RpcFault::Malformed)?)?;
+        let verified =
+            verify_sequencer_signature(&signed, self.config.sequencer_receipt_keys.as_slice())
+                .map_err(|_| RpcFault::Malformed)?;
+        if verified
+            .protocol()
+            .is_none_or(|protocol| protocol.activity_id() != keccak(&transaction.raw))
+        {
+            return Err(RpcFault::Malformed);
+        }
+        Ok(())
     }
 
     /// Journals the settlement of a publication whose committed receipt the

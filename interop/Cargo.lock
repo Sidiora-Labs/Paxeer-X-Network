@@ -1286,7 +1286,11 @@ dependencies = [
 name = "layerx-gas-station"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "ed25519-dalek",
  "k256",
+ "layerx-proof",
+ "layerx-wire",
  "native-tls",
  "serde",
  "serde_json",
