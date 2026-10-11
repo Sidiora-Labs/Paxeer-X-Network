@@ -7042,7 +7042,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.8]
 title = "Stream payload encoders including rate change"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.2"]
@@ -40801,7 +40801,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.71]
 title = "modules/sequencer in the App and MsgSequenceBatch delivered at tx 0 of the block"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["9.0.19", "9.0.20", "13.1.1", "0.106"]
@@ -40993,7 +40993,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.56]
 title = "Sequencer JSON-RPC endpoint module in layerx-client"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -41410,7 +41410,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.102]
 title = "Python EIP-1559 type-2 transaction codec and signer"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []

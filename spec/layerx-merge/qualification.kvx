@@ -1152,12 +1152,11 @@ log_path = "logs/0.92-verify-1.log"
 observed_and_assumption = "retired-caller scan excludes reviewed spec text through documentation_paths and the self-test passes 83 cases; no open gap remains for this task."
 
 [finding.0.71]
-revision = "554b342d8"
-command = "go test -count=1 ./node/ -run TestSequencedBlock -v"
+revision = "22b12919b"
+command = "go test -count=1 ./modules/sequencer/... && go test -count=1 ./node/ -run 'TestSequencedBlock"
 exit_code = 0
-log_path = "logs/0.71-verify-1.log"
-observed_and_assumption = "the sequenced-block tests pass in the task worktree, but the change breaks compilation of the sequencer keeper test package through the old NewAppModule call in receipt_keys_test.go, leaves the ReceiptKeys gov route unwired and exports a lastSeq that genesis import refuses; held for widening and a relaunch after the store-key constants task lands."
-
+log_path = "logs/0.71-verify-2.log"
+observed_and_assumption = "verify passed (2 sequencer packages ok, 14 node tests passed (all subtests), 0 failed)."
 [finding.0.51]
 revision = "6d0a5684a"
 command = "go test -count=1 ./rpc/... -run TestReceiptsRootIsSameBlockResults"
@@ -1219,3 +1218,24 @@ command = "cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-ga
 exit_code = 101
 log_path = "logs/0.109-verify-1.log"
 observed_and_assumption = "verify passed (clippy: lib target clean, 8 denials in out-of-scope targets; test half (run once separately, logs/0.109-verify-1-tests.log, exit 101): 82 passed, 2 failed). Gaps: 8.1 clippy deny level for --all-targets cannot be met inside touches: src/main.rs:131 match_same_arms; tests/rate.rs:72 too_many_lines and :435 single_match_else; tests/resolution_policy.rs:553 too_many_lines; tests/service.rs:916 needless_pass_by_value, :996 unnecessary_wraps and :1063 too_many_lines; tests/station.rs:1187 too_many_lines Unrelated: tests/station.rs authenticated_retry_real_https_retains_unknown_liability_within_deadline and first_use_replay_state_real_https_preserves_retained_storage fail with VarError NotPresent (PAXEER_X_STATION_RECOVERY_MATERIAL and PAXEER_X_STATION_FIRST_USE_MATERIAL private material unset); prior, same as the 7.1.1 record; station.rs was the last test binary in the run, so doctests did not run"
+
+[finding.2.3.8]
+revision = "f802762be"
+command = "go test -count=1 ./modules/layerxpay/types/ -run TestStreamPayloads"
+exit_code = 0
+log_path = "logs/2.3.8-verify-1.log"
+observed_and_assumption = "verify passed (45 passed, 0 failed)."
+
+[finding.0.102]
+revision = "916dc5632"
+command = "cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_evm_transaction.py"
+exit_code = 0
+log_path = "logs/0.102-verify-1.log"
+observed_and_assumption = "verify passed (13 passed, 0 failed (55 subtests)). Gaps: none (ai_market.py keeps its private codec copy because it is outside touches; its removal is the later sign task that consumes this module; byte equality with it is asserted in the test)"
+
+[finding.0.56]
+revision = "2a63c5c24"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-client --test sequencer"
+exit_code = 0
+log_path = "logs/0.56-verify-1.log"
+observed_and_assumption = "verify passed (8 passed, 0 failed). Gaps: none. Deliberate choices: the committed rung also requires blockNumber (the node's rpc/sequencer_receipt.go always sends it, and it must be >= height); the px_getReceiptKeys wire encoding is not specified anywhere, so the module expects 0x-hex keyId/publicKey and quantity heights; send_raw_transaction does not check the returned hash against keccak256(raw) because layerx-client has no keccak Unrelated: layerx-client now has ureq and serde_json as normal dependencies; other workspaces that depend on layerx-client by path (platform, human, interop, programs, cmd/layerxctl) need their own Cargo.lock refreshed before any --locked gate there (these lockfiles are outside this task's touches)"
