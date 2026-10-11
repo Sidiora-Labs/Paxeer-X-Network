@@ -584,8 +584,8 @@ func TestExecutorAdmissionIsAnteChain(t *testing.T) {
 	require.Equal(t, startSeq+1, acc.Seq)
 	require.Equal(t, 1, acc.TxIndex)
 
-	_, err = sequencer.NewExecutor(h.app, sequencer.Options{Mode: sequencer.Mode(1), ChainID: testChainID, ProposerAddress: h.proposer})
-	require.EqualError(t, err, "sequencer: unknown executor mode 1")
+	_, err = sequencer.NewExecutor(h.app, sequencer.Options{Mode: sequencer.Mode(7), ChainID: testChainID, ProposerAddress: h.proposer})
+	require.EqualError(t, err, "sequencer: unknown executor mode 7")
 }
 
 func TestExecutorSnapshotIsPointInTime(t *testing.T) {
