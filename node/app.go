@@ -547,6 +547,9 @@ type App struct {
 	GigaExecutorEnabled bool
 	// GigaOCCEnabled controls whether to use OCC with the Giga executor
 	GigaOCCEnabled bool
+
+	// openBlock is the sequencer executor's open block; nil in full-node mode.
+	openBlock OpenBlock
 }
 
 type AppOption func(*App)
@@ -1119,9 +1122,7 @@ func New(
 			EVMKeeper:         &app.EvmKeeper,
 			UpgradeKeeper:     &app.UpgradeKeeper,
 			TracingInfo:       app.GetBaseApp().TracingInfo,
-			LatestCtxGetter: func() sdk.Context {
-				return app.GetCheckCtx()
-			},
+			LatestCtxGetter:   app.LatestCtx,
 		},
 	)
 	if err != nil {
@@ -2892,7 +2893,66 @@ func (app *App) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig
 
 }
 
+// PendingCtxHeight is the RPC context height that reads the sequencer's open block.
+const PendingCtxHeight int64 = evmrpc.LatestCtxHeight - 1
+
+// ErrPendingServedBySequencer refuses a pending read on a node without an open block executor.
+var ErrPendingServedBySequencer = errors.New("pending served by sequencer")
+
+// OpenBlock is the read surface of the sequencer executor over its open block L_open.
+type OpenBlock interface {
+	// OpenContext returns a branch of L_open taken under the executor lock.
+	OpenContext() (sdk.Context, error)
+}
+
+// SetOpenBlock switches the app to sequencer mode reading L_open from ob. It is called once
+// before the node serves ante or RPC reads.
+func (app *App) SetOpenBlock(ob OpenBlock) {
+	app.openBlock = ob
+}
+
+// LatestCtx is the ante read context. In sequencer mode it is a branch of L_open while a block
+// is open, so reads see every receipted transaction; otherwise it is the check context.
+func (app *App) LatestCtx() sdk.Context {
+	if app.openBlock != nil {
+		if ctx, err := app.openBlock.OpenContext(); err == nil {
+			return isolatedRead(ctx)
+		}
+	}
+	return app.GetCheckCtx()
+}
+
+// PendingSnapshot returns a read-only snapshot of L_open after the last receipted transaction.
+// The branch is taken under the executor lock, which is released before the caller reads, so
+// Accept never waits on a pending read; writes to the snapshot never reach L_open.
+func (app *App) PendingSnapshot() (sdk.Context, error) {
+	if app.openBlock == nil {
+		return sdk.Context{}, ErrPendingServedBySequencer
+	}
+	ctx, err := app.openBlock.OpenContext()
+	if err != nil {
+		return sdk.Context{}, err
+	}
+	return isolatedRead(ctx).WithIsEVM(true).WithTraceMode(true).WithIsCheckTx(false).WithClosestUpgradeName(LatestUpgrade), nil
+}
+
+// isolatedRead gives a branch of L_open its own gas meter and event managers so concurrent
+// reads never share mutable state with Accept.
+func isolatedRead(ctx sdk.Context) sdk.Context {
+	return ctx.
+		WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)).
+		WithEventManager(sdk.NewEventManager()).
+		WithEvmEventManager(sdk.NewEVMEventManager())
+}
+
 func (app *App) RPCContextProvider(i int64) sdk.Context {
+	if i == PendingCtxHeight {
+		ctx, err := app.PendingSnapshot()
+		if err != nil {
+			panic(err)
+		}
+		return ctx
+	}
 	if i == evmrpc.LatestCtxHeight {
 		ctx := app.GetCheckCtx()
 		// Populate ConsensusParams on the RPC ctx. Neither GetCheckCtx nor
