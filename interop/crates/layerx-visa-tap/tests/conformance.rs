@@ -14,12 +14,14 @@ use base64::Engine as _;
 use ed25519_dalek::{Signer as _, SigningKey};
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::TraceId;
-use layerx_proof::receipt::AuthorizedBatch;
+use layerx_proof::inclusion::SequencerAuthorization;
+use layerx_proof::receipt::verify_sequencer_signature;
 use layerx_visa_tap::{
     bind_verified_agent, prepare_trusted_intent, AgentIntent, AgentPublicKey, CredentialBinding,
     CredentialBindingStore, KeyStatus, MerchantOperationResult, NonceWindow, RegisteredAgentKey,
     TapError, TapRequest, TapVerifier, TrustedAgentRegistry, VerifiedTrustedAgent,
 };
+use sha2::{Digest as _, Sha256};
 
 const NOW: u64 = 1_735_689_700;
 const KEY_ID: &str = "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U";
@@ -29,6 +31,102 @@ const CREDENTIAL_VERIFICATION: &str =
     include_str!("../../../specs/conformance/visa-tap/credential-verification.json");
 const TARGET_CANONICALIZATION: &str =
     include_str!("../../../specs/conformance/visa-tap/target-canonicalization.json");
+const PAYMENT_REFERENCE: [u8; 32] = [0x66; 32];
+const PAYMENT_FROM: [u8; 32] = [0x11; 32];
+const PAYMENT_TO: [u8; 32] = [0x22; 32];
+const PAYMENT_ASSET: [u8; 32] = [0x55; 32];
+const PAYMENT_AMOUNT: u128 = 25;
+const RECEIPT_HEIGHT: u64 = 950;
+const V2_UNSIGNED_RECEIPT: &str = concat!(
+    "000252010002000000200303030303030303030303030303030303030303030303030303030303030303000000000000",
+    "000700000020040404040404040404040404040404040404040404040404040404040404040400000020968bd239d91b",
+    "0e9801eb4126a4ab1f3774a23752128003f99b21715d5d765c0d00000020e3b0c44298fc1c149afbf4c8996fb92427ae",
+    "41e4649b934ca495991b7852b8550000000000000002000c000000000100000000200000000000000000000000000000",
+    "000000000000000000000000000000000000000000710000000000005208000000000000520800000000000000010000",
+    "000100000000000000000000000000000000000000000000000000000000000000000000000000000000e3b0c44298fc",
+    "1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85500000000000000010475706178000c00010000030000",
+    "0000200000000000000000000000000000000000000000000000000000000000000000000000b5000000000000000000",
+    "000000000000000000101a04c4da5d6f757c251cd70947b752917e5671b677517e3d953f362a1df6648ef5b111111111",
+    "111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222",
+    "2222222222222222222222226666666666666666666666666666666666666666666666666666666666666666b83bbb56",
+    "a58493750cad329795c11372ac61a56cdfc2f82950a7e21619d733310000000000000000000000000000520800000020",
+    "00000000000000000000000000000000000000000000000000000000000003b6000c0000000100000000020000002002",
+    "cef2c10e756312b83aa7e7051954161146e03371cb3c4f091303c95e0ee8c90000000000000000000000000000000100",
+    "000020000000000000000000000000060606060606060606060606060606060606060600000000000000000000000000",
+    "00520a000000000000000000000000000000010000000000000000000000200000000000000000000000000707070707",
+    "070707070707070707070707070707000000000000000000000000000000000000000000000000000000000000000100",
+    "000020000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000",
+    "000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000",
+    "000000000000000000000200000000000003e800",
+);
+const V2_RECEIPT_DIGEST: [u8; 32] = [
+    0x38, 0xc5, 0x18, 0x89, 0x86, 0xff, 0x90, 0x82, 0xbd, 0xe7, 0x85, 0xce, 0xe4, 0x6a, 0x15, 0x53,
+    0xd4, 0x59, 0x09, 0x6d, 0x63, 0xae, 0x62, 0x31, 0x5e, 0x62, 0xa8, 0xca, 0xc2, 0x33, 0x39, 0xb7,
+];
+
+fn v2_keys(first_height: u64, last_height: u64) -> [SequencerAuthorization; 2] {
+    let mut first_id = [0; 32];
+    first_id[31] = 1;
+    let mut second_id = [0; 32];
+    second_id[31] = 2;
+    [
+        SequencerAuthorization::new(
+            first_id,
+            SigningKey::from_bytes(&[0x12; 32])
+                .verifying_key()
+                .to_bytes(),
+            0,
+            899,
+        ),
+        SequencerAuthorization::new(
+            second_id,
+            SigningKey::from_bytes(&[0x11; 32])
+                .verifying_key()
+                .to_bytes(),
+            first_height,
+            last_height,
+        ),
+    ]
+}
+
+fn v2_receipt(edit: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+    let mut unsigned: Vec<u8> = V2_UNSIGNED_RECEIPT
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let digits = std::str::from_utf8(pair)
+                .unwrap_or_else(|error| panic!("receipt vector hex: {error}"));
+            u8::from_str_radix(digits, 16)
+                .unwrap_or_else(|error| panic!("receipt vector hex: {error}"))
+        })
+        .collect();
+    edit(&mut unsigned);
+    assert_eq!(unsigned.last(), Some(&0));
+    let mut digest = Sha256::new();
+    digest.update(b"LXP/v1/receipt\0");
+    digest.update(&unsigned);
+    let digest: [u8; 32] = digest.finalize().into();
+    let signing = SigningKey::from_bytes(&[0x11; 32]);
+    assert_eq!(unsigned.pop(), Some(0));
+    unsigned.extend_from_slice(&[1, 0, 0, 0, 64]);
+    unsigned.extend_from_slice(&signing.sign(&digest).to_bytes());
+    unsigned
+}
+
+fn payment_result(
+    receipt: &[u8],
+    keys: &[SequencerAuthorization],
+) -> Result<MerchantOperationResult, TapError> {
+    MerchantOperationResult::from_receipt(
+        receipt,
+        keys,
+        PAYMENT_REFERENCE,
+        PAYMENT_FROM,
+        PAYMENT_TO,
+        PAYMENT_ASSET,
+        PAYMENT_AMOUNT,
+    )
+}
 
 struct Registry {
     key: RegisteredAgentKey,
@@ -158,6 +256,37 @@ fn registry(signing: &SigningKey, status: KeyStatus, expires_at: u64) -> Registr
     }
 }
 
+fn assert_credential_matches_vector(
+    verified: &VerifiedTrustedAgent,
+    record: &serde_json::Value,
+    layerx_agent: [u8; 32],
+    name: &str,
+    source: &str,
+) -> AgentIntent {
+    assert_eq!(
+        verified.intent,
+        intent(
+            record["intent"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{name}: a verified vector names its intent")),
+            source
+        ),
+        "{name}: interaction"
+    );
+    assert_eq!(verified.layerx_agent, Some(layerx_agent), "{name}: binding");
+    assert_eq!(
+        verified.key_id,
+        field(record, "registry_key_id", source),
+        "{name}: registry key"
+    );
+    assert_eq!(
+        verified.agent_id,
+        field(record, "registry_agent_id", source),
+        "{name}: registry agent"
+    );
+    verified.intent
+}
+
 #[test]
 fn every_credential_vector_verifies_or_is_refused_exactly_as_declared() {
     let source = "interop/specs/conformance/visa-tap/credential-verification.json";
@@ -210,48 +339,29 @@ fn every_credential_vector_verifies_or_is_refused_exactly_as_declared() {
         };
         let now = number(&record, "now", source);
         let outcome: Result<VerifiedTrustedAgent, TapError> =
-            match record["clock_skew_seconds"].as_u64() {
-                Some(skew) => TapVerifier::verify_credential(&request, &registry, now, skew),
-                None => {
-                    let mut nonces = NonceWindow::new();
-                    for delivery in 0..number(&record, "replays", source) {
-                        TapVerifier::verify(&request, &registry, &mut nonces, now).unwrap_or_else(
-                            |error| panic!("{name}: delivery {delivery} must verify: {error}"),
-                        );
-                    }
-                    TapVerifier::verify(&request, &registry, &mut nonces, now)
+            if let Some(skew) = record["clock_skew_seconds"].as_u64() {
+                TapVerifier::verify_credential(&request, &registry, now, skew)
+            } else {
+                let mut nonces = NonceWindow::new();
+                for delivery in 0..number(&record, "replays", source) {
+                    TapVerifier::verify(&request, &registry, &mut nonces, now).unwrap_or_else(
+                        |error| panic!("{name}: delivery {delivery} must verify: {error}"),
+                    );
                 }
+                TapVerifier::verify(&request, &registry, &mut nonces, now)
             };
-        match expected {
-            Some(error) => {
-                assert_eq!(outcome, Err(error), "{name}");
-                refusals.push(error);
-            }
-            None => {
-                let verified = outcome.unwrap_or_else(|error| panic!("{name}: {error}"));
-                assert_eq!(
-                    verified.intent,
-                    intent(
-                        record["intent"].as_str().unwrap_or_else(|| panic!(
-                            "{name}: a verified vector names its intent"
-                        )),
-                        source
-                    ),
-                    "{name}: interaction"
-                );
-                assert_eq!(verified.layerx_agent, Some(layerx_agent), "{name}: binding");
-                assert_eq!(
-                    verified.key_id,
-                    field(&record, "registry_key_id", source),
-                    "{name}: registry key"
-                );
-                assert_eq!(
-                    verified.agent_id,
-                    field(&record, "registry_agent_id", source),
-                    "{name}: registry agent"
-                );
-                verified_intents.push(verified.intent);
-            }
+        if let Some(error) = expected {
+            assert_eq!(outcome, Err(error), "{name}");
+            refusals.push(error);
+        } else {
+            let verified = outcome.unwrap_or_else(|error| panic!("{name}: {error}"));
+            verified_intents.push(assert_credential_matches_vector(
+                &verified,
+                &record,
+                layerx_agent,
+                name,
+                source,
+            ));
         }
     }
     for interaction in [AgentIntent::Pay, AgentIntent::Browse] {
@@ -334,9 +444,243 @@ fn binding_is_scoped_non_authoritative_and_success_requires_a_real_receipt() {
         bind_verified_agent(&principal, [0x55; 32], &verified, &mut bindings, &trace),
         Err(TapError::LayerxAgentMismatch)
     );
-    let batch = AuthorizedBatch::new([1; 32], [2; 32], [3; 32], [4; 32], [5; 32]);
     assert_eq!(
-        MerchantOperationResult::from_receipt(b"not a LayerX receipt", &batch),
+        payment_result(b"not a protocol receipt", &v2_keys(900, 1_000)),
+        Err(TapError::ReceiptMismatch)
+    );
+}
+
+#[test]
+fn v2_exact_payment_verifies_against_the_governed_key_list() {
+    let receipt = v2_receipt(|_| {});
+    let keys = v2_keys(900, 1_000);
+    let decoded = verify_sequencer_signature(&receipt, &keys)
+        .unwrap_or_else(|error| panic!("canonical v2 vector: {error:?}"));
+    let protocol = decoded
+        .protocol()
+        .unwrap_or_else(|| panic!("v2 vector must be a protocol receipt"));
+    assert_eq!(protocol.protocol_version(), 2);
+    assert_eq!(protocol.activity_id(), [3; 32]);
+    assert_eq!(protocol.global_sequence(), 7);
+    assert_eq!(protocol.result_code(), 0);
+    assert_eq!(protocol.context_hash(), keys[1].sequencer_id());
+    assert_eq!(&protocol.batch_id()[24..], RECEIPT_HEIGHT.to_be_bytes());
+    assert_eq!(protocol.effects().len(), 2);
+    let expected = Ok(MerchantOperationResult::ReceiptVerified {
+        receipt_digest: V2_RECEIPT_DIGEST,
+    });
+    assert_eq!(payment_result(&receipt, &keys), expected);
+    assert_eq!(
+        payment_result(&receipt, &v2_keys(RECEIPT_HEIGHT, RECEIPT_HEIGHT)),
+        expected,
+    );
+}
+
+#[test]
+fn v2_key_outside_its_inclusive_height_range_is_refused() {
+    let receipt = v2_receipt(|_| {});
+    for (first, last) in [(951, 1_000), (900, 949), (951, 949)] {
+        assert_eq!(
+            payment_result(&receipt, &v2_keys(first, last)),
+            Err(TapError::ReceiptMismatch),
+        );
+    }
+    let keys = v2_keys(900, 1_000);
+    assert_eq!(
+        payment_result(&receipt, &[]),
+        Err(TapError::ReceiptMismatch)
+    );
+    assert_eq!(
+        payment_result(&receipt, &keys[..1]),
+        Err(TapError::ReceiptMismatch)
+    );
+    assert_eq!(
+        payment_result(&receipt, &[keys[1], keys[1]]),
+        Err(TapError::ReceiptMismatch),
+    );
+    let wrong_key =
+        SequencerAuthorization::new(keys[1].sequencer_id(), keys[0].public_key(), 900, 1_000);
+    assert_eq!(
+        payment_result(&receipt, &[wrong_key]),
+        Err(TapError::ReceiptMismatch)
+    );
+}
+
+#[test]
+fn v2_payment_facts_must_match_the_signed_ledger_log() {
+    let receipt = v2_receipt(|_| {});
+    let keys = v2_keys(900, 1_000);
+    for (reference, from, to, asset, amount) in [
+        (
+            [0x67; 32],
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            [0x12; 32],
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            [0x23; 32],
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            [0x56; 32],
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT + 1,
+        ),
+    ] {
+        assert_eq!(
+            MerchantOperationResult::from_receipt(
+                &receipt, &keys, reference, from, to, asset, amount,
+            ),
+            Err(TapError::ReceiptMismatch),
+        );
+    }
+}
+
+#[test]
+fn v2_invalid_payment_terms_are_refused() {
+    let receipt = v2_receipt(|_| {});
+    let keys = v2_keys(900, 1_000);
+    for (reference, from, to, asset, amount) in [
+        (
+            [0; 32],
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            [0; 32],
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            [0; 32],
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            PAYMENT_FROM,
+            PAYMENT_ASSET,
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            [0; 32],
+            PAYMENT_AMOUNT,
+        ),
+        (
+            PAYMENT_REFERENCE,
+            PAYMENT_FROM,
+            PAYMENT_TO,
+            PAYMENT_ASSET,
+            0,
+        ),
+    ] {
+        assert_eq!(
+            MerchantOperationResult::from_receipt(
+                &receipt, &keys, reference, from, to, asset, amount,
+            ),
+            Err(TapError::ReceiptMismatch),
+        );
+    }
+}
+
+#[test]
+fn v2_unverifiable_or_failed_receipts_never_produce_payment_success() {
+    let keys = v2_keys(900, 1_000);
+    let mut receipt = v2_receipt(|_| {});
+    let last = receipt.len() - 1;
+    receipt[last] ^= 1;
+    assert_eq!(
+        payment_result(&receipt, &keys),
+        Err(TapError::ReceiptMismatch)
+    );
+    let mut unsigned = receipt[..receipt.len() - 69].to_vec();
+    unsigned.push(0);
+    assert_eq!(
+        payment_result(&unsigned, &keys),
+        Err(TapError::ReceiptMismatch)
+    );
+    assert_eq!(
+        payment_result(&receipt[..42], &keys),
+        Err(TapError::ReceiptMismatch)
+    );
+    assert_eq!(
+        payment_result(&vec![0; 1_048_577], &keys),
+        Err(TapError::ReceiptMismatch)
+    );
+    for offset in [
+        10, 49, 90, 161, 165, 168, 170, 172, 178, 321, 327, 329, 331, 333, 339, 393, 395, 396, 428,
+        460, 492, 524, 576, 608, 613, 617, 891,
+    ] {
+        let receipt = v2_receipt(|unsigned| unsigned[offset] ^= 1);
+        assert_eq!(
+            payment_result(&receipt, &keys),
+            Err(TapError::ReceiptMismatch),
+            "signed mutation at {offset} must be refused",
+        );
+    }
+    for version in [1_u16, 3] {
+        let receipt = v2_receipt(|unsigned| {
+            unsigned[..2].copy_from_slice(&version.to_be_bytes());
+            unsigned[4..6].copy_from_slice(&version.to_be_bytes());
+        });
+        assert_eq!(
+            payment_result(&receipt, &keys),
+            Err(TapError::ReceiptMismatch)
+        );
+    }
+}
+
+#[test]
+fn v2_requires_one_matching_payment_log() {
+    let keys = v2_keys(900, 1_000);
+    let no_log = v2_receipt(|unsigned| {
+        unsigned[162..166].copy_from_slice(&1_u32.to_be_bytes());
+        unsigned[318..322].copy_from_slice(&0_u32.to_be_bytes());
+        unsigned.drain(327..556);
+    });
+    assert_eq!(
+        payment_result(&no_log, &keys),
+        Err(TapError::ReceiptMismatch)
+    );
+    let duplicate = v2_receipt(|unsigned| {
+        let mut log = unsigned[327..556].to_vec();
+        log[2..4].copy_from_slice(&2_u16.to_be_bytes());
+        unsigned.splice(556..556, log);
+        unsigned[162..166].copy_from_slice(&3_u32.to_be_bytes());
+        unsigned[318..322].copy_from_slice(&2_u32.to_be_bytes());
+    });
+    assert_eq!(
+        payment_result(&duplicate, &keys),
         Err(TapError::ReceiptMismatch)
     );
 }
