@@ -109,8 +109,8 @@ typedef struct fixture {
     trace *trace;
 } fixture;
 
-static fixture fixtures[2];
-static trace traces[2];
+static fixture fixtures[3];
+static trace traces[3];
 static lxp_state_witness witness;
 static uint8_t controller_seed[32], intruder_seed[32];
 static uint8_t archive_seed_a[32], archive_seed_b[32], stranger_seed[32];
@@ -808,16 +808,52 @@ static int retire(fixture *fx, const char *name, size_t length, uint8_t count,
     return pass(fx, name, result);
 }
 
-static int seed_world(fixture *fx)
+static int profile_build(fixture *fx, lxp_programs_retirement_profile *profile)
+{
+    fill(fx->ns_paxai, 32U, 0xA1U);
+    fx->ns_paxai[32] = 1U;
+    (void)memset(profile, 0, sizeof(*profile));
+    profile->version = LXP_PROGRAMS_RETIREMENT_PROFILE_VERSION;
+    profile->network_id = 1U;
+    (void)memcpy(profile->controller, fx->controller->did_id, 32U);
+    (void)memcpy(profile->paxai_program_id, fx->ns_paxai, 32U);
+    profile->hot_horizon = 1U;
+    return public_key_for(archive_seed_a, profile->archive_keys[0]) != 0 ||
+        public_key_for(archive_seed_b, profile->archive_keys[1]) != 0 ||
+        lxp_programs_retirement_profile_digest(profile, fx->profile_digest) !=
+            LXP_OK;
+}
+
+static int profile_stage(fixture *fx,
+                         const lxp_programs_retirement_profile *profile)
 {
     static const uint8_t control_key[] = "progretire/v1";
-    lxp_programs_retirement_profile profile;
+    const lxp_module_kv_entry *control;
+    if (seed_open(fx) != 0 ||
+        seed_close(fx, lxp_programs_retirement_profile_stage(&fx->ctx,
+                                                             profile)) != 0)
+        return 1;
+    control = find_kv(&fx->kernel, control_key, sizeof(control_key) - 1U);
+    if (control == NULL ||
+        control->value_length != LXP_PROGRAMS_RETIREMENT_CONTROL_BYTES ||
+        memcmp(control->value + 147U, fx->profile_digest, 32U) != 0)
+        return 1;
+    if (seed_open(fx) != 0) return 1;
+    if (lxp_programs_retirement_profile_stage(&fx->ctx, profile) !=
+        LXP_ERR_DUPLICATE_ENTRY) {
+        lxp_module_ctx_rollback(&fx->ctx);
+        return 1;
+    }
+    lxp_module_ctx_rollback(&fx->ctx);
+    return 0;
+}
+
+static int seed_storage(fixture *fx)
+{
     uint8_t value_a[40], value_b[40], value_c[40], value_shared[40];
     uint8_t witness_a[96], witness_c[80], witness_d[72];
     uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES];
     size_t i;
-    fill(fx->ns_paxai, 32U, 0xA1U);
-    fx->ns_paxai[32] = 1U;
     fill(fx->ns_shared_b, 32U, 0xB1U);
     fx->ns_shared_b[32] = 1U;
     (void)memcpy(fx->ns_principal_b, fx->ns_shared_b, 32U);
@@ -830,26 +866,6 @@ static int seed_world(fixture *fx)
     fill(witness_a, sizeof(witness_a), 0x55U);
     fill(witness_c, sizeof(witness_c), 0x66U);
     fill(witness_d, sizeof(witness_d), 0x77U);
-    (void)memset(&profile, 0, sizeof(profile));
-    profile.version = LXP_PROGRAMS_RETIREMENT_PROFILE_VERSION;
-    profile.network_id = 1U;
-    (void)memcpy(profile.controller, fx->controller->did_id, 32U);
-    (void)memcpy(profile.paxai_program_id, fx->ns_paxai, 32U);
-    profile.hot_horizon = 1U;
-    if (public_key_for(archive_seed_a, profile.archive_keys[0]) != 0 ||
-        public_key_for(archive_seed_b, profile.archive_keys[1]) != 0 ||
-        lxp_programs_retirement_profile_digest(&profile, fx->profile_digest) !=
-            LXP_OK ||
-        seed_open(fx) != 0 ||
-        seed_close(fx, lxp_programs_retirement_profile_stage(&fx->ctx,
-                                                             &profile)) != 0 ||
-        find_kv(&fx->kernel, control_key, sizeof(control_key) - 1U) == NULL)
-        return 1;
-    if (seed_open(fx) != 0) return 1;
-    if (lxp_programs_retirement_profile_stage(&fx->ctx, &profile) !=
-        LXP_ERR_DUPLICATE_ENTRY)
-        return 1;
-    lxp_module_ctx_rollback(&fx->ctx);
     if (seed_namespace(fx, fx->ns_paxai, 33U, paxai_key, 14U, value_a,
                        sizeof(value_a)) != 0 ||
         seed_replay(fx, 0U, witness_a, sizeof(witness_a)) != 0 ||
@@ -889,6 +905,13 @@ static int seed_world(fixture *fx)
                    fx->manifest_c) != 0)
         return 1;
     return advance(fx, 2U);
+}
+
+static int seed_world(fixture *fx)
+{
+    lxp_programs_retirement_profile profile;
+    return profile_build(fx, &profile) != 0 || profile_stage(fx, &profile) != 0 ||
+        seed_storage(fx) != 0;
 }
 
 static int absent_profile(fixture *fx)
@@ -1324,6 +1347,66 @@ static int retirements(fixture *fx)
     return proofs_survive(fx, "replay_proofs_valid_after_retirement");
 }
 
+static int fee_key_take(const fixture *fx, bool *present, uint8_t digest[32])
+{
+    static const uint8_t fee_key[] = "progfee/active/v1";
+    const lxp_module_kv_entry *entry =
+        find_kv(&fx->kernel, fee_key, sizeof(fee_key) - 1U);
+    *present = entry != NULL;
+    (void)memset(digest, 0, 32U);
+    return entry != NULL &&
+        lxp_hash_sha256(entry->value, entry->value_length, digest) != LXP_OK;
+}
+
+static int profile_staged_flow(fixture *fx, const char *name)
+{
+    lxp_programs_retirement_profile profile;
+    request_params p;
+    candidate c;
+    uint8_t deleted = 1U;
+    uint8_t fee_before[32], fee_after[32];
+    bool fee_present_before, fee_present_after;
+    if (profile_build(fx, &profile) != 0 || absent_profile(fx) != 0 ||
+        seed_storage(fx) != 0)
+        return fail(name, "seed", LXP_OK, LXP_OK);
+    storage_candidate(&c, LXP_PROGRAMS_RETIREMENT_CLASS_MANIFEST, fx->ns_paxai,
+                      &fx->head_b, fx->origin_b, fx->root_b, fx->manifest_b);
+    if (find_blob(&fx->kernel, c.digest) == NULL)
+        return fail(name, "blob-missing", LXP_OK, LXP_OK);
+    default_params(fx, &p);
+    if (refuse(fx, "retirement_profile_unstaged_disabled",
+               encode(fx, &p, &c, 1U, 1U), LXP_ERR_MODULE_DISABLED) != 0)
+        return 1;
+    if (profile_stage(fx, &profile) != 0)
+        return fail(name, "stage", LXP_OK, LXP_OK);
+    if (fee_key_take(fx, &fee_present_before, fee_before) != 0)
+        return fail(name, "fee-key", LXP_OK, LXP_OK);
+    default_params(fx, &p);
+    if (retire(fx, name, encode(fx, &p, &c, 1U, 1U), 1U, 1U, 0U, &deleted,
+               &c) != 0)
+        return 1;
+    if (find_blob(&fx->kernel, c.digest) != NULL)
+        return fail(name, "blob-live", LXP_OK, LXP_OK);
+    if (fee_key_take(fx, &fee_present_after, fee_after) != 0 ||
+        fee_present_after != fee_present_before ||
+        memcmp(fee_after, fee_before, 32U) != 0)
+        return fail(name, "fee-key-changed", LXP_OK, LXP_OK);
+    return 0;
+}
+
+static int test_retirement_profile_staged(fixture *fx, trace *out)
+{
+    static const char name[] = "retirement_profile_staged";
+    int status;
+    if (fixture_init(fx, true, out) != 0) {
+        fixture_destroy(fx);
+        return fail(name, "init", LXP_OK, LXP_OK);
+    }
+    status = profile_staged_flow(fx, name);
+    fixture_destroy(fx);
+    return status;
+}
+
 static int scenario(fixture *fx, bool verbose, trace *out)
 {
     int status;
@@ -1351,6 +1434,7 @@ int main(void)
     fill(stranger_seed, 32U, 0xC9U);
     if (scenario(&fixtures[0], true, &traces[0]) != 0) return 1;
     if (scenario(&fixtures[1], false, &traces[1]) != 0) return 1;
+    if (test_retirement_profile_staged(&fixtures[2], &traces[2]) != 0) return 1;
     if (traces[0].count != traces[1].count ||
         memcmp(traces[0].outcome, traces[1].outcome, 32U) != 0 ||
         memcmp(traces[0].final_root, traces[1].final_root, 32U) != 0)
