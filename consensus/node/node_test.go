@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -777,4 +779,118 @@ func loadStatefromGenesis(ctx context.Context, t *testing.T) sm.State {
 	require.NotNil(t, state)
 
 	return state
+}
+
+const nodeShutdownPruneUnprunedHeight = 40
+
+func nodeShutdownPruneNode(ctx context.Context, t *testing.T, cfg *config.Config, app *kvstore.Application) *nodeImpl {
+	t.Helper()
+	ns, err := New(
+		ctx,
+		cfg,
+		func() {},
+		app,
+		nil,
+		nil,
+		DefaultMetricsProvider(cfg.Instrumentation)(cfg.ChainID()),
+		types.DefaultConsensusPolicy(),
+	)
+	require.NoError(t, err)
+	n, ok := ns.(*nodeImpl)
+	require.True(t, ok)
+	return n
+}
+
+// nodeShutdownPruneRunUntil starts n and returns the height of the first new
+// block at or above height, leaving the node running.
+func nodeShutdownPruneRunUntil(ctx context.Context, t *testing.T, n *nodeImpl, height int64) int64 {
+	t.Helper()
+	sub, err := n.EventBus().SubscribeWithArgs(ctx, pubsub.SubscribeArgs{
+		ClientID: "node_shutdown_prune_test",
+		Query:    types.EventQueryNewBlock,
+		Limit:    1000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, n.Start(ctx))
+
+	tctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	for {
+		msg, err := sub.Next(tctx)
+		require.NoError(t, err, "waiting for a new block")
+		ev, ok := msg.Data().(types.EventDataNewBlock)
+		require.True(t, ok)
+		if ev.Block.Height >= height {
+			return ev.Block.Height
+		}
+	}
+}
+
+func nodeShutdownPruneInFlight() bool {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return strings.Contains(string(buf[:n]), "state.(*BlockExecutor).pruneBlocks")
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+}
+
+func TestNodeShutdownJoinsPruner(t *testing.T) {
+	cfg, err := config.ResetTestRoot(t.TempDir(), "node_shutdown_prune_test")
+	require.NoError(t, err)
+	cfg.DBBackend = string(dbm.GoLevelDBBackend)
+	cfg.RPC.ListenAddress = fmt.Sprintf("tcp://%s", tcp.TestReserveAddr())
+	// goleveldb drains its memory pool for up to a second after Close.
+	t.Cleanup(leaktest.CheckTimeout(t, 5*time.Second))
+
+	ctx := t.Context()
+	app := kvstore.NewApplication()
+	app.SetValidators(utils.OrPanic1(types.GenesisDocFromFile(cfg.GenesisFile())).ValidatorUpdates())
+
+	// Build a chain with no retain height, so the first commit with one
+	// prunes every block below it in a single prune.
+	unpruned := nodeShutdownPruneNode(ctx, t, cfg, app)
+	nodeShutdownPruneRunUntil(ctx, t, unpruned, nodeShutdownPruneUnprunedHeight)
+	unpruned.Stop()
+	unpruned.Wait()
+
+	app.RetainBlocks = 1
+	pruning := nodeShutdownPruneNode(ctx, t, cfg, app)
+	retainHeight := nodeShutdownPruneRunUntil(ctx, t, pruning, nodeShutdownPruneUnprunedHeight+1)
+	require.Greater(t, retainHeight, int64(nodeShutdownPruneUnprunedHeight))
+
+	pruning.Stop()
+	pruning.Wait()
+	require.False(t, pruning.IsRunning(), "node must shut down")
+	require.False(t, nodeShutdownPruneInFlight(), "a prune is still running after OnStop returned")
+
+	// The stores reopen only once OnStop closed them; the prune either never
+	// started or finished, never torn by the close.
+	blockDB, err := config.DefaultDBProvider(&config.DBContext{ID: "blockstore", Config: cfg})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, blockDB.Close()) })
+	stateDB, err := config.DefaultDBProvider(&config.DBContext{ID: "state", Config: cfg})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, stateDB.Close()) })
+
+	blockStore := store.NewBlockStore(blockDB)
+	base, height := blockStore.Base(), blockStore.Height()
+	require.GreaterOrEqual(t, height, retainHeight)
+	if base != 1 {
+		require.GreaterOrEqual(t, base, retainHeight)
+		require.LessOrEqual(t, base, height)
+	}
+	for h := base; h <= height; h++ {
+		require.NotNil(t, blockStore.LoadBlockMeta(h), "block meta missing at height %d", h)
+	}
+
+	stateStore := sm.NewStore(stateDB)
+	st, err := stateStore.Load()
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, st.LastBlockHeight, height-1)
+	require.LessOrEqual(t, st.LastBlockHeight, height)
+	_, err = stateStore.LoadValidators(base)
+	require.NoError(t, err)
 }

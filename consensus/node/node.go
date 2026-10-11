@@ -257,6 +257,10 @@ func makeNode(
 			nodeMetrics.state,
 			consensusPolicy,
 		)
+		closers = append([]closer{func() error {
+			blockExec.Stop()
+			return nil
+		}}, closers...)
 
 		// Determine whether we should attempt state sync.
 		stateSync := cfg.StateSync.Enable && !onlyValidatorIsUs(state, pubKey)
