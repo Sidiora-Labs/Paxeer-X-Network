@@ -14,6 +14,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -220,6 +221,103 @@ func TestLayerXBindRefusalsThroughPrecompile(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrLayerXAddressBound)
 	_, _, err = h.run(layerXCall{caller: thief}, addr.BindLayerXMethod, didPublicKey, h.sign(private, thief, 0))
 	require.ErrorIs(t, err, types.ErrLayerXDidBound)
+}
+
+// TestLayerXReasonsFromPlanHeight drives getLayerXDid of an unbound address and
+// a second bind of a bound address through the real precompile: one height
+// below the merge plan both revert with empty data, from the plan height both
+// revert with the Error(string) reason of their addr registry code.
+func TestLayerXReasonsFromPlanHeight(t *testing.T) {
+	const planHeight = int64(100)
+	testApp := testkeeper.EVMTestApp
+	ctx := testApp.NewContext(false, tmtypes.Header{}).WithBlockHeight(planHeight - 1).WithChainID("layerx-binding-test")
+	ctx = ctx.WithMultiStore(ctx.MultiStore().CacheMultiStore())
+	k := &testApp.EvmKeeper
+	p, err := addr.NewPrecompile(testApp.GetPrecompileKeepers())
+	require.NoError(t, err)
+	chainID := k.ChainID(ctx)
+	sign := func(private ed25519.PrivateKey, evmAddress common.Address, nonce uint64) []byte {
+		message, err := types.LayerXBindMessage(chainID, evmAddress, nonce)
+		require.NoError(t, err)
+		return ed25519.Sign(private, message)
+	}
+
+	_, unboundEvm := testkeeper.MockAddressPair()
+	_, boundEvm := testkeeper.MockAddressPair()
+	boundDid, boundPrivate := newDidKey(t)
+	var boundSignature [64]byte
+	copy(boundSignature[:], sign(boundPrivate, boundEvm, 0))
+	nonce, err := k.BindLayerX(ctx, boundEvm, boundDid, boundSignature)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), nonce)
+	require.Equal(t, uint64(1), k.GetLayerXBindNonce(ctx, boundEvm))
+	k.UpgradeKeeper().SetDone(ctx.WithBlockHeight(planHeight), pcommon.MergeUpgrade)
+
+	otherDid, otherPrivate := newDidKey(t)
+	getDidInput, err := p.ABI.Pack(addr.GetLayerXDidMethod, unboundEvm)
+	require.NoError(t, err)
+	rebindInput, err := p.ABI.Pack(addr.BindLayerXMethod, otherDid, sign(otherPrivate, boundEvm, 1))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		caller   common.Address
+		readOnly bool
+		input    []byte
+		code     string
+		detail   string
+		reason   string
+		keeper   error
+	}{
+		{
+			name: "getLayerXDid of an unbound address", caller: unboundEvm, readOnly: true, input: getDidInput,
+			code: "LXP_ADDR_EVM_NOT_BOUND", detail: unboundEvm.Hex(),
+			reason: "LXP_ADDR_EVM_NOT_BOUND: EVM address is not bound to a LayerX DID; " + unboundEvm.Hex(),
+		},
+		{
+			name: "second bind of a bound address", caller: boundEvm, input: rebindInput,
+			code:   "LXP_ADDR_LAYERX_ADDRESS_BOUND",
+			reason: "LXP_ADDR_LAYERX_ADDRESS_BOUND: layerx binding: evm address is already bound to a did",
+			keeper: types.ErrLayerXAddressBound,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := func(height int64) ([]byte, *state.DBImpl, error) {
+				stateDB := state.NewDBImpl(ctx.WithBlockHeight(height), k, false)
+				ret, _, err := p.RunAndCalculateGas(&vm.EVM{StateDB: stateDB}, tt.caller, tt.caller, tt.input, 200000, big.NewInt(0), nil, tt.readOnly, false)
+				return ret, stateDB, err
+			}
+
+			// One height below the plan the revert carries no data.
+			ret, stateDB, err := call(planHeight - 1)
+			require.Equal(t, vm.ErrExecutionReverted, err)
+			require.Nil(t, ret)
+			require.Error(t, stateDB.GetPrecompileError())
+
+			// From the plan height it is Error(string) with the registry reason.
+			ret, stateDB, err = call(planHeight)
+			require.Equal(t, vm.ErrExecutionReverted, err)
+			require.Equal(t, pcommon.LXPRevert(tt.code, tt.detail), ret)
+			require.Equal(t, []byte{0x08, 0xc3, 0x79, 0xa0}, ret[:4])
+			reason, err := abi.UnpackRevert(ret)
+			require.NoError(t, err)
+			require.Equal(t, tt.reason, reason)
+			refusal := stateDB.GetPrecompileError()
+			require.Error(t, refusal)
+			if tt.keeper != nil {
+				require.ErrorIs(t, refusal, tt.keeper)
+			}
+		})
+	}
+
+	// Neither refusal changed the binding.
+	stored, found := k.GetLayerXDid(ctx, boundEvm)
+	require.True(t, found)
+	require.Equal(t, boundDid, stored)
+	_, found = k.GetLayerXDid(ctx, unboundEvm)
+	require.False(t, found)
+	require.Equal(t, uint64(1), k.GetLayerXBindNonce(ctx, boundEvm))
 }
 
 func TestLayerXUnbindAndRebindThroughPrecompile(t *testing.T) {
