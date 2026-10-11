@@ -46,6 +46,53 @@ type SendConfig struct {
 	Sequencer SequencerAccepter
 	// SequencerURL, set on every other node, is the EVM RPC endpoint raw transactions are forwarded to.
 	SequencerURL *url.URL
+	// pendingTxs, created by NewSendAPI when Sequencer is set, feeds eth_subscribe
+	// newPendingTransactions. The HTTP and WebSocket SendAPI of the sequencer share one SendConfig so
+	// a hash receipted through either reaches every subscriber.
+	pendingTxs *pendingTxFeed1315
+}
+
+// pendingTxListenerBuffer1315 is how many receipted hashes a newPendingTransactions subscriber may
+// lag behind before it is dropped.
+const pendingTxListenerBuffer1315 = 1024
+
+// pendingTxFeed1315 fans receipted transaction hashes out to newPendingTransactions subscribers.
+// receiptMu is held across Accept and emit so hashes leave in receipt order.
+type pendingTxFeed1315 struct {
+	receiptMu sync.Mutex
+	mu        sync.Mutex
+	listeners map[rpc.ID]chan common.Hash
+}
+
+func (f *pendingTxFeed1315) add(id rpc.ID) <-chan common.Hash {
+	listener := make(chan common.Hash, pendingTxListenerBuffer1315)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listeners[id] = listener
+	return listener
+}
+
+func (f *pendingTxFeed1315) remove(id rpc.ID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if listener, ok := f.listeners[id]; ok {
+		close(listener)
+		delete(f.listeners, id)
+	}
+}
+
+// emit hands hash to every subscriber; a subscriber whose buffer is full is closed and dropped.
+func (f *pendingTxFeed1315) emit(hash common.Hash) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, listener := range f.listeners {
+		select {
+		case listener <- hash:
+		default:
+			close(listener)
+			delete(f.listeners, id)
+		}
+	}
 }
 
 // SequencerAccepter executes transactions at receipt on the sequencer's open block.
@@ -73,6 +120,9 @@ func NewSendAPI(
 	cacheCreationMutex *sync.Mutex,
 	watermarks *WatermarkManager,
 ) *SendAPI {
+	if sendConfig.Sequencer != nil && sendConfig.pendingTxs == nil {
+		sendConfig.pendingTxs = &pendingTxFeed1315{listeners: make(map[rpc.ID]chan common.Hash)}
+	}
 	return &SendAPI{
 		tmClient:         tmClient,
 		txConfigProvider: txConfigProvider,
@@ -211,6 +261,9 @@ func (s *SendAPI) acceptOnSequencer(tx *ethtypes.Transaction) error {
 	if err != nil {
 		return err
 	}
+	feed := s.sendConfig.pendingTxs
+	feed.receiptMu.Lock()
+	defer feed.receiptMu.Unlock()
 	receipt, err := s.sendConfig.Sequencer.Accept(txbz)
 	if err != nil {
 		var coded *sdkerrors.Error
@@ -222,7 +275,46 @@ func (s *SendAPI) acceptOnSequencer(tx *ethtypes.Transaction) error {
 	if len(receipt) == 0 {
 		return errors.New("missing sequencer receipt")
 	}
+	feed.emit(tx.Hash())
 	return nil
+}
+
+// NewPendingTransactions serves eth_subscribe newPendingTransactions on the sequencer: the hash of
+// every transaction receipted after the subscription, in receipt order. Every other node refuses
+// it with ErrPendingServedBySequencer.
+func (s *SendAPI) NewPendingTransactions(ctx context.Context) (sub *rpc.Subscription, err error) {
+	startTime := time.Now()
+	defer func() {
+		recordMetricsWithError(ctx, "eth_newPendingTransactions", s.connectionType, startTime, err, recover())
+	}()
+	feed := s.sendConfig.pendingTxs
+	if feed == nil {
+		return nil, ErrPendingServedBySequencer
+	}
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	}
+	rpcSub := notifier.CreateSubscription()
+	listener := feed.add(rpcSub.ID)
+	go func() {
+		defer recoverAndLog()
+		defer feed.remove(rpcSub.ID)
+		for {
+			select {
+			case hash, ok := <-listener:
+				if !ok {
+					return
+				}
+				if err := notifier.Notify(rpcSub.ID, hash); err != nil {
+					return
+				}
+			case <-rpcSub.Err():
+				return
+			}
+		}
+	}()
+	return rpcSub, nil
 }
 
 func getSender(tx *ethtypes.Transaction, chainID *big.Int) (common.Address, error) {
