@@ -467,3 +467,210 @@ func TestAddress(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, common.HexToAddress(bank.BankAddress), p.Address())
 }
+
+const (
+	sendContextDenom      = "factory/p/usdl"
+	sendContextPlanHeight = int64(500)
+	sendContextTopic0     = "0x4b11729a809ec729868d9ba54f3192aa4179fe63668e9f742aa9b25de21de65f"
+)
+
+var sendContextHash = common.HexToHash("0x7777777777777777777777777777777777777777777777777777777777777777")
+
+type sendContextEnv struct {
+	ctx      sdk.Context
+	k        *keeper.Keeper
+	p        *pcommon.DynamicGasPrecompile
+	executor *bank.PrecompileExecutor
+	pointer  common.Address
+	from     common.Address
+	to       common.Address
+	fromPax  sdk.AccAddress
+	toPax    sdk.AccAddress
+}
+
+// newSendContextEnv funds A with 1000 factory/p/usdl, binds A and B, makes P
+// the denom's ERC20 native pointer and applies the merge plan at its height.
+func newSendContextEnv(t *testing.T) *sendContextEnv {
+	testApp := testkeeper.EVMTestApp
+	ctx, _ := testApp.NewContext(false, tmtypes.Header{}).CacheContext()
+	ctx = ctx.WithBlockHeight(sendContextPlanHeight)
+	k := &testApp.EvmKeeper
+	fromPax, from := testkeeper.MockAddressPair()
+	k.SetAddressMapping(ctx, fromPax, from)
+	toPax, to := testkeeper.MockAddressPair()
+	k.SetAddressMapping(ctx, toPax, to)
+	funds := sdk.NewCoins(sdk.NewCoin(sendContextDenom, sdk.NewInt(1000)))
+	require.NoError(t, k.BankKeeper().MintCoins(ctx, types.ModuleName, funds))
+	require.NoError(t, k.BankKeeper().SendCoinsFromModuleToAccount(ctx, types.ModuleName, fromPax, funds))
+	_, pointer := testkeeper.MockAddressPair()
+	k.SetERC20NativePointer(ctx, sendContextDenom, pointer)
+	testApp.UpgradeKeeper.SetDone(ctx, pcommon.MergeUpgrade)
+	p, err := bank.NewPrecompile(testApp.GetPrecompileKeepers())
+	require.NoError(t, err)
+	return &sendContextEnv{
+		ctx:      ctx,
+		k:        k,
+		p:        p,
+		executor: p.GetExecutor().(*bank.PrecompileExecutor),
+		pointer:  pointer,
+		from:     from,
+		to:       to,
+		fromPax:  fromPax,
+		toPax:    toPax,
+	}
+}
+
+func (e *sendContextEnv) input(t *testing.T, denom string, amount int64) []byte {
+	input, err := e.p.ABI.Pack(bank.SendContextMethod, e.from, e.to, denom, big.NewInt(amount), sendContextHash)
+	require.NoError(t, err)
+	return input
+}
+
+func (e *sendContextEnv) call(height int64, caller common.Address, input []byte, value *big.Int, readOnly bool) ([]byte, *state.DBImpl, error) {
+	statedb := state.NewDBImpl(e.ctx.WithBlockHeight(height), e.k, false)
+	ret, _, err := e.p.RunAndCalculateGas(&vm.EVM{StateDB: statedb}, caller, caller, input, 1_000_000, value, nil, readOnly, false)
+	return ret, statedb, err
+}
+
+func (e *sendContextEnv) balance(statedb *state.DBImpl, addr sdk.AccAddress) int64 {
+	return e.k.BankKeeper().GetBalance(statedb.Ctx(), addr, sendContextDenom).Amount.Int64()
+}
+
+func sendContextReason(t *testing.T, ret []byte) string {
+	reason, err := abi.UnpackRevert(ret)
+	require.NoError(t, err)
+	return reason
+}
+
+func sendContextTrue(t *testing.T, p *pcommon.DynamicGasPrecompile, ret []byte) {
+	out, err := p.ABI.Unpack(bank.SendContextMethod, ret)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{true}, out)
+}
+
+func TestSendContextHashSelector(t *testing.T) {
+	e := newSendContextEnv(t)
+	send0, ok := e.p.ABI.Methods[bank.SendContextMethod]
+	require.True(t, ok)
+	require.Equal(t, "send(address,address,string,uint256,bytes32)", send0.Sig)
+	require.Equal(t, common.FromHex("0x2e4c85ac"), send0.ID)
+	require.Equal(t, send0.ID, e.executor.SendContextID)
+	send, ok := e.p.ABI.Methods[bank.SendMethod]
+	require.True(t, ok)
+	require.Equal(t, "send(address,address,string,uint256)", send.Sig)
+	require.Equal(t, common.FromHex("0x5c05961b"), send.ID)
+	require.Equal(t, send.ID, e.executor.SendID)
+
+	// Input under the literal selector 0x2e4c85ac runs the overload: coins
+	// move and the receipt log is emitted.
+	args, err := send0.Inputs.Pack(e.from, e.to, sendContextDenom, big.NewInt(7), sendContextHash)
+	require.NoError(t, err)
+	ret, statedb, err := e.call(sendContextPlanHeight, e.pointer, append(common.FromHex("0x2e4c85ac"), args...), nil, false)
+	require.NoError(t, err)
+	sendContextTrue(t, e.p, ret)
+	require.Equal(t, int64(993), e.balance(statedb, e.fromPax))
+	require.Equal(t, int64(7), e.balance(statedb, e.toPax))
+	logs := statedb.GetAllLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, common.HexToHash(sendContextTopic0), logs[0].Topics[0])
+}
+
+func TestSendContextHashRefusals(t *testing.T) {
+	e := newSendContextEnv(t)
+	valid := e.input(t, sendContextDenom, 5)
+	refused := func(caller common.Address, input []byte, value *big.Int, readOnly bool) string {
+		ret, statedb, err := e.call(sendContextPlanHeight, caller, input, value, readOnly)
+		require.Equal(t, vm.ErrExecutionReverted, err)
+		require.Empty(t, statedb.GetAllLogs())
+		require.Equal(t, int64(1000), e.balance(statedb, e.fromPax))
+		require.Equal(t, int64(0), e.balance(statedb, e.toPax))
+		return sendContextReason(t, ret)
+	}
+
+	require.Equal(t, "LXP_NON_CANONICAL: non canonical; cannot call send from staticcall", refused(e.pointer, valid, nil, true))
+	require.Equal(t, "LXP_NON_CANONICAL: non canonical; sending funds to a non-payable function", refused(e.pointer, valid, big.NewInt(1), false))
+	require.Equal(t, "invalid denom", refused(e.pointer, e.input(t, "", 5), nil, false))
+	_, q := testkeeper.MockAddressPair()
+	require.Equal(t, "only pointer "+e.pointer.Hex()+" can send "+sendContextDenom+" but got "+q.Hex(), refused(q, valid, nil, false))
+
+	// A paused denom is refused by the bank send-enabled check.
+	params := e.k.BankKeeper().GetParams(e.ctx)
+	e.k.BankKeeper().SetParams(e.ctx, params.SetSendEnabledParam(sendContextDenom, false))
+	require.Equal(t, "LXP_ASSET_PAUSED: asset paused; "+sendContextDenom+" transfers are currently disabled: send transactions are disabled", refused(e.pointer, valid, nil, false))
+}
+
+func TestSendContextHashZeroAmount(t *testing.T) {
+	e := newSendContextEnv(t)
+	ret, statedb, err := e.call(sendContextPlanHeight, e.pointer, e.input(t, sendContextDenom, 0), nil, false)
+	require.NoError(t, err)
+	sendContextTrue(t, e.p, ret)
+	require.Empty(t, statedb.GetAllLogs())
+	require.Equal(t, int64(1000), e.balance(statedb, e.fromPax))
+	require.Equal(t, int64(0), e.balance(statedb, e.toPax))
+}
+
+func TestSendContextHashReceipt(t *testing.T) {
+	e := newSendContextEnv(t)
+	ret, statedb, err := e.call(sendContextPlanHeight, e.pointer, e.input(t, sendContextDenom, 25), nil, false)
+	require.NoError(t, err)
+	sendContextTrue(t, e.p, ret)
+	require.Equal(t, int64(975), e.balance(statedb, e.fromPax))
+	require.Equal(t, int64(25), e.balance(statedb, e.toPax))
+
+	event := e.p.ABI.Events[bank.LayerXReceiptEvent]
+	require.Equal(t, common.HexToHash(sendContextTopic0), event.ID)
+	logs := statedb.GetAllLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, common.HexToAddress(bank.BankAddress), logs[0].Address)
+	require.Equal(t, []common.Hash{common.HexToHash(sendContextTopic0), common.BytesToHash(e.from.Bytes()), common.BytesToHash(e.to.Bytes())}, logs[0].Topics)
+	data, err := event.Inputs.NonIndexed().Pack(sendContextDenom, big.NewInt(25), sendContextHash)
+	require.NoError(t, err)
+	require.Equal(t, data, logs[0].Data)
+	fields, err := event.Inputs.NonIndexed().Unpack(logs[0].Data)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{sendContextDenom, big.NewInt(25), [32]byte(sendContextHash)}, fields)
+
+	// The four-argument send moves coins and still emits no log.
+	input, err := e.p.ABI.Pack(bank.SendMethod, e.from, e.to, sendContextDenom, big.NewInt(25))
+	require.NoError(t, err)
+	ret, statedb, err = e.call(sendContextPlanHeight, e.pointer, input, nil, false)
+	require.NoError(t, err)
+	out, err := e.p.ABI.Unpack(bank.SendMethod, ret)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{true}, out)
+	require.Equal(t, int64(975), e.balance(statedb, e.fromPax))
+	require.Equal(t, int64(25), e.balance(statedb, e.toPax))
+	require.Empty(t, statedb.GetAllLogs())
+}
+
+func TestSendReasonsFromPlanHeight(t *testing.T) {
+	e := newSendContextEnv(t)
+	valid := e.input(t, sendContextDenom, 5)
+
+	// From the plan height a staticcall of the overload reverts LXP_NON_CANONICAL.
+	for _, height := range []int64{sendContextPlanHeight, sendContextPlanHeight + 1} {
+		ret, _, err := e.call(height, e.pointer, valid, nil, true)
+		require.Equal(t, vm.ErrExecutionReverted, err)
+		require.Equal(t, "LXP_NON_CANONICAL: non canonical; cannot call send from staticcall", sendContextReason(t, ret))
+	}
+
+	// One height below the plan the overload does not exist: every call,
+	// staticcall or not, reverts with no data, and the refusal is the
+	// unknown-method text with no transfer and no log.
+	for _, readOnly := range []bool{true, false} {
+		ret, statedb, err := e.call(sendContextPlanHeight-1, e.pointer, valid, nil, readOnly)
+		require.Equal(t, vm.ErrExecutionReverted, err)
+		require.Nil(t, ret)
+		require.Empty(t, statedb.GetAllLogs())
+		require.Equal(t, int64(1000), e.balance(statedb, e.fromPax))
+		require.Equal(t, int64(0), e.balance(statedb, e.toPax))
+	}
+	send0 := e.p.ABI.Methods[bank.SendContextMethod]
+	args, err := send0.Inputs.Unpack(valid[4:])
+	require.NoError(t, err)
+	below := e.ctx.WithBlockHeight(sendContextPlanHeight - 1)
+	ret, gas, err := e.executor.Execute(below, &send0, e.pointer, e.pointer, args, nil, false, &vm.EVM{StateDB: state.NewDBImpl(below, e.k, false)}, 1_000_000, nil)
+	require.Nil(t, ret)
+	require.Equal(t, uint64(0), gas)
+	require.EqualError(t, err, "no method with id: 0x2e4c85ac")
+}
