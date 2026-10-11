@@ -20,6 +20,7 @@ pub enum Operation {
     CapabilityRevoke,
     ExportOffline,
     FaucetClaim,
+    McpInvoke,
     PolicyDryRun,
     Prepare,
     ProgramActivity,
@@ -77,6 +78,7 @@ impl Operation {
         Self::CapabilityRevoke,
         Self::ExportOffline,
         Self::FaucetClaim,
+        Self::McpInvoke,
         Self::PolicyDryRun,
         Self::Prepare,
         Self::ProgramActivity,
@@ -135,6 +137,7 @@ impl Operation {
             Self::CapabilityRevoke => "capability.revoke",
             Self::ExportOffline => "export.offline",
             Self::FaucetClaim => "faucet.claim",
+            Self::McpInvoke => "mcp.invoke",
             Self::PolicyDryRun => "policy.dry_run",
             Self::Prepare => "prepare",
             Self::ProgramActivity => "program.activity",
@@ -186,6 +189,7 @@ impl Operation {
                 | Self::CapabilityAttenuate
                 | Self::CapabilityCreate
                 | Self::CapabilityRevoke
+                | Self::McpInvoke
                 | Self::Prepare
                 | Self::ProgramCall
                 | Self::ProgramDeploy
