@@ -54,7 +54,7 @@ func (k *Keeper) record(ctx sdk.Context, owner common.Address, intent types.Inte
 // account into the layerxcustody module account as a custody deposit for the
 // LayerX account, and records the deposit intent that tells the router the
 // credit is margin. The asset must margin an enabled market.
-func (k *Keeper) DepositMargin(ctx sdk.Context, owner common.Address, ownerAccount sdk.AccAddress,
+func (k *Keeper) RecordDepositMarginIntent(ctx sdk.Context, owner common.Address, ownerAccount sdk.AccAddress,
 	assetID, account [32]byte, amount sdk.Int) (types.Intent, error) {
 	if !k.GetParams(ctx).MarginAsset(custodytypes.Hash32(assetID)) {
 		return types.Intent{}, types.ErrNotMarginAsset
@@ -70,16 +70,15 @@ func (k *Keeper) DepositMargin(ctx sdk.Context, owner common.Address, ownerAccou
 		if err != nil {
 			return types.Intent{}, err
 		}
-		return intent, ctx.EventManager().EmitTypedEvent(&types.EventMarginDeposited{IntentId: intent.IntentId,
-			Owner: intent.Owner, Account: intent.Account, AssetId: intent.AssetId, Denom: intent.Denom,
-			Amount: intent.Amount, DepositId: intent.DepositId, Nonce: intent.Nonce})
+		return intent, ctx.EventManager().EmitTypedEvent(&types.EventMarginDeposited{DepositId: intent.IntentId,
+			MarginAccount: intent.Account, Owner: intent.Owner, AssetId: intent.AssetId, Amount: amount})
 	})
 }
 
 // WithdrawMargin records a request that LayerX move margin of the account
 // back to its withdrawable balance. No coin moves on Paxeer: the release is a
 // proof-carrying layerxcustody withdrawal of the resulting LayerX receipt.
-func (k *Keeper) WithdrawMargin(ctx sdk.Context, owner common.Address, account, assetID [32]byte,
+func (k *Keeper) RecordWithdrawMarginIntent(ctx sdk.Context, owner common.Address, account, assetID [32]byte,
 	amount sdk.Int) (types.Intent, error) {
 	asset, found := k.custody.GetAsset(ctx, assetID)
 	if !found || !k.GetParams(ctx).MarginAsset(asset.AssetId) {
@@ -102,7 +101,7 @@ func (k *Keeper) WithdrawMargin(ctx sdk.Context, owner common.Address, account, 
 
 // PlaceOrder records an order intent for an enabled market. Paxeer checks
 // only the shape of the order; LayerX matches it.
-func (k *Keeper) PlaceOrder(ctx sdk.Context, owner common.Address, marketID [32]byte, side uint8,
+func (k *Keeper) RecordPlaceOrderIntent(ctx sdk.Context, owner common.Address, marketID [32]byte, side uint8,
 	price, quantity sdk.Int, timeInForce uint8) (types.Intent, error) {
 	market, found := k.GetParams(ctx).Market(custodytypes.Hash32(marketID))
 	if !found || !market.Enabled {
@@ -143,14 +142,13 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, owner common.Address, marketID [32]
 		if err != nil {
 			return types.Intent{}, err
 		}
-		return intent, ctx.EventManager().EmitTypedEvent(&types.EventOrderPlaced{IntentId: intent.IntentId,
-			Owner: intent.Owner, MarketId: intent.MarketId, Side: intent.Side, Price: intent.Price,
-			Quantity: intent.Quantity, TimeInForce: intent.TimeInForce, Nonce: intent.Nonce})
+		return intent, ctx.EventManager().EmitTypedEvent(&types.EventOrderPlaced{OrderId: intent.IntentId,
+			MarketId: intent.MarketId, FillCount: 0, Quantity: quantity})
 	})
 }
 
 // CancelOrder records a request to cancel a LayerX order.
-func (k *Keeper) CancelOrder(ctx sdk.Context, owner common.Address, orderID [32]byte) (types.Intent, error) {
+func (k *Keeper) RecordCancelOrderIntent(ctx sdk.Context, owner common.Address, orderID [32]byte) (types.Intent, error) {
 	if orderID == ([32]byte{}) {
 		return types.Intent{}, sdkerrors.Wrap(types.ErrInvalidIntent, "order id")
 	}

@@ -62,7 +62,21 @@ func eventRoundTrip(t *testing.T, original proto.Message) {
 	if event.Type != wantType {
 		t.Fatalf("typed event name: got %q, want %q", event.Type, wantType)
 	}
-	parsed, err := sdk.ParseTypedEvent(abci.Event(event))
+	manager := sdk.NewEventManager()
+	if err := manager.EmitTypedEvent(original); err != nil {
+		t.Fatal(err)
+	}
+	emitted := manager.Events()
+	if len(emitted) != 1 {
+		t.Fatalf("emitted event count: got %d, want 1", len(emitted))
+	}
+	if !reflect.DeepEqual(event, emitted[0]) {
+		t.Fatalf("emitted event: got %v, want %v", emitted[0], event)
+	}
+	if emitted[0].Type != wantType {
+		t.Fatalf("emitted event name: got %q, want %q", emitted[0].Type, wantType)
+	}
+	parsed, err := sdk.ParseTypedEvent(abci.Event(emitted[0]))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +131,19 @@ func TestEventSignedAndZeroRoundTrip(t *testing.T) {
 	}
 	eventRoundTrip(t, &EventSpotOrderPlaced{OrderId: "order", MarketId: "market", FillCount: 0, Quantity: sdk.NewInt(1), Remaining: sdk.ZeroInt()})
 	eventRoundTrip(t, &EventPerpsMarketHalted{MarketId: "market", Administrator: "administrator", Halted: false})
+}
+
+func TestEventIntentRoundTrip(t *testing.T) {
+	cases := []proto.Message{
+		&EventMarginWithdrawalRequested{IntentId: "withdrawal", Owner: "owner", Account: "account", AssetId: "asset", Amount: eventMaxU128, Nonce: math.MaxUint64},
+		&EventOrderCancelRequested{IntentId: "cancellation", Owner: "owner", OrderId: "order", Nonce: math.MaxUint64},
+		&EventSettlementRequested{IntentId: "settlement", Owner: "owner", PositionId: "position", Nonce: math.MaxUint64},
+	}
+	for _, event := range cases {
+		t.Run(reflect.TypeOf(event).Elem().Name(), func(t *testing.T) {
+			eventRoundTrip(t, event)
+		})
+	}
 }
 
 func TestEventIntegerAttributes(t *testing.T) {
@@ -183,6 +210,9 @@ func TestEventSchema(t *testing.T) {
 		{"EventSpotOrderCancelled", []eventFieldSpec{{"order_id", stringType, false}, {"market_id", stringType, false}, {"escrowed", stringType, true}}},
 		{"EventSpotMarketHalted", []eventFieldSpec{{"market_id", stringType, false}, {"administrator", stringType, false}}},
 		{"EventSpotMarketResumed", []eventFieldSpec{{"market_id", stringType, false}, {"administrator", stringType, false}}},
+		{"EventMarginWithdrawalRequested", []eventFieldSpec{{"intent_id", stringType, false}, {"owner", stringType, false}, {"account", stringType, false}, {"asset_id", stringType, false}, {"amount", stringType, false}, {"nonce", uint64Type, false}}},
+		{"EventOrderCancelRequested", []eventFieldSpec{{"intent_id", stringType, false}, {"owner", stringType, false}, {"order_id", stringType, false}, {"nonce", uint64Type, false}}},
+		{"EventSettlementRequested", []eventFieldSpec{{"intent_id", stringType, false}, {"owner", stringType, false}, {"position_id", stringType, false}, {"nonce", uint64Type, false}}},
 	}
 	compressed, _ := (&EventMarginDeposited{}).Descriptor()
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
@@ -245,8 +275,8 @@ func TestEventSchema(t *testing.T) {
 		})
 	}
 	for _, name := range []string{"EventMarginWithdrawalRequested", "EventOrderCancelRequested", "EventSettlementRequested"} {
-		if proto.MessageType(file.GetPackage()+"."+name) != nil {
-			t.Errorf("obsolete event remains registered: %s", name)
+		if proto.MessageType(file.GetPackage()+"."+name) == nil {
+			t.Errorf("intent event is not registered: %s", name)
 		}
 	}
 }

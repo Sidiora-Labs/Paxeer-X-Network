@@ -153,3 +153,29 @@ message EventSpotMarketResumed {
   string market_id = 1;
   string administrator = 2;
 }
+
+// EventMarginWithdrawalRequested mirrors the MarginWithdrawalRequested EVM log.
+message EventMarginWithdrawalRequested {
+  string intent_id = 1;
+  string owner = 2;
+  string account = 3;
+  string asset_id = 4;
+  string amount = 5;
+  uint64 nonce = 6;
+}
+
+// EventOrderCancelRequested mirrors the OrderCancelRequested EVM log.
+message EventOrderCancelRequested {
+  string intent_id = 1;
+  string owner = 2;
+  string order_id = 3;
+  uint64 nonce = 4;
+}
+
+// EventSettlementRequested mirrors the SettlementRequested EVM log.
+message EventSettlementRequested {
+  string intent_id = 1;
+  string owner = 2;
+  string position_id = 3;
+  uint64 nonce = 4;
+}

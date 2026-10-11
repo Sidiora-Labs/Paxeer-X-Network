@@ -326,7 +326,7 @@ func addressTopic(value common.Address) common.Hash { return common.BytesToHash(
 
 func (p PrecompileExecutor) recordDeposit(ctx sdk.Context, method *abi.Method, caller common.Address,
 	assetID, account [32]byte, value sdk.Int, evm *vm.EVM) ([]byte, error) {
-	intent, err := p.keeper.DepositMargin(ctx, caller, p.evmKeeper.GetPaxAddressOrDefault(ctx, caller), assetID, account, value)
+	intent, err := p.keeper.RecordDepositMarginIntent(ctx, caller, p.evmKeeper.GetPaxAddressOrDefault(ctx, caller), assetID, account, value)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +381,7 @@ func (p PrecompileExecutor) withdrawMargin(ctx sdk.Context, method *abi.Method, 
 		return nil, err
 	}
 	account, assetID, value := args[0].([32]byte), args[1].([32]byte), args[2].(*big.Int)
-	intent, err := p.keeper.WithdrawMargin(ctx, caller, account, assetID, sdk.NewIntFromBigInt(value))
+	intent, err := p.keeper.RecordWithdrawMarginIntent(ctx, caller, account, assetID, sdk.NewIntFromBigInt(value))
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +399,7 @@ func (p PrecompileExecutor) placeOrder(ctx sdk.Context, method *abi.Method, call
 		return nil, err
 	}
 	market, side, price, quantity, tif := args[0].([32]byte), args[1].(uint8), args[2].(*big.Int), args[3].(*big.Int), args[4].(uint8)
-	intent, err := p.keeper.PlaceOrder(ctx, caller, market, side, sdk.NewIntFromBigInt(price),
+	intent, err := p.keeper.RecordPlaceOrderIntent(ctx, caller, market, side, sdk.NewIntFromBigInt(price),
 		sdk.NewIntFromBigInt(quantity), tif)
 	if err != nil {
 		return nil, err
@@ -418,7 +418,7 @@ func (p PrecompileExecutor) cancelOrder(ctx sdk.Context, method *abi.Method, cal
 		return nil, err
 	}
 	orderID := args[0].([32]byte)
-	intent, err := p.keeper.CancelOrder(ctx, caller, orderID)
+	intent, err := p.keeper.RecordCancelOrderIntent(ctx, caller, orderID)
 	if err != nil {
 		return nil, err
 	}

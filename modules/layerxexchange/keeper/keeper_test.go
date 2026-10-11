@@ -205,7 +205,7 @@ func TestDepositMarginMovesFundsOnlyIntoCustody(t *testing.T) {
 	f := newFixture(t)
 	ctx := f.fresh()
 	before := f.balance(f.callerAcc, sdk.MustGetBaseDenom())
-	intent, err := f.keeper.DepositMargin(ctx, f.caller, f.callerAcc, f.native, account, sdk.NewInt(2_500))
+	intent, err := f.keeper.RecordDepositMarginIntent(ctx, f.caller, f.callerAcc, f.native, account, sdk.NewInt(2_500))
 	require.NoError(t, err)
 
 	require.Equal(t, sdk.NewInt(2_500), f.balance(f.custody.ModuleAddress(), sdk.MustGetBaseDenom()))
@@ -219,6 +219,10 @@ func TestDepositMarginMovesFundsOnlyIntoCustody(t *testing.T) {
 	require.Equal(t, custodytypes.Hash32(account), deposit.Beneficiary)
 	require.Equal(t, 1, f.typedEvents(ctx, eventNamespace+"EventMarginDeposited"))
 	require.Equal(t, 1, f.typedEvents(ctx, "paxprotocol.paxchain.layerxcustody.EventCustodyDeposit"))
+	expectedEvent, err := sdk.TypedEventToEvent(&types.EventMarginDeposited{DepositId: intent.IntentId,
+		MarginAccount: intent.Account, Owner: intent.Owner, AssetId: intent.AssetId, Amount: sdk.NewInt(2_500)})
+	require.NoError(t, err)
+	require.Contains(t, ctx.EventManager().Events(), expectedEvent)
 
 	stored, found := f.keeper.GetIntent(ctx, types.IntentID(chainID, f.caller, types.IntentKind_INTENT_KIND_DEPOSIT, 1))
 	require.True(t, found)
@@ -231,11 +235,11 @@ func TestDepositMarginMovesFundsOnlyIntoCustody(t *testing.T) {
 	require.False(t, broken, message)
 
 	// Refusals leave no intent, no nonce and no custody movement behind.
-	_, err = f.keeper.DepositMargin(ctx, f.caller, f.callerAcc, f.token, account, sdk.NewInt(10))
+	_, err = f.keeper.RecordDepositMarginIntent(ctx, f.caller, f.callerAcc, f.token, account, sdk.NewInt(10))
 	require.ErrorIs(t, err, types.ErrNotMarginAsset)
-	_, err = f.keeper.DepositMargin(ctx, f.caller, f.callerAcc, f.native, [32]byte{}, sdk.NewInt(10))
+	_, err = f.keeper.RecordDepositMarginIntent(ctx, f.caller, f.callerAcc, f.native, [32]byte{}, sdk.NewInt(10))
 	require.Error(t, err)
-	_, err = f.keeper.DepositMargin(ctx, f.caller, f.callerAcc, f.native, account, sdk.NewInt(60_000_000))
+	_, err = f.keeper.RecordDepositMarginIntent(ctx, f.caller, f.callerAcc, f.native, account, sdk.NewInt(60_000_000))
 	require.Error(t, err)
 	require.Equal(t, uint64(1), f.keeper.GetOwnerNonce(ctx, f.caller))
 	require.Equal(t, uint64(1), f.keeper.GetIntentCount(ctx))
@@ -251,11 +255,11 @@ func TestIntentsAreRecordedWithoutMovingFunds(t *testing.T) {
 	custodyBefore := f.balance(f.custody.ModuleAddress(), sdk.MustGetBaseDenom())
 	callerBefore := f.balance(f.callerAcc, sdk.MustGetBaseDenom())
 
-	withdraw, err := f.keeper.WithdrawMargin(ctx, f.caller, account, f.native, sdk.NewInt(700))
+	withdraw, err := f.keeper.RecordWithdrawMarginIntent(ctx, f.caller, account, f.native, sdk.NewInt(700))
 	require.NoError(t, err)
-	place, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideSell, sdk.NewInt(31_000), sdk.NewInt(4), types.TimeInForcePostOnly)
+	place, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideSell, sdk.NewInt(31_000), sdk.NewInt(4), types.TimeInForcePostOnly)
 	require.NoError(t, err)
-	cancel, err := f.keeper.CancelOrder(ctx, f.caller, orderID)
+	cancel, err := f.keeper.RecordCancelOrderIntent(ctx, f.caller, orderID)
 	require.NoError(t, err)
 	settle, err := f.keeper.RequestSettlement(ctx, f.caller, positionID)
 	require.NoError(t, err)
@@ -272,6 +276,10 @@ func TestIntentsAreRecordedWithoutMovingFunds(t *testing.T) {
 	require.Equal(t, "31000", place.Price)
 	require.Equal(t, "4", place.Quantity)
 	require.Equal(t, uint32(types.TimeInForcePostOnly), place.TimeInForce)
+	expectedEvent, err := sdk.TypedEventToEvent(&types.EventOrderPlaced{OrderId: place.IntentId,
+		MarketId: place.MarketId, FillCount: 0, Quantity: sdk.NewInt(4)})
+	require.NoError(t, err)
+	require.Contains(t, ctx.EventManager().Events(), expectedEvent)
 	require.Equal(t, custodytypes.Hash32(orderID), cancel.OrderId)
 	require.Equal(t, custodytypes.Hash32(positionID), settle.PositionId)
 	for _, name := range []string{"EventMarginWithdrawalRequested", "EventOrderPlaced", "EventOrderCancelRequested",
@@ -283,23 +291,23 @@ func TestIntentsAreRecordedWithoutMovingFunds(t *testing.T) {
 
 	tooLarge := sdk.NewIntFromBigInt(new(big.Int).Lsh(big.NewInt(1), 128))
 	refusals := map[string]error{}
-	_, refusals["unlisted market"] = f.keeper.PlaceOrder(ctx, f.caller, [32]byte{9}, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
-	_, refusals["side"] = f.keeper.PlaceOrder(ctx, f.caller, marketID, 3, sdk.NewInt(1), sdk.NewInt(1), 0)
-	_, refusals["time in force"] = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 4)
-	_, refusals["zero price"] = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.ZeroInt(), sdk.NewInt(1), 0)
-	_, refusals["u128 quantity"] = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), tooLarge, 0)
-	_, refusals["zero order"] = f.keeper.CancelOrder(ctx, f.caller, [32]byte{})
+	_, refusals["unlisted market"] = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, [32]byte{9}, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
+	_, refusals["side"] = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, 3, sdk.NewInt(1), sdk.NewInt(1), 0)
+	_, refusals["time in force"] = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 4)
+	_, refusals["zero price"] = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.ZeroInt(), sdk.NewInt(1), 0)
+	_, refusals["u128 quantity"] = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), tooLarge, 0)
+	_, refusals["zero order"] = f.keeper.RecordCancelOrderIntent(ctx, f.caller, [32]byte{})
 	_, refusals["zero position"] = f.keeper.RequestSettlement(ctx, f.caller, [32]byte{})
-	_, refusals["non-margin asset"] = f.keeper.WithdrawMargin(ctx, f.caller, account, f.token, sdk.NewInt(1))
-	_, refusals["zero amount"] = f.keeper.WithdrawMargin(ctx, f.caller, account, f.native, sdk.ZeroInt())
-	_, refusals["zero account"] = f.keeper.WithdrawMargin(ctx, f.caller, [32]byte{}, f.native, sdk.NewInt(1))
-	_, refusals["zero owner"] = f.keeper.CancelOrder(ctx, common.Address{}, orderID)
+	_, refusals["non-margin asset"] = f.keeper.RecordWithdrawMarginIntent(ctx, f.caller, account, f.token, sdk.NewInt(1))
+	_, refusals["zero amount"] = f.keeper.RecordWithdrawMarginIntent(ctx, f.caller, account, f.native, sdk.ZeroInt())
+	_, refusals["zero account"] = f.keeper.RecordWithdrawMarginIntent(ctx, f.caller, [32]byte{}, f.native, sdk.NewInt(1))
+	_, refusals["zero owner"] = f.keeper.RecordCancelOrderIntent(ctx, common.Address{}, orderID)
 	for name, err := range refusals {
 		require.Error(t, err, name)
 	}
 	require.NoError(t, f.keeper.SetMarket(ctx, types.Market{MarketId: custodytypes.Hash32(marketID),
 		MarginAssetId: custodytypes.Hash32(f.native), Enabled: false}))
-	_, err = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
+	_, err = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
 	require.ErrorIs(t, err, types.ErrUnknownMarket)
 	require.Equal(t, uint64(4), f.keeper.GetOwnerNonce(ctx, f.caller))
 	require.Equal(t, uint64(4), f.keeper.GetIntentCount(ctx))
@@ -310,7 +318,7 @@ func TestOrderTimeInForceIsRecordedDistinctlyBeforeAnyNonce(t *testing.T) {
 	f.enableNativeTIF()
 	ctx := f.fresh()
 	chainID := testkeeper.EVMTestApp.EvmKeeper.ChainID(ctx)
-	_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 4)
+	_, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 4)
 	require.ErrorIs(t, err, types.ErrInvalidIntent)
 	require.Equal(t, uint64(0), f.keeper.GetOwnerNonce(ctx, f.caller))
 	require.Equal(t, uint64(0), f.keeper.GetIntentCount(ctx))
@@ -318,14 +326,14 @@ func TestOrderTimeInForceIsRecordedDistinctlyBeforeAnyNonce(t *testing.T) {
 	tifs := []uint8{types.TimeInForceGoodTillCancelled, types.TimeInForceImmediateOrCancel,
 		types.TimeInForceFillOrKill, types.TimeInForcePostOnly}
 	for i, tif := range tifs {
-		placed, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(30_000), sdk.NewInt(2), tif)
+		placed, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(30_000), sdk.NewInt(2), tif)
 		require.NoError(t, err)
 		require.Equal(t, uint64(i+1), placed.Nonce)
 		stored, found := f.keeper.GetIntent(ctx, types.IntentID(chainID, f.caller, types.IntentKind_INTENT_KIND_PLACE, placed.Nonce))
 		require.True(t, found)
 		require.Equal(t, uint32(tif), stored.TimeInForce)
 	}
-	_, err = f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0xff)
+	_, err = f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0xff)
 	require.ErrorIs(t, err, types.ErrInvalidIntent)
 	require.Equal(t, uint64(4), f.keeper.GetOwnerNonce(ctx, f.caller))
 	require.Equal(t, uint64(4), f.keeper.GetIntentCount(ctx))
@@ -388,9 +396,9 @@ func TestViewsProveFinalizedState(t *testing.T) {
 func TestGenesisAndAuthority(t *testing.T) {
 	f := newFixture(t)
 	ctx := f.fresh()
-	_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(5), sdk.NewInt(6), 0)
+	_, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(5), sdk.NewInt(6), 0)
 	require.NoError(t, err)
-	_, err = f.keeper.CancelOrder(ctx, f.caller, orderID)
+	_, err = f.keeper.RecordCancelOrderIntent(ctx, f.caller, orderID)
 	require.NoError(t, err)
 	exported := f.keeper.ExportGenesis(ctx)
 	require.NoError(t, exported.Validate())
@@ -526,7 +534,7 @@ func TestNativeTimeInForceCapabilityRefusesBeforeNonce(t *testing.T) {
 	f := newFixture(t)
 	ctx := f.fresh()
 	for _, tif := range []uint8{1, 2, 3} {
-		_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), tif)
+		_, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), tif)
 		require.ErrorIs(t, err, types.ErrInvalidIntent)
 	}
 	require.Zero(t, f.keeper.GetOwnerNonce(ctx, f.caller))
@@ -566,7 +574,7 @@ func TestNativeTimeInForceCapabilityRefusesBeforeNonce(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, f.keeper.SetMarket(ctx, listing))
 			for _, tif := range []uint8{1, 2, 3} {
-				_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), tif)
+				_, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), tif)
 				require.Error(t, err)
 			}
 			require.Zero(t, f.keeper.GetOwnerNonce(ctx, f.caller))
@@ -591,7 +599,7 @@ func TestNativeTimeInForceCapabilityRefusesBeforeNonce(t *testing.T) {
 	}
 	for _, listing := range []types.Market{legacy, oracleOnly} {
 		require.NoError(t, f.keeper.SetMarket(ctx, listing))
-		_, err := f.keeper.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
+		_, err := f.keeper.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(1), sdk.NewInt(1), 0)
 		require.NoError(t, err)
 	}
 }
@@ -700,7 +708,7 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 		first.InitGenesis(ctx, *types.DefaultGenesis())
 		require.NoError(t, first.SetParams(ctx, f.keeper.GetParams(f.ctx)))
 		for _, tif := range []uint8{0, 1, 2, 3} {
-			intent, err := first.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), tif)
+			intent, err := first.RecordPlaceOrderIntent(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), tif)
 			require.NoError(t, err)
 			expected.Intents = append(expected.Intents, intent)
 			encoded, err := intent.Marshal()
@@ -754,14 +762,13 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 		encoded, err := stored.Marshal()
 		require.NoError(t, err)
 		require.Equal(t, canonical[i], encoded)
-		expectedEvent, err := sdk.TypedEventToEvent(&types.EventOrderPlaced{IntentId: stored.IntentId,
-			Owner: stored.Owner, MarketId: stored.MarketId, Side: stored.Side, Price: stored.Price,
-			Quantity: stored.Quantity, TimeInForce: stored.TimeInForce, Nonce: stored.Nonce})
+		quantity, ok := new(big.Int).SetString(stored.Quantity, 10)
+		require.True(t, ok)
+		expectedEvent, err := sdk.TypedEventToEvent(&types.EventOrderPlaced{OrderId: stored.IntentId,
+			MarketId: stored.MarketId, FillCount: 0, Quantity: sdk.NewIntFromBigInt(quantity)})
 		require.NoError(t, err)
 		require.Equal(t, expectedEvent, events[i])
 		price, ok := new(big.Int).SetString(stored.Price, 10)
-		require.True(t, ok)
-		quantity, ok := new(big.Int).SetString(stored.Quantity, 10)
 		require.True(t, ok)
 		data, err := placedABI.Inputs.NonIndexed().Pack(uint8(stored.Side), price, quantity, uint8(stored.TimeInForce), stored.Nonce)
 		require.NoError(t, err)
@@ -787,7 +794,7 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	}
 	require.Equal(t, uint64(4), restored.GetOwnerNonce(restoredCtx, f.caller))
 	require.Equal(t, uint64(4), restored.GetIntentCount(restoredCtx))
-	next, err := restored.PlaceOrder(restoredCtx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), 3)
+	next, err := restored.RecordPlaceOrderIntent(restoredCtx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), 3)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), next.Nonce)
 	for _, intent := range intents {
