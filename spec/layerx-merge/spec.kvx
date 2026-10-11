@@ -41594,7 +41594,7 @@ stop_condition = "Stop on the bounded gate result; record exact revision, comman
 
 [task.0.108]
 title = "Gas station rate publisher verifies the sequencer receipt signature against the pinned ReceiptKeys list"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["7.0.6", "7.2.2"]
@@ -41621,7 +41621,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.109]
 title = "Gas station crate passes its clippy deny level in tx.rs, journal.rs, rpc.rs and policy.rs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
