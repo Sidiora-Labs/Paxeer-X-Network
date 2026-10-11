@@ -364,3 +364,31 @@ command = "go test -count=1 -run TestPause ./modules/layerxgov/types/ -v"
 exit_code = 0
 log_path = "logs/1.3.1-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; 1032.3 (every write in a paused module reverts with LXP_PAUSED_SCOPE) is keeper behaviour outside touches and is not tested here, so the keeper-side pause refusal belongs to a follow-up task."
+
+[finding.7.1.1]
+revision = "1d2d9a450"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station"
+exit_code = 101
+log_path = "logs/7.1.1-verify-1.log"
+observed_and_assumption = "the branch is held: every test the task wrote passes but the target still reports three failures outside touches (two private-material environment tests and recovery_deadline_bounds_real_stalled_tls, the same WouldBlock seen in 9.0.23-verify-3.log), and removing the journal Replacement types leaves tests/resolution_policy.rs uncompilable and tests/service.rs expecting 503 where the no-replacement rule now answers 422; a follow-up task owning resolution_policy.rs, service.rs, service.rs report() and lib.rs docs is needed before this branch can land."
+
+[finding.10.0.4]
+revision = "941e7e3a2"
+command = "go test -count=1 ./precompiles/common/ -run TestLXPRevertTable -v"
+exit_code = 0
+log_path = "logs/10.0.4-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; LXP_ARBITER_REQUIRED, LXP_UNAUTHORIZED_ARBITER and LXP_ESCROW_LINK_MISMATCH (-737..-739) are not in include/layerx/lxp_result.h yet so LXPCodeName answers LXP_UNKNOWN for them until the header declares them, and the fee-token refusals are keyed by code only because modules/evm/keeper imports precompiles/common."
+
+[finding.13.2.2]
+revision = "ef40f532c"
+command = "go test -count=1 ./modules/lxphost/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.2.2-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; the host now persists module blobs under store prefix 0x05 (0x05||u16be module||key32) because Programs deploy staging requires it and the spec states no layout, and perps margin dispatch cannot run in the host because lxphost_reset registers only governance and Programs; the blob layout needs confirmation in the spec."
+
+[finding.2.3.1]
+revision = "09c88cd8a"
+command = "make test-budget-delegate"
+exit_code = 0
+log_path = "logs/2.3.1-verify-3.log"
+observed_and_assumption = "the gate passes and the task is landed; acceptance 2.9.1 says ten activity entries ending at 0x0003000a while the landed list has eleven ending at LX_BUDGET_PULL 0x0003000b, no activity issues a delegate capability yet (the test seeds it through lxp_ctx_kv_put), and tests/ledger/lxp_check_sole_writer.sh needs a real rg binary on PATH under /bin/sh."

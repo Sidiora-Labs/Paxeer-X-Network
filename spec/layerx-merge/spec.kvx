@@ -6733,7 +6733,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.1]
 title = "Execute budget delegate spend with a persisted delegate capability"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.1"]
@@ -40015,6 +40015,154 @@ time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.13]
+title = "Pending log filter resolves latest, safe and finalized fromBlock against its install-time base"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["9028.1", "9028.2", "9028.3"]
+capabilities = []
+do_1 = "NewFilter (rpc/filter.go:686-690) stores pendingBase=H but keeps crit.FromBlock=latest; pendingOnly (rpc/filter.go:400-401) is false for latest, so pendingFilterChanges (rpc/filter.go:856-860) calls GetLogsByFilters with latest resolved to H+1 by ComputeBlockBounds (rpc/filter.go:1137-1155, rpc/utils.go:136-137) once a block commits, the fromBlock > toBlock error returns before the drain and before lastToHeight moves, and every later poll fails the same way. NewFilter rewrites a latest, safe or finalized FromBlock to big.NewInt(pendingBase) when the filter is pending, so begin can never exceed the frozen end."
+do_2 = "Add TestPendingFilterExplicitLatestSurvivesCommit to rpc/pending_filter_test.go modelled on the existing cases at rpc/pending_filter_test.go:142, :235 and :301: at H install fromBlock=latest toBlock=pending, commit H+1 and H+2 before the first poll; the first poll returns no error, includes the committed logs at H and the receipted logs above H exactly once; a second poll after a further commit returns no error and no duplicate, lastToHeight stays at H+1 and new logs arrive only through receipts."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["rpc/filter.go", "rpc/pending_filter_test.go"]
+build_cmd = "go build ./rpc/"
+verify_cmd = "go test -count=1 ./rpc/ -run TestPendingFilterExplicitLatestSurvivesCommit"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.14]
+title = "Pending simulation header carries the committed parent block hash"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["9003.1", "9003.2", "9013.1"]
+capabilities = []
+do_1 = "pendingStateAndHeader (rpc/simulate.go:366-374) builds the pending header without ParentHash, so core.NewEVMBlockContext answers BLOCKHASH(number-1) with the zero hash and the ancestor walk starts from zero. Set ParentHash to the committed block at openHeight-1 through the same encoding getHeader uses (rpc/simulate.go:882, LastBlockID.Hash); when that block cannot be read return an error instead of a zero hash."
+do_2 = "Add TestPendingSimulateBlockhashParent to rpc/pending_simulate_test.go: a pending eth_call of blockhash(block.number-1) returns the hash eth_getBlockByNumber(H) reports, and a pending eth_estimateGas on a contract that branches on blockhash(block.number-1) != 0 takes the non-zero branch."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["rpc/simulate.go", "rpc/pending_simulate_test.go"]
+build_cmd = "go build ./rpc/"
+verify_cmd = "go test -count=1 ./rpc/ -run TestPendingSimulateBlockhashParent"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.15]
+title = "Gateway live reads select the receipt key per receipt instead of the singleton"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["9024.1", "9024.2", "9026.1"]
+capabilities = []
+do_1 = "Config::sequencer_authorization and sequencer_public_key (platform/hosted/gateway/src/main.rs:285-299) go through ReceiptKeyList::single (platform/hosted/gateway/src/lib.rs:1328-1333), which is None for any list that is not exactly one key, so every caller (main.rs:892, :1933, :1994, :2235, :2268, :2843, :2930, :3113, :3248, :3716, :5011 and state.rs:168) answers 503 receipt_key_selection_required once two keys are configured. Remove the singleton use from every caller; each picks its key through ReceiptKeyList::authorization_for_key (lib.rs:1336) from the receipt's or authority fact's sequencer public key plus a height-window check, the way main.rs:1866-1870 already does."
+do_2 = "With keys K1 (heights 5000-6999) and K2 (7000 and above), a K1 receipt at height 6000 and a K2 receipt at height 7500 both verify and read_receipt returns 200; a receipt signed by an unconfigured key, or by K1 at a height outside its window, is refused as unauthorized and never as 503."
+do_3 = "Single-key configurations behave as before and the existing platform/hosted/gateway/tests/receipt_keys.rs cases pass unchanged; add two_key_list_verifies_historical_and_current_receipts to that file."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/state.rs", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/tests/receipt_keys.rs"]
+build_cmd = "cargo build --manifest-path platform/Cargo.toml -p layerx-platform-gateway"
+verify_cmd = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys two_key_list_verifies_historical_and_current_receipts"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.16]
+title = "Replica restore returns a missing-chunk quarantined artifact to Available"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["7042.1", "7042.2"]
+capabilities = []
+do_1 = "restore_payloads (platform/hosted/ai-artifacts/src/retention.rs:352-378) restores a Quarantined object's payload from a valid Published replica but changes only record.session, so the object stays Quarantined and the read path (platform/hosted/ai-artifacts/src/main.rs:1128-1133) keeps answering IntegrityConflict. Quarantined is set only by the short-or-missing-chunk GET path (main.rs:1311-1315). When a restore from a replica succeeds, move a Quarantined object to Available through ObjectRecord::transition and persist it before the restored event; Tombstoned and Purged objects keep their state; revocations, grants and session states are untouched."
+do_2 = "A quarantined root with no valid replica stays Quarantined and logs payload-missing."
+do_3 = "Add r21_quarantined_root_restored_from_replica_reads_after_restart to platform/hosted/ai-artifacts/tests/artifact_service.rs: publish, add a matching replica, remove a primary chunk, GET fails with IntegrityConflict and the object is Quarantined, restart, then an authorized GET returns 200 with the original bytes."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["platform/hosted/ai-artifacts/src/retention.rs", "platform/hosted/ai-artifacts/tests/artifact_service.rs"]
+build_cmd = "cargo build --manifest-path platform/hosted/ai-artifacts/Cargo.toml --tests"
+verify_cmd = "cargo test --manifest-path platform/hosted/ai-artifacts/Cargo.toml --test artifact_service r21_quarantined_root_restored_from_replica_reads_after_restart"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.17]
+title = "MicroBatch executor is selectable through sequencer configuration"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["9001.1", "9035.1", "9035.2"]
+capabilities = []
+do_1 = "ParseMode (node/sequencer/config.go:73-79) knows only sequential, Validate (config.go:87-89) refuses any mode but ModeSequential, Config (config.go:41-54) carries no window or max-count, and NewExecutor (node/sequencer/executor.go:202-212) switches only on ModeSequential, so NewMicroBatch (node/sequencer/microbatch.go:85-99) is unreachable from daemon/paxd/cmd/root.go:247. ParseMode and String round-trip microbatch to ModeMicroBatch; the default stays sequential and unknown names still return ErrConfigMode."
+do_2 = "Config gains sequencer.microbatch-window and sequencer.microbatch-max-count; Validate accepts ModeMicroBatch only when both are positive, with no defaults, returning ErrMicroBatchWindow or ErrMicroBatchMaxCount otherwise."
+do_3 = "NewExecutor's ModeMicroBatch case calls NewMicroBatch with the configured MicroBatchOptions and returns an error when the host is not a BatchHost."
+do_4 = "Add TestSequencerConfigSelectsMicroBatch to node/sequencer/config_test.go: ReadConfig with sequencer.mode=microbatch, Validate, NewExecutor on a real BatchHost asserts Mode()==ModeMicroBatch; sequential stays the default; an unknown mode is refused."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["node/sequencer/config.go", "node/sequencer/executor.go", "node/sequencer/config_test.go"]
+build_cmd = "go build ./node/sequencer/ ./daemon/paxd/..."
+verify_cmd = "go test -count=1 ./node/sequencer/ -run TestSequencerConfigSelectsMicroBatch"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.18]
+title = "Gas station deployment templates carry the mandatory DID gas budget"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["7024.1", "7023.1"]
+capabilities = []
+do_1 = "GasStation::new (interop/crates/layerx-gas-station/src/station.rs:206-208) refuses to start without GAS_STATION_DID_GAS_LIMIT (config.rs:46-52), yet interop/deploy/gas-station/railway.env.example:8-40 lists every GAS_STATION_* value but that one and docker/gas-station/init.sh:32-55 never validates it. Add GAS_STATION_DID_GAS_LIMIT= with a one-line gas-units comment to the policy block of railway.env.example; init.sh adds need GAS_STATION_DID_GAS_LIMIT with the digit rule config.rs:50 applies and exits 2 when it is unset or malformed."
+do_2 = "Add documented_deploy_inputs_start_service to interop/crates/layerx-gas-station/tests/service.rs: it include_str!s railway.env.example, sets every key it lists (blank values filled with test values), starts the real service through spawn_service without the hard-coded set_var at tests/service.rs:295, and asserts the service is ready; the same test then removes GAS_STATION_DID_GAS_LIMIT and asserts GasStation::new returns Invalid."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["interop/deploy/gas-station/railway.env.example", "docker/gas-station/init.sh", "interop/crates/layerx-gas-station/tests/service.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test service documented_deploy_inputs_start_service"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.9.0.6]
 title = "Pending state, call and estimate"
 status = "done"
@@ -48369,7 +48517,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.4]
 title = "Shared LXP_ revert table and its focused test (one entry per code of the error registry)"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["10.0.3"]
@@ -94381,7 +94529,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1.6]
 title = "Block pruning off the ApplyBlock path"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -94435,7 +94583,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.2.2]
 title = "Host shim: account derivation, execute entry, guest imports and block-open time"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["13.1.1"]
