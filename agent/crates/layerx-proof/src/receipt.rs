@@ -21,6 +21,39 @@ pub use owner_module::{
 const PROGRAMS_MODULE_ID: u32 = 9;
 const PROGRAMS_STATE_OPERATION: u16 = 0;
 const PROGRAMS_CALL_OPERATION: u16 = 3;
+const KERNEL_MODULE_COUNT: u16 = 11;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptKeys<'a> {
+    HeightRanges(&'a [crate::inclusion::SequencerAuthorization]),
+    HistoricalKernel([u8; 32]),
+}
+
+impl<'a> From<&'a [crate::inclusion::SequencerAuthorization]> for ReceiptKeys<'a> {
+    fn from(keys: &'a [crate::inclusion::SequencerAuthorization]) -> Self {
+        Self::HeightRanges(keys)
+    }
+}
+
+impl<'a, const N: usize> From<&'a [crate::inclusion::SequencerAuthorization; N]>
+    for ReceiptKeys<'a>
+{
+    fn from(keys: &'a [crate::inclusion::SequencerAuthorization; N]) -> Self {
+        Self::HeightRanges(keys)
+    }
+}
+
+impl From<[u8; 32]> for ReceiptKeys<'_> {
+    fn from(key: [u8; 32]) -> Self {
+        Self::HistoricalKernel(key)
+    }
+}
+
+impl<'a> From<&ReceiptKeys<'a>> for ReceiptKeys<'a> {
+    fn from(keys: &ReceiptKeys<'a>) -> Self {
+        *keys
+    }
+}
 
 const fn supported_protocol_version(version: u16) -> bool {
     protocol_version_uses_occupancy(version)
@@ -626,11 +659,13 @@ fn verify_maintained_chain(
 /// # Errors
 ///
 /// Refuses non-canonical or unsupported receipt shapes, zero activity
-/// identities, missing signatures, and signatures invalid under the pinned
-/// sequencer key.
-pub fn verify_sequencer_signature(
+/// identities, missing signatures, malformed height encodings, unpinned or
+/// ambiguous key identities, heights outside the pinned range, and signatures
+/// invalid under the selected ed25519 key. Bare keys remain valid only for
+/// historical kernel module receipts.
+pub fn verify_sequencer_signature<'a>(
     receipt_bytes: &[u8],
-    sequencer_public_key: [u8; 32],
+    receipt_keys: impl Into<ReceiptKeys<'a>>,
 ) -> Result<Receipt, VerificationFailure> {
     let receipt =
         decode(receipt_bytes).map_err(|_| VerificationFailure::at(ReceiptCheck::Decode))?;
@@ -651,6 +686,38 @@ pub fn verify_sequencer_signature(
     let signature = protocol
         .sequencer_signature()
         .ok_or_else(|| VerificationFailure::at(ReceiptCheck::MissingSignature))?;
+    let sequencer_public_key = match receipt_keys.into() {
+        ReceiptKeys::HeightRanges(keys) => {
+            let batch_id = protocol.batch_id();
+            if batch_id[..24] != [0; 24] {
+                return Err(VerificationFailure::at(ReceiptCheck::BatchId));
+            }
+            let height = u64::from_be_bytes(
+                batch_id[24..]
+                    .try_into()
+                    .map_err(|_| VerificationFailure::at(ReceiptCheck::BatchId))?,
+            );
+            let mut matching = keys
+                .iter()
+                .filter(|key| key.sequencer_id() == protocol.context_hash());
+            let key = matching
+                .next()
+                .ok_or_else(|| VerificationFailure::at(ReceiptCheck::SequencerSignature))?;
+            if matching.next().is_some()
+                || height < key.first_batch_number()
+                || height > key.last_batch_number()
+            {
+                return Err(VerificationFailure::at(ReceiptCheck::SequencerSignature));
+            }
+            key.public_key()
+        }
+        ReceiptKeys::HistoricalKernel(key) => {
+            if protocol.module_id() == 0 || protocol.module_id() > KERNEL_MODULE_COUNT {
+                return Err(VerificationFailure::at(ReceiptCheck::SequencerSignature));
+            }
+            key
+        }
+    };
     let unsigned = encode_unsigned(&receipt)
         .map_err(|_| VerificationFailure::at(ReceiptCheck::CanonicalEncoding))?;
     let digest = receipt_digest(&unsigned)
