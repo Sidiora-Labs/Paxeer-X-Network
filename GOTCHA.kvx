@@ -5316,3 +5316,28 @@ fix = "NODE_INFO capability names are capped at 64 bytes each by the Rust client
 area = "explorer frontend / address page"
 symptom = "The address page landed on the Transactions tab with its list request never sent; token transfers the same; the tab strip held for seconds on every address."
 fix = "toolkit RoutedTabs never writes the default tab into the URL, so any `tab === '<id>'` gate leaves the default tab's query disabled on landing and a disabled TanStack v5 query with placeholderData stays a placeholder forever; gate the local list as the complement of the explicit cross-chain sub-tab instead. The shared retry policy retried 501 like a transient 5xx (two backoffs); 501 is now final. Unit script is `yarn test:vitest --run <specs>` (not test:unit); `yarn install` in a git worktree fails only at the husky postinstall because .git is a file, the dependencies are usable."
+
+[gotcha.1149]
+area = "spec / public checker"
+symptom = "The publication checker rejected `path.go:1234` line citations as port numbers and flagged identifier words such as `_REJECTED` inside error codes as reputational wording."
+fix = "Anchor the port pattern to `localhost`, an IP or `://host` before the colon; strip `LXP_*` identifiers and backticked names before matching; write citations as path:line."
+
+[gotcha.1150]
+area = "spec / cg spec lint"
+symptom = "`cg spec lint -f <feature>` reported `reqs points at N, which no [req.*] declares` on every task that listed bare requirement numbers."
+fix = "Task `reqs` entries must name an acceptance criterion in `<req>.<ac>` form (for example `4.2`), never a bare requirement id; add an acceptance criterion when no existing one fits rather than pointing at a placeholder."
+
+[gotcha.1151]
+area = "spec / wave planning"
+symptom = "Two tasks in the same wave declared `touches` on the same directory, which the parallel-admission rule treats as an exclusive-ownership conflict."
+fix = "Declare `touches` at file level and move the dependent task one wave later; renumber it to that wave so its id matches."
+
+[gotcha.1152]
+area = "spec / contract naming"
+symptom = "A blanket rename of short contract ids (K1..K5) to public file names also rewrote the sequencer receipt key names K1/K2 inside the sequencer contract."
+fix = "Exclude files whose own vocabulary reuses the short ids from the mapping, or rename only the title line there."
+
+[gotcha.1153]
+area = "spec / specgen"
+symptom = "`spec/specgen` and `scripts/specgen.sh` point at `../tools/specgen`, which does not exist from those directories, and `go` is not on PATH in a bare shell."
+fix = "Run `/usr/local/go/bin/go run ./tools/specgen -root <repo> render` from the repository root; `requirements.md`/`design.md`/`tasks.md` mirrors are only produced when `[render] markdown_mirror = true` in spec/workflow.kvx."
