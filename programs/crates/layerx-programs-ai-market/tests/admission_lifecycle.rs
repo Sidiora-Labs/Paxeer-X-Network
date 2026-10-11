@@ -1319,7 +1319,8 @@ impl NativeAdmission {
             header.funding_asset,
             header.rewards_account,
             header.refund_recipient_account,
-        )?;
+        )?
+        .deposit(1)?;
         let mut initial = vec![0; REWARD_STATE_BYTES];
         RewardState::init(&ledger, &mut initial)?;
         let entry = WorkerRosterEntry {
@@ -1335,7 +1336,7 @@ impl NativeAdmission {
         let mut rewards = vec![0; REWARD_STATE_BYTES];
         decode_reward_state(&initial)?.reserve_epoch(
             epoch,
-            0,
+            1,
             digest,
             &[entry],
             epoch * 128,
