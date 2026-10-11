@@ -201,8 +201,10 @@ static lxp_result execute_tool_exec_attest(
     lx_service_attest_request request;
     lx_service_attestor_grant grant;
     lx_service_execution execution;
+    const uint8_t *idempotency_key = lxp_ctx_idempotency_key(ctx);
     lxp_result status;
-    if (memcmp(payload->activity_id, lxp_ctx_activity_id(ctx), 32U) != 0)
+    if (idempotency_key == NULL ||
+        memcmp(payload->activity_id, idempotency_key, 32U) != 0)
         return LXP_ERR_INVALID_ATTESTATION;
     (void)memset(&grant, 0, sizeof(grant));
     (void)memcpy(grant.principal, authority->principal, 32U);
@@ -372,6 +374,7 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
         return LXP_ERR_UNKNOWN_ACTIVITY;
     status = lxp_ctx_charge_gas(ctx, value->payload_length + 1U);
     if (status != LXP_OK) return status;
+    ctx->activity = activity;
     payload = &value->payload;
     switch (value->ordinal) {
     case 1U:

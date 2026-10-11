@@ -170,6 +170,7 @@ struct lxp_module_ctx {
     uint64_t gas_limit;
     uint64_t gas_used;
     uint8_t activity_id[32];
+    const lxp_activity *activity;
     lxp_arena *arena;
     lxp_effect_buffer *effects;
     uint16_t next_effect_ordinal;
@@ -353,6 +354,7 @@ lxp_result lxp_ctx_bind_activity_state(lxp_module_ctx *ctx, void *state,
 void *lxp_ctx_activity_state(const lxp_module_ctx *ctx);
 void *lxp_ctx_take_activity_state(lxp_module_ctx *ctx);
 const uint8_t *lxp_ctx_activity_id(const lxp_module_ctx *ctx);
+const uint8_t *lxp_ctx_idempotency_key(const lxp_module_ctx *ctx);
 lxp_result lxp_kernel_program_payment_account(
     lx_account_registry *accounts, const uint8_t principal[32],
     const uint8_t asset[32], uint16_t protocol_version, lx_account **account);

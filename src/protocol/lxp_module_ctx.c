@@ -1676,6 +1676,12 @@ const uint8_t *lxp_ctx_activity_id(const lxp_module_ctx *ctx)
            ctx->activity_id;
 }
 
+const uint8_t *lxp_ctx_idempotency_key(const lxp_module_ctx *ctx)
+{
+    return ctx == NULL || ctx->activity == NULL ? NULL :
+           ctx->activity->idempotency_key;
+}
+
 lxp_result lxp_ctx_ledger_execution_sequence(
     lxp_module_ctx *ctx, const uint8_t principal[32],
     uint64_t legacy_sequence, uint64_t *sequence)
