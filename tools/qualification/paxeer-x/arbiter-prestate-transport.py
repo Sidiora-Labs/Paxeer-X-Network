@@ -32,30 +32,77 @@ def digest(path):
 
 
 def evidence_directory():
-    directory = Path(os.environ.get("PAXEER_X_ARBITER_TRANSPORT_EVIDENCE",
-        "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043512"))
+    directory = Path(
+        os.environ.get(
+            "PAXEER_X_ARBITER_TRANSPORT_EVIDENCE",
+            "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043512",
+        )
+    )
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory = directory.resolve(strict=True)
     info = directory.stat()
-    if ROOT == directory or ROOT in directory.parents or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+    if (
+        ROOT == directory
+        or ROOT in directory.parents
+        or info.st_uid != os.geteuid()
+        or info.st_mode & 0o077
+    ):
         raise RuntimeError("private caller-owned evidence outside checkout required")
     return directory
 
 
 def inputs():
-    inventory = subprocess.run(["git", "ls-files", "-z", "--", "Makefile", "src", "include",
-        "cmd/layerxd", "cmd/layerx-guarantor", "agent/Cargo.toml", "agent/Cargo.lock",
-        "agent/crates/layerx-client", "agent/crates/layerx-proof", "agent/crates/layerx-wire",
-        "agent/crates/layerx-types", "agent/crates/layerx-crypto", "agent/crates/layerx-paxeer-verifier",
-        "agent/schema/lni", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates",
-        "programs/sdk/rust", "tests/daemon/lxp_test_arbiter_prestate.c",
-        "tests/programs/test_call_activity.c", "tests/bridge/files.h", "contracts/config",
-        "tools/paxeer-x/build", ".cargo", "rust-toolchain.toml"], cwd=ROOT,
-        check=True, capture_output=True).stdout.split(b"\0")
+    inventory = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            "Makefile",
+            "src",
+            "include",
+            "cmd/layerxd",
+            "agent/Cargo.toml",
+            "agent/Cargo.lock",
+            "agent/crates/layerx-client",
+            "agent/crates/layerx-proof",
+            "agent/crates/layerx-wire",
+            "agent/crates/layerx-types",
+            "agent/crates/layerx-crypto",
+            "go.mod",
+            "go.sum",
+            "node/sequencer",
+            "modules/sequencer",
+            "custodyproof",
+            "layerxproof",
+            "rpc",
+            "sdk/store",
+            "platform/hosted/gateway/src/paxeer.rs",
+            "platform/hosted/gateway/src/rpc.rs",
+            "programs/Cargo.toml",
+            "programs/Cargo.lock",
+            "programs/crates",
+            "programs/sdk/rust",
+            "tests/daemon/lxp_test_arbiter_prestate.c",
+            "tests/programs/test_call_activity.c",
+            "tests/bridge/files.h",
+            "contracts/config",
+            "tools/paxeer-x/build",
+            ".cargo",
+            "rust-toolchain.toml",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
     paths = {os.fsdecode(path) for path in inventory if path} | set(DECLARED)
-    return {path: digest(ROOT / path) for path in sorted(paths)
-        if Path(path).suffix in {".c", ".h", ".rs", ".toml", ".lock", ".kvx", ".json", ".mk", ".py"}
-        or path == "Makefile"}
+    return {
+        path: digest(ROOT / path)
+        for path in sorted(paths)
+        if Path(path).suffix
+        in {".c", ".h", ".rs", ".go", ".toml", ".lock", ".kvx", ".json", ".mk", ".py"}
+        or path in {"Makefile", "go.mod", "go.sum"}
+    }
 
 
 def save(path, value):
@@ -81,13 +128,33 @@ def build(arguments, evidence):
     manifest = evidence / "artifacts.json"
     manifest.unlink(missing_ok=True)
     source = inputs()
-    command = [*shlex.split(arguments.cargo), "test", "--locked", "--manifest-path", "agent/Cargo.toml",
-        "-p", "layerx-client", "--test", "arbiter_prestate_transport", "--no-run", "--message-format=json"]
-    environment = dict(os.environ, CARGO_TARGET_DIR="/root/lx-target/agent", CARGO_BUILD_JOBS="4")
+    command = [
+        *shlex.split(arguments.cargo),
+        "test",
+        "--locked",
+        "--manifest-path",
+        "agent/Cargo.toml",
+        "-p",
+        "layerx-client",
+        "--test",
+        "arbiter_prestate_transport",
+        "--no-run",
+        "--message-format=json",
+    ]
+    environment = dict(
+        os.environ, CARGO_TARGET_DIR="/root/lx-target/agent", CARGO_BUILD_JOBS="4"
+    )
     log = evidence / "build-client.log"
     with log.open("w") as output:
-        result = subprocess.run(command, cwd=ROOT, env=environment,
-            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=1100)
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=1100,
+        )
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, command)
     executables = set()
@@ -95,15 +162,35 @@ def build(arguments, evidence):
         if not line.startswith("{"):
             continue
         value = json.loads(line)
-        if value.get("reason") == "compiler-artifact" and value.get("executable") and value.get("target", {}).get("name") == "arbiter_prestate_transport":
+        if (
+            value.get("reason") == "compiler-artifact"
+            and value.get("executable")
+            and value.get("target", {}).get("name") == "arbiter_prestate_transport"
+        ):
             executables.add(value["executable"])
     if len(executables) != 1 or inputs() != source:
-        raise RuntimeError("one declared client artifact and unchanged build source required")
-    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
-        check=True, capture_output=True, text=True).stdout.strip()
-    save(manifest, {"schema": SCHEMA, "task": TASK, "revision": revision,
-        "inputs": source, "native": artifact(arguments.native), "daemon": artifact(arguments.daemon),
-        "rust": artifact(executables.pop())})
+        raise RuntimeError(
+            "one declared client artifact and unchanged build source required"
+        )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    save(
+        manifest,
+        {
+            "schema": SCHEMA,
+            "task": TASK,
+            "revision": revision,
+            "inputs": source,
+            "native": artifact(arguments.native),
+            "daemon": artifact(arguments.daemon),
+            "rust": artifact(executables.pop()),
+        },
+    )
     print("ARTIFACTS " + str(manifest), flush=True)
 
 
@@ -115,9 +202,15 @@ def become_client():
 
 def qualify(evidence):
     if os.geteuid() != 0:
-        raise RuntimeError("distinct owner and admitted service UID qualification requires root")
+        raise RuntimeError(
+            "distinct owner and admitted service UID qualification requires root"
+        )
     manifest = json.loads((evidence / "artifacts.json").read_text())
-    if manifest.get("schema") != SCHEMA or manifest.get("task") != TASK or manifest.get("inputs") != inputs():
+    if (
+        manifest.get("schema") != SCHEMA
+        or manifest.get("task") != TASK
+        or manifest.get("inputs") != inputs()
+    ):
         raise RuntimeError("declared artifacts do not bind current source")
     native, rust = checked(manifest["native"]), checked(manifest["rust"])
     checked(manifest["daemon"])
@@ -133,8 +226,15 @@ def qualify(evidence):
     events = queue.Queue()
     native_log = evidence / "verify-native.log"
     stream = native_log.open("w")
-    process = subprocess.Popen([str(native), str(fixture)], cwd=ROOT,
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    process = subprocess.Popen(
+        [str(native), str(fixture)],
+        cwd=ROOT,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
 
     def capture():
         for line in process.stdout:
@@ -153,38 +253,83 @@ def qualify(evidence):
                 process.stdin.flush()
             marker = events.get(timeout=120)
             if marker != "ARBITER_TRANSPORT_READY " + phase:
-                raise RuntimeError("genuine native boundary failed before " + phase + ": " + str(native_log))
-            captures = json.loads((fixture / "inputs.json").read_text()).get("captures", [])
-            if {item.get("name") for item in captures} != {"serial-empty-0", "scheduled-0", "scheduled-1", "terminal-0"}:
-                raise RuntimeError("complete genuine serial/scheduled/terminal corpus required")
+                raise RuntimeError(
+                    "genuine native boundary failed before "
+                    + phase
+                    + ": "
+                    + str(native_log)
+                )
+            captures = json.loads((fixture / "inputs.json").read_text()).get(
+                "captures", []
+            )
+            if {item.get("name") for item in captures} != {
+                "serial-empty-0",
+                "scheduled-0",
+                "scheduled-1",
+                "terminal-0",
+            }:
+                raise RuntimeError(
+                    "complete genuine serial/scheduled/terminal corpus required"
+                )
             for path in fixture.iterdir():
                 if path.is_file() and not path.is_socket():
                     os.chown(path, 0, 65534)
                     path.chmod(0o750 if path == executable else 0o640)
-            command = [str(executable), TEST, "--exact", "--nocapture", "--test-threads=1"]
-            environment = {"LAYERX_ARBITER_TRANSPORT_INPUTS": str(fixture / "inputs.json"),
-                "LAYERX_ARBITER_TRANSPORT_PHASE": phase, "RUST_BACKTRACE": "0"}
+            command = [
+                str(executable),
+                TEST,
+                "--exact",
+                "--nocapture",
+                "--test-threads=1",
+            ]
+            environment = {
+                "LAYERX_ARBITER_TRANSPORT_INPUTS": str(fixture / "inputs.json"),
+                "LAYERX_ARBITER_TRANSPORT_PHASE": phase,
+                "RUST_BACKTRACE": "0",
+            }
             log = evidence / ("verify-client-" + phase + ".log")
             with log.open("w") as output:
-                result = subprocess.run(command, cwd=fixture, env=environment, preexec_fn=become_client,
-                    stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=120)
+                result = subprocess.run(
+                    command,
+                    cwd=fixture,
+                    env=environment,
+                    preexec_fn=become_client,
+                    stdin=subprocess.DEVNULL,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    timeout=120,
+                )
             if result.returncode:
                 raise subprocess.CalledProcessError(result.returncode, command)
-            if "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out" not in log.read_text():
+            if (
+                "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+                not in log.read_text()
+            ):
                 raise RuntimeError("genuine client assertions skipped or incomplete")
         process.stdin.write("stop\n")
         process.stdin.flush()
         if process.wait(timeout=30) != 0:
             raise RuntimeError("native shutdown failed: " + str(native_log))
         reader.join(timeout=5)
-        if "ARBITER_TRANSPORT native-retained-reopened-authenticated-boundary" not in native_log.read_text():
+        if (
+            "ARBITER_TRANSPORT native-retained-reopened-authenticated-boundary"
+            not in native_log.read_text()
+        ):
             raise RuntimeError("native capture/reopen boundary did not complete")
         if inputs() != manifest["inputs"]:
             raise RuntimeError("source changed during verification")
-        save(evidence / "result.json", {"task": TASK, "revision": manifest["revision"],
-            "command": "timeout 20m python3 tools/qualification/paxeer-x/arbiter-prestate-transport.py",
-            "exit": 0, "phases": ["before", "after"], "fixture": str(fixture),
-            "native_log": str(native_log)})
+        save(
+            evidence / "result.json",
+            {
+                "task": TASK,
+                "revision": manifest["revision"],
+                "command": "timeout 20m python3 tools/qualification/paxeer-x/arbiter-prestate-transport.py",
+                "exit": 0,
+                "phases": ["before", "after"],
+                "fixture": str(fixture),
+                "native_log": str(native_log),
+            },
+        )
         print("VERIFIED " + str(evidence / "result.json"), flush=True)
     finally:
         if process.poll() is None:
@@ -217,6 +362,14 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, RuntimeError, queue.Empty, subprocess.SubprocessError) as error:
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        queue.Empty,
+        subprocess.SubprocessError,
+    ) as error:
         print("FAILED " + str(error), file=sys.stderr)
-        sys.exit(error.returncode if isinstance(error, subprocess.CalledProcessError) else 1)
+        sys.exit(
+            error.returncode if isinstance(error, subprocess.CalledProcessError) else 1
+        )
