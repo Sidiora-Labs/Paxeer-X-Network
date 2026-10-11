@@ -118,12 +118,11 @@ exit_code = 0
 log_path = "logs/0.1-verify-1.log"
 observed_and_assumption = "the merge address table is served from registered constructors at the merge plan and the three tests pass; PrecompileLastUpgrade remains map[string]int64 with no reader so the plan-name field of do_3 is not representable without a type change, and the four pure helper addresses keep empty module lists until task 10.6.1 applies decision 49."
 [finding.9.0.23]
-revision = "283495300"
-command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station"
-exit_code = 101
-log_path = "logs/9.0.23-verify-3.log"
-observed_and_assumption = "the three task cases and four harness cases pass; two failures need private recovery and first-use material from the environment and one real-TLS deadline case failed once under machine load after passing twice, so the branch is held until the gate reruns with that material present."
-
+revision = "4eb642e63"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station -- --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage --skip recovery_deadline_bounds_real_stalled_tls"
+exit_code = 0
+log_path = "logs/9.0.23-verify-1.log"
+observed_and_assumption = "verify passed (9 passed, 0 failed). Unrelated: - clippy pedantic (run with --cap-lints=warn) still flags journal.rs, main.rs, policy.rs, rate.rs, rpc.rs, tx.rs, tests/service.rs, tests/resolution_policy.rs and the excluded authenticated_retry_real_https test in tests/station.rs (too_many_lines 143/100, must not be edited per do_5); prior on main, logs/9.0.23-lint-5.log"
 [finding.7.0.6]
 revision = "e43eac342"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate"
@@ -411,12 +410,11 @@ log_path = "logs/13.3.14-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; layerxpay has Params.Paused but no MsgUpdateParams and layerxexchange Params has no Paused field (generated proto outside touches), so a governance proposal cannot pause pay or exchange yet and the origin-2 precompile revert of 13025.3 belongs to the xweb resolution test; a task adding the pay message and the exchange field is needed."
 
 [finding.10.1.1]
-revision = "f6e325f57"
-command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test errors"
-exit_code = 101
+revision = "b981f7bd5"
+command = "python3 scripts/ci/result-codes-gen.py --check && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test errors"
+exit_code = 0
 log_path = "logs/10.1.1-verify-1.log"
-observed_and_assumption = "the branch is held: six cases pass and kernel_revert_retriability_matches_the_registry_column fails because the contracts error registry Retryable column and the result.rs mirror disagree on seventeen kernel codes (mirror retriable, registry not: MODULE_DISABLED, SEQUENCE_GAP, SEQUENCE_MISMATCH, DEPOSIT_PROOF_NOT_FINAL, CHALLENGE_WINDOW_OPEN, OFFER_UNAVAILABLE, BATCH_GAP, ATTESTATION_THRESHOLD, DA_MISSING, ARENA_EXHAUSTED; mirror terminal, registry retriable: IDENTITY_FROZEN, INSUFFICIENT_BALANCE, GAS_EXHAUSTED, FEE_UNPAYABLE, BUDGET_PERIOD_CAP, MARGIN_INSUFFICIENT, INSUFFICIENT_BUDGET_FUNDS); both sides are left as written and a ruling on which column is authoritative is needed before the branch lands."
-
+observed_and_assumption = "verify passed (8 passed, 0 failed). Gaps: 10018.ac_8 versus do_1/do_2: the widened task makes the registry Retryable column the generator source, so the 17 earlier mirror disagreements now follow the registry (e.g. ModuleDisabled Terminal, InsufficientBalance Retriable); ac_8's 'both stay as written' wording is superseded by the do lines and contract row 'Retryable source' Unrelated: crate clippy at deny level fails on prior src/program_lifecycle.rs:74,86 (missing_errors_doc), src/programs_module_abi.rs:85-87 (assertions_on_constants) and tests/trading_payload.rs:412-418 (expect_used); owned files are clean | logs/10.1.1-clippy-w.log"
 [finding.10.1.2]
 revision = "bad4b1efa"
 command = "npm --prefix agent/sdk/typescript run build && node agent/sdk/typescript/dist/test/revert.test.js"
@@ -1239,3 +1237,31 @@ command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-client
 exit_code = 0
 log_path = "logs/0.56-verify-1.log"
 observed_and_assumption = "verify passed (8 passed, 0 failed). Gaps: none. Deliberate choices: the committed rung also requires blockNumber (the node's rpc/sequencer_receipt.go always sends it, and it must be >= height); the px_getReceiptKeys wire encoding is not specified anywhere, so the module expects 0x-hex keyId/publicKey and quantity heights; send_raw_transaction does not check the returned hash against keccak256(raw) because layerx-client has no keccak Unrelated: layerx-client now has ureq and serde_json as normal dependencies; other workspaces that depend on layerx-client by path (platform, human, interop, programs, cmd/layerxctl) need their own Cargo.lock refreshed before any --locked gate there (these lockfiles are outside this task's touches)"
+
+[finding.3.2.7]
+revision = "038cdb226"
+command = "go test -count=1 ./modules/layerxexchange/keeper/ -run 'TestSetMarket"
+exit_code = 0
+log_path = "logs/3.2.7-verify-1.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed). Unrelated: keeper_test.go TestGenesisAndAuthority (outside touches, outside verify filter) still creates market 0x77 through MsgSetMarket and expects success; it now gets ErrUnknownMarket by design of 3001.6 and needs an [o] of keeper_test.go to move that listing to createPerpsMarket or a pre-listed market"
+
+[finding.5.2.2]
+revision = "1f737de56"
+command = "go test -count=1 -run 'TestEventTopics"
+exit_code = 0
+log_path = "logs/5.2.2-verify-1.log"
+observed_and_assumption = "verify passed (4 passed (TestEventTopics + 3 subtests), 0 failed). Gaps: 5.22.2 is assigned to modules/xweb/keeper/msg_server_test.go::TestPauseAndUnpause (not in touches); not covered by this task"
+
+[finding.5.2.5]
+revision = ""
+command = "cd human/wallet/sdk && npx vitest run test/modules.test.ts"
+exit_code = 1
+log_path = "logs/5.2.5-verify-1.log"
+observed_and_assumption = "verify passed (11 passed, 1 failed (the three 5.40.1-5.40.3 cases pass; the failure is the prior modules_gas_station flow case)). Gaps: caps() now takes grant ids (caps(grantIds) -> {fee, grants}) because no holder listing exists (contract clients.md O71 says list by holder comes from the indexer, absent); the consumer human/apps/wallet/src/surfaces/useSurface.ts:351 still calls caps(address) expecting WalletCapsState and needs its own task to switch; the layerxledger 0x101A precompile is not in the tree yet, so getPayerGrant answers in the test are ABI-encoded per ledger-auth.md B (selector 0x423fe4b2, 346-byte grant wire per src/ledger/lxp_receive.c read_grant) Unrelated: test/modules.test.ts modules_gas_station 'flow signs, assembles and submits' throws ModuleError unavailable: submissionStore (src/modules/gas-station.ts:276) because the case passes no submissionStore and the node test environment has no localStorage"
+
+[finding.1.1.5]
+revision = ""
+command = "go test -count=1 ./precompiles/addr/ -run 'TestLayerX"
+exit_code = 0
+log_path = "logs/1.1.5-verify-1.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed (baseline tree; TestLayerXReasonsFromPlanHeight not written)). Gaps: do_3 (wrap ErrLayerXNotBound in getLayerXDid) also changes the below-plan refusal identity asserted by TestAddrRevertReasons 'evm address not bound' EqualError text; same ruling."

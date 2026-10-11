@@ -314,6 +314,12 @@ value = "precompiles.MergeUpgrade (precompiles/setup.go:50) is a second declarat
 basis = "node imports precompiles, so precompiles cannot import the node constant without an import cycle; the equality test fails as soon as either declaration changes, and PrecompileLastUpgrade (precompiles/setup.go:401) is a map[string]int64 with no reader that cannot carry a plan name."
 affects = ["0.1", "10.0.1", "10.6.1"]
 
+[decision.52]
+title = "Gas station: a finalized earlier publication never consumes the renewal tick"
+value = "The rate publisher's recovery and settlement bookkeeping is separate from renewal scheduling; the existing assertion that publish returns the old publication after a late commit encoded the fault reported in issue 578 and is replaced by the settlement checks plus a fresh rate evaluation, which is a spec correction and not a weakening"
+basis = "Before the receipt-before-commit success path, publish waited for committed settlement and cleared active state before returning, so recovery could never return a publication already reported; with that path the services.md cadence bound (cadence plus retry below max_rate_age) is only honoured if recovery stays bookkeeping and every tick evaluates the rate file."
+affects = ["0.110", "7.0.6"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -10701,7 +10707,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.7]
 title = "MsgSetMarket keeps only flag toggles and the pause rule is checked first"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.2.6"]
@@ -41646,6 +41652,34 @@ stop_condition = "Stop on the bounded gate result; record exact revision, comman
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+[task.0.110]
+title = "Gas station rate publisher never spends a renewal tick on finalizing an earlier publication"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["7.0.6", "0.108"]
+reqs = ["7023.1", "7023.2", "7023.3", "7023.4"]
+capabilities = []
+do_1 = "In RatePublisher::publish (interop/crates/layerx-gas-station/src/rate.rs:414) recovery stops ending the tick: delete the early return at rate.rs:418-420 so that after recover_pending succeeds the tick always loads the rate file and runs the existing freshness evaluation (NotYetSet, Expired, Unchanged against on-chain rate() and rateUpdatedAt(), the configured operator address, spend_ceiling, pending nonce) and sends a fresh setRate when it is due. A publication that recovery confirms or settles is journal bookkeeping only and is never returned from publish as this tick's publication."
+do_2 = "Change recover_pending (rate.rs:480) to return Result<(), RateRefusal>: it still confirms every rate_active group, settles every one whose committed receipt try_finalize (rate.rs:660) finds finalized, returns Err(Reverted) for a settled revert, Err(Divergence) when the finalized nonce passed an unconfirmed nonce, resends only the exact journalled bytes when pax_sequencerReceipt is null, and propagates ReceiptTimeout from confirm_by_receipt (rate.rs:611); any Err still returns from publish before signing, so an unknown outcome is never followed by a new transaction and no second transaction is ever signed at a journalled nonce. A group confirmed by receipt but not yet finalized stays in rate_active and keeps reserving its most in reserved_wei; the fresh publication takes the next pending nonce exactly as today."
+do_3 = "Move the wait the executable sleeps after a tick out of the inline match in run_rate (interop/crates/layerx-gas-station/src/main.rs:100-144) into a public fn in rate.rs, next_wait(cadence_seconds, &Result<Publication, RateRefusal>) -> u64, with the same mapping (Ok: cadence; Unchanged { age }: cadence minus age, at least 1; other refusals: cadence) and call it from main.rs; the fatal refusals (Journal, LegacyUnresolved, NotOwner) still exit with failure and the printed publication line keeps its fields. Since publish now returns Ok only for a publication sent on this tick, Ok always means a fresh rate went out and the following tick is due one cadence later."
+do_4 = "In interop/crates/layerx-gas-station/tests/rate.rs replace the fixed NOW in the Chain double with a chain clock field (latest block timestamp, the RateUpdated updatedAt word and the sequencer receipt timestamp read it) and make a sent setRate that the sequencer receipts update chain.rate and chain.updated_at to the clock, as the paymaster does. Add renewal_tick_is_not_spent_on_finalizing_the_previous_publication: config with rate_cadence_seconds 239, rate_confirmation_retry_seconds 60 and max_rate_age 300; tick 1 at t0 with rung receipted publishes (sent 1, publication unsettled, wait from next_wait is 239); the transaction then commits; tick 2 at t0 plus that wait settles the first publication (reserved_wei 0, cost recorded) and sends a fresh setRate at the next nonce in the same call (sent 2, Ok publication with that nonce); assert that at every tick the chain clock minus chain.updated_at stays below max_rate_age and that the gap between the two sends is at most cadence. Add a second case in the same test where the rate file changes between ticks and assert the changed rate is the one sent on tick 2."
+do_5 = "In unsettled_publications_reserve_their_most_against_the_floor (tests/rate.rs:582) the step after rung becomes committed currently asserts that publish returns the old publication with sent still 1 (tests/rate.rs:626-628), which is the fault this task removes; it now asserts the settlement bookkeeping it already checks (unsettled empty, reserved_wei 0, the recorded cost) and that the same call went on to evaluate the rate file, returning a new publication at the next nonce or RateRefusal::Unchanged as the chain double's rate and clock dictate. Every other existing case keeps its assertions unchanged, including publication_waits_for_the_sequencer_receipt_and_is_never_resent_at_its_nonce and publication_unknown_to_the_sequencer_is_resent_as_its_exact_bytes, which prove the unknown-outcome and nonce safeguards hold."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["publish", "recover_pending", "confirm_by_receipt", "try_finalize", "next_wait", "run_rate", "renewal_tick_is_not_spent_on_finalizing_the_previous_publication", "unsettled_publications_reserve_their_most_against_the_floor"]
+touches = ["interop/crates/layerx-gas-station/src/rate.rs", "interop/crates/layerx-gas-station/src/main.rs", "interop/crates/layerx-gas-station/tests/rate.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --tests"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
 [task.9.0.6]
 title = "Pending state, call and estimate"
 status = "done"
@@ -42153,7 +42187,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.23]
 title = "Gas station: sequencer nonce and no replacement"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -50091,7 +50125,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.1]
 title = "Rust client error table: revert reason text maps to the protocol result code and its retriability"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
