@@ -8,8 +8,9 @@ use layerx_interop_gateway::gateway::{TranslationKind, TranslationRequest, Trans
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::{TraceId, Traced};
 use layerx_interop_gateway::GatewayCore;
+use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_proof::merkle::leaf_hash;
-use layerx_proof::receipt::{verify, AuthorizedBatch};
+use layerx_proof::receipt::{verify, verify_sequencer_signature, AuthorizedBatch};
 use sha2::{Digest as _, Sha256};
 
 const ADAPTER_ID: &str = "ucp";
@@ -24,6 +25,15 @@ const REST_SCHEMA: &str = "https://ucp.dev/2026-04-08/services/shopping/rest.ope
 const VALUE_LIMIT: usize = 256;
 const REQUEST_DOMAIN: &[u8] = b"LayerX/interop/ucp/checkout/v1\0";
 const IDEMPOTENCY_DOMAIN: &[u8] = b"LayerX/interop/ucp/idempotency/v1\0";
+const SEQUENCE_DOMAIN: &[u8] = b"PAXEER/v1/sequence\0";
+const RECEIPT_DOMAIN: &[u8] = b"LXP/v1/receipt\0";
+const PAYMENT_EXACT_TOPIC: [u8; 32] = [
+    0xc4, 0xda, 0x5d, 0x6f, 0x75, 0x7c, 0x25, 0x1c, 0xd7, 0x09, 0x47, 0xb7, 0x52, 0x91, 0x7e, 0x56,
+    0x71, 0xb6, 0x77, 0x51, 0x7e, 0x3d, 0x95, 0x3f, 0x36, 0x2a, 0x1d, 0xf6, 0x64, 0x8e, 0xf5, 0xb1,
+];
+const LEDGER_ADDRESS: [u8; 20] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x1a,
+];
 
 /// SHA-256 of the published checkout specification page at [`CHECKOUT_SPEC`]
 /// (canonical trailing-slash URL), UCP revision `2026-04-08`.
@@ -649,6 +659,151 @@ fn verify_order_receipt(
         return Err(UcpError::ReceiptMismatch);
     }
     leaf_hash(verified.canonical_bytes()).map_err(|_| UcpError::ReceiptMismatch)
+}
+
+pub fn verify_sequencer_receipt(
+    submission: &CheckoutSubmission,
+    canonical_receipt: &[u8],
+    receipt_keys: &[SequencerAuthorization],
+) -> Result<[u8; 32], UcpError> {
+    submission.validate()?;
+    let verified = verify_sequencer_signature(canonical_receipt, receipt_keys)
+        .map_err(|_| UcpError::ReceiptMismatch)?;
+    let protocol = verified.protocol().ok_or(UcpError::ReceiptMismatch)?;
+    if protocol.protocol_version() != 2
+        || protocol.module_id() <= 11
+        || protocol.module_version() != 1
+        || protocol.parameter_version() != 0
+        || !matches!(protocol.operation(), 0 | 1 | 2 | 4)
+        || protocol.result_code() != 0
+        || protocol.global_sequence() == 0
+        || protocol.batch_id() == [0; 32]
+        || protocol.timestamp() == 0
+        || protocol.transfer_set_root() != [0; 32]
+        || protocol.program_outcome().is_some()
+    {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    let mut sequence_hash = Sha256::new();
+    sequence_hash.update(SEQUENCE_DOMAIN);
+    sequence_hash.update(protocol.previous_state_root());
+    sequence_hash.update(protocol.global_sequence().to_be_bytes());
+    sequence_hash.update(protocol.activity_id());
+    if <[u8; 32]>::from(sequence_hash.finalize()) != protocol.resulting_state_root() {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    let effects = protocol.effects();
+    let summary = effects.first().ok_or(UcpError::ReceiptMismatch)?;
+    let body = summary.body();
+    if summary.ordinal() != 0
+        || summary.module_id() != protocol.module_id()
+        || summary.event_type() != 0
+        || summary.kind() != 1
+        || summary.monetary()
+        || summary.transfer_set_root() != [0; 32]
+    {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    verify_sequencer_summary(body, effects.len() - 1, protocol.asset())?;
+    let reference = submission.idempotency_key.gateway_key();
+    let mut payment_data = [0; 64];
+    payment_data[..32].copy_from_slice(&submission.layerx_asset);
+    payment_data[48..].copy_from_slice(&submission.total_minor.to_be_bytes());
+    let data_digest: [u8; 32] = Sha256::digest(payment_data).into();
+    let mut matched = false;
+    for (position, effect) in effects.iter().enumerate().skip(1) {
+        if usize::from(effect.ordinal()) != position
+            || effect.module_id() != protocol.module_id()
+            || effect.event_type() != 0
+            || effect.kind() != 3
+            || effect.monetary()
+            || effect.transfer_set_root() != [0; 32]
+        {
+            return Err(UcpError::ReceiptMismatch);
+        }
+        if matches_payment_exact(
+            effect.body(),
+            reference,
+            submission.layerx_recipient,
+            data_digest,
+        )? {
+            if matched {
+                return Err(UcpError::ReceiptMismatch);
+            }
+            matched = true;
+        }
+    }
+    if !matched {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    sequencer_receipt_digest(canonical_receipt)
+}
+
+fn verify_sequencer_summary(
+    body: &[u8],
+    log_count: usize,
+    asset: [u8; 32],
+) -> Result<(), UcpError> {
+    if body.len() < 110 {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    let denomination_length = usize::from(body[108]);
+    let logs = u32::from_be_bytes(
+        body[104..108]
+            .try_into()
+            .map_err(|_| UcpError::ReceiptMismatch)?,
+    );
+    if !(1..=64).contains(&denomination_length)
+        || body.len() != 109 + denomination_length
+        || std::str::from_utf8(&body[109..]).is_err()
+        || <[u8; 32]>::from(Sha256::digest(&body[109..])) != asset
+        || usize::try_from(logs).map_err(|_| UcpError::ReceiptMismatch)? != log_count
+    {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    Ok(())
+}
+
+fn matches_payment_exact(
+    body: &[u8],
+    reference: [u8; 32],
+    recipient: [u8; 32],
+    data_digest: [u8; 32],
+) -> Result<bool, UcpError> {
+    let topic_count = usize::from(*body.get(20).ok_or(UcpError::ReceiptMismatch)?);
+    if topic_count > 4 || body.len() != 53 + topic_count * 32 {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    if topic_count != 4
+        || body[..20] != LEDGER_ADDRESS
+        || body[21..53] != PAYMENT_EXACT_TOPIC
+        || body[117..149] != reference
+    {
+        return Ok(false);
+    }
+    if body[53..85] == [0; 32]
+        || body[53..85] == body[85..117]
+        || body[85..117] != recipient
+        || body[149..181] != data_digest
+    {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    Ok(true)
+}
+
+fn sequencer_receipt_digest(canonical_receipt: &[u8]) -> Result<[u8; 32], UcpError> {
+    let unsigned_end = canonical_receipt
+        .len()
+        .checked_sub(69)
+        .ok_or(UcpError::ReceiptMismatch)?;
+    if canonical_receipt.get(unsigned_end..unsigned_end + 5) != Some(&[1, 0, 0, 0, 64]) {
+        return Err(UcpError::ReceiptMismatch);
+    }
+    let mut digest = Sha256::new();
+    digest.update(RECEIPT_DOMAIN);
+    digest.update(&canonical_receipt[..unsigned_end]);
+    digest.update([0]);
+    Ok(digest.finalize().into())
 }
 
 fn completed_outcome(
