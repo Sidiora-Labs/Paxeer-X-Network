@@ -5356,3 +5356,73 @@ fix = "Sample every delivered part before accepting it: grep the do_ lines for t
 area = "spec / public check"
 symptom = "The public-content checker matched product words and paths as if they were internal language: `reputation` from ai_reputation.rs, `governance/owner-rotation`, `agent/unsafe-allowlist.toml`."
 fix = "Match only the sensitive word forms (for example `reputational`, not `reputation`) and strip repository paths and backticked identifiers before matching; keep the exemptions listed beside the pattern so they are reviewable."
+
+[gotcha.1157]
+area = "spec / planning"
+symptom = "Wave-0 tasks with requires = [] still depended on sibling wave-0 types (sequencer msgs, plan constants, activation lists) that no landed task provided, so workers hit missing interfaces mid-implementation."
+fix = "requires = [] means the task must build on the tree as it stands at wave start; a task whose do steps name a symbol that no earlier task or the current tree defines must require the task that defines it, even inside the same wave."
+
+[gotcha.1158]
+area = "build / protobuf"
+symptom = "buf generate without an input regenerated every module and the first run spent minutes downloading plugins; regenerating one module's tx.pb.go through the whole protoc script pulled unrelated diffs."
+fix = "Run buf generate with an explicit input and path (buf generate api --path api/<module>/tx.proto), or build protoc-gen-gocosmos from the module cache and use a private template that writes outside the tree, then copy only the wanted tx.pb.go."
+
+[gotcha.1159]
+area = "go / api design"
+symptom = "Adding an rpc to a Msg service breaks every package that asserts the keeper implements MsgServer until the keeper handler exists, so a types-only task that adds the rpc leaves the module unbuildable."
+fix = "The rpc line in tx.proto and its keeper handler land in the same task; a types task may add message types only."
+
+[gotcha.1160]
+area = "go / naming"
+symptom = "A Go package whose entry type is named Open cannot also export func Open, and node/sequencer cannot import package node (node/app.go builds the executor), so an import cycle appears as soon as the executor references *node.App."
+fix = "Name constructors after their product (OpenWAL, not Open) when a type shares the name, and give the executor a Host interface that *node.App satisfies instead of importing node."
+
+[gotcha.1161]
+area = "go / portability"
+symptom = "golang.org/x/sys/unix Fdatasync exists on linux only; a WAL that calls it unconditionally does not compile on other targets."
+fix = "Keep the fdatasync call behind a build-tagged file with a fallback that calls File.Sync."
+
+[gotcha.1162]
+area = "layerxproof / codec"
+symptom = "DecodeReceipt requires strictly increasing (module_id, ordinal) pairs and at most 512 effects; vectors with equal or unordered pairs decode as errors, and a sequencer bound above MaxEffects is unreachable."
+fix = "Generate receipt vectors with ordered effect pairs and derive any sequencer effect bound from the codec limit rather than from the wire size alone."
+
+[gotcha.1163]
+area = "rust / clippy"
+symptom = "cargo clippy on the agent crates fails inside layerx-types on warnings that the agent crate does not own."
+fix = "Run cargo clippy -p <crate> --all-targets --no-deps so only the crate under qualification is linted."
+
+[gotcha.1164]
+area = "kernel / tests"
+symptom = "make test-idempotency runs only the journal_single_entry case; the checkpoint and restart cases need explicit --checkpoint and --restart arguments that the Makefile target does not pass, and lxp_snapshot_write requires snapshot_size to equal the written length exactly."
+fix = "A task whose acceptance names the checkpoint or restart cases must either pass those arguments in its verify_cmd or add a Makefile target that does; size every new entry format in lxp_snapshot_size before writing it."
+
+[gotcha.1165]
+area = "kernel / Makefile"
+symptom = "A test target that links only liblayerx.a fails to link once the test references any kernel or governance-module symbol (undefined layerx_programs_* and EVP_*)."
+fix = "Link such a test like the lxp_test_owner_rotation_unit rule: $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm with a programs-build order-only dependency; a task adding kernel-path cases to such a test must list the Makefile in its touches."
+
+[gotcha.1166]
+area = "layerxproof / verify"
+symptom = "A strict ed25519 verifier already exists at layerxproof/verify (Ed25519Digest); a second one was nearly written in the sequencer."
+fix = "Reuse layerxproof/verify for every ed25519 check over kernel digests."
+
+[gotcha.1167]
+area = "consensus / tests"
+symptom = "makeState in the consensus/internal/state tests sets the genesis time to the current time, so any fixed past header time fails validateBlock in ApplyBlock and ValidateBlock."
+fix = "Open test blocks one second after state.LastBlockTime instead of a fixed timestamp."
+
+[gotcha.1168]
+area = "node / tests"
+symptom = "DefaultConsensusParams in node/test_helpers.go leaves MaxGasWanted at 0, so a gas bound faithful to checkTotalBlockGas refuses every tx, and occ_tests utils.ToTxBytes signs Cosmos txs with gas 1e10."
+fix = "Block-limit-aware tests set the baseapp BlockParams through the params subspace and sign their own txs with a gas below the limit."
+
+[gotcha.1169]
+area = "kernel / ledger"
+symptom = "ACCOUNT_OPEN binds a ledger receipt that requires exactly one effect in the buffer and a journal opened at store next_sequence; reusing a buffer across dispatches fails the receipt bind."
+fix = "Give each dispatch in a test a fresh effect buffer and a journal opened at the store's next_sequence."
+
+[gotcha.1170]
+area = "codify / fleet"
+symptom = "cg spec done on a 95,000-line spec takes more than ten minutes while dozens of workers build, and killing it by pattern with pkill -f also killed the shell whose command line contained the pattern."
+fix = "Under fleet load record done by editing the task status and carrying revision, command, exit code and log path in the commit message; never pkill -f a pattern that appears in the current command line."
