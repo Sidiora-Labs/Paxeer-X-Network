@@ -1,0 +1,27 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxledger;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types";
+
+// Msg defines the layerxledger module's gRPC message service. Ledger writes
+// enter only through the precompile.
+service Msg {
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+}
+
+// Params defines the parameters of the layerxledger module.
+message Params {
+  // paused refuses every ledger write while views keep answering.
+  bool paused = 1;
+}
+
+// MsgUpdateParams replaces the module params. Authority only.
+message MsgUpdateParams {
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+// MsgUpdateParamsResponse is the MsgUpdateParams response.
+message MsgUpdateParamsResponse {}
