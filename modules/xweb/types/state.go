@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -157,6 +158,8 @@ func (a Attestor) Validate() error {
 	return nil
 }
 
+const MaxAttestorSetSize = 16
+
 // AttestorSet is the registered attestors and the number of distinct members
 // whose signatures a fulfilment needs. A non-empty set requires a strict
 // majority threshold; the empty set with threshold zero accepts nothing.
@@ -180,19 +183,22 @@ func (s AttestorSet) Validate() error {
 		}
 		return nil
 	}
-	if len(s.Attestors) > MaxAttestors {
-		return ErrInvalidAttestors.Wrapf("more than %d attestors", MaxAttestors)
+	if len(s.Attestors) > MaxAttestorSetSize {
+		return ErrInvalidAttestors.Wrapf("more than %d attestors", MaxAttestorSetSize)
 	}
 	if !ValidThreshold(s.Threshold, len(s.Attestors)) {
 		return ErrInvalidThreshold.Wrapf("threshold %d of %d attestors", s.Threshold, len(s.Attestors))
 	}
 	seen := map[Address20]bool{}
-	for _, attestor := range s.Attestors {
+	for i, attestor := range s.Attestors {
 		if err := attestor.Validate(); err != nil {
 			return err
 		}
 		if seen[attestor.Signer] {
 			return ErrInvalidAttestors.Wrapf("duplicate signer %s", attestor.Signer.Hex())
+		}
+		if i > 0 && bytes.Compare(s.Attestors[i-1].Signer[:], attestor.Signer[:]) >= 0 {
+			return ErrInvalidAttestors.Wrap("attestors are not in strictly ascending signer order")
 		}
 		seen[attestor.Signer] = true
 	}

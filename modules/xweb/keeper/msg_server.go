@@ -79,8 +79,8 @@ func (k Keeper) RegisterAttestor(ctx sdk.Context, msg types.MsgRegisterAttestor)
 	if set.Has(msg.Attestor.Signer) {
 		return types.ErrInvalidAttestors.Wrapf("%s is already registered", msg.Attestor.Signer.Hex())
 	}
-	if len(set.Attestors) >= types.MaxAttestors {
-		return types.ErrInvalidAttestors.Wrapf("set is full at %d attestors", types.MaxAttestors)
+	if len(set.Attestors) >= types.MaxAttestorSetSize {
+		return types.ErrInvalidAttestors.Wrapf("set is full at %d attestors", types.MaxAttestorSetSize)
 	}
 	set.Attestors = append(set.Attestors, msg.Attestor)
 	sort.Slice(set.Attestors, func(i, j int) bool {
