@@ -107,15 +107,11 @@ lxp_result lxp_idempotency_reserve(lxp_state_store *store)
     return store->idempotency == NULL ? LXP_ERR_ARENA_EXHAUSTED : LXP_OK;
 }
 
-lxp_result lxp_idempotency_prune(lxp_state_store *store,
-                                 uint64_t current_sequence)
+static void lxp_idempotency_prune_window(lxp_state_store *store,
+                                         uint64_t current_sequence)
 {
     size_t read, kept = 0U;
-    if (store == NULL) return LXP_ERR_NON_CANONICAL;
-    if (store->idempotency_count > LXP_STATE_MAX_IDEMPOTENCY ||
-        (store->idempotency_count != 0U && store->idempotency == NULL))
-        return LXP_FATAL_INVARIANT;
-    if (store->idempotency_retention == 0U) return LXP_OK;
+    if (store->idempotency_retention == 0U) return;
     for (read = 0U; read < store->idempotency_count; ++read) {
         if (entry_expired(store, &store->idempotency[read], current_sequence))
             continue;
@@ -127,6 +123,16 @@ lxp_result lxp_idempotency_prune(lxp_state_store *store,
                      (store->idempotency_count - kept) *
                          sizeof(store->idempotency[0]));
     store->idempotency_count = kept;
+}
+
+lxp_result lxp_idempotency_prune(lxp_state_store *store,
+                                 uint64_t current_sequence)
+{
+    if (store == NULL) return LXP_ERR_NON_CANONICAL;
+    if (store->idempotency_count > LXP_STATE_MAX_IDEMPOTENCY ||
+        (store->idempotency_count != 0U && store->idempotency == NULL))
+        return LXP_FATAL_INVARIANT;
+    lxp_idempotency_prune_window(store, current_sequence);
     return LXP_OK;
 }
 

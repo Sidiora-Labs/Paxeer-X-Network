@@ -567,6 +567,79 @@ static int retention_preview_bound(void)
     return 0;
 }
 
+static int test_retention_window_prunes(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    uint8_t oldest_hash[32];
+    size_t i;
+    REQUIRE(lxp_state_store_init(&store, LXP_STATE_MAX_IDEMPOTENCY + 1U) == LXP_OK);
+    store.idempotency_retention = LXP_STATE_MAX_IDEMPOTENCY;
+    REQUIRE(retention_fill(&store, 1U, 1U) == 0);
+    (void)memcpy(oldest_hash, store.idempotency[0].key_hash, 32U);
+    REQUIRE(lxp_idempotency_live_count(&store, store.next_sequence) ==
+            LXP_STATE_MAX_IDEMPOTENCY - 1U);
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.next_sequence == LXP_STATE_MAX_IDEMPOTENCY + 2U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 2U);
+    REQUIRE(store.idempotency[LXP_STATE_MAX_IDEMPOTENCY - 2U].recorded_sequence ==
+            LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.idempotency[LXP_STATE_MAX_IDEMPOTENCY - 1U].recorded_sequence ==
+            LXP_STATE_MAX_IDEMPOTENCY + 1U);
+    for (i = 0U; i < store.idempotency_count; ++i)
+        REQUIRE(memcmp(store.idempotency[i].key_hash, oldest_hash, 32U) != 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_commit(&journal, &store, 2U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.idempotency[0].recorded_sequence == 3U);
+    REQUIRE(store.idempotency[LXP_STATE_MAX_IDEMPOTENCY - 1U].recorded_sequence ==
+            LXP_STATE_MAX_IDEMPOTENCY + 2U);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_lookup(&store, 2U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_commit(&journal, &store, 3U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.idempotency[0].recorded_sequence == 4U);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("test_retention_window_prunes");
+    return 0;
+}
+
+static int test_replay_inside_window(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    uint8_t key[32];
+    const uint8_t *bytes = NULL;
+    size_t length = 0U;
+    REQUIRE(lxp_state_store_init(&store, 10U) == LXP_OK);
+    store.idempotency_retention = RETENTION_WINDOW;
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == 1U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 10U);
+    REQUIRE(retention_advance(&journal, &store, 500U) == 0);
+    raw_key(1U, RETENTION_KEY_MARKER, key);
+    REQUIRE(lxp_idempotency_lookup(&store, retention_actor, sizeof(retention_actor) - 1U,
+                                   key, &bytes, &length) == LXP_ERR_IDEMPOTENT_REPLAY);
+    REQUIRE(length == sizeof(retention_receipt));
+    REQUIRE(memcmp(bytes, retention_receipt, length) == 0);
+    REQUIRE(lxp_idempotency_live_count(&store, 500U) == 1U);
+    REQUIRE(lxp_idempotency_prune(&store, 500U) == LXP_OK);
+    REQUIRE(store.idempotency_count == 1U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 10U);
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_FATAL_INVARIANT) == 0);
+    REQUIRE(store.idempotency_count == 1U && store.next_sequence == 500U);
+    REQUIRE(retention_advance(&journal, &store, 1009U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_advance(&journal, &store, 1010U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_OK) == 0);
+    REQUIRE(lxp_idempotency_prune(&store, 1010U) == LXP_OK);
+    REQUIRE(store.idempotency_count == 0U);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("test_replay_inside_window");
+    return 0;
+}
+
 /* Every committed alice key replays its recorded first receipt bytes, and a
  * snapshot of the store loads into an independent kernel with an equal
  * canonical root, an equal count and the same retrievable receipts. */
@@ -1146,6 +1219,8 @@ int main(int argc, char **argv)
     REQUIRE(retention_replay_inside_window() == 0);
     REQUIRE(retention_zero_window() == 0);
     REQUIRE(retention_preview_bound() == 0);
+    REQUIRE(test_retention_window_prunes() == 0);
+    REQUIRE(test_replay_inside_window() == 0);
     if (argc == 3 && strcmp(argv[1], "--checkpoint") == 0) {
         REQUIRE(lifecycle(argv[2]) == 0);
     } else if (argc == 3 && strcmp(argv[1], "--restart") == 0) {
