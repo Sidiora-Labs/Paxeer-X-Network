@@ -28,16 +28,16 @@ for key in ('LAYERX_GENERATION_ARTIFACT_MANIFEST',):
  p=Path(os.environ[key]);assert p.is_absolute() and not p.exists()
  assert not any(item.is_symlink() for item in (p,*p.parents))
  assert p.parent.stat().st_uid==os.geteuid() and not p.parent.stat().st_mode&0o077
-for name in ('layerxd','layerx-genesis-build','layerx-handover','layerx-guarantor'):
+for name in ('layerxd','layerx-genesis-build'):
  assert not (root/'build/bin'/name).exists(), 'fresh source build required: '+name
 PREPARE
     revision=$(git rev-parse HEAD)
-    make -j2 LXP_REVISION="$revision" PAXEER_GO_JOBS=2 layerxd layerx-genesis-build layerx-handover layerx-guarantor
+    make -j2 LXP_REVISION="$revision" PAXEER_GO_JOBS=2 layerxd layerx-genesis-build
     python3 - <<'RECORD'
 import hashlib,json,os,stat,subprocess,time
 from pathlib import Path
 root=Path.cwd()
-paths=['platform/hosted/node/'+name for name in ('generation_transport.py','generation_client.py','supervisor.sh','bootstrap.sh','guarantor.sh','deployment.yaml','tests/test_generation_transport.py','tests/reset_recovery.py')]
+paths=['platform/hosted/node/'+name for name in ('generation_transport.py','generation_client.py','supervisor.sh','bootstrap.sh','deployment.yaml','tests/test_generation_transport.py','tests/reset_recovery.py')]
 paths += ['docker/kernel/init.sh','tools/paxeer-x/gates/24.20.sh']
 paths += ['docker/platform-'+role+'/'+name for role in ('core','authority') for name in ('Dockerfile','Dockerfile.dockerignore')]
 def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
@@ -46,11 +46,11 @@ def digest(p):
 assert not git('status','--porcelain','--untracked-files=all'), 'source changed during build'
 for name in ('generation_transport.py','generation_client.py','reset_state.py','data_directory.py','tests/test_generation_transport.py','tests/reset_recovery.py'):
  p=root/'platform/hosted/node'/name;compile(p.read_bytes(),str(p),'exec')
-for name in ('supervisor.sh','bootstrap.sh','guarantor.sh'):
+for name in ('supervisor.sh','bootstrap.sh'):
  subprocess.run(['bash','-n',str(root/'platform/hosted/node'/name)],check=True)
 subprocess.run(['bash','-n',str(root/'docker/kernel/init.sh')],check=True)
 executables={}
-for name in ('layerxd','layerx-genesis-build','layerx-handover','layerx-guarantor'):
+for name in ('layerxd','layerx-genesis-build'):
  p=root/'build/bin'/name;info=p.lstat()
  assert stat.S_ISREG(info.st_mode) and info.st_uid==os.geteuid() and not info.st_mode&0o022 and os.access(p,os.X_OK)
  with p.open('rb') as f: assert f.read(4)==b'\x7fELF'
@@ -80,9 +80,9 @@ def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
 assert not git('status','--porcelain','--untracked-files=all')
 assert value['version']==1 and value['source_revision']==git('rev-parse','HEAD') and value['source_tree']==git('rev-parse','HEAD^{tree}')
 assert value['native_build_source_binding']==hashlib.sha256(subprocess.check_output(['git','ls-tree','-r','-z','--full-tree','HEAD'])).hexdigest()
-assert len(value['candidate_sources'])==14
+assert len(value['candidate_sources'])==13
 for name,expected in value['candidate_sources'].items(): assert digest(root/name)==expected,'candidate source mismatch: '+name
-assert set(value['executables'])=={'layerxd','layerx-genesis-build','layerx-handover','layerx-guarantor'}
+assert set(value['executables'])=={'layerxd','layerx-genesis-build'}
 for name,row in value['executables'].items():
  target=root/'build/bin'/name
  assert row['path']==str(target) and digest(target)==row['sha256'] and target.stat().st_mtime_ns==row['mtime_ns']<=value['recorded_ns']
@@ -94,6 +94,7 @@ assert count>0,'missing actual broker tests'
 result=unittest.TextTestRunner(verbosity=2).run(suite)
 print('PAXEER_X_GENERATION_BROKER_GATE tests=%d skipped=%d'%(result.testsRun,len(result.skipped)),flush=True)
 assert result.wasSuccessful() and not result.skipped and result.testsRun==count,'actual broker corpus failed'
+subprocess.run(['go','test','-count=1','-run','^TestRealStateCredit(AndClockBounds|RefusesMissingAuthority)$','./custodyproof'],check=True,timeout=750)
 fixture=os.environ.get('LAYERX_CUSTODY_ARTIFACT_MANIFEST')
 assert fixture and Path(fixture).is_file(),'genuine matching custody artifact manifest unavailable; actual funded/bootstrap process prerequisite unqualified'
 native=os.environ.get('LAYERX_RESET_NATIVE_ARTIFACT_MANIFEST')
