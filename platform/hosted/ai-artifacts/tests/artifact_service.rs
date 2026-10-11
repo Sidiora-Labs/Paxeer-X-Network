@@ -1616,3 +1616,101 @@ fn tls_listener_releases_object_key_only_to_verified_tls_clients() {
         plaintext
     );
 }
+
+#[test]
+fn r21_quarantined_root_restored_from_replica_reads_after_restart() {
+    let dir = data_dir("r21");
+    let svc = start(&dir);
+    let plain = vec![0x5e; CHUNK_BYTES as usize + 41];
+    let (root, staged) = publish(&svc, 0x61, &private(&plain, P1, 1, key1()));
+    let g = grant(&svc, 0x62, &root, 3600, 1);
+    let lonely_plain = vec![0x6f; CHUNK_BYTES as usize + 9];
+    let (lonely, lonely_staged) = publish(&svc, 0x63, &private(&lonely_plain, P1, 1, key1()));
+    let lonely_g = grant(&svc, 0x64, &lonely, 3600, 1);
+    drop(svc);
+
+    // A published replica session of the same root, written while offline.
+    let replica = hex::encode([0xa5; 32]);
+    let mut store = open_store(&dir);
+    store.create_session_dir(&replica).unwrap();
+    for (i, chunk) in staged.bytes.chunks(CHUNK_BYTES as usize).enumerate() {
+        store.write_chunk(&replica, i as u32, chunk).unwrap();
+    }
+    let mut session = store.state.sessions[&staged.session].clone();
+    session.request_id = replica.clone();
+    store.state.sessions.insert(replica.clone(), session);
+    store.persist().unwrap();
+    drop(store);
+
+    let access = |root: &str, g: &str| json!({"root": root, "task": hex::encode(TASK), "purpose": "inference", "grant_id": g, "request_id": g});
+    let content = |svc: &Svc, access: &Value, index: u32| {
+        let mut req = access.clone();
+        req["index"] = json!(index);
+        http(
+            svc,
+            "POST",
+            "/v1/content",
+            TOKEN_B,
+            req.to_string().as_bytes(),
+        )
+    };
+    let refused = |svc: &Svc, access: &Value| {
+        let (status, body) = content(svc, access, 1);
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        (status, body["error"].as_str().map(str::to_string))
+    };
+    let conflict = (409, Some("IntegrityConflict".to_string()));
+    let (access, lonely_access) = (access(&root, &g), access(&lonely, &lonely_g));
+    let svc = start(&dir);
+    assert_eq!(fetch(&svc, TOKEN_B, &access, 2), staged.bytes);
+    let staging = dir.join("store/staging");
+    std::fs::remove_file(staging.join(&staged.session).join("1")).unwrap();
+    std::fs::remove_file(staging.join(&lonely_staged.session).join("1")).unwrap();
+    assert_eq!(refused(&svc, &access), conflict);
+    assert_eq!(refused(&svc, &lonely_access), conflict);
+    drop(svc);
+
+    let store = open_store(&dir);
+    for quarantined in [&root, &lonely] {
+        assert_eq!(
+            store.state.objects[quarantined].state,
+            ObjectState::Quarantined
+        );
+    }
+    drop(store);
+
+    let svc = start(&dir);
+    let bytes = fetch(&svc, TOKEN_B, &access, 2);
+    assert_eq!(bytes, staged.bytes);
+    assert_eq!(open(&staged.object_key.unwrap(), &bytes).unwrap(), plain);
+    assert_eq!(refused(&svc, &lonely_access), conflict);
+    drop(svc);
+
+    let store = open_store(&dir);
+    let record = &store.state.objects[&root];
+    assert_eq!(record.state, ObjectState::Available);
+    assert_eq!(record.session, replica);
+    let history: Vec<ObjectState> = record.history.iter().map(|t| t.state).collect();
+    assert_eq!(
+        history,
+        [
+            ObjectState::Publishing,
+            ObjectState::Available,
+            ObjectState::Quarantined,
+            ObjectState::Available
+        ]
+    );
+    let stranded = &store.state.objects[&lonely];
+    assert_eq!(stranded.state, ObjectState::Quarantined);
+    assert_eq!(stranded.session, lonely_staged.session);
+    assert!(!store.state.grants[&g].revoked);
+    assert_eq!(
+        store.state.sessions[&staged.session].state,
+        store::SessionState::Published
+    );
+    let log = std::fs::read_to_string(dir.join("store/events.log")).unwrap();
+    assert!(log.contains(&format!("quarantine root={root}")));
+    assert!(log.contains(&format!("restored root={root} replica={replica}")));
+    assert!(log.contains(&format!("payload-missing root={lonely}")));
+    assert!(!log.contains(&format!("restored root={lonely}")));
+}

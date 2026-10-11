@@ -23,6 +23,7 @@ use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// v1 maximum ordinary lease; a longer hold is refused by storage admission.
 pub const MAX_HOLD_SECS: u64 = 365 * 86_400;
@@ -343,6 +344,8 @@ fn payload_present(store: &Store, record: &ObjectRecord, session: &str) -> bool 
 /// Every retained root whose primary payload fails verification is served from
 /// a published replica session of the same root that re-verifies in full; a
 /// root with no such replica stays unrestored and is never reported present.
+/// A restored quarantined root returns to available; tombstoned roots keep
+/// their state.
 // ponytail: re-reads every retained payload at startup; track per-root
 // verification marks if stores grow large enough to slow restart.
 fn restore_payloads(store: &mut Store) -> Result<(), ArtifactError> {
@@ -372,9 +375,16 @@ fn restore_payloads(store: &mut Store) -> Result<(), ArtifactError> {
             None => missing.push(root.clone()),
         }
     }
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| FAIL)?
+        .as_secs();
     for (root, session) in &restored {
         if let Some(record) = store.state.objects.get_mut(root) {
             record.session = session.clone();
+            if record.state == ObjectState::Quarantined {
+                record.transition(ObjectState::Available, at);
+            }
         }
     }
     if !restored.is_empty() {
