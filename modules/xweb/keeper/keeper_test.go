@@ -177,9 +177,62 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 func TestInitGenesisPanicsOnInvalidState(t *testing.T) {
 	s := newSuite(t, false)
-	genesis := *types.DefaultGenesis()
-	genesis.Attestors.Threshold = 1
-	require.Panics(t, func() { s.k.InitGenesis(s.ctx, genesis) })
+	initial := s.k.ExportGenesis(s.ctx)
+	attestors := xwebtestutil.Attestors(types.MaxAttestorSetSize + 1)
+	for _, tc := range []struct {
+		name string
+		set  types.AttestorSet
+		err  error
+		code string
+	}{
+		{"threshold without members", types.AttestorSet{Threshold: 1},
+			types.ErrInvalidAttestors.Wrap("threshold without attestors"), "LXP_XWEB_INVALID_ATTESTORS"},
+		{"oversized", xwebtestutil.Set(attestors, 9),
+			types.ErrInvalidAttestors.Wrap("more than 16 attestors"), "LXP_XWEB_INVALID_ATTESTORS"},
+		{"non-majority", xwebtestutil.Set(attestors[:16], 8),
+			types.ErrInvalidThreshold.Wrap("threshold 8 of 16 attestors"), "LXP_XWEB_INVALID_THRESHOLD"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			genesis := initial
+			genesis.Attestors = tc.set
+			root := types.ErrInvalidAttestors
+			if tc.code == "LXP_XWEB_INVALID_THRESHOLD" {
+				root = types.ErrInvalidThreshold
+			}
+			err := requireXWebPanic(t, root, tc.code, func() { s.k.InitGenesis(s.ctx, genesis) })
+			require.EqualError(t, err, tc.err.Error())
+			require.Equal(t, initial, s.k.ExportGenesis(s.ctx))
+		})
+	}
+	genesis := initial
+	genesis.Attestors = xwebtestutil.Set(attestors[:16], 9)
+	require.NoError(t, genesis.Validate())
+	s.k.InitGenesis(s.ctx, genesis)
+	require.Equal(t, genesis.Attestors, s.k.GetAttestorSet(s.ctx))
+	require.Equal(t, uint32(9), s.k.Threshold(s.ctx))
+	require.Equal(t, genesis, s.k.ExportGenesis(s.ctx))
+	for _, tc := range []struct {
+		name   string
+		mutate func(*types.GenesisState)
+		err    error
+	}{
+		{"invalid request", func(g *types.GenesisState) { g.Requests = []types.Request{{}} },
+			types.ErrInvalidRequest.Wrap("request id is zero")},
+		{"invalid result", func(g *types.GenesisState) { g.Results = []types.Result{{}} },
+			types.ErrInvalidRequest.Wrap("result of request id zero")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := genesis
+			tc.mutate(&invalid)
+			err := invalid.Validate()
+			requireXWebError(t, err, types.ErrInvalidGenesis, "LXP_XWEB_INVALID_GENESIS")
+			require.EqualError(t, err, types.ErrInvalidGenesis.Wrap(tc.err.Error()).Error())
+			panicErr := requireXWebPanic(t, types.ErrInvalidGenesis, "LXP_XWEB_INVALID_GENESIS",
+				func() { s.k.InitGenesis(s.ctx, invalid) })
+			require.EqualError(t, panicErr, err.Error())
+			require.Equal(t, genesis, s.k.ExportGenesis(s.ctx))
+		})
+	}
 }
 
 func TestModuleAddressIsTheXWebAccount(t *testing.T) {

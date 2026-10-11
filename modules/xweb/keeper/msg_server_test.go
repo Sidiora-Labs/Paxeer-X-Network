@@ -4,16 +4,46 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"maps"
+	"math"
 	"testing"
 
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
 	xwebtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/testutil"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkaddress "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
+
+func requireXWebError(t *testing.T, err, root error, code string) {
+	t.Helper()
+	require.ErrorIs(t, err, root)
+	name, mapped := types.LXPName(err)
+	require.True(t, mapped)
+	require.Equal(t, code, name)
+}
+
+func requireXWebPanic(t *testing.T, root error, code string, run func()) error {
+	t.Helper()
+	var value interface{}
+	func() {
+		defer func() { value = recover() }()
+		run()
+	}()
+	err, ok := value.(error)
+	require.True(t, ok, "panic value: %v", value)
+	requireXWebError(t, err, root, code)
+	return err
+}
 
 func (s *suite) register(attestor xwebtestutil.Attestor) error {
 	return s.k.RegisterAttestor(s.ctx, types.MsgRegisterAttestor{Authority: authority, Attestor: attestor.Registration()})
@@ -96,10 +126,10 @@ func TestRegisterAttestorRefusesAFullSet(t *testing.T) {
 	require.NoError(t, set.Validate())
 	events := s.ctx.EventManager().Events()
 	err := s.register(attestors[types.MaxAttestorSetSize])
-	require.ErrorIs(t, err, types.ErrInvalidAttestors)
+	requireXWebError(t, err, types.ErrInvalidAttestors, "LXP_XWEB_INVALID_ATTESTORS")
 	require.EqualError(t, err, types.ErrInvalidAttestors.Wrap("set is full at 16 attestors").Error())
 	err = s.register(attestors[0])
-	require.ErrorIs(t, err, types.ErrInvalidAttestors)
+	requireXWebError(t, err, types.ErrInvalidAttestors, "LXP_XWEB_INVALID_ATTESTORS")
 	require.EqualError(t, err, types.ErrInvalidAttestors.Wrapf("%s is already registered", attestors[0].Signer.Hex()).Error())
 	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
 	require.Equal(t, events, s.ctx.EventManager().Events())
@@ -112,7 +142,7 @@ func TestRemoveAttestor(t *testing.T) {
 	events := s.ctx.EventManager().Events()
 	unknown := types.Address20{0x01}
 	err := s.k.RemoveAttestor(s.ctx, types.MsgRemoveAttestor{Authority: authority, Signer: unknown})
-	require.ErrorIs(t, err, types.ErrUnknownAttestor)
+	requireXWebError(t, err, types.ErrUnknownAttestor, "LXP_XWEB_UNKNOWN_ATTESTOR")
 	require.EqualError(t, err, types.ErrUnknownAttestor.Wrap(unknown.Hex()).Error())
 	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
 	require.Equal(t, events, s.ctx.EventManager().Events())
@@ -164,10 +194,11 @@ func TestSetThresholdMajorityRule(t *testing.T) {
 	events := s.ctx.EventManager().Events()
 	for _, threshold := range []uint32{1, 2, 5} {
 		err := s.k.SetThreshold(s.ctx, types.MsgSetThreshold{Authority: authority, Threshold: threshold})
-		require.ErrorIs(t, err, types.ErrInvalidThreshold, "threshold %d of 4", threshold)
+		requireXWebError(t, err, types.ErrInvalidThreshold, "LXP_XWEB_INVALID_THRESHOLD")
 		require.EqualError(t, err, types.ErrInvalidThreshold.Wrapf("threshold %d of 4 attestors", threshold).Error())
 	}
 	zero := types.MsgSetThreshold{Authority: authority}
+	requireXWebError(t, zero.ValidateBasic(), types.ErrInvalidThreshold, "LXP_XWEB_INVALID_THRESHOLD")
 	require.EqualError(t, zero.ValidateBasic(), types.ErrInvalidThreshold.Wrap("threshold is zero").Error())
 	require.ErrorIs(t, s.k.SetThreshold(s.ctx, zero), types.ErrInvalidThreshold)
 	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
@@ -246,7 +277,7 @@ func TestRegisterAttestorWithAPublicKey(t *testing.T) {
 	wrong := s.attestors[2].Registration()
 	wrong.PublicKey = registration.PublicKey
 	err := s.k.RegisterAttestor(s.ctx, types.MsgRegisterAttestor{Authority: authority, Attestor: wrong})
-	require.ErrorIs(t, err, types.ErrInvalidAttestors)
+	requireXWebError(t, err, types.ErrInvalidAttestors, "LXP_XWEB_INVALID_ATTESTORS")
 	require.ErrorContains(t, err, "belongs to "+attestor.Signer.Hex())
 	require.Len(t, s.k.GetAttestorSet(s.ctx).Attestors, 2)
 
@@ -270,7 +301,7 @@ func TestRegisterAttestorWithAPublicKey(t *testing.T) {
 			set := s.k.GetAttestorSet(s.ctx)
 			events := s.ctx.EventManager().Events()
 			err := s.k.RegisterAttestor(s.ctx, types.MsgRegisterAttestor{Authority: authority, Attestor: tc.attestor})
-			require.ErrorIs(t, err, types.ErrInvalidAttestors)
+			requireXWebError(t, err, types.ErrInvalidAttestors, "LXP_XWEB_INVALID_ATTESTORS")
 			require.ErrorContains(t, err, tc.message)
 			require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
 			require.Equal(t, events, s.ctx.EventManager().Events())
@@ -288,7 +319,7 @@ func TestAttestorSetMajorityRuleGenesisImport(t *testing.T) {
 				if int(threshold) > n/2 && int(threshold) <= n {
 					require.NoError(t, err, "%d of %d", threshold, n)
 				} else {
-					require.ErrorIs(t, err, types.ErrInvalidThreshold, "%d of %d", threshold, n)
+					requireXWebError(t, err, types.ErrInvalidThreshold, "LXP_XWEB_INVALID_THRESHOLD")
 				}
 			}
 		}
@@ -321,12 +352,18 @@ func TestAttestorSetMajorityRuleGenesisImport(t *testing.T) {
 				invalid := genesis
 				invalid.Attestors = tc.set
 				require.EqualError(t, invalid.Attestors.Validate(), tc.err.Error())
-				genesisErr := types.ErrInvalidGenesis.Wrap(tc.err.Error())
-				require.ErrorIs(t, invalid.Validate(), types.ErrInvalidGenesis)
-				if tc.name == "oversized" {
-					genesisErr = tc.err
+				root := types.ErrInvalidAttestors
+				code := "LXP_XWEB_INVALID_ATTESTORS"
+				if tc.name == "half threshold" {
+					root = types.ErrInvalidThreshold
+					code = "LXP_XWEB_INVALID_THRESHOLD"
 				}
-				require.PanicsWithError(t, genesisErr.Error(), func() { s.k.InitGenesis(s.ctx, invalid) })
+				requireXWebError(t, invalid.Attestors.Validate(), root, code)
+				err := invalid.Validate()
+				requireXWebError(t, err, root, code)
+				require.EqualError(t, err, tc.err.Error())
+				panicErr := requireXWebPanic(t, root, code, func() { s.k.InitGenesis(s.ctx, invalid) })
+				require.EqualError(t, panicErr, tc.err.Error())
 				require.Equal(t, genesis, s.k.ExportGenesis(s.ctx))
 			})
 		}
@@ -368,6 +405,87 @@ func TestRegisterAttestorWithDerivedPayoutAccounts(t *testing.T) {
 	require.Equal(t, sdk.NewInt(500_002), s.balance(s.attestors[0].Payout))
 	require.Equal(t, sdk.NewInt(500_001), s.balance(s.attestors[1].Payout))
 	require.Equal(t, sdk.ZeroInt(), s.balance(s.attestors[2].Payout))
+	require.Equal(t, sdk.ZeroInt(), s.balance(s.k.ModuleAddress()))
+	require.Equal(t, sdk.NewInt(requesterBal-fee), s.balance(s.account(requester)))
+}
+
+func TestProgramOriginUsesTheXWebSet(t *testing.T) {
+	s := newSuite(t, false)
+	s.ctx = s.ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(s.ctx))
+	server := keeper.NewMsgServerImpl(s.k)
+	member := s.attestors[0]
+	registration := member.Registration()
+	registration.PublicKey = crypto.CompressPubkey(&member.Key.PublicKey)
+	registered, err := server.RegisterAttestor(sdk.WrapSDKContext(s.ctx), &types.MsgRegisterAttestor{
+		Authority: authority, Attestor: registration,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, registered)
+	set := types.AttestorSet{Attestors: []types.Attestor{registration}, Threshold: 1}
+	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
+	require.NoError(t, set.Validate())
+	stored, found := s.k.GetAttestorSet(s.ctx).Find(member.Signer)
+	require.True(t, found)
+	require.Equal(t, registration, stored)
+
+	precompile := xweb.NewPrecompileWithKeeper(&s.k, s.app.BankKeeper, &s.app.EvmKeeper)
+	stateDB := state.NewDBImpl(s.ctx, &s.app.EvmKeeper, false)
+	blockCtx, err := s.app.EvmKeeper.GetVMBlockContext(s.ctx, core.GasPool(math.MaxUint64))
+	require.NoError(t, err)
+	config := evmtypes.DefaultChainConfig().EthereumConfig(s.app.EvmKeeper.ChainID(s.ctx))
+	contracts := make(map[common.Address]vm.PrecompiledContract)
+	maps.Copy(contracts, s.app.EvmKeeper.CustomPrecompiles(s.ctx))
+	contracts[precompile.Address()] = precompile
+	evm := vm.NewEVM(*blockCtx, stateDB, config, vm.Config{}, contracts)
+	method, found := precompile.GetABI().Methods[xweb.GetAttestorsMethod]
+	require.True(t, found)
+	const suppliedGas = uint64(50_000)
+	raw, left, err := evm.StaticCall(requester, precompile.Address(), method.ID, suppliedGas)
+	require.NoError(t, err)
+	require.Equal(t, suppliedGas-xweb.ViewBaseGas, left)
+	out, err := method.Outputs.Unpack(raw)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	var listed []xweb.AttestorView
+	listed = *abi.ConvertType(out[0], &listed).(*[]xweb.AttestorView)
+	require.Equal(t, []xweb.AttestorView{{Signer: common.Address(member.Signer),
+		Payout: registration.Payout, PublicKey: registration.PublicKey}}, listed)
+	require.Equal(t, uint32(1), out[1])
+	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
+
+	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(fee),
+		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout}))
+	require.NoError(t, s.k.Unpause(s.ctx, types.MsgUnpause{Authority: authority}))
+	s.fund(requester, requesterBal)
+	id := s.request()
+	length := uint32(len(response))
+	_, _, err = s.k.Fulfil(s.ctx, id, response, digest, length, nil)
+	requireXWebError(t, err, types.ErrBelowThreshold, "LXP_XWEB_BELOW_THRESHOLD")
+	require.EqualError(t, err, types.ErrBelowThreshold.Wrap("0 of 1").Error())
+	_, _, err = s.k.Fulfil(s.ctx, id, response, digest, length,
+		s.signed(id, response, digest, length, s.attestors[1]))
+	requireXWebError(t, err, types.ErrBadSignature, "LXP_XWEB_BAD_SIGNATURE")
+	pending, found := s.k.GetRequest(s.ctx, id)
+	require.True(t, found)
+	require.Equal(t, types.StatusPending, pending.Status)
+	_, found = s.k.GetResult(s.ctx, id)
+	require.False(t, found)
+	require.Equal(t, sdk.NewInt(fee), s.balance(s.k.ModuleAddress()))
+	require.Equal(t, sdk.ZeroInt(), s.balance(member.Payout))
+
+	request, result, err := s.k.Fulfil(s.ctx, id, response, digest, length,
+		s.signed(id, response, digest, length, member))
+	require.NoError(t, err)
+	pending.Status = types.StatusFulfilled
+	require.Equal(t, pending, request)
+	require.Equal(t, types.Result{RequestID: id, Response: response, ContentDigest: digest,
+		FullLength: length, Signers: []types.Address20{member.Signer}, Height: startHeight,
+		Callback: types.CallbackPending, Level: types.LevelMajority}, result)
+	storedResult, found := s.k.GetResult(s.ctx, id)
+	require.True(t, found)
+	require.Equal(t, result, storedResult)
+	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
+	require.Equal(t, sdk.NewInt(fee), s.balance(member.Payout))
 	require.Equal(t, sdk.ZeroInt(), s.balance(s.k.ModuleAddress()))
 	require.Equal(t, sdk.NewInt(requesterBal-fee), s.balance(s.account(requester)))
 }
@@ -442,18 +560,18 @@ func TestMsgServerRefusesAnAuthorityOtherThanTheModules(t *testing.T) {
 	events := s.ctx.EventManager().Events()
 
 	_, err := server.RegisterAttestor(goCtx, &types.MsgRegisterAttestor{Authority: stranger, Attestor: candidate})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.RemoveAttestor(goCtx, &types.MsgRemoveAttestor{Authority: stranger, Signer: set.Attestors[0].Signer})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.SetThreshold(goCtx, &types.MsgSetThreshold{Authority: stranger, Threshold: 3})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.SetParams(goCtx, &types.MsgSetParams{Authority: stranger, Fee: sdk.NewInt(1),
 		MaxPayloadBytes: 1, MaxCallbackGas: 1, TimeoutBlocks: 1})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.Pause(goCtx, &types.MsgPause{Authority: stranger})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 	_, err = server.Unpause(goCtx, &types.MsgUnpause{Authority: stranger})
-	require.ErrorIs(t, err, types.ErrUnauthorized)
+	requireXWebError(t, err, types.ErrUnauthorized, "LXP_XWEB_UNAUTHORIZED")
 
 	require.Equal(t, set, s.k.GetAttestorSet(s.ctx))
 	require.Equal(t, params, s.k.GetParams(s.ctx))

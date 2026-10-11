@@ -31,7 +31,7 @@ func (g GenesisState) Validate() error {
 		return err
 	}
 	if err := g.Attestors.Validate(); err != nil {
-		return ErrInvalidGenesis.Wrap(err.Error())
+		return err
 	}
 	requests := map[uint64]Request{}
 	for _, request := range g.Requests {
