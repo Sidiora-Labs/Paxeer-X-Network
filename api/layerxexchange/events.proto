@@ -1,54 +1,155 @@
 syntax = "proto3";
 package paxprotocol.paxchain.layerxexchange;
 
+import "gogoproto/gogo.proto";
+
 option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types";
 
-// EventMarginDeposited mirrors the MarginDeposited EVM log.
 message EventMarginDeposited {
-  string intent_id = 1;
-  string owner = 2;
-  string account = 3;
+  string deposit_id = 1;
+  string margin_account = 2;
+  string owner = 3;
   string asset_id = 4;
-  string denom = 5;
-  string amount = 6;
-  string deposit_id = 7;
-  uint64 nonce = 8;
+  string amount = 5 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
 }
 
-// EventMarginWithdrawalRequested mirrors the MarginWithdrawalRequested EVM log.
-message EventMarginWithdrawalRequested {
-  string intent_id = 1;
+message EventMarginWithdrawn {
+  string margin_account = 1;
   string owner = 2;
-  string account = 3;
-  string asset_id = 4;
-  string amount = 5;
-  uint64 nonce = 6;
+  string asset_id = 3;
+  string amount = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
 }
 
-// EventOrderPlaced mirrors the OrderPlaced EVM log.
+message EventPerpsMarketCreated {
+  string market_id = 1;
+  string quote_asset = 2;
+}
+
+message EventPerpsMarketHalted {
+  string market_id = 1;
+  string administrator = 2;
+  bool halted = 3;
+}
+
+message EventOracleAccepted {
+  string market_id = 1;
+  string oracle_pubkey = 2;
+  uint64 sequence = 3;
+  string price = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
 message EventOrderPlaced {
-  string intent_id = 1;
-  string owner = 2;
-  string market_id = 3;
-  uint32 side = 4;
-  string price = 5;
-  string quantity = 6;
-  uint32 time_in_force = 7;
-  uint64 nonce = 8;
+  string order_id = 1;
+  string market_id = 2;
+  uint32 fill_count = 3;
+  string quantity = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
 }
 
-// EventOrderCancelRequested mirrors the OrderCancelRequested EVM log.
-message EventOrderCancelRequested {
-  string intent_id = 1;
-  string owner = 2;
-  string order_id = 3;
-  uint64 nonce = 4;
+message EventOrderCancelled {
+  string order_id = 1;
+  string market_id = 2;
 }
 
-// EventSettlementRequested mirrors the SettlementRequested EVM log.
-message EventSettlementRequested {
-  string intent_id = 1;
-  string owner = 2;
-  string position_id = 3;
-  uint64 nonce = 4;
+message EventPositionOpened {
+  string position_id = 1;
+  string market_id = 2;
+  uint32 side = 3;
+}
+
+message EventPositionIncreased {
+  string position_id = 1;
+  string market_id = 2;
+  uint32 side = 3;
+}
+
+message EventPositionClosed {
+  string position_id = 1;
+  string market_id = 2;
+  string owed = 3 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventFundingSettled {
+  string market_id = 1;
+  string quote_asset = 2;
+  string funding_index = 3 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+  string rate = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventLiquidated {
+  string position_id = 1;
+  string market_id = 2;
+  string covered = 3 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventDeleveraged {
+  string market_id = 1;
+  string liquidity_id = 2;
+  uint32 count = 3;
+  string deficit = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventSpotMarketCreated {
+  string market_id = 1;
+  string base_asset = 2;
+  string quote_asset = 3;
+}
+
+message EventSpotOrderPlaced {
+  string order_id = 1;
+  string market_id = 2;
+  uint32 fill_count = 3;
+  string quantity = 4 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+  string remaining = 5 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventSpotOrderCancelled {
+  string order_id = 1;
+  string market_id = 2;
+  string escrowed = 3 [
+    (gogoproto.customtype) = "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types.Int",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message EventSpotMarketHalted {
+  string market_id = 1;
+  string administrator = 2;
+}
+
+message EventSpotMarketResumed {
+  string market_id = 1;
+  string administrator = 2;
 }
