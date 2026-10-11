@@ -294,6 +294,9 @@ config :ethereum_jsonrpc, EthereumJSONRPC.PaxeerX,
   cosmos_transaction_type: ConfigHelper.parse_integer_env_var("PAXEER_X_COSMOS_TRANSACTION_TYPE", 127),
   native_coin_decimals: ConfigHelper.parse_integer_env_var("PAXEER_X_NATIVE_COIN_DECIMALS", 18)
 
+config :explorer, Explorer.Chain.PaxeerX.SequencerReceipt,
+  router_url: ConfigHelper.parse_url_env_var("PAXEER_X_ROUTER_URL")
+
 config :ethereum_jsonrpc, EthereumJSONRPC.PendingTransaction,
   type: System.get_env("ETHEREUM_JSONRPC_PENDING_TRANSACTIONS_TYPE", "default")
 
