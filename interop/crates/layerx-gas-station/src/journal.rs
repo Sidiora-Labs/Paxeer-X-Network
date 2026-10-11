@@ -36,6 +36,8 @@ pub struct Key {
 #[serde(deny_unknown_fields)]
 pub struct QuoteRecord {
     pub key: Key,
+    pub did: String,
+    pub batch_nonce: Word,
     pub chain_id: u64,
     pub paymaster: Address,
     pub account: Address,
@@ -67,7 +69,8 @@ impl QuoteRecord {
             .as_slice()
             .try_into()
             .map_err(|_| JournalError::Corrupt)?;
-        if recover(digest, &signature).map_err(|_| JournalError::Corrupt)? != self.key.sponsor
+        if !crate::policy::valid_did(&self.did)
+            || recover(digest, &signature).map_err(|_| JournalError::Corrupt)? != self.key.sponsor
             || self.amount == word(0)
             || self.amount > self.maximum
             || self.deadline < self.issued_at
@@ -85,6 +88,8 @@ impl QuoteRecord {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Submission {
+    pub did: String,
+    pub batch_nonce: Word,
     pub nonce: u64,
     pub hash: Word,
     pub raw: Vec<u8>,
@@ -381,6 +386,26 @@ impl State {
                     || item.replacement.as_ref().is_some_and(|r| r.nonce == nonce))
         })
     }
+    #[must_use]
+    pub fn next_nonce(&self, sponsor: Address, pending: u64) -> Option<u64> {
+        if self.signing_intents.iter().any(|(key, nonce)| {
+            key.sponsor == sponsor
+                && *nonce >= pending
+                && self
+                    .items
+                    .get(key)
+                    .is_none_or(|item| item.submission.is_none())
+        }) {
+            return None;
+        }
+        let mut nonce = pending;
+        while self.holds(sponsor, nonce) {
+            nonce = nonce.checked_add(1)?;
+        }
+        nonce.checked_add(1)?;
+        Some(nonce)
+    }
+
     pub fn liability(&self, key: Key) -> Result<u128, JournalError> {
         if self.liability_releases.contains_key(&key) {
             return Ok(0);
@@ -494,30 +519,10 @@ impl State {
                 }
                 self.signing_intents.insert(*key, *nonce);
             }
-            Entry::ReplacementSigningIntent {
-                key,
-                nonce,
-                fees,
-                digest,
-            } => {
-                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if *digest == [0; 32]
-                    || self.replacement_intents.contains_key(key)
-                    || self.liability_releases.contains_key(key)
-                    || item.completion.is_some()
-                    || item.replacement.is_some()
-                    || item
-                        .submission
-                        .as_ref()
-                        .is_none_or(|value| value.nonce != *nonce)
-                    || !fees
-                        .replaces(item.quote.as_ref().ok_or(JournalError::Conflict)?.fees)
-                        .map_err(|_| JournalError::Corrupt)?
-                {
-                    return Err(JournalError::Conflict);
-                }
-                self.replacement_intents.insert(*key, *fees);
-            }
+            Entry::ReplacementSigningIntent { .. }
+            | Entry::Replaced { .. }
+            | Entry::Cancelled { .. }
+            | Entry::Released { .. } => return Err(JournalError::Conflict),
             Entry::QuoteAdmitted { quote, admission } => {
                 if admission.identity
                     != Admission::identity(quote.account, admission.batch_nonce, admission.interval)
@@ -623,6 +628,14 @@ impl State {
                 if self.liability_releases.contains_key(key) {
                     return Err(JournalError::Conflict);
                 }
+                let quote = self
+                    .items
+                    .get(key)
+                    .and_then(|item| item.quote.as_ref())
+                    .ok_or(JournalError::Conflict)?;
+                if submission.did != quote.did || submission.batch_nonce != quote.batch_nonce {
+                    return Err(JournalError::Conflict);
+                }
                 if submission.raw.first() != Some(&4) || keccak(&submission.raw) != submission.hash
                 {
                     return Err(JournalError::Corrupt);
@@ -698,58 +711,6 @@ impl State {
                 }
                 item.completion = Some(*completion);
             }
-            Entry::Released { .. } => return Err(JournalError::Conflict),
-            Entry::Replaced { key, replacement } => {
-                if self.liability_releases.contains_key(key) {
-                    return Err(JournalError::Conflict);
-                }
-                if replacement.raw.first() != Some(&2)
-                    || keccak(&replacement.raw) != replacement.hash
-                {
-                    return Err(JournalError::Corrupt);
-                }
-                let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
-                if item.completion.is_some()
-                    || item.replacement.is_some()
-                    || self
-                        .replacement_intents
-                        .get(key)
-                        .is_some_and(|fees| *fees != replacement.fees)
-                    || (self.tracked_quotes.contains(key)
-                        && !self.replacement_intents.contains_key(key))
-                    || item
-                        .submission
-                        .as_ref()
-                        .is_none_or(|s| s.nonce != replacement.nonce)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                let original = item.quote.as_ref().ok_or(JournalError::Conflict)?.fees;
-                if !replacement
-                    .fees
-                    .replaces(original)
-                    .map_err(|_| JournalError::Corrupt)?
-                {
-                    return Err(JournalError::Corrupt);
-                }
-                item.replacement = Some(replacement.clone());
-            }
-            Entry::Cancelled {
-                key,
-                hash,
-                block_number,
-            } => {
-                let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
-                if item.completion.is_some()
-                    || item.replacement.as_ref().is_none_or(|r| r.hash != *hash)
-                {
-                    return Err(JournalError::Conflict);
-                }
-                item.completion = Some(Completion::Cancelled {
-                    hash: *hash,
-                    block_number: *block_number,
-                });
-            }
             Entry::ReceiptObserved {
                 key,
                 hash,
@@ -758,8 +719,8 @@ impl State {
                 finalized,
             } => {
                 let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if !item.submission.as_ref().is_some_and(|s| s.hash == *hash)
-                    && !item.replacement.as_ref().is_some_and(|r| r.hash == *hash)
+                if item.submission.as_ref().is_none_or(|s| s.hash != *hash)
+                    && item.replacement.as_ref().is_none_or(|r| r.hash != *hash)
                 {
                     return Err(JournalError::Conflict);
                 }
@@ -1113,6 +1074,8 @@ mod tests {
             max_priority_fee_per_gas: 1_000_000_000,
         };
         let mut record = QuoteRecord {
+            did: crate::rpc::hex(&[0x11; 20]),
+            batch_nonce: word(0),
             key: Key {
                 sponsor: signer.address(),
                 quote_nonce: word(quote_nonce),
@@ -1150,6 +1113,8 @@ mod tests {
         Entry::Prepared {
             key,
             submission: Submission {
+                did: crate::rpc::hex(&[0x11; 20]),
+                batch_nonce: word(0),
                 nonce,
                 hash: keccak(&raw),
                 raw,

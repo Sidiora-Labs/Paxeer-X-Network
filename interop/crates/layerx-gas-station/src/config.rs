@@ -17,6 +17,43 @@ impl std::fmt::Display for ConfigError {
 }
 impl std::error::Error for ConfigError {}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PaymasterRequired(pub Address);
+
+impl TryFrom<Option<&str>> for PaymasterRequired {
+    type Error = ConfigError;
+
+    fn try_from(raw: Option<&str>) -> Result<Self, Self::Error> {
+        let error = ConfigError {
+            field: "GAS_STATION_PAYMASTER",
+        };
+        let paymaster = parse_address(raw.ok_or_else(|| error.clone())?, error.field)?;
+        if paymaster == [0; 20] || paymaster == SIDIORA {
+            return Err(error);
+        }
+        Ok(Self(paymaster))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DidGasLimit(pub u64);
+
+impl TryFrom<Option<&str>> for DidGasLimit {
+    type Error = ConfigError;
+
+    fn try_from(raw: Option<&str>) -> Result<Self, Self::Error> {
+        let error = ConfigError {
+            field: "GAS_STATION_DID_GAS_LIMIT",
+        };
+        let raw = raw.ok_or_else(|| error.clone())?;
+        if raw.is_empty() || raw.starts_with('0') || !raw.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(error);
+        }
+        raw.parse().map(Self).map_err(|_| error)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StationConfig {
     pub chain_id: u64,
@@ -45,8 +82,12 @@ pub(crate) fn field<T: DeserializeOwned>(
 
 fn address(map: &mut Map<String, Value>, name: &'static str) -> Result<Address, ConfigError> {
     let raw: String = field(map, name)?;
+    parse_address(&raw, name)
+}
+
+fn parse_address(raw: &str, name: &'static str) -> Result<Address, ConfigError> {
     let raw = raw.strip_prefix("0x").ok_or(ConfigError { field: name })?;
-    if raw.len() != 40 || !raw.is_ascii() {
+    if raw.len() != 40 || !raw.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(ConfigError { field: name });
     }
     let mut result = [0; 20];
@@ -55,6 +96,16 @@ fn address(map: &mut Map<String, Value>, name: &'static str) -> Result<Address, 
             .map_err(|_| ConfigError { field: name })?;
     }
     Ok(result)
+}
+
+fn require_paymaster(configured: Address, raw: Option<&str>) -> Result<(), ConfigError> {
+    let paymaster = PaymasterRequired::try_from(raw)?;
+    if paymaster.0 != configured {
+        return Err(ConfigError {
+            field: "GAS_STATION_PAYMASTER",
+        });
+    }
+    Ok(())
 }
 
 pub(crate) fn object(text: &str) -> Result<Map<String, Value>, ConfigError> {
@@ -115,7 +166,12 @@ impl StationConfig {
     /// # Errors
     /// Refuses unreadable, oversized or invalid configuration files.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        Self::parse(&read_text(path)?)
+        let config = Self::parse(&read_text(path)?)?;
+        let paymaster = std::env::var("GAS_STATION_PAYMASTER").map_err(|_| ConfigError {
+            field: "GAS_STATION_PAYMASTER",
+        })?;
+        require_paymaster(config.paymaster, Some(&paymaster))?;
+        Ok(config)
     }
 
     /// # Errors
@@ -217,7 +273,12 @@ impl ServiceConfig {
     /// # Errors
     /// Refuses unreadable, oversized or invalid configuration files.
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        Self::parse(&read_text(path)?)
+        let config = Self::parse(&read_text(path)?)?;
+        let paymaster = std::env::var("GAS_STATION_PAYMASTER").map_err(|_| ConfigError {
+            field: "GAS_STATION_PAYMASTER",
+        })?;
+        require_paymaster(config.station.paymaster, Some(&paymaster))?;
+        Ok(config)
     }
 }
 
@@ -413,11 +474,26 @@ pub(crate) mod tests {
 
     #[test]
     fn load_file_and_refuse_missing_path() -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(path) = std::env::var_os("GAS_STATION_CONFIG_LOAD_TEST_PATH") {
+            let result = StationConfig::load(Path::new(&path));
+            assert_eq!(result, Ok(config()));
+            return Ok(());
+        }
         let path = std::env::temp_dir().join(format!("gas-station-config-{}", std::process::id()));
         std::fs::write(&path, json().to_string())?;
-        let result = StationConfig::load(&path);
+        let result = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "config::tests::load_file_and_refuse_missing_path",
+            ])
+            .env("GAS_STATION_CONFIG_LOAD_TEST_PATH", &path)
+            .env(
+                "GAS_STATION_PAYMASTER",
+                "0x4444444444444444444444444444444444444444",
+            )
+            .status()?;
         std::fs::remove_file(&path)?;
-        assert_eq!(result, Ok(config()));
+        assert!(result.success());
         assert_eq!(
             StationConfig::load(&path).err(),
             Some(ConfigError {
