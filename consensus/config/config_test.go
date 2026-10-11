@@ -36,6 +36,61 @@ func TestConfigValidateBasic(t *testing.T) {
 	assert.Error(t, cfg.ValidateBasic())
 }
 
+func TestSequencerConfigValidateBasic(t *testing.T) {
+	def := DefaultSequencerConfig()
+	require.False(t, def.Enable)
+	require.Equal(t, time.Second, def.TimeoutPropose)
+	require.Equal(t, 500*time.Millisecond, def.TimeoutProposeDelta)
+	require.Equal(t, 50*time.Millisecond, def.TimeoutVote)
+	require.Equal(t, 50*time.Millisecond, def.TimeoutCommit)
+	require.Equal(t, time.Second, def.ProposeTimeout(0))
+	require.Equal(t, 1500*time.Millisecond, def.ProposeTimeout(1))
+	require.Equal(t, 2500*time.Millisecond, def.ProposeTimeout(3))
+
+	cfg := DefaultConfig()
+	require.Equal(t, def, cfg.Consensus.Sequencer)
+	require.NoError(t, cfg.ValidateBasic())
+	cfg.Consensus.Sequencer.Enable = true
+	require.NoError(t, cfg.ValidateBasic())
+
+	// The unsafe overrides do not feed the sequencer timeouts.
+	cfg.Consensus.UnsafeProposeTimeoutOverride = 7 * time.Second
+	require.NoError(t, cfg.ValidateBasic())
+	require.Equal(t, time.Second, cfg.Consensus.Sequencer.ProposeTimeout(0))
+
+	cases := []struct {
+		field string
+		set   func(*SequencerConfig, time.Duration)
+	}{
+		{"timeout-propose", func(c *SequencerConfig, d time.Duration) { c.TimeoutPropose = d }},
+		{"timeout-propose-delta", func(c *SequencerConfig, d time.Duration) { c.TimeoutProposeDelta = d }},
+		{"timeout-vote", func(c *SequencerConfig, d time.Duration) { c.TimeoutVote = d }},
+		{"timeout-commit", func(c *SequencerConfig, d time.Duration) { c.TimeoutCommit = d }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			enabled := DefaultSequencerConfig()
+			enabled.Enable = true
+			tc.set(&enabled, 0)
+			require.EqualError(t, enabled.ValidateBasic(), "sequencer."+tc.field+" can't be zero in sequencer mode")
+
+			cfg := DefaultConfig()
+			cfg.Consensus.Sequencer = enabled
+			require.EqualError(t, cfg.ValidateBasic(), "error in [consensus] section: sequencer."+tc.field+" can't be zero in sequencer mode")
+
+			disabled := DefaultSequencerConfig()
+			tc.set(&disabled, 0)
+			require.NoError(t, disabled.ValidateBasic())
+
+			tc.set(&disabled, -time.Millisecond)
+			require.EqualError(t, disabled.ValidateBasic(), "sequencer."+tc.field+" can't be negative")
+			enabled.Enable = true
+			tc.set(&enabled, -time.Millisecond)
+			require.EqualError(t, enabled.ValidateBasic(), "sequencer."+tc.field+" can't be negative")
+		})
+	}
+}
+
 func TestTLSConfiguration(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.SetRoot("/home/user")

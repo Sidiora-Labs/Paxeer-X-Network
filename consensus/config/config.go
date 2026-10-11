@@ -1186,6 +1186,11 @@ type ConsensusConfig struct {
 	// as soon as the node has gathered votes from all of the validators on the network.
 	UnsafeBypassCommitTimeoutOverride *bool `mapstructure:"unsafe-bypass-commit-timeout-override"`
 
+	// Sequencer enables sequencer mode and holds its consensus timeouts. The
+	// leader list is module state, not node config, and the unsafe timeout
+	// overrides above do not apply to the sequencer path.
+	Sequencer SequencerConfig `mapstructure:"sequencer"`
+
 	// Deprecated timeout parameters. These parameters are present in this struct
 	// so that they can be parsed so that validation can check if they have erroneously
 	// been included and provide a helpful error message.
@@ -1213,7 +1218,62 @@ func DefaultConsensusConfig() *ConsensusConfig {
 		// Pax Configurations
 		GossipTransactionKeyOnly: true,
 		StatelessLeaderElection:  true,
+		Sequencer:                DefaultSequencerConfig(),
 	}
+}
+
+// SequencerConfig defines the consensus settings of sequencer mode.
+type SequencerConfig struct {
+	// Enable switches the node into sequencer mode.
+	Enable bool `mapstructure:"enable"`
+	// TimeoutPropose is how long a round waits for the proposal in round 0.
+	TimeoutPropose time.Duration `mapstructure:"timeout-propose"`
+	// TimeoutProposeDelta is added to TimeoutPropose for each later round.
+	TimeoutProposeDelta time.Duration `mapstructure:"timeout-propose-delta"`
+	// TimeoutVote is how long a round waits for the remaining votes after +2/3.
+	TimeoutVote time.Duration `mapstructure:"timeout-vote"`
+	// TimeoutCommit is how long the node waits after +2/3 precommits before
+	// beginning the next height.
+	TimeoutCommit time.Duration `mapstructure:"timeout-commit"`
+}
+
+// DefaultSequencerConfig returns the sequencer settings with the mode disabled
+// and the activation timeouts.
+func DefaultSequencerConfig() SequencerConfig {
+	return SequencerConfig{
+		TimeoutPropose:      1 * time.Second,
+		TimeoutProposeDelta: 500 * time.Millisecond,
+		TimeoutVote:         50 * time.Millisecond,
+		TimeoutCommit:       50 * time.Millisecond,
+	}
+}
+
+// ProposeTimeout returns the propose timeout of the given round.
+func (cfg SequencerConfig) ProposeTimeout(round int32) time.Duration {
+	return cfg.TimeoutPropose + cfg.TimeoutProposeDelta*time.Duration(round)
+}
+
+// ValidateBasic refuses negative timeouts, and zero timeouts when sequencer
+// mode is enabled.
+func (cfg SequencerConfig) ValidateBasic() error {
+	timeouts := []struct {
+		name  string
+		value time.Duration
+	}{
+		{"timeout-propose", cfg.TimeoutPropose},
+		{"timeout-propose-delta", cfg.TimeoutProposeDelta},
+		{"timeout-vote", cfg.TimeoutVote},
+		{"timeout-commit", cfg.TimeoutCommit},
+	}
+	for _, t := range timeouts {
+		if t.value < 0 {
+			return fmt.Errorf("sequencer.%s can't be negative", t.name)
+		}
+		if cfg.Enable && t.value == 0 {
+			return fmt.Errorf("sequencer.%s can't be zero in sequencer mode", t.name)
+		}
+	}
+	return nil
 }
 
 // TestConsensusConfig returns a configuration for testing the consensus service
@@ -1282,7 +1342,7 @@ func (cfg *ConsensusConfig) ValidateBasic() error {
 	if cfg.DoubleSignCheckHeight < 0 {
 		return errors.New("double-sign-check-height can't be negative")
 	}
-	return nil
+	return cfg.Sequencer.ValidateBasic()
 }
 
 func (cfg *ConsensusConfig) DeprecatedFieldWarning() error {
