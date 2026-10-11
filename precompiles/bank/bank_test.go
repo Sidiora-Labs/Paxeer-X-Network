@@ -19,6 +19,7 @@ import (
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/address"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
@@ -91,6 +92,24 @@ func TestRun(t *testing.T) {
 	require.Nil(t, err)
 	_, _, err = p.RunAndCalculateGas(&evm, senderEVMAddr, senderEVMAddr, append(p.GetExecutor().(*bank.PrecompileExecutor).SendID, invalidDenomArgs...), 100000, nil, nil, false, false) // should error because denom is empty
 	require.NotNil(t, err)
+	require.Empty(t, statedb.GetAllLogs())
+
+	// The denom's pointer sends through the four-argument send: coins move
+	// and no log is emitted.
+	_, fooPointer := testkeeper.MockAddressPair()
+	pointerCtx, _ := ctx.CacheContext()
+	k.SetERC20NativePointer(pointerCtx, "ufoo", fooPointer)
+	pointerDB := state.NewDBImpl(pointerCtx, k, false)
+	fooArgs, err := send.Inputs.Pack(senderEVMAddr, evmAddr, "ufoo", big.NewInt(25))
+	require.Nil(t, err)
+	sendRet, _, err := p.RunAndCalculateGas(&vm.EVM{StateDB: pointerDB}, fooPointer, fooPointer, append(p.GetExecutor().(*bank.PrecompileExecutor).SendID, fooArgs...), 100000, nil, nil, false, false)
+	require.Nil(t, err)
+	sendOut, err := send.Outputs.Unpack(sendRet)
+	require.Nil(t, err)
+	require.Equal(t, []interface{}{true}, sendOut)
+	require.Equal(t, sdk.NewInt(9999975), k.BankKeeper().GetBalance(pointerDB.Ctx(), senderAddr, "ufoo").Amount)
+	require.Equal(t, sdk.NewInt(25), k.BankKeeper().GetBalance(pointerDB.Ctx(), paxAddr, "ufoo").Amount)
+	require.Empty(t, pointerDB.GetAllLogs())
 
 	// Precompile sendNative test error
 	sendNative, err := p.ABI.MethodById(p.GetExecutor().(*bank.PrecompileExecutor).SendNativeID)
@@ -673,4 +692,28 @@ func TestSendReasonsFromPlanHeight(t *testing.T) {
 	require.Nil(t, ret)
 	require.Equal(t, uint64(0), gas)
 	require.EqualError(t, err, "no method with id: 0x2e4c85ac")
+}
+
+func TestSendContextHashSubAccount(t *testing.T) {
+	e := newSendContextEnv(t)
+	sub := sdk.AccAddress(address.Module("layerx", sdk.Uint64ToBigEndian(7)))
+	require.Len(t, sub, 32)
+	_, subEVM := testkeeper.MockAddressPair()
+	e.k.SetAddressMapping(e.ctx, sub, subEVM)
+	funds := sdk.NewCoins(sdk.NewCoin(sendContextDenom, sdk.NewInt(40)))
+	require.NoError(t, e.k.BankKeeper().MintCoins(e.ctx, types.ModuleName, funds))
+	require.NoError(t, e.k.BankKeeper().SendCoinsFromModuleToAccount(e.ctx, types.ModuleName, sub, funds))
+	require.Equal(t, int64(40), e.k.BankKeeper().GetBalance(e.ctx, sub, sendContextDenom).Amount.Int64())
+
+	input, err := e.p.ABI.Pack(bank.SendContextMethod, subEVM, e.to, sendContextDenom, big.NewInt(40), sendContextHash)
+	require.NoError(t, err)
+	ret, statedb, err := e.call(sendContextPlanHeight, e.pointer, input, nil, false)
+	require.NoError(t, err)
+	sendContextTrue(t, e.p, ret)
+	require.Equal(t, int64(0), e.balance(statedb, sub))
+	require.Equal(t, int64(40), e.balance(statedb, e.toPax))
+	require.Equal(t, int64(1000), e.balance(statedb, e.fromPax))
+	logs := statedb.GetAllLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, []common.Hash{common.HexToHash(sendContextTopic0), common.BytesToHash(subEVM.Bytes()), common.BytesToHash(e.to.Bytes())}, logs[0].Topics)
 }
