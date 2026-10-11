@@ -207,27 +207,91 @@ func TestBridgeInMintsAtThresholdThroughThePrecompile(t *testing.T) {
 func TestBridgeInRefusalsThroughThePrecompile(t *testing.T) {
 	h := newHarness(t)
 	h.activate()
+	testkeeper.EVMTestApp.EvmKeeper.UpgradeKeeper().SetDone(h.ctx, pcommon.MergeUpgrade)
+	require.NoError(t, h.keeper.RegisterChain(h.ctx, types.MsgRegisterChain{Authority: authority,
+		Chain: types.Chain{ChainID: 2, Vault: types.Address20(vault), FinalityDepth: 64, Enabled: false}}))
 
-	_, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[2])...)
-	require.Error(t, err, "below threshold")
-	_, err = h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 1001, h.attestors[0], h.attestors[1])...)
-	require.Error(t, err, "over the per-transaction cap")
 	unregistered := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
 	unregistered[0] = uint64(9)
-	_, err = h.call(layerxbridge.BridgeInMethod, unregistered...)
-	require.Error(t, err, "unregistered chain")
+	disabled := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	disabled[0] = uint64(2)
+	wrongVault := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	wrongVault[1] = remote
+	unknownAsset := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	unknownAsset[5] = remote
+	zeroRecipient := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	zeroRecipient[4] = [32]byte{}
+	unpaddedRecipient := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	unpaddedRecipient[4] = [32]byte{1}
+	oversizedAmount := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	oversizedAmount[6] = new(big.Int).Lsh(big.NewInt(1), 255)
+	shortSignature := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	shortSignature[7].([][]byte)[0] = shortSignature[7].([][]byte)[0][:types.SignatureLength-1]
+	wrongV := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	wrongV[7].([][]byte)[0][64] = 0
+	highS := h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])
+	signature := highS[7].([][]byte)[0]
+	s := new(big.Int).SetBytes(signature[32:64])
+	s.Sub(crypto.S256().Params().N, s).FillBytes(signature[32:64])
+	wrongDigest := h.bridgeInArgs(1, 101, h.attestors[0], h.attestors[1])
+	wrongDigest[6] = big.NewInt(100)
+	tooManySignatures := h.bridgeInArgs(1, 100)
+	tooManySignatures[7] = make([][]byte, types.MaxAttestors+1)
+	var outsider bridgetestutil.Attestor
+	for _, candidate := range bridgetestutil.Attestors(4) {
+		if !bridgetestutil.Set(h.attestors, 1, 2).Has(candidate.Signer) {
+			outsider = candidate
+		}
+	}
+	require.NotNil(t, outsider.Key)
+	cases := []struct {
+		name   string
+		reason string
+		args   []interface{}
+	}{
+		{"below-threshold", "LXP_BRIDGE_BELOW_THRESHOLD: attestor signatures below threshold",
+			h.bridgeInArgs(1, 100, h.attestors[2])},
+		{"no-signatures", "LXP_BRIDGE_BELOW_THRESHOLD: attestor signatures below threshold", h.bridgeInArgs(1, 100)},
+		{"per-transaction-cap", "LXP_BRIDGE_CAP_EXCEEDED: amount exceeds the asset cap",
+			h.bridgeInArgs(1, 1001, h.attestors[0], h.attestors[1])},
+		{"unknown-chain", "LXP_BRIDGE_UNKNOWN_CHAIN: chain not registered", unregistered},
+		{"disabled-chain", "LXP_BRIDGE_CHAIN_DISABLED: chain disabled", disabled},
+		{"wrong-vault", "LXP_BRIDGE_VAULT_MISMATCH: vault is not the registered vault", wrongVault},
+		{"unknown-asset", "LXP_BRIDGE_UNKNOWN_ASSET: asset not registered", unknownAsset},
+		{"zero-amount", "LXP_BRIDGE_INVALID_REQUEST: invalid bridge request", h.bridgeInArgs(1, 0)},
+		{"oversized-amount", "LXP_BRIDGE_INVALID_REQUEST: invalid bridge request", oversizedAmount},
+		{"zero-recipient", "LXP_BRIDGE_INVALID_REQUEST: invalid bridge request", zeroRecipient},
+		{"unpadded-recipient", "LXP_BRIDGE_INVALID_REQUEST: invalid bridge request", unpaddedRecipient},
+		{"descending-signers", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature",
+			h.bridgeInArgs(1, 100, h.attestors[1], h.attestors[0])},
+		{"duplicate-signer", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature",
+			h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[0])},
+		{"non-member-signer", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", h.bridgeInArgs(1, 100, outsider)},
+		{"short-signature", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", shortSignature},
+		{"wrong-v", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", wrongV},
+		{"high-s", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", highS},
+		{"wrong-digest", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", wrongDigest},
+		{"too-many-signatures", "LXP_BRIDGE_BAD_SIGNATURE: invalid attestor signature", tooManySignatures},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sub := *h
+			sub.t = t
+			sub.refuse(layerxbridge.BridgeInMethod, c.reason, c.args...)
+		})
+	}
 
 	require.NoError(t, h.keeper.Pause(h.ctx, types.MsgPause{Authority: authority}))
 	require.Equal(t, true, h.view(layerxbridge.IsPausedMethod)[0])
-	_, err = h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])...)
-	require.Error(t, err, "paused")
+	h.refuse(layerxbridge.BridgeInMethod, "LXP_BRIDGE_PAUSED: bridge paused",
+		h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])...)
 	require.NoError(t, h.keeper.Unpause(h.ctx, types.MsgUnpause{Authority: authority}))
 	require.True(t, h.balance().IsZero())
 
-	_, err = h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])...)
+	_, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])...)
 	require.NoError(t, err)
-	_, err = h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[1], h.attestors[2])...)
-	require.Error(t, err, "reused nullifier")
+	h.refuse(layerxbridge.BridgeInMethod, "LXP_BRIDGE_NULLIFIED: remote event already bridged",
+		h.bridgeInArgs(1, 100, h.attestors[1], h.attestors[2])...)
 	require.Equal(t, sdk.NewInt(100), h.balance())
 
 	_, err = h.run(layerxbridge.BridgeInMethod, nil, true, false, h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])...)
@@ -241,6 +305,25 @@ func TestBridgeInRefusalsThroughThePrecompile(t *testing.T) {
 	require.Equal(t, sdk.NewInt(100), h.balance())
 }
 
+func (h *harness) refuse(name, reason string, args ...interface{}) {
+	h.t.Helper()
+	genesis := h.keeper.ExportGenesis(h.ctx)
+	balance := h.balance()
+	moduleBalance := testkeeper.EVMTestApp.BankKeeper.GetBalance(h.ctx, h.keeper.ModuleAddress(), h.denom)
+	supply := testkeeper.EVMTestApp.BankKeeper.GetSupply(h.ctx, h.denom)
+	logs := h.stateDB.GetAllLogs()
+	events := append(sdk.Events{}, h.stateDB.Ctx().EventManager().Events()...)
+	res := h.revert(name, false, args...)
+	require.Equal(h.t, pcommon.RevertReason(errors.New(reason)), res)
+	require.Equal(h.t, reason, revertText(h.t, res))
+	require.Equal(h.t, genesis, h.keeper.ExportGenesis(h.ctx))
+	require.Equal(h.t, balance, h.balance())
+	require.Equal(h.t, moduleBalance, testkeeper.EVMTestApp.BankKeeper.GetBalance(h.ctx, h.keeper.ModuleAddress(), h.denom))
+	require.Equal(h.t, supply, testkeeper.EVMTestApp.BankKeeper.GetSupply(h.ctx, h.denom))
+	require.Equal(h.t, logs, h.stateDB.GetAllLogs())
+	require.Equal(h.t, events, h.stateDB.Ctx().EventManager().Events())
+}
+
 // revert runs a call that must fail and returns its revert data.
 func (h *harness) revert(name string, delegate bool, args ...interface{}) []byte {
 	h.t.Helper()
@@ -251,6 +334,8 @@ func (h *harness) revert(name string, delegate bool, args ...interface{}) []byte
 
 func revertText(t *testing.T, data []byte) string {
 	t.Helper()
+	require.GreaterOrEqual(t, len(data), 4)
+	require.Equal(t, []byte{0x08, 0xc3, 0x79, 0xa0}, data[:4])
 	text, err := abi.UnpackRevert(data)
 	require.NoError(t, err)
 	return text
@@ -333,6 +418,14 @@ func TestBridgeRevertCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), out[0])
 	require.Equal(t, sdk.NewInt(150), h.balance())
+	require.Equal(t, []interface{}{true, vault, uint64(64), true}, h.view(layerxbridge.GetChainMethod, chainID))
+	require.Equal(t, []interface{}{h.denom, big.NewInt(1500), big.NewInt(1000), big.NewInt(150)},
+		h.view(layerxbridge.GetCapMethod, chainID, asset))
+	require.Equal(t, false, h.view(layerxbridge.IsPausedMethod)[0])
+	require.Equal(t, true, h.view(layerxbridge.IsNullifiedMethod, chainID, [32]byte{0xde, 0xad, 2}, uint64(2))[0])
+	h.at(h.ctx.WithBlockHeight(planHeight + 1))
+	h.refuse(layerxbridge.BridgeInMethod, "LXP_BRIDGE_NULLIFIED: remote event already bridged",
+		h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])...)
 
 	// Every registered bridge refusal maps to its code by registered name.
 	for err, code := range map[error]string{
@@ -386,6 +479,82 @@ func TestBridgeOutBurnsAndEmitsThroughThePrecompile(t *testing.T) {
 	require.Error(t, err, "nothing left to burn")
 	_, err = h.run(layerxbridge.BridgeOutMethod, nil, true, false, chainID, asset, big.NewInt(1), remote)
 	require.Error(t, err, "staticcall cannot write")
+}
+
+func TestBridgeCapBoundariesThroughThePrecompile(t *testing.T) {
+	h := newHarness(t)
+	h.activate()
+	testkeeper.EVMTestApp.EvmKeeper.UpgradeKeeper().SetDone(h.ctx, pcommon.MergeUpgrade)
+	for _, index := range []uint64{1, 2} {
+		out, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(index, 700, h.attestors[0], h.attestors[1])...)
+		require.NoError(t, err)
+		require.Equal(t, []interface{}{h.denom}, out)
+	}
+	h.refuse(layerxbridge.BridgeInMethod, "LXP_BRIDGE_CAP_EXCEEDED: amount exceeds the asset cap",
+		h.bridgeInArgs(3, 101, h.attestors[0], h.attestors[1])...)
+	require.Equal(t, false, h.view(layerxbridge.IsNullifiedMethod, chainID, [32]byte{0xde, 0xad, 3}, uint64(3))[0])
+	out, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(3, 100, h.attestors[0], h.attestors[1])...)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{h.denom}, out)
+	require.Equal(t, sdk.NewInt(1500), h.balance())
+	require.Equal(t, []interface{}{h.denom, big.NewInt(1500), big.NewInt(1000), big.NewInt(1500)},
+		h.view(layerxbridge.GetCapMethod, chainID, asset))
+	h.refuse(layerxbridge.BridgeOutMethod, "LXP_BRIDGE_CAP_EXCEEDED: amount exceeds the asset cap",
+		chainID, asset, big.NewInt(1001), remote)
+	out, err = h.call(layerxbridge.BridgeOutMethod, chainID, asset, big.NewInt(1000), remote)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{uint64(1)}, out)
+	require.Equal(t, sdk.NewInt(500), h.balance())
+	require.Equal(t, sdk.NewInt(500), testkeeper.EVMTestApp.BankKeeper.GetSupply(h.ctx, h.denom).Amount)
+	require.Equal(t, sdk.NewInt(500), h.keeper.InFlight(h.ctx, h.denom))
+	require.Equal(t, uint64(1), h.keeper.OutboundNonce(h.ctx, chainID))
+	require.NoError(t, h.keeper.SetCap(h.ctx, types.MsgSetCap{Authority: authority, ChainID: chainID,
+		Asset: types.Address20(asset), MaxInFlight: sdk.NewInt(1500), MaxPerTx: sdk.NewInt(100)}))
+	h.refuse(layerxbridge.BridgeOutMethod, "LXP_BRIDGE_CAP_EXCEEDED: amount exceeds the asset cap",
+		chainID, asset, big.NewInt(101), remote)
+	out, err = h.call(layerxbridge.BridgeOutMethod, chainID, asset, big.NewInt(100), remote)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{uint64(2)}, out)
+	require.Equal(t, sdk.NewInt(400), h.balance())
+	require.Equal(t, sdk.NewInt(400), testkeeper.EVMTestApp.BankKeeper.GetSupply(h.ctx, h.denom).Amount)
+	require.Equal(t, sdk.NewInt(400), h.keeper.InFlight(h.ctx, h.denom))
+	require.Equal(t, uint64(2), h.keeper.OutboundNonce(h.ctx, chainID))
+	require.Len(t, h.logs("BridgeOut(uint64,address,uint256,address,uint64)"), 2)
+	require.Equal(t, 2, h.events(types.EventBridgeOut))
+}
+
+func TestBridgeOutboundNonceThroughThePrecompile(t *testing.T) {
+	h := newHarness(t)
+	h.activate()
+	testkeeper.EVMTestApp.EvmKeeper.UpgradeKeeper().SetDone(h.ctx, pcommon.MergeUpgrade)
+	_, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 41, h.attestors[0], h.attestors[1])...)
+	require.NoError(t, err)
+	for nonce := uint64(1); nonce <= 41; nonce++ {
+		out, err := h.call(layerxbridge.BridgeOutMethod, chainID, asset, big.NewInt(1), remote)
+		require.NoError(t, err)
+		require.Equal(t, []interface{}{nonce}, out)
+	}
+	genesis := h.keeper.ExportGenesis(h.ctx)
+	require.Equal(t, uint64(41), h.keeper.OutboundNonce(h.ctx, chainID))
+	cap := h.view(layerxbridge.GetCapMethod, chainID, asset)
+	require.Len(t, cap, 4)
+	require.Equal(t, []interface{}{h.denom, big.NewInt(1500), big.NewInt(1000)}, cap[:3])
+	require.Equal(t, 0, cap[3].(*big.Int).Cmp(big.NewInt(0)))
+	require.Equal(t, []interface{}{false, common.Address{}, uint64(0), false},
+		h.view(layerxbridge.GetChainMethod, uint64(9)))
+	unknownCap := h.view(layerxbridge.GetCapMethod, chainID, remote)
+	require.Len(t, unknownCap, 4)
+	require.Equal(t, "", unknownCap[0])
+	for _, value := range unknownCap[1:] {
+		require.Equal(t, 0, value.(*big.Int).Cmp(big.NewInt(0)))
+	}
+	require.Equal(t, true, h.view(layerxbridge.IsNullifiedMethod, chainID, [32]byte{0xde, 0xad, 1}, uint64(1))[0])
+	require.Equal(t, false, h.view(layerxbridge.IsNullifiedMethod, chainID, [32]byte{0xde, 0xad, 1}, uint64(2))[0])
+	require.Equal(t, genesis, h.keeper.ExportGenesis(h.ctx))
+	require.True(t, h.balance().Equal(sdk.ZeroInt()))
+	require.True(t, testkeeper.EVMTestApp.BankKeeper.GetSupply(h.ctx, h.denom).Amount.Equal(sdk.ZeroInt()))
+	require.Len(t, h.logs("BridgeOut(uint64,address,uint256,address,uint64)"), 41)
+	require.Equal(t, 41, h.events(types.EventBridgeOut))
 }
 
 func TestGasIsTheDocumentedFormula(t *testing.T) {
