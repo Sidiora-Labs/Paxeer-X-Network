@@ -212,6 +212,112 @@ static int oracle_read_expected_record(const lx_perps_market *market,
     return 0;
 }
 
+static int oracle_read_record(lxp_module_ctx *ctx,
+                              const lx_perps_market *market,
+                              const lx_perps_oracle_state *observation)
+{
+    uint8_t expected[LX_ORACLE_COMMITTED_BYTES];
+    uint8_t encoded[LX_ORACLE_COMMITTED_BYTES];
+    lx_oracle_committed committed;
+    uint16_t module_id = ctx->module_id;
+    size_t staged_count = ctx->staged_count;
+    ORACLE_READ_CHECK(oracle_read_expected_record(market, observation,
+                                                  expected) == 0);
+    ORACLE_READ_CHECK(lx_oracle_committed_read(ctx, market->market_id,
+                                               &committed) == LXP_OK);
+    ORACLE_READ_CHECK(ctx->module_id == module_id);
+    ORACLE_READ_CHECK(ctx->staged_count == staged_count);
+    ORACLE_READ_CHECK(memcmp(committed.market_id, market->market_id, 32U) == 0);
+    ORACLE_READ_CHECK(lxp_u128_cmp(committed.price, observation->price) == 0);
+    ORACLE_READ_CHECK(committed.observed_at == observation->observed_at);
+    ORACLE_READ_CHECK(committed.observation_sequence ==
+                      observation->observation_sequence);
+    ORACLE_READ_CHECK(lx_oracle_committed_encode(&committed, encoded) == LXP_OK);
+    ORACLE_READ_CHECK(memcmp(encoded, expected, sizeof(expected)) == 0);
+    return 0;
+}
+
+static int oracle_read_refusal(lxp_module_ctx *ctx,
+                               const uint8_t market_id[32], lxp_result code)
+{
+    lx_oracle_committed committed;
+    uint16_t module_id = ctx->module_id;
+    size_t staged_count = ctx->staged_count;
+    ORACLE_READ_CHECK(lx_oracle_committed_read(ctx, market_id, &committed) ==
+                      code);
+    ORACLE_READ_CHECK(ctx->module_id == module_id);
+    ORACLE_READ_CHECK(ctx->staged_count == staged_count);
+    return 0;
+}
+
+static int oracle_read_pending_case(lxp_module_ctx *perps_ctx,
+                                    lxp_module_ctx *view_ctx,
+                                    const lx_perps_market *market,
+                                    const lx_perps_oracle_state *observation)
+{
+    static const uint8_t market_prefix[] = "market:";
+    static const uint8_t oracle_prefix[] = "oracle:";
+    uint8_t market_key[LX_PERPS_MARKET_KEY_BYTES];
+    uint8_t oracle_key[LX_PERPS_ORACLE_KEY_BYTES];
+    uint8_t oracle_bytes[LX_PERPS_ORACLE_BYTES];
+    uint8_t market_bytes[LX_PERPS_MARKET_BYTES];
+    const uint8_t *bytes;
+    size_t length;
+    lx_perps_market pending_market = *market;
+    lx_perps_oracle_state pending = *observation;
+    (void)memcpy(market_key, market_prefix, sizeof(market_prefix) - 1U);
+    (void)memcpy(market_key + sizeof(market_prefix) - 1U, market->market_id, 32U);
+    (void)memcpy(oracle_key, oracle_prefix, sizeof(oracle_prefix) - 1U);
+    (void)memcpy(oracle_key + sizeof(oracle_prefix) - 1U, market->market_id, 32U);
+    pending_market.permitted_oracle_keys[1][31] ^= 1U;
+    pending.price = (lxp_u128){0U, ORACLE_READ_PRICE + 1U};
+    ++pending.observed_at;
+    ++pending.observation_sequence;
+    ORACLE_READ_CHECK(lx_perps_market_put(perps_ctx, &pending_market) == LXP_OK);
+    ORACLE_READ_CHECK(lx_perps_oracle_state_put(perps_ctx, &pending) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_record(perps_ctx, &pending_market,
+                                         &pending) == 0);
+    ORACLE_READ_CHECK(oracle_read_record(view_ctx, market, observation) == 0);
+    ORACLE_READ_CHECK(lxp_ctx_kv_get(perps_ctx, market_key, sizeof(market_key),
+                                     &bytes, &length) == LXP_OK);
+    ORACLE_READ_CHECK(length == sizeof(market_bytes));
+    (void)memcpy(market_bytes, bytes, length);
+    ORACLE_READ_CHECK(lxp_ctx_kv_put(view_ctx, market_key, sizeof(market_key),
+                                     bytes, length) == LXP_OK);
+    ORACLE_READ_CHECK(lxp_ctx_kv_get(perps_ctx, oracle_key, sizeof(oracle_key),
+                                     &bytes, &length) == LXP_OK);
+    ORACLE_READ_CHECK(length == sizeof(oracle_bytes));
+    (void)memcpy(oracle_bytes, bytes, length);
+    ORACLE_READ_CHECK(lxp_ctx_kv_put(view_ctx, oracle_key, sizeof(oracle_key),
+                                     bytes, length) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_record(view_ctx, market, observation) == 0);
+    ORACLE_READ_CHECK(lxp_ctx_kv_del(perps_ctx, oracle_key,
+                                     sizeof(oracle_key)) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_refusal(perps_ctx, market->market_id,
+                                          LXP_ERR_UNKNOWN_FIELD) == 0);
+    ORACLE_READ_CHECK(oracle_read_record(view_ctx, market, observation) == 0);
+    ORACLE_READ_CHECK(lxp_ctx_kv_put(perps_ctx, oracle_key, sizeof(oracle_key),
+        oracle_bytes, sizeof(oracle_bytes) - 1U) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_refusal(perps_ctx, market->market_id,
+                                          LXP_ERR_NON_CANONICAL) == 0);
+    ORACLE_READ_CHECK(lx_perps_oracle_state_put(perps_ctx, &pending) == LXP_OK);
+    pending_market.halted = true;
+    ORACLE_READ_CHECK(lx_perps_market_put(perps_ctx, &pending_market) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_refusal(perps_ctx, market->market_id,
+                                          LXP_ERR_MARKET_HALTED) == 0);
+    ORACLE_READ_CHECK(oracle_read_record(view_ctx, market, observation) == 0);
+    ORACLE_READ_CHECK(lxp_ctx_kv_put(perps_ctx, market_key, sizeof(market_key),
+        market_bytes, sizeof(market_bytes) - 1U) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_refusal(perps_ctx, market->market_id,
+                                          LXP_ERR_NON_CANONICAL) == 0);
+    pending_market.halted = false;
+    ORACLE_READ_CHECK(lx_perps_market_put(perps_ctx, &pending_market) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_record(perps_ctx, &pending_market,
+                                         &pending) == 0);
+    ORACLE_READ_CHECK(oracle_read_record(view_ctx, market, observation) == 0);
+    return 0;
+}
+
 static int oracle_read_case(void)
 {
     static const uint8_t did[] = "did:lxp:programs-oracle-read";
@@ -398,6 +504,12 @@ static int oracle_read_case(void)
     ORACLE_READ_CHECK(lx_perps_market_put(&perps_ctx, &halted_market) == LXP_OK);
     ORACLE_READ_CHECK(lx_perps_oracle_state_put(&perps_ctx,
                                                 &observation) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_record(&perps_ctx, &observed_market,
+                                         &observation) == 0);
+    ORACLE_READ_CHECK(oracle_read_refusal(&perps_ctx, unknown_id,
+                                          LXP_ERR_UNKNOWN_FIELD) == 0);
+    ORACLE_READ_CHECK(oracle_read_refusal(&perps_ctx, halted_id,
+                                          LXP_ERR_MARKET_HALTED) == 0);
     ORACLE_READ_CHECK(lxp_module_ctx_prepare_commit(&perps_ctx) == LXP_OK);
     ORACLE_READ_CHECK(lxp_state_journal_commit(&journal) == LXP_OK);
     ORACLE_READ_CHECK(lxp_module_ctx_commit(&perps_ctx) == LXP_OK);
@@ -475,6 +587,15 @@ static int oracle_read_case(void)
     ORACLE_READ_CHECK(lx_oracle_committed_read(&view_ctx, halted_id,
                                                &committed) ==
                       LXP_ERR_MARKET_HALTED);
+    ORACLE_READ_CHECK(lxp_module_ctx_init(&perps_ctx, &kernel, LXP_MODULE_PERPS,
+        10U, 0U, state.next_sequence, 100000U, &perps_arena, true) == LXP_OK);
+    ORACLE_READ_CHECK(lxp_module_ctx_set_mutable(&view_ctx, true) == LXP_OK);
+    ORACLE_READ_CHECK(oracle_read_pending_case(&perps_ctx, &view_ctx,
+        &observed_market, &observation) == 0);
+    ORACLE_READ_CHECK(oracle_read_refusal(&view_ctx, unknown_id,
+                                          LXP_ERR_UNKNOWN_FIELD) == 0);
+    ORACLE_READ_CHECK(oracle_read_refusal(&view_ctx, halted_id,
+                                          LXP_ERR_MARKET_HALTED) == 0);
     ORACLE_READ_CHECK(lxp_state_store_destroy(&state) == LXP_OK);
     return 0;
 }

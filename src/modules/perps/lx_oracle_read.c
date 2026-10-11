@@ -32,23 +32,27 @@ static void committed_key(uint8_t key[LX_PERPS_MARKET_KEY_BYTES],
     (void)memcpy(key + prefix_length, market_id, 32U);
 }
 
-static lxp_result committed_entry(const lxp_kernel *kernel,
+static lxp_result committed_entry(lxp_module_ctx *ctx,
                                   const uint8_t *key, size_t key_length,
                                   const uint8_t **bytes, size_t *length)
 {
-    size_t i;
-    if (kernel == NULL || kernel->module_kv_count > LXP_KERNEL_MAX_MODULE_KV)
+    uint16_t module_id;
+    size_t staged_count;
+    lxp_result status;
+    if (ctx == NULL || ctx->kernel == NULL ||
+        ctx->kernel->module_kv_count > LXP_KERNEL_MAX_MODULE_KV ||
+        ctx->staged_count > LXP_MODULE_MAX_STAGED_WRITES)
         return LXP_ERR_NON_CANONICAL;
-    for (i = 0U; i < kernel->module_kv_count; ++i) {
-        const lxp_module_kv_entry *entry = &kernel->module_kv[i];
-        if (entry->module_id != LXP_MODULE_PERPS) continue;
-        if ((size_t)entry->key_length != key_length) continue;
-        if (memcmp(entry->key, key, key_length) != 0) continue;
-        *bytes = entry->value;
-        *length = entry->value_length;
-        return LXP_OK;
-    }
-    return LXP_ERR_UNKNOWN_FIELD;
+    if (ctx->module_id == LXP_MODULE_PERPS)
+        return lxp_ctx_kv_get(ctx, key, key_length, bytes, length);
+    module_id = ctx->module_id;
+    staged_count = ctx->staged_count;
+    ctx->module_id = LXP_MODULE_PERPS;
+    ctx->staged_count = 0U;
+    status = lxp_ctx_kv_get(ctx, key, key_length, bytes, length);
+    ctx->module_id = module_id;
+    ctx->staged_count = staged_count;
+    return status;
 }
 
 lxp_result lx_oracle_source_set_digest(const uint8_t *permitted_keys,
@@ -104,14 +108,14 @@ lxp_result lx_oracle_committed_read(lxp_module_ctx *ctx,
     (void)memset(committed, 0, sizeof(*committed));
     committed_key(key, committed_market_prefix,
                   sizeof(committed_market_prefix) - 1U, market_id);
-    status = committed_entry(ctx->kernel, key, sizeof(key), &bytes, &length);
+    status = committed_entry(ctx, key, sizeof(key), &bytes, &length);
     if (status != LXP_OK) return status;
     status = lx_perps_market_decode(bytes, length, &market);
     if (status != LXP_OK) return status;
     if (market.halted) return LXP_ERR_MARKET_HALTED;
     committed_key(key, committed_oracle_prefix,
                   sizeof(committed_oracle_prefix) - 1U, market_id);
-    status = committed_entry(ctx->kernel, key, sizeof(key), &bytes, &length);
+    status = committed_entry(ctx, key, sizeof(key), &bytes, &length);
     if (status != LXP_OK) return status;
     if (length != LX_PERPS_ORACLE_BYTES) return LXP_ERR_NON_CANONICAL;
     (void)memcpy(committed->market_id, market_id, 32U);
