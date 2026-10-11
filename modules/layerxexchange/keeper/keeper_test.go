@@ -422,6 +422,10 @@ func TestGenesisAndAuthority(t *testing.T) {
 
 	server := keeper.NewMsgServerImpl(f.keeper)
 	listing := types.Market{MarketId: custodytypes.Hash32([32]byte{0x77}), MarginAssetId: custodytypes.Hash32(f.token), Enabled: true}
+	seeded := listing
+	seeded.Enabled = false
+	require.NoError(t, f.keeper.SetMarket(ctx, seeded))
+	require.False(t, f.keeper.GetParams(ctx).MarginAsset(custodytypes.Hash32(f.token)))
 	_, err = server.SetMarket(sdk.WrapSDKContext(ctx), &types.MsgSetMarket{Authority: f.callerAcc.String(), Market: listing})
 	require.Error(t, err, "not the authority")
 	governance := authtypes.NewModuleAddress(govtypes.ModuleName).String()
