@@ -19,15 +19,11 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
-// seqHashDomain prefixes every seqHash preimage.
-const seqHashDomain = "PAXEER/v1/sequence\x00"
-
 // batchReserveBytes keeps block data room for tx 0, the MsgSequenceBatch.
 // ponytail: fixed 1 KiB over the 216 bytes of batch fields; size it from the encoded message once the batch message type lands.
 const batchReserveBytes int64 = 1024
 
 var (
-	ErrLayerOpen         = errors.New("sequencer: a layer is already open")
 	ErrNoOpenLayer       = errors.New("sequencer: no open layer")
 	ErrSealedPending     = errors.New("sequencer: the sealed layer is not committed yet")
 	ErrNoSealedLayer     = errors.New("sequencer: no sealed layer")
@@ -353,7 +349,7 @@ func activityID(tx sdk.Tx, txBytes []byte) [32]byte {
 // sequenceHash is sha256("PAXEER/v1/sequence\0" ‖ prevSeqHash ‖ u64be(seq) ‖ activity_id).
 func sequenceHash(prev [32]byte, seq uint64, activity [32]byte) [32]byte {
 	h := sha256.New()
-	h.Write([]byte(seqHashDomain))
+	h.Write(seqHashDomain)
 	h.Write(prev[:])
 	var seqBytes [8]byte
 	binary.BigEndian.PutUint64(seqBytes[:], seq)
