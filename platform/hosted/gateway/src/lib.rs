@@ -1,6 +1,7 @@
 //! Receipt-verifying authority boundary for the hosted gateway.
 
 pub use layerx_proof::inclusion::SequencerAuthorization;
+pub use layerx_proof::receipt::ReceiptKeys;
 
 pub mod ai_views;
 pub mod authority_evidence;
@@ -1295,10 +1296,14 @@ pub struct ReceiptKeyList(Vec<SequencerAuthorization>);
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ReceiptKeyDocument {
+struct ReceiptKeyEntry {
+    #[serde(rename = "keyId", alias = "key_id")]
     key_id: String,
+    #[serde(rename = "publicKey", alias = "public_key")]
     public_key: String,
+    #[serde(rename = "firstHeight", alias = "first_height")]
     first_height: u64,
+    #[serde(rename = "lastHeight", alias = "last_height")]
     last_height: u64,
 }
 
@@ -1307,7 +1312,7 @@ impl ReceiptKeyList {
         if document.len() > 256 * 1024 {
             return Err("receipt key list");
         }
-        let entries: Vec<ReceiptKeyDocument> =
+        let entries: Vec<ReceiptKeyEntry> =
             serde_json::from_str(document).map_err(|_| "receipt key list")?;
         if entries.is_empty() {
             return Err("receipt key list");
@@ -1432,7 +1437,10 @@ impl ReceiptKeyList {
             .iter()
             .find(|key| key.sequencer_id() == sequencer_id)
             .ok_or(GatewayError::UntrustedSequencer)?;
-        self.authorization_at(named.public_key(), batch_number)
+        if !(named.first_batch_number()..=named.last_batch_number()).contains(&batch_number) {
+            return Err(GatewayError::UntrustedSequencer);
+        }
+        Ok(named)
     }
 
     pub fn verify_receipt(
@@ -1444,17 +1452,12 @@ impl ReceiptKeyList {
         let protocol = receipt
             .protocol()
             .ok_or(GatewayError::Receipt(ReceiptCheck::ReceiptShape))?;
-        let height = batch_height(protocol.batch_id())?;
-        let authorization = self
-            .0
-            .iter()
-            .find(|key| {
-                key.sequencer_id() == protocol.context_hash()
-                    && (key.first_batch_number()..=key.last_batch_number()).contains(&height)
-            })
-            .ok_or(GatewayError::UntrustedSequencer)?;
-        layerx_proof::receipt::verify_sequencer_signature(receipt_bytes, authorization.public_key())
-            .map_err(|failure| GatewayError::Receipt(failure.check))
+        self.authorization_for_header(protocol.context_hash(), batch_height(protocol.batch_id())?)?;
+        layerx_proof::receipt::verify_sequencer_signature(
+            receipt_bytes,
+            ReceiptKeys::HeightRanges(self.0.as_slice()),
+        )
+        .map_err(|failure| GatewayError::Receipt(failure.check))
     }
 }
 
@@ -1504,12 +1507,54 @@ pub fn verify_settlement_receipt(
         .iter()
         .find(|key| key.sequencer_id() == protocol.context_hash())
         .ok_or(GatewayError::UntrustedSequencer)?;
-    verify_activity_operation(
-        receipt_bytes,
-        authority,
-        &authorization.public_key(),
-        Some(expected_activity_id),
-    )
+    if authority.sequencer_public_key() != authorization.public_key() {
+        return Err(GatewayError::UntrustedSequencer);
+    }
+    let batch = authority.authorized();
+    for (matches, check) in [
+        (
+            protocol.batch_id() == batch.batch_id(),
+            ReceiptCheck::BatchId,
+        ),
+        (protocol.asset() == batch.asset(), ReceiptCheck::Asset),
+        (
+            protocol.previous_state_root() == batch.previous_state_root(),
+            ReceiptCheck::PreviousStateRoot,
+        ),
+        (
+            protocol.resulting_state_root() == batch.resulting_state_root(),
+            ReceiptCheck::ResultingStateRoot,
+        ),
+    ] {
+        if !matches {
+            return Err(GatewayError::Receipt(check));
+        }
+    }
+    if protocol.activity_id() != expected_activity_id {
+        return Err(GatewayError::ActivityMismatch);
+    }
+    let unsigned = layerx_wire::receipt::encode_unsigned(&receipt)
+        .map_err(|_| GatewayError::Receipt(ReceiptCheck::CanonicalEncoding))?;
+    let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned)
+        .map_err(|_| GatewayError::Receipt(ReceiptCheck::CanonicalEncoding))?;
+    let response = serde_json::to_vec(&ActivityResult {
+        activity_id: hex(&protocol.activity_id()),
+        batch_id: hex(&protocol.batch_id()),
+        global_sequence: protocol.global_sequence(),
+        result_code: protocol.result_code(),
+        state_root: hex(&protocol.resulting_state_root()),
+        receipt: hex(receipt_bytes),
+    })
+    .map_err(|_| GatewayError::Encoding)?;
+    Ok(VerifiedOperation {
+        response,
+        receipt: receipt_bytes.to_vec(),
+        receipt_digest,
+        activity_id: protocol.activity_id(),
+        result_code: protocol.result_code(),
+        verification_rank: layerx_types::verify::VerificationLevel::SEQUENCER_SIGNED.wire_rank(),
+        verification_level: "receipt-verified",
+    })
 }
 
 /// Parses and validates independently configured sequencer trust inputs.
@@ -1542,7 +1587,34 @@ pub fn configured_sequencer(
 
 #[cfg(test)]
 mod tests {
-    use super::{platform_gateway_program_routes, production_route, IssuedKey, ProductionRoute};
+    use super::{
+        platform_gateway_program_routes, production_route, IssuedKey, ProductionRoute,
+        ReceiptKeyList,
+    };
+
+    #[test]
+    fn receipt_keys_list_loads() -> Result<(), Box<dyn std::error::Error>> {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[0x42; 32])
+            .verifying_key()
+            .to_bytes();
+        let document = serde_json::json!([
+            { "keyId": layerx_platform_internal::base64::encode(&[1; 32]),
+              "publicKey": layerx_platform_internal::base64::encode(&key),
+              "firstHeight": 800, "lastHeight": 1000 },
+            { "keyId": layerx_platform_internal::base64::encode(&[2; 32]),
+              "publicKey": layerx_platform_internal::base64::encode(&key),
+              "firstHeight": 850, "lastHeight": 1000 },
+        ]);
+        let keys = ReceiptKeyList::from_config(&document.to_string())?;
+        assert_eq!(keys.0.len(), 2);
+        assert_eq!(keys.0[0].sequencer_id(), [1; 32]);
+        assert_eq!(keys.0[1].sequencer_id(), [2; 32]);
+        assert_eq!(keys.0[0].first_batch_number(), 800);
+        assert_eq!(keys.0[1].first_batch_number(), 850);
+        assert_eq!(keys.0[0].last_batch_number(), 1000);
+        assert_eq!(keys.0[1].last_batch_number(), 1000);
+        Ok(())
+    }
 
     #[test]
     fn issued_key_debug_redacts_the_credential() {

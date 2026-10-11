@@ -170,6 +170,9 @@ pub fn claim(body: &[u8]) -> Result<Claim, Refusal> {
         return Err(Refusal::IdempotencyBinding);
     }
     let decoded = layerx_wire::receipt::decode(&receipt).map_err(|_| Refusal::Receipt)?;
+    if layerx_wire::receipt::encode(&decoded).map_err(|_| Refusal::Receipt)? != receipt {
+        return Err(Refusal::Receipt);
+    }
     let activity_id = decoded
         .protocol()
         .map(layerx_wire::receipt::ProtocolReceipt::activity_id)
@@ -182,6 +185,332 @@ pub fn claim(body: &[u8]) -> Result<Claim, Refusal> {
         activity_id,
         idempotency_key: document.idempotency_key,
     })
+}
+
+pub(super) fn authorize(
+    claim: &Claim,
+    keys: &layerx_platform_gateway::ReceiptKeyList,
+) -> Result<(layerx_platform_gateway::VerifiedOperation, AuthorizedBatch), &'static str> {
+    let decoded =
+        layerx_wire::receipt::decode(claim.receipt()).map_err(|_| "receipt_verification_failed")?;
+    let receipt = decoded.protocol().ok_or("receipt_verification_failed")?;
+    let height = receipt_height(receipt).ok_or("receipt_verification_failed")?;
+    let key = keys
+        .authorization_for_header(receipt.context_hash(), height)
+        .map_err(|_| "receipt_verification_failed")?;
+    let facts = layerx_platform_gateway::AuthorityFacts::new(
+        receipt.batch_id(),
+        receipt.asset(),
+        receipt.previous_state_root(),
+        receipt.resulting_state_root(),
+        key.public_key(),
+    );
+    let verified = layerx_platform_gateway::verify_settlement_receipt(
+        claim.receipt(),
+        facts,
+        keys,
+        claim.activity_id(),
+    )
+    .map_err(|_| "receipt_verification_failed")?;
+    Ok((verified, facts.authorized()))
+}
+
+pub(super) fn sequencer_committed(
+    canonical: &[u8],
+    inclusion: &serde_json::Value,
+) -> Result<bool, &'static str> {
+    if inclusion.is_null() {
+        return Ok(false);
+    }
+    let decoded =
+        layerx_wire::receipt::decode(canonical).map_err(|_| "receipt_verification_failed")?;
+    let receipt = decoded.protocol().ok_or("receipt_verification_failed")?;
+    if rpc_bytes(&inclusion["txHash"]).as_deref() != Some(receipt.activity_id().as_slice())
+        || quantity(&inclusion["nonce"]) != Some(u128::from(receipt.debit_sequence()))
+    {
+        return Err("settlement_inclusion_mismatch");
+    }
+    let rung = inclusion["rung"]
+        .as_str()
+        .ok_or("settlement_inclusion_mismatch")?;
+    if rung == "submitted" {
+        if inclusion.get("receipt").is_some()
+            || inclusion.get("blockHash").is_some()
+            || inclusion.get("blockNumber").is_some()
+        {
+            return Err("settlement_inclusion_mismatch");
+        }
+        return Ok(false);
+    }
+    if !matches!(rung, "receipted" | "committed") {
+        return Err("settlement_inclusion_mismatch");
+    }
+    if rpc_bytes(&inclusion["receipt"]).as_deref() != Some(canonical) {
+        return Err("settlement_receipt_mismatch");
+    }
+    if !sequencer_fields_match(receipt, inclusion) {
+        return Err("settlement_inclusion_mismatch");
+    }
+    if rung == "receipted" {
+        if inclusion.get("blockHash").is_some() || inclusion.get("blockNumber").is_some() {
+            return Err("settlement_inclusion_mismatch");
+        }
+        return Ok(false);
+    }
+    let height = receipt_height(receipt).ok_or("settlement_inclusion_mismatch")?;
+    if quantity(&inclusion["blockNumber"])
+        .is_none_or(|committed| committed < u128::from(height) || u64::try_from(committed).is_err())
+        || !rpc_bytes(&inclusion["blockHash"])
+            .is_some_and(|hash| hash.len() == 32 && hash != [0; 32])
+    {
+        return Err("settlement_inclusion_mismatch");
+    }
+    Ok(true)
+}
+
+pub(super) fn transaction_committed(
+    inclusion: &serde_json::Value,
+    transaction: &serde_json::Value,
+) -> Result<bool, &'static str> {
+    if transaction.is_null() {
+        return Ok(false);
+    }
+    for (chain, sequencer) in [("transactionHash", "txHash"), ("blockHash", "blockHash")] {
+        if rpc_bytes(&transaction[chain]) != rpc_bytes(&inclusion[sequencer])
+            || rpc_bytes(&transaction[chain]).is_none()
+        {
+            return Err("settlement_inclusion_mismatch");
+        }
+    }
+    for (chain, sequencer) in [
+        ("blockNumber", "blockNumber"),
+        ("status", "status"),
+        ("gasUsed", "gasUsed"),
+        ("cumulativeGasUsed", "cumulativeGasUsed"),
+        ("effectiveGasPrice", "effectiveGasPrice"),
+    ] {
+        if quantity(&transaction[chain]) != quantity(&inclusion[sequencer])
+            || quantity(&transaction[chain]).is_none()
+        {
+            return Err("settlement_inclusion_mismatch");
+        }
+    }
+    let logs = transaction["logs"]
+        .as_array()
+        .ok_or("settlement_inclusion_mismatch")?;
+    let expected = inclusion["logs"]
+        .as_array()
+        .ok_or("settlement_inclusion_mismatch")?;
+    if logs.len() != expected.len()
+        || logs.iter().zip(expected).any(|(actual, expected)| {
+            actual
+                .get("removed")
+                .is_some_and(|removed| removed != false)
+                || ["address", "data"]
+                    .iter()
+                    .any(|field| rpc_bytes(&actual[field]) != rpc_bytes(&expected[field]))
+                || !topics_match(&actual["topics"], &expected["topics"])
+        })
+    {
+        return Err("settlement_inclusion_mismatch");
+    }
+    Ok(true)
+}
+
+fn sequencer_fields_match(
+    receipt: &layerx_wire::receipt::ProtocolReceipt,
+    view: &serde_json::Value,
+) -> bool {
+    let Some(summary) = receipt.effects().first() else {
+        return false;
+    };
+    let body = summary.body();
+    if summary.ordinal() != 0
+        || summary.kind() != 1
+        || summary.monetary()
+        || summary.module_id() != receipt.module_id()
+        || body.len() < 109
+    {
+        return false;
+    }
+    let Some(denom) = view["feeDenom"].as_str() else {
+        return false;
+    };
+    let Some(return_data) = rpc_bytes(&view["returnData"]) else {
+        return false;
+    };
+    let Some(vm_error) = view["vmError"].as_str() else {
+        return false;
+    };
+    let Some(logs) = view["logs"].as_array() else {
+        return false;
+    };
+    let Some(height) = receipt_height(receipt) else {
+        return false;
+    };
+    let mut sequence = Sha256::new();
+    sequence.update(b"PAXEER/v1/sequence\0");
+    sequence.update(receipt.previous_state_root());
+    sequence.update(receipt.global_sequence().to_be_bytes());
+    sequence.update(receipt.activity_id());
+    let sequence_hash: [u8; 32] = sequence.finalize().into();
+    if sequence_hash != receipt.resulting_state_root()
+        || receipt.global_sequence() == 0
+        || height == 0
+        || receipt.timestamp() == 0
+        || receipt.protocol_version() != 2
+        || receipt.module_version() != 1
+        || receipt.parameter_version() != 0
+        || !matches!(receipt.operation(), 0 | 1 | 2 | 4)
+        || !matches!(receipt.result_code(), 0 | 1)
+        || receipt.from()[..12] != [0; 12]
+        || receipt.to()[..12] != [0; 12]
+        || receipt.transfer_set_root() != [0; 32]
+        || denom.is_empty()
+        || denom.len() > 64
+        || usize::from(body[108]) != denom.len()
+        || body.get(109..) != Some(denom.as_bytes())
+        || Sha256::digest(denom.as_bytes()).as_slice() != receipt.asset()
+        || Sha256::digest(&return_data).as_slice() != receipt.activity_root()
+        || Sha256::digest(vm_error.as_bytes()).as_slice() != &body[68..100]
+        || word(&body[100..104]) != Some(return_data.len() as u128)
+        || word(&body[104..108]) != Some(logs.len() as u128)
+        || receipt.effects().len() != logs.len() + 1
+    {
+        return false;
+    }
+    view_fields_match(receipt, view, body, height) && logs_match(receipt, logs)
+}
+
+fn view_fields_match(
+    receipt: &layerx_wire::receipt::ProtocolReceipt,
+    view: &serde_json::Value,
+    body: &[u8],
+    height: u64,
+) -> bool {
+    for (name, expected) in [
+        ("seq", u128::from(receipt.global_sequence())),
+        ("height", u128::from(height)),
+        ("timestamp", u128::from(receipt.timestamp())),
+        ("status", u128::from(receipt.result_code() == 0)),
+        ("feeAmount", receipt.fee_charged()),
+    ] {
+        if quantity(&view[name]) != Some(expected) {
+            return false;
+        }
+    }
+    for (name, bytes) in [
+        ("gasUsed", &body[..8]),
+        ("cumulativeGasUsed", &body[8..16]),
+        ("effectiveGasPrice", &body[16..24]),
+        ("index", &body[24..28]),
+    ] {
+        if quantity(&view[name]) != word(bytes) {
+            return false;
+        }
+    }
+    for (name, expected) in [
+        ("keyId", receipt.context_hash().to_vec()),
+        ("from", receipt.from()[12..].to_vec()),
+        ("to", receipt.to()[12..].to_vec()),
+        ("contractAddress", body[28..48].to_vec()),
+        ("sponsor", body[48..68].to_vec()),
+    ] {
+        if rpc_bytes(&view[name]) != Some(expected) {
+            return false;
+        }
+    }
+    true
+}
+
+fn logs_match(receipt: &layerx_wire::receipt::ProtocolReceipt, logs: &[serde_json::Value]) -> bool {
+    logs.iter()
+        .zip(&receipt.effects()[1..])
+        .enumerate()
+        .all(|(index, (log, effect))| {
+            let body = effect.body();
+            if body.len() < 53
+                || effect.kind() != 3
+                || effect.monetary()
+                || effect.module_id() != receipt.module_id()
+                || u16::try_from(index)
+                    .ok()
+                    .and_then(|ordinal| ordinal.checked_add(1))
+                    != Some(effect.ordinal())
+                || quantity(&log["logIndex"]) != Some(index as u128)
+            {
+                return false;
+            }
+            let count = usize::from(body[20]);
+            let Some(topics) = log["topics"].as_array() else {
+                return false;
+            };
+            let Some(data) = rpc_bytes(&log["data"]) else {
+                return false;
+            };
+            count <= 4
+                && topics.len() == count
+                && body.len() == 53 + count * 32
+                && rpc_bytes(&log["address"]).as_deref() == Some(&body[..20])
+                && topics.iter().enumerate().all(|(i, topic)| {
+                    rpc_bytes(topic).as_deref() == body.get(21 + i * 32..53 + i * 32)
+                })
+                && Sha256::digest(data).as_slice() == &body[21 + count * 32..]
+        })
+}
+
+fn receipt_height(receipt: &layerx_wire::receipt::ProtocolReceipt) -> Option<u64> {
+    let batch = receipt.batch_id();
+    if batch[..24] != [0; 24] {
+        return None;
+    }
+    Some(u64::from_be_bytes(batch[24..].try_into().ok()?))
+}
+
+fn word(bytes: &[u8]) -> Option<u128> {
+    if bytes.len() > 16 {
+        return None;
+    }
+    Some(
+        bytes
+            .iter()
+            .fold(0, |value, byte| (value << 8) | u128::from(*byte)),
+    )
+}
+
+fn quantity(value: &serde_json::Value) -> Option<u128> {
+    let digits = value.as_str()?.strip_prefix("0x")?;
+    if digits.is_empty()
+        || digits.len() > 32
+        || (digits.len() > 1 && digits.starts_with('0'))
+        || !digits.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    u128::from_str_radix(digits, 16).ok()
+}
+
+fn rpc_bytes(value: &serde_json::Value) -> Option<Vec<u8>> {
+    let digits = value.as_str()?.strip_prefix("0x")?;
+    if digits.len() > super::MAX_REQUEST * 2 || !digits.len().is_multiple_of(2) {
+        return None;
+    }
+    digits
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect()
+}
+
+fn topics_match(actual: &serde_json::Value, expected: &serde_json::Value) -> bool {
+    let (Some(actual), Some(expected)) = (actual.as_array(), expected.as_array()) else {
+        return false;
+    };
+    actual.len() == expected.len()
+        && actual
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| rpc_bytes(actual) == rpc_bytes(expected))
 }
 
 /// Renders the settled result exactly as the seller middleware parses it.

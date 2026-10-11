@@ -4465,6 +4465,25 @@ fn settlement_response(
     )
 }
 
+fn settlement_rpc(
+    config: &Config,
+    activity_id: &str,
+    method: &str,
+) -> Result<serde_json::Value, OutgoingResponse> {
+    let document = paxeer::node(
+        config,
+        &serde_json::json!({
+            "jsonrpc": "2.0", "id": "settlement-inclusion", "method": method,
+            "params": [format!("0x{activity_id}")],
+        }),
+    )
+    .map_err(|_| response(503, "settlement_inclusion_unavailable", Some(5)))?;
+    document
+        .get("result")
+        .cloned()
+        .ok_or_else(|| response(503, "settlement_inclusion_unavailable", Some(5)))
+}
+
 fn settle(
     config: &Config,
     request: &IncomingRequest,
@@ -4492,43 +4511,33 @@ fn settle(
         Ok(claim) => claim,
         Err(refused) => return response(400, refused.reason(), None),
     };
-    let activity_id = hex(&claim.activity_id());
-    let upstream = match authority_request(config, &activity_id, false) {
-        Ok(upstream) => upstream,
-        Err(error) => return error,
-    };
-    if matches!(upstream.status, 202 | 404) {
-        return settlement_response(202, &settlement::pending(), trace_id);
-    }
-    let prepared = match authority_response(config, &activity_id, &upstream) {
-        Ok(prepared) => prepared,
-        Err(error) => return error,
-    };
-    if prepared.receipt.len() != claim.receipt().len()
-        || prepared.receipt.ct_eq(claim.receipt()).unwrap_u8() != 1
-    {
-        return settlement_response(
-            200,
-            &settlement::refused("settlement_receipt_mismatch"),
-            trace_id,
-        );
-    }
-    let receipt_keys = match config.kernel_side(KernelBackend::Authority) {
-        Ok(kernel) => &kernel.receipt_keys,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
     };
-    let Ok(verified) = layerx_platform_gateway::verify_settlement_receipt(
-        claim.receipt(),
-        prepared.facts,
-        receipt_keys,
-        claim.activity_id(),
-    ) else {
-        return settlement_response(
-            200,
-            &settlement::refused("receipt_verification_failed"),
-            trace_id,
-        );
+    let (verified, batch) = match settlement::authorize(&claim, receipt_keys) {
+        Ok(verified) => verified,
+        Err(reason) => return settlement_response(200, &settlement::refused(reason), trace_id),
     };
+    let activity_id = hex(&claim.activity_id());
+    let inclusion = match settlement_rpc(config, &activity_id, "pax_sequencerReceipt") {
+        Ok(inclusion) => inclusion,
+        Err(error) => return error,
+    };
+    match settlement::sequencer_committed(verified.receipt(), &inclusion) {
+        Ok(true) => {}
+        Ok(false) => return settlement_response(202, &settlement::pending(), trace_id),
+        Err(reason) => return settlement_response(200, &settlement::refused(reason), trace_id),
+    }
+    let transaction = match settlement_rpc(config, &activity_id, "eth_getTransactionReceipt") {
+        Ok(transaction) => transaction,
+        Err(error) => return error,
+    };
+    match settlement::transaction_committed(&inclusion, &transaction) {
+        Ok(true) => {}
+        Ok(false) => return settlement_response(202, &settlement::pending(), trace_id),
+        Err(reason) => return settlement_response(200, &settlement::refused(reason), trace_id),
+    }
     if verified.result_code() != 0 {
         return settlement_response(
             200,
@@ -4538,7 +4547,7 @@ fn settle(
     }
     settlement_response(
         200,
-        &settlement::settled(&claim, verified.receipt(), &prepared.facts.authorized()),
+        &settlement::settled(&claim, verified.receipt(), &batch),
         trace_id,
     )
 }
@@ -6277,9 +6286,392 @@ mod module_schema_tests {
 #[cfg(test)]
 mod settlement_contract_tests {
     use super::*;
+    use ed25519_dalek::{Signer as _, SigningKey};
+    use layerx_wire::encode::Encoder;
+    use std::error::Error;
 
     const PRINCIPAL: &str = "did:layerx:merchant-settlement";
     const REQUEST_DIGEST: [u8; 32] = [0x5a; 32];
+
+    fn receipt_keys_document() -> serde_json::Value {
+        serde_json::json!([
+            { "keyId": layerx_platform_internal::base64::encode(&[1; 32]),
+              "publicKey": layerx_platform_internal::base64::encode(&SigningKey::from_bytes(&[0x41; 32]).verifying_key().to_bytes()),
+              "firstHeight": 800, "lastHeight": 1000 },
+            { "keyId": layerx_platform_internal::base64::encode(&[2; 32]),
+              "publicKey": layerx_platform_internal::base64::encode(&SigningKey::from_bytes(&[0x42; 32]).verifying_key().to_bytes()),
+              "firstHeight": 850, "lastHeight": 1000 },
+        ])
+    }
+
+    fn signed_effect(
+        encoder: &mut Encoder,
+        ordinal: u16,
+        kind: u8,
+        body: &[u8],
+    ) -> Result<(), layerx_wire::WireError> {
+        encoder.u16(12)?;
+        encoder.u16(ordinal)?;
+        encoder.u16(0)?;
+        encoder.u8(kind)?;
+        encoder.u8(0)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(body, 256)?;
+        Ok(())
+    }
+
+    fn signed_receipt(
+        height: u64,
+        key_id: [u8; 32],
+        seed: [u8; 32],
+    ) -> Result<Vec<u8>, layerx_wire::WireError> {
+        let mut summary = Encoder::new(191);
+        summary.u64(5)?;
+        summary.u64(12)?;
+        summary.u64(1)?;
+        summary.u32(2)?;
+        summary.fixed(&[0; 40])?;
+        summary.fixed(&Sha256::digest(b""))?;
+        summary.u32(4)?;
+        summary.u32(1)?;
+        summary.u8(4)?;
+        summary.fixed(b"upax")?;
+        let mut log = Encoder::new(181);
+        log.fixed(&[0x33; 20])?;
+        log.u8(1)?;
+        log.fixed(&[0x44; 32])?;
+        log.fixed(&Sha256::digest(b"settlement"))?;
+        let mut sequence = Sha256::new();
+        sequence.update(b"PAXEER/v1/sequence\0");
+        sequence.update([3; 32]);
+        sequence.update(7_u64.to_be_bytes());
+        sequence.update([0x55; 32]);
+        let state: [u8; 32] = sequence.finalize().into();
+        let mut encoder = Encoder::new(2048);
+        encoder.u16(2)?;
+        encoder.u16(0x5201)?;
+        encoder.u16(2)?;
+        encoder.bytes(&[0x55; 32], 32)?;
+        encoder.u64(7)?;
+        encoder.bytes(&[3; 32], 32)?;
+        encoder.bytes(&state, 32)?;
+        encoder.bytes(&Sha256::digest(b"paid"), 32)?;
+        encoder.i32(0)?;
+        encoder.u32(2)?;
+        signed_effect(&mut encoder, 0, 1, &summary.finish())?;
+        signed_effect(&mut encoder, 1, 3, &log.finish())?;
+        encoder.u128(5)?;
+        let mut batch = [0; 32];
+        batch[24..].copy_from_slice(&height.to_be_bytes());
+        encoder.bytes(&batch, 32)?;
+        encoder.u16(12)?;
+        encoder.u32(1)?;
+        encoder.u32(0)?;
+        encoder.u8(0)?;
+        encoder.bytes(&Sha256::digest(b"upax"), 32)?;
+        encoder.u128(10)?;
+        let mut from = [0; 32];
+        from[12..].fill(0x11);
+        encoder.bytes(&from, 32)?;
+        encoder.u128(100)?;
+        encoder.u128(85)?;
+        encoder.u64(4)?;
+        let mut to = [0; 32];
+        to[12..].fill(0x22);
+        encoder.bytes(&to, 32)?;
+        encoder.u128(20)?;
+        encoder.u128(30)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(&key_id, 32)?;
+        encoder.u64(1234)?;
+        encoder.u8(0)?;
+        let mut unsigned = encoder.finish();
+        let digest = layerx_wire::hash::receipt_digest(&unsigned)?;
+        let signature = SigningKey::from_bytes(&seed).sign(&digest).to_bytes();
+        unsigned.pop();
+        let mut signed = Encoder::new(2048);
+        signed.fixed(&unsigned)?;
+        signed.u8(1)?;
+        signed.bytes(&signature, 64)?;
+        Ok(signed.finish())
+    }
+
+    fn inclusion(receipt: &[u8], rung: &str) -> Result<serde_json::Value, Box<dyn Error>> {
+        let decoded =
+            layerx_wire::receipt::decode(receipt).map_err(|error| format!("{error:?}"))?;
+        let protocol = decoded.protocol().ok_or("protocol receipt")?;
+        let height = u64::from_be_bytes(protocol.batch_id()[24..].try_into()?);
+        let mut view = serde_json::json!({
+            "rung": rung, "txHash": format!("0x{}", hex(&protocol.activity_id())),
+            "nonce": "0x4", "seq": "0x7", "height": format!("0x{height:x}"),
+            "timestamp": "0x4d2", "index": "0x2", "status": "0x1",
+            "gasUsed": "0x5", "cumulativeGasUsed": "0xc", "effectiveGasPrice": "0x1",
+            "feeDenom": "upax", "feeAmount": "0x5", "returnData": "0x70616964", "vmError": "",
+            "keyId": format!("0x{}", hex(&protocol.context_hash())),
+            "from": format!("0x{}", "11".repeat(20)), "to": format!("0x{}", "22".repeat(20)),
+            "contractAddress": format!("0x{}", "00".repeat(20)), "sponsor": format!("0x{}", "00".repeat(20)),
+            "receipt": format!("0x{}", hex(receipt)),
+            "logs": [{ "address": format!("0x{}", "33".repeat(20)),
+                "topics": [format!("0x{}", "44".repeat(32))], "data": "0x736574746c656d656e74", "logIndex": "0x0" }],
+        });
+        if rung == "committed" {
+            view["blockNumber"] = serde_json::json!(format!("0x{:x}", height + 1));
+            view["blockHash"] = serde_json::json!(format!("0x{}", "66".repeat(32)));
+        }
+        Ok(view)
+    }
+
+    fn transaction(inclusion: &serde_json::Value) -> serde_json::Value {
+        let mut logs = inclusion["logs"].clone();
+        logs[0]["logIndex"] = serde_json::json!("0x9");
+        serde_json::json!({
+            "transactionHash": inclusion["txHash"], "blockNumber": inclusion["blockNumber"],
+            "blockHash": inclusion["blockHash"], "status": inclusion["status"],
+            "gasUsed": inclusion["gasUsed"], "cumulativeGasUsed": inclusion["cumulativeGasUsed"],
+            "effectiveGasPrice": inclusion["effectiveGasPrice"], "logs": logs, "transactionIndex": "0x1",
+        })
+    }
+
+    #[test]
+    fn receipt_keys_list_loads_and_accepts_primary_and_standby_inclusive_ranges(
+    ) -> Result<(), Box<dyn Error>> {
+        let keys = ReceiptKeyList::from_config(&receipt_keys_document().to_string())?;
+        assert_eq!(keys.single(), None);
+        for (height, key_id, seed) in [
+            (800, [1; 32], [0x41; 32]),
+            (850, [2; 32], [0x42; 32]),
+            (900, [2; 32], [0x42; 32]),
+            (1000, [2; 32], [0x42; 32]),
+        ] {
+            let receipt =
+                signed_receipt(height, key_id, seed).map_err(|error| format!("{error:?}"))?;
+            let body = settlement_request(&receipt);
+            let claim =
+                settlement::claim(body.to_string().as_bytes()).map_err(|err| err.reason())?;
+            let (verified, batch) = settlement::authorize(&claim, &keys)?;
+            assert_eq!(verified.activity_id(), [0x55; 32]);
+            assert_eq!(verified.receipt(), receipt);
+            assert_eq!(verified.result_code(), 0);
+            assert_eq!(
+                batch.sequencer_public_key(),
+                SigningKey::from_bytes(&seed).verifying_key().to_bytes()
+            );
+            let committed = inclusion(&receipt, "committed")?;
+            assert_eq!(
+                settlement::sequencer_committed(&receipt, &committed),
+                Ok(true)
+            );
+            assert_eq!(
+                settlement::transaction_committed(&committed, &transaction(&committed)),
+                Ok(true)
+            );
+            let settled = settlement::settled(&claim, verified.receipt(), &batch);
+            assert_eq!(
+                settled,
+                serde_json::json!({ "state": "settled", "activity_id": hex(&[0x55; 32]),
+                "idempotency_key": body["idempotencyKey"], "receipt_base64": layerx_platform_internal::base64::encode(&receipt),
+                "authorized_batch": { "batch_id": hex(&batch.batch_id()), "asset": hex(&batch.asset()),
+                    "previous_state_root": hex(&batch.previous_state_root()), "resulting_state_root": hex(&batch.resulting_state_root()),
+                    "sequencer_public_key": hex(&batch.sequencer_public_key()) } })
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn settlement_refuses_out_of_range_unknown_key_and_failed_signature(
+    ) -> Result<(), Box<dyn Error>> {
+        let keys = ReceiptKeyList::from_config(&receipt_keys_document().to_string())?;
+        for (height, id, seed) in [
+            (849, [2; 32], [0x42; 32]),
+            (1001, [2; 32], [0x42; 32]),
+            (900, [3; 32], [0x42; 32]),
+            (900, [1; 32], [0x42; 32]),
+        ] {
+            let receipt = signed_receipt(height, id, seed).map_err(|error| format!("{error:?}"))?;
+            assert_eq!(
+                keys.verify_receipt(&receipt),
+                Err(if id == [1; 32] {
+                    GatewayError::Receipt(layerx_proof::receipt::ReceiptCheck::SequencerSignature)
+                } else {
+                    GatewayError::UntrustedSequencer
+                })
+            );
+            let body = settlement_request(&receipt);
+            let claim =
+                settlement::claim(body.to_string().as_bytes()).map_err(|err| err.reason())?;
+            assert_eq!(
+                settlement::authorize(&claim, &keys),
+                Err("receipt_verification_failed")
+            );
+        }
+        let mut receipt =
+            signed_receipt(900, [2; 32], [0x42; 32]).map_err(|error| format!("{error:?}"))?;
+        let last = receipt.last_mut().ok_or("signature")?;
+        *last ^= 1;
+        let body = settlement_request(&receipt);
+        let claim = settlement::claim(body.to_string().as_bytes()).map_err(|err| err.reason())?;
+        assert_eq!(
+            settlement::authorize(&claim, &keys),
+            Err("receipt_verification_failed")
+        );
+        let refused = settlement_response(
+            200,
+            &settlement::refused("receipt_verification_failed"),
+            "settlement",
+        );
+        assert_eq!(refused.status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&refused.body)?,
+            serde_json::json!({"ok": true, "result": {"state": "refused", "reason": "receipt_verification_failed"}, "trace": "settlement"})
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn settlement_pending_before_commit_and_before_committed_transaction(
+    ) -> Result<(), Box<dyn Error>> {
+        let receipt =
+            signed_receipt(900, [2; 32], [0x42; 32]).map_err(|error| format!("{error:?}"))?;
+        let keys = ReceiptKeyList::from_config(&receipt_keys_document().to_string())?;
+        let body = settlement_request(&receipt);
+        let claim = settlement::claim(body.to_string().as_bytes()).map_err(|err| err.reason())?;
+        let (verified, _) = settlement::authorize(&claim, &keys)?;
+        assert_eq!(
+            settlement::sequencer_committed(verified.receipt(), &serde_json::Value::Null),
+            Ok(false)
+        );
+        let submitted = serde_json::json!({"rung":"submitted", "txHash": format!("0x{}", hex(&[0x55; 32])), "nonce":"0x4"});
+        assert_eq!(
+            settlement::sequencer_committed(verified.receipt(), &submitted),
+            Ok(false)
+        );
+        assert_eq!(
+            settlement::sequencer_committed(verified.receipt(), &inclusion(&receipt, "receipted")?),
+            Ok(false)
+        );
+        let committed = inclusion(&receipt, "committed")?;
+        assert_eq!(
+            settlement::sequencer_committed(verified.receipt(), &committed),
+            Ok(true)
+        );
+        assert_eq!(
+            settlement::transaction_committed(&committed, &serde_json::Value::Null),
+            Ok(false)
+        );
+        let pending = settlement_response(202, &settlement::pending(), "settlement");
+        assert_eq!(pending.status, 202);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&pending.body)?,
+            serde_json::json!({"ok": true, "result": {"state": "pending"}, "trace": "settlement"})
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn settlement_refuses_tampered_commit_and_execution_fields() -> Result<(), Box<dyn Error>> {
+        let receipt =
+            signed_receipt(900, [2; 32], [0x42; 32]).map_err(|error| format!("{error:?}"))?;
+        let committed = inclusion(&receipt, "committed")?;
+        for (field, value) in [
+            ("keyId", serde_json::json!(format!("0x{}", "01".repeat(32)))),
+            ("seq", serde_json::json!("0x8")),
+            ("height", serde_json::json!("0x385")),
+            ("status", serde_json::json!("0x0")),
+            ("gasUsed", serde_json::json!("0x6")),
+            ("returnData", serde_json::json!("0x")),
+            ("vmError", serde_json::json!("revert")),
+            ("blockNumber", serde_json::json!("0x383")),
+            ("blockNumber", serde_json::json!("0x10000000000000000")),
+            (
+                "blockHash",
+                serde_json::json!(format!("0x{}", "00".repeat(32))),
+            ),
+            ("rung", serde_json::json!("final")),
+        ] {
+            let mut tampered = committed.clone();
+            tampered[field] = value;
+            assert_eq!(
+                settlement::sequencer_committed(&receipt, &tampered),
+                Err("settlement_inclusion_mismatch"),
+                "{field}"
+            );
+        }
+        let mut wrong_receipt = committed.clone();
+        wrong_receipt["receipt"] = serde_json::json!("0x00");
+        assert_eq!(
+            settlement::sequencer_committed(&receipt, &wrong_receipt),
+            Err("settlement_receipt_mismatch")
+        );
+        let standard = transaction(&committed);
+        for field in [
+            "transactionHash",
+            "blockHash",
+            "blockNumber",
+            "status",
+            "gasUsed",
+            "cumulativeGasUsed",
+            "effectiveGasPrice",
+        ] {
+            let mut tampered = standard.clone();
+            tampered[field] = serde_json::Value::Null;
+            assert_eq!(
+                settlement::transaction_committed(&committed, &tampered),
+                Err("settlement_inclusion_mismatch"),
+                "{field}"
+            );
+        }
+        let mut wrong_log = standard.clone();
+        wrong_log["logs"][0]["data"] = serde_json::json!("0x00");
+        assert_eq!(
+            settlement::transaction_committed(&committed, &wrong_log),
+            Err("settlement_inclusion_mismatch")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn receipt_keys_refuse_empty_duplicated_malformed_and_reversed_entries(
+    ) -> Result<(), Box<dyn Error>> {
+        assert_eq!(ReceiptKeyList::from_config("[]"), Err("receipt key list"));
+        let entries = receipt_keys_document();
+        let duplicate = serde_json::json!([entries[0], entries[0]]);
+        assert_eq!(
+            ReceiptKeyList::from_config(&duplicate.to_string()),
+            Err("duplicate receipt key ID")
+        );
+        for (field, value, reason) in [
+            ("keyId", serde_json::json!(""), "sequencer ID"),
+            (
+                "publicKey",
+                serde_json::json!(layerx_platform_internal::base64::encode(&[0; 32])),
+                "sequencer public key",
+            ),
+            (
+                "firstHeight",
+                serde_json::json!(1001),
+                "authorized batch range",
+            ),
+        ] {
+            let mut malformed = entries.clone();
+            malformed[0][field] = value;
+            assert_eq!(
+                ReceiptKeyList::from_config(&malformed.to_string()),
+                Err(reason)
+            );
+        }
+        let snake = serde_json::json!([{ "key_id": entries[0]["keyId"], "public_key": entries[0]["publicKey"],
+            "first_height": 800, "last_height": 1000 }]);
+        let loaded = ReceiptKeyList::from_config(&snake.to_string())?;
+        assert_eq!(
+            loaded
+                .single()
+                .map(layerx_platform_gateway::SequencerAuthorization::sequencer_id),
+            Some([1; 32])
+        );
+        Ok(())
+    }
 
     fn fixture() -> serde_json::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
