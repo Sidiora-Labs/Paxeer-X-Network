@@ -14,7 +14,7 @@ enum {
     LXP_STATE_MAX_CELLS = 512,
     LXP_STATE_MAX_IDEMPOTENCY = 8192,
     LXP_STATE_MAX_RECEIPT_BYTES = 4096,
-    LXP_STATE_MAX_REPLAY_ENTRY_BYTES = 13 + 2 * LXP_STATE_MAX_RECEIPT_BYTES
+    LXP_STATE_MAX_REPLAY_ENTRY_BYTES = 21 + 2 * LXP_STATE_MAX_RECEIPT_BYTES
 };
 
 typedef struct lxp_state_cell {
@@ -28,6 +28,7 @@ typedef struct lxp_idempotency_key_state {
     uint8_t receipt[LXP_STATE_MAX_RECEIPT_BYTES];
     uint32_t canonical_length;
     uint8_t canonical_receipt[LXP_STATE_MAX_RECEIPT_BYTES];
+    uint64_t recorded_sequence;
 } lxp_idempotency_key_state;
 #define lxp_idempotency_key_state lxp_idempotency_key_state
 
@@ -38,6 +39,7 @@ typedef struct lxp_state_store {
     size_t count;
     lxp_idempotency_key_state *idempotency;
     size_t idempotency_count;
+    uint64_t idempotency_retention;
     uint64_t next_sequence;
     struct lx_account_registry *accounts;
     bool account_root_required;
@@ -132,6 +134,13 @@ lxp_result lxp_idempotency_snapshot_decode(lxp_idempotency_key_state *entry,
 lxp_result lxp_kernel_idempotency_receipt_validate(
     const lxp_idempotency_key_state *entry);
 lxp_result lxp_idempotency_reserve(lxp_state_store *store);
+lxp_result lxp_idempotency_prune(lxp_state_store *store,
+                                 uint64_t current_sequence);
+lxp_result lxp_idempotency_append(lxp_state_store *store,
+                                  const lxp_idempotency_key_state *entry,
+                                  uint64_t current_sequence);
+size_t lxp_idempotency_live_count(const lxp_state_store *store,
+                                  uint64_t current_sequence);
 lxp_result lxp_idempotency_can_commit(const lxp_state_journal *journal);
 void lxp_idempotency_commit_staged(lxp_state_journal *journal);
 
