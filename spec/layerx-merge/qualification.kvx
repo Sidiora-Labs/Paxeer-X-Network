@@ -1488,3 +1488,10 @@ command = "cargo test --offline --manifest-path platform/Cargo.toml --locked -p 
 exit_code = 0
 log_path = "logs/0.93-verify-1.log"
 observed_and_assumption = "verify passed (24 passed, 0 failed). Unrelated: gates ran with CARGO_TARGET_DIR in a private scratch directory because the shared target lock starved this worker for hours (about 30 concurrent holders); commands otherwise exactly as declared"
+
+[finding.10.5.40]
+revision = "c02008b2a"
+command = "npm --prefix agent/sdk/typescript run build && node agent/sdk/typescript/dist/test/ai-market.test.js"
+exit_code = 0
+log_path = "logs/10.5.40-rebase-verify-2.log"
+observed_and_assumption = "verify passed (26 passed, 0 failed). Gaps: do_5: agent/sdk/typescript/src/agent-http.ts is outside touches; scoped submission and verified receipt reverts are mapped in ai_market.ts, but shared service mapping is unchanged."

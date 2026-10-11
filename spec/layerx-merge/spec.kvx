@@ -51062,7 +51062,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.40]
 title = "TypeScript AI market views read the indexed gateway projection; operations are 0x101D transactions"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 10
 requires = ["10.1.2", "10.5.39", "10.5.24"]
