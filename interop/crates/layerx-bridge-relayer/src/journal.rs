@@ -260,6 +260,13 @@ pub enum Entry {
         #[serde(with = "hex::bytes_serde")]
         raw: Vec<u8>,
     },
+    Receipted {
+        item: String,
+        #[serde(with = "hex::fixed_serde")]
+        tx_hash: [u8; 32],
+        sequence: u64,
+        height: u64,
+    },
     /// The transaction executed and reverted without consuming the nullifier.
     Reverted {
         item: String,
@@ -317,6 +324,14 @@ pub enum Entry {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SubmissionStatus {
     Pending,
+    Receipted {
+        sequence: u64,
+        height: u64,
+    },
+    Committed {
+        sequence: u64,
+        height: u64,
+    },
     Reverted,
     Dropped,
     /// The transaction a completion names: it is final and awaits nothing.
@@ -384,9 +399,12 @@ impl Item {
     /// The transaction still awaiting an outcome, if any.
     #[must_use]
     pub fn pending(&self) -> Option<&Submission> {
-        self.submissions
-            .iter()
-            .find(|submission| submission.status == SubmissionStatus::Pending)
+        self.submissions.iter().find(|submission| {
+            matches!(
+                submission.status,
+                SubmissionStatus::Pending | SubmissionStatus::Receipted { .. }
+            )
+        })
     }
 
     /// The Solana release still awaiting an outcome, if any.
@@ -409,18 +427,40 @@ impl Item {
     fn land(&mut self, item: &str, completion: &Completion) -> Result<(), JournalError> {
         let status = match *completion {
             Completion::AlreadyBridged => return Ok(()),
-            Completion::Included { tx_hash, .. } => self
-                .submissions
-                .iter_mut()
-                .rev()
-                .find(|submission| submission.tx_hash == tx_hash)
-                .map(|submission| &mut submission.status)
-                .ok_or_else(|| {
-                    JournalError::Conflict(format!(
-                        "{item} never submitted {}",
-                        hex::prefixed(&tx_hash)
-                    ))
-                })?,
+            Completion::Included {
+                tx_hash,
+                block_number,
+            } => {
+                if self.pending().is_some_and(|submission| {
+                    matches!(submission.status, SubmissionStatus::Receipted { .. })
+                        && submission.tx_hash != tx_hash
+                }) {
+                    return Err(JournalError::Conflict(format!(
+                        "{item} inclusion does not match its receipt"
+                    )));
+                }
+                let submission = self
+                    .submissions
+                    .iter_mut()
+                    .rev()
+                    .find(|submission| submission.tx_hash == tx_hash)
+                    .ok_or_else(|| {
+                        JournalError::Conflict(format!(
+                            "{item} never submitted {}",
+                            hex::prefixed(&tx_hash)
+                        ))
+                    })?;
+                if let SubmissionStatus::Receipted { sequence, height } = submission.status {
+                    if block_number < height {
+                        return Err(JournalError::Conflict(format!(
+                            "{item} inclusion precedes its receipt height"
+                        )));
+                    }
+                    submission.status = SubmissionStatus::Committed { sequence, height };
+                    return Ok(());
+                }
+                &mut submission.status
+            }
             Completion::Released { signature, .. } => self
                 .releases
                 .iter_mut()
@@ -498,19 +538,15 @@ impl State {
                 tx_hash,
                 raw,
             } => {
-                let record = self.item_mut(item)?;
-                if record.pending().is_some() {
-                    return Err(JournalError::Conflict(format!(
-                        "{item} already has a pending transaction"
-                    )));
-                }
-                record.submissions.push(Submission {
-                    submitter: *submitter,
-                    nonce: *nonce,
-                    tx_hash: *tx_hash,
-                    raw: raw.clone(),
-                    status: SubmissionStatus::Pending,
-                });
+                self.submit(item, *submitter, *nonce, *tx_hash, raw)?;
+            }
+            Entry::Receipted {
+                item,
+                tx_hash,
+                sequence,
+                height,
+            } => {
+                self.receipt(item, tx_hash, *sequence, *height)?;
             }
             Entry::Reverted { item, tx_hash } | Entry::Dropped { item, tx_hash } => {
                 let status = if matches!(entry, Entry::Reverted { .. }) {
@@ -548,6 +584,74 @@ impl State {
             | Entry::ReleaseExpired { .. }
             | Entry::ReleaseFailed { .. } => self.apply_release(entry)?,
         }
+        Ok(())
+    }
+
+    fn submit(
+        &mut self,
+        item: &str,
+        submitter: [u8; 20],
+        nonce: u64,
+        tx_hash: [u8; 32],
+        raw: &[u8],
+    ) -> Result<(), JournalError> {
+        let record = self.item_mut(item)?;
+        if !record.is_open() {
+            return Err(JournalError::Conflict(format!("{item} is closed")));
+        }
+        if record.pending().is_some() {
+            return Err(JournalError::Conflict(format!(
+                "{item} already has a pending transaction"
+            )));
+        }
+        record.submissions.push(Submission {
+            submitter,
+            nonce,
+            tx_hash,
+            raw: raw.to_vec(),
+            status: SubmissionStatus::Pending,
+        });
+        Ok(())
+    }
+
+    fn receipt(
+        &mut self,
+        item: &str,
+        tx_hash: &[u8; 32],
+        sequence: u64,
+        height: u64,
+    ) -> Result<(), JournalError> {
+        let record = self.item_mut(item)?;
+        if !record.is_open() || !matches!(record.observation, Observation::Inbound { .. }) {
+            return Err(JournalError::Conflict(format!(
+                "{item} is not an open inbound deposit"
+            )));
+        }
+        if sequence == 0 || height == 0 {
+            return Err(JournalError::Conflict(format!(
+                "{item} receipt has a zero sequence or height"
+            )));
+        }
+        let submission = record
+            .submissions
+            .iter_mut()
+            .find(|submission| {
+                submission.tx_hash == *tx_hash
+                    && matches!(
+                        submission.status,
+                        SubmissionStatus::Pending | SubmissionStatus::Receipted { .. }
+                    )
+            })
+            .ok_or_else(|| {
+                JournalError::Conflict(format!("{item} has no pending {tx_hash:02x?}"))
+            })?;
+        let status = SubmissionStatus::Receipted { sequence, height };
+        if submission.status != SubmissionStatus::Pending && submission.status != status {
+            return Err(JournalError::Conflict(format!(
+                "{item} receipt changed its sequence or height"
+            )));
+        }
+        submission.status = status;
         Ok(())
     }
 
@@ -624,6 +728,7 @@ impl State {
             | Entry::Observed { .. }
             | Entry::Signed { .. }
             | Entry::Submitted { .. }
+            | Entry::Receipted { .. }
             | Entry::Reverted { .. }
             | Entry::Dropped { .. }
             | Entry::Completed { .. }

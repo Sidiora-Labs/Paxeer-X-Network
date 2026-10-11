@@ -17,12 +17,14 @@ use std::time::Duration;
 
 use ed25519_dalek::{Signer as _, SigningKey, Verifier as _};
 use k256::sha2::{Digest as _, Sha256};
+use layerx_bridge_relayer::abi::{address_word, encode_bridge_in, LAYERX_BRIDGE_PRECOMPILE};
 use layerx_bridge_relayer::attestation::{
-    to_attestor_signature, uint256_from_u64, OutboundAttestation,
+    to_attestor_signature, uint256_from_u64, InboundAttestation, OutboundAttestation,
 };
 use layerx_bridge_relayer::hex;
 use layerx_bridge_relayer::journal::{
-    outbound_key, Completion, Entry, Journal, Recipient, SubmissionStatus,
+    outbound_key, Completion, Entry, Journal, JournalError, Observation, Position, Recipient,
+    SubmissionStatus,
 };
 use layerx_bridge_relayer::relayer::{
     ChainLink, ChainSettings, GasPolicy, PaxeerLink, PaxeerSettings, Relayer, RelayerAssembly,
@@ -44,6 +46,8 @@ use layerx_bridge_relayer::solana::rpc::{Commitment, SolanaRpc};
 use layerx_bridge_relayer::solana::{
     base58_encode, base58_fixed, base64_encode, handle, SOLANA_CHAIN_ID,
 };
+use layerx_bridge_relayer::tx;
+use layerx_crypto::evm_transaction::Eip1559Call;
 use layerx_mirror::signer::{RemoteChainSigner, RemoteSignerConfig, SignerEndpoint};
 use support::{key, work_directory, Recording, SignerServer};
 
@@ -943,4 +947,512 @@ fn releases_need_the_custody_program_and_distinct_mints() {
         ));
     }
     assert_eq!(signers.attestor_requests(), 0);
+}
+
+fn inbound_observation() -> Observation {
+    Observation::inbound(
+        &InboundAttestation {
+            chain_id: CHAIN.chain_id,
+            vault: CHAIN.vault,
+            tx_hash: [0xaa; 32],
+            log_index: 3,
+            recipient: address_word(&[0x55; 20]),
+            asset: [0x44; 20],
+            amount: uint256_from_u64(5_000_000),
+        },
+        Position {
+            block_number: 100,
+            block_hash: [0xbb; 32],
+        },
+    )
+}
+
+fn inbound_submission(nonce: u64) -> Entry {
+    let observation = inbound_observation();
+    let attestation = observation
+        .inbound_attestation()
+        .unwrap_or_else(|| panic!("inbound attestation"));
+    let call = Eip1559Call {
+        chain_id: PAXEER.chain_id,
+        nonce,
+        max_priority_fee_per_gas: PAXEER.gas.max_priority_fee_per_gas,
+        max_fee_per_gas: PAXEER.gas.max_fee_per_gas,
+        gas_limit: PAXEER.gas.gas_limit,
+        to: LAYERX_BRIDGE_PRECOMPILE,
+        data: encode_bridge_in(&attestation, &[attest(&attestation.digest())]),
+    };
+    let fee_key = key(PAXEER_FEES);
+    let (signature, recovery) = fee_key
+        .sign_prehash_recoverable(&call.signing_hash())
+        .unwrap_or_else(|error| panic!("transaction signature: {error}"));
+    let mut recoverable = [0_u8; 65];
+    recoverable[..64].copy_from_slice(&signature.to_bytes());
+    recoverable[64] = recovery.to_byte();
+    let signed = tx::assemble(&call, &recoverable);
+    let submitter = layerx_crypto::secp256k1::evm_address(
+        fee_key.verifying_key().to_encoded_point(true).as_bytes(),
+    )
+    .unwrap_or_else(|error| panic!("submitter address: {error:?}"));
+    Entry::Submitted {
+        item: observation.key(),
+        submitter,
+        nonce,
+        tx_hash: signed.hash,
+        raw: signed.raw,
+    }
+}
+
+fn append_entry(journal: &mut Journal, entry: &Entry) {
+    journal
+        .append(entry)
+        .unwrap_or_else(|error| panic!("append {entry:?}: {error}"));
+}
+
+fn deposit_journal(name: &str) -> (Journal, String, [u8; 32]) {
+    let path = work_directory(name).join("relayer.jsonl");
+    let mut journal =
+        Journal::open(&path).unwrap_or_else(|error| panic!("journal {}: {error}", path.display()));
+    let observation = inbound_observation();
+    let item = observation.key();
+    let attestation = observation
+        .inbound_attestation()
+        .unwrap_or_else(|| panic!("inbound attestation"));
+    append_entry(
+        &mut journal,
+        &Entry::Observed {
+            item: item.clone(),
+            observation,
+        },
+    );
+    append_entry(
+        &mut journal,
+        &Entry::Signed {
+            item: item.clone(),
+            signature: attest(&attestation.digest()),
+        },
+    );
+    append_entry(&mut journal, &inbound_submission(5));
+    let tx_hash = journal.state().items[&item].submissions[0].tx_hash;
+    (journal, item, tx_hash)
+}
+
+fn assert_journal_refusal(journal: &mut Journal, entry: &Entry) {
+    let before = journal.state().clone();
+    let bytes = fs::read(journal.path()).unwrap_or_else(|error| panic!("journal bytes: {error}"));
+    let result = journal.append(entry);
+    assert!(
+        matches!(result, Err(JournalError::Conflict(_))),
+        "{result:?}"
+    );
+    assert_eq!(journal.state(), &before);
+    assert_eq!(
+        fs::read(journal.path()).unwrap_or_else(|error| panic!("journal bytes: {error}")),
+        bytes
+    );
+    let reopened =
+        Journal::open(journal.path()).unwrap_or_else(|error| panic!("journal replay: {error}"));
+    assert_eq!(reopened.state(), &before);
+}
+
+fn assert_receipted_deposit(journal: &Journal, item: &str, tx_hash: [u8; 32]) {
+    let record = &journal.state().items[item];
+    assert_eq!(
+        record.submissions[0].status,
+        SubmissionStatus::Receipted {
+            sequence: 7,
+            height: 112
+        }
+    );
+    assert_eq!(
+        record.pending().map(|submission| submission.tx_hash),
+        Some(tx_hash)
+    );
+    assert_eq!(record.completion, None);
+    assert!(record.is_open());
+}
+
+#[test]
+fn a_receipted_deposit_replays_without_a_second_submission_and_settles_at_its_landing_height() {
+    for block_number in [112, 115] {
+        let (mut journal, item, tx_hash) =
+            deposit_journal(&format!("receipt-landing-{block_number}"));
+        let receipt = Entry::Receipted {
+            item: item.clone(),
+            tx_hash,
+            sequence: 7,
+            height: 112,
+        };
+        append_entry(&mut journal, &receipt);
+        assert_receipted_deposit(&journal, &item, tx_hash);
+        let expected = journal.state().clone();
+        let raw = expected.items[&item].submissions[0].raw.clone();
+        let path = journal.path().to_owned();
+        drop(journal);
+        let mut journal =
+            Journal::open(&path).unwrap_or_else(|error| panic!("journal replay: {error}"));
+        assert_eq!(journal.state(), &expected);
+        assert_eq!(
+            journal.state().items[&item]
+                .pending()
+                .map(|submission| submission.raw.as_slice()),
+            Some(raw.as_slice())
+        );
+        assert_journal_refusal(&mut journal, &inbound_submission(6));
+        append_entry(
+            &mut journal,
+            &Entry::Completed {
+                item: item.clone(),
+                completion: Completion::Included {
+                    tx_hash,
+                    block_number,
+                },
+            },
+        );
+        let settled = &journal.state().items[&item];
+        assert_eq!(settled.submissions.len(), 1);
+        assert_eq!(
+            settled.submissions[0].status,
+            SubmissionStatus::Committed {
+                sequence: 7,
+                height: 112
+            }
+        );
+        assert_eq!(settled.submissions[0].raw, raw);
+        assert_eq!(
+            settled.completion,
+            Some(Completion::Included {
+                tx_hash,
+                block_number
+            })
+        );
+        assert_eq!(settled.pending(), None);
+        assert!(!settled.is_open());
+        assert_eq!(
+            Journal::open(&path)
+                .unwrap_or_else(|error| panic!("journal replay: {error}"))
+                .state(),
+            journal.state()
+        );
+        assert_eq!(journal_lines(&path)[3], receipt);
+    }
+}
+
+#[test]
+fn receipt_coordinates_are_positive_bound_to_the_pending_transaction_and_immutable() {
+    let (mut journal, item, tx_hash) = deposit_journal("receipt-coordinates");
+    for (hash, sequence, height) in [(tx_hash, 0, 112), (tx_hash, 7, 0), ([0xcc; 32], 7, 112)] {
+        assert_journal_refusal(
+            &mut journal,
+            &Entry::Receipted {
+                item: item.clone(),
+                tx_hash: hash,
+                sequence,
+                height,
+            },
+        );
+    }
+    let receipt = Entry::Receipted {
+        item: item.clone(),
+        tx_hash,
+        sequence: 7,
+        height: 112,
+    };
+    append_entry(&mut journal, &receipt);
+    let expected = journal.state().clone();
+    append_entry(&mut journal, &receipt);
+    assert_eq!(journal.state(), &expected);
+    for (sequence, height) in [(8, 112), (7, 113)] {
+        assert_journal_refusal(
+            &mut journal,
+            &Entry::Receipted {
+                item: item.clone(),
+                tx_hash,
+                sequence,
+                height,
+            },
+        );
+    }
+    assert_journal_refusal(
+        &mut journal,
+        &Entry::Receipted {
+            item,
+            tx_hash: [0xcc; 32],
+            sequence: 7,
+            height: 112,
+        },
+    );
+    assert_eq!(
+        journal_lines(journal.path())
+            .iter()
+            .filter(|entry| **entry == receipt)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn a_receipted_deposit_cannot_be_dropped_reverted_or_included_before_its_receipt_height() {
+    let (mut journal, item, tx_hash) = deposit_journal("receipt-outcomes");
+    append_entry(
+        &mut journal,
+        &Entry::Receipted {
+            item: item.clone(),
+            tx_hash,
+            sequence: 7,
+            height: 112,
+        },
+    );
+    for entry in [
+        Entry::Dropped {
+            item: item.clone(),
+            tx_hash,
+        },
+        Entry::Reverted {
+            item: item.clone(),
+            tx_hash,
+        },
+        Entry::Completed {
+            item: item.clone(),
+            completion: Completion::Included {
+                tx_hash,
+                block_number: 111,
+            },
+        },
+        Entry::Completed {
+            item: item.clone(),
+            completion: Completion::Included {
+                tx_hash: [0xcc; 32],
+                block_number: 112,
+            },
+        },
+    ] {
+        assert_journal_refusal(&mut journal, &entry);
+    }
+    assert_eq!(
+        journal.state().items[&item].submissions[0].status,
+        SubmissionStatus::Receipted {
+            sequence: 7,
+            height: 112
+        }
+    );
+    assert_eq!(journal.state().items[&item].completion, None);
+}
+
+#[test]
+fn a_previous_submission_cannot_replace_the_receipted_transaction_at_settlement() {
+    let (mut journal, item, previous_hash) = deposit_journal("receipt-previous-submission");
+    append_entry(
+        &mut journal,
+        &Entry::Dropped {
+            item: item.clone(),
+            tx_hash: previous_hash,
+        },
+    );
+    append_entry(&mut journal, &inbound_submission(6));
+    let tx_hash = journal.state().items[&item].submissions[1].tx_hash;
+    assert_ne!(tx_hash, previous_hash);
+    append_entry(
+        &mut journal,
+        &Entry::Receipted {
+            item: item.clone(),
+            tx_hash,
+            sequence: 7,
+            height: 112,
+        },
+    );
+    assert_journal_refusal(
+        &mut journal,
+        &Entry::Receipted {
+            item: item.clone(),
+            tx_hash: previous_hash,
+            sequence: 7,
+            height: 112,
+        },
+    );
+    assert_journal_refusal(
+        &mut journal,
+        &Entry::Completed {
+            item: item.clone(),
+            completion: Completion::Included {
+                tx_hash: previous_hash,
+                block_number: 112,
+            },
+        },
+    );
+    assert_eq!(
+        journal.state().items[&item].submissions[0].status,
+        SubmissionStatus::Dropped
+    );
+    assert_eq!(
+        journal.state().items[&item].submissions[1].status,
+        SubmissionStatus::Receipted {
+            sequence: 7,
+            height: 112
+        }
+    );
+    assert_eq!(journal.state().items[&item].completion, None);
+}
+
+#[test]
+fn receipts_require_an_observed_open_inbound_item_with_a_pending_submission() {
+    let path = work_directory("receipt-admission").join("relayer.jsonl");
+    let mut journal = Journal::open(&path).unwrap_or_else(|error| panic!("journal: {error}"));
+    let observation = inbound_observation();
+    let item = observation.key();
+    let Entry::Submitted { tx_hash, .. } = inbound_submission(5) else {
+        panic!("submission entry")
+    };
+    let receipt = Entry::Receipted {
+        item: item.clone(),
+        tx_hash,
+        sequence: 7,
+        height: 112,
+    };
+    assert_journal_refusal(&mut journal, &receipt);
+    append_entry(
+        &mut journal,
+        &Entry::Observed {
+            item: item.clone(),
+            observation,
+        },
+    );
+    assert_journal_refusal(&mut journal, &receipt);
+    append_entry(&mut journal, &inbound_submission(5));
+    append_entry(
+        &mut journal,
+        &Entry::Dropped {
+            item: item.clone(),
+            tx_hash,
+        },
+    );
+    assert_journal_refusal(&mut journal, &receipt);
+    append_entry(
+        &mut journal,
+        &Entry::Completed {
+            item: item.clone(),
+            completion: Completion::AlreadyBridged,
+        },
+    );
+    assert_journal_refusal(&mut journal, &receipt);
+    assert_journal_refusal(&mut journal, &inbound_submission(6));
+
+    let (mut refused, refused_item, refused_hash) = deposit_journal("receipt-refused");
+    append_entry(
+        &mut refused,
+        &Entry::Refused {
+            item: refused_item.clone(),
+            reason: "invalid deposit".to_owned(),
+        },
+    );
+    assert_journal_refusal(
+        &mut refused,
+        &Entry::Receipted {
+            item: refused_item,
+            tx_hash: refused_hash,
+            sequence: 7,
+            height: 112,
+        },
+    );
+    assert_journal_refusal(&mut refused, &inbound_submission(6));
+}
+
+#[test]
+fn a_receipt_cannot_confirm_a_solana_burn_or_change_a_committed_submission() {
+    let (mut journal, item, tx_hash) = deposit_journal("receipt-closed-and-outbound");
+    let receipt = Entry::Receipted {
+        item: item.clone(),
+        tx_hash,
+        sequence: 7,
+        height: 112,
+    };
+    append_entry(&mut journal, &receipt);
+    let completion = Entry::Completed {
+        item: item.clone(),
+        completion: Completion::Included {
+            tx_hash,
+            block_number: 112,
+        },
+    };
+    append_entry(&mut journal, &completion);
+    assert_journal_refusal(&mut journal, &receipt);
+    assert_journal_refusal(&mut journal, &completion);
+    assert_journal_refusal(&mut journal, &inbound_submission(6));
+    let burn = Observation::outbound(
+        &vector(),
+        Position {
+            block_number: 28,
+            block_hash: [0x1c; 32],
+        },
+    );
+    let burn_item = burn.key();
+    append_entry(
+        &mut journal,
+        &Entry::Observed {
+            item: burn_item.clone(),
+            observation: burn,
+        },
+    );
+    append_entry(
+        &mut journal,
+        &Entry::RecipientResolved {
+            item: burn_item.clone(),
+            key: base58(RECIPIENT_KEY),
+        },
+    );
+    let (raw, signature) = signed_release(BLOCKHASH_FIRST);
+    append_entry(
+        &mut journal,
+        &Entry::ReleaseSubmitted {
+            item: burn_item.clone(),
+            fee_payer: fee_payer_key().verifying_key().to_bytes(),
+            signature,
+            last_valid_block_height: 2000,
+            raw,
+        },
+    );
+    assert_journal_refusal(
+        &mut journal,
+        &Entry::Receipted {
+            item: burn_item.clone(),
+            tx_hash,
+            sequence: 7,
+            height: 112,
+        },
+    );
+    assert_eq!(
+        journal.state().items[&burn_item].releases[0].status,
+        SubmissionStatus::Pending
+    );
+    assert_eq!(
+        journal.state().items[&burn_item]
+            .pending_release()
+            .map(|release| release.signature),
+        Some(signature)
+    );
+}
+
+#[test]
+fn an_inbound_completion_without_a_receipt_preserves_the_existing_landed_status() {
+    let (mut journal, item, tx_hash) = deposit_journal("receipt-legacy-completion");
+    append_entry(
+        &mut journal,
+        &Entry::Completed {
+            item: item.clone(),
+            completion: Completion::Included {
+                tx_hash,
+                block_number: 112,
+            },
+        },
+    );
+    assert_eq!(
+        journal.state().items[&item].submissions[0].status,
+        SubmissionStatus::Landed
+    );
+    assert_eq!(journal.state().items[&item].pending(), None);
+    assert_eq!(
+        Journal::open(journal.path())
+            .unwrap_or_else(|error| panic!("journal replay: {error}"))
+            .state(),
+        journal.state()
+    );
 }
