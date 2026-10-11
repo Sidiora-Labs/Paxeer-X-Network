@@ -106,6 +106,8 @@ const V610Upgrade = "v6.10"
 // embedded tag list.
 const V611Upgrade = layerxcustodytypes.GovernanceActivationUpgrade
 
+const MergeUpgrade = "v7.0"
+
 // The governance voting periods the v6.10 plan writes. Every other governance
 // parameter, the deposit and the tally parameters among them, is left as the
 // plan finds it.
@@ -411,10 +413,30 @@ func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
 	}
 }
 
+func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
+	return evmkeeper.CustomPrecompileActivation{
+		Upgrade: MergeUpgrade,
+		Modules: map[common.Address][]string{
+			common.HexToAddress("0x000000000000000000000000000000000000101A"): {"layerxledger"},
+			common.HexToAddress("0x000000000000000000000000000000000000101B"): {"layerxpay"},
+			common.HexToAddress("0x000000000000000000000000000000000000101C"): {"layerxauth"},
+			common.HexToAddress("0x000000000000000000000000000000000000101D"): {"layerxprograms"},
+			common.HexToAddress("0x0000000000000000000000000000000000000901"): {},
+			common.HexToAddress("0x0000000000000000000000000000000000000902"): {},
+			common.HexToAddress("0x0000000000000000000000000000000000000903"): {layerxexchangetypes.ModuleName},
+			common.HexToAddress("0x0000000000000000000000000000000000000904"): {},
+			common.HexToAddress("0x0000000000000000000000000000000000000905"): {"layerxagent"},
+			common.HexToAddress("0x0000000000000000000000000000000000000906"): {"layerxpay"},
+			common.HexToAddress("0x0000000000000000000000000000000000000907"): {xwebtypes.ModuleName},
+			common.HexToAddress("0x0000000000000000000000000000000000000908"): {},
+		},
+	}
+}
+
 // knownUpgradePlans names, in the order they apply, the plans the application
 // applies from the upgrade info file an operator leaves on disk.
 func knownUpgradePlans() []string {
-	return []string{ActivationUpgrade, V610Upgrade, V611Upgrade}
+	return []string{ActivationUpgrade, V610Upgrade, V611Upgrade, MergeUpgrade}
 }
 
 // upgradePlanPending reports whether the named plan is one of those the

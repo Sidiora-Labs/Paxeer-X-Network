@@ -109,6 +109,43 @@ func TestActivationUpgradeIsRegisteredBesideTheTagList(t *testing.T) {
 	require.True(t, a.UpgradeKeeper.HasHandler(sidioraFeeTokenUpgrade))
 }
 
+func TestMergePlanIsRegisteredBesideTheTagList(t *testing.T) {
+	require.Equal(t, "v7.0", MergeUpgrade)
+	require.Equal(t, []string{ActivationUpgrade, V610Upgrade, V611Upgrade, MergeUpgrade}, knownUpgradePlans())
+
+	tags, err := f.ReadFile("tags")
+	require.NoError(t, err)
+	names := parseUpgradesList(string(tags))
+	require.NotContains(t, names, MergeUpgrade)
+	require.Equal(t, xwebUpgrade, LatestUpgrade)
+	require.Equal(t, LatestUpgrade, names[len(names)-1])
+	require.Equal(t, 1, semver.Compare(MergeUpgrade, V611Upgrade))
+
+	gate := mergePrecompileGate()
+	require.Equal(t, MergeUpgrade, gate.Upgrade)
+	want := []common.Address{
+		common.HexToAddress("0x101A"),
+		common.HexToAddress("0x101B"),
+		common.HexToAddress("0x101C"),
+		common.HexToAddress("0x101D"),
+		common.HexToAddress("0x0901"),
+		common.HexToAddress("0x0902"),
+		common.HexToAddress("0x0903"),
+		common.HexToAddress("0x0904"),
+		common.HexToAddress("0x0905"),
+		common.HexToAddress("0x0906"),
+		common.HexToAddress("0x0907"),
+		common.HexToAddress("0x0908"),
+	}
+	got := make([]common.Address, 0, len(gate.Modules))
+	activation := activationPrecompileGate()
+	for addr := range gate.Modules {
+		got = append(got, addr)
+		require.NotContains(t, activation.Modules, addr)
+	}
+	require.ElementsMatch(t, want, got)
+}
+
 func TestActivationStoreUpgradesMountEveryForkStore(t *testing.T) {
 	upgrades, ok := layerxStoreUpgrades(ActivationUpgrade)
 	require.True(t, ok)
