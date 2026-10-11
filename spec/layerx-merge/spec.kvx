@@ -40191,7 +40191,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.20]
 title = "Gateway maintained receipt reads keep hash-identified batches under receipt key selection"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = ["0.15"]
 reqs = ["9024.1", "9024.2", "9026.1"]

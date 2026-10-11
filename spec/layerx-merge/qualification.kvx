@@ -819,3 +819,10 @@ command = "go test -count=1 ./rpc/ -run TestResolutionPendingSubscription -v"
 exit_code = 0
 log_path = "logs/0.21-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; emit resets the lag counter and attaches the count to the next queued hash rather than the forwarder resetting it, so the marker never overtakes hashes already buffered; the overflow acceptance sentence is added to acceptance.13.3.2 by the leader because workers do not edit the spec."
+
+[finding.0.20]
+revision = "011d6704b"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys maintained_hash_batch_id_verifies_with_single_and_two_key_lists"
+exit_code = 0
+log_path = "logs/0.20-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; AuthorityFacts carries a crate-private authenticated batch number set by MaintainedBatchDocument::authorize_with_keys from the signed header, the height-encoded path is unchanged, and workspace clippy stops at eight pre-existing errors in layerx-platform-internal; gateway tests need a redis-server binary that is not on the build host PATH."
