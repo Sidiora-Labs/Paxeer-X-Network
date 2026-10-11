@@ -53,44 +53,62 @@ type SendConfig struct {
 }
 
 // pendingTxListenerBuffer1315 is how many receipted hashes a newPendingTransactions subscriber may
-// lag behind before it is dropped.
+// lag behind before further hashes are dropped for it and counted as lag.
 const pendingTxListenerBuffer1315 = 1024
+
+// pendingTx1315 is one receipted hash queued for a subscriber, with the number of hashes dropped for
+// that subscriber between the previous queued hash and this one.
+type pendingTx1315 struct {
+	hash   common.Hash
+	lagged uint64
+}
+
+// pendingTxListener1315 is one newPendingTransactions subscriber. lagged counts the hashes dropped
+// since the last queued one; it is guarded by the feed lock.
+type pendingTxListener1315 struct {
+	queue  chan pendingTx1315
+	lagged uint64
+}
+
+// pendingTxLag1315 is the notification a subscriber receives in place of the hashes dropped while
+// its buffer was full, so the client can resynchronise through pending-block reads.
+type pendingTxLag1315 struct {
+	Lagged hexutil.Uint64 `json:"lagged"`
+}
 
 // pendingTxFeed1315 fans receipted transaction hashes out to newPendingTransactions subscribers.
 // receiptMu is held across Accept and emit so hashes leave in receipt order.
 type pendingTxFeed1315 struct {
 	receiptMu sync.Mutex
 	mu        sync.Mutex
-	listeners map[rpc.ID]chan common.Hash
+	listeners map[rpc.ID]*pendingTxListener1315
 }
 
-func (f *pendingTxFeed1315) add(id rpc.ID) <-chan common.Hash {
-	listener := make(chan common.Hash, pendingTxListenerBuffer1315)
+func (f *pendingTxFeed1315) add(id rpc.ID) <-chan pendingTx1315 {
+	listener := &pendingTxListener1315{queue: make(chan pendingTx1315, pendingTxListenerBuffer1315)}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listeners[id] = listener
-	return listener
+	return listener.queue
 }
 
 func (f *pendingTxFeed1315) remove(id rpc.ID) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if listener, ok := f.listeners[id]; ok {
-		close(listener)
-		delete(f.listeners, id)
-	}
+	delete(f.listeners, id)
 }
 
-// emit hands hash to every subscriber; a subscriber whose buffer is full is closed and dropped.
+// emit hands hash to every subscriber. A subscriber whose buffer is full stays registered: the hash
+// is dropped for it and counted as lag, reported ahead of the next hash it is handed.
 func (f *pendingTxFeed1315) emit(hash common.Hash) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for id, listener := range f.listeners {
+	for _, listener := range f.listeners {
 		select {
-		case listener <- hash:
+		case listener.queue <- pendingTx1315{hash: hash, lagged: listener.lagged}:
+			listener.lagged = 0
 		default:
-			close(listener)
-			delete(f.listeners, id)
+			listener.lagged++
 		}
 	}
 }
@@ -121,7 +139,7 @@ func NewSendAPI(
 	watermarks *WatermarkManager,
 ) *SendAPI {
 	if sendConfig.Sequencer != nil && sendConfig.pendingTxs == nil {
-		sendConfig.pendingTxs = &pendingTxFeed1315{listeners: make(map[rpc.ID]chan common.Hash)}
+		sendConfig.pendingTxs = &pendingTxFeed1315{listeners: make(map[rpc.ID]*pendingTxListener1315)}
 	}
 	return &SendAPI{
 		tmClient:         tmClient,
@@ -282,6 +300,12 @@ func (s *SendAPI) acceptOnSequencer(tx *ethtypes.Transaction) error {
 // NewPendingTransactions serves eth_subscribe newPendingTransactions on the sequencer: the hash of
 // every transaction receipted after the subscription, in receipt order. Every other node refuses
 // it with ErrPendingServedBySequencer.
+//
+// A subscriber may lag pendingTxListenerBuffer1315 (1024) hashes behind; hashes receipted while its
+// buffer is full are dropped for it. Ahead of the next hash it receives after a drop it receives one
+// lag notification {"lagged": "0x<count>"} carrying the number of hashes dropped, then hashes
+// resume in receipt order. The subscription stays live until the client unsubscribes or the
+// connection closes.
 func (s *SendAPI) NewPendingTransactions(ctx context.Context) (sub *rpc.Subscription, err error) {
 	startTime := time.Now()
 	defer func() {
@@ -302,11 +326,13 @@ func (s *SendAPI) NewPendingTransactions(ctx context.Context) (sub *rpc.Subscrip
 		defer feed.remove(rpcSub.ID)
 		for {
 			select {
-			case hash, ok := <-listener:
-				if !ok {
-					return
+			case pending := <-listener:
+				if pending.lagged > 0 {
+					if err := notifier.Notify(rpcSub.ID, pendingTxLag1315{Lagged: hexutil.Uint64(pending.lagged)}); err != nil {
+						return
+					}
 				}
-				if err := notifier.Notify(rpcSub.ID, hash); err != nil {
+				if err := notifier.Notify(rpcSub.ID, pending.hash); err != nil {
 					return
 				}
 			case <-rpcSub.Err():

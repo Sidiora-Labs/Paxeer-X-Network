@@ -2,8 +2,11 @@ package evmrpc_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -277,4 +280,162 @@ func TestResolutionPendingSubscription(t *testing.T) {
 	fullNode := resolutionInProc1315(t, resolutionSendAPI1315(h, &evmrpc.SendConfig{}))
 	_, err = fullNode.EthSubscribe(ctx, make(chan common.Hash), "newPendingTransactions")
 	requireRPCError1315(t, err, -32000, "pending served by sequencer")
+}
+
+// resolutionStallConn1315 is the server end of an in-process JSON-RPC connection whose writes block
+// while stalled, as they do when the client stops reading its socket.
+type resolutionStallConn1315 struct {
+	in      *io.PipeReader
+	out     *io.PipeWriter
+	mu      sync.Mutex
+	gate    chan struct{}
+	blocked chan struct{}
+}
+
+func (c *resolutionStallConn1315) Read(b []byte) (int, error) { return c.in.Read(b) }
+
+func (c *resolutionStallConn1315) Write(b []byte) (int, error) {
+	c.mu.Lock()
+	gate := c.gate
+	c.mu.Unlock()
+	if gate != nil {
+		select {
+		case c.blocked <- struct{}{}:
+		default:
+		}
+		<-gate
+	}
+	return c.out.Write(b)
+}
+
+func (c *resolutionStallConn1315) Close() error {
+	c.resume()
+	_ = c.in.Close()
+	return c.out.Close()
+}
+
+func (c *resolutionStallConn1315) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *resolutionStallConn1315) stall() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gate == nil {
+		c.gate = make(chan struct{})
+	}
+}
+
+func (c *resolutionStallConn1315) resume() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gate != nil {
+		close(c.gate)
+		c.gate = nil
+	}
+}
+
+// resolutionStallable1315 serves the given eth service to a client over a connection whose server
+// writes can be stalled.
+func resolutionStallable1315(t *testing.T, service any) (*rpc.Client, *resolutionStallConn1315) {
+	t.Helper()
+	srv := rpc.NewServer()
+	require.NoError(t, srv.RegisterName("eth", service))
+	toServer, fromClient := io.Pipe()
+	toClient, fromServer := io.Pipe()
+	conn := &resolutionStallConn1315{in: toServer, out: fromServer, blocked: make(chan struct{}, 1)}
+	go srv.ServeCodec(rpc.NewCodec(conn), 0)
+	c, err := rpc.DialIO(context.Background(), toClient, fromClient)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		srv.Stop()
+		c.Close()
+		_ = toClient.Close()
+		_ = fromClient.Close()
+	})
+	return c, conn
+}
+
+func TestResolutionPendingSubscriptionOverflow(t *testing.T) {
+	sender := occutils.NewSigner()
+	h := newSendSeqHarness(t, sender)
+	to := common.BytesToAddress(sendSeqLabel("resolution overflow recipient")[:20])
+	cfg := &evmrpc.SendConfig{Sequencer: h.accepter}
+	httpAPI := resolutionSendAPI1315(h, cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	ws, conn := resolutionStallable1315(t, resolutionSendAPI1315(h, cfg))
+	notes := make(chan json.RawMessage, 16)
+	sub, err := ws.EthSubscribe(ctx, notes, "newPendingTransactions")
+	require.NoError(t, err)
+	defer sub.Unsubscribe()
+
+	nonce := uint64(0)
+	send := func() common.Hash {
+		etx, raw := sendSeqTransfer(t, sender, nonce, to, big.NewInt(1), sendSeqTransferGas)
+		nonce++
+		hash, err := httpAPI.SendRawTransaction(ctx, raw)
+		require.NoError(t, err)
+		require.Equal(t, etx.Hash(), hash)
+		return hash
+	}
+	next := func(what string) json.RawMessage {
+		select {
+		case note := <-notes:
+			return note
+		case err := <-sub.Err():
+			t.Fatalf("subscription ended before %s: %v", what, err)
+		case <-ctx.Done():
+			t.Fatalf("%s not delivered: %v", what, ctx.Err())
+		}
+		return nil
+	}
+	requireHash := func(want common.Hash, what string) {
+		var got common.Hash
+		require.NoError(t, json.Unmarshal(next(what), &got), what)
+		require.Equal(t, want, got, what)
+	}
+
+	// The first hash reaches the client, so the subscription is active.
+	requireHash(send(), "the first hash")
+
+	// The client stops reading: the forwarder blocks writing the next hash, the buffer then fills
+	// and every further hash is dropped for this subscriber.
+	conn.stall()
+	delivered := []common.Hash{send()}
+	select {
+	case <-conn.blocked:
+	case <-ctx.Done():
+		t.Fatalf("forwarder never wrote to the stalled connection: %v", ctx.Err())
+	}
+	for i := 0; i < 1024; i++ {
+		delivered = append(delivered, send())
+	}
+	const dropped = 5
+	for i := 0; i < dropped; i++ {
+		send()
+	}
+
+	conn.resume()
+	for i, want := range delivered {
+		requireHash(want, "buffered hash "+hexutil.EncodeUint64(uint64(i)))
+	}
+
+	// Delivery continues: one lag notification with the exact dropped count, then every later hash
+	// in receipt order.
+	later := []common.Hash{send(), send(), send()}
+	require.JSONEq(t, `{"lagged":"0x5"}`, string(next("the lag notification")))
+	for i, want := range later {
+		requireHash(want, "later hash "+hexutil.EncodeUint64(uint64(i)))
+	}
+	select {
+	case extra := <-notes:
+		t.Fatalf("unexpected notification %s after the later hashes", extra)
+	case err := <-sub.Err():
+		t.Fatalf("subscription ended after the later hashes: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.Len(t, h.accepter.receipts, 1+len(delivered)+dropped+len(later))
+
+	// The feed still holds the listener: a hash receipted after the lag reaches the subscriber.
+	requireHash(send(), "the hash after the lag")
 }
