@@ -798,6 +798,13 @@ fn submission_refusals_are_4xx_and_an_unreachable_node_is_5xx() -> TestResult {
     );
     lines.push("/submit 422");
     assert_eq!(harness.recorded.sent().len(), 1);
+    let hash = hex(&keccak(&harness.recorded.sent()[0]));
+    assert_eq!(
+        harness.post("/submit", &submission)?,
+        (422, json!({"error": "refused"}))
+    );
+    lines.push("/submit 422");
+    assert_eq!(harness.recorded.sent().len(), 1);
     harness.recorded.phase("unreachable");
     assert_eq!(
         harness.post("/submit", &submission)?,
@@ -805,6 +812,19 @@ fn submission_refusals_are_4xx_and_an_unreachable_node_is_5xx() -> TestResult {
     );
     lines.push("/submit 503");
     assert_eq!(harness.recorded.sent().len(), 1);
+    assert_eq!(
+        harness.post("/status", &harness.status_body(&quote))?,
+        (
+            200,
+            json!({
+                "state": "refused",
+                "deadline": "1019",
+                "submission": {"sponsorNonce": "5", "transactionHash": hash},
+                "completion": null,
+            })
+        )
+    );
+    lines.push("/status 200");
     harness.assert_log_clean(&lines);
     harness.finish()
 }

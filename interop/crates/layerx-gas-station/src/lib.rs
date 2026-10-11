@@ -16,18 +16,21 @@
 //! it to the station. Quote, admission, transaction, receipt and liability
 //! transitions are keyed by sponsor and quote nonce.
 //! Quotes persist reservations and signatures. Signing intents reserve nonces
-//! and replacement fee ceilings before the actual signer runs; an uncertain
-//! signing outcome retains that capacity and refuses further signing. Prepared entries persist the
-//! transaction nonce, hash and exact signed bytes; legacy released entries are
-//! refused because rejection cannot invalidate a signed transaction. A replaced entry persists the
-//! fee and signed bytes of the zero-value self-transfer that fills the sponsor
-//! nonce of a dropped or expired submission, written before it is broadcast; a
-//! cancelled entry records that replacement's inclusion; completion records
-//! contain consumed, included, reverted or cancelled outcomes. No key,
-//! endpoint or credential is serialized. Entries are flushed and synced before
-//! publication or broadcast. Exclusive locking prevents simultaneous writers;
-//! corrupt or torn lines fail closed. Restart replays policy reservations,
-//! rebroadcasts the saved bytes and resumes each replacement from the journal.
+//! before the actual signer runs; an uncertain signing outcome retains that
+//! capacity and refuses further signing. Prepared entries persist the
+//! transaction nonce, hash and exact signed bytes. No submission is ever
+//! replaced at its sponsor nonce: a definitive send refusal of which the
+//! sequencer holds no record, or a hash the sequencer does not know past its
+//! quote deadline, is persisted as a refused entry that closes the item,
+//! releases its liability and frees its sponsor nonce for the next submission;
+//! a resubmission of refused bytes is itself refused. A journal holding the
+//! retired replacement, cancellation or release records of an earlier version
+//! is refused on replay. Completion records contain consumed, included or
+//! reverted outcomes. No key, endpoint or credential is serialized. Entries are
+//! flushed and synced before publication or broadcast. Exclusive locking
+//! prevents simultaneous writers; corrupt or torn lines fail closed. Restart
+//! replays policy reservations and advances each unresolved submission from its
+//! finalized receipt or sequencer record, sending only its saved bytes.
 //! Active PAX liability is released only by an exact retained finalized receipt
 //! or finalized chain-time expiry of a tracked quote with no signing intent.
 //! A consumed quote releases only with an exact canonical finalized getter proof

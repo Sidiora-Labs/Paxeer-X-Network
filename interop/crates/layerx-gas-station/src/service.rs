@@ -615,6 +615,7 @@ where
             })
         };
         let (state, outcome) = match status.completion {
+            None if status.refused => ("refused", Value::Null),
             None => match status.submission {
                 None => ("quoted", Value::Null),
                 Some((nonce, hash)) => {
