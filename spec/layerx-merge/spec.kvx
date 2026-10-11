@@ -7342,7 +7342,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.4.9]
 title = "0x101B ABI and Solidity interface"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = []
@@ -11374,7 +11374,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.4.8]
 title = "Launchpad precompile tests for major 2"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["3.2.11"]
@@ -15238,7 +15238,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3.4]
 title = "Fixed per-method gas table for 0x101D"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.1"]
@@ -25071,7 +25071,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.8]
 title = "Scheduler keeper hook: due-job execution at block end"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -41887,7 +41887,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.117]
 title = "Gas station image fetches the receipt keys and refuses a bad configuration before either process starts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.108", "0.110"]
