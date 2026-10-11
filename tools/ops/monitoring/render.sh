@@ -9,6 +9,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 HOSTS="" COMET_METRICS_PORT=26660 NODE_EXPORTER_PORT=9100 KERNEL_READYZ_URLS="" EDGE_CERT_URLS=""
 SEQUENCER_PRIMARY_READYZ_URLS="" SEQUENCER_STANDBY_READYZ_URLS="" AUTHORITY_METRICS_URLS=""
+KEEPER_METRICS_URLS="" FEEDER_METRICS_URLS="" PAXAI_WORKER_METRICS_URLS="" AI_EVALUATOR_METRICS_URLS=""
+X_WEBSEARCH_METRICS_URLS="" WALLET_ATTESTOR_METRICS_URLS="" EXPLORER_INDEX_HEAD_URLS="" STREAM_METER_PROVIDER_URLS=""
 ALERT_WEBHOOK_URL="" ALERT_EMAIL_TO="" ALERT_EMAIL_FROM="" ALERT_SMTP_SMARTHOST="" ALERT_SMTP_USERNAME="" ALERT_SMTP_PASSWORD=""
 # shellcheck disable=SC1090
 . "$env_file"
@@ -64,6 +66,14 @@ url_targets "$KERNEL_READYZ_URLS" keep >"$out/targets/readyz.json"
 url_targets "$SEQUENCER_PRIMARY_READYZ_URLS" keep primary >"$out/targets/sequencer-primary-readyz.json"
 url_targets "$SEQUENCER_STANDBY_READYZ_URLS" keep standby >"$out/targets/sequencer-standby-readyz.json"
 url_targets "$AUTHORITY_METRICS_URLS" keep >"$out/targets/authority-metrics.json"
+url_targets "$KEEPER_METRICS_URLS" keep >"$out/targets/keeper-metrics.json"
+url_targets "$FEEDER_METRICS_URLS" keep >"$out/targets/feeder-metrics.json"
+url_targets "$PAXAI_WORKER_METRICS_URLS" keep >"$out/targets/paxai-worker-metrics.json"
+url_targets "$AI_EVALUATOR_METRICS_URLS" keep >"$out/targets/ai-evaluator-metrics.json"
+url_targets "$X_WEBSEARCH_METRICS_URLS" keep >"$out/targets/x-websearch-metrics.json"
+url_targets "$WALLET_ATTESTOR_METRICS_URLS" keep >"$out/targets/wallet-attestor-metrics.json"
+url_targets "$EXPLORER_INDEX_HEAD_URLS" keep explorer-index-head >"$out/targets/explorer-index-head.json"
+url_targets "$STREAM_METER_PROVIDER_URLS" keep stream-meter >"$out/targets/stream-meter-providers.json"
 url_targets "$EDGE_CERT_URLS" strip >"$out/targets/certs.json"
 
 receivers=""

@@ -56,7 +56,7 @@ scrape_configs:
   - job_name: receipt-authority
     file_sd_configs:
       - files: [/etc/prometheus/targets/authority-metrics.json]
-    relabel_configs:
+    relabel_configs: &metrics_url_relabel
       - source_labels: [__address__]
         target_label: instance
       - source_labels: [__address__]
@@ -78,6 +78,50 @@ scrape_configs:
       module: [tls_cert]
     file_sd_configs:
       - files: [/etc/prometheus/targets/certs.json]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: keeper
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/keeper-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: feeder
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/feeder-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: paxai-worker
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/paxai-worker-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: ai-evaluator
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/ai-evaluator-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: x-websearch
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/x-websearch-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: wallet-attestors
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/wallet-attestor-metrics.json]
+    relabel_configs: *metrics_url_relabel
+
+  - job_name: service-probe
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/explorer-index-head.json, /etc/prometheus/targets/stream-meter-providers.json]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
