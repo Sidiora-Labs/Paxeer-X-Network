@@ -29,6 +29,7 @@ var (
 	DenomsPrefixKey            = "denoms"
 	CreatorPrefixKey           = "creator"
 	AdminPrefixKey             = "admin"
+	DenomPausedPrefixKey       = "paused"
 	CreateDenomFeeWhitelistKey = "createdenomfeewhitelist"
 	DenomAllowListMaxSizeKey   = []byte("allowlistmaxsize")
 )
@@ -48,4 +49,9 @@ func GetCreatorPrefix(creator string) []byte {
 // GetCreatorsPrefix returns the store prefix where a list of all creator addresses are stored
 func GetCreatorsPrefix() []byte {
 	return []byte(strings.Join([]string{CreatorPrefixKey, ""}, KeySeparator))
+}
+
+// GetDenomPausedKey returns the store key holding the pause flag of a specific denom
+func GetDenomPausedKey(denom string) []byte {
+	return []byte(strings.Join([]string{DenomPausedPrefixKey, denom}, KeySeparator))
 }
