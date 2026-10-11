@@ -86,6 +86,7 @@ TEST_LIBRARY := $(BUILD_DIR)/liblayerx-testing.a
 	test-ledger-receive test-ledger-send-allowance \
 	test-ledger-receipt \
 	test-asset-registry \
+	test-asset-account-grant \
 	test-asset-balance \
 	test-asset-transfer \
 	test-asset-deposit \
@@ -469,6 +470,16 @@ test-state-commitment-transition: $(BUILD_DIR)/tests/test_state_commitment_trans
 
 test-asset-registry: $(BUILD_DIR)/tests/test_asset_registry
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_registry
+
+$(BUILD_DIR)/tests/test_asset_account_grant: tests/modules/test_asset_account_grant.c \
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(LIBRARY) $(EXTRA_LDFLAGS) \
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
+
+test-asset-account-grant: $(BUILD_DIR)/tests/test_asset_account_grant
+	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_account_grant
 
 $(BUILD_DIR)/tests/test_asset_state: tests/modules/test_asset_state.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) | programs-build
