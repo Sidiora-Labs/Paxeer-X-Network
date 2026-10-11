@@ -399,3 +399,10 @@ command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-
 exit_code = 0
 log_path = "logs/0.19-verify-2.log"
 observed_and_assumption = "the gate passes and the task is landed together with 7.1.1; src/tx.rs still carries sign_cancellation, Fees::replacement, Fees::replaces and REPLACEMENT_BUMP_PERCENT with their unit test because nothing in the refusal rule needs them removed, and the crate's pedantic clippy already fails in rate.rs, rpc.rs and policy.rs before any integration target is linted."
+
+[finding.0.15]
+revision = "0189252da"
+command = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys two_key_list_verifies_historical_and_current_receipts"
+exit_code = 0
+log_path = "logs/0.15-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; read_receipt's HTTP 200 is exercised through verify_live_receipt rather than over HTTP because main.rs is a binary, program discovery proofs carry no batch height so they are checked against the configured key without a window, and pedantic clippy on the gateway stops in the hosted internal dependency (logs/0.15-clippy.log) while cargo check --all-targets passes."

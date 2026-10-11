@@ -40041,7 +40041,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.14]
 title = "Pending simulation header carries the committed parent block hash"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["9003.1", "9003.2", "9013.1"]
@@ -40065,7 +40065,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.15]
 title = "Gateway live reads select the receipt key per receipt instead of the singleton"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["9024.1", "9024.2", "9026.1"]
@@ -40115,7 +40115,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.17]
 title = "MicroBatch executor is selectable through sequencer configuration"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["9001.1", "9035.1", "9035.2"]
