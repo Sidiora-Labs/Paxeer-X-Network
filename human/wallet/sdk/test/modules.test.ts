@@ -615,6 +615,15 @@ describe('modules', () => {
       quoteUrl: `${gatewayUrl}/quote`,
       gatewayUrl,
       accessToken: () => 'session-token',
+      submissionStore: (() => {
+        const entries = new Map<string, string>();
+        return {
+          getItem: (key: string) => entries.get(key) ?? null,
+          setItem: (key: string, item: string) => {
+            entries.set(key, item);
+          },
+        };
+      })(),
     });
     const budget = await station.quote({ gasLimit: 250_000n, rate: '3114000' });
     const gasCost = 250_000n * 1_000_000_000n;
