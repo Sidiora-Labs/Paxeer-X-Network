@@ -26,6 +26,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 )
 
@@ -120,7 +121,7 @@ func NewPrecompile(keepers putils.Keepers) (*pcommon.DynamicGasPrecompile, error
 		}
 	}
 
-	return pcommon.NewDynamicGasPrecompile(newAbi, p, common.HexToAddress(AddrAddress), "addr"), nil
+	return pcommon.NewDynamicGasPrecompile(newAbi, p, common.HexToAddress(AddrAddress), "addr").WithRevertReasons(), nil
 }
 
 // RequiredGas returns the required bare minimum gas to execute the precompile.
@@ -135,7 +136,7 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 	// Needed to catch gas meter panics
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("execution reverted: %v", r)
+			err = p.refusal(ctx, fmt.Errorf("execution reverted: %v", r), "LXP_ADDR_PANIC", fmt.Sprint(r))
 		}
 	}()
 	switch method.Name {
@@ -145,30 +146,32 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 		return p.getEvmAddr(ctx, method, args, value)
 	case Associate:
 		if readOnly {
-			return nil, 0, errors.New("cannot call associate precompile from staticcall")
+			return nil, 0, p.refusal(ctx, errors.New("cannot call associate precompile from staticcall"), "LXP_ADDR_STATICCALL", Associate)
 		}
 		return p.associate(ctx, method, args, value)
 	case AssociatePubKey:
 		if readOnly {
-			return nil, 0, errors.New("cannot call associate pub key precompile from staticcall")
+			return nil, 0, p.refusal(ctx, errors.New("cannot call associate pub key precompile from staticcall"), "LXP_ADDR_STATICCALL", AssociatePubKey)
 		}
 		return p.associatePublicKey(ctx, method, args, value)
 	case BindLayerXMethod:
 		if readOnly {
-			return nil, 0, errors.New("cannot call bindLayerX from staticcall")
+			return nil, 0, p.refusal(ctx, errors.New("cannot call bindLayerX from staticcall"), "LXP_ADDR_STATICCALL", BindLayerXMethod)
 		}
 		if ctx.EVMPrecompileCalledFromDelegateCall() {
-			return nil, 0, errors.New("cannot delegatecall bindLayerX")
+			return nil, 0, p.refusal(ctx, errors.New("cannot delegatecall bindLayerX"), "LXP_ADDR_DELEGATECALL", BindLayerXMethod)
 		}
-		return p.bindLayerX(ctx, method, caller, args, value, evm)
+		ret, remainingGas, err = p.bindLayerX(ctx, method, caller, args, value, evm)
+		return ret, remainingGas, p.bindingRefusal(ctx, err)
 	case UnbindLayerXMethod:
 		if readOnly {
-			return nil, 0, errors.New("cannot call unbindLayerX from staticcall")
+			return nil, 0, p.refusal(ctx, errors.New("cannot call unbindLayerX from staticcall"), "LXP_ADDR_STATICCALL", UnbindLayerXMethod)
 		}
 		if ctx.EVMPrecompileCalledFromDelegateCall() {
-			return nil, 0, errors.New("cannot delegatecall unbindLayerX")
+			return nil, 0, p.refusal(ctx, errors.New("cannot delegatecall unbindLayerX"), "LXP_ADDR_DELEGATECALL", UnbindLayerXMethod)
 		}
-		return p.unbindLayerX(ctx, method, caller, args, value, evm)
+		ret, remainingGas, err = p.unbindLayerX(ctx, method, caller, args, value, evm)
+		return ret, remainingGas, p.bindingRefusal(ctx, err)
 	case GetLayerXDidMethod:
 		return p.getLayerXDid(ctx, method, args, value)
 	case GetEvmAddrByLayerXMethod:
@@ -193,7 +196,7 @@ func (p PrecompileExecutor) getPaxAddr(ctx sdk.Context, method *abi.Method, args
 	paxAddr, found := p.evmKeeper.GetPaxAddress(ctx, args[0].(common.Address))
 	if !found {
 		metrics.IncrementAssociationError("getPaxAddr", types.NewAssociationMissingErr(args[0].(common.Address).Hex()))
-		return nil, 0, fmt.Errorf("EVM address %s is not associated", args[0].(common.Address).Hex())
+		return nil, 0, p.refusal(ctx, fmt.Errorf("EVM address %s is not associated", args[0].(common.Address).Hex()), "LXP_ADDR_EVM_NOT_ASSOCIATED", args[0].(common.Address).Hex())
 	}
 	ret, err = method.Outputs.Pack(paxAddr.String())
 	return ret, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
@@ -216,7 +219,7 @@ func (p PrecompileExecutor) getEvmAddr(ctx sdk.Context, method *abi.Method, args
 	evmAddr, found := p.evmKeeper.GetEVMAddress(ctx, paxAddr)
 	if !found {
 		metrics.IncrementAssociationError("getEvmAddr", types.NewAssociationMissingErr(args[0].(string)))
-		return nil, 0, fmt.Errorf("pax address %s is not associated", args[0].(string))
+		return nil, 0, p.refusal(ctx, fmt.Errorf("pax address %s is not associated", args[0].(string)), "LXP_ADDR_PAX_NOT_ASSOCIATED", args[0].(string))
 	}
 	ret, err = method.Outputs.Pack(evmAddr)
 	return ret, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
@@ -305,7 +308,7 @@ func (p PrecompileExecutor) associateAddresses(ctx sdk.Context, method *abi.Meth
 	// Check that address is not already associated
 	_, found := p.evmKeeper.GetEVMAddress(ctx, paxAddr)
 	if found {
-		return nil, 0, fmt.Errorf("address %s is already associated with evm address %s", paxAddr, evmAddr)
+		return nil, 0, p.refusal(ctx, fmt.Errorf("address %s is already associated with evm address %s", paxAddr, evmAddr), "LXP_ADDR_ALREADY_ASSOCIATED", paxAddr.String())
 	}
 
 	// Associate Addresses:
@@ -398,7 +401,7 @@ func (p PrecompileExecutor) getLayerXDid(ctx sdk.Context, method *abi.Method, ar
 	evmAddr := args[0].(common.Address)
 	didPublicKey, found := p.evmKeeper.GetLayerXDid(ctx, evmAddr)
 	if !found {
-		return nil, 0, fmt.Errorf("EVM address %s is not bound to a LayerX DID", evmAddr.Hex())
+		return nil, 0, p.refusal(ctx, fmt.Errorf("EVM address %s is not bound to a LayerX DID", evmAddr.Hex()), "LXP_ADDR_EVM_NOT_BOUND", evmAddr.Hex())
 	}
 	ret, err = method.Outputs.Pack(didPublicKey, types.LayerXDid(didPublicKey))
 	return ret, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
@@ -414,7 +417,7 @@ func (p PrecompileExecutor) getEvmAddrByLayerX(ctx sdk.Context, method *abi.Meth
 	didPublicKey := args[0].([32]byte)
 	evmAddr, found := p.evmKeeper.GetEVMAddressByLayerXDid(ctx, didPublicKey)
 	if !found {
-		return nil, 0, fmt.Errorf("LayerX DID %s is not bound to an EVM address", types.LayerXDid(didPublicKey))
+		return nil, 0, p.refusal(ctx, fmt.Errorf("LayerX DID %s is not bound to an EVM address", types.LayerXDid(didPublicKey)), "LXP_ADDR_DID_NOT_BOUND", types.LayerXDid(didPublicKey))
 	}
 	ret, err = method.Outputs.Pack(evmAddr)
 	return ret, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
@@ -455,6 +458,77 @@ func (p PrecompileExecutor) getUnifiedAccount(ctx sdk.Context, method *abi.Metho
 	}
 	ret, err = method.Outputs.Pack(evmAddr, paxAddr, didPublicKey, mainAccountID)
 	return ret, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+}
+
+// layerXBindingCodes maps each binding keeper error that bindLayerX and
+// unbindLayerX surface to its registry code.
+var layerXBindingCodes = []struct {
+	err  error
+	code string
+}{
+	{types.ErrLayerXChainID, "LXP_ADDR_LAYERX_CHAIN_ID"},
+	{types.ErrLayerXSignature, "LXP_ADDR_LAYERX_SIGNATURE"},
+	{types.ErrLayerXAddressBound, "LXP_ADDR_LAYERX_ADDRESS_BOUND"},
+	{types.ErrLayerXDidBound, "LXP_ADDR_LAYERX_DID_BOUND"},
+	{types.ErrLayerXNotBound, "LXP_ADDR_LAYERX_NOT_BOUND"},
+	{types.ErrLayerXNonceExhausted, "LXP_ADDR_LAYERX_NONCE_EXHAUSTED"},
+	{types.ErrLayerXNonCanonicalKey, "LXP_ADDR_LAYERX_NON_CANONICAL_KEY"},
+	{types.ErrLayerXSignatureLength, "LXP_ADDR_LAYERX_SIGNATURE_LENGTH"},
+}
+
+// bindingRefusal maps a binding keeper error to its registry code through
+// refusal and returns any other error unchanged.
+func (p PrecompileExecutor) bindingRefusal(ctx sdk.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	for _, binding := range layerXBindingCodes {
+		if errors.Is(err, binding.err) {
+			return p.refusal(ctx, err, binding.code, "")
+		}
+	}
+	return err
+}
+
+// lxpRefusal is a refusal whose text is the LXP_ revert reason of its
+// registry code, so the reason path reverts with exactly that Error(string).
+type lxpRefusal struct {
+	reason string
+	err    error
+}
+
+func (r lxpRefusal) Error() string {
+	return r.reason
+}
+
+func (r lxpRefusal) Unwrap() error {
+	return r.err
+}
+
+// refusal returns err unchanged below the merge plan's height, so the call
+// keeps today's revert bytes and error text. From that height it returns err
+// carrying the text of LXPRevert(code, detail).
+func (p PrecompileExecutor) refusal(ctx sdk.Context, err error, code, detail string) error {
+	if !p.mergePlanActive(ctx) {
+		return err
+	}
+	reason, unpackErr := abi.UnpackRevert(pcommon.LXPRevert(code, detail))
+	if unpackErr != nil {
+		return errors.Join(err, unpackErr)
+	}
+	return lxpRefusal{reason: reason, err: err}
+}
+
+// mergePlanActive reports whether the merge plan is active at the height of
+// ctx. It reads the plan without charging the call.
+func (p PrecompileExecutor) mergePlanActive(ctx sdk.Context) bool {
+	getter, ok := p.evmKeeper.(interface {
+		UpgradeKeeper() *upgradekeeper.Keeper
+	})
+	if !ok || getter.UpgradeKeeper() == nil {
+		return false
+	}
+	return getter.UpgradeKeeper().IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), pcommon.MergeUpgrade, ctx.BlockHeight())
 }
 
 func (p PrecompileExecutor) EVMKeeper() putils.EVMKeeper {
