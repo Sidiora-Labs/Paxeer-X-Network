@@ -928,6 +928,7 @@ dependencies = [
  "ed25519-dalek",
  "layerx-crypto",
  "layerx-paxeer-verifier",
+ "layerx-programs-ai-market",
  "layerx-proof",
  "layerx-types",
  "layerx-wire",
@@ -1262,6 +1263,16 @@ name = "layerx-program-sdk"
 version = "0.1.0"
 dependencies = [
  "sha2",
+]
+
+[[package]]
+name = "layerx-programs-ai-market"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "layerx-program-sdk",
+ "sha2",
+ "spin",
 ]
 
 [[package]]
