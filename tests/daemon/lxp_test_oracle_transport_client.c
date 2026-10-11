@@ -226,7 +226,8 @@ static int oracle_read(int fd, uint16_t module, const uint8_t *key, size_t key_l
     free(witness); release_envelope(&response); return 0;
 }
 
-static int oracle_preparation(int fd, const uint8_t did[76])
+static int oracle_preparation(int fd, const uint8_t did[76],
+    uint64_t *next_account_sequence)
 {
     uint8_t request[79] = {0U, 1U, 0U, 75U};
     wire_envelope response;
@@ -238,6 +239,8 @@ static int oracle_preparation(int fd, const uint8_t did[76])
     const uint8_t *value = response.payload;
     REQUIRE(load_u16(value) == 1U && load_u16(value + 2U) == 75U &&
         memcmp(value + 4U, did, 75U) == 0 && load_u32(value + 79U) == NETWORK_ID);
+    if (next_account_sequence != NULL)
+        *next_account_sequence = load_u64(value + 83U);
     printf("preparation actor_sequence=%llu timestamp=%llu head=%llu root=",
         (unsigned long long)load_u64(value + 83U),
         (unsigned long long)load_u64(value + 91U),
@@ -359,22 +362,6 @@ static int submit_wire(int fd, const uint8_t *encoded, size_t length,
     return 1;
 }
 
-typedef struct oracle_input {
-    lx_oracle_observation observation;
-    bool emitted;
-    int fd;
-    const char *path;
-} oracle_input;
-static lxp_result poll_owned_observation(void *opaque,lx_oracle_observation *observation,bool *available)
-{
-    oracle_input *input=opaque;*available=!input->emitted;
-    if(*available){*observation=input->observation;input->emitted=true;}return LXP_OK;
-}
-static lxp_result submit_owned_observation(void *opaque,const uint8_t *bytes,size_t length)
-{
-    oracle_input *input=opaque;
-    return submit_wire(input->fd,bytes,length,input->path,LXP_OK,false,true)==0?LXP_OK:LXP_ERR_IO;
-}
 static int named_account(const char *name,uint8_t id[32])
 {
     REQUIRE(lx_account_id_from_string((const uint8_t *)name,strlen(name),id)==LXP_OK);return 0;
@@ -422,7 +409,9 @@ int main(int argc,char **argv)
         uint8_t fees[32];REQUIRE(named_account("system:fees",fees)==0);
         memcpy(account+1U,fees,32U);REQUIRE(oracle_read(fd,0U,account,sizeof(account),"fees")==0);
         REQUIRE(oracle_read(fd,0U,(const uint8_t *)"sequence",8U,"global_sequence")==0);
-        REQUIRE(oracle_preparation(fd,strncmp(operation,"read-bob",8U)==0?bob_did:did)==0);
+        REQUIRE(oracle_preparation(fd,
+            strncmp(operation, "read-bob", 8U) == 0 ? bob_did : did,
+            NULL) == 0);
         REQUIRE(close(fd)==0);return 0;
     }
     static uint8_t payload[LXP_MAX_PAYLOAD_BYTES],wire[LXP_MAX_ACTIVITY_BYTES];size_t length=0U,wire_length=0U;
@@ -465,11 +454,26 @@ int main(int argc,char **argv)
     } else {
         struct timespec now;REQUIRE(clock_gettime(CLOCK_REALTIME,&now)==0);uint64_t timestamp=(uint64_t)now.tv_sec*1000U;
         lx_oracle_observation observation={0};memcpy(observation.market_id,market_id,32U);observation.observation_sequence=strtoull(argv[5],NULL,10);observation.price.lo=100U;observation.observed_at=timestamp;observation.source_identifier=1U;
-        lx_oracle_adapter_config config={0};memcpy(config.oracle_private_key,owner.private_key,32U);config.network_id=NETWORK_ID;config.protocol_version=3U;config.transport_version=1U;config.actor_did=did;config.actor_did_length=75U;config.next_account_sequence=sequence;config.fee_limit.lo=10000U;config.maximum_observations=1U;config.not_before=timestamp;config.not_after=timestamp+300000U;
         if(strcmp(operation,"oracle")==0){
             printf("observation sequence=%llu price=100 time=%llu source=1 key=",(unsigned long long)observation.observation_sequence,(unsigned long long)timestamp);print_hex(owner.public_key,32U);puts("");
-            oracle_input input={.observation=observation,.fd=fd,.path=argv[6]};config.poll_context=config.submit_context=&input;config.poll_crossverse=poll_owned_observation;config.submit_activity=submit_owned_observation;
-            size_t submitted=0U;REQUIRE(lx_oracle_adapter_run(&config,&submitted)==LXP_OK && submitted==1U && config.next_account_sequence==sequence+1U);
+            REQUIRE(sequence != UINT64_MAX);
+            REQUIRE(lx_oracle_observation_sign(&observation,
+                owner.private_key) == LXP_OK);
+            REQUIRE(lx_oracle_transport_encode(&observation, payload) == LXP_OK);
+            length = LX_ORACLE_TRANSPORT_BYTES;
+            REQUIRE(build_oracle_activity(&owner, sequence, type, timestamp,
+                payload, length, wire, sizeof(wire), &wire_length) == 0);
+            lxp_activity activity;
+            REQUIRE(lxp_activity_decode(wire, wire_length, &activity) == LXP_OK);
+            REQUIRE(activity.account_sequence == sequence);
+            REQUIRE(lxp_hash_context_value(payload, length,
+                activity.idempotency_key) == LXP_OK);
+            REQUIRE(resign(&activity, &owner, wire, &wire_length) == 0);
+            REQUIRE(submit_wire(fd, wire, wire_length, argv[6],
+                LXP_OK, false, true) == 0);
+            uint64_t next_account_sequence;
+            REQUIRE(oracle_preparation(fd, did, &next_account_sequence) == 0);
+            REQUIRE(next_account_sequence == sequence + 1U);
         } else {
             if(strcmp(operation,"stale")==0)observation.observed_at=timestamp-60001U;
             if(strcmp(operation,"future")==0)observation.observed_at=timestamp+60000U;
