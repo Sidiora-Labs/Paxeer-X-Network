@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Version | 1.0.1 |
+| Version | 1.0.2 |
 | Revision read | 52b672ac4 |
 | Binding inputs | ADR D7, D14, D15, D17, D18, D19 |
 | Change control | Change control: changes only by amendment; each amendment raises the version. |
@@ -117,8 +117,8 @@
 | eth_newBlockFilter | committed blocks only | unchanged | rpc/filter.go:422 |
 | eth_newPendingTransactionFilter | receipted tx hashes in receipt order | stays unsupported | rpc/filter.go:445-455 |
 | eth_subscribe newHeads | committed headers only | unchanged | rpc/subscribe.go:107, :181 |
-| eth_subscribe logs | NEW logs-from-receipts stream fed by Accept, each log carries seq; committed logs not re-emitted | committed only | rpc/subscribe.go:226 |
-| eth_subscribe newPendingTransactions | NEW handler on the sequencer: receipted tx hashes in receipt order, under the standard name | unsupported | no handler today in rpc/subscribe.go (newHeads :107, logs :226) |
+| eth_subscribe logs | logs-from-receipts stream fed by the ReceiptLogFeed at the point the receipt is returned; each log carries seq; committed logs not re-emitted; a subscriber whose buffer is full receives one {"lagged": "0x<count>"} object before the next log and stays subscribed | committed only | rpc/subscribe.go:226; rpc/filter.go:213 |
+| eth_subscribe newPendingTransactions | handler on the sequencer under the standard name: receipted tx hashes in receipt order; a subscriber whose buffer is full receives one {"lagged": "0x<count>"} object before the next hash and stays subscribed | unsupported (-32000 pending served by sequencer) | rpc/send.go:309 SendAPI.NewPendingTransactions |
 | eth_getTransactionByHash | receipted tx returned with blockNumber = pending height, blockHash null | committed only | rpc/tx.go:269 |
 | debug_trace* on pending | refused | refused | rpc/simulate.go:395-396 |
 | eth_gasPrice / eth_feeHistory / eth_maxPriorityFeePerGas | base fee of the open block (fixed at L_open open) | committed values | rpc/info.go:100, :142, :292; modules/evm/keeper/fee.go:100 |

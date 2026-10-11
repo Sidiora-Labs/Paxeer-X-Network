@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Name | layerxledger (proposed 0x000000000000000000000000000000000000101A) and layerxauth (proposed 0x000000000000000000000000000000000000101C) |
-| Version | 1.0.1 |
+| Version | 1.0.2 |
 | Change control | Changes only by amendment to this contract, recorded with a new version number. |
 | Binding decisions | D2 A (derived bank address per DID and sub-account suffix; parity target is kernel sub-account parent/kind), D3 A (sdk/x/authz with a LayerX-scope Authorization, all eight authority kinds kept), D6 A (Error(string) with prefix LXP_<code>), D10 A (per-request draw lives at 0x101A); typed payExact is a send with a payment reference; EVM gas is a fixed per-method gas table |
 | Bring-up | a bring-up at the activation height; no account-state migration is required |
@@ -93,7 +93,7 @@ One line: read methods; no state written; gas per table D-G.
 | Transfer(bytes32 indexed from, bytes32 indexed to, bytes32 indexed assetId, uint128 amount, uint8 reason) | one per leg of send, payExact, draw, mint, burn | effect LXP_EFFECT_TRANSFER from lxp_ctx_emit_monetary_transfer_set src/protocol/lxp_module_ctx.c:2187-2213; emitted for send src/modules/asset/lx_asset_transfer.c:51, for draw/mint/burn src/modules/asset/lx_asset_execution.h:145 |
 | PayerGrantIssued(bytes32 indexed grantId) | grantId | event type 7, src/modules/asset/lx_asset_execution.h:374-393 |
 | PayerGrantRevoked(bytes32 indexed grantId) | grantId | event type 8, src/modules/asset/lx_asset_execution.h:394-408 |
-| PaymentDrawn(bytes32 indexed grantId, bytes32 indexed from, bytes32 indexed to, bytes32 assetId, uint128 amount, bytes32 contextHash) | the applied draw: lxp_receive fields after a successful RECEIVE | precompile log, no kernel event constant (no PaymentDrawn in the tree); data from include/layerx/lxp_ledger.h:216-227 and the transfer leg src/modules/asset/lx_asset_execution.h:369-370 |
+| PaymentDrawn(bytes32 indexed grantId, bytes32 indexed from, bytes32 indexed to, bytes32 assetId, uint128 amount, bytes32 idempotencyKey, bytes32 contextHash) | the applied draw: lxp_receive fields after a successful RECEIVE; idempotencyKey is the draw argument, non-indexed; the signed receipt effect commits sha256(data), so the key is authenticated by the receipt | precompile log, no kernel event constant (no PaymentDrawn in the tree); data from include/layerx/lxp_ledger.h:216-227 and the transfer leg src/modules/asset/lx_asset_execution.h:369-370 |
 | PaymentExact(bytes32 indexed from, bytes32 indexed to, bytes32 indexed paymentReference, bytes32 assetId, uint128 amount) | the applied payExact send; paymentReference = send idempotency_key | precompile log, no kernel event constant; data from include/layerx/lxp_ledger.h:138-150 and the transfer leg src/modules/asset/lx_asset_transfer.c:42-51 |
 
 ## D Framework fit
@@ -158,6 +158,7 @@ D-G Gas table: fixed per method, DefaultGasCost pattern (precompiles/common/prec
 | Epoch | begin and end hook module_epoch charges 1 gas, no state | src/modules/asset/lx_asset_registry.c:560-566, :580 |
 | Supply binding | after every op, issuance + total_units must equal initial supply, else LXP_FATAL_SUPPLY_MISMATCH | src/protocol/lxp_module_ctx.c:105-130 |
 | Admission | ACCOUNT_OPEN records principal sequence | src/protocol/lxp_kernel.c:427-510 |
+| Host store | the shared cgo host store keeps module values under 0x01, the last sequence at 0x02, identity sequences under 0x03, idempotency records under 0x04, module blobs under 0x05 and kernel accounts under 0x06 (key 0x06 \|\| account id, value lx_account_record_encode); the host asset runtime declares the binding authority that replaces the activity, send envelope and receiver authorization ed25519 checks | modules/lxphost/ctx.go; modules/lxphost/host.go; src/state/lxp_snapshot.c |
 
 # Precompile 2: layerxauth (0x101C)
 
