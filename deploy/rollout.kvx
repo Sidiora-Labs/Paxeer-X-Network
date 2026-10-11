@@ -188,6 +188,21 @@ railway_service = "relay-archive-b"
 health = "/healthz"
 order = 11
 
+[service.archive]
+target = "box"
+image = "paxd"
+box_role = "archive"
+box_unit = "paxd.service"
+health = "tcp:8545"
+order = 5
+
+[service.ai-evaluator]
+target = "railway"
+image = "ai-evaluator"
+railway_service = "ai-evaluator"
+health = "/healthz"
+order = 12
+
 [service.indexer]
 target = "railway"
 image = "platform-indexer"

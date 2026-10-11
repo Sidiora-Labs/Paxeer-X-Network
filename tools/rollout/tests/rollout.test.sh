@@ -24,7 +24,7 @@ plan_precedes() {
 
 "$rollout" plan --sha "$sha" >"$tmp/plan"
 mapfile -t want < <(sed -n 's/^\[service\.\(.*\)\]$/\1/p' "$manifest")
-[ "${#want[@]}" -eq 29 ] || fail "manifest has ${#want[@]} services, want 29"
+[ "${#want[@]}" -eq 31 ] || fail "manifest has ${#want[@]} services, want 31"
 mapfile -t got < <(awk 'NR > 1 {print $2}' "$tmp/plan")
 [ "${#got[@]}" -eq "${#want[@]}" ] || fail "plan lists ${#got[@]} of ${#want[@]} services"
 for s in "${want[@]}"; do
@@ -35,10 +35,10 @@ awk 'NR > 1 {print $1}' "$tmp/plan" | sort -n -c || fail "plan is not in wave or
 for s in identity router redis-router redis-internal internal-kms internal-journeys internal-payments \
 	internal-approvals internal-programs webhooks-public webhooks-ingress dashboard dashboard-web interop \
 	search-front ramp relay-archive-a relay-archive-b wallet-gateway wallet-postgres gas-station indexer \
-	intent-ingester; do
+	intent-ingester ai-evaluator; do
 	grep -qE "^ *[0-9]+ $s +railway +$s " "$tmp/plan" || fail "$s is not a railway target"
 done
-for s in kernel program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby; do
+for s in kernel program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby archive; do
 	grep -qE "^ *[0-9]+ $s +box +$s ghcr\.io/sidiora-labs/[a-z0-9-]+:${sha:0:12} unit=[a-z0-9-]+\.service host=\\\$[A-Z_]+_HOST " "$tmp/plan" ||
 		fail "$s is not a box target"
 done
@@ -49,6 +49,38 @@ awk 'NR > 1 && $2 == "kernel" {k = $1} NR > 1 && $2 == "router" {r = $1} END {ex
 plan_precedes sequencer-primary router "$tmp/plan" || fail "sequencer-primary does not precede router"
 plan_precedes sequencer-primary sequencer-standby "$tmp/plan" ||
 	fail "sequencer-standby does not follow sequencer-primary"
+plan_precedes sequencer-standby archive "$tmp/plan" || fail "archive does not follow sequencer-standby"
+plan_precedes gas-station ai-evaluator "$tmp/plan" || fail "ai-evaluator does not follow gas-station"
+grep -qE "^ *5 archive +box +archive ghcr\.io/sidiora-labs/paxd:${sha:0:12} unit=paxd\.service host=\\\$ARCHIVE_HOST health=tcp:8545$" "$tmp/plan" ||
+	fail "archive does not use its paxd image, host, unit and health check"
+grep -qE "^ *12 ai-evaluator +railway +ai-evaluator commit=$sha health=/healthz$" "$tmp/plan" ||
+	fail "ai-evaluator does not pin its hosted deployment and health check"
+python3 - "$root" "$manifest" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1]) / "tools" / "rollout"))
+from rollout import services
+
+units = {unit["name"]: unit for unit in services(sys.argv[2])}
+assert units["archive"] == {
+    "name": "archive",
+    "target": "box",
+    "image": "paxd",
+    "box_role": "archive",
+    "box_unit": "paxd.service",
+    "health": "tcp:8545",
+    "order": 5,
+}, units["archive"]
+assert units["ai-evaluator"] == {
+    "name": "ai-evaluator",
+    "target": "railway",
+    "image": "ai-evaluator",
+    "railway_service": "ai-evaluator",
+    "health": "/healthz",
+    "order": 12,
+}, units["ai-evaluator"]
+PY
 grep -qE " sequencer-primary +box +sequencer-primary .* unit=paxeer-sequencer-primary\.service host=\\\$SEQUENCER_PRIMARY_HOST " "$tmp/plan" ||
 	fail "sequencer-primary does not own its host and unit"
 grep -qE " sequencer-standby +box +sequencer-standby .* unit=paxeer-sequencer-standby\.service host=\\\$SEQUENCER_STANDBY_HOST " "$tmp/plan" ||
@@ -62,9 +94,20 @@ ROLLOUT_MANIFEST="$tmp/router-first.kvx" "$rollout" plan --sha "$sha" >"$tmp/rou
 if plan_precedes sequencer-primary router "$tmp/router-first.plan"; then
 	fail "ordering check accepted a plan listing the router before the sequencer"
 fi
+for order in 3 4; do
+	sed -e "/^\[service\.archive\]$/,/^order/s/^order = 5$/order = $order/" "$manifest" >"$tmp/archive-$order.kvx"
+	ROLLOUT_MANIFEST="$tmp/archive-$order.kvx" "$rollout" plan --sha "$sha" >"$tmp/archive-$order.plan"
+	if plan_precedes sequencer-standby archive "$tmp/archive-$order.plan"; then
+		fail "ordering check accepted archive at or before sequencer-standby"
+	fi
+done
 
 "$rollout" apply --sha "$sha" --only kernel,router >"$tmp/apply"
 [ "$(awk 'NR > 1' "$tmp/apply" | wc -l)" -eq 2 ] || fail "--only did not narrow the plan"
+"$rollout" apply --sha "$sha" --only archive,ai-evaluator >"$tmp/new-units"
+[ "$(awk 'NR > 1' "$tmp/new-units" | wc -l)" -eq 2 ] || fail "--only did not select the two new units"
+grep -qE "^ *5 archive +box +archive " "$tmp/new-units" || fail "--only misses archive"
+grep -qE "^ *12 ai-evaluator +railway +ai-evaluator " "$tmp/new-units" || fail "--only misses ai-evaluator"
 
 expect_reject() {
 	local name="$1"
