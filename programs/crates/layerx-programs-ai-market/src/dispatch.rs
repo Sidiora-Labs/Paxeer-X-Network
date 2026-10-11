@@ -9,7 +9,10 @@ use crate::registry::F01_SECTION_CAP;
 use crate::registry_ops::{self, CallContext, PolicySection};
 use crate::state::{self, RetainedResult, Section, SharedState};
 use crate::types::{Presence, RequestDigest};
-use crate::{commit_reveal, epoch, evidence, tasks, workers, MAX_STATE_BYTES};
+use crate::{
+    aggregation, closure, commit_reveal, epoch, evidence, queries, rewards, tasks, value_adapter,
+    workers, MAX_STATE_BYTES,
+};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SequencePolicy {
     Role,
@@ -700,19 +703,26 @@ const fn max_of(values: &[usize]) -> usize {
     maximum
 }
 
-/// Router scratch: at least the largest scratch any routed transition or the F01 revision
-/// rebinding needs.
-pub const SCRATCH_BYTES: usize = max_of(&[
-    epoch::ADVANCE_SCRATCH_BYTES,
-    epoch::OPEN_SCRATCH_BYTES,
+const TRANSITION_SCRATCH_BYTES: usize = max_of(&[
     tasks::SCRATCH_BYTES,
     commit_reveal::SCRATCH_BYTES,
     evidence::SEAL_SCRATCH_BYTES,
     challenge::CHALLENGE_SCRATCH_BYTES,
     authority::SCRATCH_BYTES,
     workers::CONTROL_SCRATCH_BYTES,
+    closure::SCRATCH_BYTES,
+    rewards::SCRATCH_BYTES,
     F01_SECTION_CAP + CONTROL_CAP,
     REBIND_SCRATCH_BYTES,
+]);
+/// Router scratch: at least the largest scratch any routed transition or the F01 revision
+/// rebinding needs.
+pub const SCRATCH_BYTES: usize = max_of(&[
+    epoch::ADVANCE_SCRATCH_BYTES,
+    epoch::OPEN_SCRATCH_BYTES,
+    epoch::AGGREGATE_SCRATCH_BYTES,
+    epoch::HISTORY_SCRATCH_BYTES,
+    TRANSITION_SCRATCH_BYTES + epoch::CARRY_SCRATCH_BYTES,
 ]);
 
 /// Caller-owned outputs of one routed call.
@@ -764,6 +774,9 @@ enum Step {
     },
     Retained(RetainedResult),
     Unchanged(Payload),
+    Read {
+        payload_len: usize,
+    },
 }
 
 /// Routes one direct native call to its landed feature transition and frames its result.
@@ -846,6 +859,11 @@ pub fn route(
             )
             .map(|result_len| Routed::Unchanged { result_len })
         }
+        Ok(Step::Read { payload_len }) => scratch
+            .get(..payload_len)
+            .ok_or(NON_CANONICAL)
+            .and_then(|body| queries::frame_read_result(request, visible, body, result))
+            .map(|result_len| Routed::Unchanged { result_len }),
         Err(error) => Err(error),
     };
     match framed {
@@ -907,6 +925,49 @@ fn transition(
     scratch: &mut [u8],
     event: &mut [u8],
 ) -> CodecResult<Step> {
+    if current.is_none()
+        || matches!(
+            envelope.envelope.operation.0,
+            0x0105 | 0x0111 | 0x0501..=0x0503 | 0x0701..=0x0703 | 0x0A01 | 0x0A02
+        )
+    {
+        return transition_inner(ctx, envelope, envelope_bytes, current, next, scratch, event);
+    }
+    let (inner, carry) = scratch
+        .split_at_mut_checked(TRANSITION_SCRATCH_BYTES)
+        .ok_or(crate::errors::CAPACITY)?;
+    let (mut step, written) =
+        epoch::carry_reputation(present(current)?, next, carry, |current, next| {
+            let step = transition_inner(
+                ctx,
+                envelope,
+                envelope_bytes,
+                Some(current),
+                next,
+                inner,
+                event,
+            )?;
+            let written = match &step {
+                Step::Applied { state_len, .. } => Some(*state_len),
+                _ => None,
+            };
+            Ok((step, written))
+        })?;
+    if let Step::Applied { state_len, .. } = &mut step {
+        *state_len = written.ok_or(NON_CANONICAL)?;
+    }
+    Ok(step)
+}
+
+fn transition_inner(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    envelope_bytes: &[u8],
+    current: Option<&[u8]>,
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Step> {
     let operation = envelope.envelope.operation;
     match operation.0 {
         0x0101..=0x0104 | 0x0106..=0x0109 => registry(ctx, envelope, current, next, scratch, event),
@@ -920,6 +981,7 @@ fn transition(
                 payload: Payload::Suffix,
             })
         }
+        0x010A | 0x010B => close(ctx, envelope, present(current)?, next, scratch, event),
         0x0111 => {
             match epoch::open_epoch(ctx, envelope, present(current)?, next, scratch, event)? {
                 epoch::Outcome::Opened {
@@ -967,8 +1029,139 @@ fn transition(
         0x0304 | 0x0401 | 0x0402 | 0x0901 => {
             assessment(ctx, envelope, present(current)?, next, scratch, event)
         }
+        0x0501..=0x0503 | 0x0601..=0x0605 | 0x0701..=0x0703 => {
+            settlement(ctx, envelope, present(current)?, next, scratch, event)
+        }
+        0x0A01 | 0x0A02 => read(ctx, envelope, present(current)?, scratch),
         _ => Err(UNKNOWN_OPERATION),
     }
+}
+
+fn close(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Step> {
+    match closure::apply(ctx, envelope, current, next, scratch, event)? {
+        closure::Outcome::Applied {
+            receipt,
+            revision,
+            state_len,
+            event_len,
+            effect,
+            ..
+        } => {
+            if effect != rewards::RewardEffect::NoTransfer {
+                let before = state::decode_shared_state(current)?;
+                let after =
+                    state::decode_shared_state(next.get(..state_len).ok_or(NON_CANONICAL)?)?;
+                let before = state::settlement_rewards(&before, None)?.ledger()?;
+                let after = state::settlement_rewards(&after, None)?.ledger()?;
+                let bound = value_adapter::RewardsAccount::for_ledger(ctx.program, &before)?;
+                #[cfg(target_arch = "wasm32")]
+                value_adapter::settle(&bound, &before, &after, effect)?;
+                #[cfg(not(target_arch = "wasm32"))]
+                value_adapter::plan(&bound, &before, &after, effect)?;
+            }
+            Ok(Step::Applied {
+                revision,
+                state_len,
+                event_len,
+                payload: Payload::record(receipt.bytes())?,
+            })
+        }
+        closure::Outcome::Retained(retained) => Ok(Step::Retained(retained)),
+    }
+}
+
+fn settlement(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<Step> {
+    match envelope.envelope.operation.0 {
+        0x0501..=0x0503 => match epoch::aggregate(ctx, envelope, current, next, scratch, event)? {
+            aggregation::Outcome::Applied {
+                response,
+                revision,
+                state_len,
+                event_len,
+                ..
+            } => Ok(Step::Applied {
+                revision,
+                state_len,
+                event_len,
+                payload: Payload::record(response.as_bytes())?,
+            }),
+            aggregation::Outcome::AlreadyApplied { response, .. } => {
+                Ok(Step::Unchanged(Payload::record(response.as_bytes())?))
+            }
+        },
+        0x0601..=0x0605 => match rewards::apply(ctx, envelope, current, next, scratch, event)? {
+            rewards::Outcome::Applied {
+                response,
+                revision,
+                state_len,
+                event_len,
+                ..
+            } => Ok(Step::Applied {
+                revision,
+                state_len,
+                event_len,
+                payload: Payload::record(response.as_bytes())?,
+            }),
+            rewards::Outcome::AlreadyApplied { subject } => {
+                Ok(Step::Unchanged(Payload::record(&subject)?))
+            }
+            rewards::Outcome::Retained(retained) => Ok(Step::Retained(retained)),
+        },
+        0x0701..=0x0703 => match epoch::history(ctx, envelope, current, next, scratch, event)? {
+            epoch::HistoryOutcome::Applied {
+                revision,
+                state_len,
+                event_len,
+                ..
+            } => Ok(Step::Applied {
+                revision,
+                state_len,
+                event_len,
+                payload: Payload::Suffix,
+            }),
+            epoch::HistoryOutcome::Retained(retained) => Ok(Step::Retained(retained)),
+        },
+        _ => Err(UNKNOWN_OPERATION),
+    }
+}
+
+fn read(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    out: &mut [u8],
+) -> CodecResult<Step> {
+    let e = &envelope.envelope;
+    codec::compare_native_principal(e, ctx.principal)?;
+    e.check_domain(
+        ctx.chain,
+        ctx.program,
+        codec::derive_market(ctx.chain, ctx.program)?,
+    )?;
+    e.check_expiry(ctx.height)?;
+    let state = state::decode_shared_state(current)?;
+    bound_section(ctx, &state)?;
+    let header = queries::read_header(current, ctx.chain, ctx.program)?;
+    let payload_len = match e.operation {
+        READ_HEADER => codec::encode_read_header(&header, out)?,
+        READ_STATE_CHUNK => queries::read_state_chunk(current, e.payload, out)?,
+        _ => return Err(UNKNOWN_OPERATION),
+    };
+    Ok(Step::Read { payload_len })
 }
 
 fn identity(
