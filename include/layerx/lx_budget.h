@@ -125,7 +125,7 @@ typedef struct lx_budget_delegate_spend_request {
 
 typedef struct lx_budget_pull_request {
     lx_budget_spend_request spend;
-    const lxp_payer_grant *grant;
+    lxp_grant_state *grant_state;
     const lx_account *grantor;
 } lx_budget_pull_request;
 

@@ -127,7 +127,7 @@ static lxp_result pull_authorize(const lx_budget_pull_request *request,
                                  const lx_budget_record *record,
                                  uint64_t batch_timestamp)
 {
-    const lxp_payer_grant *grant = request->grant;
+    const lxp_payer_grant *grant = &request->grant_state->grant;
     lxp_result status = lxp_verify_payer_grant(grant, request->grantor);
     if (status != LXP_OK) return status;
     if (memcmp(grant->from, record->owner, 32U) != 0 ||
@@ -148,16 +148,28 @@ lxp_result lx_budget_pull_execute(lxp_module_ctx *ctx,
                                   lxp_receipt *receipt)
 {
     lx_budget_record *record;
+    lxp_grant_state drawn;
+    uint64_t batch_timestamp;
     lxp_result status;
-    if (ctx == NULL || request == NULL || request->grant == NULL ||
+    if (ctx == NULL || request == NULL || request->grant_state == NULL ||
         request->grantor == NULL || request->spend.store == NULL ||
         request->spend.budget_id == NULL || request->spend.recipient == NULL)
         return LXP_ERR_GRANT_SCOPE_VIOLATION;
+    batch_timestamp = lxp_ctx_batch_timestamp_ms(ctx);
     status = lx_budget_lookup(request->spend.store,
                               request->spend.budget_id, &record);
     if (status == LXP_OK)
-        status = pull_authorize(request, record,
-                                lxp_ctx_batch_timestamp_ms(ctx));
+        status = pull_authorize(request, record, batch_timestamp);
     if (status != LXP_OK) return status;
-    return lx_budget_spend_execute(ctx, &request->spend, receipt);
+    if (request->grant_state->revoked &&
+        lxp_ctx_global_sequence(ctx) >=
+            request->grant_state->revoked_at_sequence)
+        return LXP_ERR_GRANT_REVOKED;
+    drawn = *request->grant_state;
+    status = lxp_grant_draw_record(&drawn, request->spend.amount,
+                                   batch_timestamp);
+    if (status == LXP_OK)
+        status = lx_budget_spend_execute(ctx, &request->spend, receipt);
+    if (status == LXP_OK) *request->grant_state = drawn;
+    return status;
 }
