@@ -5426,3 +5426,948 @@ fix = "Give each dispatch in a test a fresh effect buffer and a journal opened a
 area = "codify / fleet"
 symptom = "cg spec done on a 95,000-line spec takes more than ten minutes while dozens of workers build, and killing it by pattern with pkill -f also killed the shell whose command line contained the pattern."
 fix = "Under fleet load record done by editing the task status and carrying revision, command, exit code and log path in the commit message; never pkill -f a pattern that appears in the current command line."
+
+[gotcha.1171]
+area = "none"
+symptom = "task 0.1 is scheduled in wave 0 with requires=[] but depends on construct packages and the plan constant delivered by later tasks (10.0.1, 10.0.2, the construct feature tasks)."
+fix = "its requires list should name them and the wave should follow them."
+
+[gotcha.1172]
+area = "none"
+symptom = "the merge plan is a named plan without a semver tag."
+fix = "precompile gating by semver.Compare in GetCustomPrecompiles cannot express it; gating goes through the evm keeper activation entries."
+
+[gotcha.1173]
+area = "consensus/node"
+symptom = "in makeNode the dbCloser is closers[1]."
+fix = "shutdownOps closes the block and state DBs itself; any closer that must run before the stores close has to be prepended, not appended."
+
+[gotcha.1174]
+area = "consensus/node"
+symptom = "node tests default to memdb whose Close is a no-op."
+fix = "a use-after-close shows up only with cfg.DBBackend = goleveldb, and goleveldb's Close leaves a memory-pool drain goroutine alive for up to 1s, which trips a 1s leaktest."
+
+[gotcha.1175]
+area = "api/layerxauth"
+symptom = "scripts/protoc.sh runs offline from the module cache but rewrites about 180 generated .pb.go files repository-wide."
+fix = "restore every one outside the task with git checkout before committing (protoc log at logs/0.11-protoc.log)."
+
+[gotcha.1176]
+area = "node/sequencer"
+symptom = "node/sequencer cannot import package node because node/app.go will build the executor."
+fix = "the executor takes a Host interface that *node.App satisfies. Type names Config, DefaultConfig, OpenLayer, SealedLayer, SealedBlock, SeqHash, BuildReceipt and MicroBatch are reserved for sibling tasks in node/sequencer. On a failed ante, the EVM deliver path bumps the nonce through DeliverTxCallback in the per-tx branch, so a dropped branch is what keeps a refused transaction from touching the nonce."
+
+[gotcha.1177]
+area = "node/sequencer"
+symptom = "package sequencer_test shares one namespace across sibling task test files."
+fix = "generic helper names (word, label, repeat) collide after rebase; use task-prefixed helper names."
+
+[gotcha.1178]
+area = "node/sequencer"
+symptom = "state written through CommitMultiStore().CacheMultiStore().Write() after Commit did not reach an executor opened afterwards in the test app."
+fix = "do pre-open setup on the TestWrapper context before the height-1 FinalizeBlock."
+
+[gotcha.1179]
+area = "node/sequencer"
+symptom = "transient EVM receipts carry CumulativeGasUsed 0 until flush."
+fix = "the committed value is the per-block running sum of GasUsed in txIndex order."
+
+[gotcha.1180]
+area = "rpc/utils.go"
+symptom = "go build ./rpc/... does not compile node/sequencer (only rpc tests import it)."
+fix = "an executor API change can leave build green while the rpc test binary fails."
+
+[gotcha.1181]
+area = "rpc/utils.go"
+symptom = "In rpc external tests, a WatermarkManager over the global Ctx provider reports latest = Ctx height (8), not MockClient Status height (103), because Watermarks takes the minimum source."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1182]
+area = "node/sequencer"
+symptom = "cachekv Get never fills its own cache from the parent."
+fix = "a frozen cache branch is safe to read from many goroutines while a branch above it is written; only Write() on that branch (which swaps its maps without the reader lock) races with readers."
+
+[gotcha.1183]
+area = "layerxproof/codec"
+symptom = "the Go receipt decoder reads module_id/module_version after the effects."
+fix = "a layout-dependent effect bound can only be settled after the effects are decoded; the go verifier vectors (valid-0 etc.) are protocol 3, so they never select the sequencer layout."
+
+[gotcha.1184]
+area = "layerxproof/codec"
+symptom = "the kernel already pins agent asset and all other kind ids in tests/ledger/test_account_id.c."
+fix = "reuse those vectors rather than recomputing."
+
+[gotcha.1185]
+area = "node/sequencer"
+symptom = "rpc cannot import node/sequencer."
+fix = "the PendingTx struct lives in rpc/utils.go and sequencer.PendingTx is a type alias of it; node/sequencer already depends on rpc through node, so adding the import creates no cycle."
+
+[gotcha.1186]
+area = "node/sequencer"
+symptom = "replicate on a fresh link sends the whole retained window."
+fix = "Release's Ack.GapFrom..GapTo now names the ACCEPT seqs resent ahead of the group (requested by a gap answer or carried by a fresh link); this keeps TestStandbyAppliesInSeqOrder's gap assertion intact. Ack doc comment updated to match."
+
+[gotcha.1187]
+area = "node/sequencer"
+symptom = "a re-sent LEASE with an equal epoch is admitted again by the standby and re-applied/re-appended (admit refuses only a lower epoch)."
+fix = "harmless here but every fresh link repeats it."
+
+[gotcha.1188]
+area = "node/sequencer"
+symptom = "pgrep -f/pkill -f with a pattern from the current command line matches the waiting shell itself."
+fix = "wait on a PID with kill -0 instead."
+
+[gotcha.1189]
+area = "include/layerx"
+symptom = "make test-idempotency runs only journal_single_entry."
+fix = "checkpoint, legacy snapshot and restart cases run only via --checkpoint/--restart, so snapshot regressions in the idempotency codec are not caught by the declared gate."
+
+[gotcha.1190]
+area = "include/layerx"
+symptom = "lxp_snapshot_write requires the precomputed snapshot_size to equal the written length exactly."
+fix = "any change to an entry codec's size must be mirrored in lxp_snapshot.c snapshot_size and the daemon capacity estimate."
+
+[gotcha.1191]
+area = "include/layerx"
+symptom = "(1) A test target that links only liblayerx.a fails to link once the test references any kernel or governance-module symbol."
+fix = "it needs the programs runtime archive, a second liblayerx.a and -lssl -lcrypto -pthread -ldl -lm. (2) PROGRAMS_RUNTIME_LIB is defined with := near Makefile line 3400, so as a prerequisite of a rule written above that line it expands to empty; only the order-only programs-build prerequisite guarantees that the archive exists."
+
+[gotcha.1192]
+area = "include/layerx"
+symptom = "pause_fixture payload buffer was 512 bytes, too small for an encoded lxp_receive carrying a full payer grant."
+fix = "widened to 1024 in the test file."
+
+[gotcha.1193]
+area = "modules/lxphost"
+symptom = "sdk/store/rootmulti mounts StoreTypeIAVL as a DB adapter whose Commit hash is the constant 'FAKE_HASH'."
+fix = "CommitMultiStore.Commit().Hash never changes with state and app-hash equality tests through it prove nothing; programs activities at protocol version 3 need a real ed25519 signature over lxp_activity_signing_preimage even when signature_valid is set; programs/target/debug/liblayerx_programs_sandbox.a is built by make build regardless of CARGO_TARGET_DIR; lxp_result is a macro for int32_t, so cgo code must use C.int32_t, not C.lxp_result."
+
+[gotcha.1194]
+area = "api/tokenfactory"
+symptom = "(1) tx.pb.go can be regenerated for a single proto without running the whole scripts/protoc.sh."
+fix = "Build protoc-gen-gocosmos from the module cache, run buf generate with a private template that writes outside the tree and uses --path api/<module>/tx.proto, then copy only that tx.pb.go. (2) Adding an rpc to a Msg service breaks every package that asserts the keeper implements MsgServer, so the rpc line must land in the same task as its keeper handler."
+
+[gotcha.1195]
+area = "api/tokenfactory"
+symptom = "buf generate for one proto downloads grpc-gateway plugin deps on first run and can exceed two minutes."
+fix = "run it in the background."
+
+[gotcha.1196]
+area = "api/layerxledger"
+symptom = "buf generate --path finds no files under the multi-input buf.gen.yaml."
+fix = "give the input explicitly (buf generate api --path api/<module>) and copy only that module's tx.pb.go, not the whole protoc.sh copy-back."
+
+[gotcha.1197]
+area = "src/protocol"
+symptom = "preview_state_root built its preview store without copying idempotency_retention."
+fix = "any preview prune silently diverged from commit (fixed in scope: retention now copied); preview_apply_journal now calls lxp_idempotency_can_commit before lxp_idempotency_live_count so a corrupt count > max returns FATAL_INVARIANT before the live-count scan walks past the array."
+
+[gotcha.1198]
+area = "modules/layerxauth"
+symptom = "a worktree rebase onto main can land on a stale main ref while the leader is landing."
+fix = "check git log HEAD against main after rebasing and rebase again if behind."
+
+[gotcha.1199]
+area = "modules/lxphost"
+symptom = "EVM NewKeeper accepts bank Keeper as an interface and transfer Keeper as a concrete value."
+fix = "binding fixtures must match those real constructor types."
+
+[gotcha.1200]
+area = "modules/lxphost"
+symptom = "Makefile pins program runtime outputs to programs/target even when CARGO_TARGET_DIR is exported."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1201]
+area = "modules/lxphost"
+symptom = "Direct Go references to macro-backed C.lxp_u128 and C.lxp_receipt typedefs cause inconsistent cgo definitions across files."
+fix = "tagged C.struct_lxp_u128 and C.struct_lxp_receipt references pass go vet."
+
+[gotcha.1202]
+area = "tests/state"
+symptom = "governance sub-op 8 cannot issue a delegated capability while the grantor identity REVOCATION is 0, because grant validation refuses grantor_revocation_sequence 0."
+fix = "seed governance identities at REVOCATION 1 or higher before issuing grants."
+
+[gotcha.1203]
+area = "modules/lxphost"
+symptom = "the Go account codec (layerxproof/codec AccountKind) lagged the kernel's account kinds (agent ':asset:' sub-accounts, now added as kind 14 by task 0.7)."
+fix = "the retired 'asset:<hex>:issuance' seed names are still C-only, so DeriveAccountID refuses them."
+
+[gotcha.1204]
+area = "modules/lxphost"
+symptom = "cgo rejects a C struct type referenced from Go in two files of one package when the preambles include different header sets ('inconsistent definitions for C.lxp_kernel')."
+fix = "pass a void* handle instead."
+
+[gotcha.1205]
+area = "modules/lxphost"
+symptom = "lxp_bridge_credit.c registry_asset hashes 'layerx-asset:125' + symbol without the second colon, diverging from every Go and genesis asset id."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1206]
+area = "modules/tokenfactory"
+symptom = "GetTokenDenom takes (creator, subdenom)."
+fix = "validating a full denom means DeconstructDenom first, then GetTokenDenom on the parts; DeconstructDenom returns a plain sdk.ValidateDenom error, not ErrInvalidDenom, when the denom string itself is malformed."
+
+[gotcha.1207]
+area = "modules/tokenfactory"
+symptom = "a tokenfactory keeper test that calls unexported keeper methods must be in package keeper and build the keeper from sdk/testutil.DefaultContext, because importing node/apptesting from package keeper is an import cycle."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1208]
+area = "modules/layerxledger"
+symptom = "include/layerx/lxp_module.h has no LXP_MODULE_LEDGER id (ledger receipts use LXP_MODULE_ASSET, src/ledger/lxp_receipt.c:9)."
+fix = "KernelKVPrefix 0x02 covers the asset module id, and its key layout should mirror modules/lxphost/ctx.go moduleKVKey (prefix."
+
+[gotcha.1209]
+area = "api/tokenfactory"
+symptom = "the worker prompt pointed at tasks/1.2.1.md, which does not exist."
+fix = "the shared worker rules were taken from a sibling task file and the task id from the fleet table."
+
+[gotcha.1210]
+area = "api/tokenfactory"
+symptom = "tx.pb.go was restored by reverse-applying commit 58d6e02dc (the generated SetDenomPaused service code an earlier task removed) instead of rerunning scripts/protoc.sh, which rewrites generated files across the whole repository."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1211]
+area = "api/tokenfactory"
+symptom = "events.go has no paused attribute constant and is outside this task's touches."
+fix = "the event uses the literal key 'paused'."
+
+[gotcha.1212]
+area = "modules/tokenfactory"
+symptom = "the task prompt file tasks/1.2.3.md was absent."
+fix = "the block was taken from spec.kvx and the task id from the fleet table."
+
+[gotcha.1213]
+area = "modules/tokenfactory"
+symptom = "testify suite methods are subtests of TestKeeperTestSuite."
+fix = "a verify_cmd of -run TestIssuerDid needs top-level Test funcs that build the suite with SetT plus SetupTest."
+
+[gotcha.1214]
+area = "modules/layerxledger"
+symptom = "sdk/codec ProtoCodec has no MarshalJSON/UnmarshalJSON."
+fix = "use MarshalInterface/UnmarshalInterface (or MarshalAsJSON) for message round trips in tests."
+
+[gotcha.1215]
+area = "modules/layerxauth"
+symptom = "the task prompt file tasks/1.2.5.md was missing at dispatch."
+fix = "regenerated with tooling/gen-prompt.py 1.2.5 116 (fm id from fm.tsv); lxp_governance.c line citations in the spec are offset by about 12 lines from the current file (header checks at 172-180, revoke reason at 647)."
+
+[gotcha.1216]
+area = "node/upgrades.go"
+symptom = "go test ./node/ links node/sequencer."
+fix = "any sequencer compile break blocks every node-package test gate."
+
+[gotcha.1217]
+area = "node/upgrades.go"
+symptom = "0x0907 tee attestor roots belong to the layerxagent store (agent-functions.md F), not xweb."
+fix = "the earlier commit mapped it to xweb and is corrected."
+
+[gotcha.1218]
+area = "modules/evm"
+symptom = "node/app.go is the only caller of SetCustomPrecompileActivation but not in the 10.0.2 touches list, though the keeper tests import the node package and fail to compile without it."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1219]
+area = "precompiles/common"
+symptom = "DBImpl keeps its EVM keeper in an unexported field."
+fix = "precompile code that needs the upgrade keeper must reach it through the executor's EVMKeeper(); use a CacheContext in tests that call SetDone on the shared EVMTestApp so the plan does not leak into sibling tests."
+
+[gotcha.1220]
+area = "human/wallet"
+symptom = "human/apps/wallet/.prettierrc contains deprecated jsxBracketSameLine."
+fix = "Prettier succeeds with a warning."
+
+[gotcha.1221]
+area = "node/sequencer"
+symptom = "Independent NewTestWrapper instances produced different app hashes despite sharing a wrapper block time."
+fix = "the log shows different initial epoch times. Exact hash equality is an additional assertion, not the cited reference's length assertion."
+
+[gotcha.1222]
+area = "node/sequencer"
+symptom = "Existing node/sequencer nonce-queue and WAL files do not supply Accept/Open/Seal, activation wiring or pax_sequencerReceipt."
+fix = "nonce progression does not establish global sequence numbering."
+
+[gotcha.1223]
+area = "none"
+symptom = "node/sequencer/executor.go and node/sequencer/layers.go redeclare seqHashDomain and ErrLayerOpen in the same package."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1224]
+area = "none"
+symptom = "Wait for git status to finish before invoking fleet-commit.sh."
+fix = "index refresh can hold the worktree index lock."
+
+[gotcha.1225]
+area = "none in worktree; reports/12.0.11.report and logs"
+symptom = "The assigned wave-zero tx RPC task requires production sequencer ingress, signed-receipt RPC and proposal validation absent from the current tree."
+fix = "this is the dependency trap already recorded in gotcha.1157."
+
+[gotcha.1226]
+area = "none; checkout unchanged"
+symptom = "Synthetic Autobahn headers lacking canonical roots are discarded by the production notifier."
+fix = "the existing fixture cannot reach its subscription assertions."
+
+[gotcha.1227]
+area = "none in worktree"
+symptom = "the existing OCC Wasm fixture requires capability sei, which the configured VM does not provide."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1228]
+area = "none in worktree"
+symptom = "fleet-commit.sh exited 1 with nothing to commit because the required-interface stop left the worktree clean."
+fix = "no new commit was created."
+
+[gotcha.1229]
+area = "none"
+symptom = "the test-retargeting task declares no dependencies although its sequencer executor, signed-receipt API and proposal wiring are absent from the assigned checkout."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1230]
+area = "none"
+symptom = "Fleet commit helper refuses an empty checkpoint (exit 1)."
+fix = "no task commit was created."
+
+[gotcha.1231]
+area = "none"
+symptom = "The focused receipt translation gate passes unchanged helper-only tests while sequencer execution, signing and proposal ordering are absent."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1232]
+area = "node/check_total_block_gas_test.go"
+symptom = "MsgSequenceBatch lacks SDK/protobuf message methods and cannot be encoded through the app transaction builder."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1233]
+area = "node/app_test.go"
+symptom = "importing node/sequencer into external node tests exposes duplicate identifiers in its layer and executor implementations."
+fix = "the consumer cannot qualify until the owning package is reconciled."
+
+[gotcha.1234]
+area = "node/ante_test.go"
+symptom = "The generic node test consensus parameters leave MaxGasWanted at zero."
+fix = "proposal fixtures must use the real chain block parameters."
+
+[gotcha.1235]
+area = "node/ante_test.go"
+symptom = "The executor and layer builder currently declare duplicate package symbols."
+fix = "importing node/sequencer prevents the node test package from building."
+
+[gotcha.1236]
+area = "node/app.go"
+symptom = "the node test app commits consensus params with MaxGasWanted=0."
+fix = "ProcessProposal REJECTs any EVM tx unless the test stores block params before height 1 commits."
+
+[gotcha.1237]
+area = "node/app.go"
+symptom = "NewTestWrapper/TestAppOpts cannot inject node config keys."
+fix = "tests read config through ReadActivationHeight(viper) and apply it with SetActivationHeight."
+
+[gotcha.1238]
+area = "node/app.go"
+symptom = "an ACCEPTed ProcessProposal starts an optimistic ProcessBlock goroutine."
+fix = "tests must wait on GetOptimisticProcessingInfo().Completion and ClearOptimisticProcessingInfo before the next proposal."
+
+[gotcha.1239]
+area = "interop/crates"
+symptom = "Runtime startup now requires GAS_STATION_DID_GAS_LIMIT as positive canonical decimal gas units, separately from the existing token-denominated limits."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1240]
+area = "interop/crates"
+symptom = "Historical journals without DID/batch-nonce fields, or with replacement entries, fail closed during replay."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1241]
+area = "interop/crates"
+symptom = "Existing service error mapping exhaustively matches PolicyRefusal."
+fix = "DID budget exhaustion uses the existing PerAccount refusal rather than adding an unmapped variant."
+
+[gotcha.1242]
+area = "agent/crates"
+symptom = "layerx-wire::hash::sha256 is crate-private."
+fix = "external tests use the existing sha2 dependency."
+
+[gotcha.1243]
+area = "agent/crates"
+symptom = "Compact replay receipts decode only with the legacy protocol version."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1244]
+area = "agent/crates"
+symptom = "The portable-v2 target named by do_4 is omitted from this task's touches."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1245]
+area = "include/layerx"
+symptom = "Acceptance 2.9.1 counts ten activity types although the paired activity task requires eleven."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1246]
+area = "include/layerx"
+symptom = "agent/crates/layerx-types/build.rs:405 enforces ordered parity between the C result list and the Rust result table."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1247]
+area = "modules/layerxpay"
+symptom = "modules/lxphost/ctx.go reserves store prefixes 0x01 through 0x04."
+fix = "ParamsKey uses 0x05 to avoid colliding with shim iteration."
+
+[gotcha.1248]
+area = "modules/layerxpay"
+symptom = "go build can pass for a package importing lxphost while go test cannot link without the kernel and Programs runtime libraries."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1249]
+area = "modules/layerxpay"
+symptom = "The raw 416-byte service attestation is an exception to the general two-byte service payload header rule."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1250]
+area = "modules/launchpad"
+symptom = "sdk.Int{} JSON-marshals as zero."
+fix = "persisted market fixtures cannot preserve nil snapshot values."
+
+[gotcha.1251]
+area = "modules/launchpad"
+symptom = "SDK ABCIInfo follows Cause() rather than standard Unwrap()."
+fix = "owned query errors use SDK wrappers to retain refusal codes."
+
+[gotcha.1252]
+area = "modules/launchpad"
+symptom = "The counter API retirement cannot qualify independently because its declared gates compile genesis and tests whose API migrations are assigned to later tasks."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1253]
+area = "modules/launchpad"
+symptom = "The scoped launchpad acceptance and shared wire contract specify incompatible revert text."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1254]
+area = "api/layerxexchange"
+symptom = "The declared Go verify package reports exit 0 with no test files."
+fix = "this provides no behavioural qualification."
+
+[gotcha.1255]
+area = "api/layerxexchange"
+symptom = "The task requires replacing a keeper witness check while excluding that keeper file from touches."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1256]
+area = "modules/layerxexchange"
+symptom = "Go package build and vet can pass while the test binary cannot link."
+fix = "the declared Go build does not produce the native archives required by lxphost."
+
+[gotcha.1257]
+area = "modules/layerxexchange"
+symptom = "module context implementation is src/protocol/lxp_module_ctx.c."
+fix = "the committed asset helper is inline in src/modules/asset/committed.h."
+
+[gotcha.1258]
+area = "api/layerxexchange"
+symptom = "Acceptance 3.36.1 says 17 events, but the binding contract and kernel define 18."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1259]
+area = "api/layerxexchange"
+symptom = "Replacing exchange event schemas breaks existing keeper constructors."
+fix = "the types-only task build needs the separate keeper migration."
+
+[gotcha.1260]
+area = "none"
+symptom = "SandboxActivity is absent from the checkout."
+fix = "the existing submission type is SandboxSubmission. Proof removal requires production and fixture consumers omitted from the task touches."
+
+[gotcha.1261]
+area = "api/layerxprograms"
+symptom = "Metering uses nine coefficients in the binding contract and C type, while requirement 4006.3 says seven."
+fix = "Buf is absent from the prescribed PATH."
+
+[gotcha.1262]
+area = "programs/crates"
+symptom = "Task 4.2.4 lacks its admission producer dependency."
+fix = "market_protocol_boundary invokes closure::apply directly and does not cover the new dispatch arms."
+
+[gotcha.1263]
+area = "programs/crates"
+symptom = "EvidenceSealed is the prose label."
+fix = "the actual event topic is PAXAI/v1/SealEvidence."
+
+[gotcha.1264]
+area = "programs/crates"
+symptom = "changing aggregation EPOCH_HEIGHTS alone cannot retune the fixed clock and commit/reveal windows in the other source files."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1265]
+area = "programs/crates"
+symptom = "F05 tests bypass the guest dispatcher and runtime meter."
+fix = "their passing result does not prove guest reachability or fuel compliance."
+
+[gotcha.1266]
+area = "none"
+symptom = "ICS23 state proof at height H verifies against header H+1 app hash (contracts/sequencer.md:99-100)."
+fix = "a binding to header 1000 needs proof state height 999."
+
+[gotcha.1267]
+area = "modules/xweb"
+symptom = "The task requires precompile prefix changes but excludes their files from touches."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1268]
+area = "modules/xweb"
+symptom = "SDK error wrappers append source locations under fmt.Errorf with %w."
+fix = "canonical text must be recovered through the error chain."
+
+[gotcha.1269]
+area = "modules/xweb"
+symptom = "Task touches omit the precompile refusal sites required by do_4."
+fix = "the binding shared D6 mapper has no callable Go interface in this checkout."
+
+[gotcha.1270]
+area = "modules/xweb"
+symptom = "CustomPrecompiles can return nil for a fresh application."
+fix = "allocate a map before inserting the test precompile."
+
+[gotcha.1271]
+area = "modules/xweb"
+symptom = "EventManager.Events returns the named sdk.Events slice."
+fix = "[]sdk.Event snapshots fail exact equality despite identical contents."
+
+[gotcha.1272]
+area = "modules/xweb"
+symptom = "NewDBImpl snapshots create a fresh event manager."
+fix = "preserve prior events when checking EVM-call effects."
+
+[gotcha.1273]
+area = "modules/xweb"
+symptom = "Genesis validation wraps attestor refusal text in ErrInvalidGenesis and loses its error identity."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1274]
+area = "modules/xweb"
+symptom = "C intake vectors are copied arrays, and the C encoder accepts only fetch/search."
+fix = "the API vector is checked by Go and Rust."
+
+[gotcha.1275]
+area = "modules/xweb"
+symptom = "SDK wrapped errors formatted with %w include a source frame."
+fix = "sdkerrors.Wrap preserves their plain Error text."
+
+[gotcha.1276]
+area = "modules/xweb"
+symptom = "The prescribed filter omits TestRequestRefusesWrongPayment."
+fix = "it now runs as TestLXPNames/wrong_payment."
+
+[gotcha.1277]
+area = "interop/crates"
+symptom = "The declared multi-target Cargo test stops after a failed content target and leaves search unrun."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1278]
+area = "interop/crates"
+symptom = "Library lint failures prevent all-target Clippy from reaching integration-test files."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1279]
+area = "interop/crates"
+symptom = "AttestError is exhaustively matched by kernel.rs."
+fix = "adding a variant crosses ownership, so program errors must compose the existing error types."
+
+[gotcha.1280]
+area = "precompiles/xweb"
+symptom = "The existing ABI gate requires consumer files scheduled in a later task, outside this task's touches."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1281]
+area = "modules/xweb"
+symptom = "The declared verify filter excludes TestFulfilProgramSignerIdentity."
+fix = "the signature matrix runs its exact scenario as a subtest."
+
+[gotcha.1282]
+area = "modules/xweb"
+symptom = "Internal keeper tests cannot import modules/xweb/testutil because it imports keeper and node."
+fix = "the tests use the real SDK store and keeper types directly."
+
+[gotcha.1283]
+area = "precompiles/layerxagent"
+symptom = "shared Prepare returns uncoded errors before executor dispatch."
+fix = "the common adapter supplies typed refusal codes."
+
+[gotcha.1284]
+area = "precompiles/layerxagent"
+symptom = "shared RequiredGas removes the selector before executor dispatch."
+fix = "D2 gas includes all input bytes."
+
+[gotcha.1285]
+area = "precompiles/layerxagent"
+symptom = "merge plan constant lives in node."
+fix = "the common constructor receives the real upgrade keeper and plan name."
+
+[gotcha.1286]
+area = "include/layerx"
+symptom = "Task do_* lines name the payload-dependent activity hash, while its requirements, capability and binding contract require the activity idempotency key."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1287]
+area = "include/layerx"
+symptom = "The capability requires test changes that the task touches list excludes."
+fix = "the existing attestation test cannot qualify the required binding."
+
+[gotcha.1288]
+area = "include/layerx"
+symptom = "Programs Makefile overrides exported CARGO_TARGET_DIR with the checkout-local programs/target directory."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1289]
+area = "tools/ops"
+symptom = "The existing monitoring gate validates rendered configuration but has no explicit assertions for new target contents or empty inventories."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1290]
+area = "deploy/rollout.kvx"
+symptom = "deploy/rollout.kvx service sections accept only the fixed railway/box key sets in tools/rollout/rollout.py."
+fix = "per-unit settings cannot be added as manifest keys without changing the parser."
+
+[gotcha.1291]
+area = "interop/crates"
+symptom = "GasStation::new reads GAS_STATION_DID_GAS_LIMIT from the environment, and every quote resolves getLayerXDid(address) via eth_call to 0x...1004 at pending."
+fix = "Any harness that builds a station has to set the variable and answer that call, or it refuses with Invalid or panics on an unmatched replay."
+
+[gotcha.1292]
+area = "interop/crates"
+symptom = "adding a field to StationConfig breaks struct literals in tests/station.rs, tests/resolution_policy.rs and tests/service.rs."
+fix = "Put per-binary settings on ServiceConfig, or list all three test files in touches."
+
+[gotcha.1293]
+area = "interop/crates"
+symptom = "worktrees of the same repo share identical cargo artifact hashes."
+fix = "a shared CARGO_TARGET_DIR lets one worktree's build overwrite another's crate rlib and tests link stale library code; use a per-worktree target dir for a trustworthy gate."
+
+[gotcha.1294]
+area = "interop/crates"
+symptom = "the rate tests must write rate files with mode 0600 because RateFile::load refuses group or other permission bits."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1295]
+area = "interop/deploy"
+symptom = "Qualification-only reruns on a clean worktree make fleet-commit.sh exit 1 with nothing to commit."
+fix = "the existing task revision remains. Both gates used FOUNDRY_CONFIG=foundry.paxeer.toml."
+
+[gotcha.1296]
+area = "platform/hosted"
+symptom = "The referenced KMS store is Ed25519-only and cannot resolve or sign secp256k1 EVM sender handles."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1297]
+area = "platform/hosted"
+symptom = "An untyped empty-slice assertion can be ambiguous with serde_json PartialEq implementations."
+fix = "assert the exact length or specify the expected element type."
+
+[gotcha.1298]
+area = "deploy/rollout.kvx"
+symptom = "The rollout reader requires an exact service-field set and rejects additional pruning, key-handle or sponsorship configuration."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1299]
+area = "none"
+symptom = "The archive route at tools/paxeer-x/route-catalogue.json:434 still describes relay archive discovery."
+fix = "it does not identify the chain archive node described by the merge contract."
+
+[gotcha.1300]
+area = "interop/crates"
+symptom = "layerx-portable cannot depend on layerx-wire without a Cargo.toml and Cargo.lock change (fails --locked)."
+fix = "the v2 receipt digest is recomputed from the canonical signed bytes (strip trailing 01 00000040 ‖ sig, append flag 0, sha256 with 'LXP/v1/receipt\0'); the Receipt type from verify_sequencer_signature cannot be named in this crate either."
+
+[gotcha.1301]
+area = "interop/crates"
+symptom = "task file tasks/7.2.2.md was missing at dispatch."
+fix = "it was regenerated with tooling/gen-prompt.py 7.2.2 117."
+
+[gotcha.1302]
+area = "platform/hosted"
+symptom = "tests/artifact_recovery.rs and tests/artifact_service.rs include src/retention.rs via #[path]."
+fix = "a cfg(test) module in retention.rs also runs inside both integration test binaries and must only use crate::store items those test crates declare; the HTTP retention routes and the finality_observers config key are pinned by the unchanged tests, so renames need serde aliases."
+
+[gotcha.1303]
+area = "tools/ops"
+symptom = "test.sh runs a full promtool config check only through Docker (local promtool falls back to --syntax-only)."
+fix = "new file_sd target files must be rendered by render.sh or the Docker check fails on missing files."
+
+[gotcha.1304]
+area = "rpc/block.go"
+symptom = "rpc cannot reach the EVM transient store key through the keeper (no getter)."
+fix = "the pending block finds it by name (evm_transient) in the snapshot's MultiStore().StoreKeys(); the fixed Open base fee is only available when SetPendingSnapshot is given a sequencer.FeeFloor (a bare Executor makes the fee views refuse on the sequencer)."
+
+[gotcha.1305]
+area = "node/app.go"
+symptom = "the rpc package at rpc/ is named evmrpc."
+fix = "importing it needs an alias; the evm ante EVMSigVerifyDecorator ignores the LatestCtxGetter argument (modules/evm/ante/sig.go NewEVMSigVerifyDecorator takes `_ func() sdk.Context`), so the getter only affects code that calls it directly."
+
+[gotcha.1306]
+area = "consensus/internal"
+symptom = "makeState in consensus/internal/state tests sets genesis time to now."
+fix = "any fixed past header time fails validateBlock on ApplyBlock/ValidateBlock."
+
+[gotcha.1307]
+area = "none"
+symptom = "a wave 0 task with requires = [] can still depend on types created by a sibling wave 0 task."
+fix = "check that every type a do_* line names exists in the tree before dispatching it."
+
+[gotcha.1308]
+area = "node/sequencer"
+symptom = "golang.org/x/sys/unix has no Fdatasync on darwin."
+fix = "node/sequencer/wal builds on linux only."
+
+[gotcha.1309]
+area = "node/sequencer"
+symptom = "a Go package that declares an entry type named Open cannot also export a func Open."
+fix = "name the constructor OpenWAL as the consensus WAL does."
+
+[gotcha.1310]
+area = "node/sequencer"
+symptom = "package node/sequencer holds several test files with package-level helpers in sequencer_test."
+fix = "give new test helpers task-specific names to avoid redeclaration when tasks land together."
+
+[gotcha.1311]
+area = "node/sequencer"
+symptom = "a worktree branched before a dependency landed lacks it (node/sequencer/wal was missing)."
+fix = "rebase the clean worktree onto local main before starting."
+
+[gotcha.1312]
+area = "modules/sequencer"
+symptom = "a strict ed25519 verifier matching layerx-crypto already exists at layerxproof/verify (Ed25519Digest)."
+fix = "reuse it instead of crypto/ed25519.Verify, which accepts small-order keys."
+
+[gotcha.1313]
+area = "modules/sequencer"
+symptom = "keys.go has no per-block marker key."
+fix = "the keeper keeps the last delivered batch height under unexported key 0x06 in keeper.go to refuse a second batch in one block, so keys.go should adopt 0x06 if it grows. Sequencer error codes: types 2-4, keeper 5-10."
+
+[gotcha.1314]
+area = "node/sequencer"
+symptom = "test consensus params (node/test_helpers.go DefaultConsensusParams) leave MaxGasWanted at 0."
+fix = "any checkTotalBlockGas-faithful gas bound refuses every tx until the tests set the baseapp BlockParams through the params subspace; occ_tests utils.ToTxBytes signs Cosmos txs with gas 1e10, which is over MaxGasWanted, so block-limit-aware tests have to sign their own."
+
+[gotcha.1315]
+area = "modules/sequencer"
+symptom = "params ParamSetPair keys must be alphanumeric."
+fix = "the param key is 'ReceiptKeys' and types.ReceiptKeysKey (0x03) is not used for the governed list."
+
+[gotcha.1316]
+area = "modules/sequencer"
+symptom = "the Go layerxproof codec has no receipt encoder."
+fix = "tests build signed receipts by patching batch_id and context_hash in the valid-0 fixture and re-signing digest(body || 0), keeping the 5-byte signature block header."
+
+[gotcha.1317]
+area = "modules/sequencer"
+symptom = "sdkerrors.Register codes in modules/sequencer are shared by every same-wave task in the module."
+fix = "plain error sentinels avoid duplicate-code init panics."
+
+[gotcha.1318]
+area = "node/sequencer"
+symptom = "a CacheMultiStore over app.CommitMultiStore() written after Commit is not seen by the next executor Open in the node test app."
+fix = "seed pre-open state by committing one more FinalizeBlock/NewContext(false)/SetDeliverStateToCommit/Commit block and open the height after it; the fee test embeds BatchCallAndSponsor creation code compiled with forge (solc 0.8.27, OpenZeppelin 5.3.0), because the repository has no compiled artifact and contracts/ has no node_modules."
+
+[gotcha.1319]
+area = "modules/evm"
+symptom = "lowering DefaultMinFeePerGas also changes the RPC fallback gas price (rpc/info.go:372,388, rpc/subscribe.go:150, rpc/block.go:388, rpc/tx.go:446), and a live chain whose stored MinimumFeePerGas is above 67000000 now fails Params.Validate/SetParams until the activation proposal lowers it."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1320]
+area = "interop/crates"
+symptom = "- tests/fixtures/cycle.json no longer covers the station's RPC reads (finalized replay with a code override, pending eth_getCode, the addr precompile DID call)."
+fix = "every recorded-exchange station test panicked or refused until tests/station.rs added those rules at load time."
+
+[gotcha.1321]
+area = "interop/crates"
+symptom = "tests/fixtures/cycle.json predates anchored block reads (eth_getBlockByNumber latest/finalized, eth_getCode and eth_call against {blockHash, requireCanonical})."
+fix = "tests that reuse it must add those rules or every quote panics on an unmatched exchange."
+
+[gotcha.1322]
+area = "interop/crates"
+symptom = "the gas-station service writes its per-request log line after it delivered the response."
+fix = "a test reading the log right after the response can miss the last line."
+
+[gotcha.1323]
+area = "interop/crates"
+symptom = "src/rpc.rs on main was not rustfmt-clean."
+fix = "formatting it as a touched file reflows unrelated lines."
+
+[gotcha.1324]
+area = "agent/crates"
+symptom = "layerxproof/codec DecodeReceipt requires (module_id, ordinal) to strictly increase across effects and keeps MaxEffects 512."
+fix = "log effects must take ordinal = effect position (log index + 1) and the Go verifier needs the same sequencer bound."
+
+[gotcha.1325]
+area = "agent/crates"
+symptom = "clippy on any agent crate fails in layerx-types before it reaches the target crate."
+fix = "pass --no-deps to lint only the crate you own."
+
+[gotcha.1326]
+area = "rpc/send.go"
+symptom = "rpc cannot import node/sequencer (node/sequencer imports node, which imports rpc)."
+fix = "external test package evmrpc_test can, and must build its own App/executor/receipt key harness."
+
+[gotcha.1327]
+area = "rpc/sequencer_receipt.go"
+symptom = "the pax legacy HTTP gate (rpc/pax_legacy.go) fail-closes every pax_* method that is not in the gated list."
+fix = "a new pax_* method needs an exemption or it answers -32601."
+
+[gotcha.1328]
+area = "rpc/sequencer_receipt.go"
+symptom = "legacy sdk/store/rootmulti CacheMultiStoreWithVersion ignores its version argument and returns the latest state."
+fix = "historical-height tests need their own per-height state."
+
+[gotcha.1329]
+area = "rpc/simulate.go"
+symptom = "the pendingSequencer test context provider from pending_state_test.go returns committed contexts with no consensus params."
+fix = "any latest-path simulate or header read on it fails 'consensus block parameters are unavailable'; wrap it with app.GetConsensusParams the way RPCContextProvider does."
+
+[gotcha.1330]
+area = "rpc/simulate.go"
+symptom = "CheckVersion uses VersionExists(ctx.BlockHeight()), which is false for the open-block snapshot at height H+1."
+fix = "pending reads have to skip it."
+
+[gotcha.1331]
+area = "rpc/simulate.go"
+symptom = "the address 0x1234567890123456789023456789012345678901 in the shared rpc test server state is not a plain EOA (a zero-value estimate to it costs 0x52b0, not 0x5208)."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1332]
+area = "rpc/tx.go"
+symptom = "TestGetTransactionCountPendingFallsBackToLocalNonce asserted the EvmNextPendingNonce fallback that req 9019.4 forbids."
+fix = "It was rewritten as TestGetTransactionCountPendingRefusedWithoutSequencerRoute, which asserts ErrPendingServedBySequencer; the verify regex matches it by prefix."
+
+[gotcha.1333]
+area = "rpc/tx.go"
+symptom = "App.EvmNonce reads GetCheckCtx, not the open block."
+fix = "it is not a valid NonceQueue reader in sequencer mode; the tests read the nonce from Executor.Snapshot()."
+
+[gotcha.1334]
+area = "rpc/tx.go"
+symptom = "occ_tests/utils clashes with consensus/libs/utils in rpc/tx_test.go."
+fix = "import it as occutils."
+
+[gotcha.1335]
+area = "rpc/tx.go"
+symptom = "export.NewRPCTransaction leaves blockNumber, transactionIndex and the effective gas price unset for a zero block hash."
+fix = "The pending encoder passes a non-zero placeholder hash and then clears BlockHash."
+
+[gotcha.1336]
+area = "rpc/tx.go"
+symptom = "Package-level helper names in rpc collide across parallel tasks (isPendingTag)."
+fix = "give them task-specific names."
+
+[gotcha.1337]
+area = "rpc/filter.go"
+symptom = "NewFilterAPI from the external evmrpc_test package panics on a zero FilterConfig timeout (time.NewTicker(0)) and its fields are unexported."
+fix = "use evmrpc.NewFilterConfig (added in 9.0.8)."
+
+[gotcha.1338]
+area = "rpc/filter.go"
+symptom = "the sequential executor cannot hold L_N and L_open at once (Open requires LastBlockHeight+1)."
+fix = "tests needing a receipted tx in L_open above a sealed L_N build a second App at committed+1 and an executor with LastSeq/LastSeqHash continued from the first."
+
+[gotcha.1339]
+area = "rpc/subscribe.go"
+symptom = "rpc package tests bind fixed ports (7777 and up)."
+fix = "concurrent go test ./rpc/ runs in sibling worktrees panic with address already in use; TestSubscribeNewHeadsAutobahn can never pass while encodeCommittedBlock refuses every Autobahn head; geth rpc registers every exported method of a service, so setters on SubscriptionAPI would become callable eth_* methods - keep publish/attach surfaces off API types."
+
+[gotcha.1340]
+area = "consensus/internal"
+symptom = "ApplyBlock does not save the block to the block store (consensus does that first)."
+fix = "a prune test that goes through ApplyBlock must SaveBlock each height itself, or PruneBlocks fails because the height is above the store height."
+
+[gotcha.1341]
+area = "node/sequencer"
+symptom = "init.go executes initAppConfig's template against a plain CustomAppConfig."
+fix = "a new app.toml section whose template references a field not on CustomAppConfig breaks paxd init; either add the field in app_config.go or render the section with literal defaults."
+
+[gotcha.1342]
+area = "platform/hosted"
+symptom = "A focused authority integration test compiles the agentd development dependency and can stop in layerx-sdk before executing any selected case."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1343]
+area = "platform/hosted"
+symptom = "ReceiptKeys governance JSON encodes byte fields as padded base64 with snake_case names, rather than the historical hexadecimal pin files."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1344]
+area = "consensus/internal"
+symptom = "consensus enterPropose schedules a propose timeout even when the local node proposes."
+fix = "a test that waits for the next round's TimeoutPropose event can receive the previous round's event first."
+
+[gotcha.1345]
+area = "node/sequencer"
+symptom = "the task prompt file was not generated before dispatch."
+fix = "tooling/gen-prompt.py <task> <fm> produces it from spec.kvx and COMMON.md."
+
+[gotcha.1346]
+area = "occ_tests/sequencer_occ_test.go"
+symptom = "Independently initialized test applications need identical Epoch.GenesisTime and CurrentEpochStartTime for app-hash comparisons."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1347]
+area = "occ_tests/sequencer_occ_test.go"
+symptom = "NewGigaTestWrapper initializes an empty App.ChainID."
+fix = "configure it from the wrapper context before FinalizeBlock."
+
+[gotcha.1348]
+area = "occ_tests/sequencer_occ_test.go"
+symptom = "Giga configuration can enable executor flags while EvmoneVM remains nil."
+fix = "real-path tests must assert the engine is available."
+
+[gotcha.1349]
+area = "none"
+symptom = "The fleet commit helper cannot record a blocked task when the checkout has no changes."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1350]
+area = "none"
+symptom = "Internal node tests cannot import node/sequencer while its layer implementation imports node."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1351]
+area = "node/app_feetoken_test.go"
+symptom = "The giga TestWrapper context chain ID can differ from App.ChainID."
+fix = "FinalizeBlock validates against App.ChainID."
+
+[gotcha.1352]
+area = "node/app_feetoken_test.go"
+symptom = "Sequencer Accept preserves stale-rate text but reconstructs its typed keeper error through ABCIError."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1353]
+area = "node/app_feetoken_test.go"
+symptom = "The receipt executor Seal and layer Seal are separate paths."
+fix = "only the layer path performs end-of-block fee routing."
+
+[gotcha.1354]
+area = "node/ante_test.go"
+symptom = "Unassociated EVM balance lookups omit funds at the Cosmos address."
+fix = "read that address before association."
+
+[gotcha.1355]
+area = "node/ante_test.go"
+symptom = "Accept uses dedicated deliver ante functions."
+fix = "the test covers those and the registered NewAnteHandler chain."
+
+[gotcha.1356]
+area = "node/ante_test.go"
+symptom = "Helpers and the wrapper checker live in occ_tests/utils/utils.go and modules/evm/ante/no_cosmos_fields.go."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1357]
+area = "node/sequencer"
+symptom = "WAL Replay discards the lease checkpoint before the last COMMITTED entry."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1358]
+area = "node/sequencer"
+symptom = "A synced WAL tail does not identify the durable acknowledged frontier."
+fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1359]
+area = "node/sequencer"
+symptom = "Executor reserves transaction index 0 for MsgSequenceBatch, while the available FinalizeBlock path receives only the user transaction list."
+fix = "Recorded from the task report, which states no separate fix.."
