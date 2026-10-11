@@ -2,14 +2,14 @@ package layerxexchange
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/lxphost"
+	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 )
 
 func KernelCodeText(code lxphost.Code) string {
-	return strings.Replace(code.Error(), "LXP_ERR_", "LXP_", 1)
+	return pcommon.LXPCodeName(int32(code))
 }
 
 func RevertError(err error) error {

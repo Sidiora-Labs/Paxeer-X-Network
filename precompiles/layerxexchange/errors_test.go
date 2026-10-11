@@ -3,10 +3,12 @@ package layerxexchange_test
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
@@ -18,140 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/stretchr/testify/require"
 )
-
-var kernelCodeCases = []struct {
-	code lxphost.Code
-	text string
-}{
-	{0, "LXP_OK"},
-	{-1, "LXP_TRUNCATED"},
-	{-2, "LXP_TRAILING_BYTES"},
-	{-3, "LXP_NON_CANONICAL"},
-	{-4, "LXP_UNSORTED_SEQUENCE"},
-	{-5, "LXP_LENGTH_LIMIT"},
-	{-6, "LXP_INVALID_TAG"},
-	{-7, "LXP_UNKNOWN_FIELD"},
-	{-8, "LXP_DUPLICATE_ENTRY"},
-	{-100, "LXP_WRONG_NETWORK"},
-	{-101, "LXP_VERSION_UNSUPPORTED"},
-	{-102, "LXP_UNKNOWN_MODULE"},
-	{-103, "LXP_MODULE_DISABLED"},
-	{-104, "LXP_PAYLOAD_HASH_MISMATCH"},
-	{-105, "LXP_MALFORMED_ENVELOPE"},
-	{-106, "LXP_UNKNOWN_ACTIVITY"},
-	{-107, "LXP_MALFORMED_SEND"},
-	{-108, "LXP_MALFORMED_RECEIVE"},
-	{-200, "LXP_UNKNOWN_DID"},
-	{-201, "LXP_BAD_SIGNATURE"},
-	{-202, "LXP_AUTH_EXPIRED"},
-	{-203, "LXP_AUTH_REVOKED"},
-	{-204, "LXP_AUTH_SCOPE"},
-	{-205, "LXP_AUTH_ALLOWANCE"},
-	{-206, "LXP_IDENTITY_FROZEN"},
-	{-207, "LXP_UNAUTHORIZED_DEBIT"},
-	{-208, "LXP_UNKNOWN_ACCOUNT_NAMESPACE"},
-	{-209, "LXP_MALFORMED_GRANT"},
-	{-210, "LXP_UNKNOWN_AUTHORITY_KIND"},
-	{-211, "LXP_GRANT_EXHAUSTED"},
-	{-212, "LXP_STALE_REVOCATION"},
-	{-213, "LXP_CONTEXT_MISMATCH"},
-	{-214, "LXP_NO_PAYER_GRANT"},
-	{-215, "LXP_GRANT_SCOPE_VIOLATION"},
-	{-216, "LXP_PURPOSE_MISMATCH"},
-	{-217, "LXP_INVOICE_ALREADY_SETTLED"},
-	{-218, "LXP_GRANT_EXPIRED"},
-	{-219, "LXP_GRANT_REVOKED"},
-	{-220, "LXP_AUTH_THRESHOLD_UNMET"},
-	{-221, "LXP_AUTH_DUPLICATE_SIGNER"},
-	{-222, "LXP_AUTH_NOT_MATURE"},
-	{-300, "LXP_SEQUENCE_GAP"},
-	{-301, "LXP_SEQUENCE_REUSED"},
-	{-302, "LXP_IDEMPOTENT_REPLAY"},
-	{-303, "LXP_EXPIRED"},
-	{-304, "LXP_NOT_YET_VALID"},
-	{-305, "LXP_SEQUENCE_MISMATCH"},
-	{-306, "LXP_CONDITION_UNMET"},
-	{-307, "LXP_SEQUENCE_EXHAUSTED"},
-	{-400, "LXP_INSUFFICIENT_BALANCE"},
-	{-401, "LXP_ZERO_AMOUNT"},
-	{-402, "LXP_ASSET_MISMATCH"},
-	{-403, "LXP_ASSET_PAUSED"},
-	{-404, "LXP_ACCOUNT_FROZEN"},
-	{-405, "LXP_CONSERVATION"},
-	{-406, "LXP_TOO_MANY_LEGS"},
-	{-407, "LXP_ACCOUNT_NOT_EMPTY"},
-	{-408, "LXP_BALANCE_BYPASS"},
-	{-409, "LXP_ACCOUNT_ID_MISMATCH"},
-	{-410, "LXP_CLIENT_SUPPLIED_BALANCE"},
-	{-411, "LXP_ASSET_ALREADY_REGISTERED"},
-	{-412, "LXP_INVALID_AMOUNT"},
-	{-413, "LXP_DEPOSIT_PROOF_NOT_FINAL"},
-	{-414, "LXP_DEPOSIT_ALREADY_CREDITED"},
-	{-415, "LXP_WITHDRAWAL_ALREADY_SETTLED"},
-	{-416, "LXP_CHALLENGE_WINDOW_OPEN"},
-	{-417, "LXP_WITHDRAWAL_CANCELLED"},
-	{-418, "LXP_WITHDRAWAL_ASSET_MISMATCH"},
-	{-500, "LXP_OVERFLOW"},
-	{-501, "LXP_UNDERFLOW"},
-	{-502, "LXP_DIV_ZERO"},
-	{-503, "LXP_PRECISION"},
-	{-600, "LXP_FEE_LIMIT"},
-	{-601, "LXP_GAS_EXHAUSTED"},
-	{-602, "LXP_FEE_UNPAYABLE"},
-	{-700, "LXP_ESCROW_STATE"},
-	{-701, "LXP_BUDGET_PERIOD_CAP"},
-	{-702, "LXP_STREAM_UNDERFUNDED"},
-	{-703, "LXP_MARKET_HALTED"},
-	{-704, "LXP_ORACLE_STALE"},
-	{-705, "LXP_MARGIN_INSUFFICIENT"},
-	{-706, "LXP_AGREEMENT_STATE"},
-	{-707, "LXP_CAPTURE_EXCEEDS_HOLD"},
-	{-708, "LXP_UNAUTHORIZED_CAPTURE"},
-	{-709, "LXP_HOLD_EXPIRED"},
-	{-710, "LXP_UNAUTHORIZED_ESCROW_SPEND"},
-	{-711, "LXP_DISPUTE_WINDOW_CLOSED"},
-	{-712, "LXP_HOLD_DISPUTED"},
-	{-713, "LXP_BUDGET_ALLOWANCE_EXCEEDED"},
-	{-714, "LXP_INSUFFICIENT_BUDGET_FUNDS"},
-	{-715, "LXP_UNAUTHORIZED_DELEGATE"},
-	{-716, "LXP_BUDGET_REVOKED"},
-	{-717, "LXP_NON_MONOTONIC_TIME"},
-	{-718, "LXP_ACCRUAL_OVERFLOW"},
-	{-719, "LXP_UNAUTHORIZED_METER"},
-	{-720, "LXP_METER_REGRESSION"},
-	{-721, "LXP_STREAM_CLOSED"},
-	{-722, "LXP_MODULE_MAY_NOT_WRITE_BALANCE"},
-	{-723, "LXP_OFFER_UNAVAILABLE"},
-	{-724, "LXP_TERMS_MISMATCH"},
-	{-725, "LXP_INVALID_ATTESTATION"},
-	{-726, "LXP_DELIVERABLE_MISMATCH"},
-	{-727, "LXP_DELIVERY_DEADLINE_PASSED"},
-	{-728, "LXP_UNAUTHORIZED_DISPUTANT"},
-	{-729, "LXP_UNAUTHORIZED_ORACLE"},
-	{-730, "LXP_ORACLE_SEQUENCE"},
-	{-731, "LXP_ORACLE_BOUNDS"},
-	{-732, "LXP_ORACLE_DEVIATION"},
-	{-733, "LXP_MARKET_ALREADY_EXISTS"},
-	{-734, "LXP_PARAMETER_BOUNDS"},
-	{-735, "LXP_PAUSED_SCOPE"},
-	{-736, "LXP_PROGRAM_REFUSED"},
-	{-800, "LXP_BATCH_GAP"},
-	{-801, "LXP_ROOT_MISMATCH"},
-	{-802, "LXP_TIMESTAMP_REGRESSION"},
-	{-803, "LXP_ATTESTATION_THRESHOLD"},
-	{-804, "LXP_DA_MISSING"},
-	{-805, "LXP_EQUIVOCATION"},
-	{-900, "LXP_LOG_CORRUPT"},
-	{-901, "LXP_LOG_TRUNCATED"},
-	{-902, "LXP_SNAPSHOT_MISMATCH"},
-	{-903, "LXP_PROJECTION_STALE"},
-	{-904, "LXP_IO"},
-	{-905, "LXP_ARENA_EXHAUSTED"},
-	{-906, "LXP_SNAPSHOT_BLOBS_MISSING"},
-	{-1001, "LXP_FATAL_INVARIANT"},
-	{-1002, "LXP_FATAL_REPLAY_DIVERGENCE"},
-	{-1003, "LXP_FATAL_SUPPLY_MISMATCH"},
-}
 
 func assertLxpRevert(t *testing.T, data []byte, text string) {
 	t.Helper()
@@ -247,32 +115,49 @@ func TestRevertReasonIsLxpCode(t *testing.T) {
 func TestKernelCodeTable(t *testing.T) {
 	header, err := os.ReadFile("../../include/layerx/lxp_result.h")
 	require.NoError(t, err)
-	pattern, err := regexp.Compile(`X\((LXP_[A-Z_]+),\s*(-?\d+)\)`)
+	pattern, err := regexp.Compile(`(?m)^\s*X\(\s*(LXP_[A-Z0-9_]+)\s*,\s*(-?\d+)\s*\)`)
 	require.NoError(t, err)
 	declarations := pattern.FindAllSubmatch(header, -1)
-	require.Len(t, declarations, len(kernelCodeCases))
-	expected := make(map[lxphost.Code]string, len(kernelCodeCases))
-	seen := make(map[string]lxphost.Code, len(kernelCodeCases))
-	for _, test := range kernelCodeCases {
-		_, duplicate := expected[test.code]
-		require.False(t, duplicate, "duplicate numeric code %d", test.code)
-		expected[test.code] = test.text
-		actual := layerxexchange.KernelCodeText(test.code)
-		require.Equal(t, test.text, actual, "numeric code %d", test.code)
-		previous, duplicate := seen[actual]
-		require.False(t, duplicate, "codes %d and %d map to %q", previous, test.code, actual)
-		seen[actual] = test.code
-		if test.code < 0 && test.code > -1000 {
-			assertLxpRevert(t, pcommon.RevertReason(layerxexchange.RevertError(test.code)), test.text)
-		}
-	}
+	require.NotEmpty(t, declarations)
+	values := make(map[lxphost.Code]struct{}, len(declarations))
+	names := make(map[string]struct{}, len(declarations))
+	mappedNames := make(map[string]lxphost.Code, len(declarations))
+	lowest, highest := int64(math.MaxInt32), int64(math.MinInt32)
 	for _, declaration := range declarations {
 		numeric, err := strconv.ParseInt(string(declaration[2]), 10, 32)
 		require.NoError(t, err)
-		_, present := expected[lxphost.Code(numeric)]
-		require.True(t, present, "canonical code %s (%d) has no expected mapping", declaration[1], numeric)
+		code := lxphost.Code(numeric)
+		name := strings.Replace(string(declaration[1]), "LXP_ERR_", "LXP_", 1)
+		require.NotContains(t, values, code, "duplicate numeric code %d", numeric)
+		require.NotContains(t, names, name, "duplicate kernel name %q", name)
+		values[code] = struct{}{}
+		names[name] = struct{}{}
+		if numeric < lowest {
+			lowest = numeric
+		}
+		if numeric > highest {
+			highest = numeric
+		}
+		actual := layerxexchange.KernelCodeText(code)
+		previous, duplicate := mappedNames[actual]
+		mappedNames[actual] = code
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, name, actual, "numeric code %d", numeric)
+			require.True(t, strings.HasPrefix(actual, "LXP_"))
+			require.False(t, duplicate, "codes %d and %d map to %q", previous, code, actual)
+			if code != 0 {
+				assertLxpRevert(t, pcommon.RevertReason(layerxexchange.RevertError(code)), name)
+			}
+		})
 	}
-	for _, unknown := range []lxphost.Code{1, -9, -737, -1004, -2147483648, 2147483647} {
-		require.Equal(t, "LXP_UNKNOWN", layerxexchange.KernelCodeText(unknown))
+	require.Greater(t, lowest, int64(math.MinInt32))
+	require.Less(t, highest, int64(math.MaxInt32))
+	for _, numeric := range []int64{lowest - 1, highest + 1} {
+		t.Run(fmt.Sprintf("unknown_%d", numeric), func(t *testing.T) {
+			code := lxphost.Code(numeric)
+			require.NotContains(t, values, code)
+			require.Equal(t, "LXP_UNKNOWN", layerxexchange.KernelCodeText(code))
+			assertLxpRevert(t, pcommon.RevertReason(layerxexchange.RevertError(code)), "LXP_UNKNOWN")
+		})
 	}
 }
