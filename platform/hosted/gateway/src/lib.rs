@@ -281,6 +281,7 @@ pub struct AuthorityFacts {
     previous_state_root: [u8; 32],
     resulting_state_root: [u8; 32],
     sequencer_public_key: [u8; 32],
+    authenticated_batch_number: Option<u64>,
 }
 
 impl AuthorityFacts {
@@ -298,6 +299,17 @@ impl AuthorityFacts {
             previous_state_root,
             resulting_state_root,
             sequencer_public_key,
+            authenticated_batch_number: None,
+        }
+    }
+
+    /// Attaches the batch number a signed batch header authenticated for these
+    /// facts, so key selection does not read a hash batch ID as a height.
+    #[must_use]
+    pub(crate) const fn with_authenticated_batch_number(self, batch_number: u64) -> Self {
+        Self {
+            authenticated_batch_number: Some(batch_number),
+            ..self
         }
     }
 
@@ -1358,18 +1370,23 @@ impl ReceiptKeyList {
         Ok(authorization)
     }
 
-    /// Selects the key named by authority facts for the batch height they attest.
+    /// Selects the key named by authority facts for the batch they attest: the
+    /// header-authenticated batch number when the facts carry one, otherwise the
+    /// height a sequencer batch ID encodes.
     ///
     /// # Errors
-    /// Refuses an unconfigured key or a height outside that key's window.
+    /// Refuses an unconfigured key, a batch outside that key's window, or a
+    /// batch ID that is not a canonical height when no authenticated number is
+    /// attached.
     pub fn authorization_for_facts(
         &self,
         authority: AuthorityFacts,
     ) -> Result<&SequencerAuthorization, GatewayError> {
-        self.authorization_at(
-            authority.sequencer_public_key(),
-            batch_height(authority.batch_id)?,
-        )
+        let batch_number = match authority.authenticated_batch_number {
+            Some(batch_number) => batch_number,
+            None => batch_height(authority.batch_id)?,
+        };
+        self.authorization_at(authority.sequencer_public_key(), batch_number)
     }
 
     /// Selects the configured key whose window covers the receipt's batch height

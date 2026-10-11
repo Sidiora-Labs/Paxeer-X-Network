@@ -1855,27 +1855,9 @@ fn authority_response(
     let evidence_started = Instant::now();
     let result = match facts.batch_evidence {
         None => Ok(authority),
-        Some(maintained) => {
-            let verified = maintained
-                .authorize(
-                    &receipt,
-                    &authority.authorized(),
-                    config
-                        .receipt_keys()?
-                        .authorization_for_facts(authority)
-                        .map_err(|error| {
-                            unauthorized_or(error, response(503, "authority_invalid", Some(5)))
-                        })?,
-                )
-                .map_err(|_| response(503, "authority_invalid", Some(5)))?;
-            Ok(AuthorityFacts::new(
-                verified.batch_id(),
-                verified.asset(),
-                verified.previous_state_root(),
-                verified.resulting_state_root(),
-                verified.sequencer_public_key(),
-            ))
-        }
+        Some(maintained) => maintained
+            .authorize_with_keys(&receipt, authority, config.receipt_keys()?)
+            .map_err(|error| unauthorized_or(error, response(503, "authority_invalid", Some(5)))),
     };
     pay_timing("gateway.authority.evidence", evidence_started);
     pay_timing("gateway.authority.total", total_started);

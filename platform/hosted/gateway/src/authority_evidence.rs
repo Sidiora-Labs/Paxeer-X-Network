@@ -1,4 +1,4 @@
-use crate::SequencerAuthorization;
+use crate::{AuthorityFacts, GatewayError, ReceiptKeyList, SequencerAuthorization};
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -60,7 +60,56 @@ impl MaintainedIdentityDocument {
     }
 }
 
+fn bytes(text: &str) -> Result<Vec<u8>, &'static str> {
+    if text.len() > 2_097_152
+        || !text.len().is_multiple_of(2)
+        || !text.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("maintained evidence encoding");
+    }
+    text.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let digits = std::str::from_utf8(pair).map_err(|_| "maintained evidence encoding")?;
+            u8::from_str_radix(digits, 16).map_err(|_| "maintained evidence encoding")
+        })
+        .collect()
+}
+
 impl MaintainedBatchDocument {
+    /// Selects the configured key the signed header names for its batch number,
+    /// authenticates this attachment under that key and returns the selected
+    /// facts carrying the batch number the header signature authenticated.
+    ///
+    /// # Errors
+    /// Refuses an unconfigured sequencer ID or a batch outside its window as an
+    /// untrusted sequencer, and malformed or unauthenticated evidence as
+    /// missing verified evidence.
+    pub fn authorize_with_keys(
+        &self,
+        receipt: &[u8],
+        facts: AuthorityFacts,
+        keys: &ReceiptKeyList,
+    ) -> Result<AuthorityFacts, GatewayError> {
+        let header = bytes(&self.header_hex)
+            .ok()
+            .and_then(|header| layerx_wire::receipt::decode_batch_header(&header).ok())
+            .ok_or(GatewayError::VerificationRequired)?;
+        let batch_number = header.batch_number();
+        let authorization = keys.authorization_for_header(header.sequencer_id(), batch_number)?;
+        let verified = self
+            .authorize(receipt, &facts.authorized(), authorization)
+            .map_err(|_| GatewayError::VerificationRequired)?;
+        Ok(AuthorityFacts::new(
+            verified.batch_id(),
+            verified.asset(),
+            verified.previous_state_root(),
+            verified.resulting_state_root(),
+            verified.sequencer_public_key(),
+        )
+        .with_authenticated_batch_number(batch_number))
+    }
+
     /// Authenticates this selected maintained attachment under configured pins.
     ///
     /// # Errors
@@ -71,22 +120,6 @@ impl MaintainedBatchDocument {
         facts: &layerx_proof::receipt::AuthorizedBatch,
         authorization: &SequencerAuthorization,
     ) -> Result<layerx_proof::receipt::AuthorizedBatch, &'static str> {
-        fn bytes(text: &str) -> Result<Vec<u8>, &'static str> {
-            if text.len() > 2_097_152
-                || !text.len().is_multiple_of(2)
-                || !text.bytes().all(|byte| byte.is_ascii_hexdigit())
-            {
-                return Err("maintained evidence encoding");
-            }
-            text.as_bytes()
-                .chunks_exact(2)
-                .map(|pair| {
-                    let digits =
-                        std::str::from_utf8(pair).map_err(|_| "maintained evidence encoding")?;
-                    u8::from_str_radix(digits, 16).map_err(|_| "maintained evidence encoding")
-                })
-                .collect()
-        }
         fn proof(text: &str) -> Result<layerx_proof::merkle::Proof, &'static str> {
             let encoded = bytes(text)?;
             let path = layerx_wire::receipt::decode_merkle_proof(&encoded)
