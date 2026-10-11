@@ -3612,7 +3612,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.8]
 title = "bank 0x1001 overload, sub-account and reason tests"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.1.6"]
@@ -25771,7 +25771,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.21]
 title = "x402 conformance documents regenerated"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["6.5.20"]
@@ -27000,7 +27000,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.13]
 title = "Retire the custody credit disclosure"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -30854,7 +30854,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.19]
 title = "Protocol adapter layerx-ucp verifies settlement on sequencer receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2", "0.26"]
@@ -30882,7 +30882,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.20]
 title = "Protocol adapter layerx-visa-tap verifies settlement on sequencer receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2", "0.26"]
@@ -36482,7 +36482,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.33]
 title = "Bridge relayer journal keys releases by receipt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -40594,7 +40594,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.46]
 title = "Explorer verifies sequencer receipts R1-R8 against pinned ReceiptKeys"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.45"]
@@ -41706,7 +41706,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.110]
 title = "Gas station rate publisher never spends a renewal tick on finalizing an earlier publication"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.0.6", "0.108", "0.114"]
@@ -51338,7 +51338,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.23]
 title = "Python web search pays through layerxledger 0x101A payExact"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 13
 requires = ["10.5.18", "0.100", "0.102", "10.5.19", "10.5.20", "10.5.22"]
@@ -61835,7 +61835,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.6.1]
 title = "Return every guarantor bond and open challenge deposit at the merge plan height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -97000,7 +97000,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.5.2]
 title = "Wallet gateway routes sponsorship through the gas station"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 8
 requires = ["13.1.3", "0.38"]

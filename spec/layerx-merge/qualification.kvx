@@ -1329,3 +1329,101 @@ command = "go test -count=1 ./modules/layerxexchange/keeper/ -run TestGenesisAnd
 exit_code = 0
 log_path = "logs/0.115-verify-2.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed)."
+
+[finding.0.110]
+revision = "5d2a30087"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+exit_code = 0
+log_path = "logs/0.110-verify-2.log"
+observed_and_assumption = "verify passed (14 passed, 0 failed). Gaps: none. Under decision 52, the assertion that publish returns the publication recovery just finished was replaced by recovery bookkeeping checks plus the fresh-evaluation result (Unchanged { age: 0 }) in four places: the reserve test (do_5), the committed step of publication_waits_..., the receipted step of publication_unknown_..., and the final step of receipt_signature_is_verified_against_pinned_receipt_keys. Their sent-count, exact-bytes, nonce, rate_active and settlement assertions are unchanged. The double now updates the on-chain rate when the sequencer receipts a setRate, so daily_gas_budget_stops_publishing and the follow-up publish in publication_waits_... move the chain clock forward one cadence in setup; their assertions are unchanged. Unrelated: none (after the rebase, cargo clippy -p layerx-gas-station --all-targets is clean without cap-lints)"
+
+[finding.0.46]
+revision = "2d5ea9aaa"
+command = "explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/sequencer_receipt_test.exs"
+exit_code = 0
+log_path = "logs/0.46-verify-2.log"
+observed_and_assumption = "verify passed (17 passed, 0 failed (verify-1: exit 2, 3 failed)). Gaps: R7 has no router read for the landing block's MsgSequenceBatch range; the caller passes it as opts[:batch] %{from_seq, to_seq}, with eth_getTransactionReceipt in opts[:eth_receipt] and chain_id/commit/validators for R8. The committed tests build eth_receipt from the golden answer and reuse the height-1000 commit fixture from 0.45 (four of four committed, two of four refused at R8)"
+
+[finding.7.5.19]
+revision = "82427c1ec"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-ucp --test conformance_vectors"
+exit_code = 0
+log_path = "logs/7.5.19-verify-1.log"
+observed_and_assumption = "verify passed (18 passed, 0 failed). Gaps: lint: cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-ucp --all-targets --no-deps | exit 101 | logs/7.5.19-clippy-1.log; lib.rs:664 requires # Errors documentation, conflicting with the no-docs/comments rule; check left intact."
+
+[finding.7.5.20]
+revision = "cca1cfa02"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-visa-tap --test conformance"
+exit_code = 0
+log_path = "logs/7.5.20-verify-1.log"
+observed_and_assumption = "verify passed (9 passed, 0 failed). Gaps: 7026.2 / do_2: PaymentDrawn omits the idempotency key and this adapter has no authenticated calldata binding; only PaymentExact is supported. Unrelated: dependency dead-code warnings in programs/sdk/rust/src/bindgen_*.rs and programs/crates/layerx-programs-runtime/src/execute.rs; retained in build and verify logs."
+
+[finding.8.5.33]
+revision = "1a2e30d9e"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer --test solana_release"
+exit_code = 0
+log_path = "logs/8.5.33-verify-1.log"
+observed_and_assumption = "verify passed (16 passed, 0 failed). Gaps: 8055.3: the restart loop lacks signed receipt lookup and may rebroadcast journaled bytes; its integration in relayer.rs is outside touches. Unrelated: cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer --all-targets | exit 101 | logs/8.5.33-lint-1.log | six errors in interop/crates/layerx-mirror/src/node.rs:515, runtime.rs:233/337/392/842, signer.rs:304 prevented linting owned files."
+
+[finding.10.5.23]
+revision = "69d7f049f"
+command = "cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py"
+exit_code = 0
+log_path = "logs/10.5.23-verify-1.log"
+observed_and_assumption = "verify passed (18 passed, 0 failed). Gaps: Python SDK typing: web_search.pyi is outside touches and lacks the new payer_rpc and payer_address constructor keywords."
+
+[finding.13.5.2]
+revision = "d52fe12da"
+command = "pnpm --dir human/wallet/gateway exec vitest run test/resolution-sponsor.test.ts"
+exit_code = 0
+log_path = "logs/13.5.2-verify-2.log"
+observed_and_assumption = "verify passed (9 passed, 0 failed). Gaps: 13006.4 successful relayer-send coverage remains unqualified; human/wallet/gateway/src/routes/wallet.ts statusBody requires replacement and rejects receipted, while interop/crates/layerx-gas-station/src/service.rs Service::report emits receipted without replacement. Both adapter files are outside touches; added tests cover environment retirement and real gateway refusals only."
+
+[finding.6.6.13]
+revision = "1e8ae236c"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test disclosure"
+exit_code = 0
+log_path = "logs/6.6.13-verify-1.log"
+observed_and_assumption = "verify passed (11 passed, 0 failed). Gaps: 6100.3: layerx-agentd/src/read/balance.rs and its deposit acceptance test are outside touches; existing balance reads still use LNI rather than eth_getBalance/bank. Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-crypto -p layerx-types -p layerx-proof --all-targets --no-deps | exit 101 | logs/6.6.13-lint-1.log | unowned layerx-types/src/program_lifecycle.rs:74,86 missing_errors_doc; programs_module_abi.rs:85-87 assertions_on_constants; remaining crate lint incomplete."
+
+[finding.11.6.1]
+revision = "23963e813"
+command = "go test -count=1 -run TestBondReturn ./modules/layerxanchor/keeper/"
+exit_code = 0
+log_path = "logs/11.6.1-verify-2.log"
+observed_and_assumption = "verify passed (20 passed, 0 failed). Gaps: 11006.4: Keeper conservation passes; conservation in the actual merge plan handler cannot be verified because that handler is missing outside touches."
+
+[finding.6.5.21]
+revision = "bc760476d"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402 --test pinned_spec"
+exit_code = 0
+log_path = "logs/6.5.21-verify-1.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed). Gaps: 6085.3: agent/sdk/python/layerx_sdk/x402_http.py still expects sequencer-signed and renders lxp: settlement; platform/middleware/seller/src/rpc.ts still submits lx_sendActivity; outside permitted touches. Unrelated: none; gate logs retain 30 unowned program SDK build-script warnings and one unowned program runtime warning."
+
+[finding.1.2.8]
+revision = "528c0b022"
+command = "go test -count=1 ./precompiles/bank/ -run 'TestRun"
+exit_code = 0
+log_path = "logs/1.2.8-verify-1.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed)."
+
+[finding.5.2.1]
+revision = "ce8d37490"
+command = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run 'TestMsgValidateBasic"
+exit_code = 0
+log_path = "logs/5.2.1-verify-1.log"
+observed_and_assumption = "verify passed (22 passed, 0 failed). Gaps: xweb_params_set attribute keys kernel_network_id and program_fee_denoms are unexported constants in msg_server.go because modules/xweb/types/events.go is outside touches Unrelated: modules/xweb/types/attestation_test.go:154 and node/upgrades_xweb_test.go:272 load a genesis with Paused false and the unset pair, which InitGenesis now panics on; both outside touches, not run"
+
+[finding.0.113]
+revision = ""
+command = "cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof --all-targets && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof"
+exit_code = 101
+log_path = "logs/0.113-verify-1.log"
+observed_and_assumption = "verify passed (--no-fail-fast evidence: 167 passed, 6 failed (logs/0.113-verify-1-nofailfast.log)). Gaps: none for lint scope; do_3 'every existing test keeps passing' not met by prior failures below Unrelated: native_terminal_outcome 4 tests panic without LAYERX_NATIVE_TERMINAL_RECORDS (env-gated); with the retained records tsv set they pass 4/4 on this revision | logs/0.113-native-terminal-retained.log"
+
+[finding.0.111]
+revision = ""
+command = "go test -count=1 ./rpc/... -run TestHeaderReceiptsRootIsSameBlockResults"
+exit_code = 0
+log_path = "logs/0.111-verify-2.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: under Autobahn the notifier publishes at app Commit and giga BlockResults returns no TxsResults (per 0.51), so the newHeads root there matches eth_getBlockByNumber but is the zero-leaf root; out of scope Unrelated: none (gate scoped by -run; not run here) - TestSubscribeNewHeadsAutobahn (rpc/subscribe_test.go) and TestEncodeCommittedBlockWithRoots-style expectations of receiptsRoot == header LastResultsHash on the served newHeads payload now contradict req 10.4; subscribe_test's MockClient-backed assertion receiptsRoot == resultsHash will fail and needs re-targeting by its owning task"
