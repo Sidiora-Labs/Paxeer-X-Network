@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
@@ -202,7 +204,7 @@ func (a *BlockAPI) getBlockByHash(ctx context.Context, blockHash common.Hash, fu
 		return nil, err
 	}
 
-	return EncodeTmBlock(a.ctxProvider, a.txConfigProvider, block, a.keeper, fullTx, a.includeBankTransfers, includeSyntheticTxs, excludeUntraceable, a.globalBlockCache, a.cacheCreationMutex)
+	return a.encodeBlock(ctx, block, fullTx, includeSyntheticTxs, excludeUntraceable)
 }
 
 func (a *BlockAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (result map[string]interface{}, returnErr error) {
@@ -244,7 +246,48 @@ func (a *BlockAPI) getBlockByNumber(
 	if block == nil {
 		return nil, nil
 	}
-	return EncodeTmBlock(a.ctxProvider, a.txConfigProvider, block, a.keeper, fullTx, a.includeBankTransfers, includeSyntheticTxs, excludeUntraceable, a.globalBlockCache, a.cacheCreationMutex)
+	return a.encodeBlock(ctx, block, fullTx, includeSyntheticTxs, excludeUntraceable)
+}
+
+// encodeBlock renders block H with receiptsRoot set to the Comet results root
+// of block H, the value header H+1 commits as LastResultsHash.
+func (a *BlockAPI) encodeBlock(ctx context.Context, block *coretypes.ResultBlock, fullTx bool, includeSyntheticTxs bool, excludeUntraceable bool) (map[string]interface{}, error) {
+	if block == nil || block.Block == nil {
+		return nil, errors.New("cannot encode an empty consensus block")
+	}
+	height := block.Block.Height
+	results, err := a.tmClient.BlockResults(ctx, &height)
+	if err != nil {
+		return nil, fmt.Errorf("load block %d results: %w", height, err)
+	}
+	receiptsRoot, err := blockResultsRoot(height, results)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := EncodeTmBlock(a.ctxProvider, a.txConfigProvider, block, a.keeper, fullTx, a.includeBankTransfers, includeSyntheticTxs, excludeUntraceable, a.globalBlockCache, a.cacheCreationMutex)
+	if err != nil {
+		return nil, err
+	}
+	encoded["receiptsRoot"] = receiptsRoot
+	return encoded, nil
+}
+
+// blockResultsRoot computes the root consensus commits over the deterministic
+// results of block height as LastResultsHash of header height+1.
+func blockResultsRoot(height int64, results *coretypes.ResultBlockResults) (common.Hash, error) {
+	if results == nil {
+		return common.Hash{}, fmt.Errorf("block %d results are unavailable", height)
+	}
+	for i, txResult := range results.TxsResults {
+		if txResult == nil {
+			return common.Hash{}, fmt.Errorf("block %d result %d is missing", height, i)
+		}
+	}
+	leaves, err := abci.MarshalTxResults(results.TxsResults)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("marshal block %d results: %w", height, err)
+	}
+	return common.BytesToHash(merkle.HashFromByteSlices(leaves)), nil
 }
 
 // pendingBlock encodes the open block on the sequencer and standby: its height,
@@ -392,7 +435,8 @@ func (a *BlockAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.Block
 	return allReceipts, nil
 }
 
-// EncodeTmBlock renders a tendermint block as an eth_getBlockBy* response.
+// EncodeTmBlock renders a tendermint block as an eth_getBlockBy* response
+// without receiptsRoot, which needs the block's results (see encodeBlock).
 //
 // excludeUntraceable, when true, drops EVM txs whose receipt is an
 // ante-deferred stub (EffectiveGasPrice==0 && GasUsed==0). modules/evm/keeper/abci.go
@@ -433,7 +477,6 @@ func EncodeTmBlock(
 	lastHash := common.HexToHash(block.Block.LastBlockID.Hash.String())
 	appHash := common.HexToHash(block.Block.AppHash.String())
 	txHash := common.HexToHash(block.Block.DataHash.String())
-	resultHash := common.HexToHash(block.Block.LastResultsHash.String())
 	miner := common.HexToAddress(block.Block.ProposerAddress.String())
 	ctx := ctxProvider(block.Block.Height)
 	var baseFeePerGas *big.Int
@@ -600,7 +643,6 @@ func EncodeTmBlock(
 		"gasUsed":          hexutil.Uint64(blockGasUsed),
 		"timestamp":        hexutil.Uint64(block.Block.Time.Unix()), //nolint:gosec
 		"transactionsRoot": txHash,
-		"receiptsRoot":     resultHash,
 		"size":             hexutil.Uint64(block.Block.Size()), //nolint:gosec
 		"uncles":           []common.Hash{},                    // inapplicable to Pax
 		"transactions":     transactions,
