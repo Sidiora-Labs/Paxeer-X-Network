@@ -8,10 +8,14 @@ import {
   TradingPayloadError,
   TradingReader,
   TradingWriter,
-  type EncodedActivity,
   type TradeSide,
   type TradingId,
 } from "./perps.js";
+import {
+  LAYERX_EXCHANGE_PRECOMPILE,
+  encodeAbiCall,
+  type PrecompileCall,
+} from "./exchange.js";
 
 export const SPOT_MODULE_ID = 10;
 
@@ -51,15 +55,44 @@ export type SpotActivity =
       readonly price: bigint;
       readonly quantity: bigint;
     }
-  | { readonly activity: "order_cancel"; readonly marketId: TradingId; readonly orderId: TradingId }
+  | {
+      readonly activity: "order_cancel";
+      readonly marketId: TradingId;
+      readonly orderId: TradingId;
+    }
   | { readonly activity: "market_halt"; readonly marketId: TradingId }
   | { readonly activity: "market_resume"; readonly marketId: TradingId };
+
+export type SpotCallActivity =
+  | Exclude<SpotActivity, { readonly activity: "order_place" }>
+  | (Omit<
+      Extract<SpotActivity, { readonly activity: "order_place" }>,
+      "orderId"
+    > & {
+      readonly orderId?: TradingId;
+    });
 
 function oneOrTwo(value: number, label: string): 1 | 2 {
   if (value !== 1 && value !== 2) {
     throw new TradingPayloadError("non_canonical", label);
   }
   return value;
+}
+
+function validateSpotOrder(
+  activity: Extract<SpotCallActivity, { readonly activity: "order_place" }>,
+): void {
+  const priced =
+    activity.kind === 1
+      ? activity.price !== 0n
+      : activity.price === 0n && activity.timeInForce === 2;
+  if (
+    !priced ||
+    activity.quantity === 0n ||
+    activity.baseAccountId === activity.quoteAccountId
+  ) {
+    throw new TradingPayloadError("non_canonical", "order");
+  }
 }
 
 /** Returns the packed activity type of a spot activity. */
@@ -89,11 +122,7 @@ export function encodeSpotActivity(activity: SpotActivity): Uint8Array {
         .id(activity.administrator);
       break;
     case "order_place": {
-      const priced =
-        activity.kind === 1 ? activity.price !== 0n : activity.price === 0n && activity.timeInForce === 2;
-      if (!priced || activity.quantity === 0n || activity.baseAccountId === activity.quoteAccountId) {
-        throw new TradingPayloadError("non_canonical", "order");
-      }
+      validateSpotOrder(activity);
       writer
         .id(activity.marketId)
         .id(activity.orderId)
@@ -117,19 +146,104 @@ export function encodeSpotActivity(activity: SpotActivity): Uint8Array {
   return writer.bytes();
 }
 
-/** Builds the activity type and payload a spot activity submits. */
-export function buildSpotActivity(activity: SpotActivity): EncodedActivity {
-  return { activityType: spotActivityType(activity), payload: encodeSpotActivity(activity) };
+/** Builds the ABI call a spot activity submits to the exchange precompile. */
+export function buildSpotActivity(activity: SpotCallActivity): PrecompileCall {
+  let data: string;
+  switch (activity.activity) {
+    case "market_create":
+      encodeSpotActivity(activity);
+      data = encodeAbiCall(
+        "createSpotMarket",
+        ["bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256"],
+        [
+          `0x${activity.marketId}`,
+          `0x${activity.baseAsset}`,
+          `0x${activity.quoteAsset}`,
+          `0x${activity.administrator}`,
+          activity.tickSize,
+          activity.lotSize,
+        ],
+      );
+      break;
+    case "order_place":
+      validateSpotOrder(activity);
+      new TradingWriter()
+        .id(activity.marketId)
+        .id(activity.baseAccountId)
+        .id(activity.quoteAccountId)
+        .byte(oneOrTwo(activity.side, "side"))
+        .byte(oneOrTwo(activity.kind, "kind"))
+        .byte(oneOrTwo(activity.timeInForce, "time in force"))
+        .uint(activity.price, 16)
+        .uint(activity.quantity, 16);
+      data = encodeAbiCall(
+        "placeSpotOrder",
+        [
+          "bytes32",
+          "bytes32",
+          "bytes32",
+          "uint8",
+          "uint8",
+          "uint8",
+          "uint256",
+          "uint256",
+        ],
+        [
+          `0x${activity.marketId}`,
+          `0x${activity.baseAccountId}`,
+          `0x${activity.quoteAccountId}`,
+          BigInt(activity.side),
+          BigInt(activity.kind),
+          BigInt(activity.timeInForce),
+          activity.price,
+          activity.quantity,
+        ],
+      );
+      break;
+    case "order_cancel":
+      encodeSpotActivity(activity);
+      data = encodeAbiCall(
+        "cancelSpotOrder",
+        ["bytes32", "bytes32"],
+        [`0x${activity.marketId}`, `0x${activity.orderId}`],
+      );
+      break;
+    case "market_halt":
+    case "market_resume":
+      encodeSpotActivity(activity);
+      data = encodeAbiCall(
+        "setSpotHalt",
+        ["bytes32", "bool"],
+        [`0x${activity.marketId}`, activity.activity === "market_halt"],
+      );
+      break;
+    default:
+      throw new TradingPayloadError("unknown_activity");
+  }
+  return { to: LAYERX_EXCHANGE_PRECOMPILE, data, value: 0n };
 }
 
-const SPOT_LENGTHS: Readonly<Record<number, number>> = { 1: 160, 2: 163, 3: 64, 4: 32, 5: 32 };
+const SPOT_LENGTHS: Readonly<Record<number, number>> = {
+  1: 160,
+  2: 163,
+  3: 64,
+  4: 32,
+  5: 32,
+};
 
 /** Decodes and validates kernel payload bytes of a spot activity. */
-export function decodeSpotActivity(activityType: number, payload: Uint8Array): SpotActivity {
+export function decodeSpotActivity(
+  activityType: number,
+  payload: Uint8Array,
+): SpotActivity {
   const ordinal = activityType & 0xffff;
-  const expected = activityType >>> 16 === SPOT_MODULE_ID ? SPOT_LENGTHS[ordinal] : undefined;
+  const expected =
+    activityType >>> 16 === SPOT_MODULE_ID ? SPOT_LENGTHS[ordinal] : undefined;
   if (expected === undefined) {
-    throw new TradingPayloadError("unknown_activity", activityType.toString(16));
+    throw new TradingPayloadError(
+      "unknown_activity",
+      activityType.toString(16),
+    );
   }
   if (payload.length !== expected) {
     throw new TradingPayloadError("length");
@@ -163,7 +277,11 @@ export function decodeSpotActivity(activityType: number, payload: Uint8Array): S
       };
       break;
     case 3:
-      decoded = { activity: "order_cancel", marketId: reader.id(), orderId: reader.id() };
+      decoded = {
+        activity: "order_cancel",
+        marketId: reader.id(),
+        orderId: reader.id(),
+      };
       break;
     case 4:
       decoded = { activity: "market_halt", marketId: reader.id() };
@@ -172,7 +290,10 @@ export function decodeSpotActivity(activityType: number, payload: Uint8Array): S
       decoded = { activity: "market_resume", marketId: reader.id() };
   }
   const encoded = encodeSpotActivity(decoded);
-  if (encoded.length !== payload.length || encoded.some((byte, index) => byte !== payload[index])) {
+  if (
+    encoded.length !== payload.length ||
+    encoded.some((byte, index) => byte !== payload[index])
+  ) {
     throw new TradingPayloadError("non_canonical");
   }
   return decoded;
