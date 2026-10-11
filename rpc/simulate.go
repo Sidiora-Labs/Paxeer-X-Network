@@ -117,7 +117,7 @@ func (s *SimulationAPI) EstimateGas(ctx context.Context, args export.Transaction
 		}
 		defer s.requestLimiter.Release(1)
 	}
-	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+	bNrOrHash := s.backend.defaultEstimateTag()
 	if blockNrOrHash != nil {
 		bNrOrHash = *blockNrOrHash
 	}
@@ -312,7 +312,73 @@ func (b *Backend) SetTraceContextProvider(provider TraceContextProvider) {
 	}
 }
 
+// defaultEstimateTag is pending on the sequencer and standby, which hold the
+// open block, and latest on every other node.
+func (b *Backend) defaultEstimateTag() rpc.BlockNumberOrHash {
+	if b.watermarks != nil && b.watermarks.pending != nil {
+		return rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
+	}
+	return rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+}
+
+func isPendingTag(blockNrOrHash rpc.BlockNumberOrHash) bool {
+	return blockNrOrHash.BlockHash == nil && blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber
+}
+
+// ctxAtHeight returns the open-block snapshot for the height of the open
+// block and the provider's context for every other height.
+func (b *Backend) ctxAtHeight(height int64) sdk.Context {
+	if b.watermarks != nil && b.watermarks.pending != nil {
+		if open, err := b.watermarks.resolvePending(); err == nil && open == height {
+			return b.ctxProvider(PendingCtxHeight)
+		}
+	}
+	return b.ctxProvider(height)
+}
+
+// pendingStateAndHeader reads a snapshot of the open block. Its header carries
+// the open height, the open time, the open block's base fee and gas limit, and
+// no hash or state root, since the block is not sealed.
+func (b *Backend) pendingStateAndHeader(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (vm.StateDB, *ethtypes.Header, error) {
+	height, err := b.watermarks.ResolveHeight(ctx, blockNrOrHash)
+	if err != nil {
+		return nil, nil, err
+	}
+	isWasmdCall, ok := ctx.Value(CtxIsWasmdPrecompileCallKey).(bool)
+	sdkCtx := b.ctxProvider(height).WithIsEVM(true).WithEVMEntryViaWasmdPrecompile(ok && isWasmdCall)
+	openHeight := sdkCtx.BlockHeight()
+	if openHeight <= 0 {
+		return nil, nil, fmt.Errorf("open block height %d is not positive", openHeight)
+	}
+	openTime := sdkCtx.BlockTime().Unix()
+	if openTime < 0 {
+		return nil, nil, fmt.Errorf("open block %d timestamp predates Unix epoch", openHeight)
+	}
+	cp := sdkCtx.ConsensusParams()
+	if cp == nil || cp.Block == nil {
+		return nil, nil, fmt.Errorf("consensus block parameters are unavailable for open block %d", openHeight)
+	}
+	gasLimit, err := encodeHeadGasLimit(cp.Block.MaxGas)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open block %d: %w", openHeight, err)
+	}
+	zeroExcessBlobGas := uint64(0)
+	header := &ethtypes.Header{
+		Difficulty:    common.Big0,
+		Number:        big.NewInt(openHeight),
+		BaseFee:       b.keeper.GetNextBaseFeePerGas(sdkCtx).TruncateInt().BigInt(),
+		GasLimit:      uint64(gasLimit),
+		Time:          uint64(openTime),
+		ExcessBlobGas: &zeroExcessBlobGas,
+		Coinbase:      common.BytesToAddress(sdkCtx.BlockHeader().ProposerAddress),
+	}
+	return state.NewDBImpl(sdkCtx, b.keeper, true), header, nil
+}
+
 func (b *Backend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (vm.StateDB, *ethtypes.Header, error) {
+	if isPendingTag(blockNrOrHash) {
+		return b.pendingStateAndHeader(ctx, blockNrOrHash)
+	}
 	tmBlock, isLatestBlock, err := b.getBlockByNumberOrHash(ctx, blockNrOrHash)
 	if err != nil {
 		return nil, nil, err
@@ -493,7 +559,7 @@ func (b *Backend) RPCGasCap() uint64 { return b.config.GasCap }
 func (b *Backend) RPCEVMTimeout() time.Duration { return b.config.EVMTimeout }
 
 func (b *Backend) chainConfigForHeight(height int64) *params.ChainConfig {
-	ctx := b.ctxProvider(height)
+	ctx := b.ctxAtHeight(height)
 	sstore := b.keeper.GetSstoreSetGasEIP2200(ctx)
 	return types.DefaultChainConfig().EthereumConfigWithSstore(b.keeper.ChainID(ctx), &sstore)
 }
@@ -711,7 +777,7 @@ func (b *Backend) GetEVM(_ context.Context, msg *core.Message, stateDB vm.StateD
 	}
 	height := h.Number.Int64()
 	chainCfg := b.chainConfigForHeight(height)
-	evm := vm.NewEVM(*blockCtx, stateDB, chainCfg, *vmConfig, b.keeper.CustomPrecompiles(b.ctxProvider(height)))
+	evm := vm.NewEVM(*blockCtx, stateDB, chainCfg, *vmConfig, b.keeper.CustomPrecompiles(b.ctxAtHeight(height)))
 	evm.SetTxContext(txContext)
 	return evm
 }
@@ -828,7 +894,7 @@ func (b *Backend) getHeader(ctx context.Context, tmBlock *coretypes.ResultBlock)
 }
 
 func (b *Backend) GetCustomPrecompiles(h int64) map[common.Address]vm.PrecompiledContract {
-	return b.keeper.CustomPrecompiles(b.ctxProvider(h))
+	return b.keeper.CustomPrecompiles(b.ctxAtHeight(h))
 }
 
 func (b *Backend) PrepareTx(statedb vm.StateDB, tx *ethtypes.Transaction) error {

@@ -28,6 +28,10 @@ import (
 
 var errNoProofCapableQueryableKVStore = errors.New("cannot find a proof-capable queryable KV store")
 
+// ErrPendingProofRefused refuses eth_getProof with the pending tag on every
+// node: the open block has no committed root to prove against.
+var ErrPendingProofRefused error = &ErrEVMNotSupported{Msg: "pending state has no committed root"}
+
 const MaxStorageKeysPerProof = 1024
 
 type StateAPI struct {
@@ -52,7 +56,7 @@ func (a *StateAPI) GetBalance(ctx context.Context, address common.Address, block
 		return nil, err
 	}
 	sdkCtx := a.ctxProvider(height)
-	if err := CheckVersion(sdkCtx, a.keeper); err != nil {
+	if err := checkStateVersion(sdkCtx, height, a.keeper); err != nil {
 		return nil, err
 	}
 	statedb := state.NewDBImpl(sdkCtx, a.keeper, true)
@@ -69,7 +73,7 @@ func (a *StateAPI) GetCode(ctx context.Context, address common.Address, blockNrO
 		return nil, err
 	}
 	sdkCtx := a.ctxProvider(height)
-	if err := CheckVersion(sdkCtx, a.keeper); err != nil {
+	if err := checkStateVersion(sdkCtx, height, a.keeper); err != nil {
 		return nil, err
 	}
 	code := a.keeper.GetCode(sdkCtx, address)
@@ -86,7 +90,7 @@ func (a *StateAPI) GetStorageAt(ctx context.Context, address common.Address, hex
 		return nil, err
 	}
 	sdkCtx := a.ctxProvider(height)
-	if err := CheckVersion(sdkCtx, a.keeper); err != nil {
+	if err := checkStateVersion(sdkCtx, height, a.keeper); err != nil {
 		return nil, err
 	}
 	key, _, err := decodeHash(hexKey)
@@ -95,6 +99,16 @@ func (a *StateAPI) GetStorageAt(ctx context.Context, address common.Address, hex
 	}
 	state := a.keeper.GetState(sdkCtx, address, key)
 	return state[:], nil
+}
+
+// checkStateVersion checks that the state stores exist at a committed height.
+// The open block is built over the latest committed state and has no version
+// of its own, so a pending read skips the check.
+func checkStateVersion(sdkCtx sdk.Context, height int64, k *keeper.Keeper) error {
+	if height == PendingCtxHeight {
+		return nil
+	}
+	return CheckVersion(sdkCtx, k)
 }
 
 // Result structs for GetProof
@@ -112,6 +126,9 @@ func (a *StateAPI) GetProof(ctx context.Context, address common.Address, storage
 	defer func() {
 		recordMetricsWithError(ctx, "eth_getProof", a.connectionType, startTime, returnErr, recover())
 	}()
+	if isPendingTag(blockNrOrHash) {
+		return nil, ErrPendingProofRefused
+	}
 	var block *coretypes.ResultBlock
 	var err error
 	if blockNr, ok := blockNrOrHash.Number(); ok {
