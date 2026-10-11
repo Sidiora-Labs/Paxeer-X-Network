@@ -18,17 +18,18 @@ use layerx_programs_ai_market::{
     epoch::{self, Frozen, Outcome as Opening, ADVANCE_SCRATCH_BYTES, OPEN_SCRATCH_BYTES},
     errors::{
         ApplicationError, CodecResult, ARITHMETIC, BAD_SIGNATURE, BAD_VERSION, CAPACITY, CONFLICT,
-        EVIDENCE_BINDING, EXPIRED, F09_EVIDENCE_SEAL_CONFLICT, F09_EVIDENCE_TASK_SET_UNSEALED,
-        KEY_MISMATCH, NON_CANONICAL, NOT_FOUND, REPLAY_CONFLICT, REVOKED, SEQUENCE_GAP,
-        UNAUTHORIZED, UNKNOWN_OPERATION, WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE,
-        WRONG_ROSTER,
+        EVIDENCE_BINDING, EXPIRED, F03_EVIDENCE_NOT_SEALED, F03_EVIDENCE_ROOT_MISMATCH,
+        F09_EVIDENCE_SEAL_CONFLICT, F09_EVIDENCE_TASK_SET_UNSEALED, KEY_MISMATCH, NON_CANONICAL,
+        NOT_FOUND, REPLAY_CONFLICT, REVOKED, SEQUENCE_GAP, UNAUTHORIZED, UNKNOWN_OPERATION,
+        WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE, WRONG_ROSTER,
     },
     evaluators::{
         authority::{
             self, split_identity_section, AuthorityContext, EvaluatorRecord, EvaluatorRegion,
             LastRequest,
         },
-        model::{EvaluatorGrant, GrantTerms, RegisteredEvidence},
+        codec::check_report_context,
+        model::{EvaluatorGrant, GrantTerms, RegisteredEvidence, ReportContext},
     },
     evidence::{
         self, bind_root, check_root_binding, chunk_count, encode_envelope as encode_publisher,
@@ -53,7 +54,7 @@ use layerx_programs_ai_market::{
         decode_shared_state, encode_shared_state, ActorSlot, Control, ReplayRequest, ReplayTable,
         Section, SharedState, ACTOR_SLOTS, REPLAY_RESULT_BYTES,
     },
-    tasks::{self, Outcome as Task, SetBinding, TaskSet},
+    tasks::{self, Outcome as Task, SetBinding, TaskBinding, TaskSet},
     types::{
         AccountId, AssetId, Authentication, ChainDomain, Digest32, EvaluatorBinding, EvaluatorId,
         EvidenceRoot, FrozenBinding, MarketId, MetadataDigest, PolicyDigest, Presence, PrincipalId,
@@ -2104,6 +2105,199 @@ fn a24_report_seal_and_policy_mismatches_fail_binding() -> TestResult {
     assert_eq!(
         (conclusions.binding, conclusions.integrity),
         (invalid, invalid)
+    );
+    Ok(())
+}
+
+fn holds(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+impl Market {
+    /// A native `ACCEPT_TASK` or `COMMIT_TASK_RESULT` of worker 1 at the current revision.
+    fn worker_step(
+        &mut self,
+        operation: Operation,
+        sequence: u64,
+        task: TaskId,
+        digest: [u8; 32],
+        at: u64,
+    ) -> CodecResult<Task> {
+        let mut payload = self.world.revision()?.to_be_bytes().to_vec();
+        payload.extend_from_slice(task.as_bytes());
+        payload.extend_from_slice(&digest);
+        let mut request = [0xd0; 32];
+        request[1..9].copy_from_slice(&sequence.to_be_bytes());
+        let call = Req {
+            sequence,
+            request,
+            expiry: ROLE_EXPIRY,
+            ..self.bound(operation, principal(1)?, payload)
+        };
+        self.world.task(&call, at)
+    }
+    /// The committed task record of `task`.
+    fn task_binding(&self, task: TaskId) -> CodecResult<TaskBinding> {
+        let region = self.region()?;
+        for binding in TaskSet::decode(&region)?.bindings() {
+            let binding = binding?;
+            if binding.task == task {
+                return Ok(binding);
+            }
+        }
+        Err(NOT_FOUND)
+    }
+    /// The F03 reveal context of evaluator `n`, its evidence read from committed state.
+    fn report_context(&self, n: u8) -> CodecResult<ReportContext<'_>> {
+        let evaluator = self.evaluator(n)?;
+        let region = EvaluatorRegion::decode(&self.world.parts()?.region)?;
+        Ok(ReportContext {
+            binding: EvaluatorBinding {
+                frozen: self.frozen_binding(),
+                evaluator,
+                grant: version()?,
+                key_version: version()?,
+            },
+            frozen_grant: region.frozen_grant(evaluator)?,
+            live_grant: region.stored_grant(evaluator)?,
+            approved_rubric: rubric()?,
+            market_owner: PrincipalId::new(OWNER)?,
+            workers: &self.workers,
+            evidence: self.registered(n)?,
+        })
+    }
+}
+
+#[test]
+fn f09_seal_stores_the_digest_bound_to_the_output_commitment() -> TestResult {
+    let mut m = opened()?;
+    m.admit(0x21, 1, 1172, 1140)?;
+    let task = m.task_id(0x21, 1)?;
+    let published = publish(&m, task, &delegate_key(1))?;
+    let commitment = published.root;
+    m.worker_step(dispatch::ACCEPT_TASK, 1, task, [0xac; 32], 1141)?;
+    let Task::Applied { .. } =
+        m.worker_step(dispatch::COMMIT_TASK_RESULT, 2, task, commitment, 1142)?
+    else {
+        return Err(NON_CANONICAL);
+    };
+    let committed = m.task_binding(task)?;
+    assert_eq!(
+        (committed.status, committed.result),
+        (
+            tasks::TaskStatus::ResultCommitted,
+            Some(Digest32::new(commitment)?)
+        )
+    );
+    assert_eq!(
+        check_root_binding(
+            &published.manifest,
+            &published.context,
+            SubjectContext::Task { epoch: 1, task },
+            ArtifactKind::Result,
+            commitment,
+        )
+        .map(ArtifactManifestRoot::bytes),
+        Ok(commitment)
+    );
+    let set = m.set_digest()?;
+    m.seal_set(set, 1192)?;
+    assert_eq!(m.sealed_set()?, set);
+    let proof = Proof {
+        binding: EvaluatorBinding {
+            frozen: m.frozen_binding(),
+            evaluator: m.evaluator(2)?,
+            grant: version()?,
+            key_version: version()?,
+        },
+        policy: m.frozen.policy,
+        set,
+        worker: m.workers[0].worker,
+        generation: 1,
+        model: [0x71; 32],
+        score: 900_000,
+        task,
+        request: [0x81; 32],
+        result: commitment,
+        status: TerminalStatus::Success,
+    };
+    let digest = proof.root()?;
+    let unknown = Proof {
+        result: [0x5c; 32],
+        ..proof
+    }
+    .root()?;
+    assert_ne!(unknown, digest);
+    let scores = proof.scores()?;
+    let reveal = |evidence| ReportBody {
+        binding: proof.binding,
+        evidence,
+        scores: ScoreVector::Typed(&scores),
+    };
+    assert_eq!(m.registered(2)?, Presence::Absent);
+    for cited in [digest, unknown] {
+        assert_eq!(
+            check_report_context(&reveal(cited), &m.report_context(2)?),
+            Err(F03_EVIDENCE_NOT_SEALED)
+        );
+    }
+    let before = m.world.bytes.clone();
+    assert!(m.world.features()?.is_empty());
+    let claim = Claim {
+        root: digest.bytes(),
+        ..m.claim(1)?
+    };
+    let Sealing::Applied { seal, .. } = m.evidence(&claim, 2, 1, 1192)? else {
+        return Err(NON_CANONICAL);
+    };
+    assert_eq!((seal.root, seal.task_set), (digest, set));
+    let mut region = 1u64.to_be_bytes().to_vec();
+    region.push(1);
+    region.extend_from_slice(&seal.encode()?);
+    assert_eq!(m.world.features()?, region);
+    assert_eq!(
+        m.registered(2)?,
+        Presence::Present(seal.registered(m.frozen_binding()))
+    );
+    let manifest = proof.manifest()?;
+    for artifact in [
+        b"result of one task".as_slice(),
+        published.manifest.as_slice(),
+        published.envelope.as_slice(),
+        manifest.as_slice(),
+    ] {
+        assert!(!holds(&before, artifact));
+        assert!(!holds(&m.world.bytes, artifact));
+    }
+    assert!(holds(&m.world.bytes, digest.as_bytes()));
+    assert!(!holds(&before, digest.as_bytes()));
+    let report = reveal(digest);
+    let tasks = [proof.proven()?];
+    let publishers = [published.envelope.as_slice()];
+    let conclusions = verify_evidence_proof(&EvidenceProof {
+        seal,
+        binding: proof.binding,
+        policy: evidence_policy()?,
+        report: &report,
+        manifest: &manifest,
+        tasks: &tasks,
+        publishers: &publishers,
+    });
+    assert_eq!(
+        (
+            conclusions.binding,
+            conclusions.signatures,
+            conclusions.integrity
+        ),
+        (Conclusion::Holds, Conclusion::Holds, Conclusion::Holds)
+    );
+    let context = m.report_context(2)?;
+    assert_eq!(check_report_context(&report, &context), Ok(()));
+    assert_eq!(
+        check_report_context(&reveal(unknown), &context),
+        Err(F03_EVIDENCE_ROOT_MISMATCH)
     );
     Ok(())
 }
