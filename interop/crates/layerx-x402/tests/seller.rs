@@ -7,11 +7,11 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 use layerx_interop_gateway::adapter::{AdapterId, ConformanceSuite};
 use layerx_interop_gateway::principal::PrincipalId;
-use layerx_interop_gateway::trace::TraceId;
+use layerx_interop_gateway::trace::{TraceId, Traced};
 use layerx_interop_gateway::GatewayCore;
 use layerx_x402::model::{
     account_identifiers, AtomicAmount, PaymentPayload, PaymentRequired, PaymentRequirements,
-    ResourceInfo, SettlementResponse, X402_VERSION,
+    ResourceInfo, SettlementResponse, X402Error, X402_VERSION,
 };
 use layerx_x402::seller::{
     LayerXPaymentRequest, PaymentPlane, PlanePaymentOutcome, Seller, SellerOutcome,
@@ -71,13 +71,13 @@ fn pay_to(account: &str) -> String {
 fn test_requirements() -> PaymentRequirements {
     PaymentRequirements {
         scheme: "exact".to_owned(),
-        network: "layerx:beta".to_owned(),
+        network: "eip155:125".to_owned(),
         amount: AtomicAmount::from_u128(1000),
         asset: "0x".to_owned() + &"ab".repeat(32),
         pay_to: pay_to(PAYEE_ACCOUNT),
         max_timeout_seconds: 120,
         extra: Some(json!({
-            "layerx": {"commitment": "executed", "account": PAYEE_ACCOUNT, "currency": CURRENCY}
+            "layerx": {"commitment": "receipted", "account": PAYEE_ACCOUNT, "currency": CURRENCY}
         })),
     }
 }
@@ -119,15 +119,21 @@ fn seller_validates_payment_required_on_construction() {
 
     let mut invalid = valid.clone();
     invalid.accepts = vec![];
-    assert!(Seller::new(invalid).is_err());
+    assert_eq!(
+        Seller::new(invalid).err(),
+        Some(X402Error::InvalidRequirements)
+    );
 
     let mut wrong_version = valid.clone();
     wrong_version.x402_version = 1;
-    assert!(Seller::new(wrong_version).is_err());
+    assert_eq!(
+        Seller::new(wrong_version).err(),
+        Some(X402Error::WrongVersion)
+    );
 
     let mut no_resource = valid;
     no_resource.resource.url = String::new();
-    assert!(Seller::new(no_resource).is_err());
+    assert_eq!(Seller::new(no_resource).err(), Some(X402Error::Bounds));
 }
 
 #[test]
@@ -168,7 +174,10 @@ fn seller_refuses_payment_when_requirements_mismatch() {
 
     let result = seller.settle(&mut gateway, &principal, &encoded, &mut plane, &trace, 0);
 
-    assert!(result.is_err());
+    assert_eq!(
+        result.map_err(Traced::into_error),
+        Err(X402Error::RequirementsMismatch)
+    );
 }
 
 #[test]
@@ -223,7 +232,12 @@ fn seller_returns_refused_when_plane_refuses_payment() {
     match outcome {
         SellerOutcome::Refused { response, .. } => {
             assert!(!response.success);
-            assert!(response.error_reason.is_some());
+            assert_eq!(
+                response.error_reason.as_deref(),
+                Some("insufficient_balance")
+            );
+            assert_eq!(response.network, "eip155:125");
+            assert_eq!(response.transaction, "");
         }
         _ => panic!("expected refused outcome"),
     }
@@ -300,7 +314,10 @@ fn seller_validates_payment_payload_before_settlement() {
 
     let result = seller.settle(&mut gateway, &principal, &encoded, &mut plane, &trace, 0);
 
-    assert!(result.is_err());
+    assert_eq!(
+        result.map_err(Traced::into_error),
+        Err(X402Error::WrongVersion)
+    );
 }
 
 #[test]
@@ -341,7 +358,7 @@ fn payment_plane_request_contains_all_requirements() {
 
     let captured = plane.captured.unwrap_or_else(|| panic!("plane was called"));
     assert_eq!(captured.scheme, "exact");
-    assert_eq!(captured.network, "layerx:beta");
+    assert_eq!(captured.network, "eip155:125");
     assert_eq!(captured.amount.value(), 1000);
     assert!(captured.idempotency_key != [0; 32]);
     assert!(captured.request_digest != [0; 32]);
@@ -357,7 +374,7 @@ fn seller_outcome_types_are_distinct_and_typed() {
             error_reason: Some("test_refused".to_owned()),
             payer: None,
             transaction: String::new(),
-            network: "layerx:beta".to_owned(),
+            network: "eip155:125".to_owned(),
             amount: None,
             extensions: BTreeMap::new(),
         },
@@ -373,7 +390,7 @@ fn seller_payment_required_encoding_is_bounded() {
     required.resource.url = "https://example.com/".to_owned() + &"x".repeat(10_000);
 
     let seller_result = Seller::new(required);
-    assert!(seller_result.is_err());
+    assert_eq!(seller_result.err(), Some(X402Error::Bounds));
 }
 
 #[test]
@@ -435,7 +452,7 @@ fn asset_offer(account: &str, pay_to: String) -> PaymentRequirements {
     PaymentRequirements {
         pay_to,
         extra: Some(json!({
-            "layerx": {"commitment": "executed", "account": account, "currency": "SID"}
+            "layerx": {"commitment": "receipted", "account": account, "currency": "SID"}
         })),
         ..test_requirements()
     }
@@ -449,13 +466,17 @@ fn required_with(offer: PaymentRequirements) -> PaymentRequired {
 }
 
 #[test]
-fn seller_accepts_a_per_asset_payee_account_for_the_offered_asset() {
+fn seller_preserves_per_asset_binding_but_refuses_its_eip155_profile() {
     let account = asset_account("did:layerx:test-resource", ASSET_HEX);
     let identifiers = account_identifiers(&account)
         .unwrap_or_else(|error| panic!("asset account identifiers: {error}"));
     for (index, identifier) in identifiers.into_iter().enumerate() {
         let offer = asset_offer(&account, format!("0x{}", hex_id(identifier)));
-        assert_eq!(offer.validate(), Ok(()), "derivation {index}");
+        assert_eq!(
+            offer.validate(),
+            Err(X402Error::ProfileMismatch),
+            "derivation {index}"
+        );
         assert_eq!(
             offer
                 .layerx_terms()
@@ -463,7 +484,10 @@ fn seller_accepts_a_per_asset_payee_account_for_the_offered_asset() {
             Ok((account.clone(), "SID".to_owned())),
             "derivation {index}"
         );
-        assert!(Seller::new(required_with(offer.clone())).is_ok());
+        assert_eq!(
+            Seller::new(required_with(offer.clone())).err(),
+            Some(X402Error::ProfileMismatch)
+        );
 
         let bare = PaymentRequirements {
             asset: ASSET_HEX.to_owned(),
@@ -472,14 +496,31 @@ fn seller_accepts_a_per_asset_payee_account_for_the_offered_asset() {
         };
         assert_eq!(
             bare.validate(),
-            Ok(()),
+            Err(X402Error::ProfileMismatch),
             "unprefixed asset, derivation {index}"
+        );
+        assert_eq!(
+            bare.layerx_terms()
+                .map(|terms| (terms.account, terms.currency)),
+            Ok((account.clone(), "SID".to_owned())),
+            "unprefixed asset binding, derivation {index}"
+        );
+        assert_eq!(
+            Seller::new(required_with(bare)).err(),
+            Some(X402Error::ProfileMismatch)
         );
     }
 
     let main_account = "agent:did:layerx:test-resource:main";
     let main_offer = asset_offer(main_account, pay_to(main_account));
     assert_eq!(main_offer.validate(), Ok(()));
+    assert_eq!(
+        main_offer
+            .layerx_terms()
+            .map(|terms| (terms.account, terms.currency)),
+        Ok((main_account.to_owned(), "SID".to_owned()))
+    );
+    assert!(Seller::new(required_with(main_offer)).is_ok());
 }
 
 #[test]
@@ -511,7 +552,16 @@ fn seller_refuses_every_other_per_asset_payee_form() {
             Err(layerx_x402::model::X402Error::ProfileMismatch),
             "{account}"
         );
-        assert!(Seller::new(required_with(offer)).is_err(), "{account}");
+        assert_eq!(
+            offer.layerx_terms(),
+            Err(X402Error::ProfileMismatch),
+            "{account}"
+        );
+        assert_eq!(
+            Seller::new(required_with(offer)).err(),
+            Some(X402Error::ProfileMismatch),
+            "{account}"
+        );
     }
 
     let bound_to_other = asset_offer(&other_asset, pay_to(&other_asset));
@@ -520,23 +570,39 @@ fn seller_refuses_every_other_per_asset_payee_form() {
         Err(layerx_x402::model::X402Error::ProfileMismatch)
     );
 
+    assert_eq!(
+        bound_to_other.layerx_terms(),
+        Err(X402Error::ProfileMismatch)
+    );
+
     let redirected = asset_offer(&accepted, pay_to(PAYEE_ACCOUNT));
     assert_eq!(
         redirected.validate(),
         Err(layerx_x402::model::X402Error::ProfileMismatch)
     );
+    assert_eq!(redirected.layerx_terms(), Err(X402Error::ProfileMismatch));
+
     let main_payee = asset_offer(PAYEE_ACCOUNT, pay_to(&accepted));
+    assert_eq!(main_payee.validate(), Ok(()));
+    assert_eq!(main_payee.layerx_terms(), Err(X402Error::ProfileMismatch));
     assert_eq!(
-        main_payee.validate(),
-        Err(layerx_x402::model::X402Error::ProfileMismatch)
+        Seller::new(required_with(main_payee)).err(),
+        Some(X402Error::ProfileMismatch)
     );
 
     let unparsed_asset = PaymentRequirements {
         asset: "lxp".to_owned(),
         ..asset_offer(&accepted, pay_to(&accepted))
     };
-    assert!(unparsed_asset.validate().is_err());
-    assert!(Seller::new(required_with(unparsed_asset)).is_err());
+    assert_eq!(unparsed_asset.validate(), Err(X402Error::ProfileMismatch));
+    assert_eq!(
+        unparsed_asset.layerx_terms(),
+        Err(X402Error::ProfileMismatch)
+    );
+    assert_eq!(
+        Seller::new(required_with(unparsed_asset)).err(),
+        Some(X402Error::ProfileMismatch)
+    );
 
     let external = PaymentRequirements {
         network: "eip155:8453".to_owned(),
@@ -632,7 +698,7 @@ fn settlement_executed(operation: u8, from: [u8; 32]) -> layerx_x402::seller::Ex
 
 fn grant_requirements(purpose: Option<&str>) -> PaymentRequirements {
     let mut layerx = json!({
-        "commitment": "executed",
+        "commitment": "receipted",
         "account": PAYEE_ACCOUNT,
         "currency": CURRENCY,
         "payer": hex32(&payer_account()),
@@ -719,12 +785,13 @@ fn a_grant_settlement_repeats_the_challenge_purpose_hash_byte_for_byte() {
     let digest = receipt_leaf(&receipt);
     let expected = format!(
         concat!(
-            r#"{{"success":true,"payer":"{payer}","transaction":"lxp:{digest}","#,
-            r#""network":"layerx:beta","amount":"1000","extensions":{{"layerx":{{"#,
+            r#"{{"success":true,"payer":"{payer}","transaction":"0x{transaction}","#,
+            r#""network":"eip155:125","amount":"1000","extensions":{{"layerx":{{"#,
             r#""purposeHash":"{purpose}","receipt":"{receipt}","receiptDigest":"{digest}","#,
-            r#""verificationLevel":"sequencer-signed"}}}}}}"#
+            r#""verificationLevel":"receipted"}}}}}}"#
         ),
         payer = hex32(&payer_account()),
+        transaction = hex32(&[0x61; 32]),
         digest = digest,
         purpose = SETTLEMENT_PURPOSE,
         receipt = base64::engine::general_purpose::STANDARD.encode(&receipt),
@@ -737,26 +804,35 @@ fn a_grant_settlement_repeats_the_challenge_purpose_hash_byte_for_byte() {
 }
 
 #[test]
-fn an_exact_settlement_carries_no_purpose_hash() {
+fn settlement_transaction_is_tx_hash() {
     let executed = settlement_executed(5, [0x6a; 32]);
     let receipt = executed.canonical_receipt.clone();
     let outcome = settle_executed(test_requirements(), json!({"receipt": "AA=="}), executed)
         .unwrap_or_else(|error| panic!("exact settlement: {error:?}"));
-    let (bytes, _) = settled_header(outcome);
+    let (bytes, response) = settled_header(outcome);
 
     let digest = receipt_leaf(&receipt);
     let expected = format!(
         concat!(
-            r#"{{"success":true,"payer":"{payer}","transaction":"lxp:{digest}","#,
-            r#""network":"layerx:beta","amount":"1000","extensions":{{"layerx":{{"#,
+            r#"{{"success":true,"payer":"{payer}","transaction":"0x{transaction}","#,
+            r#""network":"eip155:125","amount":"1000","extensions":{{"layerx":{{"#,
             r#""receipt":"{receipt}","receiptDigest":"{digest}","#,
-            r#""verificationLevel":"sequencer-signed"}}}}}}"#
+            r#""verificationLevel":"receipted"}}}}}}"#
         ),
         payer = hex32(&[0x6a; 32]),
+        transaction = hex32(&[0x61; 32]),
         digest = digest,
         receipt = base64::engine::general_purpose::STANDARD.encode(&receipt),
     );
     assert_eq!(String::from_utf8(bytes).as_deref(), Ok(expected.as_str()));
+    assert_eq!(response.transaction, format!("0x{}", hex32(&[0x61; 32])));
+    assert_eq!(response.network, "eip155:125");
+    assert_eq!(
+        response.extensions["layerx"]["verificationLevel"],
+        "receipted"
+    );
+    assert!(response.extensions["layerx"].get("purposeHash").is_none());
+    assert_ne!(response.transaction, format!("0x{digest}"));
 }
 
 #[test]
@@ -769,6 +845,11 @@ fn a_grant_settlement_without_a_challenge_purpose_never_succeeds() {
         );
         assert!(
             !matches!(outcome, Ok(SellerOutcome::Settled { .. })),
+            "{purpose:?}"
+        );
+        assert_eq!(
+            outcome.map_err(Traced::into_error),
+            Err(X402Error::ProfileMissing),
             "{purpose:?}"
         );
     }
