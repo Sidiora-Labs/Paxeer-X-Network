@@ -24,7 +24,8 @@ import {
   type BindFees,
   type Eip1193Requester,
 } from "./account-derivation.js";
-import { abiSelector } from "./exchange.js";
+import { abiSelector, type PrecompileCall } from "./exchange.js";
+import { decodeRevertReason, RevertReasonError } from "./revert.js";
 import type {
   ProtocolReceipt,
   ReceiptEffect,
@@ -1278,6 +1279,58 @@ function gatewayResult(status: number, value: unknown): unknown {
   return refuse(code ?? "Service", { category: error.code, status });
 }
 
+export function decodeProgramsRpcRevert(
+  cause: unknown,
+): RevertReasonError | null {
+  if (cause instanceof RevertReasonError) return cause;
+  if (
+    cause === null ||
+    typeof cause !== "object" ||
+    !("code" in cause) ||
+    cause.code !== 3
+  )
+    return null;
+  return decodeRevertReason(
+    "data" in cause && typeof cause.data === "string"
+      ? cause.data
+      : new Uint8Array(),
+  );
+}
+
+export function encodeProgramsStateHeadCall(program: Hex32): PrecompileCall {
+  if (!isId(program)) invalid();
+  return Object.freeze({
+    to: PROGRAMS_PRECOMPILE,
+    data: `${abiSelector("getStateHead(bytes32)")}${program}`,
+    value: 0n,
+  });
+}
+
+export function decodeProgramsStateHead(
+  value: string | Uint8Array,
+): Uint8Array {
+  let bytes: Uint8Array;
+  if (typeof value === "string") {
+    if (!/^0x(?:[0-9a-fA-F]{2})*$/u.test(value)) invalid();
+    if (value.length > 2 + (64 + RESPONSE_MAX_BYTES) * 2)
+      refuse("ResponseTooLarge");
+    bytes = fromHex(value.slice(2).toLowerCase());
+  } else {
+    bytes = value;
+  }
+  if (bytes.length < 64 || bytes.length % 32 !== 0) invalid();
+  if (BigInt(`0x${hex(bytes.subarray(0, 32))}`) !== 32n) invalid();
+  const length = BigInt(`0x${hex(bytes.subarray(32, 64))}`);
+  if (length > BigInt(RESPONSE_MAX_BYTES)) refuse("ResponseTooLarge");
+  const size = Number(length);
+  if (
+    bytes.length !== 64 + Math.ceil(size / 32) * 32 ||
+    bytes.subarray(64 + size).some((byte) => byte !== 0)
+  )
+    invalid();
+  return new Uint8Array(bytes.subarray(64, 64 + size));
+}
+
 export interface AiMarketViewsOptions {
   readonly endpoint: URL | string;
   readonly credential?: LayerXKeyCredential;
@@ -1304,6 +1357,24 @@ export class AiMarketViews {
     this.#endpoint = endpoint;
     this.#credential = options.credential;
     this.#timeoutMs = timeoutMs;
+  }
+
+  public async stateHead(
+    program: Hex32,
+    operations: Eip1193Requester,
+  ): Promise<Uint8Array> {
+    const call = encodeProgramsStateHeadCall(program);
+    let result: unknown;
+    try {
+      result = await operations.request({
+        method: "eth_call",
+        params: [{ to: call.to, data: call.data }, "pending"],
+      });
+    } catch (cause) {
+      throw decodeProgramsRpcRevert(cause) ?? cause;
+    }
+    if (typeof result !== "string") invalid();
+    return decodeProgramsStateHead(result);
   }
 
   public async snapshot(market: Hex32, snapshot?: Hex32): Promise<MarketView> {
@@ -2682,6 +2753,17 @@ export class OperationRecord implements RecordFields {
     return this.#signed.slice();
   }
 
+  public get txHash(): string {
+    return `0x${this.activityId}`;
+  }
+
+  public get rung(): "submitted" | "receipted" | null {
+    if (this.globalSequence !== null) return "receipted";
+    return this.state === "pending" || this.state === "unknown"
+      ? "submitted"
+      : null;
+  }
+
   public with(
     changes: Partial<
       Omit<
@@ -2995,6 +3077,7 @@ export class OperationJournal {
       TOKEN,
     );
     await this.persist(resolved);
+    if (execution.revert !== null) throw execution.revert;
     return resolved;
   }
 
@@ -3043,7 +3126,18 @@ export class OperationJournal {
         method: "eth_sendRawTransaction",
         params: [`0x${hex(record.signedBytes)}`],
       });
-    } catch {
+    } catch (cause) {
+      let revert: RevertReasonError | null;
+      try {
+        revert = decodeProgramsRpcRevert(cause);
+      } catch (error) {
+        await this.persist(submitting.with({ state: "failed" }, TOKEN));
+        throw error;
+      }
+      if (revert !== null) {
+        await this.persist(submitting.with({ state: "failed" }, TOKEN));
+        throw revert;
+      }
       const unknown = submitting.with({ state: "unknown" }, TOKEN);
       await this.persist(unknown);
       return unknown;
@@ -3100,34 +3194,6 @@ export function decodeProgramsCallResult(
     terminalKind: Number(word(1)),
     response,
   });
-}
-
-function decodeRevert(bytes: Uint8Array): string | null {
-  if (bytes.length === 0) return null;
-  if (
-    bytes.length < 68 ||
-    !equal(bytes.slice(0, 4), fromHex(abiSelector("Error(string)").slice(2)))
-  )
-    refuse("ReceiptMismatch");
-  const offset = BigInt(`0x${hex(bytes.slice(4, 36))}`);
-  const length = BigInt(`0x${hex(bytes.slice(36, 68))}`);
-  if (
-    offset !== 32n ||
-    length > BigInt(bytes.length - 68) ||
-    bytes.length !== 68 + Math.ceil(Number(length) / 32) * 32 ||
-    bytes.slice(68 + Number(length)).some((byte) => byte !== 0)
-  )
-    refuse("ReceiptMismatch");
-  let reason: string;
-  try {
-    reason = new TextDecoder("utf-8", { fatal: true }).decode(
-      bytes.slice(68, 68 + Number(length)),
-    );
-  } catch {
-    return refuse("ReceiptMismatch");
-  }
-  if (!/^LXP_[A-Z0-9_]+(?:: .*)?$/u.test(reason)) refuse("ReceiptMismatch");
-  return reason;
 }
 
 function receiptObject(value: unknown): Readonly<Record<string, unknown>> {
@@ -3429,13 +3495,18 @@ export function decodeProgramsReceipt(
       refuse("ReceiptMismatch");
   }
   const call = decodeNativeProgramCallV1(transaction.activity.payload);
+  const revert = status === 0n ? decodeRevertReason(returnData) : null;
   return Object.freeze({
     receipt,
     programResult:
       status === 1n
         ? decodeProgramsCallResult(returnData, call.responseCapacity)
         : null,
-    refusal: status === 0n ? decodeRevert(returnData) : null,
+    refusal:
+      revert === null
+        ? null
+        : `${revert.code}: ${revert.message}${revert.detail === undefined ? "" : `; ${revert.detail}`}`,
+    revert,
   });
 }
 

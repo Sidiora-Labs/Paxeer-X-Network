@@ -11,6 +11,9 @@ import { sha256 } from "@noble/hashes/sha2.js";
 
 import {
   LayerXKeyCredential,
+  JsonRpcError,
+  PlatformSdkError,
+  RevertReasonError,
   SecretBytes,
   type NativePrepareResultV1,
 } from "../src/index.js";
@@ -26,12 +29,15 @@ import {
   activityIdOf,
   decodeProgramsCallResult,
   decodeProgramsReceipt,
+  decodeProgramsRpcRevert,
+  decodeProgramsStateHead,
   PROGRAMS_PRECOMPILE,
   decodeProgramCallActivity,
   decodeRequestEnvelope,
   encodeClaimRequest,
   encodeFundRequest,
   encodeProgramCallActivity,
+  encodeProgramsStateHeadCall,
   encodeRefundRequest,
   encodeRequestEnvelope,
   encodeSnapshotBinding,
@@ -105,6 +111,27 @@ async function refuses(
       `expected ${key}=${String(value)}, got ${String(failure.detail[key as keyof AiMarketErrorDetail])}`,
     );
   }
+  return failure;
+}
+
+async function refusesRevert(
+  action: () => unknown,
+  code: string,
+  retryable: boolean,
+): Promise<RevertReasonError> {
+  let failure: unknown;
+  try {
+    await action();
+  } catch (error) {
+    failure = error;
+  }
+  assert(failure instanceof RevertReasonError, "registry refusal missing");
+  assert(failure.code === code, `expected ${code}, got ${failure.code}`);
+  assert(failure.retryable === retryable, "registry retryability changed");
+  assert(
+    failure.retry === (retryable ? "safe" : "never"),
+    "retry class changed",
+  );
   return failure;
 }
 
@@ -577,6 +604,7 @@ function signedReceiptView(
   result = 0,
   kind = 1,
   revert = false,
+  reasonText = "LXP_FEE_LIMIT: fee cap",
 ): Record<string, unknown> {
   const txHash = keccak_256(signed);
   const seq = 1n;
@@ -596,7 +624,7 @@ function signedReceiptView(
   const nonceBytes = transactionParts(signed)[1];
   assert(nonceBytes !== undefined, "missing nonce");
   const nonce = nonceBytes.length === 0 ? 0n : BigInt(`0x${hex(nonceBytes)}`);
-  const reason = Buffer.from("LXP_FEE_LIMIT: fee cap");
+  const reason = Buffer.from(reasonText);
   const returnData = revert
     ? Buffer.concat([
         raw("08c379a0"),
@@ -722,6 +750,69 @@ function disclosure(canonical: Uint8Array): NativePrepareResultV1 {
 }
 
 try {
+  await check(
+    "market_state_head_view_decodes_canonical_abi_bytes",
+    async () => {
+      const program = id(0x02);
+      const call = encodeProgramsStateHeadCall(program);
+      assert(
+        call.to === PROGRAMS_PRECOMPILE &&
+          call.data === `0x0833650b${program}` &&
+          call.value === 0n,
+        "state head view target or selector changed",
+      );
+      const record = Uint8Array.from({ length: 33 }, (_value, index) => index);
+      const encoded = Buffer.concat([
+        be(32n, 32),
+        be(BigInt(record.length), 32),
+        record,
+        Buffer.alloc(31),
+      ]);
+      const decoded = decodeProgramsStateHead(new Uint8Array(encoded));
+      assert(hex(decoded) === hex(record), "state head bytes changed");
+      assert(
+        hex(
+          decodeProgramsStateHead(
+            x(hex(encoded)).toUpperCase().replace("0X", "0x"),
+          ),
+        ) === hex(record),
+        "hex state head bytes changed",
+      );
+      encoded[64] = 0xff;
+      assert(decoded[0] === 0, "decoded state head aliases the input");
+      assert(
+        decodeProgramsStateHead(
+          new Uint8Array(Buffer.concat([be(32n, 32), be(0n, 32)])),
+        ).length === 0,
+        "empty ABI bytes changed",
+      );
+      await refuses("InvalidEncoding", () =>
+        encodeProgramsStateHeadCall("0".repeat(64)),
+      );
+      for (const malformed of [
+        "0x0",
+        "0xzz",
+        "0x",
+        x(hex(Buffer.concat([be(64n, 32), encoded.subarray(32)]))),
+        x(hex(encoded.subarray(0, encoded.length - 1))),
+        x(hex(Buffer.concat([encoded, Buffer.alloc(32)]))),
+        x(hex(Buffer.concat([encoded.subarray(0, -1), Buffer.from([1])]))),
+      ]) {
+        await refuses("InvalidEncoding", () =>
+          decodeProgramsStateHead(malformed),
+        );
+      }
+      await refuses("ResponseTooLarge", () =>
+        decodeProgramsStateHead(
+          new Uint8Array(Buffer.concat([be(32n, 32), be(262_145n, 32)])),
+        ),
+      );
+      await refuses("ResponseTooLarge", () =>
+        decodeProgramsStateHead(`0x${"00".repeat(64 + 262_176)}`),
+      );
+    },
+  );
+
   // ----- AI.F10-A01: snapshot pinning across a newer snapshot ---------------------------------
 
   await check(
@@ -1830,6 +1921,82 @@ try {
   const recordSigned = freshRecord.signedBytes;
   const recordIntent = recordPrepared.intent;
 
+  await check(
+    "market_rpc_reverts_use_registry_codes_and_retry_classes",
+    async () => {
+      for (const [reason, code, retryable] of [
+        ["LXP_IO: io; read=state", "LXP_IO", true],
+        ["LXP_FEE_LIMIT: fee cap", "LXP_FEE_LIMIT", false],
+        ["LXP_UNRECOGNIZED: new refusal", "LXP_UNRECOGNIZED", false],
+        [
+          "LXP_FEETOKEN_SWITCH_OFF: fee token preference: fee-token switch is off",
+          "LXP_FEETOKEN_SWITCH_OFF",
+          true,
+        ],
+      ] as const) {
+        const receipt = signedReceiptView(recordSigned, 0, 1, true, reason);
+        const cause = new JsonRpcError(
+          3,
+          "execution reverted",
+          receipt.returnData,
+        );
+        const error = decodeProgramsRpcRevert(cause);
+        assert(
+          error instanceof RevertReasonError,
+          "RPC refusal was not decoded",
+        );
+        assert(
+          error.code === code && error.retryable === retryable,
+          "RPC registry mapping changed",
+        );
+        assert(
+          error.retry === (retryable ? "safe" : "never"),
+          "RPC retry class changed",
+        );
+        assert(
+          decodeProgramsRpcRevert(error) === error,
+          "decoded refusal identity changed",
+        );
+        if (code === "LXP_IO")
+          assert(
+            error.message === "io" && error.detail === "read=state",
+            "RPC refusal detail changed",
+          );
+      }
+      assert(
+        decodeProgramsRpcRevert(new JsonRpcError(-32000, "unavailable")) ===
+          null,
+        "transport failure became a revert",
+      );
+      assert(
+        decodeProgramsRpcRevert(new Error("disconnected")) === null,
+        "lost acknowledgement became a revert",
+      );
+      for (const cause of [
+        new JsonRpcError(3, "execution reverted"),
+        new JsonRpcError(3, "execution reverted", "0x"),
+        new JsonRpcError(
+          3,
+          "execution reverted",
+          signedReceiptView(recordSigned, 0, 1, true, "LXP_IO").returnData,
+        ),
+      ]) {
+        let failure: unknown;
+        try {
+          decodeProgramsRpcRevert(cause);
+        } catch (error) {
+          failure = error;
+        }
+        assert(
+          failure instanceof PlatformSdkError &&
+            failure.code === "decode-failure" &&
+            failure.retry === "never",
+          "malformed revert was not terminal",
+        );
+      }
+    },
+  );
+
   await check("A08 records round-trip and refuse corruption", async () => {
     const record = OperationRecord.signed(recordSigned, ownerKey, recordIntent);
     const bytes = record.encode();
@@ -2053,7 +2220,10 @@ try {
       assert(
         pending.state === "pending" &&
           pending.resultCode === null &&
-          pending.globalSequence === null,
+          pending.globalSequence === null &&
+          pending.txHash === x(hex(keccak_256(recordSigned))) &&
+          pending.rung === "submitted" &&
+          record.rung === null,
         "hash alone became execution",
       );
       const calls = lost.map(
@@ -2106,7 +2276,9 @@ try {
       assert(
         resolved.state === "executed" &&
           resolved.resultCode === 0 &&
-          resolved.globalSequence === 1n,
+          resolved.globalSequence === 1n &&
+          resolved.txHash === pending.txHash &&
+          resolved.rung === "receipted",
         "verified receipt not applied",
       );
       assert(
@@ -2157,9 +2329,39 @@ try {
         assert(
           reverted?.receipt.resultCode === 1 &&
             reverted.programResult === null &&
-            reverted.refusal === "LXP_FEE_LIMIT: fee cap",
+            reverted.refusal === "LXP_FEE_LIMIT: fee cap" &&
+            reverted.revert?.code === "LXP_FEE_LIMIT" &&
+            reverted.revert.retry === "never" &&
+            reverted.revert.retryable === false,
           "EVM revert changed",
         );
+        for (const [reason, code, retryable] of [
+          ["LXP_FEE_LIMIT: fee cap", "LXP_FEE_LIMIT", false],
+          ["LXP_IO: io; read=state", "LXP_IO", true],
+        ] as const) {
+          const error = await refusesRevert(
+            () =>
+              failedJournal.resolve(
+                failedPending,
+                signedReceiptView(recordSigned, 0, 1, true, reason),
+              ),
+            code,
+            retryable,
+          );
+          const durable = await failedJournal.load(failedPending.activityId);
+          assert(
+            durable.state === "failed" &&
+              durable.resultCode === 1 &&
+              durable.globalSequence === 1n &&
+              durable.rung === "receipted",
+            "EVM refusal was not durable before throwing",
+          );
+          if (retryable)
+            assert(
+              error.detail === "read=state",
+              "verified refusal detail changed",
+            );
+        }
         const base = signedReceiptView(recordSigned);
         for (const altered of [
           { ...base, seq: "0x2" },
