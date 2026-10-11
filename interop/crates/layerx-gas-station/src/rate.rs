@@ -492,25 +492,25 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
     }
 
     /// Publishes the rate file's rate once to the sequencer, confirms it by
-    /// its `pax_sequencerReceipt` and returns the journalled publication.
+    /// its `pax_sequencerReceipt` and returns the journalled publication sent
+    /// on this call.
     /// # Errors
     /// Refuses a missing, malformed, zero, not yet set or expired rate file,
     /// a rate unchanged on chain within the cadence, a signer that is not the
     /// paymaster owner, an exhausted daily gas budget, a fee per gas above the
     /// ceiling, an owner balance that would fall below its floor once this
     /// publication and every unsettled one pay their most, a reverted or
-    /// unconfirmed publication, and node or journal failures. Before the
-    /// budget and balance checks it confirms every unconfirmed publication and
-    /// settles every one whose committed receipt the node now has. A refusal
+    /// unconfirmed publication, and node or journal failures. Before reading
+    /// the rate file it confirms every unconfirmed publication and settles
+    /// every one whose committed receipt the node now has; that recovery is
+    /// bookkeeping only and never ends the call. A refusal
     /// never publishes, so the paymaster's rate ages until `currentRate`
     /// reverts with `StaleRate`.
     pub fn publish(&mut self, rate_file: &Path) -> Result<Publication, RateRefusal> {
         self.rpc.set_deadline(Some(
             Instant::now() + Duration::from_secs(self.config.confirmation_retry_seconds),
         ))?;
-        if let Some(recovered) = self.recover_pending()? {
-            return Ok(recovered);
-        }
+        self.recover_pending()?;
         let file = RateFile::load(rate_file)?;
         let head: Value = self
             .rpc
@@ -588,18 +588,19 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
     /// Settles every journalled publication whose committed receipt the node
     /// has, and waits for the sequencer receipt of every other one. A
     /// publication the sequencer has no record of is resent as its exact
-    /// journalled bytes; no other transaction is ever signed at its nonce.
+    /// journalled bytes; no other transaction is ever signed at its nonce. A
+    /// publication confirmed but not yet finalized stays active and keeps
+    /// reserving its most.
     /// # Errors
     /// Refuses a signer that is not the paymaster owner, a reverted or
     /// unconfirmed publication, a nonce consumed by another transaction, and
     /// node or journal failures.
-    pub fn recover_pending(&mut self) -> Result<Option<Publication>, RateRefusal> {
+    pub fn recover_pending(&mut self) -> Result<(), RateRefusal> {
         let owner = self.paymaster_word(b"owner()")?;
         if owner[..12] != [0; 12] || owner[12..] != self.signer.address() {
             return Err(RateRefusal::NotOwner);
         }
         let groups: Vec<_> = self.journal.state().rate_active.keys().copied().collect();
-        let mut recovered = None;
         for (signer, nonce) in groups {
             let candidates: Vec<_> = self
                 .journal
@@ -612,15 +613,14 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             let mut complete = None;
             for transaction in candidates {
                 if let Some(settlement) = self.try_finalize(&transaction)? {
-                    complete = Some((transaction.publication, settlement));
+                    complete = Some(settlement);
                     break;
                 }
             }
-            if let Some((publication, settlement)) = complete {
+            if let Some(settlement) = complete {
                 if !settlement.succeeded {
                     return Err(RateRefusal::Reverted);
                 }
-                recovered = Some(publication);
                 continue;
             }
             let hash = *self
@@ -651,9 +651,9 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             {
                 self.broadcast(&transaction)?;
             }
-            recovered = Some(self.confirm_by_receipt(&transaction)?);
+            self.confirm_by_receipt(&transaction)?;
         }
-        Ok(recovered)
+        Ok(())
     }
 
     fn broadcast(&mut self, transaction: &PublicationTransaction) -> Result<(), RateRefusal> {
@@ -848,6 +848,17 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             finalized,
         })?;
         Ok(settlement)
+    }
+}
+
+/// The seconds the publisher sleeps after a tick: one cadence after a
+/// publication or a refusal, and the rest of the cadence (at least one second)
+/// after an unchanged rate of the given age.
+#[must_use]
+pub fn next_wait(cadence_seconds: u64, result: &Result<Publication, RateRefusal>) -> u64 {
+    match result {
+        Err(RateRefusal::Unchanged { age }) => cadence_seconds.saturating_sub(*age).max(1),
+        _ => cadence_seconds,
     }
 }
 

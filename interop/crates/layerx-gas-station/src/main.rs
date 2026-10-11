@@ -1,7 +1,9 @@
 use layerx_gas_station::config::ServiceConfig;
 use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
-use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
+use layerx_gas_station::rate::{
+    next_wait, PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS,
+};
 use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange, JsonRpc};
 use layerx_gas_station::service::{drive, Limits, Schedule, Service};
 use layerx_gas_station::signer::LocalSigner;
@@ -98,7 +100,8 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
         "Paxeer X Network rate publisher publishing every {cadence} s, at most {daily_wei} wei per chain day"
     );
     loop {
-        let wait = match publisher.publish(&arguments.rate_file) {
+        let result = publisher.publish(&arguments.rate_file);
+        match &result {
             Ok(publication) => {
                 let state = publisher.journal().state();
                 let day = publication.signed_at / DAY_SECONDS;
@@ -125,9 +128,8 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
                     state.publication_gas(day),
                     state.reserved_wei(),
                 );
-                cadence
             }
-            Err(RateRefusal::Unchanged { age }) => cadence.saturating_sub(age).max(1),
+            Err(RateRefusal::Unchanged { .. }) => {}
             Err(
                 error @ (RateRefusal::Journal(_)
                 | RateRefusal::LegacyUnresolved
@@ -136,12 +138,9 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
                 eprintln!("{error}");
                 return ExitCode::FAILURE;
             }
-            Err(error) => {
-                eprintln!("{error}");
-                cadence
-            }
-        };
-        std::thread::sleep(Duration::from_secs(wait));
+            Err(error) => eprintln!("{error}"),
+        }
+        std::thread::sleep(Duration::from_secs(next_wait(cadence, &result)));
     }
 }
 

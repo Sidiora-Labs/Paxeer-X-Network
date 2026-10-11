@@ -12,7 +12,7 @@ use layerx_gas_station::config::ConfigError;
 use layerx_gas_station::journal::{Entry, Journal, Publication};
 use layerx_gas_station::quote::{address_word, keccak, word, Address, Word};
 use layerx_gas_station::rate::{
-    PublisherConfig, RateFile, RatePublisher, RateRefusal, RATE_GAS_LIMIT,
+    next_wait, PublisherConfig, RateFile, RatePublisher, RateRefusal, RATE_GAS_LIMIT,
 };
 use layerx_gas_station::rpc::{bytes, hex, ConfiguredRpc, Exchange, RpcFault};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
@@ -75,6 +75,7 @@ fn signed_receipt(
     from: Address,
     to: Address,
     status: u64,
+    timestamp: u64,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let (key_id, height, activity_id) = match tamper {
         Tamper::UnpinnedKeyId => ([0x5b; 32], BLOCK, activity_id),
@@ -113,7 +114,7 @@ fn signed_receipt(
         encoder.bytes(&[0; 32], 32)?;
         encoder.bytes(&[0; 32], 32)?;
         encoder.bytes(&key_id, 32)?;
-        encoder.u64(NOW * 1_000)?;
+        encoder.u64(timestamp * 1_000)?;
         encoder.u8(u8::from(signature.is_some()))?;
         if let Some(signature) = signature {
             encoder.bytes(&signature, 64)?;
@@ -135,7 +136,12 @@ fn signed_receipt(
 /// them: `rung` is how far the sequencer has taken every sent transaction
 /// ("unknown", "submitted", "receipted" or "committed"); a receipted
 /// transaction advances the pending nonce, a committed one the finalized nonce.
+/// `clock` is the chain time of the latest block; a successful setRate sets
+/// the paymaster's rate and `updated_at` to the clock once the sequencer
+/// receipts it, and `applied` counts the sent transactions it has receipted.
 struct Chain {
+    clock: u64,
+    applied: usize,
     rate: u128,
     updated_at: u64,
     owner: Address,
@@ -168,14 +174,14 @@ impl Chain {
                 let logs = if self.status == 1 {
                     json!([{"address": hex(&to),
                         "topics": [hex(&keccak(b"RateUpdated(uint256,uint256)"))],
-                        "data": hex(&[rate, word(NOW.into())].concat()),
+                        "data": hex(&[rate, word(self.clock.into())].concat()),
                         "logIndex": "0x0"}])
                 } else {
                     json!([])
                 };
                 let mut receipt = json!({"rung": rung, "txHash": hex(hash),
                     "seq": quantity(nonce.into()), "height": quantity(BLOCK.into()),
-                    "index": "0x1", "timestamp": quantity(NOW.into()),
+                    "index": "0x1", "timestamp": quantity(self.clock.into()),
                     "status": quantity(self.status.into()), "returnData": "0x",
                     "logs": logs, "gasUsed": quantity(self.gas_used.into()),
                     "cumulativeGasUsed": quantity(self.gas_used.into()),
@@ -186,8 +192,16 @@ impl Chain {
                     receipt["blockHash"] = Value::String(hex(&BLOCK_HASH));
                 }
                 if !matches!(self.tamper, Tamper::Missing) {
-                    let signed = signed_receipt(self.tamper, *hash, nonce, from, to, self.status)
-                        .map_err(|_| RpcFault::Malformed)?;
+                    let signed = signed_receipt(
+                        self.tamper,
+                        *hash,
+                        nonce,
+                        from,
+                        to,
+                        self.status,
+                        self.clock,
+                    )
+                    .map_err(|_| RpcFault::Malformed)?;
                     receipt["keyId"] = Value::String(hex(&RECEIPT_KEY_ID));
                     receipt["receipt"] = Value::String(hex(&signed));
                 }
@@ -205,6 +219,30 @@ impl Chain {
         self.nonces
             .iter()
             .find_map(|(h, n)| (h == hash).then_some(*n))
+    }
+    /// Applies every accepted setRate the sequencer has receipted since the
+    /// last request, as the paymaster does: a successful one sets the rate and
+    /// stamps `updated_at` with the clock.
+    fn receipt_sent_rates(&mut self) -> Result<(), RpcFault> {
+        if !matches!(self.rung, "receipted" | "committed") {
+            return Ok(());
+        }
+        while let Some((hash, _)) = self.nonces.get(self.applied).copied() {
+            self.applied += 1;
+            if self.status != 1 {
+                continue;
+            }
+            let raw = self
+                .sent
+                .iter()
+                .find(|raw| keccak(raw) == hash)
+                .ok_or(RpcFault::Malformed)?;
+            let (_, rate, _) = published_rate(raw).map_err(|_| RpcFault::Malformed)?;
+            self.rate =
+                u128::from_be_bytes(rate[16..].try_into().map_err(|_| RpcFault::Malformed)?);
+            self.updated_at = self.clock;
+        }
+        Ok(())
     }
 }
 fn quantity(v: u128) -> Value {
@@ -225,6 +263,7 @@ impl Exchange for ChainExchange {
 
     fn request(&self, _: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
         let mut chain = self.0.borrow_mut();
+        chain.receipt_sent_rates()?;
         let hash_param = || -> Result<Word, RpcFault> {
             bytes(params[0].as_str().ok_or(RpcFault::Malformed)?)?
                 .try_into()
@@ -234,7 +273,7 @@ impl Exchange for ChainExchange {
             "eth_chainId" => quantity(1325),
             "eth_getBlockByNumber" => match params[0].as_str() {
                 Some("latest") => {
-                    json!({"timestamp": quantity(NOW.into()), "baseFeePerGas": quantity(1_000_000_000)})
+                    json!({"timestamp": quantity(chain.clock.into()), "baseFeePerGas": quantity(1_000_000_000)})
                 }
                 Some("finalized" | "0x10") => {
                     json!({"number": quantity(BLOCK.into()), "hash": hex(&BLOCK_HASH)})
@@ -316,6 +355,8 @@ impl Lane {
         Ok(Self {
             dir,
             chain: Rc::new(RefCell::new(Chain {
+                clock: NOW,
+                applied: 0,
                 rate: 3_114_000,
                 updated_at: NOW - 120,
                 owner,
@@ -589,6 +630,7 @@ fn daily_gas_budget_stops_publishing() -> TestResult {
     let mut publisher = lane.publisher(u128::from(RATE_GAS_LIMIT) + 35_000 - 1)?;
     publisher.publish(&file)?;
     lane.chain.borrow_mut().nonce = 8;
+    lane.chain.borrow_mut().clock += 120;
     assert_eq!(publisher.publish(&file), Err(RateRefusal::BudgetExhausted));
     assert_eq!(lane.sent(), 1);
     drop(publisher);
@@ -745,10 +787,18 @@ fn unsettled_publications_reserve_their_most_against_the_floor() -> TestResult {
         u128::from(RATE_GAS_LIMIT)
     );
     assert_eq!(state.publications[&publication.hash].1, None);
+    assert_eq!(
+        (lane.chain.borrow().rate, lane.chain.borrow().updated_at),
+        (3_200_000, NOW)
+    );
     lane.chain.borrow_mut().rung = "committed";
-    assert_eq!(publisher.publish(&file)?, publication);
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::Unchanged { age: 0 })
+    );
     assert_eq!(lane.sent(), 1);
     let state = publisher.journal().state();
+    assert_eq!(state.publications[&publication.hash].0, publication);
     assert!(state.unsettled().is_empty());
     assert_eq!(state.reserved_wei(), 0);
     assert_eq!(
@@ -845,10 +895,14 @@ fn publication_waits_for_the_sequencer_receipt_and_is_never_resent_at_its_nonce(
     assert_eq!(lane.sent(), 1);
     assert_eq!(publisher.journal().state().rate_transactions.len(), 1);
     lane.chain.borrow_mut().rung = "committed";
-    let publication = publisher.publish(&file)?;
-    assert_eq!((publication.nonce, publication.hash), (7, hash));
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::Unchanged { age: 0 })
+    );
     assert_eq!(lane.sent(), 1);
     let state = publisher.journal().state();
+    let publication = state.publications[&hash].0;
+    assert_eq!((publication.nonce, publication.hash), (7, hash));
     assert!(state.rate_active.is_empty());
     assert_eq!(
         state.publications[&hash]
@@ -856,6 +910,7 @@ fn publication_waits_for_the_sequencer_receipt_and_is_never_resent_at_its_nonce(
             .map(|s| (s.gas_used, s.succeeded)),
         Some((35_000, true))
     );
+    lane.chain.borrow_mut().clock += 120;
     let next = publisher.publish(&file)?;
     assert_eq!(next.nonce, 8);
     assert_eq!(lane.sent(), 2);
@@ -875,13 +930,17 @@ fn publication_unknown_to_the_sequencer_is_resent_as_its_exact_bytes() -> TestRe
     assert_eq!(lane.sent(), 1);
     assert!(publisher.journal().state().rate_broadcast.is_empty());
     lane.chain.borrow_mut().rung = "receipted";
-    let publication = publisher.publish(&file)?;
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::Unchanged { age: 0 })
+    );
     let sent = lane.chain.borrow().sent.clone();
     assert_eq!(sent.len(), 2);
     assert_eq!(sent[0], sent[1]);
+    let state = publisher.journal().state();
+    let publication = state.publications[&keccak(&sent[0])].0;
     assert_eq!(publication.hash, keccak(&sent[0]));
     assert_eq!(publication.nonce, 7);
-    let state = publisher.journal().state();
     assert_eq!(state.rate_transactions.len(), 1);
     assert!(state.rate_broadcast.contains(&publication.hash));
     assert_eq!(state.unsettled(), vec![publication]);
@@ -1069,12 +1128,90 @@ fn receipt_signature_is_verified_against_pinned_receipt_keys() -> TestResult {
         assert_eq!(state.publications[&hash].1, None);
     }
     lane.chain.borrow_mut().tamper = Tamper::None;
-    let publication = publisher.publish(&file)?;
-    assert_eq!(lane.sent(), 1);
     assert_eq!(
-        (publication.nonce, publication.hash),
-        (7, keccak(&lane.chain.borrow().sent[0]))
+        publisher.publish(&file),
+        Err(RateRefusal::Unchanged { age: 0 })
     );
-    assert_eq!(publisher.journal().state().unsettled(), vec![publication]);
+    assert_eq!(lane.sent(), 1);
+    let hash = keccak(&lane.chain.borrow().sent[0]);
+    let state = publisher.journal().state();
+    let publication = state.publications[&hash].0;
+    assert_eq!((publication.nonce, publication.hash), (7, hash));
+    assert_eq!(state.unsettled(), vec![publication]);
+    Ok(())
+}
+
+#[test]
+fn renewal_tick_is_not_spent_on_finalizing_the_previous_publication() -> TestResult {
+    const CADENCE: u64 = 239;
+    const MAX_RATE_AGE: u64 = 300;
+    let rate_age = |lane: &Lane| {
+        let chain = lane.chain.borrow();
+        chain.clock - chain.updated_at
+    };
+    for (name, renewed) in [("renewal", 3_114_000_u128), ("renewal-changed", 3_200_000)] {
+        let lane = Lane::new(name)?;
+        let file = lane.rate_file("rate = 3_114_000\nset_at = 1_899_000_000\n")?;
+        let mut value = config_json();
+        value["rate_cadence_seconds"] = json!(CADENCE);
+        value["rate_confirmation_retry_seconds"] = json!(60);
+        value["max_rate_age"] = json!(MAX_RATE_AGE);
+        let mut publisher = lane.publisher_from(&value, Duration::ZERO)?;
+        lane.chain.borrow_mut().rung = "receipted";
+        lane.chain.borrow_mut().updated_at = NOW - CADENCE;
+        assert!(rate_age(&lane) < MAX_RATE_AGE, "{name}");
+
+        let tick = publisher.publish(&file);
+        let wait = next_wait(CADENCE, &tick);
+        let first = tick?;
+        assert_eq!(wait, CADENCE, "{name}");
+        assert_eq!(
+            (first.nonce, first.signed_at, first.rate),
+            (7, NOW, word(3_114_000)),
+            "{name}"
+        );
+        assert_eq!(lane.sent(), 1, "{name}");
+        let state = publisher.journal().state();
+        assert_eq!(state.unsettled(), vec![first], "{name}");
+        assert_eq!(state.publications[&first.hash].1, None, "{name}");
+        assert_eq!(state.reserved_wei(), RESERVE, "{name}");
+        assert_eq!(rate_age(&lane), 0, "{name}");
+
+        lane.chain.borrow_mut().rung = "committed";
+        lane.chain.borrow_mut().clock += wait;
+        if renewed != 3_114_000 {
+            lane.rate_file(&format!("rate = {renewed}\nset_at = 1_899_000_000\n"))?;
+        }
+        assert!(rate_age(&lane) < MAX_RATE_AGE, "{name}");
+        let tick = publisher.publish(&file);
+        assert_eq!(next_wait(CADENCE, &tick), CADENCE, "{name}");
+        let second = tick?;
+        assert_eq!(
+            (second.nonce, second.signed_at, second.rate),
+            (8, NOW + CADENCE, word(renewed)),
+            "{name}"
+        );
+        assert_eq!(lane.sent(), 2, "{name}");
+        assert!(second.signed_at - first.signed_at <= CADENCE, "{name}");
+        let raw = lane.chain.borrow().sent[1].clone();
+        assert_eq!(second.hash, keccak(&raw), "{name}");
+        assert_eq!(
+            published_rate(&raw)?,
+            (PAYMASTER, word(renewed), lane.owner),
+            "{name}"
+        );
+        let state = publisher.journal().state();
+        assert!(state.unsettled().is_empty(), "{name}");
+        assert_eq!(state.reserved_wei(), 0, "{name}");
+        assert_eq!(
+            state.publications[&first.hash]
+                .1
+                .map(|s| (s.cost_wei, s.succeeded)),
+            Some((1_500_000_000 * 35_000, true)),
+            "{name}"
+        );
+        assert_eq!(lane.chain.borrow().rate, renewed, "{name}");
+        assert_eq!(rate_age(&lane), 0, "{name}");
+    }
     Ok(())
 }
