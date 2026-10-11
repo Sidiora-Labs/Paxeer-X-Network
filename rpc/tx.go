@@ -271,6 +271,11 @@ func (t *TransactionAPI) GetTransactionByHash(ctx context.Context, hash common.H
 	defer func() {
 		recordMetricsWithError(ctx, "eth_getTransactionByHash", t.connectionType, startTime, returnErr, recover())
 	}()
+	if t.watermarks != nil && t.watermarks.pending != nil {
+		if ptx, ok := t.watermarks.pending.PendingTx(hash); ok {
+			return t.encodePendingTransaction(ptx)
+		}
+	}
 	sdkCtx := t.ctxProvider(LatestCtxHeight)
 	// first try get from mempool
 	if tx, ok := t.tmClient.EvmTxByHash(hash); ok {
@@ -335,6 +340,40 @@ func (t *TransactionAPI) GetTransactionByHash(ctx context.Context, hash common.H
 		return nil, errors.New("transaction is not an EVM transaction and thus cannot be represented in _getTransaction* endpoints")
 	}
 	return t.encodeRPCTransaction(ethtx, block, uint32(txIndex)) //nolint:gosec
+}
+
+// encodePendingTransaction encodes a receipted transaction of the open block:
+// blockNumber is the open height, transactionIndex its position in the block and
+// blockHash null, since the open block has no hash before it is sealed.
+func (t *TransactionAPI) encodePendingTransaction(ptx PendingTx) (*export.RPCTransaction, error) {
+	if ptx.Height < 1 {
+		return nil, fmt.Errorf("pending transaction height %d is not positive", ptx.Height)
+	}
+	if ptx.TxIndex < 0 {
+		return nil, fmt.Errorf("pending transaction index %d is negative", ptx.TxIndex)
+	}
+	etx := getEthTxForTxBz(ptx.TxBytes, t.txConfigProvider(LatestCtxHeight).TxDecoder())
+	if etx == nil {
+		return nil, errors.New("transaction is not an EVM transaction and thus cannot be represented in _getTransaction* endpoints")
+	}
+	sdkCtx := t.ctxProvider(PendingCtxHeight)
+	from, err := rpcutils.RecoverEVMSenderWithContext(sdkCtx, etx)
+	if err != nil {
+		return nil, err
+	}
+	blockTime := sdkCtx.BlockTime().Unix()
+	if blockTime < 0 {
+		return nil, fmt.Errorf("open block %d timestamp predates Unix epoch", ptx.Height)
+	}
+	// The base fee of the open block is fixed at open from the committed state below it.
+	baseFeePerGas := t.keeper.GetNextBaseFeePerGas(t.ctxProvider(ptx.Height - 1)).TruncateInt().BigInt()
+	chainConfig := types.DefaultChainConfig().EthereumConfig(t.keeper.ChainID(sdkCtx))
+	// NewRPCTransaction fills the block fields and the effective gas price only for
+	// a non-zero block hash; the hash is dropped right after.
+	res := export.NewRPCTransaction(etx, common.Hash{1}, uint64(ptx.Height), uint64(blockTime), uint64(ptx.TxIndex), baseFeePerGas, chainConfig)
+	res.BlockHash = nil
+	res.From = from
+	return res, nil
 }
 
 func (t *TransactionAPI) GetTransactionErrorByHash(ctx context.Context, hash common.Hash) (result string, returnErr error) {
