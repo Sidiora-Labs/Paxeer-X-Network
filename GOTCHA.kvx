@@ -7136,3 +7136,73 @@ fix = "create fixtures with 0600 permissions"
 area = "evm precompile tables"
 symptom = "entries in the built-in vm.PrecompiledContracts tables override custom precompiles at every height, so addPrecompileToVM reached through InitializePrecompiles(false) skips activation height gating"
 fix = "register merge precompiles only through the custom activation path; InitializePrecompiles(false) is for tests"
+
+[gotcha.1513]
+area = "explorer frontend install"
+symptom = "yarn install --frozen-lockfile exits 1 on the husky prepare step because the package directory has no .git"
+fix = "run with HUSKY=0"
+
+[gotcha.1514]
+area = "explorer frontend install"
+symptom = "the yarn link step takes about two hours under heavy host load"
+fix = "install once on main and symlink node_modules into worktrees"
+
+[gotcha.1515]
+area = "npm workspaces"
+symptom = "the root package.json workspaces hoist the agent SDK and seller dependencies into the root node_modules, so the package-local node_modules stays empty"
+fix = "resolve binaries with npm --prefix <pkg> exec, not <pkg>/node_modules/.bin"
+
+[gotcha.1516]
+area = "node test apps"
+symptom = "BaseApp.SetOccEnabled panics once the app is sealed"
+fix = "set OCC through the NewTestWrapper baseapp option"
+
+[gotcha.1517]
+area = "node test apps"
+symptom = "two test apps get different app hashes because InitChain stamps the epoch with the current time"
+fix = "copy the epoch from one app into the other before comparing hashes"
+
+[gotcha.1518]
+area = "node test packages"
+symptom = "occ_tests/utils imports node, so an internal node test cannot use it"
+fix = "use it only from the external app_test package"
+
+[gotcha.1519]
+area = "rpc external tests"
+symptom = "setup_test.go init binds fixed ports 7777, 7778 and 7779, so two concurrent go test ./rpc/... runs on one machine panic with address already in use"
+fix = "serialise rpc test runs across worktrees or wait for the port to free"
+
+[gotcha.1520]
+area = "rpc block encoding"
+symptom = "kvstore test chain txs must be Paxeer-decodable sdk txs when served through BlockAPI because validateBlockExecutionReceipts fails on undecodable block txs"
+fix = "build test blocks from real sdk txs"
+
+[gotcha.1521]
+area = "python sdk tests"
+symptom = "test_binding_preflight.py is hand-wrapped at 120 columns and black rewrites the whole file"
+fix = "keep the existing style; do not run black on it"
+
+[gotcha.1522]
+area = "python sdk tests"
+symptom = "NativeTerms account_sequence in the approval() fixture is the EVM nonce of the market transaction, so a chain fixture tracking pending nonces must pass the post-bind nonce"
+fix = "the fixture takes the nonce as a parameter"
+
+[gotcha.1523]
+area = "rpc websocket tests"
+symptom = "the geth jsonCodec write deadline is 10 seconds, so a stalled-subscriber test must finish its stall inside that window"
+fix = "keep the stall shorter than the codec deadline"
+
+[gotcha.1524]
+area = "rpc websocket tests"
+symptom = "a gorilla websocket read error including a deadline is permanent, so one sendWSRequestAndListen deadline cannot wait for late notifications"
+fix = "open a fresh connection per timed read"
+
+[gotcha.1525]
+area = "worktrees"
+symptom = "worktrees share refs, so origin/main moves mid-task"
+fix = "diff against HEAD, not origin/main"
+
+[gotcha.1526]
+area = "rpc logs"
+symptom = "wire log addresses are lowercase hex, never checksummed"
+fix = "encode expected addresses with hexutil.Encode(addr.Bytes())"

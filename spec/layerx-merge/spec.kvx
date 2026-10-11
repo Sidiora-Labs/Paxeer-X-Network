@@ -308,6 +308,12 @@ value = "The completed reputation summaries are pruned when an epoch opens: the 
 basis = "The production path in src/epoch.rs and src/rewards.rs prunes at opening and tests/reputation_lifecycle.rs:2147 encodes that order; an assertion of 32 summaries right after an opening disagrees with the code path, so the code governs. The 32-entry bound (LIMIT src/reputation.rs:13, MAX_RETAINED_EPOCHS src/lib.rs:323) is reached again at every close, so rank and roster consumers read a full 32-entry history between closes."
 affects = ["4.2.12"]
 
+[decision.51]
+title = "Merge plan name constant in the precompiles package"
+value = "precompiles.MergeUpgrade (precompiles/setup.go:50) is a second declaration of node.MergeUpgrade (node/upgrades.go:117), both \"v7.0\"; precompiles/setup_test.go:194 requires the two to be equal, and the merge entries carry the plan through the registered constructors and their MergeUpgrade version key (precompiles/setup.go:117-199), not through PrecompileLastUpgrade."
+basis = "node imports precompiles, so precompiles cannot import the node constant without an import cycle; the equality test fails as soon as either declaration changes, and PrecompileLastUpgrade (precompiles/setup.go:401) is a map[string]int64 with no reader that cannot carry a plan name."
+affects = ["0.1", "10.0.1", "10.6.1"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -6633,7 +6639,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.2]
 title = "Stream rate-change activity type, payload and decode"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -10751,7 +10757,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.9]
 title = "Typed Cosmos events for the v2 exchange"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -12183,7 +12189,7 @@ ac_4 = "oracle_read, web_read and market_step_adjudicate keep their ABI v5 signa
 title = "Metering schedule and program fee on top of gas"
 ac_1 = "The program fee is charged in addition to EVM gas (decision.9) from the per-call usage times the schedule prices resolved at src/modules/programs/fees.c:1828."
 ac_2 = "The fee schedule is updated only by MsgUpdateFeeSchedule with the gov module account as authority, replacing the permissionless relay at src/modules/programs/fees.c:1181."
-ac_3 = "The metering schedule is updated only by MsgUpdateMeteringSchedule under gov authority, with the seven-field schedule validated as in src/modules/programs/metering.c:353."
+ac_3 = "The metering schedule is updated only by MsgUpdateMeteringSchedule under gov authority, with the nine-coefficient schedule (include/layerx/programs.h:390-412) validated as in schedule_valid_for_encoding (src/modules/programs/metering.c:53-71): a zero coefficient is refused."
 ac_4 = "A sponsored call is charged the program fee once: the gas station pays gas and the program fee leg is drawn from the declared fee payer only, as fee settlement at src/modules/programs/fee.c:154 does."
 
 [req.4007]
@@ -12635,7 +12641,7 @@ qualification = "UNRUN"
 [acceptance.4.6.3]
 feature = "4"
 req = "4006.3"
-scenario = "Given MsgUpdateMeteringSchedule with a zero fuel limit, when the gov proposal executes, then the message fails validation and getCurrentMeteringSchedule returns the previous schedule."
+scenario = "Given MsgUpdateMeteringSchedule with one of its nine coefficients set to zero, when the gov proposal executes, then the message fails validation and getCurrentMeteringSchedule returns the previous schedule."
 contract = "contracts/programs.md#f-internal-not-user-methods"
 test = "modules/layerxprograms/keeper/params_test.go"
 qualification = "UNRUN"
@@ -15084,7 +15090,7 @@ requires = []
 reqs = ["4019.1", "4019.2", "4019.3", "4006.1", "4006.2", "4006.3", "4006.4"]
 capabilities = ["4.6.2", "4.4.1"]
 do_1 = "Add api/layerxprograms/tx.proto (package paxprotocol.paxchain.layerxprograms, go_package as api/layerxcustody/tx.proto) with MsgUpdateFeeSchedule, MsgUpdateMeteringSchedule, MsgStageRetirementProfile and MsgUpdateParams, each with a gov authority string, staged as src/modules/programs/fees.c:1288 stages."
-do_2 = "FeeSchedule carries the version and the seven prices of the fee schedule; MeteringSchedule carries version, the nine coefficients in LX_PROGRAMS_METER_* order (include/layerx/programs.h:389-400), activation height, MeteringAuthorityKind (programs.h:402-403) and authority digest, matching lx_programs_metering_schedule (programs.h:406-412); every coefficient must be nonzero as schedule_valid_for_encoding requires (src/modules/programs/metering.c:53-71), which is the zero-value refusal of acceptance.4.6.3."
+do_2 = "FeeSchedule carries the version and the seven prices of the fee schedule; MeteringSchedule carries version, the nine coefficients in LX_PROGRAMS_METER_* order (include/layerx/programs.h:389-400), activation height, MeteringAuthorityKind (programs.h:402-403) and authority digest, matching lx_programs_metering_schedule (programs.h:406-412); every coefficient must be nonzero as schedule_valid_for_encoding requires (src/modules/programs/metering.c:53-71), which is the zero-coefficient refusal of acceptance.4.6.3; the schedule carries no fuel limit field (contracts/programs.md getCurrentMeteringSchedule returns uint32 version and uint64[9] coefficients), so MsgUpdateMeteringSchedule validation refuses any zero coefficient of the nine."
 do_3 = "Add query.proto with ProgramState(program_id, key, height, prove) returning the value, the state record and ProofOps against the app hash of that height (acceptance.4.19.1), ProgramBalances with per-account proofs (acceptance.4.19.2), and ProgramEvents, served from src/modules/programs/accounts.c:623 and src/modules/programs/accounts.c:881."
 do_4 = "Add genesis.proto with params and empty program stores and blobs, following the api/layerxcustody/genesis.proto layout; genesis materialization follows src/modules/programs/fees.c:1542."
 do_5 = "Encode state values as src/modules/programs/state_record.c:198 encodes them."
@@ -19159,7 +19165,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.4]
 title = "One capped attestor set, strict-majority threshold and the retired kernel set activity"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -26317,14 +26323,15 @@ title = "CLI RPC filter admits eth_ and pax_ methods and derive --bind completes
 status = "in_progress"
 mode = "BUILD"
 wave = 5
-requires = []
+requires = ["0.37"]
 reqs = ["6067.1", "6067.2", "6067.3"]
 capabilities = ["6.9.6"]
 do_1 = "Extend the method filter in platform/cli/src/rpc.rs (request at :84, refusal at :172-176)."
 do_2 = "Complete the bind flow in platform/cli/src/wallet_derive.rs."
 do_3 = "Add the sponsored bind option."
 do_4 = "Add the live bind case to platform/cli/tests/wallet_derive.rs."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "derive_bind_live in platform/cli/tests/wallet_derive.rs (acceptance.6.67.2) runs against an isolated sequencer endpoint: with PAXEER_BIND_RPC_URL unset it starts the single-node sequencer harness of task 0.37 (tools/paxeer-x/seqnode, paxd built from ./daemon/paxd), reads its JSON line {rpcUrl, chainId, funder}, funds a freshly derived unbound address A from the printed funder key, runs wallet derive --bind against rpcUrl and requires getLayerXDid(A) (precompiles/addr/addr.go:40) to return the DID key D afterwards; with PAXEER_BIND_RPC_URL set the same case targets that endpoint. The live case is part of verify_cmd and is never skipped or ignored."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["request", "derive_bind"]
 touches = ["platform/cli/src/rpc.rs", "platform/cli/src/wallet_derive.rs", "platform/cli/tests/wallet_derive.rs"]
 build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-cli --tests"
@@ -40646,7 +40653,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.51]
 title = "Block receiptsRoot commits the results of the same block"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40805,11 +40812,15 @@ do_2 = "In ProcessBlock (node/app.go:2135), at a height where App.Sequenced (nod
 do_3 = "Execute txs 1..n through ExecuteTxsConcurrently (node/app.go:1905) and its four paths (ProcessTxsSynchronousV2 :1731, ProcessTxsSynchronousGiga :1751, ProcessTXsWithOCCV2 :1932, ProcessTXsWithOCCGiga :2002) with entry 0 not executed, so every other transaction keeps its block position as AbsoluteIndex and EVM TransactionIndex; txResults[0] is the batch result with code 0 and zero gas. Below the activation height nothing changes."
 do_4 = "Add node/sequenced_block_test.go with TestSequencedBlockDeliversBatchAtTxZero (a block of tx 0 plus two EVM transfers stores toSeq and lastSeqHash and gives the transfers TransactionIndex 1 and 2), TestSequencedBlockRefusesBadBatch (wrong prevSeqHash and unknown keyId fail the block), TestSequencedBlockOCCEqualsSequential (OCC on and off give the same app hash) and TestSequencedBlockGenesisOneKeySet, on the real App built as node/app_test.go:263 builds it, signing tx 0 with a test ed25519 key through MsgSequenceBatch.SignBytes (modules/sequencer/types/msgs.go:98)."
 do_5 = "Append SequencerStoreKey of task 0.106 to MemIAVLStoreKeys (storage/common/keys/store_keys.go:46) in the same position as the module StoreKey in kvStoreKeyNames (node/app.go:311), so TestKVStoreKeyNamesMatchMemIAVLStoreKeys (node/store_keys_test.go:15) holds."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-symbols = ["SequencerKeeper", "ProcessBlock", "DeliverSequenceBatch", "DecodeSequenceBatch", "ExecuteTxsConcurrently"]
-touches = ["node/app.go", "modules/sequencer/module.go", "node/sequenced_block_test.go", "storage/common/keys/store_keys.go"]
+do_6 = "Update modules/sequencer/keeper/receipt_keys_test.go (receiptKeysEnv at :55) to the two-argument NewAppModule(keeper, paramSpace), building the keeper with keeper.NewKeeper on the test store key it already mounts, so the keeper test package compiles and every existing case there passes unchanged."
+do_7 = "Install NewParamChangeProposalHandler of modules/sequencer/module.go:142 around the evm wrapper on the params proposal route (node/app.go:926), and after a passed ReceiptKeys change write the new list into the keeper store through a Keeper.SetReceiptKeys (modules/sequencer/keeper/keeper.go), so DeliverSequenceBatch (keeper.go:94 receiptKeyAt) and the ReceiptKeys param hold one key set after a rotation. Add TestSequencedBlockReceiptKeyRotation to node/sequenced_block_test.go: a passed param change that closes K1 at H2-1 and pins K2 from H2 makes a batch signed by K2 at H2 deliver and a batch signed by K1 at H2 fail the block."
+do_8 = "Make the genesis round trip succeed: GenesisState (modules/sequencer/types/genesis.go:28) carries LastSeqHash beside LastSeq; Validate (genesis.go:74) accepts lastSeq 0 with the zero hash and a non-zero lastSeq only with a non-zero hash; Keeper.InitGenesis (keeper.go:163) writes both and Keeper.ExportGenesis (keeper.go:187) exports both. Add TestSequencedBlockGenesisRoundTrip: after a delivered batch, the exported module genesis imports into a fresh App and LastSeq, LastSeqHash and ReceiptKeys read back equal."
+do_9 = "Register the sequencer store at the merge plan: add mergeStoreUpgrades to node/upgrades.go beside activationStoreUpgrades (node/upgrades.go:384) with Added holding SequencerStoreKey of task 0.106, return it from layerxStoreUpgrades (node/app.go:1398-1410) for MergeUpgrade, and in node/upgrades_activation_test.go account for it exactly: kvStoreKeyNames has preForkStoreCount + len(forkModules) + len(mergeStoreUpgrades().Added) entries (node/upgrades_activation_test.go:171) and every merge store is in kvStoreKeyNames and MemIAVLStoreKeys; task 10.6.1 extends mergeStoreUpgrades with the other merge stores."
+do_10 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["SequencerKeeper", "ProcessBlock", "DeliverSequenceBatch", "DecodeSequenceBatch", "ExecuteTxsConcurrently", "SetReceiptKeys", "NewParamChangeProposalHandler", "mergeStoreUpgrades", "GenesisState"]
+touches = ["node/app.go", "modules/sequencer/module.go", "node/sequenced_block_test.go", "storage/common/keys/store_keys.go", "modules/sequencer/keeper/receipt_keys_test.go", "modules/sequencer/keeper/keeper.go", "modules/sequencer/types/genesis.go", "node/upgrades.go", "node/upgrades_activation_test.go"]
 build_cmd = "go build ./node/... ./modules/sequencer/..."
-verify_cmd = "go test -count=1 ./node/ -run TestSequencedBlock"
+verify_cmd = "go test -count=1 ./modules/sequencer/... && go test -count=1 ./node/ -run 'TestSequencedBlock|TestActivation'"
 gate_kind = "planned"
 planned_paths = ["node/sequenced_block_test.go"]
 max_builds = 1
@@ -41010,7 +41021,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.57]
 title = "Rung type in layerx-types"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -41507,7 +41518,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.106]
 title = "Store key constants for the layerxledger, layerxauth, layerxpay, layerxprograms and sequencer stores"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41533,7 +41544,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.107]
 title = "Hosted internal crate passes its clippy deny level in events.rs, producer.rs and tls.rs"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41559,7 +41570,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.94]
 title = "Python binding-preflight regression fixture models the signed raw bind transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.91", "10.5.17"]
@@ -41580,6 +41591,60 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+
+[task.0.108]
+title = "Gas station rate publisher verifies the sequencer receipt signature against the pinned ReceiptKeys list"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["7.0.6", "7.2.2"]
+reqs = ["7023.1"]
+capabilities = []
+do_1 = "Add sequencer_receipt_keys to PublisherConfig::parse (interop/crates/layerx-gas-station/src/rate.rs:187): a non-empty list of {keyId, publicKey, firstHeight, lastHeight} in the shape px_getReceiptKeys returns (px_getReceiptKeys in contracts/services.md, contracts/sequencer.md a3 Pin), parsed into layerx_proof::inclusion::SequencerAuthorization entries; an empty list, a weak or non-canonical ed25519 key, a repeated keyId or an inverted range is refused at load naming sequencer_receipt_keys."
+do_2 = "In confirm_by_receipt (interop/crates/layerx-gas-station/src/rate.rs:611) a receipted or committed answer is accepted only after its receipt field (hex canonical bytes, contracts/sequencer.md b1) passes layerx_proof::receipt::verify_sequencer_signature (agent/crates/layerx-proof/src/receipt.rs:666) against the pinned list, the key is chosen by keyId and height (contracts/sequencer.md a5 steps 2-3), and the verified activity_id equals the publication hash (keccak256 of the raw transaction); a missing, undecodable, unsigned, unpinned or mismatched receipt is refused as malformed and never journalled as confirmed."
+do_3 = "Add layerx-proof (workspace) to interop/crates/layerx-gas-station/Cargo.toml dependencies and layerx-wire and ed25519-dalek (workspace) to its dev-dependencies, and update the layerx-gas-station entry of interop/Cargo.lock to match so the locked build resolves."
+do_4 = "Extend interop/crates/layerx-gas-station/tests/rate.rs: the receipt server fixtures answer with ProtocolReceipt v2 bytes encoded by layerx_wire::receipt::encode (agent/crates/layerx-wire/src/receipt.rs:1033) and signed by a test ed25519 key pinned in the config; add receipt_signature_is_verified_against_pinned_receipt_keys: a correctly signed receipt confirms, while a flipped signature byte, a keyId outside the pinned list, a height outside the key range and an activity_id other than the publication hash are each refused and the publication stays unconfirmed. Every existing case keeps its assertions."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["PublisherConfig", "confirm_by_receipt", "verify_sequencer_signature", "receipt_signature_is_verified_against_pinned_receipt_keys"]
+touches = ["interop/crates/layerx-gas-station/src/rate.rs", "interop/crates/layerx-gas-station/tests/rate.rs", "interop/crates/layerx-gas-station/Cargo.toml", "interop/Cargo.lock"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --tests"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.109]
+title = "Gas station crate passes its clippy deny level in tx.rs, journal.rs, rpc.rs and policy.rs"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = []
+reqs = ["8.1"]
+capabilities = []
+do_1 = "Rename the similar bindings of the sign_cancellation unit test in interop/crates/layerx-gas-station/src/tx.rs (signed beside signer, around :524) so similar_names no longer fires, with the same assertions."
+do_2 = "Split Journal::apply (interop/crates/layerx-gas-station/src/journal.rs:476) into per-entry helpers below the too_many_lines bound of the interop workspace lints, applying every Entry exactly as today."
+do_3 = "Add the # Errors doc sections to JsonRpc::set_deadline (interop/crates/layerx-gas-station/src/rpc.rs:44), Exchange::request_until (rpc.rs:143), reserve_for_did (interop/crates/layerx-gas-station/src/policy.rs:178) and quote_for_did (policy.rs:196)."
+do_4 = "No lint is allowed, capped or expected away: the workspace deny level (interop/Cargo.toml lints) stays as written and every existing crate test keeps passing unchanged; the rate test case that needs private material stays excluded by name only, as in task 7.0.6."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["sign_cancellation", "apply", "set_deadline", "request_until", "reserve_for_did", "quote_for_did"]
+touches = ["interop/crates/layerx-gas-station/src/tx.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/src/rpc.rs", "interop/crates/layerx-gas-station/src/policy.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --tests"
+verify_cmd = "cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --all-targets && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 [task.9.0.6]
 title = "Pending state, call and estimate"
@@ -41667,7 +41732,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.9]
 title = "Subscriptions fed from receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.4", "9.0.8", "0.21", "9.0.4"]
@@ -49833,12 +49898,12 @@ reqs = ["6.1", "8.1", "8.3", "10001.1", "10001.2", "10001.3", "10001.4", "10002.
 capabilities = ["10.1.1", "10.1.2", "10.1.3", "10.1.4", "10.1.5", "10.1.6", "10.1.7", "10.1.8", "10.1.9", "10.1.10", "10.1.11", "10.1.12", "10.2.3", "10.3.1"]
 do_1 = "Add the merge address table to GetCustomPrecompiles (precompiles/setup.go:63): beside the existing map built at precompiles/setup.go:67 (bank precompiles/setup.go:68 through launchpad precompiles/setup.go:86, feetoken precompiles/setup.go:88-92, xweb precompiles/setup.go:93-95) declare MergeAddressTable, the eight agent-function addresses 0x0000000000000000000000000000000000000901-0x0000000000000000000000000000000000000908 and the four construct addresses 0x000000000000000000000000000000000000101A-0x000000000000000000000000000000000000101D with their GetName values (layerxledger, layerxpay, layerxauth, layerxprograms, orob, clearing, oracle aggregator, pofq, scheduler, streams, tee attestor, eip712)."
 do_2 = "Register each merge entry through addPrecompileToVM (precompiles/setup.go:271-284) under the merge plan name (the constant added by task 10.0.1) through the keeper activation entry list of task 10.0.2, not a semver tag compare: add a package-level RegisterMergeConstructor(address, constructor) hook that the construct packages (precompiles/layerxledger, precompiles/layerxpay, precompiles/layerxauth, precompiles/layerxprograms, precompiles/layerxagent/*) call when their features land; an address in MergeAddressTable with no registered constructor is not served and GetCustomPrecompiles never installs a placeholder executor."
-do_3 = "Keep every existing address registered and unchanged: 0x1012 layerxVerify, 0x1013 layerxCustody and 0x1014 layerxAnchor stay in the map (precompiles/setup.go:81-83) so retired methods reach an executor that answers LXP_MODULE_DISABLED instead of an empty success; PrecompileLastUpgrade (precompiles/setup.go:286-288) reports the merge plan once the entries are present."
+do_3 = "Keep every existing address registered and unchanged: 0x1012 layerxVerify, 0x1013 layerxCustody and 0x1014 layerxAnchor stay in the map (precompiles/setup.go:81-83) so retired methods reach an executor that answers LXP_MODULE_DISABLED instead of an empty success. The merge plan is carried by the registered constructors: newMergePrecompiles (precompiles/setup.go:117) builds each MergeAddressTable entry with a registered constructor at MergeUpgrade, and GetCustomPrecompiles stores it under the versions latestUpgrade and MergeUpgrade (precompiles/setup.go:194-199), so the keeper activation entry for the plan withholds it below the plan height; PrecompileLastUpgrade (precompiles/setup.go:401) is not used for the merge plan (decision.51)."
 do_4 = "Extend precompiles/setup_test.go beside TestFeeTokenRegistration (precompiles/setup_test.go:17) and TestXWebRegistration (precompiles/setup_test.go:92) with TestMergeAddressTable: below the plan height none of the twelve addresses is served; at the plan height every address with a registered constructor is served with its GetName and every address without one is absent; the address and name pairs equal contracts/address-table.md section (a)."
 do_5 = "Assert that the route constants 0x0901-0x0908 of the wallet gateway (human/wallet/gateway/src/precompiles.ts:18-25) equal the registered addresses so a gateway call reaches an executor (head requirement 6.1)."
 do_6 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251) and the (plan name, address set) activation entry that task 10.0.2 introduces, so the precompile set and revert bytes below H stay byte-identical to today."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-symbols = ["GetCustomPrecompiles", "MergeAddressTable", "RegisterMergeConstructor", "PrecompileLastUpgrade", "addPrecompileToVM"]
+symbols = ["GetCustomPrecompiles", "MergeAddressTable", "RegisterMergeConstructor", "newMergePrecompiles", "MergeUpgrade", "addPrecompileToVM"]
 touches = ["precompiles/setup.go", "precompiles/setup_test.go"]
 build_cmd = "go build ./precompiles/..."
 verify_cmd = "go test -count=1 ./precompiles/ -run 'TestFeeTokenRegistration|TestXWebRegistration|TestMergeAddressTable'"
@@ -51436,18 +51501,19 @@ status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["10.0.2", "0.1", "0.71", "0.105", "1.6.4", "2.5.13", "4.5.1", "6.2.8", "9.1.3", "11.6.1", "0.106"]
-reqs = ["8.1", "8.2", "10004.1", "10004.2", "10004.3", "10004.4", "10016.1", "10016.2", "10016.3", "10016.4", "10016.5"]
+reqs = ["8.1", "8.2", "10004.1", "10004.2", "10004.3", "10004.4", "10016.1", "10016.2", "10016.3", "10016.4", "10016.5", "11006.1", "11006.4"]
 capabilities = ["10.1.4", "10.3.1"]
 do_1 = "Create node/upgrades_merge.go with runMergeUpgrade and register it in RegisterUpgradeHandlers through SetUpgradeHandler beside the activation handler (node/upgrades.go:187), not in App.New."
-do_2 = "Add mergeStoreUpgrades following activationStoreUpgrades (node/upgrades.go:377) and its module order (node/upgrades.go:384-390), mounting the layerxledger and layerxauth stores of task 1.6.4, layerxpay of task 2.5.13, layerxprograms of task 4.5.1, sequencer of task 0.71 and layerxagent of task 6.2.8, and return it from layerxStoreUpgrades (node/app.go:1384-1395) for the merge plan name."
+do_2 = "Extend mergeStoreUpgrades (added by task 0.71 with the sequencer store, node/upgrades.go) with the layerxledger and layerxauth stores of task 1.6.4, layerxpay of task 2.5.13, layerxprograms of task 4.5.1 and layerxagent of task 6.2.8, in the order of activationStoreUpgrades (node/upgrades.go:384-390), keeping the merge-store accounting of node/upgrades_activation_test.go exact; layerxStoreUpgrades (node/app.go:1398-1410) returns it for the merge plan name."
 do_3 = "runMergeUpgrade initialises the new modules from their genesis params, calls ReturnAllBonds of task 11.6.1 once and drains no custody claims (req 10016.3)."
 do_4 = "In mergePrecompileGate (node/upgrades.go:429-445) the pure agent helpers 0x0901, 0x0902, 0x0904 and 0x0908 name the layerxagent module (decision.49): the keeper refuses an address with no module (modules/evm/keeper/keeper.go:217-227), and an empty list would serve the address below the plan height."
 do_5 = "Append the merge entry to the activation list passed at node/app.go:940 (list from task 10.0.2); the retired executors gate through task 0.105."
 do_6 = "Add node/upgrades_merge_test.go with TestMergeUpgrade following TestActivationServesTheForkPrecompilesOnlyFromItsHeight (node/upgrades_activation_test.go:188): the twelve addresses are served only from the plan height, the five stores mount at H, the bond total returned equals the anchor module balance, and a validator whose configured height differs refuses to start."
 do_7 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251), so the precompile set and revert bytes below H stay byte-identical to today."
-do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_8 = "TestMergeUpgrade seeds three guarantors with bonds of 100, 250 and 400 PAX in the anchor module before the plan height and requires, after runMergeUpgrade, each operator balance to rise by its bond and the anchor module balance to be zero (acceptance.11.6.1; req 11006.1, 11006.4)."
+do_9 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["runMergeUpgrade", "mergeStoreUpgrades", "MergeUpgrade", "mergePrecompileGate"]
-touches = ["node/upgrades_merge.go", "node/upgrades_merge_test.go", "node/app.go", "node/upgrades.go"]
+touches = ["node/upgrades_merge.go", "node/upgrades_merge_test.go", "node/app.go", "node/upgrades.go", "node/upgrades_activation_test.go"]
 build_cmd = "go build ./node/..."
 verify_cmd = "go test -count=1 -run TestMergeUpgrade ./node/"
 gate_kind = "planned"
@@ -61486,7 +61552,8 @@ do_2 = "Pay every GetUnbondings entry (guarantors.go:34) at once: Amount (state.
 do_3 = "Refund every open challenge from GetChallenges (modules/layerxanchor/keeper/challenges.go:18) to Challenger (state.go:138) for Bond (state.go:139), reusing the refund shape at challenges.go:93, and mark it closed (state.go:140)."
 do_4 = "ReturnAllBonds returns an error unless the total returned equals the module balance before the call; the merge plan handler of task 10.6.1 calls it once at the plan height."
 do_5 = "Add TestBondReturn in modules/layerxanchor/keeper/bond_return_test.go on the real keeper built as modules/layerxanchor/keeper/keeper_test.go:1 builds it, with guarantors, unbondings and open challenges; the golden is sum returned equals the module balance, compared by decimal value."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "The merge plan handler call is delivered by task 10.6.1, which owns node/upgrades.go and node/upgrades_merge.go and requires this task: runMergeUpgrade calls ReturnAllBonds once at the plan height (10.6.1 do_3) and TestMergeUpgrade asserts the operator balances and the zero anchor module balance after the handler (req 11006.1, 11006.4). This task does not touch node/upgrades.go."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["ReturnAllBonds"]
 touches = ["modules/layerxanchor/keeper/bond_return.go", "modules/layerxanchor/keeper/bond_return_test.go"]
 build_cmd = "go build ./modules/layerxanchor/..."
