@@ -839,6 +839,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "sha2",
+ "ureq",
 ]
 
 [[package]]
