@@ -44,7 +44,7 @@ scrape_configs:
     params:
       module: [http_2xx]
     file_sd_configs:
-      - files: [/etc/prometheus/targets/sequencer-readyz.json]
+      - files: [/etc/prometheus/targets/sequencer-primary-readyz.json, /etc/prometheus/targets/sequencer-standby-readyz.json]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

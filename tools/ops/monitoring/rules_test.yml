@@ -56,3 +56,129 @@ tests:
           - exp_labels: {severity: critical, job: kernel-readyz, instance: "https://k/readyz"}
             exp_annotations:
               summary: "kernel readiness https://k/readyz is failing"
+
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="sequencer-readyz",role="primary",instance="primary"}'
+        values: '0x8 1x3'
+      - series: 'probe_success{job="sequencer-readyz",role="standby",instance="standby"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 1m45s
+        alertname: SequencerNotReady
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SequencerNotReady
+        exp_alerts:
+          - exp_labels: {severity: critical, job: sequencer-readyz, role: primary, instance: primary}
+            exp_annotations:
+              summary: "sequencer readiness primary is failing"
+      - eval_time: 2m15s
+        alertname: SequencerNotReady
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: StandbyNotReady
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="sequencer-readyz",role="primary",instance="primary"}'
+        values: '1x12'
+      - series: 'probe_success{job="sequencer-readyz",role="standby",instance="standby"}'
+        values: '0x8 1x3'
+    alert_rule_test:
+      - eval_time: 1m45s
+        alertname: StandbyNotReady
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: StandbyNotReady
+        exp_alerts:
+          - exp_labels: {severity: critical, job: sequencer-readyz, role: standby, instance: standby}
+            exp_annotations:
+              summary: "standby readiness standby is failing"
+      - eval_time: 2m15s
+        alertname: StandbyNotReady
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: SequencerNotReady
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'order_divergence_total{job="receipt-authority",instance="authority"}'
+        values: '10x4 11x24'
+      - series: 'order_divergence_total{job="receipt-authority",instance="reset-authority"}'
+        values: '10 10 0x27'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ReceiptOrderDivergence
+        exp_alerts: []
+      - eval_time: 1m15s
+        alertname: ReceiptOrderDivergence
+        exp_alerts:
+          - exp_labels: {severity: critical, job: receipt-authority, instance: authority}
+            exp_annotations:
+              summary: "receipt authority authority observed receipt-order divergence"
+      - eval_time: 6m15s
+        alertname: ReceiptOrderDivergence
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'gas_station_sponsor_balance{job="gas-station",instance="relayer",sponsor="sponsor-a"}'
+        values: '99x2 100x2 101x2'
+      - series: 'gas_station_sponsor_floor{job="gas-station",instance="relayer",sponsor="sponsor-a"}'
+        values: '100x8'
+      - series: 'gas_station_sponsor_balance{job="gas-station",instance="relayer",sponsor="sponsor-b"}'
+        values: '50x8'
+      - series: 'gas_station_sponsor_floor{job="gas-station",instance="relayer",sponsor="sponsor-b"}'
+        values: '50x8'
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: SponsorBalanceBelowFloor
+        exp_alerts:
+          - exp_labels: {severity: critical, job: gas-station, instance: relayer, sponsor: sponsor-a}
+            exp_annotations:
+              summary: "sponsor sponsor-a on relayer is below its configured balance floor"
+      - eval_time: 45s
+        alertname: SponsorBalanceBelowFloor
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: SponsorBalanceBelowFloor
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'gas_station_rate_age_seconds{job="gas-station",instance="publisher"}'
+        values: '269x2 270x2 290x2 0x2'
+      - series: 'gas_station_max_rate_age_seconds{job="gas-station",instance="publisher"}'
+        values: '300x11'
+      - series: 'gas_station_rate_age_seconds{job="gas-station",instance="bounded-publisher"}'
+        values: '89x2 90x2 99x2 0x2'
+      - series: 'gas_station_max_rate_age_seconds{job="gas-station",instance="bounded-publisher"}'
+        values: '100x11'
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: RateAgeNearLimit
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: RateAgeNearLimit
+        exp_alerts:
+          - exp_labels: {severity: warning, job: gas-station, instance: publisher}
+            exp_annotations:
+              summary: "published paymaster rate on publisher is at least 90 percent of max_rate_age"
+          - exp_labels: {severity: warning, job: gas-station, instance: bounded-publisher}
+            exp_annotations:
+              summary: "published paymaster rate on bounded-publisher is at least 90 percent of max_rate_age"
+      - eval_time: 1m30s
+        alertname: RateAgeNearLimit
+        exp_alerts:
+          - exp_labels: {severity: warning, job: gas-station, instance: publisher}
+            exp_annotations:
+              summary: "published paymaster rate on publisher is at least 90 percent of max_rate_age"
+          - exp_labels: {severity: warning, job: gas-station, instance: bounded-publisher}
+            exp_annotations:
+              summary: "published paymaster rate on bounded-publisher is at least 90 percent of max_rate_age"
+      - eval_time: 2m15s
+        alertname: RateAgeNearLimit
+        exp_alerts: []

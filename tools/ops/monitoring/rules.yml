@@ -61,6 +61,43 @@ groups:
         annotations:
           summary: "kernel readiness {{ $labels.instance }} is failing"
 
+      - alert: SequencerNotReady
+        expr: probe_success{job="sequencer-readyz",role="primary"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "sequencer readiness {{ $labels.instance }} is failing"
+
+      - alert: StandbyNotReady
+        expr: probe_success{job="sequencer-readyz",role="standby"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "standby readiness {{ $labels.instance }} is failing"
+
+      - alert: ReceiptOrderDivergence
+        expr: increase(order_divergence_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "receipt authority {{ $labels.instance }} observed receipt-order divergence"
+
+      - alert: SponsorBalanceBelowFloor
+        expr: gas_station_sponsor_balance < gas_station_sponsor_floor
+        labels:
+          severity: critical
+        annotations:
+          summary: "sponsor {{ $labels.sponsor }} on {{ $labels.instance }} is below its configured balance floor"
+
+      - alert: RateAgeNearLimit
+        expr: gas_station_rate_age_seconds >= gas_station_max_rate_age_seconds * 0.9
+        labels:
+          severity: warning
+        annotations:
+          summary: "published paymaster rate on {{ $labels.instance }} is at least 90 percent of max_rate_age"
+
       - alert: EdgeCertExpiringSoon
         expr: (probe_ssl_earliest_cert_expiry{job="edge-cert"} - time()) / 86400 < 14
         labels:
