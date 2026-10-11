@@ -1481,3 +1481,10 @@ command = "npm --prefix human/apps/wallet test -- src/surfaces/WebDataView.test.
 exit_code = 0
 log_path = "logs/0.116-verify-1.log"
 observed_and_assumption = "verify passed (5 passed, 0 failed). Gaps: precompile 0x101A (layerxledger) is not yet in the tree; reads follow ledger-auth.md accountId/getPayerGrant/PayerGrantIssued and are exercised against the test chain Unrelated: typecheck human/wallet/sdk/src/index.ts(760,27) TS2339 Property 'ExtendedPoint' does not exist on type 'EdDSA'"
+
+[finding.0.93]
+revision = "f3327708f"
+command = "cargo test --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-sdkgen --test drift"
+exit_code = 0
+log_path = "logs/0.93-verify-1.log"
+observed_and_assumption = "verify passed (24 passed, 0 failed). Unrelated: gates ran with CARGO_TARGET_DIR in a private scratch directory because the shared target lock starved this worker for hours (about 30 concurrent holders); commands otherwise exactly as declared"

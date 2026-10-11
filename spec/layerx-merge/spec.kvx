@@ -41380,7 +41380,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.93]
 title = "Agent API schema declares mcp.invoke so canonical SDK regeneration reproduces Operation::McpInvoke and the pipeline lock agrees"
-status = "in_progress"
+status = "done"
 wave = 2
 requires = ["0.22"]
 reqs = ["6061.2"]
