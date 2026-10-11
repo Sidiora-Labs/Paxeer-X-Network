@@ -1344,6 +1344,80 @@ impl ReceiptKeyList {
         Ok(authorization)
     }
 
+    fn authorization_at(
+        &self,
+        public_key: [u8; 32],
+        height: u64,
+    ) -> Result<&SequencerAuthorization, GatewayError> {
+        let authorization = self.authorization_for_key(public_key)?;
+        if !(authorization.first_batch_number()..=authorization.last_batch_number())
+            .contains(&height)
+        {
+            return Err(GatewayError::UntrustedSequencer);
+        }
+        Ok(authorization)
+    }
+
+    /// Selects the key named by authority facts for the batch height they attest.
+    ///
+    /// # Errors
+    /// Refuses an unconfigured key or a height outside that key's window.
+    pub fn authorization_for_facts(
+        &self,
+        authority: AuthorityFacts,
+    ) -> Result<&SequencerAuthorization, GatewayError> {
+        self.authorization_at(
+            authority.sequencer_public_key(),
+            batch_height(authority.batch_id)?,
+        )
+    }
+
+    /// Selects the configured key whose window covers the receipt's batch height
+    /// and whose signature the receipt carries.
+    ///
+    /// # Errors
+    /// Refuses a receipt no configured key signed within its window.
+    pub fn authorization_for_receipt(
+        &self,
+        receipt_bytes: &[u8],
+    ) -> Result<&SequencerAuthorization, GatewayError> {
+        let receipt = layerx_wire::receipt::decode(receipt_bytes)
+            .map_err(|_| GatewayError::Receipt(ReceiptCheck::Decode))?;
+        let height = batch_height(
+            receipt
+                .protocol()
+                .ok_or(GatewayError::Receipt(ReceiptCheck::ReceiptShape))?
+                .batch_id(),
+        )?;
+        let signer = self
+            .0
+            .iter()
+            .filter(|key| (key.first_batch_number()..=key.last_batch_number()).contains(&height))
+            .find(|key| {
+                layerx_proof::receipt::verify_sequencer_signature(receipt_bytes, key.public_key())
+                    .is_ok()
+            })
+            .ok_or(GatewayError::UntrustedSequencer)?;
+        self.authorization_at(signer.public_key(), height)
+    }
+
+    /// Selects the key a signed batch header names for its batch number.
+    ///
+    /// # Errors
+    /// Refuses an unconfigured sequencer ID or a batch outside its window.
+    pub fn authorization_for_header(
+        &self,
+        sequencer_id: [u8; 32],
+        batch_number: u64,
+    ) -> Result<&SequencerAuthorization, GatewayError> {
+        let named = self
+            .0
+            .iter()
+            .find(|key| key.sequencer_id() == sequencer_id)
+            .ok_or(GatewayError::UntrustedSequencer)?;
+        self.authorization_at(named.public_key(), batch_number)
+    }
+
     pub fn verify_receipt(
         &self,
         receipt_bytes: &[u8],
@@ -1353,15 +1427,7 @@ impl ReceiptKeyList {
         let protocol = receipt
             .protocol()
             .ok_or(GatewayError::Receipt(ReceiptCheck::ReceiptShape))?;
-        let batch = protocol.batch_id();
-        if batch[..24] != [0; 24] {
-            return Err(GatewayError::Receipt(ReceiptCheck::BatchId));
-        }
-        let height = u64::from_be_bytes(
-            batch[24..]
-                .try_into()
-                .map_err(|_| GatewayError::Receipt(ReceiptCheck::BatchId))?,
-        );
+        let height = batch_height(protocol.batch_id())?;
         let authorization = self
             .0
             .iter()
@@ -1373,6 +1439,37 @@ impl ReceiptKeyList {
         layerx_proof::receipt::verify_sequencer_signature(receipt_bytes, authorization.public_key())
             .map_err(|failure| GatewayError::Receipt(failure.check))
     }
+}
+
+fn batch_height(batch_id: [u8; 32]) -> Result<u64, GatewayError> {
+    let (prefix, height) = batch_id.split_at(24);
+    if prefix != [0; 24] {
+        return Err(GatewayError::Receipt(ReceiptCheck::BatchId));
+    }
+    Ok(u64::from_be_bytes(height.try_into().map_err(|_| {
+        GatewayError::Receipt(ReceiptCheck::BatchId)
+    })?))
+}
+
+/// Verifies a live-read receipt under the configured key its authority facts
+/// name, inside that key's height window.
+///
+/// # Errors
+/// Refuses an unconfigured key or out-of-window height as an untrusted
+/// sequencer, and every receipt or activity mismatch.
+pub fn verify_live_receipt(
+    receipt_bytes: &[u8],
+    authority: AuthorityFacts,
+    keys: &ReceiptKeyList,
+    expected_activity_id: Option<[u8; 32]>,
+) -> Result<VerifiedOperation, GatewayError> {
+    let authorization = keys.authorization_for_facts(authority)?;
+    verify_activity_operation(
+        receipt_bytes,
+        authority,
+        &authorization.public_key(),
+        expected_activity_id,
+    )
 }
 
 pub fn verify_settlement_receipt(

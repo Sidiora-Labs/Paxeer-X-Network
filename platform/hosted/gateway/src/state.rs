@@ -1,11 +1,12 @@
 use super::{
-    decode_hex, hex, json_response, parse_hex32, response, upstream_json, Config, OutgoingResponse,
+    decode_hex, hex, json_response, parse_hex32, response, unauthorized_or, upstream_json, Config,
+    OutgoingResponse,
 };
 use layerx_proof::inclusion::{verify_receipt, SequencerAuthorization};
 use layerx_proof::merkle::Proof;
 use layerx_wire::batch_maintenance::decode_maintenance;
 use layerx_wire::hash::receipt_digest;
-use layerx_wire::receipt::{decode, decode_merkle_proof, BatchHeader};
+use layerx_wire::receipt::{decode, decode_batch_header, decode_merkle_proof, BatchHeader};
 use sha2::{Digest as _, Sha256};
 
 const MAX_RECEIPT_BYTES: usize = 524_288;
@@ -165,9 +166,21 @@ pub(super) fn read(config: &Config, trace_id: &str) -> OutgoingResponse {
             Some(RETRY_AFTER_SECONDS),
         );
     }
-    let sequencer_authorization = match config.sequencer_authorization() {
-        Ok(authorization) => authorization,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
+    };
+    let Ok(header) = decode_hex(&head.batch_evidence.header_hex, MAX_HEADER_BYTES)
+        .map_err(|_| ())
+        .and_then(|bytes| decode_batch_header(&bytes).map_err(|_| ()))
+    else {
+        return response(502, "state_proof_unverified", None);
+    };
+    let sequencer_authorization = match receipt_keys
+        .authorization_for_header(header.sequencer_id(), header.batch_number())
+    {
+        Ok(authorization) => authorization,
+        Err(error) => return unauthorized_or(error, response(502, "state_proof_unverified", None)),
     };
     let Ok(state) = verified_state(&head, sequencer_authorization) else {
         return response(502, "state_proof_unverified", None);

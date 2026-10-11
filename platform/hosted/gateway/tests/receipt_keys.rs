@@ -1,6 +1,6 @@
 use ed25519_dalek::{Signer as _, SigningKey};
 use layerx_platform_gateway::{
-    verify_settlement_receipt, AuthorityFacts, GatewayError, ReceiptKeyList,
+    verify_live_receipt, verify_settlement_receipt, AuthorityFacts, GatewayError, ReceiptKeyList,
 };
 use layerx_platform_internal::base64;
 use layerx_proof::receipt::ReceiptCheck;
@@ -288,5 +288,59 @@ fn settlement_preserves_authority_and_activity_checks() -> TestResult {
         verify_settlement_receipt(&bytes, wrong_asset, &keys, [1; 32]).err(),
         Some(GatewayError::Receipt(ReceiptCheck::Asset))
     );
+    Ok(())
+}
+
+#[test]
+fn two_key_list_verifies_historical_and_current_receipts() -> TestResult {
+    let first = SigningKey::from_bytes(&[3; 32]);
+    let second = SigningKey::from_bytes(&[4; 32]);
+    let stranger = SigningKey::from_bytes(&[5; 32]);
+    let document = json!([
+        entry([11; 32], &first, 5000, 6999),
+        entry([12; 32], &second, 7000, u64::MAX)
+    ]);
+    let keys = ReceiptKeyList::from_config(&document.to_string())?;
+    assert_eq!(keys.single(), None);
+    for (height, id, signer) in [(6000, [11; 32], &first), (7500, [12; 32], &second)] {
+        let bytes = sign(unsigned_receipt(id, batch(height), [1; 32]), signer)?;
+        let authority = facts(height, signer);
+        let selected = keys.authorization_for_facts(authority)?;
+        assert_eq!(selected.sequencer_id(), id);
+        assert_eq!(selected.public_key(), signer.verifying_key().to_bytes());
+        assert_eq!(keys.authorization_for_receipt(&bytes)?.sequencer_id(), id);
+        assert_eq!(
+            keys.authorization_for_header(id, height)?.sequencer_id(),
+            id
+        );
+        let verified = verify_live_receipt(&bytes, authority, &keys, Some([1; 32]))?;
+        assert_eq!(verified.receipt(), bytes);
+        assert_eq!(verified.result_code(), 0);
+        assert_eq!(verified.activity_id(), [1; 32]);
+    }
+    for (height, id, signer) in [
+        (7500, [13; 32], &stranger),
+        (7500, [11; 32], &first),
+        (4999, [11; 32], &first),
+    ] {
+        let bytes = sign(unsigned_receipt(id, batch(height), [1; 32]), signer)?;
+        let authority = facts(height, signer);
+        assert_eq!(
+            keys.authorization_for_facts(authority),
+            Err(GatewayError::UntrustedSequencer)
+        );
+        assert_eq!(
+            keys.authorization_for_receipt(&bytes),
+            Err(GatewayError::UntrustedSequencer)
+        );
+        assert_eq!(
+            keys.authorization_for_header(id, height),
+            Err(GatewayError::UntrustedSequencer)
+        );
+        assert_eq!(
+            verify_live_receipt(&bytes, authority, &keys, Some([1; 32])).err(),
+            Some(GatewayError::UntrustedSequencer)
+        );
+    }
     Ok(())
 }

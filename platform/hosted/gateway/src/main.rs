@@ -25,9 +25,10 @@ use layerx_platform_gateway::store::{
 };
 use layerx_platform_gateway::{
     authenticate_gateway_key, native_explorer_public_route, pay_timing, production_route,
-    verify_activity_operation, verify_program_operation, verify_program_simulation_operation,
-    verify_submission, AccessError, AuthorityFacts, IssuedKey, NativeExplorerPublicRoute,
-    PrincipalId, ProductionRoute, Quota, ReceiptKeyList, VerifiedSubmission,
+    verify_live_receipt, verify_program_operation, verify_program_simulation_operation,
+    verify_submission, AccessError, AuthorityFacts, GatewayError, IssuedKey,
+    NativeExplorerPublicRoute, PrincipalId, ProductionRoute, Quota, ReceiptKeyList,
+    VerifiedSubmission,
 };
 use layerx_types::amount::Amount;
 use layerx_types::intent::{
@@ -282,21 +283,9 @@ impl Config {
             .ok_or(KernelUnavailable::not_configured(backend))
     }
 
-    fn sequencer_authorization(
-        &self,
-    ) -> Result<&layerx_proof::inclusion::SequencerAuthorization, KernelUnavailable> {
+    fn receipt_keys(&self) -> Result<&ReceiptKeyList, KernelUnavailable> {
         self.kernel_side(KernelBackend::Authority)
-            .and_then(|kernel| {
-                kernel.receipt_keys.single().ok_or(KernelUnavailable {
-                    backend: KernelBackend::Authority,
-                    reason: "receipt_key_selection_required",
-                })
-            })
-    }
-
-    fn sequencer_public_key(&self) -> Result<[u8; 32], KernelUnavailable> {
-        self.sequencer_authorization()
-            .map(layerx_proof::inclusion::SequencerAuthorization::public_key)
+            .map(|kernel| &kernel.receipt_keys)
     }
 
     fn key_provisioning_key(&self) -> Result<&Zeroizing<[u8; 32]>, KernelUnavailable> {
@@ -642,7 +631,7 @@ fn document_hex32(value: &serde_json::Value, field: &str) -> Option<[u8; 32]> {
 
 fn program_discovery_proof_verified(
     value: &serde_json::Value,
-    sequencer_public_key: &[u8; 32],
+    receipt_keys: &ReceiptKeyList,
 ) -> bool {
     let Some(head) = (|| {
         Some(ProgramDiscoveryHead {
@@ -670,7 +659,7 @@ fn program_discovery_proof_verified(
     ) else {
         return false;
     };
-    if public_key != *sequencer_public_key {
+    if receipt_keys.authorization_for_key(public_key).is_err() {
         return false;
     }
     let digest = program_discovery_proof_digest(&head);
@@ -889,7 +878,7 @@ fn program_registry_upstream(
         &document,
         expected_program,
         &program,
-        &config.sequencer_public_key()?,
+        config.receipt_keys()?,
     )?;
     Ok((head, document))
 }
@@ -1165,6 +1154,14 @@ fn config(event_producer: bool) -> Result<Config, String> {
     })
 }
 
+fn unauthorized_or(error: GatewayError, refusal: OutgoingResponse) -> OutgoingResponse {
+    if error == GatewayError::UntrustedSequencer {
+        response(502, "receipt_key_unauthorized", None)
+    } else {
+        refusal
+    }
+}
+
 fn response(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingResponse {
     let mut error = serde_json::json!({ "code": code });
     if let Some(seconds) = retry_after {
@@ -1246,7 +1243,7 @@ fn agent_error_class(status: u16, code: &str) -> &'static str {
 
 fn program_verification_status(
     value: &serde_json::Value,
-    sequencer_public_key: &[u8; 32],
+    receipt_keys: &ReceiptKeyList,
 ) -> serde_json::Value {
     match value.get("state").and_then(serde_json::Value::as_str) {
         Some("unknown" | "pending") => serde_json::json!({
@@ -1259,7 +1256,7 @@ fn program_verification_status(
             .get("verification")
             .and_then(serde_json::Value::as_str)
             == Some("registry-receipt-and-current-head-verified")
-            && program_discovery_proof_verified(value, sequencer_public_key) =>
+            && program_discovery_proof_verified(value, receipt_keys) =>
         {
             serde_json::json!({
                 "state": "Achieved",
@@ -1365,7 +1362,7 @@ fn normalize_program_u64s(value: &mut serde_json::Value) -> bool {
 fn agent_response(
     request_id: &str,
     response: OutgoingResponse,
-    sequencer_public_key: &[u8; 32],
+    receipt_keys: &ReceiptKeyList,
 ) -> OutgoingResponse {
     if !(200..300).contains(&response.status) {
         return agent_refusal(request_id, response);
@@ -1393,8 +1390,7 @@ fn agent_response(
             },
             |mut value| {
                 if normalize_program_u64s(&mut value) {
-                    let verification_status =
-                        program_verification_status(&value, sequencer_public_key);
+                    let verification_status = program_verification_status(&value, receipt_keys);
                     serde_json::json!({
                         "request_id": request_id,
                         "value": value,
@@ -1865,10 +1861,11 @@ fn authority_response(
                     &receipt,
                     &authority.authorized(),
                     config
-                        .kernel_side(KernelBackend::Authority)?
-                        .receipt_keys
-                        .authorization_for_key(authority.sequencer_public_key())
-                        .map_err(|_| response(503, "authority_invalid", Some(5)))?,
+                        .receipt_keys()?
+                        .authorization_for_facts(authority)
+                        .map_err(|error| {
+                            unauthorized_or(error, response(503, "authority_invalid", Some(5)))
+                        })?,
                 )
                 .map_err(|_| response(503, "authority_invalid", Some(5)))?;
             Ok(AuthorityFacts::new(
@@ -1927,13 +1924,10 @@ fn verified_result(
     }?;
     pay_timing("gateway.receipt.authority", authority_started);
     let verify_started = Instant::now();
-    let verified = verify_activity_operation(
-        &receipt,
-        facts,
-        &config.sequencer_public_key()?,
-        Some(expected),
-    )
-    .map_err(|_| response(503, "receipt_verification_failed", Some(5)))?;
+    let verified = verify_live_receipt(&receipt, facts, config.receipt_keys()?, Some(expected))
+        .map_err(|error| {
+            unauthorized_or(error, response(503, "receipt_verification_failed", Some(5)))
+        })?;
     pay_timing("gateway.receipt.verify", verify_started);
     let result = Ok((
         verified.response().to_vec(),
@@ -1986,12 +1980,22 @@ fn verified_program_result(
     let payload_hash = layerx_wire::hash::payload_hash(&activity)
         .map_err(|_| response(503, "program_activity_invalid", Some(5)))?;
     let facts = authority(config, activity_id, &receipt)?;
+    let sequencer_public_key = config
+        .receipt_keys()?
+        .authorization_for_facts(facts)
+        .map_err(|error| {
+            unauthorized_or(
+                error,
+                response(503, "program_receipt_verification_failed", Some(5)),
+            )
+        })?
+        .public_key();
     let verified = verify_program_operation(
         &receipt,
         &terminal_payload,
         &call_graph,
         facts,
-        &config.sequencer_public_key()?,
+        &sequencer_public_key,
         layerx_platform_gateway::ProgramExpectation {
             activity_id: expected_activity,
             payload_hash,
@@ -2232,9 +2236,18 @@ fn render_simulation(
     else {
         return response(503, "component_invalid", Some(5));
     };
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
+    };
+    let sequencer_public_key = match receipt_keys.authorization_for_receipt(&receipt) {
+        Ok(authorization) => authorization.public_key(),
+        Err(error) => {
+            return unauthorized_or(
+                error,
+                response(503, "program_simulation_unverified", Some(5)),
+            )
+        }
     };
     let Ok(verified) = verify_program_simulation_operation(
         &receipt,
@@ -2252,22 +2265,18 @@ fn render_simulation(
     ) else {
         return response(503, "program_simulation_unverified", Some(5));
     };
-    render_simulation_evidence(config, value, &verified, expected, trace_id)
+    render_simulation_evidence(value, &verified, expected, sequencer_public_key, trace_id)
 }
 
 fn render_simulation_evidence(
-    config: &Config,
     value: &serde_json::Value,
     verified: &layerx_platform_gateway::VerifiedOperation,
     expected: &SimulationExpectation,
+    sequencer_public_key: [u8; 32],
     trace_id: &str,
 ) -> OutgoingResponse {
     let Some(evidence) = value.get("simulation_evidence") else {
         return response(503, "program_simulation_unverified", Some(5));
-    };
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
-        Err(unavailable) => return unavailable.into(),
     };
     let boundary_id = evidence
         .get("boundary_id")
@@ -2322,9 +2331,13 @@ fn render_simulation_evidence(
     else {
         return response(503, "program_simulation_unverified", Some(5));
     };
-    if let Err(error) =
-        verify_simulation_signature(config, expected, boundary_id, hypothetical, &signature)
-    {
+    if let Err(error) = verify_simulation_signature(
+        &sequencer_public_key,
+        expected,
+        boundary_id,
+        hypothetical,
+        &signature,
+    ) {
         return error;
     }
     json_response(
@@ -2840,13 +2853,15 @@ fn complete_lifecycle(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
     };
-    if facts.sequencer_public_key() != sequencer_public_key
-        || program_lifecycle::verify_receipt(&receipt, &facts.authorized(), operation.activity_id)
-            .is_err()
+    if let Err(error) = receipt_keys.authorization_for_facts(facts) {
+        return unauthorized_or(error, response(502, "receipt_verification_failed", None));
+    }
+    if program_lifecycle::verify_receipt(&receipt, &facts.authorized(), operation.activity_id)
+        .is_err()
     {
         return response(502, "receipt_verification_failed", None);
     }
@@ -2927,9 +2942,15 @@ fn program_terminal_response(
     let Ok(receipt) = decode_hex(receipt_hex, 1_048_576) else {
         return response(503, "receipt_encoding_failed", Some(5));
     };
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
+    };
+    let sequencer_public_key = match receipt_keys.authorization_for_receipt(&receipt) {
+        Ok(authorization) => authorization.public_key(),
+        Err(error) => {
+            return unauthorized_or(error, response(502, "receipt_verification_failed", None))
+        }
     };
     let Ok(verified) =
         layerx_proof::receipt::verify_sequencer_signature(&receipt, sequencer_public_key)
@@ -3110,7 +3131,12 @@ fn verify_withdrawal_submission(
         protocol.asset(),
         protocol.previous_state_root(),
         protocol.resulting_state_root(),
-        config.sequencer_public_key().map_err(|_| ())?,
+        config
+            .receipt_keys()
+            .map_err(|_| ())?
+            .authorization_for_receipt(receipt)
+            .map_err(|_| ())?
+            .public_key(),
     );
     layerx_proof::receipt::withdrawal::verify(
         receipt,
@@ -3245,13 +3271,15 @@ fn resolve_pending_lifecycle(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
+    let receipt_keys = match config.receipt_keys() {
+        Ok(keys) => keys,
         Err(unavailable) => return unavailable.into(),
     };
-    if facts.sequencer_public_key() != sequencer_public_key
-        || program_lifecycle::verify_receipt(&receipt, &facts.authorized(), binding.activity_id())
-            .is_err()
+    if let Err(error) = receipt_keys.authorization_for_facts(facts) {
+        return unauthorized_or(error, response(502, "receipt_verification_failed", None));
+    }
+    if program_lifecycle::verify_receipt(&receipt, &facts.authorized(), binding.activity_id())
+        .is_err()
     {
         return response(502, "receipt_verification_failed", None);
     }
@@ -3713,8 +3741,8 @@ fn route_with_peer(
                 || program_lifecycle::ordinal(&request.path).is_some())
             && (200..300).contains(&result.status))
     {
-        match config.sequencer_public_key() {
-            Ok(sequencer_public_key) => agent_response(&trace_id, result, &sequencer_public_key),
+        match config.receipt_keys() {
+            Ok(receipt_keys) => agent_response(&trace_id, result, receipt_keys),
             Err(unavailable) => agent_refusal(&trace_id, OutgoingResponse::from(unavailable)),
         }
     } else {
@@ -4157,7 +4185,7 @@ fn parse_program_head(
     document: &serde_json::Value,
     expected_program: [u8; 32],
     program: &str,
-    sequencer_public_key: &[u8; 32],
+    receipt_keys: &ReceiptKeyList,
 ) -> Result<ProgramHead, OutgoingResponse> {
     let value = document.get("result").unwrap_or(document);
     if value.get("program_id").and_then(serde_json::Value::as_str) != Some(program)
@@ -4258,7 +4286,7 @@ fn parse_program_head(
             let public_key = public_key
                 .as_str()
                 .and_then(|text| parse_hex32(text).ok())
-                .filter(|key| key == sequencer_public_key)
+                .filter(|key| receipt_keys.authorization_for_key(*key).is_ok())
                 .ok_or_else(|| response(503, "program_registry_unverified", Some(5)))?;
             let signature = signature
                 .as_str()
@@ -5002,15 +5030,14 @@ fn render_program_interface(
 }
 
 fn verify_simulation_signature(
-    config: &Config,
+    sequencer_public_key: &[u8; 32],
     expected: &SimulationExpectation,
     boundary_id: [u8; 32],
     hypothetical: [u8; 32],
     signature: &[u8; 64],
 ) -> Result<(), OutgoingResponse> {
-    let sequencer_public_key = config.sequencer_public_key()?;
     let mut boundary_material = b"LayerX/emulator/simulation-boundary/v1\0".to_vec();
-    boundary_material.extend_from_slice(&sequencer_public_key);
+    boundary_material.extend_from_slice(sequencer_public_key);
     let expected_boundary: [u8; 32] = Sha256::digest(boundary_material).into();
     if boundary_id != expected_boundary {
         return Err(response(503, "program_simulation_unverified", Some(5)));
@@ -5024,7 +5051,7 @@ fn verify_simulation_signature(
     signed.extend_from_slice(&expected.observed_at.to_be_bytes());
     signed.push(0);
     let evidence_digest: [u8; 32] = Sha256::digest(signed).into();
-    if ed25519::verify_digest(&sequencer_public_key, signature, &evidence_digest).is_err() {
+    if ed25519::verify_digest(sequencer_public_key, signature, &evidence_digest).is_err() {
         return Err(response(503, "program_simulation_unverified", Some(5)));
     }
     Ok(())
@@ -5299,6 +5326,17 @@ mod programs_wire_tests {
             .to_bytes()
     }
 
+    fn test_receipt_keys(public_key: [u8; 32]) -> layerx_platform_gateway::ReceiptKeyList {
+        let document = serde_json::json!([{
+            "key_id": layerx_platform_internal::base64::encode(&[0x51; 32]),
+            "public_key": layerx_platform_internal::base64::encode(&public_key),
+            "first_height": 0,
+            "last_height": u64::MAX,
+        }]);
+        layerx_platform_gateway::ReceiptKeyList::from_config(&document.to_string())
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
     fn discovery_head(observed_at: u64, valid_through: u64) -> ProgramDiscoveryHead {
         ProgramDiscoveryHead {
             program_id: [0x11; 32],
@@ -5371,7 +5409,7 @@ mod programs_wire_tests {
             &document,
             discovery.program_id,
             &hex(&discovery.program_id),
-            &test_sequencer_public_key(),
+            &test_receipt_keys(test_sequencer_public_key()),
         )
         .unwrap_or_else(|_| panic!("signed head refused"));
         let value = serde_json::json!({"program_id":hex(&head.program_id),"version":head.version,
@@ -5426,7 +5464,7 @@ mod programs_wire_tests {
                 &document,
                 head.program_id,
                 &program,
-                &test_sequencer_public_key(),
+                &test_receipt_keys(test_sequencer_public_key()),
             )
             .unwrap_or_else(|_| panic!("signed ABI {abi_version} refused"));
             assert_eq!(admitted.abi_version, abi_version);
@@ -5437,7 +5475,7 @@ mod programs_wire_tests {
                     &altered,
                     head.program_id,
                     &program,
-                    &test_sequencer_public_key()
+                    &test_receipt_keys(test_sequencer_public_key())
                 )
                 .is_err());
             }
@@ -5447,7 +5485,7 @@ mod programs_wire_tests {
                 &substituted,
                 head.program_id,
                 &program,
-                &test_sequencer_public_key()
+                &test_receipt_keys(test_sequencer_public_key())
             )
             .is_err());
             if abi_version >= 3 {
@@ -5464,7 +5502,7 @@ mod programs_wire_tests {
                     &unsigned,
                     head.program_id,
                     &program,
-                    &test_sequencer_public_key()
+                    &test_receipt_keys(test_sequencer_public_key())
                 )
                 .is_err());
                 let mut wrong_abi = document.clone();
@@ -5474,7 +5512,7 @@ mod programs_wire_tests {
                     &wrong_abi,
                     head.program_id,
                     &program,
-                    &test_sequencer_public_key()
+                    &test_receipt_keys(test_sequencer_public_key())
                 )
                 .is_err());
             }
@@ -5551,7 +5589,7 @@ mod programs_wire_tests {
             &document,
             [0x11; 32],
             &program,
-            &test_sequencer_public_key(),
+            &test_receipt_keys(test_sequencer_public_key()),
         )
         .unwrap_or_else(|_| panic!("signed registry head refused"));
         let Some(proof) = head.discovery_proof else {
@@ -5569,7 +5607,7 @@ mod programs_wire_tests {
             &unsigned,
             [0x11; 32],
             &program,
-            &test_sequencer_public_key(),
+            &test_receipt_keys(test_sequencer_public_key()),
         )
         .unwrap_or_else(|_| panic!("unsigned registry head refused"));
         assert!(head.discovery_proof.is_none());
@@ -5577,7 +5615,13 @@ mod programs_wire_tests {
         let other_key = SigningKey::from_bytes(&[0x43; 32])
             .verifying_key()
             .to_bytes();
-        assert!(parse_program_head(&document, [0x11; 32], &program, &other_key).is_err());
+        assert!(parse_program_head(
+            &document,
+            [0x11; 32],
+            &program,
+            &test_receipt_keys(other_key)
+        )
+        .is_err());
 
         for (pointer, tampered) in [
             ("/versions/0/code_hash", serde_json::json!(hex(&[0x23; 32]))),
@@ -5591,17 +5635,26 @@ mod programs_wire_tests {
                 *slot = tampered;
             }
             assert!(
-                parse_program_head(&altered, [0x11; 32], &program, &test_sequencer_public_key())
-                    .is_err(),
+                parse_program_head(
+                    &altered,
+                    [0x11; 32],
+                    &program,
+                    &test_receipt_keys(test_sequencer_public_key())
+                )
+                .is_err(),
                 "{pointer}"
             );
         }
         let mut half = document.clone();
         half.as_object_mut()
             .map(|object| object.remove("discovery_signature"));
-        assert!(
-            parse_program_head(&half, [0x11; 32], &program, &test_sequencer_public_key()).is_err()
-        );
+        assert!(parse_program_head(
+            &half,
+            [0x11; 32],
+            &program,
+            &test_receipt_keys(test_sequencer_public_key())
+        )
+        .is_err());
     }
 
     #[test]
@@ -5630,7 +5683,7 @@ mod programs_wire_tests {
             let output = agent_response(
                 "gw-contract-test",
                 json_response(200, &serde_json::json!({"ok": true, "result": value})),
-                key,
+                &test_receipt_keys(*key),
             );
             serde_json::from_slice::<serde_json::Value>(&output.body)
                 .unwrap_or_else(|error| panic!("test value must be valid: {error}"))
@@ -5696,7 +5749,7 @@ mod programs_wire_tests {
                         }
                     }),
                 ),
-                &test_sequencer_public_key(),
+                &test_receipt_keys(test_sequencer_public_key()),
             );
             let document: serde_json::Value = serde_json::from_slice(&output.body)
                 .unwrap_or_else(|error| panic!("test value must be valid: {error}"));
@@ -5771,7 +5824,7 @@ mod programs_wire_tests {
                     }
                 }),
             ),
-            &test_sequencer_public_key(),
+            &test_receipt_keys(test_sequencer_public_key()),
         );
         let document: serde_json::Value = serde_json::from_slice(&output.body)
             .unwrap_or_else(|error| panic!("test value must be valid: {error}"));
@@ -5830,7 +5883,7 @@ mod programs_wire_tests {
             let output = agent_response(
                 operation,
                 json_response(status, &serde_json::json!({"ok":true,"result":value})),
-                &test_sequencer_public_key(),
+                &test_receipt_keys(test_sequencer_public_key()),
             );
             let document: serde_json::Value = serde_json::from_slice(&output.body)
                 .unwrap_or_else(|error| panic!("test value must be valid: {error}"));
@@ -5900,7 +5953,7 @@ mod programs_wire_tests {
         let output = agent_response(
             "gw-contract-test",
             response(409, "idempotency_conflict", None),
-            &test_sequencer_public_key(),
+            &test_receipt_keys(test_sequencer_public_key()),
         );
         let document: serde_json::Value = serde_json::from_slice(&output.body)
             .unwrap_or_else(|error| panic!("test value must be valid: {error}"));
