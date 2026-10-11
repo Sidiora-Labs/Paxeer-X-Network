@@ -826,3 +826,172 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-pla
 exit_code = 0
 log_path = "logs/0.20-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; AuthorityFacts carries a crate-private authenticated batch number set by MaintainedBatchDocument::authorize_with_keys from the signed header, the height-encoded path is unchanged, and workspace clippy stops at eight pre-existing errors in layerx-platform-internal; gateway tests need a redis-server binary that is not on the build host PATH."
+
+[finding.10.5.16]
+revision = "0c0f18c6b"
+command = "cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_xweb_api.py"
+exit_code = 0
+log_path = "logs/10.5.16-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; recorded gaps: do_5 / clients.md R9: agent/sdk/python/layerx_sdk/agent_http.py is outside touches; submitted transaction reverts are not mapped beside _service_error.; req.10 ac_5 / req.10043 ac_1: agent/sdk/python/layerx_sdk/xweb_api.pyi still declares an independent XWebPrecompileCall; runtime alias is implemented, static typing repair is outside touches.; do_4: no concrete EIP-1193 wallet ; unrelated: Source conflict only, not run: tests/agent/sdk/python/test_precompile_calls.py retains version-one exchange arities and selectors in WRITES; adapting it is outside touches."
+
+[finding.10.5.34]
+revision = "bacc61894"
+command = "python3 -m py_compile tools/qualification/paxeer-x/paid-web-contract.py tools/qualification/paxeer-x/wallet-402-caps.py tools/qualification/paxeer-x/router-complete-readiness.py"
+exit_code = 0
+log_path = "logs/10.5.34-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; recorded gaps: acceptance.10.35.1: wallet-402-caps.py retains lx_getWalletCaps calls; replacing them requires the absent major-2 wallet provider and holder indexer.; acceptance.10.35.2-16 / do_2: human/wallet/sdk/src/kernel.ts and provider.ts still expose legacy caps; the replacement holder listing is absent and the existing decoder requires sequence/batch/state_root fields removed by client"
+
+[finding.10.5.35]
+revision = "801a4fd4a"
+command = "python3 -m py_compile platform/hosted/testnet/tests/payment-journey.py platform/hosted/testnet/tests/program-journey.py platform/hosted/testnet/tests/wallet-receipt-journey.py"
+exit_code = 0
+log_path = "logs/10.5.35-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; recorded gaps: acceptance.10.35.1 and req.10.3: payment/program lx_* callers remain; required replacement interfaces below are absent.; acceptance.10.35.2 and acceptance.10.45.2: current journey signer inputs are Ed25519-only; no general EVM signing interface is exposed by the Python SDK, and precompiles/layerxprograms is absent, preventing real eth_sendRawTransaction to 0x101D.; acceptance."
+
+[finding.10.5.36]
+revision = "c4f4ee55c"
+command = "node --check platform/middleware/examples/public-rpc.mjs && node --check platform/examples/marketplace/deploy-payload.mjs && python3 -m py_compile platform/middleware/examples/public_rpc.py"
+exit_code = 0
+log_path = "logs/10.5.36-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; unrelated: source contradiction in platform/examples/marketplace/test/deploy-payload.test.mjs:275,277,295: existing checks still expect lx_getSequence, the identity selector and authenticated snapshots; outside touches and unrun."
+
+[finding.8.5.4]
+revision = "ba7974908"
+command = "npm --prefix human/wallet/gateway test -- test/served-by.test.ts"
+exit_code = 0
+log_path = "logs/8.5.4-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; recorded gaps: 8014.1: caller identity is resolved, but gateway budget checking is blocked: the station exposes no DID usage/remaining API and its internal DID cap counts gas units rather than PAX."
+
+[finding.8.5.1]
+revision = "5bd2442e6"
+command = "npm --prefix human/wallet/gateway test -- test/rpc-pool.test.ts"
+exit_code = 1
+log_path = "logs/8.5.1-verify-2.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 2); gaps: 8001.1: human/wallet/gateway/src/routes/sign.ts is outside touches; its hash-only callers require bundle handling and REST receipt fields, and currently cause the build errors.; 8001.2: human/wallet/gateway/src/env.ts lacks SEQUENCER_RPC_URL, leaving shared writes unconfigured; the existing focused fixture expects write failover and has no receipt RPC or real sequence/nonce progression path.; 8001.3: status-0 refusal; unrelated: human/wallet/gateway/test/rpc-pool.test.ts:317 expects sixteen default URLs while human/wallet/gateway/src/env.ts defines one; assertion retained."
+
+[finding.8.5.5]
+revision = "c479023c9"
+command = "npm --prefix human/wallet/gateway test -- test/agent.test.ts"
+exit_code = 1
+log_path = "logs/8.5.5-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 0); gaps: acceptance.8.25.1: Receipt forwarding implemented and unit-tested; real 0.1 PAX execution unqualified because the gateway suite has no real sequencer/attestor harness.; acceptance.8.25.2: Canonical-byte and Approval-log forwarding unit-tested; real 5 USDL approval execution unqualified for the same absent harness.; acceptance.8.28.1: Claim-once check retained; authentication setup returns 503 before it runs.; accept; unrelated: Existing /v1/agent/auth/verify custody-authority publication returns 503 where authenticate expects 200; two consent tests fail and signing-suite setup skips 19 tests."
+
+[finding.8.5.10]
+revision = "6cb3e2eec"
+command = "npm --prefix human/wallet/sdk test -- test/ladder.test.ts"
+exit_code = 0
+log_path = "logs/8.5.10-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 2); gaps: 8013.3: human/apps/wallet/src/account/StatusLadder.tsx and human/apps/wallet/e2e/send.spec.ts are outside touches; UI/send acceptance was not implemented or run.; 8013.2/10.2: human/wallet/sdk/src/types.ts and explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/status.ex still expose legacy rungs outside touches; modern explorer responses require companion changes.; 10.2: observeTransfer lacks modern sequencer; unrelated: human/wallet/sdk/src/index.ts:760: TS2339, CurveFn has no Point property; this prevents the wallet SDK build from passing."
+
+[finding.8.5.11]
+revision = "de293aa96"
+command = "npm --prefix human/wallet/sdk test -- test/client.test.ts"
+exit_code = 1
+log_path = "logs/8.5.11-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 2); gaps: acceptance.8.12.3 (8012.3/10.3): merged caps router projection and holder-index interface are absent; readWalletCaps retains lx_getWalletCaps; provider.ts is outside touches.; unrelated: human/wallet/sdk/src/index.ts:760: TS2339, ed25519.Point is absent from CurveFn.; human/wallet/sdk/test/client.test.ts:98: existing public-tier read rejects FUNDED_UNSUPPORTED from src/index.ts:504.; human/wallet/sdk/test/client.test.ts:119: existing structured-error test expects CONTRACT_NOT_WHITEL"
+
+[finding.8.5.24]
+revision = "11aa21ce3"
+command = "cd human/apps/web && node --test e2e/history-reads.test.ts"
+exit_code = 0
+log_path = "logs/8.5.24-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 2); gaps: contracts/clients.md O14/O50 requires (blockHeight, txIndex, logIndex); platform/hosted/gateway/src/history.rs exposes only a 1-32 alphanumeric row cursor, which the web read preserves.; unrelated: Typecheck reports absent SDK dependencies, absent @paxeer/wallet and @layerx/ui declarations, and typing errors outside the three owned files; full errors are in the build log."
+
+[finding.8.5.25]
+revision = "aff4841c9"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test detail"
+exit_code = 101
+log_path = "logs/8.5.25-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: 8036.1: the bank-only gateway response is absent; layerx-network-gateway/src/lib.rs still exposes legacy AccountBalances.; 8036.3: activity/detail.rs extracts protocol amount/fee fields; a verified receipt-log actuals adapter is absent and outside touches.; 8.3/9.1: platform/hosted/gateway/src/paxeer.rs still reads custody and kernel accounts for px_getBalances; outside touches.; unrelated: human/Cargo.lock requires updating; all declared gates stopped before compilation. Clippy also exited 101; logs/8.5.25-clippy-1.log."
+
+[finding.8.5.27]
+revision = "44f593562"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test native_send_producer"
+exit_code = 101
+log_path = "logs/8.5.27-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: 8046.1: EVM consent binding, transfer planning and disclosure are implemented; replacing the kernel preview consumer requires unowned server/agent_runtime.rs and server/production_components.rs changes; the EVM codec is private to KMS and the production AttestorKms evm_operation refuses transaction authorization/signing, so user signing and sequencer receipt integration remain unavailable.; 8046.2 and 7.4: server/onb; unrelated: human/Cargo.lock requires updating; build and verify exited before compilation. Clippy also exited 101 before compilation: logs/8.5.27-lint-1.log. Formatter completed; lint and runtime qualification remain unverified."
+
+[finding.8.5.28]
+revision = "55be39bd8"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test onboarding"
+exit_code = 101
+log_path = "logs/8.5.28-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: 8046.2: Added bounded gas-station quote operation and refusal tests; NativePlan::sponsor_key and sponsor() remain because production_onboarding.rs still uses the legacy sponsor path outside touches. Keyless first-transaction submission and a real station integration fixture remain absent.; 8046.3: bootstrap_intent still uses DID-based NativeOwnerBootstrap; the bound-address EVM bootstrap and binding-evidence interfa; unrelated: human/Cargo.lock requires an update; locked build, verification and Clippy stop before compilation. Clippy exit 101, log logs/8.5.28-lint-1.log."
+
+[finding.8.5.37]
+revision = "517afb5a0"
+command = "cd explorer/backend && mix test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_signature_controller_test.exs"
+exit_code = 127
+log_path = "logs/8.5.37-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8072.1 ReceiptController deletion requires explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex, outside touches; its routes are removed.; 8072.2 Fetcher retirement requires explorer/backend/apps/indexer/lib/indexer/application.ex and lib/indexer/fetcher/paxeer_x_kernel_receipts.ex, outside touches.; 8072.3 and 10.2 Transaction-page signature rendering and replac; unrelated: mix is unavailable; formatter, compile and verify each exited 127 before execution; formatter log logs/8.5.37-format-1.log."
+
+[finding.8.5.41]
+revision = "fca0b2144"
+command = "cd explorer/frontend && yarn test:vitest --run ui/shared/statusLadder/rungs.test.ts"
+exit_code = 127
+log_path = "logs/8.5.41-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 10.2 qualification: assigned rungs.test.ts is excluded by vitest.config.ts .spec-only include patterns; configuration is outside touches.; 8073.1: backend receipt-to-rung acceptance is outside this frontend task's touches and was not qualified.; 8073.2: backend finality-height acceptance is outside this frontend task's touches and was not qualified.; 8073.3: backend status-route and unknown-hash acceptance is outside; unrelated: absent frontend dependencies: tsc and vitest were not found; exact failures are recorded in the gate logs.; ESLint formatter was unavailable (exit 1); logs/8.5.41-format-1.log.; Legacy rung values remain in stubs/paxeerXLists.ts and ui/paxeerX/account/placeho"
+
+[finding.8.5.20]
+revision = "444b75919"
+command = "cd human/apps/web && node --test e2e/gas-station.test.ts"
+exit_code = 1
+log_path = "logs/8.5.20-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8032.2 / acceptance.8.32.2: sendSponsoredBatch drops the signed receipt in human/apps/web/src/api/gas-station.ts, which is excluded from touches; the wallet SDK submit interface also returns only a hash.; 8032.3 / acceptance.8.32.3: GasStationModule.pending exposes no retained transaction hash, and the TypeScript SDK lacks the sequencer receipt decoder/verifier and governed key interface; recovery now only reads stat; unrelated: typecheck cannot start because tsc is absent; verification fails on absent typescript before any behavior test runs.; repository ESLint is absent; format/lint command exited 127 | logs/8.5.20-format-1.log"
+
+[finding.8.5.23]
+revision = "6d19a1e35"
+command = "cd human/apps/web && node --test e2e/explorer-account.test.ts"
+exit_code = 1
+log_path = "logs/8.5.23-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8045.1: Native program and name projection replacements are absent; retained /v1 client methods use the sole native origin but cannot become native pages through the scoped interfaces.; 8045.3 / 8.6: mirror-server.ts, src/app/api/explorer/verify/route.ts, explorer-verifier.test.ts and package.json are outside touches; mirror verifier removal remains outstanding.; 8049.1 / 8.6: human/crates/layerx-explorer-index/src/m; unrelated: Typecheck cannot start because the fresh web checkout has no installed TypeScript executable (tsc: not found).; Existing unified-account decoder tests fail because unifiedDocument omits mandatory layerx_activity (GOTCHA.kvx entry 661); assertions and decoder checks preserved.; ESLint dependencies ar"
+
+[finding.10.5.37]
+revision = "ce4de45e8"
+command = "npm --prefix platform/middleware/seller test"
+exit_code = 127
+log_path = "logs/10.5.37-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: acceptance.10.31.3-3: R2-R8 and PaymentDrawn/PaymentExact verification require a general sequencer verifier; SDK decodeProtocolReceipt is private, verifyReceipt requires legacy AuthorizedReceiptBatch and kernel transfer balances, and aiMarket.decodeProgramsReceipt only accepts program transactions. Existing verifyRpcPayment checks remain intact.; acceptance.10.37.1: O54 transport is migrated, but the legacy verifyRpc; unrelated: Both declared gates fail before compilation because tsc is not installed in the checkout; no build or behavior result was obtained."
+
+[finding.7.5.21]
+revision = "156b2190c"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-fiat --test adapter"
+exit_code = -1
+log_path = "logs/7.5.21-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit not-run); gaps: 7026.1/7026.2: interop/crates/layerx-interop-gateway/src/gateway.rs:423-443 exposes only AuthorizedBatch settlement with kernel balance verification; completing v2 fiat settlement requires an interface outside touches.; 7026.2: PaymentDrawn in spec/layerx-merge/contracts/ledger-auth.md section C omits idempotencyKey; interop/crates/layerx-fiat/src/lib.rs:264-267 carries no signed transaction for binding the draw key ;"
+
+[finding.8.5.12]
+revision = "6fae19523"
+command = "npm --prefix human/wallet/sdk test -- test/endpoint.test.ts"
+exit_code = -1
+log_path = "logs/8.5.12-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit N/A); gaps: 8009.1: platform/hosted/gateway/src/paxeer.rs:623 still produces custody-joined rows; the required single-domain response is absent.; 8009.2: human/wallet/sdk/src/types.ts:275-315 requires legacy asset_id/domain/custody fields; no bank metadata response schema or matching shared types exist in the inspected interfaces, and types.ts is outside touches.; 8009.3: human/apps/wallet/src/account/AssetList.tsx consumes the;"
+
+[finding.8.5.31]
+revision = "bbb8524e3"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test export"
+exit_code = -1
+log_path = "logs/8.5.31-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit not-run); gaps: 8040.1 / acceptance.8.40.1: activity::ReceiptEvidence and OfflineExport supply kernel receipt digests and AuthorizedBatch; signed sequencer receipts and block receipts are unavailable through the export input.; 8040.2 / acceptance.8.40.2: PortableReceiptV2 in interop/crates/layerx-portable/src/receipt.rs lacks rawTransaction, blockHeader, receiptInclusion, commit and validatorSet; no committed portable proof interfac; unrelated: required fleet-commit.sh exited 1 with nothing to commit; the worktree remains clean at the reported revision."
+
+[finding.8.5.3]
+revision = "7ad2e0768"
+command = "npm --prefix human/wallet/gateway test -- test/provisioning.test.ts"
+exit_code = 127
+log_path = "logs/8.5.3-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: acceptance.8.17.2 requires removing top-ups and persisting sponsored submissions in human/wallet/gateway/src/provision/state.ts, plus gas-station configuration in src/env.ts and src/routes/wallet.ts; all are outside touches and ProvisionDeps has no gas-station interface.; acceptance.8.17.1 and acceptance.8.17.2 require signed send receipts; interop/crates/layerx-gas-station/src/service.rs submission_rung returns only; unrelated: build and verify cannot start because gateway dependencies are absent: tsc not found and vitest not found.; prescribed fleet-commit.sh exited 1 because the worktree is clean; no commit created."
+
+[finding.8.5.22]
+revision = "a88840b10"
+command = "cd human/apps/web && node --test e2e/bridge-page.test.ts"
+exit_code = 1
+log_path = "logs/8.5.22-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8030.2 / acceptance.8.30.2: human/apps/web/src/api/wallet.ts exposes only transactionHash; agent/sdk/typescript/src/verifier.ts lacks native EVM sequencer receipt verification with pinned ReceiptKeys, transaction binding and authenticated logs. Completing the receipt nonce and its page test requires interfaces outside touches; stopped without fabricating a decoder or weakening verification.; 9.8: signed sequencer rec; unrelated: Typecheck cannot start because tsc is absent; no dependency installation or unrelated repair attempted.; Fleet commit helper exited 1 because the worktree is clean; no commit created. Log: logs/8.5.22-commit-1.log"
+
+[finding.0.22]
+revision = "3b158fba6"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --lib"
+exit_code = 0
+log_path = "logs/0.22-verify-2.log"
+observed_and_assumption = "the verify gate passes (14 lib tests); build_cmd stops on the layerx-agentd lib test target in files outside the original touches (hex dependency, purpose_hash field, u16 identity values, Asn1TimeRef, CARGO_BIN_EXE); the task scope is widened to the agentd crate and the worker continues"
+

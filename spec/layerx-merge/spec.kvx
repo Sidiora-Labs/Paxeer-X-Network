@@ -212,6 +212,84 @@ value = "0x0907 verifies threshold signatures, 3 of 5, over secp256k1 attestor k
 basis = "This matches the deployed attestor keys and the custody signing threshold."
 affects = ["0x0907", "embedded wallet attestors"]
 
+[decision.35]
+title = "Result-code retryability source of truth"
+value = "The result-code registry table is the single source of truth for retryability; the Rust mirror in result.rs and every SDK decoder are regenerated from it, including the seventeen divergent codes and LXP_MODULE_DISABLED."
+basis = "One table drives every mirror, so the mirrors cannot drift from it again."
+affects = ["10.1.1", "result.rs", "SDK result decoders"]
+
+[decision.36]
+title = "Receipt key range overlap"
+value = "Primary and standby receipt key ranges may overlap, as the clients and sequencer contracts state; acceptance 6.72.2 forbids overlap only between two primary ranges."
+basis = "The contracts and the keeper already permit the overlap; the acceptance line is aligned with them."
+affects = ["acceptance.6.72.2", "6.5.32"]
+
+[decision.37]
+title = "Stream rate update ordinal 8"
+value = "Ordinal 8 is admitted now; task 2.2.2 owns test_stream_open.c and its build builds the sandbox library."
+basis = "The task text already admits the ordinal; the test and the build follow it."
+affects = ["2.2.2"]
+
+[decision.38]
+title = "Blob store key layout"
+value = "Blob store rows live under key prefix 0x05; the storage contract records this layout."
+basis = "The landed implementation uses it and no other prefix is reserved."
+affects = ["13.2.2"]
+
+[decision.39]
+title = "Payments and exchange governance surfaces"
+value = "layerxpay gains MsgUpdateParams and layerxexchange gains Params.Paused through a repair task; both acceptance lines stand."
+basis = "Governance of both modules is required by the acceptance, not optional."
+affects = ["13.3.14"]
+
+[decision.40]
+title = "Kernel result codes -737 to -739"
+value = "The three codes are added to lxp_result.h and the registry with the names the merge code already uses."
+basis = "The codes are already emitted; the header and registry must declare them."
+affects = ["10.0.4"]
+
+[decision.41]
+title = "Subscription lag signalling"
+value = "A lag object carrying the dropped count is the final subscription overflow behaviour; no server-side close is added to the pinned RPC notifier."
+basis = "The marker keeps the listener registered and the stream ordered without a fork of the notifier."
+affects = ["0.21", "13.3.2"]
+
+[decision.42]
+title = "Cross-module grant state stage"
+value = "A grant-state stage in lxp_module_ctx.c lets receive path 0x101A see budget pull draws; a new kernel task delivers it."
+basis = "Pulls and receives must draw against one ledger."
+affects = ["2.4.1"]
+
+[decision.43]
+title = "Activity proof verifier"
+value = "A chain-header and ICS23 verifier reachable through the registry is delivered by a new task; 4.2.14 requires it and layerx-proof retires only after lease.rs and expiry.rs use it."
+basis = "Proof verification needs one reachable verifier before the old crate can go."
+affects = ["4.2.14"]
+
+[decision.44]
+title = "Agent signing and client interfaces"
+value = "Tasks 6.5.1, 6.5.3, 6.5.41 and 6.5.42 own every file that carries the interface they need: the EIP-1559 call and DID-to-EVM binding in Prepared, the 65-byte signature type across callers, sha3 and the EVM codec in the client crate, the public receipt decoder in the gas station rpc.rs, EVM key custody in the CLI."
+basis = "Each interface has one natural owner and that owner is the task that needs it."
+affects = ["6.5.1", "6.5.3", "6.5.41", "6.5.42"]
+
+[decision.45]
+title = "Committed proof codecs"
+value = "One task delivers the shared committed fixture set and codec crate for CometBFT header, commit, validator set and EVM receipt trie; the portable, Go and JVM SDK tasks require it."
+basis = "One codec source keeps every SDK verifying the same bytes."
+affects = ["6.5.19", "6.5.27", "6.5.29", "6.5.30", "6.5.36", "8.5.31"]
+
+[decision.46]
+title = "Sequencer handover encoding"
+value = "One node task delivers the MsgSequenceBatch transaction-0 encoding and the public adapter for the consensus sequencer source; 9.2.6, 9.2.8 and 9.2.9 require it."
+basis = "Handover and failover share one encoding and one adapter."
+affects = ["9.2.6", "9.2.8", "9.2.9"]
+
+[decision.47]
+title = ".NET and Swift gates"
+value = "The dotnet and swift toolchains are installed on the build host so the .NET and Swift SDK gates run there."
+basis = "Both SDKs ship with the beta and their gates must run."
+affects = ["6.5.28"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -35501,7 +35579,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.4]
 title = "Gateway sponsorship enforces per-identity budgets and retires the sponsor key"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.4"]
@@ -40251,10 +40329,61 @@ capabilities = []
 do_1 = "agent/schema/agent-api/v1.kvx declares [transport.agent_http.operation.mcp.invoke], and agent/crates/layerx-agentd (tenant.rs, agent_rpc_dispatch.rs, agent_rpc.rs, human_runtime.rs) and agent/crates/layerx-sdk/src/agent_envelope.rs reference Operation::McpInvoke, but agent/crates/layerx-agent-api/src/operation_generated.rs no longer has the variant, so every agentd and sdk build fails with E0599. Restore the McpInvoke variant in the enum, in the catalogue list, in the name mapping as mcp.invoke and in the mutating set, matching the schema entry exactly."
 do_2 = "If operation_generated.rs is produced by a generator in agent/tools, regenerate through it and keep the output byte-identical to the hand edit; if a golden under agent/schema/agent-api/golden pins the catalogue, update that golden to the schema truth rather than deleting it."
 do_3 = "The two test targets that still do not compile are in scope: agent/crates/layerx-sdk/tests/agent_operation_envelope.rs imports ApiSuccess, Key, Level and VerificationStatus from layerx_agent_api::error where they no longer live, and dereferences an Operation at two sites; agent/crates/layerx-agentd/src/policy/native_program.rs has a test whose json-style macro call passes a vector expression the macro does not accept. Bring both to the real current exports and types with every assertion kept; nothing is deleted or weakened."
-do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-touches = ["agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/schema/agent-api/golden", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs"]
+do_4 = "The layerx-agentd lib test target and tests/runtime_mode.rs are in scope as well so build_cmd reaches exit 0: the hex uses in budget/program_sources.rs and budget/program_lifecycle_settlement.rs and the further E0433 sites get a declared dependency or the existing hex helper; the BudgetStateContext constructors in capability/effects.rs supply purpose_hash; the u32 literals in config.rs, budget/mod.rs, budget/reserve.rs and policy/approval.rs become the u16 the identity type declares; human_runtime.rs passes the Asn1TimeRef the API expects; tests/runtime_mode.rs resolves its binary through the crate bin target. Every assertion is kept and nothing is deleted or weakened."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/schema/agent-api/golden", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-agentd", "agent/Cargo.lock"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd -p layerx-sdk --tests"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --lib"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.23]
+title = "Human workspace lock file matches its manifests so locked builds run"
+status = "pending"
+wave = 1
+requires = []
+reqs = ["8.36", "8.46"]
+capabilities = []
+do_1 = "cargo metadata --locked --manifest-path human/Cargo.toml exits 101 because human/Cargo.lock is behind the workspace manifests, so every locked build, test and clippy run of layerx-human-service stops before compilation. Refresh the lock with the smallest update that satisfies the manifests (cargo generate-lockfile or cargo update on the changed packages only), review the diff so only entries the manifests require change, and keep every other pin exactly as it is."
+do_2 = "If the refreshed lock exposes compile errors in human crates on the current tree, those sources are in scope: bring them to the real current types and exports with every assertion kept; nothing is deleted or weakened."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["human/Cargo.lock", "human/crates"]
+build_cmd = "cargo metadata --locked --manifest-path human/Cargo.toml --format-version 1"
+verify_cmd = "cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service --tests"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.24]
+title = "Wallet SDK builds against its pinned curves release"
+status = "pending"
+wave = 1
+requires = []
+reqs = ["8.13", "8.12"]
+capabilities = []
+do_1 = "human/wallet/sdk/src/index.ts calls ed25519.Point in requireLxPoint, which the pinned @noble/curves release does not expose on CurveFn (TS2339), so npm run build exits 2 on the current tree and every wallet SDK gate is red. Use the point type the pinned release exports for the canonical and small-order check with identical semantics: the hex must round-trip through the decoded point and small-order points are refused."
+do_2 = "Add a focused test in human/wallet/sdk/test/point.test.ts covering a canonical point, a small-order point and a non-canonical encoding through the public entry that calls requireLxPoint, so the check cannot regress silently."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["human/wallet/sdk/src/index.ts", "human/wallet/sdk/test/point.test.ts"]
+build_cmd = "npm --prefix human/wallet/sdk run build"
+verify_cmd = "npm --prefix human/wallet/sdk test -- test/point.test.ts"
 symbols = []
 planned_paths = []
 mode = "BUILD"
@@ -49435,7 +49564,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.16]
 title = "Python XWebPrecompileCall becomes PrecompileCall and exchange calls follow 0x1015 version 2"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -49995,7 +50124,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.34]
 title = "Qualification scripts move from lx_* to eth_* and px_*"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -50023,7 +50152,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.35]
 title = "Testnet journeys move from lx_* to eth_* and px_*"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -50051,7 +50180,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.36]
 title = "Examples move from lx_getSequence to eth_getTransactionCount"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []

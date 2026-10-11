@@ -7011,3 +7011,18 @@ fix = "Recorded from the task report, which states no separate fix."
 area = "human/wallet/gateway/src/rpc"
 symptom = "The gateway environment schema strips unknown keys; adding a sequencer URL only to rpcPoolFromConfig does not configure shared writes"
 fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1488]
+area = "agent/tools/generate-operation.py"
+symptom = "The generator refuses to write operation_generated.rs when the existing file matches neither the full render nor the legacy render"
+fix = "Render the output to a separate path, copy it over, then confirm with --check."
+
+[gotcha.1489]
+area = "agent/crates/layerx-agentd/src/policy/native_program.rs"
+symptom = "serde_json::json! parses an object value that starts with [ as a JSON array, so [x; n].to_vec() is rejected"
+fix = "Wrap the vector expression in parentheses so the macro takes it as an expression."
+
+[gotcha.1490]
+area = "agent/crates/layerx-agentd"
+symptom = "The lib test target stops at its first macro error, so fixing it exposes the remaining type errors behind it"
+fix = "Expect several compile rounds; collect every error class from the first full build log before repairing."
