@@ -23,9 +23,9 @@ export const PRECOMPILE_ADDRESSES = {
   streams: '0x0000000000000000000000000000000000000906',
   teeAttestor: '0x0000000000000000000000000000000000000907',
   eip712: '0x0000000000000000000000000000000000000908',
-  staking: '0x0000000000000000000000000000000000000800',
-  bech32: '0x0000000000000000000000000000000000000400',
-  p256: '0x0000000000000000000000000000000000000100',
+  staking: '0x0000000000000000000000000000000000001005',
+  bech32: '0x0000000000000000000000000000000000001004',
+  p256: '0x0000000000000000000000000000000000001011',
 } as const satisfies Record<string, `0x${string}`>;
 
 /** TEE attestation families — order matches x/attestor/types/keys.go + ITEEAttestor.sol. */
@@ -60,7 +60,13 @@ export const SCHEDULER_ABI = [
     ],
     outputs: [{ name: 'jobId', type: 'uint256' }],
   },
-  { type: 'function', name: 'cancel', stateMutability: 'nonpayable', inputs: [{ name: 'jobId', type: 'uint256' }], outputs: [] },
+  {
+    type: 'function',
+    name: 'cancel',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'jobId', type: 'uint256' }],
+    outputs: [],
+  },
   {
     type: 'function',
     name: 'reschedule',
@@ -93,7 +99,13 @@ export const SCHEDULER_ABI = [
       },
     ],
   },
-  { type: 'function', name: 'pending', stateMutability: 'view', inputs: [{ name: 'creator', type: 'address' }], outputs: [{ name: '', type: 'uint256[]' }] },
+  {
+    type: 'function',
+    name: 'pending',
+    stateMutability: 'view',
+    inputs: [{ name: 'creator', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256[]' }],
+  },
 ] as const;
 
 export const STREAMS_ABI = [
@@ -111,8 +123,20 @@ export const STREAMS_ABI = [
     ],
     outputs: [{ name: 'streamId', type: 'uint256' }],
   },
-  { type: 'function', name: 'settle', stateMutability: 'nonpayable', inputs: [{ name: 'streamId', type: 'uint256' }], outputs: [{ name: 'paid', type: 'uint256' }] },
-  { type: 'function', name: 'close', stateMutability: 'nonpayable', inputs: [{ name: 'streamId', type: 'uint256' }], outputs: [{ name: 'finalPaid', type: 'uint256' }] },
+  {
+    type: 'function',
+    name: 'settle',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'streamId', type: 'uint256' }],
+    outputs: [{ name: 'paid', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'close',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'streamId', type: 'uint256' }],
+    outputs: [{ name: 'finalPaid', type: 'uint256' }],
+  },
   {
     type: 'function',
     name: 'updateRate',
@@ -123,7 +147,13 @@ export const STREAMS_ABI = [
     ],
     outputs: [],
   },
-  { type: 'function', name: 'accrued', stateMutability: 'view', inputs: [{ name: 'streamId', type: 'uint256' }], outputs: [{ name: 'amount', type: 'uint256' }] },
+  {
+    type: 'function',
+    name: 'accrued',
+    stateMutability: 'view',
+    inputs: [{ name: 'streamId', type: 'uint256' }],
+    outputs: [{ name: 'amount', type: 'uint256' }],
+  },
   {
     type: 'function',
     name: 'getStream',
@@ -232,8 +262,23 @@ export const TEE_ATTESTOR_ABI = [
       },
     ],
   },
-  { type: 'function', name: 'rootOf', stateMutability: 'view', inputs: [{ name: 'family', type: 'uint8' }, { name: 'index', type: 'uint256' }], outputs: [{ name: 'root', type: 'bytes' }] },
-  { type: 'function', name: 'rootCount', stateMutability: 'view', inputs: [{ name: 'family', type: 'uint8' }], outputs: [{ name: 'count', type: 'uint256' }] },
+  {
+    type: 'function',
+    name: 'rootOf',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'family', type: 'uint8' },
+      { name: 'index', type: 'uint256' },
+    ],
+    outputs: [{ name: 'root', type: 'bytes' }],
+  },
+  {
+    type: 'function',
+    name: 'rootCount',
+    stateMutability: 'view',
+    inputs: [{ name: 'family', type: 'uint8' }],
+    outputs: [{ name: 'count', type: 'uint256' }],
+  },
 ] as const;
 
 // -----------------------------------------------------------------------------
@@ -268,7 +313,11 @@ export const scheduler = {
   reschedule(jobId: bigint, newBlock: bigint): BuiltCall {
     return {
       to: PRECOMPILE_ADDRESSES.scheduler,
-      data: encodeFunctionData({ abi: SCHEDULER_ABI, functionName: 'reschedule', args: [jobId, newBlock] }),
+      data: encodeFunctionData({
+        abi: SCHEDULER_ABI,
+        functionName: 'reschedule',
+        args: [jobId, newBlock],
+      }),
     };
   },
   async getJob(jobId: bigint): Promise<{
@@ -335,7 +384,14 @@ export const streams = {
     const data = encodeFunctionData({
       abi: STREAMS_ABI,
       functionName: 'open',
-      args: [args.payee, args.token, args.ratePerSecond, args.startTime ?? 0n, args.stopTime ?? 0n, args.cap],
+      args: [
+        args.payee,
+        args.token,
+        args.ratePerSecond,
+        args.startTime ?? 0n,
+        args.stopTime ?? 0n,
+        args.cap,
+      ],
     });
     return { to: PRECOMPILE_ADDRESSES.streams, data };
   },
@@ -354,7 +410,11 @@ export const streams = {
   updateRate(streamId: bigint, newRate: bigint): BuiltCall {
     return {
       to: PRECOMPILE_ADDRESSES.streams,
-      data: encodeFunctionData({ abi: STREAMS_ABI, functionName: 'updateRate', args: [streamId, newRate] }),
+      data: encodeFunctionData({
+        abi: STREAMS_ABI,
+        functionName: 'updateRate',
+        args: [streamId, newRate],
+      }),
     };
   },
   async accrued(streamId: bigint): Promise<string> {
