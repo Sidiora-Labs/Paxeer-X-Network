@@ -12,8 +12,10 @@ import (
 	bridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
 	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	agentcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxagent/common"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -25,7 +27,7 @@ import (
 
 const (
 	TeeAttestorAddress            = "0x0000000000000000000000000000000000000907"
-	PrecompileName                = "teeattestor"
+	PrecompileName                = "tee attestor"
 	VerifyMethod                  = "verify"
 	VerifyAndExpectMethod         = "verifyAndExpect"
 	RootOfMethod                  = "rootOf"
@@ -96,6 +98,33 @@ func NewPrecompile(keeper *xwebkeeper.Keeper, evmKeeper *evmkeeper.Keeper, upgra
 	}
 	executor := &PrecompileExecutor{abi: a, keeper: keeper, evmKeeper: evmKeeper}
 	return &TeeAttestorPrecompile{Precompile: agentcommon.NewPrecompile(a, executor, ethcommon.HexToAddress(TeeAttestorAddress), PrecompileName, upgrade, planName)}, nil
+}
+
+func init() {
+	if err := precompiles.RegisterMergeConstructor(ethcommon.HexToAddress(TeeAttestorAddress), NewMergePrecompile); err != nil {
+		panic(err)
+	}
+}
+
+// NewMergePrecompile builds the precompile from the application's precompile
+// keepers; it is the constructor registered for the merge address table.
+func NewMergePrecompile(keepers utils.Keepers, planName string) (precompiles.IPrecompile, error) {
+	if keepers == nil {
+		return nil, fmt.Errorf("%w: precompile keepers are unavailable", agentcommon.ErrNoContext)
+	}
+	wired, ok := keepers.(utils.XWebKeepers)
+	if !ok {
+		return nil, fmt.Errorf("%w: xweb keeper is unavailable", agentcommon.ErrNoContext)
+	}
+	evmKeeper, ok := keepers.EVMK().(*evmkeeper.Keeper)
+	if !ok || evmKeeper == nil {
+		return nil, fmt.Errorf("%w: evm keeper is unavailable", agentcommon.ErrNoContext)
+	}
+	p, err := NewPrecompile(wired.XWebK(), evmKeeper, evmKeeper.UpgradeKeeper(), planName)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (p *PrecompileExecutor) RequiredGas(input []byte, method *abi.Method) uint64 {
