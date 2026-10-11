@@ -283,6 +283,7 @@ func createRouter(
 	app utils.Option[*proxy.Proxy],
 	genDoc *types.GenesisDoc,
 	dbProvider config.DBProvider,
+	stateStore utils.Option[sm.Store],
 ) (*p2p.Router, closer, error) {
 	closer := func() error { return nil }
 	ep, err := p2p.ResolveEndpoint(nodeKey.ID().AddressString(cfg.P2P.ListenAddress))
@@ -376,10 +377,15 @@ func createRouter(
 		if !ok {
 			return nil, closer, fmt.Errorf("autobahn requires app")
 		}
+		store, ok := stateStore.Get()
+		if !ok {
+			return nil, closer, fmt.Errorf("autobahn requires the node state store")
+		}
 		gigaCfg, err := buildGigaConfig(cfg.AutobahnConfigFile, nodeKey, valKey, app, genDoc)
 		if err != nil {
 			return nil, closer, fmt.Errorf("buildGigaConfig: %w", err)
 		}
+		gigaCfg.StateStore = store
 		gigaCfg.HandshakeTimeout = cfg.P2P.HandshakeTimeout
 		// Resolve a relative persistent_state_dir against the node's --home dir,
 		// matching how other paths in the tendermint config are handled

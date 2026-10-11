@@ -45,6 +45,17 @@ type GigaRouterConfig struct {
 	Consensus        *consensus.Config
 	Producer         *producer.Config
 	GenDoc           *types.GenesisDoc
+	// StateStore persists the FinalizeBlock response of every executed block
+	// at its global block number, so block_results serves the same-block
+	// transaction results under Autobahn.
+	StateStore FinalizeBlockResponseStore
+}
+
+// FinalizeBlockResponseStore is the part of the node state store the
+// GigaRouter writes to. The state package imports p2p, so the router names
+// the method it needs instead of the store type.
+type FinalizeBlockResponseStore interface {
+	SaveFinalizeBlockResponses(height int64, resp *abci.ResponseFinalizeBlock) error
 }
 
 const defaultGigaHandshakeTimeout = 10 * time.Second
@@ -282,6 +293,10 @@ func (r *GigaRouter) executeBlock(ctx context.Context, b *atypes.GlobalBlock) (*
 	if uint64(b.GlobalNumber) > math.MaxInt64 {
 		return nil, fmt.Errorf("block height %d exceeds maximum executable height %d", b.GlobalNumber, int64(math.MaxInt64))
 	}
+	height := int64(b.GlobalNumber) //nolint:gosec // checked above against math.MaxInt64.
+	if r.cfg.StateStore == nil {
+		return nil, errors.New("GigaRouterConfig.StateStore is nil; FinalizeBlock responses cannot be persisted")
+	}
 	app := r.cfg.Producer.App
 	hash := b.Header.Hash()
 	var proposerAddress types.Address
@@ -307,7 +322,7 @@ func (r *GigaRouter) executeBlock(ctx context.Context, b *atypes.GlobalBlock) (*
 		Hash: hash[:],
 		Header: (&types.Header{
 			ChainID: r.cfg.GenDoc.ChainID,
-			Height:  int64(b.GlobalNumber), //nolint:gosec // checked above against math.MaxInt64.
+			Height:  height,
 			Time:    b.Timestamp,
 			// WARNING: the reward distribution has corner cases where it forgets the proposer,
 			// because reward is distributed with a delay. This is not our problem here though.
@@ -316,6 +331,9 @@ func (r *GigaRouter) executeBlock(ctx context.Context, b *atypes.GlobalBlock) (*
 	})
 	if err != nil {
 		return nil, fmt.Errorf("r.cfg.App.FinalizeBlock(): %w", err)
+	}
+	if err := r.cfg.StateStore.SaveFinalizeBlockResponses(height, resp); err != nil {
+		return nil, fmt.Errorf("r.cfg.StateStore.SaveFinalizeBlockResponses(%v): %w", height, err)
 	}
 	commitResp, err := app.Commit(ctx)
 	if err != nil {

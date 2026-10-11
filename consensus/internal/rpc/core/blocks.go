@@ -250,33 +250,20 @@ func (env *Environment) Commit(ctx context.Context, req *coretypes.RequestBlockI
 // Results are for the height of the block containing the txs.
 // More: https://docs.tendermint.com/master/rpc/#/Info/block_results
 //
-// Under Autobahn, FinalizeBlock responses are not persisted to StateStore
-// (giga_router.executeBlock never calls SaveFinalizeBlockResponses), so this
-// returns a valid-but-empty ResultBlockResults at the requested height. That
-// lets downstream consumers (evmrpc's eth_getBlockByNumber, which looks up
-// BlockResults to enrich the response) keep working — the block envelope
-// renders correctly, just without per-tx ExecTxResult details. Properly
-// populating these under Autobahn is a separate follow-up.
+// Under Autobahn the GigaRouter persists every FinalizeBlock response at its
+// global block number, so both consensus modes serve the stored response. A
+// height without a stored response returns the load error rather than an
+// empty result, so no caller derives the empty-tree results root for a block
+// that holds transactions.
 func (env *Environment) BlockResults(ctx context.Context, req *coretypes.RequestBlockInfo) (*coretypes.ResultBlockResults, error) {
-	if giga, ok := env.gigaRouter().Get(); ok {
-		height, err := env.autobahnCheckAndGetHeight(ctx, (*int64)(req.Height))
-		if err != nil {
-			return nil, err
-		}
-		// evmrpc's EncodeTmBlock reads ConsensusParamUpdates.Block.MaxGas to
-		// populate the eth_getBlockByNumber gasLimit field. Populate it from
-		// Autobahn's producer config so that path doesn't nil-deref.
-		return &coretypes.ResultBlockResults{
-			Height: height,
-			ConsensusParamUpdates: &tmproto.ConsensusParams{
-				Block: &tmproto.BlockParams{
-					MaxGas: utils.Clamp[int64](giga.MaxGasEstimatedPerBlock()),
-				},
-			},
-		}, nil
+	giga, autobahn := env.gigaRouter().Get()
+	var height int64
+	var err error
+	if autobahn {
+		height, err = env.autobahnCheckAndGetHeight(ctx, (*int64)(req.Height))
+	} else {
+		height, err = env.getHeight(env.BlockStore.Height(), (*int64)(req.Height))
 	}
-
-	height, err := env.getHeight(env.BlockStore.Height(), (*int64)(req.Height))
 	if err != nil {
 		return nil, err
 	}
@@ -291,13 +278,27 @@ func (env *Environment) BlockResults(ctx context.Context, req *coretypes.Request
 		totalGasUsed += res.GetGasUsed()
 	}
 
+	consensusParamUpdates := results.ConsensusParamUpdates
+	if autobahn && consensusParamUpdates.GetBlock() == nil {
+		// evmrpc's EncodeTmBlock reads ConsensusParamUpdates.Block.MaxGas to
+		// populate the eth_getBlockByNumber gasLimit field. When the stored
+		// response carries no block-param update, report the producer
+		// config's gas limit.
+		if consensusParamUpdates == nil {
+			consensusParamUpdates = &tmproto.ConsensusParams{}
+		}
+		consensusParamUpdates.Block = &tmproto.BlockParams{
+			MaxGas: utils.Clamp[int64](giga.MaxGasEstimatedPerBlock()),
+		}
+	}
+
 	return &coretypes.ResultBlockResults{
 		Height:                height,
 		TxsResults:            results.TxResults,
 		TotalGasUsed:          totalGasUsed,
 		FinalizeBlockEvents:   results.Events,
 		ValidatorUpdates:      results.ValidatorUpdates,
-		ConsensusParamUpdates: results.ConsensusParamUpdates,
+		ConsensusParamUpdates: consensusParamUpdates,
 	}, nil
 }
 

@@ -87,6 +87,7 @@ func makeSeedNode(
 		utils.None[*proxy.Proxy](),
 		genDoc,
 		dbProvider,
+		utils.None[sm.Store](),
 	)
 	closers = append(closers, peerCloser)
 	if err != nil {

@@ -36,8 +36,10 @@ type testAppState struct {
 	Init       utils.Option[*abci.RequestInitChain]
 	Validators []abci.ValidatorUpdate
 	Blocks     []*abci.RequestFinalizeBlock
-	Txs        map[shaHash]bool
-	AppHash    shaHash
+	// Responses holds the marshaled FinalizeBlock response of each block in Blocks.
+	Responses [][]byte
+	Txs       map[shaHash]bool
+	AppHash   shaHash
 	// Committed tracks whether FinalizeBlock is allowed.
 	// Set to true by InitChain (so FinalizeBlock can follow without Commit,
 	// matching the CometBFT handshaker flow) and by Commit.
@@ -140,13 +142,19 @@ func (a *testApp) FinalizeBlock(_ context.Context, req *abci.RequestFinalizeBloc
 		for _, tx := range req.Txs {
 			state.Txs[sha256.Sum256(tx)] = true
 		}
+		resp := &abci.ResponseFinalizeBlock{
+			AppHash:   slices.Clone(state.AppHash[:]),
+			TxResults: slices.Repeat([]*abci.ExecTxResult{{Code: abci.CodeTypeOK}}, len(req.Txs)),
+		}
+		respBytes, err := resp.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("resp.Marshal(): %w", err)
+		}
+		state.Responses = append(state.Responses, respBytes)
 		logger.Info("FinalizeBlock", "n", req.Header.Height-init.InitialHeight)
 		state.Committed = false
 		ctrl.Updated()
-		return &abci.ResponseFinalizeBlock{
-			AppHash:   slices.Clone(state.AppHash[:]),
-			TxResults: slices.Repeat([]*abci.ExecTxResult{{Code: abci.CodeTypeOK}}, len(req.Txs)),
-		}, nil
+		return resp, nil
 	}
 	panic("unreachable")
 }
@@ -249,6 +257,152 @@ func TestInitChainCommitThenFinalize(t *testing.T) {
 		"testApp should report InitialHeight after 1 block")
 }
 
+// testResponseStore keeps the marshaled FinalizeBlock responses the router
+// persists, keyed by height, in the encoding the node state store writes.
+type testResponseStore struct {
+	responses utils.Watch[map[int64][]byte]
+}
+
+func newTestResponseStore() *testResponseStore {
+	return &testResponseStore{responses: utils.NewWatch(map[int64][]byte{})}
+}
+
+func (s *testResponseStore) SaveFinalizeBlockResponses(height int64, resp *abci.ResponseFinalizeBlock) error {
+	bz, err := resp.Marshal()
+	if err != nil {
+		return fmt.Errorf("resp.Marshal(): %w", err)
+	}
+	for responses, ctrl := range s.responses.Lock() {
+		responses[height] = bz
+		ctrl.Updated()
+	}
+	return nil
+}
+
+// WaitFor blocks until a response is stored at height and returns its bytes.
+func (s *testResponseStore) WaitFor(ctx context.Context, height int64) ([]byte, error) {
+	for responses, ctrl := range s.responses.Lock() {
+		if err := ctrl.WaitUntil(ctx, func() bool {
+			_, ok := responses[height]
+			return ok
+		}); err != nil {
+			return nil, err
+		}
+		return responses[height], nil
+	}
+	panic("unreachable")
+}
+
+func TestGigaRouterPersistsFinalizeBlockResponses(t *testing.T) {
+	const maxTxsPerBlock = 3
+
+	ctx := t.Context()
+	rng := utils.TestRng()
+	_, keys := atypes.GenCommittee(rng, 1)
+	cfg := &testNodeCfg{
+		validatorKey: keys[0],
+		nodeKey:      makeKey(rng),
+		addr:         tcp.TestReserveAddr(),
+	}
+	genDoc := &types.GenesisDoc{
+		ChainID:       "giga-router-results-test",
+		InitialHeight: rng.Int63n(100000) + 1,
+		AppState:      testAppStateJSON(rng),
+	}
+	require.NoError(t, genDoc.ValidateAndComplete())
+	app := newTestApp()
+	store := newTestResponseStore()
+	nodeInfo := makeInfo(cfg.nodeKey)
+	nodeInfo.ListenAddr = cfg.addr.String()
+	nodeInfo.Network = genDoc.ChainID
+	e := Endpoint{AddrPort: cfg.addr}
+	// The validator reaches its own GigaRouter through the Router's listener,
+	// so the router runs behind a full Router as on a node.
+	router, err := NewRouter(
+		NopMetrics(),
+		cfg.nodeKey,
+		func() *types.NodeInfo { return &nodeInfo },
+		dbm.NewMemDB(),
+		&RouterOptions{
+			SelfAddress:              utils.Some(e.NodeAddress(cfg.nodeKey.Public().NodeID())),
+			Endpoint:                 e,
+			Connection:               conn.DefaultMConnConfig(),
+			IncomingConnectionWindow: utils.Some(time.Duration(0)),
+			MaxAcceptRate:            utils.Some(rate.Inf),
+			MaxDialRate:              utils.Some(rate.Limit(30)),
+			Giga: utils.Some(&GigaRouterConfig{
+				DialInterval:   100 * time.Millisecond,
+				ValidatorAddrs: map[atypes.PublicKey]GigaNodeAddr{cfg.validatorKey.Public(): cfg.GigaNodeAddr()},
+				Consensus: &consensus.Config{
+					Key:                cfg.validatorKey,
+					ViewTimeout:        func(atypes.View) time.Duration { return time.Hour },
+					PersistentStateDir: utils.None[string](),
+				},
+				Producer: &producer.Config{
+					App:                     proxy.New(app, proxy.NopMetrics()),
+					MaxGasWantedPerBlock:    maxTxsPerBlock,
+					MaxGasEstimatedPerBlock: maxTxsPerBlock,
+					MaxTxsPerBlock:          maxTxsPerBlock,
+					MaxTxsPerSecond:         utils.None[uint64](),
+					// The block holding the three transactions is sealed by the
+					// fourth insertion, never by the interval.
+					BlockInterval: time.Hour,
+				},
+				GenDoc:     genDoc,
+				StateStore: store,
+			}),
+		},
+	)
+	require.NoError(t, err)
+	giga := router.Giga().OrPanic("non-giga router")
+
+	err = scope.Run(ctx, func(ctx context.Context, s scope.Scope) error {
+		s.SpawnBgNamed("router", func() error { return utils.IgnoreCancel(router.Run(ctx)) })
+		var txs [][]byte
+		for range maxTxsPerBlock + 1 {
+			tx := utils.GenBytes(rng, 100)
+			if _, err := giga.InsertTx(ctx, tx); err != nil {
+				return fmt.Errorf("giga.InsertTx(): %w", err)
+			}
+			txs = append(txs, tx)
+		}
+		blockTxs := txs[:maxTxsPerBlock]
+		for _, tx := range blockTxs {
+			if err := app.WaitForTx(ctx, tx); err != nil {
+				return fmt.Errorf("app.WaitForTx(): %w", err)
+			}
+		}
+
+		snapshot := app.Snapshot()
+		require.Equal(t, len(snapshot.Blocks), len(snapshot.Responses))
+		var height int64
+		var wantResp []byte
+		for i, req := range snapshot.Blocks {
+			if len(req.Txs) > 0 {
+				require.Equal(t, blockTxs, req.Txs, "first non-empty block")
+				height = req.Header.Height
+				wantResp = snapshot.Responses[i]
+				break
+			}
+		}
+		require.Positive(t, height)
+
+		gotResp, err := store.WaitFor(ctx, height)
+		if err != nil {
+			return fmt.Errorf("store.WaitFor(%v): %w", height, err)
+		}
+		require.Equal(t, wantResp, gotResp, "stored response at height %v", height)
+		var stored abci.ResponseFinalizeBlock
+		require.NoError(t, stored.Unmarshal(gotResp))
+		require.Len(t, stored.TxResults, maxTxsPerBlock)
+		for i, res := range stored.TxResults {
+			require.Equal(t, abci.CodeTypeOK, res.Code, "stored TxResults[%v].Code", i)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestGigaRouter_FinalizeBlocks(t *testing.T) {
 	const maxTxsPerBlock = 20
 	const blocksPerLane = 5
@@ -316,7 +470,8 @@ func TestGigaRouter_FinalizeBlocks(t *testing.T) {
 							MaxTxsPerSecond:         utils.None[uint64](),
 							BlockInterval:           100 * time.Millisecond,
 						},
-						GenDoc: genDoc,
+						GenDoc:     genDoc,
+						StateStore: newTestResponseStore(),
 					}),
 				},
 			)
@@ -458,7 +613,8 @@ func TestGigaRouter_EvmProxy(t *testing.T) {
 			MaxTxsPerSecond:         utils.None[uint64](),
 			BlockInterval:           time.Second,
 		},
-		GenDoc: genDoc,
+		GenDoc:     genDoc,
+		StateStore: newTestResponseStore(),
 	}, nodeKeys[0])
 	require.NoError(t, err)
 
