@@ -1322,3 +1322,10 @@ command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guar
 exit_code = 0
 log_path = "logs/11.5.161-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed (file scan; no test cases run))."
+
+[finding.0.115]
+revision = "db0f4a886"
+command = "go test -count=1 ./modules/layerxexchange/keeper/ -run TestGenesisAndAuthority"
+exit_code = 0
+log_path = "logs/0.115-verify-2.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed)."

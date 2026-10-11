@@ -344,6 +344,18 @@ value = "addr 0x1004 emits the LXP_ADDR_* codes of the address-table registry (s
 basis = "contracts/address-table.md section (b) rows for addr 0x1004, precompiles/common/lxp_errors.go:255-264 and the completed task 10.2.1 bind these sites to the LXP_ADDR_* codes, checked byte for byte by TestAddrRevertReasons (precompiles/addr/addr_test.go:414) and TestResolutionAddrReason (precompiles/addr/resolution_reason_test.go:25); the registry contract governs the revert text clients classify."
 affects = ["1.1.5", "10.2.1"]
 
+[decision.57]
+title = "CosmWasm transaction counter is the block position from the merge plan height"
+value = "From the height the merge plan is done, every path that executes a transaction at a block position (App.DeliverTx for the synchronous, concurrent and sequencer paths, and the Giga per-transaction deliver function) sets the CosmWasm transaction counter to that position, so env.transaction.index of a contract is the transaction's index in the sealed block at the sequencer and at every validator; before that height no path sets it, as on the existing code, so historical blocks replay unchanged. SetTxPosition only places the context; the counter is set inside the deliver path."
+basis = "req 9014.1 and acceptance 9.14.1 bind the counter value at the sequencer to the value a validator gets for the same block, and task 9.1.7 do_1 sets it per Accept; on the existing code no ante decorator sets it (node/ante.go builds no counter decorator and wasm/x/wasm/types/types.go reads TXCounter only when present), so setting it at the sequencer alone would diverge from the block path, while setting it in the shared deliver path under the merge plan gate keeps both paths and history identical."
+affects = ["9.1.7", "0.118"]
+
+[decision.58]
+title = "Stream rate change is activity ordinal 8 end to end"
+value = "Stream rate change is activity ordinal 8 in every layer: the stream result codec stores and loads ordinals 1 through 8 with the existing result layout, module_execute passes ordinal 8 to stream_execute_typed, the stored result of a rate change carries ordinal 8 and its replay returns that result, and a key stored for another ordinal or stream returns LXP_ERR_CONTEXT_MISMATCH in validate and in execute; lifecycle_load is exported and shared rather than copied. The test assertion that execute refuses ordinal 8 with LXP_ERR_UNKNOWN_ACTIVITY described the state before the rate change executed and is replaced by acceptance assertions, a spec correction and not a weakening."
+basis = "Task 2.3.2 requires ordinal 8 dispatch (event type 8 after the settle event) and LXP_ERR_CONTEXT_MISMATCH for a key stored for another ordinal; on main lx_stream_result_load and lx_stream_result_save (src/modules/stream/lx_stream_state.c) refuse ordinals above 7, module_execute (src/modules/stream/lx_stream_open.c) refuses ordinal 8, and lx_stream_rate_change_execute saves its result as ordinal 4 through settle_accrued (src/modules/stream/lx_stream_settle.c), so a settle key given to a rate change replays the settle result."
+affects = ["2.3.2"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -3600,7 +3612,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.8]
 title = "bank 0x1001 overload, sub-account and reason tests"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["1.1.6"]
@@ -6911,17 +6923,19 @@ wave = 3
 requires = ["2.2.2"]
 reqs = ["2015.1", "2015.2", "2015.3", "2015.4", "2015.5", "2015.6"]
 capabilities = ["2.3.5"]
-do_1 = "Add lx_stream_rate_change_execute: load the stream through lifecycle_load so only the payer passes and a closed stream is refused (src/modules/stream/lx_stream_lifecycle.c:9-22; src/modules/stream/lx_stream_settle.c:125)."
-do_2 = "Run the settle logic at the old rate up to the block-open time with the request key, so the paid amount and the result record are those of a settle (src/modules/stream/lx_stream_settle.c:95-188)."
+do_1 = "Export lifecycle_load from src/modules/stream/lx_stream_lifecycle.c as lx_stream_lifecycle_load with its prototype in include/layerx/lx_stream.h beside lx_stream_rate_change_execute; pause, resume and close keep calling it, and lx_stream_rate_change_execute (src/modules/stream/lx_stream_settle.c) loads the stream through it so only the payer passes and a closed stream is refused, replacing the closed and payer checks copied into lx_stream_settle.c (its request payer check against the record stays)."
+do_2 = "Run the settle logic at the old rate up to the block-open time with the request key, so the paid amount and the transfer set are those of a settle, and store the result of the rate change with ordinal 8 (decision 58), never ordinal 4 (settle_accrued and settle_save in src/modules/stream/lx_stream_settle.c)."
 do_3 = "Write the new rate on the settled record, keeping last_accrual_timestamp and remainder_carry from that settle, then save (src/modules/stream/lx_stream_accrue.c:82-83)."
-do_4 = "Dispatch ordinal 8 from stream_execute_typed and emit event type 8 with stream id, old rate, new rate and paid after the settle event (src/modules/stream/lx_stream_execution.h:105-118, :353)."
-do_5 = "A replayed key for the same stream returns the stored result and a key stored for another stream or ordinal returns LXP_ERR_CONTEXT_MISMATCH (src/modules/stream/lx_stream_settle.c:114-122)."
-do_6 = "Add lifecycle vectors: piecewise accrual 3 per s then 5 per s sums to 80 over 20 s, payee refused, closed refused, replay, plus the rate-change decode vectors (tests/modules/test_stream_lifecycle.c:1)."
-do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-symbols = ["lx_stream_rate_change_execute", "stream_execute_typed", "lx_stream_settle_execute"]
-touches = ["src/modules/stream/lx_stream_settle.c", "src/modules/stream/lx_stream_execution.h", "tests/modules/test_stream_lifecycle.c"]
+do_4 = "lx_stream_result_load and lx_stream_result_save (src/modules/stream/lx_stream_state.c) accept ordinals 1 through 8 with the existing LX_STREAM_RESULT_BYTES layout and still refuse 0 and anything above 8 as LXP_ERR_NON_CANONICAL."
+do_5 = "module_execute (src/modules/stream/lx_stream_open.c) stops refusing ordinal 8 and passes it to stream_execute_typed, which dispatches 8 to stream_execute_rate_change and emits event type 8 with stream id, old rate, new rate and paid after the settle event (src/modules/stream/lx_stream_execution.h stream_execute_rate_change, stream_event_rate_change)."
+do_6 = "Replay and key binding: settle_replay takes the ordinal it expects, so a settle accepts only a stored ordinal 4 result and a rate change only a stored ordinal 8 result for the same stream, and any other stored ordinal or stream returns LXP_ERR_CONTEXT_MISMATCH; validate_typed (src/modules/stream/lx_stream_open.c) treats ordinal 8 as a keyed activity like 4 and 7, so a stored ordinal 8 result for the same stream validates as a replay and a key stored for another ordinal or stream returns LXP_ERR_CONTEXT_MISMATCH before any state is read."
+do_7 = "In tests/modules/test_stream_open.c the assertions that iface->execute and run() of LX_STREAM_RATE_CHANGE by the payer return LXP_ERR_UNKNOWN_ACTIVITY with the stream unchanged described the state before ordinal 8 executed; per decision 58 (spec correction) they become acceptance assertions: execute returns LXP_OK, the stored result has ordinal 8, the record carries the new rate, and the settle then rate change events are emitted. The provider refusal (LXP_ERR_UNAUTHORIZED_DEBIT with the stream unchanged), the out-of-range ordinal refusals and the foreign module refusals stay exactly as written."
+do_8 = "Add lifecycle vectors in tests/modules/test_stream_lifecycle.c: piecewise accrual 3 per s then 5 per s sums to 80 over 20 s, payee refused, closed refused, replay of the same rate change returns the stored ordinal 8 result, a settle key given to a rate change and a rate change key given to a settle each return LXP_ERR_CONTEXT_MISMATCH with record and balances unchanged, plus the rate-change decode vectors."
+do_9 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["lx_stream_rate_change_execute", "lx_stream_lifecycle_load", "lx_stream_result_load", "lx_stream_result_save", "settle_replay", "validate_typed", "module_execute", "stream_execute_typed", "lx_stream_settle_execute"]
+touches = ["src/modules/stream/lx_stream_settle.c", "src/modules/stream/lx_stream_execution.h", "src/modules/stream/lx_stream_state.c", "src/modules/stream/lx_stream_open.c", "src/modules/stream/lx_stream_lifecycle.c", "include/layerx/lx_stream.h", "tests/modules/test_stream_lifecycle.c", "tests/modules/test_stream_open.c"]
 build_cmd = "make build"
-verify_cmd = "make test-stream-lifecycle"
+verify_cmd = "make test-stream-lifecycle test-stream-open test-stream-settle"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -38604,7 +38618,7 @@ qualification = "UNRUN"
 [acceptance.9.14.1]
 feature = "9"
 req = "9014.1"
-scenario = "Given a CosmWasm execute at block position 5, when the sequencer receipts it and a validator executes the sealed block, then both produce the same tx counter value and identical results."
+scenario = "Given a CosmWasm execute at block position 5, when the sequencer receipts it and a validator executes the sealed block, then both produce the same tx counter value and identical results. From the merge plan height both paths set the counter to the block position and before it neither sets it (decision 57, task 0.118)."
 contract = "contracts/sequencer.md#d-execution-mode"
 test = "node/sequencer/position_test.go::TestPositionWasmCounterMatchesBlock"
 qualification = "UNRUN"
@@ -38628,7 +38642,7 @@ qualification = "UNRUN"
 [acceptance.9.15.1]
 feature = "9"
 req = "9015.1"
-scenario = "Given a call to addr 0x0000000000000000000000000000000000001004 that reverts with reason \"not bound\", when it is receipted, then activity_root equals sha256 of the ABI encoding of Error(\"not bound\") and the committed receipt has the same revert data."
+scenario = "Given a call to addr 0x0000000000000000000000000000000000001004 that reverts with reason \"not bound\", when it is receipted, then activity_root equals sha256 of the ABI encoding of Error(\"not bound\") and the committed receipt has the same revert data. addr 0x1004 reverts with reason bytes only once the merge plan is active (decision 56), so the position test covers the same check through xweb 0x0000000000000000000000000000000000001019 with an unknown method in every plan state and through addr 0x1004 getLayerXDid of an unbound address on a harness whose merge plan is done (task 0.118)."
 contract = "contracts/sequencer.md#a1-envelope-fields"
 test = "node/sequencer/position_test.go::TestPositionPrecompileRevertBytes"
 qualification = "UNRUN"
@@ -38636,7 +38650,7 @@ qualification = "UNRUN"
 [acceptance.9.15.2]
 feature = "9"
 req = "9015.2"
-scenario = "Given the xweb module becomes live at height 1001, when L_open opens for 1001, then the xweb precompile is served to transactions in that block and was not served at 1000."
+scenario = "Given the xweb module becomes live at height 1001, when L_open opens for 1001, then the xweb precompile is served to transactions in that block and was not served at 1000. The position test runs the same transition with the xweb plan at height 3, the harness opening at height 2."
 contract = "contracts/sequencer.md#a1-envelope-fields"
 test = "node/sequencer/position_test.go::TestPositionPrecompileSetRefreshedOnOpen"
 qualification = "UNRUN"
@@ -41804,11 +41818,11 @@ wave = 0
 requires = ["0.56"]
 reqs = ["8.1"]
 capabilities = []
-do_1 = "Task 0.56 made ureq and serde_json normal dependencies of agent/crates/layerx-client, which the platform, human, interop, programs and cmd/layerxctl workspaces reach by path, so their locked builds stop at lock resolution. Refresh platform/Cargo.lock, human/Cargo.lock, interop/Cargo.lock, programs/Cargo.lock and cmd/layerxctl/Cargo.lock with the smallest update that satisfies the manifests (cargo update on the changed packages only, at the pins agent/Cargo.lock already holds: ureq =3.4.0, serde_json =1.0.149), review each diff so only entries the manifests require change, and keep every other pin exactly as it is."
-do_2 = "Only the five lock files are edited; a compile error a refreshed lock exposes in those workspaces is recorded once in qualification.kvx."
+do_1 = "Task 0.56 made ureq and serde_json normal dependencies of agent/crates/layerx-client, which the platform, human, interop, programs and cmd/layerxctl workspaces reach by path. interop/Cargo.lock already resolves on main (task 0.108 refreshed it; cargo metadata --locked on interop exits 0) and is not edited. Refresh platform/Cargo.lock, human/Cargo.lock, programs/Cargo.lock and cmd/layerxctl/Cargo.lock with the smallest update that satisfies the manifests (cargo update on the changed packages only, at the pins agent/Cargo.lock already holds: ureq =3.4.0, serde_json =1.0.149), review each diff so only entries the manifests require change, and keep every other pin exactly as it is."
+do_2 = "Only the four lock files are edited; a compile error a refreshed lock exposes in those workspaces is recorded once in qualification.kvx. The verify keeps the interop check so the interop lock stays resolvable."
 do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = []
-touches = ["platform/Cargo.lock", "human/Cargo.lock", "interop/Cargo.lock", "programs/Cargo.lock", "cmd/layerxctl/Cargo.lock"]
+touches = ["platform/Cargo.lock", "human/Cargo.lock", "programs/Cargo.lock", "cmd/layerxctl/Cargo.lock"]
 build_cmd = "cargo metadata --locked --manifest-path cmd/layerxctl/Cargo.toml --format-version 1 >/dev/null"
 verify_cmd = "cargo metadata --locked --manifest-path platform/Cargo.toml --format-version 1 >/dev/null && cargo metadata --locked --manifest-path human/Cargo.toml --format-version 1 >/dev/null && cargo metadata --locked --manifest-path interop/Cargo.toml --format-version 1 >/dev/null && cargo metadata --locked --manifest-path programs/Cargo.toml --format-version 1 >/dev/null && cargo metadata --locked --manifest-path cmd/layerxctl/Cargo.toml --format-version 1 >/dev/null"
 gate_kind = "existing"
@@ -41823,7 +41837,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.115]
 title = "Exchange keeper genesis and authority test seeds its market before the flag toggles"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["3.2.7"]
@@ -41848,7 +41862,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.116]
 title = "Wallet web-data surface reads caps by grant id"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["5.2.5"]
@@ -41861,6 +41875,61 @@ symbols = ["useSurface", "caps"]
 touches = ["human/apps/wallet/src/surfaces/useSurface.ts", "human/apps/wallet/src/surfaces/WebDataView.test.tsx"]
 build_cmd = "npm --prefix human/apps/wallet run typecheck"
 verify_cmd = "npm --prefix human/apps/wallet test -- src/surfaces/WebDataView.test.tsx"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.117]
+title = "Gas station image fetches the receipt keys and refuses a bad configuration before either process starts"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["0.108", "0.110"]
+reqs = ["7023.1"]
+capabilities = []
+do_1 = "docker/gas-station/Dockerfile installs curl in the runtime stage beside ca-certificates, libssl3 and util-linux, so docker/gas-station/init.sh can fetch px_getReceiptKeys when GAS_STATION_RECEIPT_KEYS is unset; init.sh reads the answer with bash pattern matching and needs no jq, so jq is not installed."
+do_2 = "Add a check subcommand to the paxeer-gas-station binary (interop/crates/layerx-gas-station/src/main.rs): paxeer-gas-station check --config PATH --rate-config PATH parses its flags exactly as rate_arguments does (check_arguments), and check_configs loads the station configuration with ServiceConfig::load and the publisher configuration with PublisherConfig::load (interop/crates/layerx-gas-station/src/rate.rs) and returns every refusal; it reads no key variable, opens no journal and makes no network call. run_check prints each refusal to stderr and exits 2 on any refusal and 0 when both load; main dispatches check before the rate subcommand and the usage text names it."
+do_3 = "docker/gas-station/init.sh runs /usr/local/bin/paxeer-gas-station check --config station.json --rate-config rate.json after writing both files and before chown and the two processes start; a non-zero exit stops init.sh with that status and a message naming the check, so a weak or non-canonical receipt key, a repeated keyId, an inverted range or any other load refusal stops the container at init and never after one process has started."
+do_4 = "Add unit tests in src/main.rs beside exact_rate_arguments_required: exact_check_arguments_required (flags in order, no empty value, no extra argument) and check_refuses_what_the_publisher_refuses, which writes a station and a publisher configuration in the shape init.sh renders into a temporary directory and asserts check_configs accepts them, refuses with sequencer_receipt_keys named an empty list, a weak ed25519 key, a repeated keyId and an inverted height range, and refuses a malformed station configuration."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["check_arguments", "check_configs", "run_check", "exact_check_arguments_required", "check_refuses_what_the_publisher_refuses", "ServiceConfig", "PublisherConfig"]
+touches = ["docker/gas-station/Dockerfile", "docker/gas-station/init.sh", "interop/crates/layerx-gas-station/src/main.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --bins --tests && bash -n docker/gas-station/init.sh"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --bin paxeer-gas-station"
+gate_kind = "existing"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.118]
+title = "Sequencer Accept places each transaction with SetTxPosition, Open refreshes the precompile set, and every path gives CosmWasm the block position"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["9.1.7"]
+reqs = ["9014.1", "9015.1", "9015.2"]
+capabilities = []
+do_1 = "In sequential.Accept (node/sequencer/accept.go) the per-transaction context comes from SetTxPosition (node/sequencer/precompiles.go) on the open layer at the index the transaction will hold, replacing the direct WithTxIndex in sequential.deliver; an ErrTxPosition refusal returns before delivery and leaves the open layer and the seq counter unchanged. The micro-batch path keeps its AbsoluteIndex entries, which the scheduler places at the same index."
+do_2 = "The Host interface (node/sequencer/executor.go) gains RefreshPrecompiles(ctx sdk.Context), which App already has (node/upgrades.go); sequential.Open calls it on the open-layer context after BeginBlock succeeds and before the layer is installed, so every Open, including the one at an upgrade height, serves the precompile set its own state makes live without a separate call. The exported RefreshPrecompiles(host, exec) stays for callers holding an executor."
+do_3 = "Per decision 57, App.DeliverTx (node/abci.go) sets wasmtypes.WithTXCounter(ctx, uint32(ctx.TxIndex())) (wasm/x/wasm/types/ante.go) when the merge plan is active at ctx.BlockHeight() (UpgradeKeeper.IsUpgradeActiveAtHeight with MergeUpgrade, read on an infinite gas meter as the precompile mergePlanActive helpers do), and the Giga per-transaction deliver function makeGigaDeliverTx (node/app.go) does the same, so the synchronous, concurrent, Giga and sequencer paths give a contract env.transaction.index equal to the block position; before the plan height no path sets it and historical blocks replay unchanged. The SetTxPosition comment that says no path sets the counter is updated to this rule."
+do_4 = "Add TestPositionWasmCounterFromMergePlan in node/sequencer/position_test.go: the harness setup stores and instantiates wasm/x/wasm/keeper/testdata/cyberpunk.wasm, and an execute of {\"mirror_env\":{}} is accepted at a position above 1 twice, once on a harness whose merge plan is not done (the returned env carries no transaction) and once on a harness whose setup marks the merge plan done at a height at or below the open height with UpgradeKeeper.SetDone (env.transaction.index equals the TxIndex Accept returned); in both, a validator harness at the same state executing the sealed block returns byte-identical results. TestPositionWasmCounterMatchesBlock keeps every assertion, including that SetTxPosition alone sets no counter."
+do_5 = "TestPositionPrecompileSetRefreshedOnOpen drops its explicit sequencer.RefreshPrecompiles call after Open at the upgrade height and asserts the xweb precompile is served straight after Open, proving Open refreshes it; its ErrLayerNotOpen assertions stay. TestPositionPrecompileRevertBytes gains an addr 0x0000000000000000000000000000000000001004 case on a harness whose merge plan is done: getLayerXDid of an unbound address is receipted with the Error revert bytes carrying LXP_ADDR_EVM_NOT_BOUND (decision 56), activity_root equals sha256 of those bytes, and the validator execution of the sealed block returns the same revert data; the xweb case stays as written."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["SetTxPosition", "RefreshPrecompiles", "Host", "Accept", "Open", "DeliverTx", "makeGigaDeliverTx", "WithTXCounter", "TestPositionWasmCounterFromMergePlan", "TestPositionPrecompileSetRefreshedOnOpen", "TestPositionPrecompileRevertBytes"]
+touches = ["node/sequencer/accept.go", "node/sequencer/executor.go", "node/sequencer/precompiles.go", "node/abci.go", "node/app.go", "node/sequencer/position_test.go"]
+build_cmd = "go build ./node/..."
+verify_cmd = "go test -count=1 ./node/sequencer/ -run TestPosition"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
