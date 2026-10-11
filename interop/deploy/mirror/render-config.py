@@ -38,7 +38,7 @@ ETHEREUM_KEY_HANDLE = "mirror/ethereum/beta"
 SOLANA_KEY_HANDLE = "mirror/solana/beta"
 POLL_INTERVAL_MS = 5000
 CHECKPOINT_FRESHNESS_BUDGET_BATCHES = 64
-FRAME_BYTES = 67108864
+ARCHIVE_BYTES = 67108864
 ARCHIVE_CHUNKS = 65536
 
 
@@ -72,7 +72,9 @@ def base58(value, field):
 def hexadecimal(value, field, length):
     text = value[2:] if value.startswith("0x") else value
     text = text.lower()
-    if len(text) != length * 2 or any(character not in "0123456789abcdef" for character in text):
+    if len(text) != length * 2 or any(
+        character not in "0123456789abcdef" for character in text
+    ):
         refuse("%s must be %d hexadecimal bytes" % (field, length))
     if int(text, 16) == 0:
         refuse("%s is the zero identity" % field)
@@ -92,14 +94,18 @@ def endpoints(values, field):
     for value in values:
         parts = value.split(",")
         if len(parts) != 4:
-            refuse("%s takes URL,BACKEND,CA_DER_PATH,TOKEN_PATH, got %r" % (field, value))
+            refuse(
+                "%s takes URL,BACKEND,CA_DER_PATH,TOKEN_PATH, got %r" % (field, value)
+            )
         url, backend, certificate, token = parts
         if not url.startswith("https://"):
             refuse("%s endpoint %r is not an https URL" % (field, url))
         if not backend or any(
             not (character.isalnum() or character in "-_.") for character in backend
         ):
-            refuse("%s backend %r is not an independent backend name" % (field, backend))
+            refuse(
+                "%s backend %r is not an independent backend name" % (field, backend)
+            )
         if backend in backends:
             refuse("%s repeats the independent backend %r" % (field, backend))
         origin = url.split("/", 3)[2].lower()
@@ -134,7 +140,10 @@ def signer(key_handle, public_key, socket, field):
         "key_handle": key_handle,
         "public_key": public_key,
         "timeout_ms": SIGNER_TIMEOUT_MS,
-        "transport": {"kind": "uds", "socket": absolute(socket, "%s signer socket" % field)},
+        "transport": {
+            "kind": "uds",
+            "socket": absolute(socket, "%s signer socket" % field),
+        },
     }
 
 
@@ -144,14 +153,11 @@ def main(argv):
     parser.add_argument("--state-directory", required=True)
     parser.add_argument("--first-batch-number", type=int, required=True)
     parser.add_argument("--status-listen", required=True)
-    parser.add_argument("--lni-socket", required=True)
     parser.add_argument("--paxeer-endpoint", action="append", default=[])
     parser.add_argument("--paxeer-chain-id", type=int, required=True)
     parser.add_argument("--paxeer-genesis-hash", required=True)
     parser.add_argument("--paxeer-confirmations", type=int, required=True)
     parser.add_argument("--sequencer-public-key", required=True)
-    parser.add_argument("--network-id", type=int, required=True)
-    parser.add_argument("--protocol-version", type=int, required=True)
     parser.add_argument("--ethereum-endpoint", action="append", default=[])
     parser.add_argument("--ethereum-chain-id", type=int, required=True)
     parser.add_argument("--ethereum-genesis-hash", required=True)
@@ -171,12 +177,13 @@ def main(argv):
     parser.add_argument("--solana-signer-socket", default=SIGNER_SOCKET)
     arguments = parser.parse_args(argv)
 
-    if not 0 < arguments.paxeer_chain_id < 2 ** 64 or not 0 < arguments.paxeer_confirmations < 2 ** 64:
+    if (
+        not 0 < arguments.paxeer_chain_id < 2**64
+        or not 0 < arguments.paxeer_confirmations < 2**64
+    ):
         refuse("Paxeer chain identity and confirmations must be positive uint64 values")
     if arguments.first_batch_number < 1:
         refuse("--first-batch-number must be at least 1")
-    if arguments.network_id < 1:
-        refuse("--network-id must be a real LayerX network id")
 
     solana_inputs = {
         "--solana-endpoint": arguments.solana_endpoint,
@@ -194,14 +201,29 @@ def main(argv):
             "the Solana mirror target needs every identity it publishes under; missing %s"
             % ", ".join(missing)
         )
-    if solana_requested and arguments.ethereum_signer_key_handle == arguments.solana_signer_key_handle:
+    if (
+        solana_requested
+        and arguments.ethereum_signer_key_handle == arguments.solana_signer_key_handle
+    ):
         refuse("the Ethereum and Solana signer key handles must differ")
     host, separator, port = arguments.status_listen.rpartition(":")
-    if not separator or host not in ("127.0.0.1", "[::1]") or not port.isdigit() or int(port) == 0:
-        refuse("--status-listen must be a loopback address with a port, got %r" % arguments.status_listen)
+    if (
+        not separator
+        or host not in ("127.0.0.1", "[::1]")
+        or not port.isdigit()
+        or int(port) == 0
+    ):
+        refuse(
+            "--status-listen must be a loopback address with a port, got %r"
+            % arguments.status_listen
+        )
 
     ethereum_public_key = arguments.ethereum_signer_public_key
-    stripped = ethereum_public_key[2:] if ethereum_public_key.startswith("0x") else ethereum_public_key
+    stripped = (
+        ethereum_public_key[2:]
+        if ethereum_public_key.startswith("0x")
+        else ethereum_public_key
+    )
     if len(stripped) not in (66, 130):
         refuse("--ethereum-signer-public-key must be a SEC1 secp256k1 point")
     hexadecimal(stripped, "--ethereum-signer-public-key", len(stripped) // 2)
@@ -213,22 +235,19 @@ def main(argv):
         "checkpoint_freshness_budget_batches": CHECKPOINT_FRESHNESS_BUDGET_BATCHES,
         "status_listen": arguments.status_listen,
         "node": {
-            "socket": absolute(arguments.lni_socket, "--lni-socket"),
             "checkpoint_policy": {
                 "rpc": endpoints(arguments.paxeer_endpoint, "--paxeer-endpoint"),
                 "chain_id": arguments.paxeer_chain_id,
-                "genesis_hash_hex": hexadecimal(arguments.paxeer_genesis_hash, "--paxeer-genesis-hash", 32),
-                "sequencer_public_key_hex": hexadecimal(arguments.sequencer_public_key, "--sequencer-public-key", 32),
+                "genesis_hash_hex": hexadecimal(
+                    arguments.paxeer_genesis_hash, "--paxeer-genesis-hash", 32
+                ),
+                "sequencer_public_key_hex": hexadecimal(
+                    arguments.sequencer_public_key, "--sequencer-public-key", 32
+                ),
                 "confirmations": arguments.paxeer_confirmations,
             },
-            "expected_protocol_version": arguments.protocol_version,
-            "expected_network_id": arguments.network_id,
-            "maximum_frame_bytes": FRAME_BYTES,
-            "maximum_connections": 2,
-            "maximum_streams": 2,
-            "maximum_queued_bytes": FRAME_BYTES,
             "deadline_ms": 30000,
-            "maximum_archive_bytes": FRAME_BYTES,
+            "maximum_archive_bytes": ARCHIVE_BYTES,
             "maximum_archive_chunks": ARCHIVE_CHUNKS,
         },
         "ethereum": {
@@ -260,7 +279,9 @@ def main(argv):
     if solana_requested:
         config["solana"] = {
             "rpc": endpoints(arguments.solana_endpoint, "--solana-endpoint"),
-            "genesis_hash_base58": base58(arguments.solana_genesis_hash, "--solana-genesis-hash"),
+            "genesis_hash_base58": base58(
+                arguments.solana_genesis_hash, "--solana-genesis-hash"
+            ),
             "archive_program_base58": base58(
                 arguments.solana_archive_program, "--solana-archive-program"
             ),
@@ -278,7 +299,9 @@ def main(argv):
             "chunk_bytes": SOLANA_CHUNK_BYTES,
             "signer": signer(
                 arguments.solana_signer_key_handle,
-                base58(arguments.solana_signer_public_key, "--solana-signer-public-key"),
+                base58(
+                    arguments.solana_signer_public_key, "--solana-signer-public-key"
+                ),
                 arguments.solana_signer_socket,
                 "solana",
             ),
@@ -288,9 +311,9 @@ def main(argv):
         shared_backends = {item["independent_backend"] for item in ethereum_rpc} & {
             item["independent_backend"] for item in solana_rpc
         }
-        shared_origins = {item["url"].split("/", 3)[2].lower() for item in ethereum_rpc} & {
-            item["url"].split("/", 3)[2].lower() for item in solana_rpc
-        }
+        shared_origins = {
+            item["url"].split("/", 3)[2].lower() for item in ethereum_rpc
+        } & {item["url"].split("/", 3)[2].lower() for item in solana_rpc}
         if shared_backends or shared_origins:
             refuse(
                 "the Ethereum and Solana mirrors need independent RPC trust; shared %s"
