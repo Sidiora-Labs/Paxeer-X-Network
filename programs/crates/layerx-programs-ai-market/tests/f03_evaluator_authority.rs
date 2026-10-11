@@ -11,20 +11,24 @@ use layerx_programs_ai_market::{
     },
     dispatch::{self, Operation},
     errors::{
-        CodecResult, CONFLICT, EXPIRED, F03_BAD_ACTIVATION, F03_EVALUATOR_CAPACITY,
-        F03_GRANT_VERSION_CONFLICT, F03_KEY_REUSED, F03_KEY_VERSION_CONFLICT, F03_NO_GRANT,
-        F08_BAD_CONSENT, F08_OWNER_REQUIRED, NON_CANONICAL, REPLAY_CONFLICT, REVOKED,
-        ROLE_CONFLICT, SEQUENCE_GAP, UNAUTHORIZED, UNKNOWN_OPERATION, WRONG_CONFIG, WRONG_EPOCH,
-        WRONG_PHASE,
+        CodecResult, CONFLICT, EXPIRED, F01_INVALID_POLICY, F03_BAD_ACTIVATION,
+        F03_EVALUATOR_CAPACITY, F03_GRANT_VERSION_CONFLICT, F03_KEY_REUSED,
+        F03_KEY_VERSION_CONFLICT, F03_NO_GRANT, F08_BAD_CONSENT, F08_OWNER_REQUIRED, NON_CANONICAL,
+        REPLAY_CONFLICT, REVOKED, ROLE_CONFLICT, SEQUENCE_GAP, UNAUTHORIZED, UNKNOWN_OPERATION,
+        WRONG_CONFIG, WRONG_EPOCH, WRONG_PHASE,
     },
     evaluators::{
         authority::{
             self, AuthorityContext, EvaluatorRecord, EvaluatorRegion, LastRequest, OpenedSnapshot,
             Outcome, Revocation, RevocationReason, SnapshotContext, SCRATCH_BYTES,
         },
-        codec::{check_binding, check_report_context},
-        model::{EvaluatorGrant, GrantStatus, GrantTerms, ReportContext},
+        codec::{check_binding, check_report_context, verify_signed_report},
+        model::{
+            EvaluatorGrant, GrantStatus, GrantTerms, RegisteredEvidence, ReportContext,
+            SignedReport, VerificationError,
+        },
     },
+    policy::{PolicyCommitments, TaskPolicyV1},
     registry::{derive_rewards_account, MarketHeader},
     roster,
     state::{self, ActorSlot, Control, ReplayTable, Section, SharedState},
@@ -32,7 +36,7 @@ use layerx_programs_ai_market::{
         AccountId, AssetId, Authentication, ChainDomain, Digest32, EvaluatorBinding, EvaluatorId,
         EvidenceRoot, FrozenBinding, MetadataDigest, Presence, PrincipalId, ProgramId, PublicKey32,
         RequestDigest, RequestId, ResultDigest, RosterDigest, RubricDigest, Score, ScoreEntry,
-        Version, WorkerId, WorkerRosterEntry,
+        Signature64, Version, WorkerId, WorkerRosterEntry,
     },
     workers::{WorkerCurrent, WorkerState, WorkerTable, WORKER_TABLE_MAX_BYTES},
     MAX_STATE_BYTES,
@@ -804,6 +808,177 @@ fn a07_revocation_before_seal_excludes_the_frozen_epoch() -> TestResult {
     Ok(())
 }
 
+fn verify_report_revocation(
+    m: &Market,
+    before: &EvaluatorRegion,
+    nominations: &[Nomination],
+    revoked: EvaluatorId,
+) -> TestResult {
+    let region = m.region()?;
+    let workers = [worker_entry(20)?];
+    let scores = [ScoreEntry {
+        worker: workers[0].worker,
+        score: Score::new(5)?,
+    }];
+    for nomination in nominations {
+        let id = nomination.evaluator(&m.header)?;
+        let frozen = before.frozen_grant(id)?;
+        let bound = binding(&m.header, 0, &frozen)?;
+        let body = ReportBody {
+            binding: bound,
+            evidence: EvidenceRoot::new([44; 32])?,
+            scores: ScoreVector::Typed(&scores),
+        };
+        let digest = codec::report_digest(&body)?;
+        let attestation = codec::attestation_digest(digest)?;
+        let report = SignedReport {
+            body,
+            signature: Signature64(nomination.key.sign(attestation.as_bytes()).to_bytes()),
+        };
+        let mut context = ReportContext {
+            binding: bound,
+            frozen_grant: frozen,
+            live_grant: frozen,
+            approved_rubric: RubricDigest::new(RUBRIC)?,
+            market_owner: m.header.owner_principal,
+            workers: &workers,
+            evidence: Presence::Present(RegisteredEvidence {
+                binding: bound,
+                root: body.evidence,
+                rubric: RubricDigest::new(RUBRIC)?,
+            }),
+        };
+        assert_eq!(verify_signed_report(&report, &context), Ok(digest));
+        context.live_grant = region.stored_grant(id)?;
+        let expected = if id == revoked {
+            Err(VerificationError::Application(REVOKED))
+        } else {
+            Ok(digest)
+        };
+        assert_eq!(verify_signed_report(&report, &context), expected);
+        assert_eq!(region.excluded(id), id == revoked);
+        if id != revoked {
+            assert_eq!(region.get(id), before.get(id));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn revoking_one_of_three_preserves_survivors_and_refuses_the_revoked_key() -> TestResult {
+    for revoked_index in 0..3 {
+        let (mut m, nominations) = active(3)?;
+        let before = m.region()?;
+        let snapshot = before.snapshot().copied().ok_or(F03_NO_GRANT)?;
+        let revoked = nominations[revoked_index].evaluator(&m.header)?;
+        let survivors = snapshot
+            .entries()
+            .filter(|f| f.entry.evaluator != revoked)
+            .map(|f| f.entry.evaluator)
+            .collect::<Vec<_>>();
+        let revision = m.revision()?;
+        let call = m.call(
+            dispatch::RevokeEvaluator,
+            90,
+            &revoke_payload(revoked, 1, 1, 50),
+        )?;
+        assert_eq!(applied(&call), call.event.len());
+        assert_eq!(m.revision()?, revision + 1);
+        let mut expected = revoked.as_bytes().to_vec();
+        expected.extend_from_slice(&1u64.to_be_bytes());
+        expected.extend_from_slice(&1u16.to_be_bytes());
+        expected.extend_from_slice(&[50; 32]);
+        expected.push(1);
+        assert_eq!(suffix(&call, 75), expected);
+
+        let region = m.region()?;
+        assert_eq!(region.snapshot(), Some(&snapshot));
+        assert_eq!(region.stored_grant(revoked)?.status, GrantStatus::Revoked);
+        assert_eq!(survivors.len(), 2);
+        assert_eq!(
+            region
+                .records()
+                .filter(|r| r.grant.status == GrantStatus::Active)
+                .map(|r| r.grant.evaluator)
+                .collect::<Vec<_>>(),
+            survivors
+        );
+        assert_eq!(
+            snapshot
+                .entries()
+                .filter(|f| !region.excluded(f.entry.evaluator))
+                .map(|f| f.entry.evaluator)
+                .collect::<Vec<_>>(),
+            survivors
+        );
+
+        verify_report_revocation(&m, &before, &nominations, revoked)?;
+
+        let opened = m.open(1, &[])?;
+        assert_eq!(
+            (
+                opened.pruned,
+                opened.members,
+                opened.activated,
+                opened.rekeyed
+            ),
+            (1, 2, 0, 0)
+        );
+        let region = m.region()?;
+        assert_eq!(region.len(), 2);
+        assert_eq!(region.stored_grant(revoked), Err(F03_NO_GRANT));
+        assert_eq!(region.frozen_grant(revoked), Err(F03_NO_GRANT));
+        assert_eq!(
+            region
+                .snapshot()
+                .ok_or(F03_NO_GRANT)?
+                .entries()
+                .map(|f| f.entry.evaluator)
+                .collect::<Vec<_>>(),
+            survivors
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn evaluator_policy_keeps_the_quorum_floor_at_three() -> TestResult {
+    let mut policy = TaskPolicyV1::bounded_default(
+        1,
+        1,
+        PolicyCommitments {
+            model_artifact: Digest32::new([1; 32])?,
+            dataset_artifact: [2; 32],
+            benchmark_suite: Digest32::new([3; 32])?,
+            rubric: RubricDigest::new(RUBRIC)?,
+            task_schema: Digest32::new([5; 32])?,
+            result_schema: Digest32::new([6; 32])?,
+            service_terms: Digest32::new([7; 32])?,
+        },
+        100,
+        1,
+    )?;
+    assert_eq!(policy.minimum_evaluator_count, 3);
+    for minimum in 0..3 {
+        policy.minimum_evaluator_count = minimum;
+        assert_eq!(policy.validate(), Err(F01_INVALID_POLICY));
+    }
+    for minimum in 3..=policy.max_evaluators {
+        policy.minimum_evaluator_count = minimum;
+        assert_eq!(policy.validate(), Ok(()));
+    }
+    policy.max_evaluators = 2;
+    policy.minimum_evaluator_count = 2;
+    assert_eq!(policy.validate(), Err(F01_INVALID_POLICY));
+    let median =
+        layerx_programs_ai_market::aggregation::lower_median(&[Score::new(5)?, Score::new(7)?])?;
+    assert_eq!(
+        (median.support, median.selected, median.comparisons),
+        (2, Presence::Absent, 1)
+    );
+    Ok(())
+}
+
 #[test]
 fn a08_revocation_after_seal_is_prospective() -> TestResult {
     let (mut m, ns) = active(1)?;
@@ -821,6 +996,10 @@ fn a08_revocation_after_seal_is_prospective() -> TestResult {
     assert!(!region.excluded(id));
     assert_eq!(region.frozen_grant(id)?, frozen);
     assert_eq!(region.stored_grant(id)?.status, GrantStatus::Revoked);
+    assert_eq!(
+        report_check(&m.header, 0, frozen, region.stored_grant(id)?),
+        Err(REVOKED)
+    );
 
     let opened = m.open(1, &[])?;
     assert_eq!((opened.pruned, opened.members), (1, 0));
