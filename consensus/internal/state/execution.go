@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
@@ -115,7 +116,83 @@ type BlockExecutor struct {
 	cache map[string]struct{}
 
 	// pruner prunes below the retain height from Commit in the background.
-	pruner *pruneWorker
+	pruner *AsyncPruner
+}
+
+// AsyncPruner prunes the block store and the state store below the retain
+// height Commit returns, off the ApplyBlock path. Retain heights are pruned in
+// ascending order: a request at or below the block store base is a no-op. The
+// retained base advances only after both stores finish a prune, and a prune
+// failure is reported through Err and never fails block application.
+type AsyncPruner struct {
+	blockStore BlockStore
+	store      Store
+	worker     *pruneWorker
+
+	mtx          sync.Mutex
+	retainedBase int64
+	err          error
+}
+
+func newAsyncPruner(blockStore BlockStore, store Store, metrics *Metrics) *AsyncPruner {
+	p := &AsyncPruner{blockStore: blockStore, store: store}
+	p.worker = newPruneWorker(p.prune, func(d time.Duration) {
+		metrics.PruneBlockLatency.Observe(float64(d.Milliseconds()))
+	})
+	return p
+}
+
+// Request schedules a prune below retainHeight without waiting for it.
+func (p *AsyncPruner) Request(retainHeight int64) {
+	p.worker.requestPrune(retainHeight)
+}
+
+// RetainedBase returns the highest retain height below which both stores have
+// been pruned, or 0 before the first completed prune.
+func (p *AsyncPruner) RetainedBase() int64 {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	return p.retainedBase
+}
+
+// Err returns the failure of the most recent prune, or nil when it succeeded.
+func (p *AsyncPruner) Err() error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	return p.err
+}
+
+func (p *AsyncPruner) stop() {
+	p.worker.stop()
+}
+
+func (p *AsyncPruner) prune(retainHeight int64) (uint64, error) {
+	pruned, err := p.pruneStores(retainHeight)
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if err != nil {
+		p.err = fmt.Errorf("prune below height %d: %w", retainHeight, err)
+		return pruned, p.err
+	}
+	p.err = nil
+	if retainHeight > p.retainedBase {
+		p.retainedBase = retainHeight
+	}
+	return pruned, nil
+}
+
+func (p *AsyncPruner) pruneStores(retainHeight int64) (uint64, error) {
+	if retainHeight <= p.blockStore.Base() {
+		return 0, nil
+	}
+	pruned, err := p.blockStore.PruneBlocks(retainHeight)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune block store: %w", err)
+	}
+	if err := p.store.PruneStates(retainHeight); err != nil {
+		return 0, fmt.Errorf("failed to prune state store: %w", err)
+	}
+	return pruned, nil
 }
 
 // NewBlockExecutor returns a new BlockExecutor with the passed-in EventBus.
@@ -140,10 +217,13 @@ func NewBlockExecutor(
 		blockStore:      blockStore,
 		consensusPolicy: consensusPolicy,
 	}
-	blockExec.pruner = newPruneWorker(blockExec.pruneBlocks, func(d time.Duration) {
-		metrics.PruneBlockLatency.Observe(float64(d.Milliseconds()))
-	})
+	blockExec.pruner = newAsyncPruner(blockStore, stateStore, metrics)
 	return blockExec
+}
+
+// Pruner returns the pruner fed the retain height after each commit.
+func (blockExec *BlockExecutor) Pruner() *AsyncPruner {
+	return blockExec.pruner
 }
 
 // Stop refuses further prune requests and waits for an in-flight prune to
@@ -492,7 +572,7 @@ func (blockExec *BlockExecutor) ApplyBlock(ctx context.Context, state State, blo
 		saveBlockSpan.End()
 	}
 	// Prune old heights, if requested by ABCI app, off the ApplyBlock path.
-	blockExec.pruner.requestPrune(retainHeight)
+	blockExec.pruner.Request(retainHeight)
 	// reset the verification cache
 	blockExec.cache = make(map[string]struct{})
 
@@ -826,21 +906,4 @@ func ExecCommitBlock(
 
 	// ResponseCommit has no error or log
 	return finalizeBlockResponse.AppHash, nil
-}
-
-func (blockExec *BlockExecutor) pruneBlocks(retainHeight int64) (uint64, error) {
-	base := blockExec.blockStore.Base()
-	if retainHeight <= base {
-		return 0, nil
-	}
-	pruned, err := blockExec.blockStore.PruneBlocks(retainHeight)
-	if err != nil {
-		return 0, fmt.Errorf("failed to prune block store: %w", err)
-	}
-
-	err = blockExec.Store().PruneStates(retainHeight)
-	if err != nil {
-		return 0, fmt.Errorf("failed to prune state store: %w", err)
-	}
-	return pruned, nil
 }
