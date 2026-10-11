@@ -22,6 +22,7 @@ enum {
     LX_STREAM_TOP_UP_PAYLOAD_BYTES = 50,
     LX_STREAM_METER_PAYLOAD_BYTES = 138,
     LX_STREAM_KEYED_PAYLOAD_BYTES = 66,
+    LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES = 82,
     LX_STREAM_ID_PAYLOAD_BYTES = 34,
     LX_STREAM_OPEN = 0x00040001,
     LX_STREAM_TOP_UP = 0x00040002,
@@ -29,7 +30,8 @@ enum {
     LX_STREAM_SETTLE = 0x00040004,
     LX_STREAM_PAUSE = 0x00040005,
     LX_STREAM_RESUME = 0x00040006,
-    LX_STREAM_CLOSE = 0x00040007
+    LX_STREAM_CLOSE = 0x00040007,
+    LX_STREAM_RATE_CHANGE = 0x00040008
 };
 
 typedef enum lx_stream_mode {
@@ -132,6 +134,12 @@ typedef struct lx_stream_keyed_payload {
     uint8_t idempotency_key[32];
 } lx_stream_keyed_payload;
 
+typedef struct lx_stream_rate_change_payload {
+    uint8_t stream_id[32];
+    lxp_u128 new_rate;
+    uint8_t idempotency_key[32];
+} lx_stream_rate_change_payload;
+
 typedef struct lx_stream_id_payload {
     uint8_t stream_id[32];
 } lx_stream_id_payload;
@@ -197,6 +205,9 @@ lxp_result lx_stream_keyed_encode(const lx_stream_keyed_payload *payload,
                                   size_t *length);
 lxp_result lx_stream_keyed_decode(const uint8_t *bytes, size_t length,
                                   lx_stream_keyed_payload *payload);
+lxp_result lx_stream_rate_change_decode(
+    const uint8_t *bytes, size_t length,
+    lx_stream_rate_change_payload *payload);
 lxp_result lx_stream_id_encode(const lx_stream_id_payload *payload,
                                uint8_t *bytes, size_t capacity,
                                size_t *length);

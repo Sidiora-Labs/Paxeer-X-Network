@@ -7,7 +7,7 @@
 
 static const uint32_t activity_types[] = {
     LX_STREAM_OPEN, LX_STREAM_TOP_UP, LX_STREAM_METER, LX_STREAM_SETTLE,
-    LX_STREAM_PAUSE, LX_STREAM_RESUME, LX_STREAM_CLOSE
+    LX_STREAM_PAUSE, LX_STREAM_RESUME, LX_STREAM_CLOSE, LX_STREAM_RATE_CHANGE
 };
 
 typedef union stream_typed_payload {
@@ -15,6 +15,7 @@ typedef union stream_typed_payload {
     lx_stream_amount_payload amount;
     lx_stream_meter_attestation meter;
     lx_stream_keyed_payload keyed;
+    lx_stream_rate_change_payload rate_change;
     lx_stream_id_payload id;
 } stream_typed_payload;
 
@@ -44,6 +45,8 @@ static lxp_result decode_typed(uint16_t ordinal, const uint8_t *payload,
     case 7U: return lx_stream_keyed_decode(payload, length, &typed->keyed);
     case 5U:
     case 6U: return lx_stream_id_decode(payload, length, &typed->id);
+    case 8U: return lx_stream_rate_change_decode(payload, length,
+                                                 &typed->rate_change);
     default: return LXP_ERR_UNKNOWN_ACTIVITY;
     }
 }
@@ -55,7 +58,7 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
     stream_decoded *value;
     void *memory;
     lxp_result status;
-    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 7U ||
+    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 8U ||
         payload == NULL || length == 0U) return LXP_ERR_UNKNOWN_ACTIVITY;
     status = lxp_ctx_arena_alloc(ctx, sizeof(*value), _Alignof(stream_decoded),
                                  &memory);
@@ -128,11 +131,17 @@ static lxp_result validate_typed(lxp_module_ctx *ctx,
         status = lx_stream_load(ctx, value->typed->amount.stream_id, &record);
     } else if (value->ordinal == 3U) {
         status = lx_stream_load(ctx, value->typed->meter.stream_id, &record);
+    } else if (value->ordinal == 8U) {
+        status = lx_stream_load(ctx, value->typed->rate_change.stream_id,
+                                &record);
     } else {
         status = lx_stream_load(ctx, value->typed->id.stream_id, &record);
     }
     if (status != LXP_OK) return status;
     if (record.closed) return LXP_ERR_STREAM_CLOSED;
+    if (value->ordinal == 8U &&
+        memcmp(authority->principal, record.payer, 32U) != 0)
+        return LXP_ERR_UNAUTHORIZED_DEBIT;
     if (value->ordinal != 3U) return LXP_OK;
     if (record.mode != LX_STREAM_MODE_METERED) return LXP_ERR_NON_CANONICAL;
     status = lx_stream_meter_authority_check(&record, &value->typed->meter);
@@ -149,7 +158,7 @@ static lxp_result module_validate(lxp_module_ctx *ctx,
     lxp_result status;
     if (ctx == NULL || activity == NULL || authority == NULL ||
         value == NULL || value->typed == NULL || value->ordinal == 0U ||
-        value->ordinal > 7U)
+        value->ordinal > 8U)
         return LXP_ERR_UNKNOWN_ACTIVITY;
     if (lxp_activity_module_id(activity->activity_type) != LXP_MODULE_STREAM ||
         lxp_activity_type_ordinal(activity->activity_type) != value->ordinal)
@@ -173,6 +182,8 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
 {
     const stream_decoded *value = (const stream_decoded *)decoded;
     (void)effects;
+    if (value != NULL && value->ordinal == 8U)
+        return LXP_ERR_UNKNOWN_ACTIVITY;
     return stream_execute_typed(ctx, activity, authority, value);
 }
 

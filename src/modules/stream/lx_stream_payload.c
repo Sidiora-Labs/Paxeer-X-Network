@@ -261,6 +261,27 @@ lxp_result lx_stream_keyed_decode(const uint8_t *bytes, size_t length,
     return LXP_OK;
 }
 
+lxp_result lx_stream_rate_change_decode(
+    const uint8_t *bytes, size_t length,
+    lx_stream_rate_change_payload *payload)
+{
+    lxp_result status;
+    if (payload == NULL) return LXP_ERR_NON_CANONICAL;
+    status = version_check(bytes, length,
+                           (size_t)LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES);
+    if (status != LXP_OK) return status;
+    (void)memset(payload, 0, sizeof(*payload));
+    (void)memcpy(payload->stream_id, bytes + 2U, 32U);
+    status = lxp_u128_from_be(bytes + 34U, &payload->new_rate);
+    if (status != LXP_OK) return status;
+    (void)memcpy(payload->idempotency_key, bytes + 50U, 32U);
+    if (lxp_ct_is_zero(payload->stream_id, 32U) ||
+        lxp_u128_is_zero(payload->new_rate) ||
+        lxp_ct_is_zero(payload->idempotency_key, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    return LXP_OK;
+}
+
 lxp_result lx_stream_id_encode(const lx_stream_id_payload *payload,
                                uint8_t *bytes, size_t capacity,
                                size_t *length)
