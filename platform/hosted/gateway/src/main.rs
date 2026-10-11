@@ -27,7 +27,7 @@ use layerx_platform_gateway::{
     authenticate_gateway_key, native_explorer_public_route, pay_timing, production_route,
     verify_activity_operation, verify_program_operation, verify_program_simulation_operation,
     verify_submission, AccessError, AuthorityFacts, IssuedKey, NativeExplorerPublicRoute,
-    PrincipalId, ProductionRoute, Quota, VerifiedSubmission,
+    PrincipalId, ProductionRoute, Quota, ReceiptKeyList, VerifiedSubmission,
 };
 use layerx_types::amount::Amount;
 use layerx_types::intent::{
@@ -95,12 +95,12 @@ struct Kernel {
     identity_token: Zeroizing<String>,
     registry: Endpoint,
     registry_token: Zeroizing<String>,
-    sequencer_authorization: layerx_proof::inclusion::SequencerAuthorization,
+    receipt_keys: ReceiptKeyList,
     key_provisioning_key: Zeroizing<[u8; 32]>,
     modules: ModuleRegistry,
 }
 
-const KERNEL_VARIABLES: [&str; 17] = [
+const KERNEL_VARIABLES: [&str; 14] = [
     "LAYERX_GATEWAY_COMPONENT_URL",
     "LAYERX_GATEWAY_COMPONENT_TOKEN_FILE",
     "LAYERX_GATEWAY_PUBLIC_CORE_URL",
@@ -112,10 +112,7 @@ const KERNEL_VARIABLES: [&str; 17] = [
     "LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE",
     "LAYERX_GATEWAY_CLIENT_IDENTITY_PKCS12",
     "LAYERX_GATEWAY_CLIENT_IDENTITY_PASSWORD_FILE",
-    "LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE",
-    "LAYERX_GATEWAY_SEQUENCER_ID_FILE",
-    "LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE",
-    "LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE",
+    "LAYERX_GATEWAY_RECEIPT_KEYS_FILE",
     "LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE",
     "LAYERX_GATEWAY_MODULE_REGISTRY_FILE",
 ];
@@ -289,7 +286,12 @@ impl Config {
         &self,
     ) -> Result<&layerx_proof::inclusion::SequencerAuthorization, KernelUnavailable> {
         self.kernel_side(KernelBackend::Authority)
-            .map(|kernel| &kernel.sequencer_authorization)
+            .and_then(|kernel| {
+                kernel.receipt_keys.single().ok_or(KernelUnavailable {
+                    backend: KernelBackend::Authority,
+                    reason: "receipt_key_selection_required",
+                })
+            })
     }
 
     fn sequencer_public_key(&self) -> Result<[u8; 32], KernelUnavailable> {
@@ -1027,14 +1029,19 @@ fn configured_kernel() -> Result<Option<(Kernel, Identity)>, String> {
         identity_password.as_str(),
     )
     .map_err(|error| error.to_string())?;
-    let trusted_key = read_secret("LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE")?;
-    let sequencer_authorization = layerx_platform_gateway::configured_sequencer(
-        read_secret("LAYERX_GATEWAY_SEQUENCER_ID_FILE")?.as_str(),
-        trusted_key.as_str(),
-        read_secret("LAYERX_GATEWAY_SEQUENCER_FIRST_BATCH_FILE")?.as_str(),
-        read_secret("LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE")?.as_str(),
+    let receipt_key_file = fs::File::open(
+        env::var("LAYERX_GATEWAY_RECEIPT_KEYS_FILE")
+            .map_err(|_| "LAYERX_GATEWAY_RECEIPT_KEYS_FILE is required")?,
     )
-    .map_err(|field| format!("invalid gateway {field}"))?;
+    .map_err(|error| error.to_string())?;
+    let mut receipt_key_document = String::new();
+    std::io::Read::read_to_string(
+        &mut std::io::Read::take(receipt_key_file, 256 * 1024 + 1),
+        &mut receipt_key_document,
+    )
+    .map_err(|error| error.to_string())?;
+    let receipt_keys = ReceiptKeyList::from_config(&receipt_key_document)
+        .map_err(|field| format!("invalid gateway {field}"))?;
     let provisioning_key = read_secret("LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE")?;
     let key_provisioning_key = Zeroizing::new(parse_hex32(provisioning_key.as_str())?);
     let modules = configured_modules()?;
@@ -1060,7 +1067,7 @@ fn configured_kernel() -> Result<Option<(Kernel, Identity)>, String> {
                 .map_err(|_| "gateway program registry URL is required")?,
         )?,
         registry_token: read_secret("LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE")?,
-        sequencer_authorization,
+        receipt_keys,
         key_provisioning_key,
         modules,
     };
@@ -1857,7 +1864,11 @@ fn authority_response(
                 .authorize(
                     &receipt,
                     &authority.authorized(),
-                    config.sequencer_authorization()?,
+                    config
+                        .kernel_side(KernelBackend::Authority)?
+                        .receipt_keys
+                        .authorization_for_key(authority.sequencer_public_key())
+                        .map_err(|_| response(503, "authority_invalid", Some(5)))?,
                 )
                 .map_err(|_| response(503, "authority_invalid", Some(5)))?;
             Ok(AuthorityFacts::new(
@@ -4492,15 +4503,15 @@ fn settle(
             trace_id,
         );
     }
-    let sequencer_public_key = match config.sequencer_public_key() {
-        Ok(key) => key,
+    let receipt_keys = match config.kernel_side(KernelBackend::Authority) {
+        Ok(kernel) => &kernel.receipt_keys,
         Err(unavailable) => return unavailable.into(),
     };
-    let Ok(verified) = verify_activity_operation(
+    let Ok(verified) = layerx_platform_gateway::verify_settlement_receipt(
         claim.receipt(),
         prepared.facts,
-        &sequencer_public_key,
-        Some(claim.activity_id()),
+        receipt_keys,
+        claim.activity_id(),
     ) else {
         return settlement_response(
             200,

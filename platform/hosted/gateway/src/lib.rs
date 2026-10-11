@@ -1278,6 +1278,126 @@ impl Display for GatewayError {
 
 impl std::error::Error for GatewayError {}
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceiptKeyList(Vec<SequencerAuthorization>);
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptKeyDocument {
+    key_id: String,
+    public_key: String,
+    first_height: u64,
+    last_height: u64,
+}
+
+impl ReceiptKeyList {
+    pub fn from_config(document: &str) -> Result<Self, &'static str> {
+        if document.len() > 256 * 1024 {
+            return Err("receipt key list");
+        }
+        let entries: Vec<ReceiptKeyDocument> =
+            serde_json::from_str(document).map_err(|_| "receipt key list")?;
+        if entries.is_empty() {
+            return Err("receipt key list");
+        }
+        let mut keys = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let id: [u8; 32] = layerx_platform_internal::base64::decode(&entry.key_id)
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or("sequencer ID")?;
+            let public_key: [u8; 32] = layerx_platform_internal::base64::decode(&entry.public_key)
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or("sequencer public key")?;
+            let authorization = configured_sequencer(
+                &hex(&id),
+                &hex(&public_key),
+                &entry.first_height.to_string(),
+                &entry.last_height.to_string(),
+            )?;
+            if keys
+                .iter()
+                .any(|key: &SequencerAuthorization| key.sequencer_id() == id)
+            {
+                return Err("duplicate receipt key ID");
+            }
+            keys.push(authorization);
+        }
+        Ok(Self(keys))
+    }
+
+    pub fn single(&self) -> Option<&SequencerAuthorization> {
+        match self.0.as_slice() {
+            [authorization] => Some(authorization),
+            _ => None,
+        }
+    }
+
+    pub fn authorization_for_key(
+        &self,
+        public_key: [u8; 32],
+    ) -> Result<&SequencerAuthorization, GatewayError> {
+        let mut matching = self.0.iter().filter(|key| key.public_key() == public_key);
+        let authorization = matching.next().ok_or(GatewayError::UntrustedSequencer)?;
+        if matching.next().is_some() {
+            return Err(GatewayError::UntrustedSequencer);
+        }
+        Ok(authorization)
+    }
+
+    pub fn verify_receipt(
+        &self,
+        receipt_bytes: &[u8],
+    ) -> Result<layerx_wire::receipt::Receipt, GatewayError> {
+        let receipt = layerx_wire::receipt::decode(receipt_bytes)
+            .map_err(|_| GatewayError::Receipt(ReceiptCheck::Decode))?;
+        let protocol = receipt
+            .protocol()
+            .ok_or(GatewayError::Receipt(ReceiptCheck::ReceiptShape))?;
+        let batch = protocol.batch_id();
+        if batch[..24] != [0; 24] {
+            return Err(GatewayError::Receipt(ReceiptCheck::BatchId));
+        }
+        let height = u64::from_be_bytes(
+            batch[24..]
+                .try_into()
+                .map_err(|_| GatewayError::Receipt(ReceiptCheck::BatchId))?,
+        );
+        let authorization = self
+            .0
+            .iter()
+            .find(|key| {
+                key.sequencer_id() == protocol.context_hash()
+                    && (key.first_batch_number()..=key.last_batch_number()).contains(&height)
+            })
+            .ok_or(GatewayError::UntrustedSequencer)?;
+        layerx_proof::receipt::verify_sequencer_signature(receipt_bytes, authorization.public_key())
+            .map_err(|failure| GatewayError::Receipt(failure.check))
+    }
+}
+
+pub fn verify_settlement_receipt(
+    receipt_bytes: &[u8],
+    authority: AuthorityFacts,
+    keys: &ReceiptKeyList,
+    expected_activity_id: [u8; 32],
+) -> Result<VerifiedOperation, GatewayError> {
+    let receipt = keys.verify_receipt(receipt_bytes)?;
+    let protocol = receipt
+        .protocol()
+        .ok_or(GatewayError::Receipt(ReceiptCheck::ReceiptShape))?;
+    let authorization = keys
+        .0
+        .iter()
+        .find(|key| key.sequencer_id() == protocol.context_hash())
+        .ok_or(GatewayError::UntrustedSequencer)?;
+    verify_activity_operation(
+        receipt_bytes,
+        authority,
+        &authorization.public_key(),
+        Some(expected_activity_id),
+    )
+}
+
 /// Parses and validates independently configured sequencer trust inputs.
 ///
 /// # Errors
@@ -1289,6 +1409,9 @@ pub fn configured_sequencer(
     last: &str,
 ) -> Result<SequencerAuthorization, &'static str> {
     let authorization = SequencerAuthorization::from_config(id, key, first, last)?;
+    if authorization.sequencer_id() == [0; 32] {
+        return Err("sequencer ID");
+    }
     let bytes = authorization.public_key();
     let key =
         ed25519_dalek::VerifyingKey::from_bytes(&bytes).map_err(|_| "sequencer public key")?;
