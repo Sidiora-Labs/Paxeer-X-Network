@@ -19,6 +19,8 @@ path = "src/bin/layerx-event-source.rs"
 [dependencies]
 ed25519-dalek.workspace = true
 getrandom.workspace = true
+k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa", "std"] }
+layerx-crypto.workspace = true
 native-tls.workspace = true
 rustls.workspace = true
 serde.workspace = true

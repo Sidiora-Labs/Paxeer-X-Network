@@ -10,6 +10,7 @@
 
 pub mod base64;
 pub mod events;
+pub mod evm_sender;
 pub mod gateway_http;
 pub mod http;
 pub mod journal;

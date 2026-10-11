@@ -1914,6 +1914,8 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
+ "k256",
+ "layerx-crypto",
  "layerx-wire",
  "native-tls",
  "ring",
