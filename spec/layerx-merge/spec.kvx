@@ -10861,7 +10861,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.11]
 title = "Per-market launchpad protocol fee counters"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -15129,7 +15129,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.17]
 title = "layerxprograms proto: tx, query and genesis"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -41760,7 +41760,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.112]
 title = "Autobahn block results carry the transaction results so receiptsRoot is the same-block root"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.51"]
@@ -56651,7 +56651,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.63]
 title = "Re-target checkpoint-settlement.json off the settlement domain and export trust"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -56988,7 +56988,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.75]
 title = "Re-target server.rs off the LNI transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58353,7 +58353,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.123]
 title = "Re-target config.example.json off the LNI transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58381,7 +58381,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.124]
 title = "Re-target render-config.py off the LNI transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58893,7 +58893,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.142]
 title = "Re-target feeder.env.example off the LNI transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -59270,7 +59270,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.155]
 title = "Re-target transport.rs off the layerx-paxeer-verifier crate"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.114"]

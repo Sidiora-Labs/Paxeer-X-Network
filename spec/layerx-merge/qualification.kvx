@@ -214,12 +214,11 @@ log_path = "logs/3.2.10-verify-1.log"
 observed_and_assumption = "the worktree is held unlanded; acceptance.3.23.2 / req.2 ac_7: PriceSnapshots stores prices without block heights, and Swap records none; both are outside touches. Empty and unrestricted ring reads are implemented; bounded queries explicitly refuse without inferred heights. acceptance.3.23.3: types.ErrInvalidRange and canonical LXP_LAUNCHPAD error text are absent from types/errors.go, owned by task 3.2.13. Build and verify stop at history.go:20; go vet also exited 1 (logs/3.2.10-vet-1.log)."
 
 [finding.3.2.11]
-revision = "e61e04ac0"
-command = "go test -count=1 ./modules/launchpad/keeper/ -run 'TestSwapVectors"
-exit_code = "TestSwapRejections"
-log_path = "TestQuoteConservation'"
-observed_and_assumption = "the worktree is held unlanded; 2.3: getProtocolFees(address) remains absent from the precompile interface and ABI; their migration is outside touches. 3021.3: TestProtocolFeesPerMarket is absent and existing tests call the retired global getter; keeper_test.go belongs to task 3.3.9. Unrelated: Cross-task dependency: modules/launchpad/keeper/genesis.go:18 and :52 still call setProtocolFeesPending and GetProtocolFeesPending; migration belongs to task 3.2.12 and blocks both declared gates."
-
+revision = "c53f23753"
+command = "go test -count=1 ./modules/launchpad/keeper/ ./precompiles/launchpad/ -run 'TestSwapVectors"
+exit_code = 0
+log_path = "logs/3.2.11-verify-2.log"
+observed_and_assumption = "verify passed (13 passed, 0 failed). Gaps: 3021.3 / do_6: Per-market launchpad writes pass OCC isolation, but complete-swap conflict freedom requires bank changes outside scope while retaining the required treasury send."
 [finding.4.2.8]
 revision = "71cb31804"
 command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test view_binding"
@@ -228,12 +227,11 @@ log_path = "none"
 observed_and_assumption = "no commit was produced, the task returns to pending; 4038.2 requires reusable Rust ICS23 membership verification and authenticated block-commit evidence; neither interface exists in programs/sdk/rust or the scoped crate, and Cargo.toml/dependency/FFI changes are outside touches. Stopped before implementation and qualification; no commit created. 4038.1 simulateCall integration and 4038.3 gateway/indexer/webhook/client integration live outside touches; their end-to-end acceptance remains unqualified."
 
 [finding.4.2.17]
-revision = "4a6ce1638"
+revision = "632cd400f"
 command = "buf lint api"
-exit_code = 127
+exit_code = 0
 log_path = "logs/4.2.17-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; acceptance.4.6.3 names a fuel limit absent from lx_programs_metering_schedule; schema preserves the real coefficients. Unrelated: buf executable unavailable; buf format api/layerxprograms -w | exit 127 | logs/4.2.17-format-1.log"
-
+observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: acceptance.4.6.3: zero-coefficient refusal needs a programs Go validator or protobuf validation generator; neither exists in this tree and the three-proto scope cannot implement executable validation."
 [finding.6.2.12]
 revision = "25225fff0"
 command = "make test-service-attest"
@@ -1427,3 +1425,59 @@ command = "go test -count=1 ./rpc/... -run TestHeaderReceiptsRootIsSameBlockResu
 exit_code = 0
 log_path = "logs/0.111-verify-2.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: under Autobahn the notifier publishes at app Commit and giga BlockResults returns no TxsResults (per 0.51), so the newHeads root there matches eth_getBlockByNumber but is the zero-leaf root; out of scope Unrelated: none (gate scoped by -run; not run here) - TestSubscribeNewHeadsAutobahn (rpc/subscribe_test.go) and TestEncodeCommittedBlockWithRoots-style expectations of receiptsRoot == header LastResultsHash on the served newHeads payload now contradict req 10.4; subscribe_test's MockClient-backed assertion receiptsRoot == resultsHash will fail and needs re-targeting by its owning task"
+
+[finding.0.112]
+revision = "655156bed"
+command = "go test -count=1 ./consensus/internal/p2p/ ./consensus/internal/rpc/core/ -run 'TestGigaRouterPersistsFinalizeBlockResponses"
+exit_code = 0
+log_path = "logs/0.112-verify-2.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed (verify-1 exit 1: logs/0.112-verify-1.log)). Gaps: GigaRouterConfig.StateStore is a one-method interface FinalizeBlockResponseStore (consensus/internal/state imports p2p, so p2p cannot name sm.Store); the p2p test therefore uses a recording in-memory implementation of that interface, while the rpc/core test exercises the real sm.Store end to end; StateStore is assigned after buildGigaConfig in createRouter instead of inside the literal so the 17 buildGigaConfig calls in setup_test.go (outside touches) keep their signature; a nil StateStore is refused by executeBlock with an error rather than by NewGigaRouter, because router_test.go (outside touches) constructs a GigaRouterConfig without one"
+
+[finding.11.5.63]
+revision = "b284707f6"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component settlement-domain --path contracts/config/checkpoint-settlement.json"
+exit_code = 0
+log_path = "logs/11.5.63-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped file scan)). Gaps: 11024.2: the JSON policy names custodyproof.Verify and its real validator-history fields, but agent/crates/layerx-proof/src/settlement.rs:62 still invokes the retired schema parser; wiring exports to native verification requires consumer changes outside touches. Unrelated: spec/layerx-merge/contracts/clients.md:189 specifies commit/validator evidence at H+1 while the portable-field table specifies H; left unchanged."
+
+[finding.11.5.75]
+revision = "a9f50503a"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --path human/crates/layerx-human-kms/src/server.rs"
+exit_code = 0
+log_path = "logs/11.5.75-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped source scan)). Gaps: 11021.2/do_1/do_2: server handles inbound LXKP custody; config.rs has no router and wire.rs/store.rs expose no chain-submit operation. Direct EIP-1559/router integration requires changes outside touches. Unrelated: cargo clippy --locked --manifest-path human/Cargo.toml -p layerx-human-kms --all-targets --no-deps | exit 101 | logs/11.5.75-lint-1.log | 13 prior attestor.rs denials: missing_errors_doc, too_many_arguments, needless_pass_by_value, too_many_lines."
+
+[finding.11.5.123]
+revision = "24b75f28a"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --path interop/deploy/mirror/config.example.json"
+exit_code = 0
+log_path = "logs/11.5.123-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (scoped file scan)). Gaps: acceptance.11.21.2 (11021.2): The RPC source schema is absent; interop/crates/layerx-mirror/src/runtime.rs:37,48 still requires the retired node socket, so runnable replacement configuration and EIP-1559 wiring cannot be supplied within the owned JSON."
+
+[finding.11.5.124]
+revision = "9bc11a753"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --path interop/deploy/mirror/render-config.py"
+exit_code = 0
+log_path = "logs/11.5.124-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (caller scan)). Gaps: 11021.2 / acceptance.11.21.2: interop/crates/layerx-mirror/src/runtime.rs::NodeFileConfig still requires the removed socket/handshake settings; src/node.rs::LniArchiveSource only acquires archives through Uds and NativeCheckpointPolicy targets retired layerxanchor. A native height/commit source and matching configuration interface are missing; Eip1559Call integration requires unowned publisher code. Current publisher cannot consume the rendered configuration."
+
+[finding.11.5.142]
+revision = "0204a5f9b"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --path platform/hosted/feeder/feeder.env.example"
+exit_code = 0
+log_path = "logs/11.5.142-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (file scan; no unit-test counts emitted)). Gaps: 11021.2 / acceptance.11.21.2: platform/hosted/feeder/src/lib.rs:82, :614 and src/main.rs:43 lack EVM RPC/sender configuration and Eip1559Call submission; runtime retargeting requires changes outside touches."
+
+[finding.11.5.155]
+revision = "576795482"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component paxeer-verifier --path platform/hosted/indexer/src/transport.rs"
+exit_code = 0
+log_path = "logs/11.5.155-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (file scan; no behavior tests)). Gaps: acceptance.11.22.2: settled-height commit/header verification remains unimplemented; transport.rs has no verifier call, and custodyproof.Verify exposes no Rust-callable commit/header adapter. Unrelated: cargo clippy --manifest-path platform/Cargo.toml -p layerx-indexer --all-targets | exit 101 | logs/11.5.155-lint-1.log | 71 existing lint errors outside transport.rs; the sole owned lint was fixed during formatting."
+
+[finding.0.116]
+revision = ""
+command = "npm --prefix human/apps/wallet test -- src/surfaces/WebDataView.test.tsx"
+exit_code = 0
+log_path = "logs/0.116-verify-1.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed). Gaps: precompile 0x101A (layerxledger) is not yet in the tree; reads follow ledger-auth.md accountId/getPayerGrant/PayerGrantIssued and are exercised against the test chain Unrelated: typecheck human/wallet/sdk/src/index.ts(760,27) TS2339 Property 'ExtendedPoint' does not exist on type 'EdDSA'"
