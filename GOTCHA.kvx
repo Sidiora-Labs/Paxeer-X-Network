@@ -7051,3 +7051,23 @@ fix = "Expected in worktrees; the main checkout's directory is untouched."
 area = "fleet commit helper"
 symptom = "git add -A in a worktree stages untracked node_modules symlinks"
 fix = "Stage only the owned files and run the helper with NOADD=1."
+
+[gotcha.1496]
+area = "genesis fixtures"
+symptom = "tests/fixtures/pay1-retired-genesis.manifest freezes the genesis state root, so any change to genesis materialization fails test_genesis_builder_cli with LXP_ERR_ROOT_MISMATCH"
+fix = "Rerun tests/fixtures/regen-retired-genesis.sh after changing genesis materialization; it rebuilds the manifest with the real builder and the deterministic test signer."
+
+[gotcha.1497]
+area = "kernel Makefile"
+symptom = "build/bin/layerx-genesis-build cannot be requested by path"
+fix = "Use the phony target layerx-genesis-build."
+
+[gotcha.1498]
+area = "kernel tests"
+symptom = "a spot-enabled v2 genesis request exceeds a 1024-byte request buffer, and building a manifest and materializing it inside one fprintf argument list runs in unspecified order"
+fix = "Size request buffers at 2048 bytes and keep build and materialize calls in separate statements."
+
+[gotcha.1499]
+area = "plan merge tool"
+symptom = "a plan block followed by # NOTE comment lines carries those lines into spec.kvx"
+fix = "merge-plan.py strips comment lines from every block and handles RETIRE and ACCEPTANCE directives."
