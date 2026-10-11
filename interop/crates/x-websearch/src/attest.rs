@@ -12,9 +12,10 @@ use crate::api::{self, ApiClient, ApiError, ApiPayload, KIND_API};
 use crate::content::{ContentStore, PEER_HEADER};
 use crate::fetch::{FetchError, Fetcher, HttpClient, Url};
 use crate::index::WebIndex;
+use crate::kernel::ProgramRequest;
 use crate::search;
 use crate::server::{Response, RouteError, RouteTable};
-use crate::watch::{hex0x, keccak, unhex0x, WebRequest};
+use crate::watch::{hex0x, keccak, unhex0x, EvmError, EvmRpc, WebRequest, XWEB_PRECOMPILE};
 
 /// The ASCII domain every attestation preimage starts with.
 pub const DOMAIN: &[u8] = b"PAXEERX_WEB_V1";
@@ -43,6 +44,8 @@ const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const PEER_TOTAL_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCARD_LOG: &str = "discarded.jsonl";
 const ANSWERS_DIR: &str = "answers";
+const MAX_PROGRAM_SIGNATURES: usize = 16;
+const MAX_EVM_SIGNATURES: usize = 64;
 
 /// What attestors sign for one request's answer, laid out byte for byte as
 /// `modules/xweb/ATTESTATION.md` specifies.
@@ -245,7 +248,6 @@ impl AttestError {
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
         match self {
-            Self::UnknownKind(_) | Self::Payload | Self::TooLong | Self::NotNamed(_) => true,
             Self::Fetch(error) | Self::Api(ApiError::Fetch(error)) => match error {
                 FetchError::Resolve
                 | FetchError::RobotsUnavailable
@@ -257,7 +259,11 @@ impl AttestError {
                 FetchError::Status(status) => *status != 429 && *status < 500,
                 _ => true,
             },
-            Self::Api(
+            Self::UnknownKind(_)
+            | Self::Payload
+            | Self::TooLong
+            | Self::NotNamed(_)
+            | Self::Api(
                 ApiError::Payload(_)
                 | ApiError::Envelope(_)
                 | ApiError::Credential(_)
@@ -291,6 +297,30 @@ impl std::fmt::Display for AttestError {
 }
 
 impl std::error::Error for AttestError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProgramAttestError {
+    Network(EvmError),
+    Attest(AttestError),
+}
+
+impl std::fmt::Display for ProgramAttestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Network(error) => write!(f, "attestation refused: kernel network id {error}"),
+            Self::Attest(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for ProgramAttestError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Network(error) => Some(error),
+            Self::Attest(error) => Some(error),
+        }
+    }
+}
 
 /// The stored response and the full length for a text: at most
 /// [`MAX_RESPONSE_BYTES`] leading bytes, cut back to a character boundary,
@@ -413,9 +443,9 @@ impl Attestor {
 
     /// The canonical bytes, their digest and the text for a request's
     /// payload, the canonical bytes written to the content store.
-    fn content(&self, request: &WebRequest) -> Result<([u8; 32], String), AttestError> {
-        let payload = std::str::from_utf8(&request.payload).map_err(|_| AttestError::Payload)?;
-        let (canonical, text) = match request.kind {
+    fn content(&self, kind: u8, payload: &[u8]) -> Result<([u8; 32], String), AttestError> {
+        let payload = std::str::from_utf8(payload).map_err(|_| AttestError::Payload)?;
+        let (canonical, text) = match kind {
             1 => {
                 let page = self.fetcher.fetch(payload).map_err(AttestError::Fetch)?;
                 (page.canonical, page.text)
@@ -462,6 +492,7 @@ impl Attestor {
         Ok((digest, response, full_length, level))
     }
 
+    #[must_use]
     pub fn binds(&self, request: &WebRequest, answer: &Answer) -> bool {
         answer.attestation
             == Attestation::evm(
@@ -494,7 +525,7 @@ impl Attestor {
         let (content_digest, response, full_length, level) = if request.kind == KIND_API {
             self.api(request)?
         } else {
-            let (content_digest, text) = self.content(request)?;
+            let (content_digest, text) = self.content(request.kind, &request.payload)?;
             let (response, full_length) = stored_response(&text)?;
             (content_digest, response, full_length, Level::Majority)
         };
@@ -505,18 +536,82 @@ impl Attestor {
             &response,
             full_length,
         );
+        self.sign_answer(
+            attestation,
+            level,
+            response,
+            request.callback_gas,
+            request.timeout_height,
+        )
+    }
+
+    fn attest_program(
+        &self,
+        rpc: &EvmRpc,
+        request: &ProgramRequest,
+    ) -> Result<Answer, ProgramAttestError> {
+        if !matches!(request.kind, 1 | 2) {
+            return Err(ProgramAttestError::Attest(AttestError::UnknownKind(
+                request.kind,
+            )));
+        }
+        if request.program_id == [0; 32] || request.payload.is_empty() {
+            return Err(ProgramAttestError::Attest(AttestError::Payload));
+        }
+        let word = rpc
+            .eth_call(XWEB_PRECOMPILE, &keccak(b"getKernelNetworkId()")[..4])
+            .map_err(ProgramAttestError::Network)?;
+        let word: [u8; 32] = word
+            .try_into()
+            .map_err(|_| ProgramAttestError::Network(EvmError::Malformed))?;
+        if word[..28] != [0; 28] {
+            return Err(ProgramAttestError::Network(EvmError::Malformed));
+        }
+        let mut network = [0; 4];
+        network.copy_from_slice(&word[28..]);
+        let network_id = u32::from_be_bytes(network);
+        if network_id == 0 {
+            return Err(ProgramAttestError::Network(EvmError::Malformed));
+        }
+        let (content_digest, text) = self
+            .content(request.kind, &request.payload)
+            .map_err(ProgramAttestError::Attest)?;
+        let (response, full_length) = stored_response(&text).map_err(ProgramAttestError::Attest)?;
+        let attestation = request.attestation(network_id, content_digest, &response, full_length);
+        self.sign_answer(attestation, Level::Majority, response, 0, u64::MAX)
+            .map_err(ProgramAttestError::Attest)
+    }
+
+    fn sign_answer(
+        &self,
+        attestation: Attestation,
+        level: Level,
+        response: Vec<u8>,
+        callback_gas: u64,
+        timeout_height: u64,
+    ) -> Result<Answer, AttestError> {
         let digest = attestation.digest();
         let signature = sign_digest(&self.key, &digest).map_err(AttestError::Sign)?;
         Ok(Answer {
             attestation,
             level,
             response,
-            callback_gas: request.callback_gas,
-            timeout_height: request.timeout_height,
+            callback_gas,
+            timeout_height,
             digest,
             signer: self.signer,
             signature,
         })
+    }
+}
+
+impl TryFrom<(&Attestor, &EvmRpc, &ProgramRequest)> for Answer {
+    type Error = ProgramAttestError;
+
+    fn try_from(
+        (attestor, rpc, request): (&Attestor, &EvmRpc, &ProgramRequest),
+    ) -> Result<Self, Self::Error> {
+        attestor.attest_program(rpc, request)
     }
 }
 
@@ -599,6 +694,85 @@ pub struct Ready {
     pub digest: [u8; 32],
     pub signers: Vec<[u8; 20]>,
     pub signatures: Vec<[u8; SIGNATURE_LENGTH]>,
+}
+
+impl Ready {
+    #[must_use]
+    pub fn from_signatures(
+        answer: &Answer,
+        set: &AttestorSet,
+        signatures: &BTreeMap<[u8; 20], [u8; SIGNATURE_LENGTH]>,
+    ) -> Option<Self> {
+        let limit = match answer.attestation.origin {
+            ORIGIN_EVM => MAX_EVM_SIGNATURES,
+            ORIGIN_PROGRAM if answer.level == Level::Majority => MAX_PROGRAM_SIGNATURES,
+            _ => return None,
+        };
+        if set.signers.is_empty()
+            || set.signers.len() > limit
+            || set.signers.contains(&[0; 20])
+            || set
+                .signers
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != set.signers.len()
+            || answer.attestation.digest() != answer.digest
+            || answer.response.len() > MAX_RESPONSE_BYTES
+            || usize::try_from(answer.attestation.full_length).ok()? < answer.response.len()
+            || answer.attestation.response_hash != keccak(&answer.response)
+            || recover_signer(&answer.digest, &answer.signature).ok()? != answer.signer
+        {
+            return None;
+        }
+        if answer.attestation.origin == ORIGIN_PROGRAM
+            && (answer.attestation.network_id[..28] != [0; 28]
+                || answer.attestation.network_id[28..] == [0; 4]
+                || answer.attestation.requester == [0; 32]
+                || !matches!(answer.attestation.kind, 1 | 2)
+                || answer.callback_gas != 0
+                || answer.timeout_height != u64::MAX)
+        {
+            return None;
+        }
+        let registered: Vec<_> = signatures
+            .iter()
+            .filter(|(signer, _)| set.contains(signer))
+            .filter(|(signer, _)| match answer.level {
+                Level::Majority => true,
+                Level::Single(named) => **signer == named,
+            })
+            .map(|(signer, signature)| (*signer, *signature))
+            .collect();
+        if registered.len() > limit
+            || registered.iter().any(|(signer, signature)| {
+                recover_signer(&answer.digest, signature).ok() != Some(*signer)
+            })
+        {
+            return None;
+        }
+        let enough = match answer.level {
+            Level::Majority => usize::try_from(set.threshold).is_ok_and(|threshold| {
+                threshold > set.signers.len() / 2
+                    && threshold <= set.signers.len()
+                    && registered.len() >= threshold
+            }),
+            Level::Single(_) => registered.len() == 1,
+        };
+        if !enough {
+            return None;
+        }
+        Some(Self {
+            request_id: answer.request_id(),
+            response: answer.response.clone(),
+            content_digest: answer.attestation.content_digest,
+            full_length: answer.attestation.full_length,
+            callback_gas: answer.callback_gas,
+            digest: answer.digest,
+            signers: registered.iter().map(|(signer, _)| *signer).collect(),
+            signatures: registered.iter().map(|(_, signature)| *signature).collect(),
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -1096,44 +1270,7 @@ impl SignatureExchange {
     pub fn ready(&self, request_id: u64, set: &AttestorSet) -> Option<Ready> {
         let answers = self.answers();
         let collected = answers.get(&request_id)?;
-        let answer = &collected.answer;
-        let registered: Vec<([u8; 20], [u8; SIGNATURE_LENGTH])> = collected
-            .signatures
-            .iter()
-            .filter(|(signer, _)| set.contains(signer))
-            .filter(|(signer, _)| match answer.level {
-                Level::Majority => true,
-                Level::Single(named) => **signer == named,
-            })
-            .map(|(signer, signature)| (*signer, *signature))
-            .collect();
-        let enough = match answer.level {
-            Level::Majority => {
-                usize::try_from(set.threshold).is_ok_and(|threshold| {
-                    threshold > set.signers.len() / 2 && threshold <= set.signers.len()
-                }) && set
-                    .signers
-                    .iter()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    == set.signers.len()
-                    && u32::try_from(registered.len()).is_ok_and(|count| count >= set.threshold)
-            }
-            Level::Single(_) => registered.len() == 1,
-        };
-        if !enough {
-            return None;
-        }
-        Some(Ready {
-            request_id,
-            response: answer.response.clone(),
-            content_digest: answer.attestation.content_digest,
-            full_length: answer.attestation.full_length,
-            callback_gas: answer.callback_gas,
-            digest: answer.digest,
-            signers: registered.iter().map(|(signer, _)| *signer).collect(),
-            signatures: registered.iter().map(|(_, signature)| *signature).collect(),
-        })
+        Ready::from_signatures(&collected.answer, set, &collected.signatures)
     }
 }
 

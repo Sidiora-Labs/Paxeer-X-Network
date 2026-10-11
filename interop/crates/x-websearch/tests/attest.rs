@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -12,13 +13,15 @@ use serde_json::{json, Value};
 use x_websearch::api::ApiPayload;
 use x_websearch::attest::{
     self, evm_requester, network_word, recover_signer, sign_digest, signer_address,
-    stored_response, Answer, Attestation, Attestor, AttestorSet, Discard, Level, SignatureExchange,
-    DOMAIN, MAX_RESPONSE_BYTES, ORIGIN_EVM, PREIMAGE_LENGTH,
+    stored_response, Answer, Attestation, Attestor, AttestorSet, Discard, Level, Ready,
+    SignatureExchange, DOMAIN, MAX_RESPONSE_BYTES, ORIGIN_EVM, ORIGIN_PROGRAM, PREIMAGE_LENGTH,
 };
-use x_websearch::config::FetchLimits;
+use x_websearch::canonical::{self, ContentKind};
+use x_websearch::config::{Config, FetchLimits};
 use x_websearch::content::ContentStore;
 use x_websearch::fetch::Fetcher;
 use x_websearch::index::WebIndex;
+use x_websearch::kernel::{observation_bytes, ProgramRequest, OBSERVATION_HEADER_BYTES};
 use x_websearch::keys::{KeyFiles, KeyRefusal, KeyRole};
 use x_websearch::search::{self, SearchResult};
 use x_websearch::watch::{
@@ -28,6 +31,7 @@ use x_websearch::watch::{
 use x_websearch::{Limits, RouteTable, RunningServer, Server};
 
 type Outcome<T = ()> = Result<T, Box<dyn Error>>;
+type Signatures = BTreeMap<[u8; 20], [u8; 65]>;
 
 const CHAIN_ID: u64 = 713_714;
 const RECEIVER_SECRET: &str = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
@@ -1200,4 +1204,339 @@ fn restored_answer_level_and_signature_remain_bound_to_the_paid_request() -> Out
     changed.requester[0] ^= 1;
     assert!(!attestor.binds(&changed, &original));
     Ok(())
+}
+
+fn program_vector() -> Outcome<(ProgramRequest, Attestation)> {
+    let pinned = vectors()?;
+    let vector = &pinned["vectors"][1];
+    assert_eq!(text(vector, "/name")?, "program-search");
+    let request = ProgramRequest {
+        program_id: fixed(vector, "/requester")?,
+        request_id: number_at(vector, "/request_id")?,
+        kind: u8::try_from(number_at(vector, "/kind")?)?,
+        payload: text(vector, "/payload")?.as_bytes().to_vec(),
+        sequence: 0,
+    };
+    let attestation = request.attestation(
+        u32::try_from(number_at(vector, "/network_id")?)?,
+        fixed(vector, "/content_digest")?,
+        text(vector, "/response")?.as_bytes(),
+        u32::try_from(number_at(vector, "/full_length")?)?,
+    );
+    Ok((request, attestation))
+}
+
+fn program_answer(index: u8) -> Outcome<Answer> {
+    let (_, attestation) = program_vector()?;
+    let key = attestor_key(index)?;
+    let digest = attestation.digest();
+    Ok(Answer {
+        attestation,
+        level: Level::Majority,
+        response: text(&vectors()?, "/vectors/1/response")?
+            .as_bytes()
+            .to_vec(),
+        callback_gas: 0,
+        timeout_height: u64::MAX,
+        digest,
+        signer: signer_address(&key),
+        signature: sign_digest(&key, &digest)?,
+    })
+}
+
+fn signed_set(answer: &Answer, count: u8) -> Outcome<(AttestorSet, Signatures)> {
+    let mut signatures = BTreeMap::new();
+    for index in 1..=count {
+        let key = attestor_key(index)?;
+        signatures.insert(signer_address(&key), sign_digest(&key, &answer.digest)?);
+    }
+    Ok((
+        AttestorSet {
+            signers: signatures.keys().copied().collect(),
+            threshold: u32::from(count) / 2 + 1,
+        },
+        signatures,
+    ))
+}
+
+fn chain_rpc() -> Outcome<EvmRpc> {
+    let endpoint = std::env::var("PAXEER_X_XWEB_RPC").map_err(|_| {
+        fail("PAXEER_X_XWEB_RPC must identify a real chain with getKernelNetworkId")
+    })?;
+    Ok(EvmRpc::new(&endpoint)?)
+}
+
+#[test]
+fn program_search_digest_matches_the_shared_go_and_c_vector() -> Outcome {
+    let (_, attestation) = program_vector()?;
+    let pinned = vectors()?;
+    assert_eq!(attestation.origin, ORIGIN_PROGRAM);
+    assert_eq!(
+        hex0x(&attestation.preimage()),
+        text(&pinned, "/vectors/1/preimage")?
+    );
+    assert_eq!(
+        hex0x(&attestation.digest()),
+        text(&pinned, "/vectors/1/digest")?
+    );
+    let answer = program_answer(1)?;
+    assert_eq!(
+        recover_signer(&answer.digest, &answer.signature)?,
+        signer_address(&attestor_key(1)?)
+    );
+    Ok(())
+}
+
+#[test]
+fn ready_signatures_are_sorted_and_reach_the_registered_majority() -> Outcome {
+    for answer in [program_answer(1)?, vector_answer(1, b"Paxeer X Network")?] {
+        let (mut set, mut signatures) = signed_set(&answer, 3)?;
+        set.signers.reverse();
+        let missing = *signatures
+            .keys()
+            .next_back()
+            .ok_or_else(|| fail("no signer"))?;
+        let removed = signatures
+            .remove(&missing)
+            .ok_or_else(|| fail("no signature"))?;
+        let ready = Ready::from_signatures(&answer, &set, &signatures)
+            .ok_or_else(|| fail("majority refused"))?;
+        assert_eq!(
+            ready.signers,
+            signatures.keys().copied().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ready.signatures,
+            signatures.values().copied().collect::<Vec<_>>()
+        );
+        assert_eq!(ready.signatures.len(), 2);
+        assert_eq!(ready.digest, answer.digest);
+        let first = *signatures.keys().next().ok_or_else(|| fail("no signer"))?;
+        signatures.remove(&first);
+        assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+        signatures.insert(missing, removed);
+        set.threshold = 1;
+        assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+        set.threshold = 2;
+        set.signers[0] = set.signers[1];
+        assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+    }
+    Ok(())
+}
+
+#[test]
+fn origin_two_ready_refuses_seventeen_signatures_and_admits_sixteen() -> Outcome {
+    let answer = program_answer(1)?;
+    let (set, signatures) = signed_set(&answer, 17)?;
+    assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+    let (set, signatures) = signed_set(&answer, 16)?;
+    let ready = Ready::from_signatures(&answer, &set, &signatures)
+        .ok_or_else(|| fail("sixteen signatures refused"))?;
+    assert_eq!(ready.signatures.len(), 16);
+    let (request, _) = program_vector()?;
+    let observation = observation_bytes(1, &request, &ready)?;
+    let offset = OBSERVATION_HEADER_BYTES + answer.response.len();
+    assert_eq!(observation[offset], 16);
+    assert_eq!(observation.len(), offset + 1 + 16 * 65);
+    for (encoded, signature) in observation[offset + 1..]
+        .chunks_exact(65)
+        .zip(&ready.signatures)
+    {
+        assert_eq!(encoded, signature);
+    }
+    let evm = vector_answer(1, b"Paxeer X Network")?;
+    for count in [17, 64] {
+        let (set, signatures) = signed_set(&evm, count)?;
+        assert_eq!(
+            Ready::from_signatures(&evm, &set, &signatures)
+                .ok_or_else(|| fail("EVM signature count refused"))?
+                .signatures
+                .len(),
+            usize::from(count)
+        );
+    }
+    let (set, signatures) = signed_set(&evm, 65)?;
+    assert_eq!(Ready::from_signatures(&evm, &set, &signatures), None);
+    Ok(())
+}
+
+#[test]
+fn ready_refuses_wrong_recovery_and_malformed_program_answers() -> Outcome {
+    let original = program_answer(1)?;
+    let (set, signatures) = signed_set(&original, 3)?;
+    let mut forged = signatures.clone();
+    let signer = *forged.keys().next().ok_or_else(|| fail("no signer"))?;
+    let bad_signature = forged
+        .get_mut(&signer)
+        .ok_or_else(|| fail("no signature"))?;
+    bad_signature[64] = 1;
+    assert_eq!(Ready::from_signatures(&original, &set, &forged), None);
+    for variant in 0..7 {
+        let mut answer = original.clone();
+        match variant {
+            0 => answer.attestation.origin = 3,
+            1 => answer.attestation.network_id[0] = 1,
+            2 => answer.attestation.network_id = [0; 32],
+            3 => answer.attestation.kind = 3,
+            4 => answer.attestation.requester = [0; 32],
+            5 => answer.level = Level::Single(answer.signer),
+            _ => answer.callback_gas = 1,
+        }
+        answer.digest = answer.attestation.digest();
+        answer.signature = sign_digest(&attestor_key(1)?, &answer.digest)?;
+        let (set, signatures) = signed_set(&answer, 3)?;
+        assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+    }
+    Ok(())
+}
+
+#[test]
+fn fetch_content_matches_the_canonical_digest_before_signing() -> Outcome {
+    let scratch = Scratch::new("canonical-attestation")?;
+    let site = Site::start()?;
+    let url = format!("http://{}/plain.txt", site.address);
+    let store = Arc::new(ContentStore::open(&scratch.0, &[])?);
+    let engine = Attestor::new(
+        attestor_key(1)?,
+        CHAIN_ID,
+        Arc::new(loopback_fetcher()?),
+        Arc::new(WebIndex::open(&scratch.0)?),
+        Arc::clone(&store),
+    );
+    let request = WebRequest {
+        request_id: 3,
+        requester: [1; 20],
+        kind: 1,
+        payload: url.as_bytes().to_vec(),
+        callback_gas: 1,
+        paid: [0; 32],
+        timeout_height: 1,
+        block_number: 0,
+    };
+    let raw = std::fs::read_to_string(fixtures().join("site/plain.txt"))?;
+    let text = canonical::canonicalise(&raw);
+    let bytes =
+        canonical::canonical_bytes(ContentKind::Fetch, url.as_bytes(), "text/plain", &text)?;
+    let answer = engine.attest(&request)?;
+    assert_eq!(
+        answer.attestation.content_digest,
+        canonical::content_digest(&bytes)
+    );
+    assert_eq!(store.get(&answer.attestation.content_digest)?, Some(bytes));
+    assert_eq!(answer.response, text.as_bytes());
+    assert_eq!(answer.digest, answer.attestation.digest());
+    assert_eq!(
+        recover_signer(&answer.digest, &answer.signature)?,
+        engine.signer()
+    );
+    Ok(())
+}
+
+#[test]
+fn kernel_network_view_returns_one_and_preserves_the_five_field_params_tuple() -> Outcome {
+    let rpc = chain_rpc()?;
+    assert_eq!(
+        &keccak(b"getKernelNetworkId()")[..4],
+        &[0xfc, 0x0d, 0x26, 0xf4]
+    );
+    assert_eq!(
+        rpc.eth_call(XWEB_PRECOMPILE, &keccak(b"getKernelNetworkId()")[..4])?,
+        network_word(1)
+    );
+    assert_eq!(
+        rpc.eth_call(XWEB_PRECOMPILE, &keccak(b"getParams()")[..4])?
+            .len(),
+        5 * 32
+    );
+    Ok(())
+}
+
+#[test]
+fn origin_two_preimage_places_the_kernel_network_word_at_the_shared_offsets() -> Outcome {
+    let (request, attestation) = program_vector()?;
+    let bytes = attestation.preimage();
+    assert_eq!(bytes.len(), 188);
+    assert_eq!(&bytes[15..43], &[0; 28]);
+    assert_eq!(&bytes[43..47], &1_u32.to_be_bytes());
+    assert_eq!(&bytes[47..79], &request.program_id);
+    assert_eq!(hex0x(&bytes), text(&vectors()?, "/vectors/1/preimage")?);
+    assert_eq!(
+        hex0x(&attestation.digest()),
+        text(&vectors()?, "/vectors/1/digest")?
+    );
+    Ok(())
+}
+
+#[test]
+fn origin_two_network_word_comes_from_the_chain() -> Outcome {
+    let mut config = read_json(&fixtures().join("config/valid.json"))?;
+    config
+        .as_object_mut()
+        .ok_or_else(|| fail("config is not an object"))?
+        .remove("kernel_network_id");
+    Config::parse(&config.to_string())?;
+    attest_program_with_chain_network(&chain_rpc()?)
+}
+
+fn attest_program_with_chain_network(rpc: &EvmRpc) -> Outcome {
+    let scratch = Scratch::new("program-chain-network")?;
+    let store = Arc::new(ContentStore::open(&scratch.0, &[])?);
+    let index = Arc::new(WebIndex::open(&scratch.0)?);
+    let engine = Attestor::new(
+        attestor_key(1)?,
+        CHAIN_ID,
+        Arc::new(loopback_fetcher()?),
+        Arc::clone(&index),
+        Arc::clone(&store),
+    );
+    let request = ProgramRequest {
+        program_id: [0x55; 32],
+        request_id: 3,
+        kind: 2,
+        payload: b"paxeer x network".to_vec(),
+        sequence: 0,
+    };
+    let answer = Answer::try_from((&engine, rpc, &request))?;
+    let canonical = search::search_canonical_bytes("paxeer x network", &[])?;
+    assert_eq!(answer.attestation.network_id, network_word(1));
+    assert_eq!(answer.attestation.origin, ORIGIN_PROGRAM);
+    assert_eq!(answer.attestation.content_digest, keccak(&canonical));
+    assert_eq!(
+        store.get(&answer.attestation.content_digest)?,
+        Some(canonical)
+    );
+    assert_eq!(answer.response, b"[]");
+    assert_eq!(answer.callback_gas, 0);
+    assert_eq!(answer.timeout_height, u64::MAX);
+    assert_eq!(
+        recover_signer(&answer.digest, &answer.signature)?,
+        engine.signer()
+    );
+    let evm = WebRequest {
+        request_id: request.request_id,
+        requester: [1; 20],
+        kind: request.kind,
+        payload: request.payload,
+        callback_gas: 1,
+        paid: [0; 32],
+        timeout_height: 1,
+        block_number: 0,
+    };
+    let evm_answer = engine.attest(&evm)?;
+    assert_eq!(evm_answer.attestation.network_id, network_word(CHAIN_ID));
+    assert_eq!(evm_answer.signer, answer.signer);
+    assert_eq!(
+        recover_signer(&evm_answer.digest, &evm_answer.signature)?,
+        answer.signer
+    );
+    assert_eq!(
+        evm_answer.attestation.content_digest,
+        answer.attestation.content_digest
+    );
+    Ok(())
+}
+
+#[test]
+fn program_attestor_uses_the_chain_network_and_the_same_evm_signing_key() -> Outcome {
+    attest_program_with_chain_network(&chain_rpc()?)
 }
