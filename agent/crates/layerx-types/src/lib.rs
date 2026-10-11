@@ -22,6 +22,7 @@ pub mod programs_activity;
 pub mod programs_module_abi;
 pub mod receipt;
 pub mod result;
+pub mod rung;
 pub mod settlement;
 pub mod test_support;
 pub mod vectors;
