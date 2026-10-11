@@ -24,7 +24,7 @@ plan_precedes() {
 
 "$rollout" plan --sha "$sha" >"$tmp/plan"
 mapfile -t want < <(sed -n 's/^\[service\.\(.*\)\]$/\1/p' "$manifest")
-[ "${#want[@]}" -eq 31 ] || fail "manifest has ${#want[@]} services, want 31"
+[ "${#want[@]}" -eq 32 ] || fail "manifest has ${#want[@]} services, want 32"
 mapfile -t got < <(awk 'NR > 1 {print $2}' "$tmp/plan")
 [ "${#got[@]}" -eq "${#want[@]}" ] || fail "plan lists ${#got[@]} of ${#want[@]} services"
 for s in "${want[@]}"; do
@@ -35,7 +35,7 @@ awk 'NR > 1 {print $1}' "$tmp/plan" | sort -n -c || fail "plan is not in wave or
 for s in identity router redis-router redis-internal internal-kms internal-journeys internal-payments \
 	internal-approvals internal-programs webhooks-public webhooks-ingress dashboard dashboard-web interop \
 	search-front ramp relay-archive-a relay-archive-b wallet-gateway wallet-postgres gas-station indexer \
-	intent-ingester ai-evaluator; do
+	intent-ingester ai-evaluator perps-keeper; do
 	grep -qE "^ *[0-9]+ $s +railway +$s " "$tmp/plan" || fail "$s is not a railway target"
 done
 for s in kernel program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby archive; do
@@ -51,6 +51,16 @@ plan_precedes sequencer-primary sequencer-standby "$tmp/plan" ||
 	fail "sequencer-standby does not follow sequencer-primary"
 plan_precedes sequencer-standby archive "$tmp/plan" || fail "archive does not follow sequencer-standby"
 plan_precedes gas-station ai-evaluator "$tmp/plan" || fail "ai-evaluator does not follow gas-station"
+for s in sequencer-primary sequencer-standby gas-station oracle-feeder; do
+	plan_precedes "$s" perps-keeper "$tmp/plan" || fail "perps-keeper does not follow $s"
+done
+grep -qE "^ *13 perps-keeper +railway +perps-keeper commit=$sha health=/healthz$" "$tmp/plan" ||
+	fail "perps-keeper does not pin its hosted deployment and health check"
+sed -n '/^# Perps keeper:/,/^\[service\.perps-keeper\]$/p' "$manifest" >"$tmp/perps-keeper.head"
+grep -q "sender key handle LAYERX_PERPS_KEEPER" "$tmp/perps-keeper.head" ||
+	fail "perps-keeper does not name its sender key handle"
+grep -q "gas-station registered_senders before" "$tmp/perps-keeper.head" ||
+	fail "perps-keeper sender is not registered with sponsorship before first start"
 grep -qE "^ *5 archive +box +archive ghcr\.io/sidiora-labs/paxd:${sha:0:12} unit=paxd\.service host=\\\$ARCHIVE_HOST health=tcp:8545$" "$tmp/plan" ||
 	fail "archive does not use its paxd image, host, unit and health check"
 grep -qE "^ *12 ai-evaluator +railway +ai-evaluator commit=$sha health=/healthz$" "$tmp/plan" ||
@@ -80,6 +90,14 @@ assert units["ai-evaluator"] == {
     "health": "/healthz",
     "order": 12,
 }, units["ai-evaluator"]
+assert units["perps-keeper"] == {
+    "name": "perps-keeper",
+    "target": "railway",
+    "image": "perps-keeper",
+    "railway_service": "perps-keeper",
+    "health": "/healthz",
+    "order": 13,
+}, units["perps-keeper"]
 PY
 grep -qE " sequencer-primary +box +sequencer-primary .* unit=paxeer-sequencer-primary\.service host=\\\$SEQUENCER_PRIMARY_HOST " "$tmp/plan" ||
 	fail "sequencer-primary does not own its host and unit"
@@ -101,6 +119,13 @@ for order in 3 4; do
 		fail "ordering check accepted archive at or before sequencer-standby"
 	fi
 done
+for order in 3 4; do
+	sed -e "/^\[service\.perps-keeper\]$/,/^order/s/^order = 13$/order = $order/" "$manifest" >"$tmp/keeper-$order.kvx"
+	ROLLOUT_MANIFEST="$tmp/keeper-$order.kvx" "$rollout" plan --sha "$sha" >"$tmp/keeper-$order.plan"
+	if plan_precedes sequencer-standby perps-keeper "$tmp/keeper-$order.plan"; then
+		fail "ordering check accepted perps-keeper at or before sequencer-standby"
+	fi
+done
 
 "$rollout" apply --sha "$sha" --only kernel,router >"$tmp/apply"
 [ "$(awk 'NR > 1' "$tmp/apply" | wc -l)" -eq 2 ] || fail "--only did not narrow the plan"
@@ -108,6 +133,9 @@ done
 [ "$(awk 'NR > 1' "$tmp/new-units" | wc -l)" -eq 2 ] || fail "--only did not select the two new units"
 grep -qE "^ *5 archive +box +archive " "$tmp/new-units" || fail "--only misses archive"
 grep -qE "^ *12 ai-evaluator +railway +ai-evaluator " "$tmp/new-units" || fail "--only misses ai-evaluator"
+"$rollout" apply --sha "$sha" --only perps-keeper >"$tmp/keeper-only"
+[ "$(awk 'NR > 1' "$tmp/keeper-only" | wc -l)" -eq 1 ] || fail "--only did not select perps-keeper alone"
+grep -qE "^ *13 perps-keeper +railway +perps-keeper " "$tmp/keeper-only" || fail "--only misses perps-keeper"
 
 expect_reject() {
 	local name="$1"
