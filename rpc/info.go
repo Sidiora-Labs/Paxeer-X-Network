@@ -102,7 +102,13 @@ func (i *InfoAPI) GasPrice(ctx context.Context) (result *hexutil.Big, returnErr 
 	defer func() {
 		recordMetricsWithError(ctx, "eth_GasPrice", i.connectionType, startTime, returnErr, recover())
 	}()
-	baseFee := i.keeper.GetNextBaseFeePerGas(i.ctxProvider(LatestCtxHeight)).TruncateInt().BigInt()
+	baseFee, _, err := i.pendingBaseFee()
+	if err != nil {
+		return nil, err
+	}
+	if baseFee == nil {
+		baseFee = i.keeper.GetNextBaseFeePerGas(i.ctxProvider(LatestCtxHeight)).TruncateInt().BigInt()
+	}
 	totalGasUsed, err := i.getCongestionData(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -273,9 +279,15 @@ func (i *InfoAPI) FeeHistory(ctx context.Context, blockCount gmath.HexOrDecimal6
 	// execution-apis eth_feeHistory / go-ethereum: baseFeePerGas has one more element than gasUsedRatio,
 	// the projected base fee for the child of the newest block in the range.
 	if lastBlockHeaderBaseFeeAppended {
-		childBF, err := i.getChildBaseFeeAfter(lastBlockNumber)
+		childBF, openHeight, err := i.pendingBaseFee()
 		if err != nil {
 			return nil, err
+		}
+		if childBF == nil || openHeight != lastBlockNumber+1 {
+			childBF, err = i.getChildBaseFeeAfter(lastBlockNumber)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if childBF == nil {
 			return nil, fmt.Errorf("child base fee is unavailable after height %d", lastBlockNumber)
@@ -357,6 +369,34 @@ func (i *InfoAPI) Syncing(ctx context.Context) (result any, returnErr error) {
 		CurrentBlock:  hexutil.Uint64(max(info.LatestBlockHeight, 0)),
 		HighestBlock:  hexutil.Uint64(max(highest, 0)),
 	}, nil
+}
+
+// PendingBaseFee is the base fee the open block fixed at Open from
+// GetNextBaseFeePerGas; sequencer.FeeFloor satisfies it.
+type PendingBaseFee interface {
+	BaseFeePerGas() (sdk.Dec, error)
+}
+
+// pendingBaseFee returns the base fee of the open block and its height on the
+// sequencer and standby. It returns a nil fee on every other node, which reports
+// committed values.
+func (i *InfoAPI) pendingBaseFee() (*big.Int, int64, error) {
+	if i.watermarks == nil || i.watermarks.pending == nil {
+		return nil, 0, nil
+	}
+	source, ok := i.watermarks.pending.(PendingBaseFee)
+	if !ok {
+		return nil, 0, errors.New("pending block does not fix a base fee")
+	}
+	height, err := i.watermarks.resolvePending()
+	if err != nil {
+		return nil, 0, err
+	}
+	baseFee, err := source.BaseFeePerGas()
+	if err != nil {
+		return nil, 0, fmt.Errorf("pending base fee unavailable: %w", err)
+	}
+	return baseFee.TruncateInt().BigInt(), height, nil
 }
 
 // getHeaderBaseFee returns the base fee per gas for txs in block blockNum (same as eth block header

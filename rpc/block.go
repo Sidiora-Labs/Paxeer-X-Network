@@ -16,6 +16,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/prefix"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	wasmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/wasm/x/wasm/types"
@@ -219,6 +220,9 @@ func (a *BlockAPI) getBlockByNumber(
 	includeSyntheticTxs bool,
 	excludeUntraceable bool,
 ) (result map[string]interface{}, returnErr error) {
+	if number == rpc.PendingBlockNumber && a.watermarks != nil && a.watermarks.pending != nil {
+		return a.pendingBlock(fullTx)
+	}
 	numberPtr, err := getBlockNumber(ctx, a.tmClient, number)
 	if err != nil {
 		return nil, err
@@ -241,6 +245,57 @@ func (a *BlockAPI) getBlockByNumber(
 		return nil, nil
 	}
 	return EncodeTmBlock(a.ctxProvider, a.txConfigProvider, block, a.keeper, fullTx, a.includeBankTransfers, includeSyntheticTxs, excludeUntraceable, a.globalBlockCache, a.cacheCreationMutex)
+}
+
+// pendingBlock encodes the open block on the sequencer and standby: its height,
+// its open time and the hashes of its receipted EVM transactions in receipt
+// order. It has no hash and no state root until it is sealed and committed.
+func (a *BlockAPI) pendingBlock(fullTx bool) (map[string]interface{}, error) {
+	if fullTx {
+		return nil, &ErrEVMNotSupported{Msg: "pending block lists transaction hashes only"}
+	}
+	snapshot, err := a.watermarks.pending.Snapshot()
+	if err != nil {
+		return nil, fmt.Errorf("pending block unavailable: %w", err)
+	}
+	hashes, err := pendingBlockTxHashes(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"number":       (*hexutil.Big)(big.NewInt(snapshot.BlockHeight())),
+		"hash":         nil,
+		"stateRoot":    nil,
+		"timestamp":    hexutil.Uint64(snapshot.BlockTime().Unix()), //nolint:gosec
+		"transactions": hashes,
+	}, nil
+}
+
+// pendingBlockTxHashes reads the deferred info each receipted EVM transaction
+// leaves in the open block's EVM transient store, keyed by transaction index.
+func pendingBlockTxHashes(snapshot sdk.Context) ([]common.Hash, error) {
+	var transientKey sdk.StoreKey
+	for _, key := range snapshot.MultiStore().StoreKeys() {
+		if key.Name() == types.TransientStoreKey {
+			transientKey = key
+			break
+		}
+	}
+	if transientKey == nil {
+		return nil, errors.New("pending block has no EVM transient store")
+	}
+	store := prefix.NewStore(snapshot.TransientStore(transientKey), types.DeferredInfoPrefix)
+	iter := store.Iterator(nil, nil)
+	defer func() { _ = iter.Close() }()
+	hashes := []common.Hash{}
+	for ; iter.Valid(); iter.Next() {
+		var info types.DeferredInfo
+		if err := info.Unmarshal(iter.Value()); err != nil {
+			return nil, fmt.Errorf("decode pending transaction %x: %w", iter.Key(), err)
+		}
+		hashes = append(hashes, common.BytesToHash(info.TxHash))
+	}
+	return hashes, nil
 }
 
 func (a *BlockAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (result []map[string]interface{}, returnErr error) {
