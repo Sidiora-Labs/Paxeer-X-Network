@@ -31,4 +31,6 @@ var (
 	ErrUnknownPaxTokenFactoryQuery    = sdkerrors.Register(ModuleName, 23, "Error unknown pax token factory query")
 	ErrAllowListTooLarge              = sdkerrors.Register(ModuleName, 24, "allowlist too large")
 	ErrAllowListUndefined             = sdkerrors.Register(ModuleName, 25, "allowlist undefined")
+	ErrDenomPaused                    = sdkerrors.Register(ModuleName, 26, "LXP_ASSET_PAUSED: denom is paused")
+	ErrPauseUnchanged                 = sdkerrors.Register(ModuleName, 27, "LXP_PAUSED_SCOPE: denom pause state unchanged")
 )

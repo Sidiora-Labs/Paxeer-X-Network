@@ -15,6 +15,7 @@ service Msg {
   rpc Burn(MsgBurn) returns (MsgBurnResponse);
   rpc ChangeAdmin(MsgChangeAdmin) returns (MsgChangeAdminResponse);
   rpc SetDenomMetadata(MsgSetDenomMetadata) returns (MsgSetDenomMetadataResponse);
+  rpc SetDenomPaused(MsgSetDenomPaused) returns (MsgSetDenomPausedResponse);
 }
 
 // MsgCreateDenom defines the message structure for the CreateDenom gRPC service
@@ -91,6 +92,18 @@ message MsgSetDenomMetadata {
 // MsgSetDenomMetadataResponse defines the response structure for an executed
 // MsgSetDenomMetadata message.
 message MsgSetDenomMetadataResponse {}
+
+// MsgSetDenomPaused is the sdk.Msg type for allowing an admin account to pause
+// or unpause the denom
+message MsgSetDenomPaused {
+  string sender = 1 [(gogoproto.moretags) = "yaml:\"sender\""];
+  string denom = 2 [(gogoproto.moretags) = "yaml:\"denom\""];
+  bool paused = 3 [(gogoproto.moretags) = "yaml:\"paused\""];
+}
+
+// MsgSetDenomPausedResponse defines the response structure for an executed
+// MsgSetDenomPaused message.
+message MsgSetDenomPausedResponse {}
 
 // MsgUpdateDenom is the sdk.Msg allowing an admin to update the denom
 message MsgUpdateDenom {
