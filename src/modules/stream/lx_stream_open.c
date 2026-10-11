@@ -46,7 +46,7 @@ static lxp_result decode_typed(uint16_t ordinal, const uint8_t *payload,
     case 5U:
     case 6U: return lx_stream_id_decode(payload, length, &typed->id);
     case 8U: return lx_stream_rate_change_decode(payload, length,
-                                                 &typed->rate_change);
+                                                &typed->rate_change);
     default: return LXP_ERR_UNKNOWN_ACTIVITY;
     }
 }

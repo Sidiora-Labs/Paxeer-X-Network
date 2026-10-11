@@ -308,6 +308,90 @@ static int amount_payload_codec(void)
     return 0;
 }
 
+static int rate_change_payload_codec(void)
+{
+    static const uint8_t rate_bytes[16] = {
+        1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U,
+        17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U
+    };
+    lx_stream_rate_change_payload decoded;
+    uint8_t bytes[LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES + 1U] = { 0U };
+    uint8_t canonical[LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES];
+    size_t i;
+
+    CHECK(LX_STREAM_RATE_CHANGE == 0x00040008U);
+    CHECK(LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES == 82U);
+    bytes[1] = 1U;
+    for (i = 0U; i < 32U; ++i) {
+        bytes[2U + i] = (uint8_t)(i + 1U);
+        bytes[50U + i] = (uint8_t)(128U + i);
+    }
+    (void)memcpy(bytes + 34U, rate_bytes, sizeof(rate_bytes));
+    (void)memcpy(canonical, bytes, sizeof(canonical));
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_OK);
+    CHECK(memcmp(decoded.stream_id, canonical + 2U, 32U) == 0);
+    CHECK(decoded.new_rate.hi == UINT64_C(0x0102030405060708));
+    CHECK(decoded.new_rate.lo == UINT64_C(0x1112131415161718));
+    CHECK(memcmp(decoded.idempotency_key, canonical + 50U, 32U) == 0);
+
+    for (i = 0U; i <= sizeof(bytes); ++i) {
+        if (i == sizeof(canonical)) continue;
+        CHECK(lx_stream_rate_change_decode(bytes, i, &decoded) ==
+              LXP_ERR_NON_CANONICAL);
+    }
+    CHECK(lx_stream_rate_change_decode(bytes, SIZE_MAX, &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lx_stream_rate_change_decode(NULL, sizeof(canonical), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lx_stream_rate_change_decode(NULL, 0U, &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), NULL) ==
+          LXP_ERR_NON_CANONICAL);
+
+    for (i = 1U; i <= UINT8_MAX; ++i) {
+        bytes[0] = (uint8_t)i;
+        CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical),
+                                           &decoded) ==
+              LXP_ERR_VERSION_UNSUPPORTED);
+    }
+    bytes[0] = 0U;
+    for (i = 0U; i <= UINT8_MAX; ++i) {
+        if (i == 1U) continue;
+        bytes[1] = (uint8_t)i;
+        CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical),
+                                           &decoded) ==
+              LXP_ERR_VERSION_UNSUPPORTED);
+    }
+    (void)memcpy(bytes, canonical, sizeof(canonical));
+    (void)memset(bytes + 2U, 0, 32U);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    (void)memcpy(bytes, canonical, sizeof(canonical));
+    (void)memset(bytes + 34U, 0, 16U);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    bytes[41] = 1U;
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_OK);
+    CHECK(decoded.new_rate.hi == 1U && decoded.new_rate.lo == 0U);
+    bytes[41] = 0U;
+    bytes[49] = 1U;
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_OK);
+    CHECK(decoded.new_rate.hi == 0U && decoded.new_rate.lo == 1U);
+    (void)memset(bytes + 34U, UINT8_MAX, 16U);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_OK);
+    CHECK(decoded.new_rate.hi == UINT64_MAX &&
+          decoded.new_rate.lo == UINT64_MAX);
+    (void)memcpy(bytes, canonical, sizeof(canonical));
+    (void)memset(bytes + 50U, 0, 32U);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(canonical), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    return 0;
+}
+
 static int dispatch_refusals(void)
 {
     lx_stream_open_payload payload;
@@ -331,9 +415,12 @@ static int dispatch_refusals(void)
                                          &runtime) == LXP_OK);
 
     /* An ordinal outside the advertised range never decodes. */
-    CHECK(run(0x00040008U, bytes, length, payer->id, 1000U, 1U, 100000U,
+    CHECK(run(0x00040009U, bytes, length, payer->id, 1000U, 1U, 100000U,
               &module_result) == LXP_OK);
     CHECK(module_result == LXP_ERR_UNKNOWN_ACTIVITY);
+    CHECK(run(0x00040008U, bytes, length, payer->id, 1000U, 1U, 100000U,
+              &module_result) == LXP_OK);
+    CHECK(module_result == LXP_ERR_NON_CANONICAL);
     /* A foreign module id carrying a stream ordinal is refused in validate. */
     CHECK(run(0x00050001U, bytes, length, payer->id, 1000U, 1U, 100000U,
               &module_result) == LXP_OK);
@@ -494,6 +581,110 @@ static int dispatch_open(void)
     return 0;
 }
 
+static int rate_change_unchanged(const uint8_t stream_id[32],
+                                 const uint8_t before[LX_STREAM_RECORD_BYTES],
+                                 const uint8_t root_before[32])
+{
+    lx_stream_record stored;
+    uint8_t after[LX_STREAM_RECORD_BYTES];
+    uint8_t root_after[32];
+
+    CHECK(payer->balance.hi == 0U && payer->balance.lo == 60U);
+    CHECK(provider->balance.hi == 0U && provider->balance.lo == 0U);
+    CHECK(stream_account->balance.hi == 0U &&
+          stream_account->balance.lo == 40U);
+    CHECK(payer->next_sequence == 1U);
+    CHECK(provider->next_sequence == 0U);
+    CHECK(stream_account->next_sequence == 0U);
+    CHECK(observed.calls == 0U);
+    CHECK(ctx.staged_count == 0U);
+    CHECK(ctx.staged_account_count == 0U);
+    CHECK(ctx.transfer_snapshot_count == 0U);
+    CHECK(ctx.staged_blob_count == 0U);
+    CHECK(!ctx.transfer_applied);
+    CHECK(effects.count == 0U);
+    CHECK(ctx.next_effect_ordinal == 0U);
+    CHECK(kernel.module_kv_count == 1U);
+    CHECK(lx_stream_load(&ctx, stream_id, &stored) == LXP_OK);
+    CHECK(lx_stream_record_encode(&stored, after) == LXP_OK);
+    CHECK(memcmp(before, after, sizeof(after)) == 0);
+    CHECK(lx_stream_module_iface()->state_root(&ctx, root_after) == LXP_OK);
+    CHECK(memcmp(root_before, root_after, sizeof(root_after)) == 0);
+    return 0;
+}
+
+static int dispatch_rate_change(void)
+{
+    const lxp_module_iface *iface = lx_stream_module_iface();
+    const lxp_module_registration *registration;
+    lx_stream_record stored;
+    lxp_activity activity;
+    lxp_authority_resolved authority;
+    uint8_t bytes[LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES] = { 0U };
+    uint8_t before[LX_STREAM_RECORD_BYTES];
+    uint8_t root_before[32];
+    void *decoded = NULL;
+    lxp_result module_result = LXP_OK;
+
+    bytes[1] = 1U;
+    bytes[2] = 4U;
+    CHECK(lxp_u128_to_be((lxp_u128){ 0U, 20U }, bytes + 34U) == LXP_OK);
+    bytes[81] = 1U;
+    CHECK(lx_stream_load(&ctx, bytes + 2U, &stored) == LXP_OK);
+    CHECK(lx_stream_record_encode(&stored, before) == LXP_OK);
+    CHECK(iface->state_root(&ctx, root_before) == LXP_OK);
+    CHECK(lxp_kernel_module_for_activity(&kernel, LX_STREAM_RATE_CHANGE, 0U,
+                                         &registration) == LXP_OK);
+    CHECK(registration->iface == iface);
+
+    (void)memset(&activity, 0, sizeof(activity));
+    activity.activity_type = LX_STREAM_RATE_CHANGE;
+    activity.payload.bytes = bytes;
+    activity.payload.length = sizeof(bytes);
+    (void)memset(&authority, 0, sizeof(authority));
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.principal, payer->id, 32U);
+    CHECK(lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) == LXP_OK);
+    CHECK(lxp_effect_buffer_init(&effects) == LXP_OK);
+    CHECK(lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_STREAM, 1500U, 0U,
+                              2U, 83U, &arena, true) == LXP_OK);
+    CHECK(lxp_module_ctx_bind_effects(&ctx, &effects) == LXP_OK);
+    (void)memset(&observed, 0, sizeof(observed));
+    CHECK(iface->decode(&ctx, 8U, bytes, sizeof(bytes), &decoded) == LXP_OK);
+    CHECK(decoded != NULL);
+    CHECK(ctx.gas_used == 0U);
+    CHECK(lxp_module_ctx_set_mutable(&ctx, false) == LXP_OK);
+    CHECK(iface->validate(&ctx, &activity, &authority, decoded) == LXP_OK);
+    CHECK(ctx.gas_used == sizeof(bytes) + 1U && ctx.gas_used == 83U);
+    (void)memcpy(authority.principal, provider->id, 32U);
+    CHECK(iface->validate(&ctx, &activity, &authority, decoded) ==
+          LXP_ERR_UNAUTHORIZED_DEBIT);
+    CHECK(ctx.gas_used == 83U);
+    (void)memcpy(authority.principal, payer->id, 32U);
+    CHECK(lxp_module_ctx_set_mutable(&ctx, true) == LXP_OK);
+    CHECK(iface->execute(&ctx, &activity, &authority, decoded, &effects) ==
+          LXP_ERR_UNKNOWN_ACTIVITY);
+    CHECK(ctx.gas_used == 83U);
+    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+
+    CHECK(run(LX_STREAM_RATE_CHANGE, bytes, sizeof(bytes), payer->id, 1500U,
+              2U, 83U, &module_result) == LXP_OK);
+    CHECK(module_result == LXP_ERR_UNKNOWN_ACTIVITY);
+    CHECK(ctx.gas_used == 83U);
+    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+    CHECK(run(LX_STREAM_RATE_CHANGE, bytes, sizeof(bytes), provider->id,
+              1500U, 2U, 83U, &module_result) == LXP_OK);
+    CHECK(module_result == LXP_ERR_UNAUTHORIZED_DEBIT);
+    CHECK(ctx.gas_used == 0U);
+    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+    CHECK(run(LX_STREAM_RATE_CHANGE, bytes, sizeof(bytes), payer->id, 1500U,
+              2U, 82U, &module_result) == LXP_OK);
+    CHECK(module_result == LXP_ERR_GAS_EXHAUSTED);
+    CHECK(ctx.gas_used == 0U);
+    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+    return 0;
+}
+
 static int dispatch_top_up(void)
 {
     lx_stream_amount_payload payload;
@@ -594,8 +785,10 @@ int main(void)
     if (fixture_init() != 0) return 1;
     if (open_payload_codec() != 0) return 1;
     if (amount_payload_codec() != 0) return 1;
+    if (rate_change_payload_codec() != 0) return 1;
     if (dispatch_refusals() != 0) return 1;
     if (dispatch_open() != 0) return 1;
+    if (dispatch_rate_change() != 0) return 1;
     if (dispatch_top_up() != 0) return 1;
     if (committed_state() != 0) return 1;
     if (lxp_state_store_destroy(&state) != LXP_OK) return 1;
