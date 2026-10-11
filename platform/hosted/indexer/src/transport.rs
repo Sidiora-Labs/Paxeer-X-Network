@@ -1,8 +1,8 @@
 //! Bounded blocking HTTP/1.1 client for the indexer's three upstreams: the
-//! relay/archive sync API, Paxeer EVM JSON-RPC and CometBFT JSON-RPC.
+//! relay/archive sync API, Paxeer EVM JSON-RPC and `CometBFT` JSON-RPC.
 //!
-//! The framing rules follow `layerx-paxeer-verifier`'s hand-rolled client:
-//! exactly one of `Content-Length` or chunked encoding, bounded headers,
+//! The framing rules require exactly one of `Content-Length` or chunked
+//! encoding, bounded headers,
 //! bounded bodies, `Connection: close`. HTTPS is authenticated by an
 //! explicitly configured trust anchor; plaintext is admitted for loopback
 //! endpoints, or for in-cluster endpoints only when the operator opts in.
