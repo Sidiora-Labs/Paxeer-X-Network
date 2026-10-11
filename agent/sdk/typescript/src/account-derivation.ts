@@ -17,6 +17,8 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 
+import { precompileTransactionRequest, type PrecompileCall } from "./exchange.js";
+
 /** SLIP-0044 style coin type of the LayerX branch: 0x4c58, ASCII "LX". */
 export const LAYERX_COIN_TYPE = 19544;
 export const ACCOUNT_DERIVATION_ORIGIN = "https://paxportwallet.com";
@@ -33,11 +35,11 @@ const SECP256K1_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e
 const ORIGIN = /^https?:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/u;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/u;
 const DOMAIN_TYPE = "EIP712Domain(string name,string version,uint256 chainId)";
-const MESSAGE_TYPE =
-  "LayerXKeyDerivation(string purpose,string warning,address address,uint32 index,uint32 version)";
+const MESSAGE_TYPE = "LayerXKeyDerivation(string purpose,string warning,address address,uint32 index,uint32 version)";
 const SELECTOR_BIND_LAYERX = "dd9aa628";
 const SELECTOR_LAYERX_BIND_NONCE = "cedd9ba2";
 const SELECTOR_GET_UNIFIED_ACCOUNT = "357feed6";
+const SELECTOR_GET_LAYERX_DID = toHex(keccak_256(utf8("getLayerXDid(address)"))).slice(0, 8);
 const BIND_DOMAIN = "LX:PAXEER-BIND:v1";
 
 export type AccountDerivationErrorCode =
@@ -51,6 +53,8 @@ export type AccountDerivationErrorCode =
   | "wallet_signer_mismatch"
   | "wallet_signature_not_deterministic"
   | "bound_to_different_did"
+  | "address_unbound"
+  | "invalid_bind_fees"
   | "malformed_precompile_answer"
   | "evm_key_unavailable";
 
@@ -434,6 +438,27 @@ export function boundDidCall(address: string): string {
   return addressCall(SELECTOR_GET_UNIFIED_ACCOUNT, address);
 }
 
+export function layerXDidCall(address: string): string {
+  return addressCall(SELECTOR_GET_LAYERX_DID, address);
+}
+
+export function decodeLayerXDid(answer: string): string {
+  const raw = fromHex(answer, "malformed_precompile_answer");
+  const key = toHex(raw.slice(0, 32));
+  const did = utf8(`did:layerx:${key}`);
+  if (
+    raw.length !== 192 ||
+    /^0+$/u.test(key) ||
+    toHex(raw.slice(32, 64)) !== toHex(word(64n)) ||
+    toHex(raw.slice(64, 96)) !== toHex(word(BigInt(did.length))) ||
+    toHex(raw.slice(96, 96 + did.length)) !== toHex(did) ||
+    raw.slice(96 + did.length).some((byte) => byte !== 0)
+  ) {
+    throw new AccountDerivationError("malformed_precompile_answer");
+  }
+  return key;
+}
+
 export function decodeBindNonce(answer: string): bigint {
   const bytes = fromHex(answer, "malformed_precompile_answer");
   if (bytes.length !== 32 || bytes.slice(0, 24).some((byte) => byte !== 0)) {
@@ -463,10 +488,42 @@ export async function readLayerXBindState(wallet: Eip1193Requester, address: str
     }
     return answer;
   };
-  return {
-    boundDidPublicKey: decodeBoundDid(await call(boundDidCall(address))),
-    nonce: decodeBindNonce(await call(bindNonceCall(address))),
-  };
+  const boundDidPublicKey = decodeBoundDid(await call(boundDidCall(address)));
+  const nonce = decodeBindNonce(await call(bindNonceCall(address)));
+  if (boundDidPublicKey !== null && decodeLayerXDid(await call(layerXDidCall(address))) !== boundDidPublicKey) {
+    throw new AccountDerivationError("malformed_precompile_answer");
+  }
+  return { boundDidPublicKey, nonce };
+}
+
+export function requireLayerXBinding(derived: DerivedAccount, state: LayerXBindState): void {
+  if (state.boundDidPublicKey === null) {
+    throw new AccountDerivationError("address_unbound");
+  }
+  if (state.boundDidPublicKey.toLowerCase() !== derived.layerxPublicKey.toLowerCase()) {
+    throw new AccountDerivationError("bound_to_different_did");
+  }
+}
+
+export async function sendBoundLayerXCall(
+  wallet: Eip1193Requester,
+  derived: DerivedAccount,
+  call: PrecompileCall,
+): Promise<string> {
+  const request = precompileTransactionRequest(derived.evmAddress, call);
+  requireLayerXBinding(derived, await readLayerXBindState(wallet, derived.evmAddress));
+  const hash = await wallet.request(request);
+  if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/u.test(hash)) {
+    throw new AccountDerivationError("malformed_precompile_answer");
+  }
+  return hash;
+}
+
+export function layerXBindMessage(chainId: number | bigint, address: string, nonce: bigint): Uint8Array {
+  if (nonce < 0n || nonce > 0xffffffffffffffffn) {
+    throw new AccountDerivationError("malformed_precompile_answer");
+  }
+  return concat(utf8(BIND_DOMAIN), word(checkChainId(chainId)), addressBytes(address), word(nonce).slice(24));
 }
 
 /**
@@ -474,11 +531,7 @@ export async function readLayerXBindState(wallet: Eip1193Requester, address: str
  * with `bound_to_different_did`, never producing a call, when the address
  * belongs to another identity.
  */
-export function planLayerXBind(
-  derived: DerivedAccount,
-  chainId: number | bigint,
-  state: LayerXBindState,
-): BindPlan {
+export function planLayerXBind(derived: DerivedAccount, chainId: number | bigint, state: LayerXBindState): BindPlan {
   if (state.boundDidPublicKey !== null) {
     if (state.boundDidPublicKey.toLowerCase() === derived.layerxPublicKey) {
       return { action: "already_bound" };
@@ -488,12 +541,7 @@ export function planLayerXBind(
   if (state.nonce < 0n || state.nonce > 0xffffffffffffffffn) {
     throw new AccountDerivationError("malformed_precompile_answer");
   }
-  const message = concat(
-    utf8(BIND_DOMAIN),
-    word(checkChainId(chainId)),
-    addressBytes(derived.evmAddress),
-    word(state.nonce).slice(24),
-  );
+  const message = layerXBindMessage(chainId, derived.evmAddress, state.nonce);
   const signature = toHex(ed25519.sign(message, derived.layerxSeed));
   const offset = toHex(word(64n));
   return {
@@ -521,13 +569,15 @@ export async function autoBindLayerX(
   wallet: Eip1193Requester,
   derived: DerivedAccount,
   chainId: number | bigint,
-): Promise<Readonly<{ action: "already_bound" }> | Readonly<{ action: "bind"; call: BindCall; transactionHash: string }>> {
+): Promise<
+  Readonly<{ action: "already_bound" }> | Readonly<{ action: "bind"; call: BindCall; transactionHash: string }>
+> {
   const plan = planLayerXBind(derived, chainId, await readLayerXBindState(wallet, derived.evmAddress));
   if (plan.action === "already_bound") {
     return plan;
   }
   const hash = await wallet.request(bindTransactionRequest(derived, plan.call));
-  if (typeof hash !== "string") {
+  if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/u.test(hash)) {
     throw new AccountDerivationError("malformed_precompile_answer", "wallet returned no transaction hash");
   }
   return { action: "bind", call: plan.call, transactionHash: hash };
@@ -544,7 +594,10 @@ function rlpLength(length: number, short: number): Uint8Array {
   if (length < 56) {
     return new Uint8Array([short + length]);
   }
-  const size = fromHex(length.toString(16).padStart(length.toString(16).length + (length.toString(16).length % 2), "0"), "invalid_seed");
+  const size = fromHex(
+    length.toString(16).padStart(length.toString(16).length + (length.toString(16).length % 2), "0"),
+    "invalid_seed",
+  );
   return concat(new Uint8Array([short + 55 + size.length]), size);
 }
 
@@ -582,6 +635,28 @@ export function signBindTransaction(
 ): string {
   if (derived.evmPrivateKey === null) {
     throw new AccountDerivationError("evm_key_unavailable");
+  }
+  if (
+    fees.evmNonce < 0n ||
+    fees.evmNonce > 0xffffffffffffffffn ||
+    fees.gasLimit <= 0n ||
+    fees.gasLimit > 0xffffffffffffffffn ||
+    fees.maxPriorityFeePerGas < 0n ||
+    fees.maxPriorityFeePerGas >= 1n << 128n ||
+    fees.maxFeePerGas < fees.maxPriorityFeePerGas ||
+    fees.maxFeePerGas >= 1n << 128n
+  ) {
+    throw new AccountDerivationError("invalid_bind_fees");
+  }
+  const plan = planLayerXBind(derived, chainId, { boundDidPublicKey: null, nonce: call.nonce });
+  if (
+    plan.action !== "bind" ||
+    call.to.toLowerCase() !== plan.call.to ||
+    call.data.toLowerCase() !== plan.call.data ||
+    call.didPublicKey.toLowerCase() !== plan.call.didPublicKey ||
+    call.signature.toLowerCase() !== plan.call.signature
+  ) {
+    throw new AccountDerivationError("malformed_precompile_answer");
   }
   const fields = [
     rlpInteger(checkChainId(chainId)),

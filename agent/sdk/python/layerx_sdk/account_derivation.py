@@ -17,7 +17,10 @@ import hmac
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .exchange import PrecompileCall, WalletRequest
 
 from .bip39_english import ENGLISH
 
@@ -36,9 +39,7 @@ _MAX_CHAIN_ID = (1 << 53) - 1
 _ORIGIN = re.compile(r"https?://[a-z0-9.-]{1,253}(:[0-9]{1,5})?")
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _DOMAIN_TYPE = b"EIP712Domain(string name,string version,uint256 chainId)"
-_MESSAGE_TYPE = (
-    b"LayerXKeyDerivation(string purpose,string warning,address address,uint32 index,uint32 version)"
-)
+_MESSAGE_TYPE = b"LayerXKeyDerivation(string purpose,string warning,address address,uint32 index,uint32 version)"
 _SELECTOR_BIND_LAYERX = "dd9aa628"
 _SELECTOR_LAYERX_BIND_NONCE = "cedd9ba2"
 _SELECTOR_GET_UNIFIED_ACCOUNT = "357feed6"
@@ -86,12 +87,30 @@ def _cryptography():
 
 # Keccak-256 (the pre-standard padding Ethereum uses), over public data only.
 _ROUND_CONSTANTS = (
-    0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
-    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
-    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
-    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
-    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
 )
 _ROTATIONS = (
     (0, 36, 3, 41, 18),
@@ -109,7 +128,10 @@ def _rotate(value: int, shift: int) -> int:
 
 def _keccak_f(state: list[list[int]]) -> None:
     for constant in _ROUND_CONSTANTS:
-        parity = [state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4] for x in range(5)]
+        parity = [
+            state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4]
+            for x in range(5)
+        ]
         for x in range(5):
             mix = parity[(x - 1) % 5] ^ _rotate(parity[(x + 1) % 5], 1)
             for y in range(5):
@@ -120,7 +142,9 @@ def _keccak_f(state: list[list[int]]) -> None:
                 moved[y][(2 * x + 3 * y) % 5] = _rotate(state[x][y], _ROTATIONS[x][y])
         for x in range(5):
             for y in range(5):
-                state[x][y] = moved[x][y] ^ (~moved[(x + 1) % 5][y] & moved[(x + 2) % 5][y])
+                state[x][y] = moved[x][y] ^ (
+                    ~moved[(x + 1) % 5][y] & moved[(x + 2) % 5][y]
+                )
         state[0][0] ^= constant
 
 
@@ -134,9 +158,13 @@ def keccak256(data: bytes) -> bytes:
     for block in range(0, len(padded), rate):
         for lane in range(rate // 8):
             x, y = lane % 5, lane // 5
-            state[x][y] ^= int.from_bytes(padded[block + lane * 8 : block + lane * 8 + 8], "little")
+            state[x][y] ^= int.from_bytes(
+                padded[block + lane * 8 : block + lane * 8 + 8], "little"
+            )
         _keccak_f(state)
-    return b"".join(state[lane % 5][lane // 5].to_bytes(8, "little") for lane in range(4))
+    return b"".join(
+        state[lane % 5][lane // 5].to_bytes(8, "little") for lane in range(4)
+    )
 
 
 # secp256k1 affine arithmetic, used only on public values (signature recovery).
@@ -198,13 +226,21 @@ def _address_bytes(address: str) -> bytes:
 
 
 def _check_index(index: int) -> int:
-    if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < _HARDENED:
+    if (
+        not isinstance(index, int)
+        or isinstance(index, bool)
+        or not 0 <= index < _HARDENED
+    ):
         raise AccountDerivationError("index_out_of_range")
     return index
 
 
 def _check_chain_id(chain_id: int) -> int:
-    if not isinstance(chain_id, int) or isinstance(chain_id, bool) or not 0 <= chain_id <= _MAX_CHAIN_ID:
+    if (
+        not isinstance(chain_id, int)
+        or isinstance(chain_id, bool)
+        or not 0 <= chain_id <= _MAX_CHAIN_ID
+    ):
         raise AccountDerivationError("invalid_chain_id")
     return chain_id
 
@@ -223,12 +259,16 @@ def _evm_address(public_key_xy: bytes) -> str:
     return checksum_address(keccak256(public_key_xy)[12:])
 
 
-def _account(index: int, evm_address: str, evm_private_key: bytes | None, layerx_seed: bytes) -> DerivedAccount:
+def _account(
+    index: int, evm_address: str, evm_private_key: bytes | None, layerx_seed: bytes
+) -> DerivedAccount:
     _, ed25519 = _cryptography()
     from cryptography.hazmat.primitives import serialization
 
-    public = ed25519.Ed25519PrivateKey.from_private_bytes(layerx_seed).public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    public = (
+        ed25519.Ed25519PrivateKey.from_private_bytes(layerx_seed)
+        .public_key()
+        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     )
     return DerivedAccount(
         index=index,
@@ -257,7 +297,9 @@ def slip10_ed25519(seed: bytes, path: tuple[int, ...] | list[int]) -> bytes:
 
 def _secp256k1_public(private_key: int) -> tuple[bytes, bytes]:
     ec, _ = _cryptography()
-    numbers = ec.derive_private_key(private_key, ec.SECP256K1()).public_key().public_numbers()
+    numbers = (
+        ec.derive_private_key(private_key, ec.SECP256K1()).public_key().public_numbers()
+    )
     x, y = numbers.x.to_bytes(32, "big"), numbers.y.to_bytes(32, "big")
     return bytes([2 + (numbers.y & 1)]) + x, x + y
 
@@ -277,7 +319,9 @@ def _bip32_secp256k1(seed: bytes, path: tuple[int, ...]) -> int:
         tweak = int.from_bytes(node[:32], "big")
         child = (tweak + key) % _N
         if tweak >= _N or child == 0:
-            raise AccountDerivationError("invalid_seed", "unusable BIP-32 child; use the next index")
+            raise AccountDerivationError(
+                "invalid_seed", "unusable BIP-32 child; use the next index"
+            )
         key, chain = child, node[32:]
     return key
 
@@ -297,18 +341,24 @@ def derive_from_seed(seed: bytes, index: int = 0) -> DerivedAccount:
 
 def _mnemonic_words(mnemonic: str) -> list[str]:
     words = unicodedata.normalize("NFKD", mnemonic).split()
-    if len(words) not in (12, 15, 18, 21, 24) or any(word not in _WORD_INDEX for word in words):
+    if len(words) not in (12, 15, 18, 21, 24) or any(
+        word not in _WORD_INDEX for word in words
+    ):
         raise AccountDerivationError("invalid_mnemonic")
     bits = "".join(format(_WORD_INDEX[word], "011b") for word in words)
     entropy_bits = len(bits) * 32 // 33
     entropy = int(bits[:entropy_bits], 2).to_bytes(entropy_bits // 8, "big")
-    checksum = format(hashlib.sha256(entropy).digest()[0], "08b")[: len(bits) - entropy_bits]
+    checksum = format(hashlib.sha256(entropy).digest()[0], "08b")[
+        : len(bits) - entropy_bits
+    ]
     if bits[entropy_bits:] != checksum:
         raise AccountDerivationError("invalid_mnemonic")
     return words
 
 
-def derive_from_mnemonic(mnemonic: str, passphrase: str = "", index: int = 0) -> DerivedAccount:
+def derive_from_mnemonic(
+    mnemonic: str, passphrase: str = "", index: int = 0
+) -> DerivedAccount:
     """Derives both keys of account ``index`` from an English BIP-39 mnemonic."""
     phrase = " ".join(_mnemonic_words(mnemonic))
     salt = "mnemonic" + unicodedata.normalize("NFKD", passphrase)
@@ -382,7 +432,11 @@ def key_derivation_hash(
 
 def normalize_wallet_signature(signature: bytes | str) -> bytes:
     """Brings a 65-byte r || s || v signature to low s and v of 27 or 28."""
-    raw = _hex_bytes(signature, "invalid_wallet_signature") if isinstance(signature, str) else bytes(signature)
+    raw = (
+        _hex_bytes(signature, "invalid_wallet_signature")
+        if isinstance(signature, str)
+        else bytes(signature)
+    )
     if len(raw) != 65 or raw[64] not in (0, 1, 27, 28):
         raise AccountDerivationError("invalid_wallet_signature")
     parity = raw[64] & 1 if raw[64] < 27 else raw[64] - 27
@@ -429,7 +483,9 @@ def derive_from_wallet_signature(
         + _address_bytes(address)
         + index.to_bytes(4, "big")
     )
-    return _account(index, signer, None, _hkdf_sha256(canonical, ACCOUNT_DERIVATION_HKDF_SALT, info))
+    return _account(
+        index, signer, None, _hkdf_sha256(canonical, ACCOUNT_DERIVATION_HKDF_SALT, info)
+    )
 
 
 @dataclass(frozen=True)
@@ -484,7 +540,79 @@ def decode_bound_did(answer: str) -> str | None:
     return key.hex() if any(key) else None
 
 
-def plan_layerx_bind(derived: DerivedAccount, chain_id: int, state: LayerXBindState) -> BindPlan:
+def layerx_did_call(address: str) -> str:
+    return _address_call(keccak256(b"getLayerXDid(address)")[:4].hex(), address)
+
+
+def decode_layerx_did(answer: str) -> str:
+    raw = _hex_bytes(answer, "malformed_precompile_answer")
+    key = raw[:32]
+    did = f"did:layerx:{key.hex()}".encode()
+    if (
+        len(raw) != 192
+        or not any(key)
+        or raw[32:64] != (64).to_bytes(32, "big")
+        or raw[64:96] != len(did).to_bytes(32, "big")
+        or raw[96 : 96 + len(did)] != did
+        or any(raw[96 + len(did) :])
+    ):
+        raise AccountDerivationError("malformed_precompile_answer")
+    return key.hex()
+
+
+def read_layerx_bind_state(request: WalletRequest, address: str) -> LayerXBindState:
+    def call(data: str) -> str:
+        answer = request(
+            "eth_call", [{"to": ADDR_PRECOMPILE_ADDRESS, "data": data}, "latest"]
+        )
+        if not isinstance(answer, str):
+            raise AccountDerivationError("malformed_precompile_answer")
+        return answer
+
+    bound = decode_bound_did(call(bound_did_call(address)))
+    nonce = decode_bind_nonce(call(bind_nonce_call(address)))
+    if bound is not None and decode_layerx_did(call(layerx_did_call(address))) != bound:
+        raise AccountDerivationError("malformed_precompile_answer")
+    return LayerXBindState(bound, nonce)
+
+
+def require_layerx_binding(derived: DerivedAccount, state: LayerXBindState) -> None:
+    if state.bound_did_public_key is None:
+        raise AccountDerivationError("address_unbound")
+    if state.bound_did_public_key.lower() != derived.layerx_public_key.lower():
+        raise AccountDerivationError("bound_to_different_did")
+
+
+def send_bound_layerx_call(
+    request: WalletRequest, derived: DerivedAccount, call: PrecompileCall
+) -> str:
+    from .exchange import precompile_transaction_request
+
+    transaction = precompile_transaction_request(derived.evm_address, call)
+    require_layerx_binding(
+        derived, read_layerx_bind_state(request, derived.evm_address)
+    )
+    return _transaction_hash(request("eth_sendTransaction", [transaction]))
+
+
+def layerx_bind_message(chain_id: int, address: str, nonce: int) -> bytes:
+    if (
+        not isinstance(nonce, int)
+        or isinstance(nonce, bool)
+        or not 0 <= nonce < 1 << 64
+    ):
+        raise AccountDerivationError("malformed_precompile_answer")
+    return (
+        _BIND_DOMAIN
+        + _check_chain_id(chain_id).to_bytes(32, "big")
+        + _address_bytes(address)
+        + nonce.to_bytes(8, "big")
+    )
+
+
+def plan_layerx_bind(
+    derived: DerivedAccount, chain_id: int, state: LayerXBindState
+) -> BindPlan:
     """Plans first-use binding.
 
     Idempotent when the pair is already bound; refuses with
@@ -497,22 +625,24 @@ def plan_layerx_bind(derived: DerivedAccount, chain_id: int, state: LayerXBindSt
         raise AccountDerivationError(
             "bound_to_different_did", f"did:layerx:{state.bound_did_public_key.lower()}"
         )
-    if not 0 <= state.nonce < 1 << 64:
-        raise AccountDerivationError("malformed_precompile_answer")
     _, ed25519 = _cryptography()
-    message = (
-        _BIND_DOMAIN
-        + _check_chain_id(chain_id).to_bytes(32, "big")
-        + _address_bytes(derived.evm_address)
-        + state.nonce.to_bytes(8, "big")
+    message = layerx_bind_message(chain_id, derived.evm_address, state.nonce)
+    signature = (
+        ed25519.Ed25519PrivateKey.from_private_bytes(derived.layerx_seed)
+        .sign(message)
+        .hex()
     )
-    signature = ed25519.Ed25519PrivateKey.from_private_bytes(derived.layerx_seed).sign(message).hex()
     offset = (64).to_bytes(32, "big").hex()
     return BindPlan(
         "bind",
         BindCall(
             to=ADDR_PRECOMPILE_ADDRESS,
-            data="0x" + _SELECTOR_BIND_LAYERX + derived.layerx_public_key + offset + offset + signature,
+            data="0x"
+            + _SELECTOR_BIND_LAYERX
+            + derived.layerx_public_key
+            + offset
+            + offset
+            + signature,
             did_public_key=derived.layerx_public_key,
             signature=signature,
             nonce=state.nonce,
@@ -522,4 +652,168 @@ def plan_layerx_bind(derived: DerivedAccount, chain_id: int, state: LayerXBindSt
 
 def bind_transaction_request(derived: DerivedAccount, call: BindCall) -> dict[str, str]:
     """The transaction fields a signer or wallet sends for a bind call."""
-    return {"from": derived.evm_address, "to": call.to, "data": call.data, "value": "0x0"}
+    return {
+        "from": derived.evm_address,
+        "to": call.to,
+        "data": call.data,
+        "value": "0x0",
+    }
+
+
+@dataclass(frozen=True)
+class BindFees:
+    evm_nonce: int
+    max_priority_fee_per_gas: int
+    max_fee_per_gas: int
+    gas_limit: int
+
+
+def _transaction_hash(answer: object) -> str:
+    if (
+        not isinstance(answer, str)
+        or re.fullmatch(r"0x[0-9a-fA-F]{64}", answer) is None
+    ):
+        raise AccountDerivationError("malformed_precompile_answer")
+    return answer
+
+
+def _validate_bind_call(derived: DerivedAccount, chain_id: int, call: BindCall) -> None:
+    plan = plan_layerx_bind(derived, chain_id, LayerXBindState(None, call.nonce))
+    expected = plan.call
+    if (
+        expected is None
+        or call.to.lower() != expected.to
+        or call.data.lower() != expected.data
+        or call.did_public_key.lower() != expected.did_public_key
+        or call.signature.lower() != expected.signature
+    ):
+        raise AccountDerivationError("malformed_precompile_answer")
+
+
+def _rlp_length(length: int, short: int) -> bytes:
+    if length < 56:
+        return bytes([short + length])
+    raw = length.to_bytes((length.bit_length() + 7) // 8, "big")
+    return bytes([short + 55 + len(raw)]) + raw
+
+
+def _rlp_bytes(raw: bytes) -> bytes:
+    if len(raw) == 1 and raw[0] < 0x80:
+        return raw
+    return _rlp_length(len(raw), 0x80) + raw
+
+
+def _rlp_integer(value: int) -> bytes:
+    return _rlp_bytes(value.to_bytes((value.bit_length() + 7) // 8, "big"))
+
+
+def _rlp_list(items: list[bytes]) -> bytes:
+    raw = b"".join(items)
+    return _rlp_length(len(raw), 0xC0) + raw
+
+
+def sign_bind_transaction(
+    derived: DerivedAccount, chain_id: int, call: BindCall, fees: BindFees
+) -> str:
+    if derived.evm_private_key is None:
+        raise AccountDerivationError("evm_key_unavailable")
+    limits = (
+        (fees.evm_nonce, 64),
+        (fees.max_priority_fee_per_gas, 128),
+        (fees.max_fee_per_gas, 128),
+        (fees.gas_limit, 64),
+    )
+    if (
+        any(
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 0 <= value < 1 << bits
+            for value, bits in limits
+        )
+        or fees.gas_limit == 0
+        or fees.max_priority_fee_per_gas > fees.max_fee_per_gas
+    ):
+        raise AccountDerivationError("invalid_bind_fees")
+    _validate_bind_call(derived, chain_id, call)
+    fields = [
+        _rlp_integer(_check_chain_id(chain_id)),
+        _rlp_integer(fees.evm_nonce),
+        _rlp_integer(fees.max_priority_fee_per_gas),
+        _rlp_integer(fees.max_fee_per_gas),
+        _rlp_integer(fees.gas_limit),
+        _rlp_bytes(_address_bytes(call.to)),
+        _rlp_integer(0),
+        _rlp_bytes(_hex_bytes(call.data, "malformed_precompile_answer")),
+        _rlp_list([]),
+    ]
+    digest = keccak256(b"\x02" + _rlp_list(fields))
+    ec, _ = _cryptography()
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import utils
+
+    scalar = int.from_bytes(derived.evm_private_key, "big")
+    if len(derived.evm_private_key) != 32 or not 0 < scalar < _N:
+        raise AccountDerivationError("invalid_evm_key")
+    key = ec.derive_private_key(scalar, ec.SECP256K1())
+    public = key.public_key().public_numbers()
+    xy = public.x.to_bytes(32, "big") + public.y.to_bytes(32, "big")
+    if _evm_address(xy).lower() != derived.evm_address.lower():
+        raise AccountDerivationError("wallet_signer_mismatch")
+    signature = key.sign(digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
+    r, s = utils.decode_dss_signature(signature)
+    s = min(s, _N - s)
+    for parity in (0, 1):
+        if _recover(digest, r, s, parity) == xy:
+            return (
+                "0x"
+                + (
+                    b"\x02"
+                    + _rlp_list(
+                        fields
+                        + [_rlp_integer(parity), _rlp_integer(r), _rlp_integer(s)]
+                    )
+                ).hex()
+            )
+    raise AccountDerivationError("invalid_evm_key")
+
+
+def send_bind_transaction(
+    request: WalletRequest,
+    derived: DerivedAccount,
+    chain_id: int,
+    call: BindCall,
+    fees: BindFees | None = None,
+) -> str:
+    _validate_bind_call(derived, chain_id, call)
+    if fees is None:
+        return _transaction_hash(
+            request("eth_sendTransaction", [bind_transaction_request(derived, call)])
+        )
+    raw = sign_bind_transaction(derived, chain_id, call, fees)
+    expected_hash = "0x" + keccak256(bytes.fromhex(raw[2:])).hex()
+    sent_hash = _transaction_hash(request("eth_sendRawTransaction", [raw]))
+    if sent_hash.lower() != expected_hash:
+        raise AccountDerivationError("malformed_precompile_answer")
+    return sent_hash
+
+
+def auto_bind_layerx(
+    request: WalletRequest,
+    derived: DerivedAccount,
+    chain_id: int,
+    fees: BindFees | None = None,
+) -> dict[str, object]:
+    plan = plan_layerx_bind(
+        derived, chain_id, read_layerx_bind_state(request, derived.evm_address)
+    )
+    if plan.action == "already_bound":
+        return {"action": "already_bound"}
+    if plan.call is None:
+        raise AccountDerivationError("malformed_precompile_answer")
+    return {
+        "action": "bind",
+        "call": plan.call,
+        "transaction_hash": send_bind_transaction(
+            request, derived, chain_id, plan.call, fees
+        ),
+    }
