@@ -13,4 +13,7 @@ message DenomAuthorityMetadata {
 
   // Can be empty for no admin, or a valid pax address
   string admin = 1 [(gogoproto.moretags) = "yaml:\"admin\""];
+
+  // Can be empty for no issuer, or a LayerX DID did:layerx:<64 lowercase hex>
+  string issuer_did = 2 [(gogoproto.moretags) = "yaml:\"issuer_did\""];
 }
