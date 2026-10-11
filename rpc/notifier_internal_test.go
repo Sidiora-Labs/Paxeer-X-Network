@@ -1,6 +1,7 @@
 package evmrpc
 
 import (
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -163,6 +165,90 @@ func TestEncodeCommittedBlock(t *testing.T) {
 	out, err := encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
 	require.Nil(t, out)
 	require.ErrorContains(t, err, "lacks canonical parent, transaction, and receipt roots")
+}
+
+func TestEncodeCommittedBlockWithRoots(t *testing.T) {
+	hash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	proposer := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	appHash := common.HexToHash("0x3333333333333333333333333333333333333333333333333333333333333333")
+	parentHash := common.HexToHash("0x4444444444444444444444444444444444444444444444444444444444444444")
+	dataHash := common.HexToHash("0x5555555555555555555555555555555555555555555555555555555555555555")
+	resultsHash := common.HexToHash("0x6666666666666666666666666666666666666666666666666666666666666666")
+	ts := time.Unix(1_700_000_000, 0).UTC()
+	event := func() blockHeaderEvent {
+		return blockHeaderEvent{
+			hash: hash.Bytes(),
+			header: &tmproto.Header{
+				Height:          12345,
+				Time:            ts,
+				LastBlockId:     tmproto.BlockID{Hash: parentHash.Bytes()},
+				DataHash:        dataHash.Bytes(),
+				LastResultsHash: resultsHash.Bytes(),
+				ProposerAddress: proposer.Bytes(),
+			},
+			response: &abci.ResponseFinalizeBlock{
+				AppHash: appHash.Bytes(),
+				TxResults: []*abci.ExecTxResult{
+					{GasUsed: 21000},
+					{GasUsed: 100000},
+				},
+			},
+		}
+	}
+
+	out, err := encodeCommittedBlock(event(), big.NewInt(42), 10_000_000)
+	require.NoError(t, err)
+	enc, err := json.Marshal(out)
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(enc, &got))
+	zero := common.Hash{}.Hex()
+	require.Equal(t, map[string]any{
+		"hash":                  hash.Hex(),
+		"parentHash":            parentHash.Hex(),
+		"transactionsRoot":      dataHash.Hex(),
+		"receiptsRoot":          resultsHash.Hex(),
+		"stateRoot":             appHash.Hex(),
+		"number":                "0x3039",
+		"miner":                 proposer.Hex(),
+		"timestamp":             "0x6553f100",
+		"gasUsed":               "0x1d8a8",
+		"gasLimit":              "0x989680",
+		"baseFeePerGas":         "0x2a",
+		"difficulty":            "0x0",
+		"extraData":             "0x",
+		"logsBloom":             hexutil.Encode(make([]byte, 256)),
+		"nonce":                 "0x0000000000000000",
+		"sha3Uncles":            zero,
+		"mixHash":               zero,
+		"excessBlobGas":         "0x0",
+		"parentBeaconBlockRoot": zero,
+		"withdrawalsRoot":       zero,
+		"blobGasUsed":           "0x0",
+	}, got)
+
+	// A head missing any root is refused, never published with a zero root.
+	for name, strip := range map[string]func(*blockHeaderEvent){
+		"parent":   func(e *blockHeaderEvent) { e.header.LastBlockId.Hash = nil },
+		"data":     func(e *blockHeaderEvent) { e.header.DataHash = nil },
+		"receipts": func(e *blockHeaderEvent) { e.header.LastResultsHash = nil },
+	} {
+		evt := event()
+		strip(&evt)
+		out, err := encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+		require.Nil(t, out, name)
+		require.EqualError(t, err, "committed Autobahn head 12345 lacks canonical parent, transaction, and receipt roots", name)
+	}
+	evt := event()
+	evt.response.AppHash = nil
+	out, err = encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+	require.Nil(t, out)
+	require.EqualError(t, err, "committed Autobahn head 12345 lacks a state root")
+	evt = event()
+	evt.hash = hash.Bytes()[1:]
+	out, err = encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+	require.Nil(t, out)
+	require.EqualError(t, err, "committed Autobahn head 12345 has a 31-byte block hash")
 }
 
 func TestEncodeCommittedBlock_ZeroGasLimit(t *testing.T) {

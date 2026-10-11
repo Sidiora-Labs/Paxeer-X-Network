@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"sort"
@@ -218,6 +219,7 @@ type ReceiptLogFeed struct {
 	logIndex  uint
 	txs       []receiptedTx
 	filters   map[*pendingTxFilter]struct{}
+	listeners map[*receiptLogListener]struct{}
 }
 
 type receiptedTx struct {
@@ -235,9 +237,38 @@ type pendingTxFilter struct {
 	overflow bool
 }
 
+// receiptLogListenerBuffer is how many receipted logs an eth_subscribe logs
+// subscriber may lag behind before further logs are dropped for it and counted
+// as lag.
+const receiptLogListenerBuffer = 1024
+
+// receiptLogListener is one eth_subscribe logs subscription fed from the logs
+// Receipted records. The feed's lock guards lagged and the registration; once
+// the feed closes queue it writes neither again.
+type receiptLogListener struct {
+	crit             filters.FilterCriteria
+	fromBlock        int64
+	toBlock          int64
+	includeSynthetic bool
+	queue            chan receiptLogNotice
+	lagged           uint64
+}
+
+// receiptLogNotice is one receipted log queued for a listener, with the number
+// of logs dropped for that listener between the previous queued log and this
+// one.
+type receiptLogNotice struct {
+	log    FilterLog
+	lagged uint64
+}
+
 // NewReceiptLogFeed starts an empty feed above the committed height.
 func NewReceiptLogFeed(committedHeight int64) *ReceiptLogFeed {
-	return &ReceiptLogFeed{committed: committedHeight, filters: make(map[*pendingTxFilter]struct{})}
+	return &ReceiptLogFeed{
+		committed: committedHeight,
+		filters:   make(map[*pendingTxFilter]struct{}),
+		listeners: make(map[*receiptLogListener]struct{}),
+	}
 }
 
 // Receipted records the execution receipt of the transaction at seq in the
@@ -297,7 +328,77 @@ func (f *ReceiptLogFeed) Receipted(seq uint64, height int64, txHash common.Hash,
 		}
 		sub.txs = append(sub.txs, tx)
 	}
+	f.notifyListeners(tx)
 	return nil
+}
+
+// notifyListeners queues the matching logs of tx for every live log listener in
+// log order. A listener whose buffer is full stays registered: the log is
+// dropped for it and counted as lag, reported ahead of the next log it is
+// handed. A listener whose toBlock the open height has passed is closed and
+// removed. The caller holds the feed lock.
+func (f *ReceiptLogFeed) notifyListeners(tx receiptedTx) {
+	seq := tx.seq
+	for l := range f.listeners {
+		if l.toBlock >= 0 && tx.height > l.toBlock {
+			delete(f.listeners, l)
+			close(l.queue)
+			continue
+		}
+		if tx.height < l.fromBlock || (tx.synthetic && !l.includeSynthetic) {
+			continue
+		}
+		for _, log := range tx.logs {
+			if !MatchesCriteria(log, l.crit) {
+				continue
+			}
+			select {
+			case l.queue <- receiptLogNotice{log: FilterLog{Log: log, Seq: &seq}, lagged: l.lagged}:
+				l.lagged = 0
+			default:
+				l.lagged++
+			}
+		}
+	}
+}
+
+// addLogListener registers a listener for the logs matching crit that are
+// receipted from now on. A numeric fromBlock skips logs below it; a
+// non-negative toBlock ends the listener once the open height passes it, so a
+// toBlock at or below the committed height or below the open height returns a
+// listener whose queue is already closed.
+func (f *ReceiptLogFeed) addLogListener(crit filters.FilterCriteria, includeSynthetic bool) *receiptLogListener {
+	l := &receiptLogListener{
+		crit:             crit,
+		toBlock:          -1,
+		includeSynthetic: includeSynthetic,
+		queue:            make(chan receiptLogNotice, receiptLogListenerBuffer),
+	}
+	if crit.FromBlock != nil && crit.FromBlock.Sign() >= 0 && crit.FromBlock.IsInt64() {
+		l.fromBlock = crit.FromBlock.Int64()
+	}
+	if crit.ToBlock != nil && crit.ToBlock.Sign() >= 0 {
+		l.toBlock = math.MaxInt64
+		if crit.ToBlock.IsInt64() {
+			l.toBlock = crit.ToBlock.Int64()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if l.toBlock >= 0 && (l.toBlock <= f.committed || l.toBlock < f.logHeight) {
+		close(l.queue)
+		return l
+	}
+	f.listeners[l] = struct{}{}
+	return l
+}
+
+// removeLogListener unregisters l; it is a no-op for a listener the feed has
+// already closed.
+func (f *ReceiptLogFeed) removeLogListener(l *receiptLogListener) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.listeners, l)
 }
 
 // Committed drops the transactions of every block up to height, which the

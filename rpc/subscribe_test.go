@@ -2,27 +2,36 @@ package evmrpc_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
-	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
-	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
+	occutils "github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
+	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	gethrpc "github.com/ethereum/go-ethereum/rpc"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,6 +117,9 @@ func TestSubscribeNewHeadsAutobahn(t *testing.T) {
 
 	hash := common.HexToHash("0x4242424242424242424242424242424242424242424242424242424242424242").Bytes()
 	appHash := common.HexToHash("0x3131313131313131313131313131313131313131313131313131313131313131").Bytes()
+	parentHash := common.HexToHash("0x5252525252525252525252525252525252525252525252525252525252525252").Bytes()
+	dataHash := common.HexToHash("0x6363636363636363636363636363636363636363636363636363636363636363").Bytes()
+	resultsHash := common.HexToHash("0x7474747474747474747474747474747474747474747474747474747474747474").Bytes()
 	proposer := common.HexToAddress("0x9999999999999999999999999999999999999999").Bytes()
 	ts := time.Unix(1_700_000_500, 0).UTC()
 
@@ -135,6 +147,9 @@ func TestSubscribeNewHeadsAutobahn(t *testing.T) {
 				NotifierForTest.OnBlockCommitted(hash, &tmproto.Header{
 					Height:          MockHeight8,
 					Time:            ts,
+					LastBlockId:     tmproto.BlockID{Hash: parentHash},
+					DataHash:        dataHash,
+					LastResultsHash: resultsHash,
 					ProposerAddress: proposer,
 				}, &abci.ResponseFinalizeBlock{
 					AppHash: appHash,
@@ -167,12 +182,9 @@ func TestSubscribeNewHeadsAutobahn(t *testing.T) {
 			gasLimitStr, _ := resultMap["gasLimit"].(string)
 			require.NotEmpty(t, gasLimitStr)
 			require.NotEqual(t, "0x0", gasLimitStr)
-			// Fields the Autobahn path does not surface must serialize to
-			// the zero hash.
-			zeroHash := (common.Hash{}).Hex()
-			require.Equal(t, zeroHash, resultMap["parentHash"])
-			require.Equal(t, zeroHash, resultMap["receiptsRoot"])
-			require.Equal(t, zeroHash, resultMap["transactionsRoot"])
+			require.Equal(t, common.BytesToHash(parentHash).Hex(), resultMap["parentHash"])
+			require.Equal(t, common.BytesToHash(resultsHash).Hex(), resultMap["receiptsRoot"])
+			require.Equal(t, common.BytesToHash(dataHash).Hex(), resultMap["transactionsRoot"])
 			return
 		case <-timer.C:
 			t.Fatal("No event received within 5 seconds")
@@ -279,29 +291,36 @@ func TestSubscriptionManager(t *testing.T) {
 	require.Nil(t, subCh)
 }
 
-// pendingSubscribeTwoLogs is contract-creation code that emits LOG1 with topic
-// 1 and then LOG1 with topic 2, and deploys no code.
-var pendingSubscribeTwoLogs = []byte{
+// subscribeTwoLogsInitCode is contract-creation code that emits LOG1 with topic 1, then LOG1 with
+// topic 2, and deploys no code: PUSH1 1, PUSH1 0, PUSH1 0, LOG1, PUSH1 2, PUSH1 0, PUSH1 0, LOG1,
+// STOP.
+var subscribeTwoLogsInitCode = []byte{
 	0x60, 0x01, 0x60, 0x00, 0x60, 0x00, 0xa1,
 	0x60, 0x02, 0x60, 0x00, 0x60, 0x00, 0xa1,
 	0x00,
 }
 
-const pendingSubscribeDeployGas = 100_000
-
-type pendingSubscribeLog struct {
-	Address     common.Address `json:"address"`
-	Topics      []common.Hash  `json:"topics"`
-	BlockNumber hexutil.Uint64 `json:"blockNumber"`
-	TxHash      common.Hash    `json:"transactionHash"`
-	TxIndex     hexutil.Uint   `json:"transactionIndex"`
-	Index       hexutil.Uint   `json:"logIndex"`
-	Seq         hexutil.Uint64 `json:"seq"`
+// subscribeManyLogsInitCode is contract-creation code that emits n LOG1 with topics n, n-1, ..., 1
+// and deploys no code: PUSH2 n; loop: JUMPDEST, DUP1, PUSH1 0, PUSH1 0, LOG1, PUSH1 1, SWAP1, SUB,
+// DUP1, PUSH1 loop, JUMPI; STOP.
+func subscribeManyLogsInitCode(n uint16) []byte {
+	return []byte{
+		0x61, byte(n >> 8), byte(n),
+		0x5b, 0x80, 0x60, 0x00, 0x60, 0x00, 0xa1,
+		0x60, 0x01, 0x90, 0x03,
+		0x80, 0x60, 0x03, 0x57,
+		0x00,
+	}
 }
 
-// pendingSubscribeTx signs an EVM transaction from `from` and wraps it as the
-// Cosmos transaction Accept takes. A nil `to` creates a contract.
-func pendingSubscribeTx(t *testing.T, from utils.TestAcct, nonce uint64, to *common.Address, value *big.Int, gas uint64, data []byte) ([]byte, common.Hash) {
+const (
+	subscribeTwoLogsGas  = 100_000
+	subscribeManyLogsGas = 2_000_000
+)
+
+// subscribeRawTx signs an EVM transaction from `from` and returns its raw encoding for
+// eth_sendRawTransaction. A nil `to` creates a contract.
+func subscribeRawTx(t *testing.T, from occutils.TestAcct, nonce uint64, to *common.Address, value *big.Int, gas uint64, data []byte) (hexutil.Bytes, common.Hash) {
 	t.Helper()
 	signed, err := ethtypes.SignTx(ethtypes.NewTx(&ethtypes.LegacyTx{
 		Nonce:    nonce,
@@ -312,164 +331,337 @@ func pendingSubscribeTx(t *testing.T, from utils.TestAcct, nonce uint64, to *com
 		Data:     data,
 	}), ethtypes.LatestSignerForChainID(big.NewInt(config.DefaultChainID)), from.EvmPrivateKey)
 	require.NoError(t, err)
-	txData, err := ethtx.NewTxDataFromTx(signed)
+	raw, err := signed.MarshalBinary()
 	require.NoError(t, err)
-	msg, err := evmtypes.NewMsgEVMTransaction(txData)
-	require.NoError(t, err)
-	txConfig := app.MakeEncodingConfig().TxConfig
-	builder := txConfig.NewTxBuilder()
-	require.NoError(t, builder.SetMsgs(msg))
-	builder.SetGasLimit(gas)
-	bz, err := txConfig.TxEncoder()(builder.GetTx())
-	require.NoError(t, err)
-	return bz, signed.Hash()
+	return raw, signed.Hash()
 }
 
-// pendingSubscribeAccept accepts txBytes on the open block and publishes the
-// receipted transaction with its execution logs, as the sequencer's Accept
-// path does.
-func pendingSubscribeAccept(t *testing.T, s *pendingSequencer, stream *evmrpc.ReceiptStream, txBytes []byte) *sequencer.Accepted {
+// subscribeSequencer is the open block of s served by a real Receipter through the HTTP and
+// WebSocket servers of one SequencerOption.
+type subscribeSequencer struct {
+	*pendingSequencer
+	feed     *evmrpc.ReceiptLogFeed
+	accepter *sendSeqReceipter
+	option   evmrpc.SequencerOption
+	httpPort int
+}
+
+// newSubscribeSequencer opens height 2 over committed height 1 with sender funded, signs receipts
+// with a receipt key pinned for heights 1..1000 and starts the sequencer's HTTP server.
+func newSubscribeSequencer(t *testing.T, sender occutils.TestAcct) *subscribeSequencer {
 	t.Helper()
-	acc, err := s.exec.Accept(txBytes)
+	s := newPendingSequencer(t, 1, sender)
+	dir := t.TempDir()
+	consensusPriv, err := tmed25519.SecretKeyFromSecretBytes(ed25519.NewKeyFromSeed(sendSeqLabel("subscribe consensus key")))
 	require.NoError(t, err)
-	require.Equal(t, abci.CodeTypeOK, acc.Result.Code)
-	snap, err := s.exec.Snapshot()
+	consensusFile := filepath.Join(dir, "priv_validator_key.json")
+	require.NoError(t, privval.NewFilePV(consensusPriv, consensusFile, filepath.Join(dir, "priv_validator_state.json")).Key.Save())
+	seed := sendSeqLabel("subscribe receipt key")
+	keyFile := filepath.Join(dir, "receipt_key")
+	require.NoError(t, os.WriteFile(keyFile, []byte(hex.EncodeToString(seed)+"\n"), 0o600))
+	key, err := sequencer.LoadReceiptKey(keyFile, consensusFile, []verify.SequencerAuthorization{{
+		SequencerID:      [32]byte(sendSeqLabel("subscribe key id")),
+		PublicKey:        [32]byte(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)),
+		FirstBatchNumber: 1,
+		LastBatchNumber:  1000,
+	}}, s.committed+1)
 	require.NoError(t, err)
-	rcpt, err := s.app.EvmKeeper.GetTransientReceipt(snap, common.Hash(acc.ActivityID), uint64(acc.TxIndex)) //nolint:gosec // TxIndex is positive
+	r, err := sequencer.NewReceipter(s.exec, s.app, &s.app.EvmKeeper, key, sendSeqModuleID)
 	require.NoError(t, err)
-	require.NoError(t, stream.Publish(evmrpc.SubscriptionReceipt{
-		Seq:     acc.Seq,
-		Height:  acc.Height,
-		TxIndex: uint32(acc.TxIndex), //nolint:gosec // TxIndex is positive
-		Hash:    acc.ActivityID,
-		Logs:    rcpt.Logs,
-	}))
+
+	q := &subscribeSequencer{
+		pendingSequencer: s,
+		feed:             evmrpc.NewReceiptLogFeed(s.committed),
+		accepter:         &sendSeqReceipter{r: r},
+	}
+	q.option = evmrpc.NewSequencerOption(q.accepter, q.feed)
+	cfg := evmrpcconfig.DefaultConfig
+	cfg.HTTPAddress = TestAddr
+	cfg.HTTPPort = seqReceiptFreePort9005(t)
+	server, err := evmrpc.NewEVMHTTPServer(cfg, &MockClient{latestOverride: s.committed}, &s.app.EvmKeeper, s.app.BeginBlockKeepers, s.app.BaseApp,
+		s.app.TracerAnteHandler, s.ctxProvider, q.txConfig, "", nil, q.option)
+	require.NoError(t, err)
+	require.NoError(t, server.Start())
+	t.Cleanup(server.Stop)
+	q.httpPort = cfg.HTTPPort
+	return q
+}
+
+func (q *subscribeSequencer) txConfig(int64) client.TxConfig { return q.app.GetTxConfig() }
+
+// wsServer builds the sequencer's WebSocket server on wsPort with the same SequencerOption.
+func (q *subscribeSequencer) wsServer(t *testing.T, wsPort int) evmrpc.EVMServer {
+	t.Helper()
+	cfg := evmrpcconfig.DefaultConfig
+	cfg.WSPort = wsPort
+	server, err := evmrpc.NewEVMWebSocketServer(cfg, &MockClient{latestOverride: q.committed}, &q.app.EvmKeeper, q.app.BeginBlockKeepers, q.app.BaseApp,
+		q.app.TracerAnteHandler, q.ctxProvider, q.txConfig, "", nil, nil, q.option)
+	require.NoError(t, err)
+	return server
+}
+
+// send submits raw through eth_sendRawTransaction of the HTTP server and returns its Accept
+// outcome.
+func (q *subscribeSequencer) send(t *testing.T, raw hexutil.Bytes, hash common.Hash) *sequencer.Accepted {
+	t.Helper()
+	res, rpcErr := callSeqReceipt9005(t, q.httpPort, "eth_sendRawTransaction", raw)
+	require.Nil(t, rpcErr)
+	var got common.Hash
+	require.NoError(t, json.Unmarshal(res, &got))
+	require.Equal(t, hash, got)
+	acc := q.accepter.accepted[len(q.accepter.accepted)-1]
+	require.Equal(t, [32]byte(hash), acc.ActivityID)
 	return acc
 }
 
-// pendingSubscribeClient serves a receipt-fed SubscriptionAPI for s in process.
-func pendingSubscribeClient(t *testing.T, s *pendingSequencer, stream *evmrpc.ReceiptStream) *gethrpc.Client {
+// subscribePipeListener hands the HTTP server the server ends of in-memory net.Pipe connections, on
+// which a write blocks until the client reads it.
+type subscribePipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+type subscribePipeAddr struct{}
+
+func (subscribePipeAddr) Network() string { return "pipe" }
+func (subscribePipeAddr) String() string  { return "pipe" }
+
+func (l *subscribePipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *subscribePipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *subscribePipeListener) Addr() net.Addr { return subscribePipeAddr{} }
+
+// subscribePeekConn is the client end of a pipe that can take one byte of a pending server write
+// ahead of the WebSocket reader and hand it back on the next Read.
+type subscribePeekConn struct {
+	net.Conn
+	peeked []byte
+}
+
+func (c *subscribePeekConn) Read(p []byte) (int, error) {
+	if len(c.peeked) > 0 {
+		n := copy(p, c.peeked)
+		c.peeked = c.peeked[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
+}
+
+// writing reports whether the server writes to the connection within wait. A byte it reads is kept
+// for the WebSocket reader.
+func (c *subscribePeekConn) writing(t *testing.T, wait time.Duration) bool {
 	t.Helper()
-	api, err := evmrpc.NewSubscriptionAPI(nil, &s.app.EvmKeeper, s.ctxProvider, &evmrpc.LogFetcher{}, &evmrpc.SubscriptionConfig{}, &evmrpc.FilterConfig{}, evmrpc.ConnectionTypeWS, evmrpc.NewBlockHeaderNotifier(1), stream)
+	require.Empty(t, c.peeked)
+	require.NoError(t, c.Conn.SetReadDeadline(time.Now().Add(wait)))
+	defer func() { require.NoError(t, c.Conn.SetReadDeadline(time.Time{})) }()
+	b := make([]byte, 1)
+	n, err := c.Conn.Read(b)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return false
+	}
 	require.NoError(t, err)
-	server := gethrpc.NewServer()
-	require.NoError(t, server.RegisterName("eth", api))
-	client := gethrpc.DialInProc(server)
-	t.Cleanup(func() {
-		client.Close()
-		server.Stop()
-	})
-	return client
+	c.peeked = append(c.peeked, b[:n]...)
+	return n == 1
 }
 
-func pendingSubscribeNext[T any](t *testing.T, ch chan T, sub *gethrpc.ClientSubscription) T {
+// dialWSPipe serves handler over an in-memory pipe and opens a WebSocket client on it.
+func dialWSPipe(t *testing.T, handler http.Handler) (*websocket.Conn, *subscribePeekConn) {
 	t.Helper()
-	select {
-	case v := <-ch:
-		return v
-	case err := <-sub.Err():
-		require.FailNow(t, "subscription ended", "%v", err)
-	case <-time.After(10 * time.Second):
-		require.FailNow(t, "no notification within 10 seconds")
+	l := &subscribePipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = srv.Serve(l) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	peek := &subscribePeekConn{}
+	dialer := websocket.Dialer{
+		NetDialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			serverEnd, clientEnd := net.Pipe()
+			select {
+			case l.conns <- serverEnd:
+				peek.Conn = clientEnd
+				return peek, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+		HandshakeTimeout: 10 * time.Second,
 	}
-	var zero T
-	return zero
+	conn, res, err := dialer.Dial("ws://pipe/", http.Header{"Origin": []string{"localhost"}})
+	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn, peek
 }
 
-func pendingSubscribeQuiet[T any](t *testing.T, ch chan T, wait time.Duration) {
+// wsSubscribe sends eth_subscribe with params and returns the subscription id.
+func wsSubscribe(t *testing.T, conn *websocket.Conn, params ...any) string {
 	t.Helper()
-	select {
-	case v := <-ch:
-		require.FailNow(t, "unexpected notification", "%v", v)
-	case <-time.After(wait):
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "eth_subscribe", "params": params})
+	require.NoError(t, err)
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, body))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+	_, msg, err := conn.ReadMessage()
+	require.NoError(t, err)
+	var answer struct {
+		Result string          `json:"result"`
+		Error  json.RawMessage `json:"error"`
 	}
+	require.NoError(t, json.Unmarshal(msg, &answer), string(msg))
+	require.Empty(t, answer.Error, string(msg))
+	require.NotEmpty(t, answer.Result, string(msg))
+	return answer.Result
 }
 
-func pendingSubscribeLogOf(t *testing.T, raw json.RawMessage) pendingSubscribeLog {
+// wsNotification reads the next notification of subscription id and returns its result.
+func wsNotification(t *testing.T, conn *websocket.Conn, id string) map[string]any {
 	t.Helper()
-	var l pendingSubscribeLog
-	require.NoError(t, json.Unmarshal(raw, &l))
-	return l
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+	_, msg, err := conn.ReadMessage()
+	require.NoError(t, err)
+	var notification struct {
+		Method string `json:"method"`
+		Params struct {
+			Subscription string `json:"subscription"`
+			Result       any    `json:"result"`
+		} `json:"params"`
+	}
+	require.NoError(t, json.Unmarshal(msg, &notification), string(msg))
+	require.Equal(t, "eth_subscription", notification.Method, string(msg))
+	require.Equal(t, id, notification.Params.Subscription)
+	result, ok := notification.Params.Result.(map[string]any)
+	require.True(t, ok, "notification result is %T: %s", notification.Params.Result, msg)
+	return result
+}
+
+// wsHashNotification reads the next notification of subscription id and returns its hash result.
+func wsHashNotification(t *testing.T, conn *websocket.Conn, id string) string {
+	t.Helper()
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+	_, msg, err := conn.ReadMessage()
+	require.NoError(t, err)
+	var notification struct {
+		Method string `json:"method"`
+		Params struct {
+			Subscription string `json:"subscription"`
+			Result       string `json:"result"`
+		} `json:"params"`
+	}
+	require.NoError(t, json.Unmarshal(msg, &notification), string(msg))
+	require.Equal(t, "eth_subscription", notification.Method, string(msg))
+	require.Equal(t, id, notification.Params.Subscription)
+	return notification.Params.Result
+}
+
+// receiptedLogJSON is a receipted log as a logs subscriber receives it: the log fields, its seq and
+// no block hash.
+func receiptedLogJSON(addr common.Address, topic uint64, height int64, hash common.Hash, txIndex int, index uint, seq uint64) map[string]any {
+	return map[string]any{
+		"address":          hexutil.Encode(addr.Bytes()),
+		"topics":           []any{common.BigToHash(new(big.Int).SetUint64(topic)).Hex()},
+		"data":             "0x",
+		"blockNumber":      hexutil.EncodeUint64(uint64(height)), //nolint:gosec // test heights are positive
+		"transactionHash":  hash.Hex(),
+		"transactionIndex": hexutil.EncodeUint64(uint64(txIndex)), //nolint:gosec // tx index is positive
+		"blockHash":        nil,
+		"logIndex":         hexutil.EncodeUint64(uint64(index)),
+		"removed":          false,
+		"seq":              hexutil.EncodeUint64(seq),
+	}
 }
 
 func TestSubscribeLogsFromReceipts(t *testing.T) {
-	sender := utils.NewSigner()
-	s := newPendingSequencer(t, 1, sender)
-	stream := evmrpc.NewReceiptStream()
-	client := pendingSubscribeClient(t, s, stream)
-	ctx := context.Background()
-	contractA := crypto.CreateAddress(sender.EvmAddress, 0)
-	contractB := crypto.CreateAddress(sender.EvmAddress, 1)
+	sender := occutils.NewSigner()
+	q := newSubscribeSequencer(t, sender)
+	ws, peek := dialWSPipe(t, q.wsServer(t, 0).(http.Handler))
+	id := wsSubscribe(t, ws, "logs", map[string]any{})
+	open := q.committed + 1
 
-	all := make(chan json.RawMessage, 8)
-	allSub, err := client.EthSubscribe(ctx, all, "logs", map[string]interface{}{})
-	require.NoError(t, err)
-	defer allSub.Unsubscribe()
-	onlyB := make(chan json.RawMessage, 8)
-	bSub, err := client.EthSubscribe(ctx, onlyB, "logs", map[string]interface{}{"address": contractB})
-	require.NoError(t, err)
-	defer bSub.Unsubscribe()
+	// A transaction emitting two logs reaches the subscriber once, at receipt, with its seq.
+	rawA, hashA := subscribeRawTx(t, sender, 0, nil, big.NewInt(0), subscribeTwoLogsGas, subscribeTwoLogsInitCode)
+	accA := q.send(t, rawA, hashA)
+	require.Equal(t, uint64(1), accA.Seq)
+	require.Equal(t, open, accA.Height)
+	addrA := crypto.CreateAddress(sender.EvmAddress, 0)
+	require.Equal(t, receiptedLogJSON(addrA, 1, open, hashA, accA.TxIndex, 0, 1), wsNotification(t, ws, id))
+	require.Equal(t, receiptedLogJSON(addrA, 2, open, hashA, accA.TxIndex, 1, 1), wsNotification(t, ws, id))
+	require.False(t, peek.writing(t, 500*time.Millisecond))
 
-	txA, hashA := pendingSubscribeTx(t, sender, 0, nil, big.NewInt(0), pendingSubscribeDeployGas, pendingSubscribeTwoLogs)
-	first := pendingSubscribeAccept(t, s, stream, txA)
-	txB, hashB := pendingSubscribeTx(t, sender, 1, nil, big.NewInt(0), pendingSubscribeDeployGas, pendingSubscribeTwoLogs)
-	second := pendingSubscribeAccept(t, s, stream, txB)
-	require.Equal(t, uint64(1), first.Seq)
-	require.Equal(t, uint64(2), second.Seq)
-	require.Equal(t, hashA, common.Hash(first.ActivityID))
-	require.Equal(t, hashB, common.Hash(second.ActivityID))
+	// The subscriber stalls: the server is held writing the first log of B, B's second log waits in
+	// the buffer, and the logs of C fill the rest of it; the logs of C past the buffer are dropped.
+	rawB, hashB := subscribeRawTx(t, sender, 1, nil, big.NewInt(0), subscribeTwoLogsGas, subscribeTwoLogsInitCode)
+	accB := q.send(t, rawB, hashB)
+	require.True(t, peek.writing(t, 10*time.Second))
+	const manyLogs = 1100
+	const buffered = 1024 - 1
+	rawC, hashC := subscribeRawTx(t, sender, 2, nil, big.NewInt(0), subscribeManyLogsGas, subscribeManyLogsInitCode(manyLogs))
+	accC := q.send(t, rawC, hashC)
+	require.Equal(t, uint64(2), accB.Seq)
+	require.Equal(t, uint64(3), accC.Seq)
 
-	topics := []common.Hash{common.BigToHash(big.NewInt(1)), common.BigToHash(big.NewInt(2))}
-	want := []pendingSubscribeLog{
-		{Address: contractA, Topics: topics[:1], BlockNumber: 2, TxHash: hashA, TxIndex: hexutil.Uint(first.TxIndex), Index: 0, Seq: 1},  //nolint:gosec // TxIndex is positive
-		{Address: contractA, Topics: topics[1:], BlockNumber: 2, TxHash: hashA, TxIndex: hexutil.Uint(first.TxIndex), Index: 1, Seq: 1},  //nolint:gosec // TxIndex is positive
-		{Address: contractB, Topics: topics[:1], BlockNumber: 2, TxHash: hashB, TxIndex: hexutil.Uint(second.TxIndex), Index: 2, Seq: 2}, //nolint:gosec // TxIndex is positive
-		{Address: contractB, Topics: topics[1:], BlockNumber: 2, TxHash: hashB, TxIndex: hexutil.Uint(second.TxIndex), Index: 3, Seq: 2}, //nolint:gosec // TxIndex is positive
+	addrB := crypto.CreateAddress(sender.EvmAddress, 1)
+	addrC := crypto.CreateAddress(sender.EvmAddress, 2)
+	require.Equal(t, receiptedLogJSON(addrB, 1, open, hashB, accB.TxIndex, 2, 2), wsNotification(t, ws, id))
+	require.Equal(t, receiptedLogJSON(addrB, 2, open, hashB, accB.TxIndex, 3, 2), wsNotification(t, ws, id))
+	for i := 0; i < buffered; i++ {
+		require.Equal(t, receiptedLogJSON(addrC, uint64(manyLogs-i), open, hashC, accC.TxIndex, uint(4+i), 3), wsNotification(t, ws, id)) //nolint:gosec // i is below manyLogs
 	}
-	for _, w := range want {
-		require.Equal(t, w, pendingSubscribeLogOf(t, pendingSubscribeNext(t, all, allSub)))
-	}
-	for _, w := range want[2:] {
-		require.Equal(t, w, pendingSubscribeLogOf(t, pendingSubscribeNext(t, onlyB, bSub)))
-	}
+	require.False(t, peek.writing(t, 500*time.Millisecond))
 
-	// The block leaves the open layer for commit; its logs are not notified
-	// again, neither from a replayed receipt nor from the committed-log poll.
-	_, err = s.exec.Seal(2)
+	// Ahead of the next log the subscriber receives exactly one lag notification with the number of
+	// logs dropped, then later logs in order.
+	rawD, hashD := subscribeRawTx(t, sender, 3, nil, big.NewInt(0), subscribeTwoLogsGas, subscribeTwoLogsInitCode)
+	accD := q.send(t, rawD, hashD)
+	require.Equal(t, uint64(4), accD.Seq)
+	addrD := crypto.CreateAddress(sender.EvmAddress, 3)
+	require.Equal(t, map[string]any{"lagged": hexutil.EncodeUint64(manyLogs - buffered)}, wsNotification(t, ws, id))
+	require.Equal(t, receiptedLogJSON(addrD, 1, open, hashD, accD.TxIndex, 4+manyLogs, 4), wsNotification(t, ws, id))
+	require.Equal(t, receiptedLogJSON(addrD, 2, open, hashD, accD.TxIndex, 5+manyLogs, 4), wsNotification(t, ws, id))
+
+	// The block commits: neither the commit nor the committed copy of its logs sends anything more.
+	sealed, err := q.exec.Seal(open)
 	require.NoError(t, err)
-	require.ErrorIs(t, stream.Publish(evmrpc.SubscriptionReceipt{Seq: first.Seq, Height: first.Height, Hash: hashA}), evmrpc.ErrReceiptOrder)
-	pendingSubscribeQuiet(t, all, evmrpc.SleepInterval+time.Second)
-	require.Empty(t, onlyB)
+	require.Len(t, sealed.Txs, 4)
+	require.NoError(t, q.feed.Committed(open))
+	require.False(t, peek.writing(t, evmrpc.SleepInterval+time.Second))
 }
 
 func TestSubscribeNewPendingTransactions(t *testing.T) {
-	sender := utils.NewSigner()
-	recipient := utils.NewSigner().EvmAddress
-	s := newPendingSequencer(t, 1, sender)
-	stream := evmrpc.NewReceiptStream()
-	client := pendingSubscribeClient(t, s, stream)
+	sender := occutils.NewSigner()
+	recipient := occutils.NewSigner().EvmAddress
+	q := newSubscribeSequencer(t, sender)
+	wsPort := seqReceiptFreePort9005(t)
+	server := q.wsServer(t, wsPort)
+	require.NoError(t, server.Start())
+	t.Cleanup(server.Stop)
 
-	hashes := make(chan common.Hash, 4)
-	sub, err := client.EthSubscribe(context.Background(), hashes, "newPendingTransactions")
+	ws, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s:%d", TestAddr, wsPort), http.Header{"Origin": []string{"localhost"}})
 	require.NoError(t, err)
-	defer sub.Unsubscribe()
+	t.Cleanup(func() { _ = ws.Close() })
+	id := wsSubscribe(t, ws, "newPendingTransactions")
 
+	// Two transactions sent through the HTTP server reach the WebSocket subscriber in seq order.
 	value := big.NewInt(pendingOnePaxWei)
-	tx0, hash0 := pendingSubscribeTx(t, sender, 0, &recipient, value, pendingTransferGas, nil)
-	tx1, hash1 := pendingSubscribeTx(t, sender, 1, &recipient, value, pendingTransferGas, nil)
-	first := pendingSubscribeAccept(t, s, stream, tx0)
-	second := pendingSubscribeAccept(t, s, stream, tx1)
-	require.Equal(t, uint64(1), first.Seq)
-	require.Equal(t, uint64(2), second.Seq)
-	require.Equal(t, hash0, pendingSubscribeNext(t, hashes, sub))
-	require.Equal(t, hash1, pendingSubscribeNext(t, hashes, sub))
+	raw0, hash0 := subscribeRawTx(t, sender, 0, &recipient, value, pendingTransferGas, nil)
+	raw1, hash1 := subscribeRawTx(t, sender, 1, &recipient, value, pendingTransferGas, nil)
+	acc0 := q.send(t, raw0, hash0)
+	acc1 := q.send(t, raw1, hash1)
+	require.Equal(t, uint64(1), acc0.Seq)
+	require.Equal(t, uint64(2), acc1.Seq)
+	require.Equal(t, hash0.Hex(), wsHashNotification(t, ws, id))
+	require.Equal(t, hash1.Hex(), wsHashNotification(t, ws, id))
 
-	// A receipt published out of order is refused and notifies nothing.
-	require.ErrorIs(t, stream.Publish(evmrpc.SubscriptionReceipt{Seq: second.Seq, Height: second.Height, Hash: hash1}), evmrpc.ErrReceiptOrder)
-	require.ErrorIs(t, stream.Publish(evmrpc.SubscriptionReceipt{Seq: second.Seq + 1, Height: second.Height - 1, Hash: hash1}), evmrpc.ErrReceiptOrder)
-	pendingSubscribeQuiet(t, hashes, 500*time.Millisecond)
-
-	// A node without the receipt stream refuses the subscription.
+	// A node without the sequencer option refuses the subscription.
 	recvCh, done := sendWSRequestGood(t, "subscribe", "newPendingTransactions")
 	defer func() { done <- struct{}{} }()
 	select {

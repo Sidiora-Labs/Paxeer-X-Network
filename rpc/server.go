@@ -2,6 +2,7 @@ package evmrpc
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -32,11 +33,56 @@ type EVMServer interface {
 	Stop()
 }
 
-// ServerOption configures NewEVMHTTPServer: a TraceContextProvider or a SequencerReceiptOption.
+// ServerOption configures NewEVMHTTPServer (a TraceContextProvider, a SequencerReceiptOption or a
+// SequencerOption) and NewEVMWebSocketServer (a SequencerOption).
 type ServerOption interface{ serverOption() }
 
 func (TraceContextProvider) serverOption()   {}
 func (SequencerReceiptOption) serverOption() {}
+func (SequencerOption) serverOption()        {}
+
+// SequencerOption runs the sequencer's HTTP and WebSocket servers: raw transactions are accepted
+// through the accepter, and pending logs, filters and subscriptions are served from the receipt log
+// feed. Build it once with NewSequencerOption and hand the same option to both servers, so that a
+// hash receipted through either server reaches every newPendingTransactions subscriber.
+type SequencerOption struct {
+	accepter    SequencerAccepter
+	receiptLogs *ReceiptLogFeed
+	pendingTxs  *pendingTxFeed1315
+}
+
+// NewSequencerOption builds the option holding the one pending-hash feed both servers share.
+func NewSequencerOption(accepter SequencerAccepter, feed *ReceiptLogFeed) SequencerOption {
+	return SequencerOption{
+		accepter:    accepter,
+		receiptLogs: feed,
+		pendingTxs:  &pendingTxFeed1315{listeners: make(map[rpc.ID]*pendingTxListener1315)},
+	}
+}
+
+// sendConfig is the SendConfig of a server: the sequencer's when o is set, otherwise the
+// mempool path's.
+func (o *SequencerOption) sendConfig(config evmrpcconfig.Config) *SendConfig {
+	sendConfig := &SendConfig{slow: config.Slow, keyringEnabled: config.EnableUnsafeKeyringRPC}
+	if o != nil {
+		sendConfig.Sequencer = o.accepter
+		sendConfig.pendingTxs = o.pendingTxs
+		sendConfig.receiptLogs = o.receiptLogs
+	}
+	return sendConfig
+}
+
+// sequencerOption takes opt as a server's SequencerOption; current is the one already taken, if
+// any, since a server takes at most one.
+func sequencerOption(opt SequencerOption, current *SequencerOption) (*SequencerOption, error) {
+	if current != nil {
+		return nil, errors.New("more than one sequencer option")
+	}
+	if opt.accepter == nil || opt.receiptLogs == nil || opt.pendingTxs == nil {
+		return nil, errors.New("sequencer option needs an accepter and a receipt log feed; build it with NewSequencerOption")
+	}
+	return &opt, nil
+}
 
 func NewEVMHTTPServer(
 	config evmrpcconfig.Config,
@@ -97,12 +143,9 @@ func NewEVMHTTPServer(
 	}
 	watermarks := NewWatermarkManager(tmClient, ctxProvider, stateStore, k.ReceiptStore())
 
-	globalBlockCache := NewBlockCache(3000)
-	cacheCreationMutex := &sync.Mutex{}
-	sendAPI := NewSendAPI(tmClient, txConfigProvider, &SendConfig{slow: config.Slow, keyringEnabled: config.EnableUnsafeKeyringRPC}, k, beginBlockKeepers, ctxProvider, homeDir, simulateConfig, app, antehandler, ConnectionTypeHTTP, methodTimeout, globalBlockCache, cacheCreationMutex, watermarks)
-
 	traceCtxProvider := defaultTraceContextProvider(ctxProvider)
 	var sequencerReceipts SequencerReceiptOption
+	var seq *SequencerOption
 	for _, opt := range opts {
 		switch o := opt.(type) {
 		case TraceContextProvider:
@@ -111,8 +154,17 @@ func NewEVMHTTPServer(
 			}
 		case SequencerReceiptOption:
 			sequencerReceipts = o
+		case SequencerOption:
+			var err error
+			if seq, err = sequencerOption(o, seq); err != nil {
+				return nil, err
+			}
 		}
 	}
+
+	globalBlockCache := NewBlockCache(3000)
+	cacheCreationMutex := &sync.Mutex{}
+	sendAPI := NewSendAPI(tmClient, txConfigProvider, seq.sendConfig(config), k, beginBlockKeepers, ctxProvider, homeDir, simulateConfig, app, antehandler, ConnectionTypeHTTP, methodTimeout, globalBlockCache, cacheCreationMutex, watermarks)
 	sequencerReceiptAPI, err := newSequencerReceiptAPI(tmClient, ctxProvider, sequencerReceipts, ConnectionTypeHTTP)
 	if err != nil {
 		return nil, err
@@ -139,6 +191,26 @@ func NewEVMHTTPServer(
 	// DB semaphore aligned with worker count
 	dbReadSemaphore := make(chan struct{}, workerCount)
 	globalLogSlicePool := NewLogSlicePool()
+	filterAPI := func(namespace string) *FilterAPI {
+		api := NewFilterAPI(
+			tmClient,
+			k,
+			ctxProvider,
+			txConfigProvider,
+			&FilterConfig{timeout: config.FilterTimeout, maxLog: config.MaxLogNoBlock, maxBlock: config.MaxBlocksForLog},
+			ConnectionTypeHTTP,
+			namespace,
+			dbReadSemaphore,
+			globalBlockCache,
+			cacheCreationMutex,
+			globalLogSlicePool,
+			watermarks,
+		)
+		if seq != nil {
+			api.SetReceiptLogFeed(seq.receiptLogs)
+		}
+		return api
+	}
 	apis := []rpc.API{
 		{
 			Namespace: "echo",
@@ -190,37 +262,11 @@ func NewEVMHTTPServer(
 		},
 		{
 			Namespace: "eth",
-			Service: NewFilterAPI(
-				tmClient,
-				k,
-				ctxProvider,
-				txConfigProvider,
-				&FilterConfig{timeout: config.FilterTimeout, maxLog: config.MaxLogNoBlock, maxBlock: config.MaxBlocksForLog},
-				ConnectionTypeHTTP,
-				"eth",
-				dbReadSemaphore,
-				globalBlockCache,
-				cacheCreationMutex,
-				globalLogSlicePool,
-				watermarks,
-			),
+			Service:   filterAPI("eth"),
 		},
 		{
 			Namespace: "pax",
-			Service: NewFilterAPI(
-				tmClient,
-				k,
-				ctxProvider,
-				txConfigProvider,
-				&FilterConfig{timeout: config.FilterTimeout, maxLog: config.MaxLogNoBlock, maxBlock: config.MaxBlocksForLog},
-				ConnectionTypeHTTP,
-				"pax",
-				dbReadSemaphore,
-				globalBlockCache,
-				cacheCreationMutex,
-				globalLogSlicePool,
-				watermarks,
-			),
+			Service:   filterAPI("pax"),
 		},
 		{
 			Namespace: "pax",
@@ -278,9 +324,21 @@ func NewEVMWebSocketServer(
 	homeDir string,
 	stateStore types.StateStore,
 	blockHeaderNotifier *BlockHeaderNotifier,
+	opts ...ServerOption,
 ) (EVMServer, error) {
 	if tmClient == nil || k == nil || ctxProvider == nil || txConfigProvider == nil || app == nil {
 		return nil, errors.New("EVM WebSocket server dependencies are not configured")
+	}
+	var seq *SequencerOption
+	for _, opt := range opts {
+		o, ok := opt.(SequencerOption)
+		if !ok {
+			return nil, fmt.Errorf("EVM WebSocket server takes no %T option", opt)
+		}
+		var err error
+		if seq, err = sequencerOption(o, seq); err != nil {
+			return nil, err
+		}
 	}
 	ctx := ctxProvider(LatestCtxHeight)
 	if config.EnableUnsafeKeyringRPC && evmCfg.IsLiveChainID(ctx) {
@@ -328,6 +386,9 @@ func NewEVMWebSocketServer(
 	if err != nil {
 		return nil, err
 	}
+	if seq != nil {
+		subscriptionAPI.receiptLogs = seq.receiptLogs
+	}
 	apis := []rpc.API{
 		{
 			Namespace: "echo",
@@ -351,7 +412,7 @@ func NewEVMWebSocketServer(
 		},
 		{
 			Namespace: "eth",
-			Service:   NewSendAPI(tmClient, txConfigProvider, &SendConfig{slow: config.Slow, keyringEnabled: config.EnableUnsafeKeyringRPC}, k, beginBlockKeepers, ctxProvider, homeDir, simulateConfig, app, antehandler, ConnectionTypeWS, methodTimeout, globalBlockCache, cacheCreationMutex, watermarks),
+			Service:   NewSendAPI(tmClient, txConfigProvider, seq.sendConfig(config), k, beginBlockKeepers, ctxProvider, homeDir, simulateConfig, app, antehandler, ConnectionTypeWS, methodTimeout, globalBlockCache, cacheCreationMutex, watermarks),
 		},
 		{
 			Namespace: "eth",

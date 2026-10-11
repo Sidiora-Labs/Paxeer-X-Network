@@ -1,15 +1,19 @@
 package evmrpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/utils"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/codec"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
@@ -50,6 +54,9 @@ type SendConfig struct {
 	// newPendingTransactions. The HTTP and WebSocket SendAPI of the sequencer share one SendConfig so
 	// a hash receipted through either reaches every subscriber.
 	pendingTxs *pendingTxFeed1315
+	// receiptLogs, set with Sequencer by a SequencerOption, records the execution receipt of every
+	// receipted transaction for pending logs, filters and logs subscriptions.
+	receiptLogs *ReceiptLogFeed
 }
 
 // pendingTxListenerBuffer1315 is how many receipted hashes a newPendingTransactions subscriber may
@@ -293,8 +300,49 @@ func (s *SendAPI) acceptOnSequencer(tx *ethtypes.Transaction) error {
 	if len(receipt) == 0 {
 		return errors.New("missing sequencer receipt")
 	}
+	if s.sendConfig.receiptLogs != nil {
+		if err := s.recordReceiptLogs(receipt, tx.Hash()); err != nil {
+			return fmt.Errorf("transaction %s is receipted but its logs are not recorded: %w", tx.Hash().Hex(), err)
+		}
+	}
 	feed.emit(tx.Hash())
 	return nil
+}
+
+// recordReceiptLogs records the execution receipt of the transaction hash, whose signed sequencer
+// receipt is signed, in the receipt log feed at the receipt's seq, batch height and transaction
+// index. The caller holds receiptMu, so transactions are recorded in receipt order.
+func (s *SendAPI) recordReceiptLogs(signed []byte, hash common.Hash) error {
+	decoded, err := codec.DecodeReceipt(signed)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSequencerReceiptInvalid, err)
+	}
+	if common.Hash(decoded.ActivityID) != hash {
+		return mismatch("receipt activity %x, transaction %s", decoded.ActivityID, hash.Hex())
+	}
+	if !bytes.Equal(decoded.BatchID[:24], make([]byte, 24)) {
+		return invalidReceipt("batch_id is not a height")
+	}
+	height := binary.BigEndian.Uint64(decoded.BatchID[24:])
+	if height == 0 || height > math.MaxInt64 {
+		return invalidReceipt("batch height %d", height)
+	}
+	if len(decoded.Effects) == 0 {
+		return invalidReceipt("no summary effect")
+	}
+	summary := decoded.Effects[0]
+	if summary.ModuleID != decoded.ModuleID || summary.Ordinal != 0 || summary.Kind != sequencerEffectKindState {
+		return invalidReceipt("effect 0 is not the execution summary")
+	}
+	if len(summary.Body) < sequencerSummaryFixedBytes {
+		return invalidReceipt("summary is %d bytes", len(summary.Body))
+	}
+	txIndex := binary.BigEndian.Uint32(summary.Body[24:28])
+	rcpt, err := s.keeper.GetTransientReceipt(s.ctxProvider(PendingCtxHeight), hash, uint64(txIndex))
+	if err != nil {
+		return fmt.Errorf("read execution receipt at index %d: %w", txIndex, err)
+	}
+	return s.sendConfig.receiptLogs.Receipted(decoded.GlobalSequence, int64(height), hash, rcpt) //nolint:gosec // height is checked to fit int64 above
 }
 
 // NewPendingTransactions serves eth_subscribe newPendingTransactions on the sequencer: the hash of
