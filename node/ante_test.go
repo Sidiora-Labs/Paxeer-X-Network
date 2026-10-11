@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"go/ast"
@@ -8,6 +9,7 @@ import (
 	"go/token"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/tx"
@@ -24,6 +26,8 @@ import (
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/apptesting"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/utils/tracing"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/ante"
 	xauthsigning "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/signing"
@@ -193,6 +197,162 @@ func TestEvmAnteErrorHandler(t *testing.T) {
 	deferredInfo := testkeeper.EVMTestApp.EvmKeeper.GetAllEVMTxDeferredInfo(ctx)
 	require.Equal(t, 1, len(deferredInfo))
 	require.Contains(t, deferredInfo[0].Error, "nonce too high")
+}
+
+func TestAnteSequencerDeliverMode(t *testing.T) {
+	t.Run("evm_fees_and_association_from_open_block", func(t *testing.T) {
+		sender := utils.NewSigner()
+		recipient := utils.NewSigner().EvmAddress
+		a, executor, genesis := newSequencerContextApp(t, false, sender)
+		t.Cleanup(func() { require.NoError(t, a.Close()) })
+		a.SetOpenBlock(executor)
+		openTime := genesis.Add(time.Second).UnixMilli()
+		require.NoError(t, executor.Open(seqCtxOpen, openTime))
+		value := big.NewInt(1_000_000_000_000_000_000)
+		fee := new(big.Int).Mul(big.NewInt(seqCtxTransferGas), big.NewInt(seqCtxGasPrice))
+		funded := new(big.Int).Mul(big.NewInt(seqCtxFundingUhpx), big.NewInt(seqCtxWeiPerUhpx))
+		future := seqCtxTransfer(t, sender, 1, recipient, value)
+		futureTx, err := a.GetTxConfig().TxDecoder()(future)
+		require.NoError(t, err)
+		check, _ := a.GetCheckCtx().CacheContext()
+		checked, err := a.AnteHandler(check.WithTxBytes(future).WithTxIndex(1), futureTx, false)
+		require.NoError(t, err)
+		require.True(t, checked.IsCheckTx())
+		requireSeqCtxWei(t, funded, seqCtxWei(a, checked, sender.EvmAddress))
+		surplus, err := a.EvmKeeper.GetAnteSurplusSum(checked)
+		require.NoError(t, err)
+		require.Equal(t, sdk.ZeroInt(), surplus)
+
+		refused, err := executor.Accept(future)
+		require.Nil(t, refused)
+		require.Error(t, err)
+		space, code, _ := sdkerrors.ABCIInfo(err, false)
+		require.Equal(t, sdkerrors.ErrWrongSequence.Codespace(), space)
+		require.Equal(t, sdkerrors.ErrWrongSequence.ABCICode(), code)
+		_, associated := a.EvmKeeper.GetPaxAddress(a.LatestCtx(), sender.EvmAddress)
+		require.False(t, associated)
+		require.Equal(t, uint64(0), a.EvmKeeper.GetNonce(a.LatestCtx(), sender.EvmAddress))
+		requireSeqCtxWei(t, funded, a.EvmKeeper.GetBalance(a.LatestCtx(), sender.AccountAddress))
+
+		for nonce := uint64(0); nonce < 2; nonce++ {
+			before := a.LatestCtx()
+			require.False(t, before.IsCheckTx())
+			require.False(t, before.IsReCheckTx())
+			require.Equal(t, seqCtxOpen, before.BlockHeight())
+			balance := a.EvmKeeper.GetBalance(before, sender.AccountAddress)
+			encoded := seqCtxTransfer(t, sender, nonce, recipient, value)
+			transaction, err := a.GetTxConfig().TxDecoder()(encoded)
+			require.NoError(t, err)
+			branch, _ := before.CacheContext()
+			anteCtx, err := a.AnteHandler(branch.WithTxBytes(encoded).WithTxIndex(int(nonce)+1), transaction, false)
+			require.NoError(t, err)
+			require.False(t, anteCtx.IsCheckTx())
+			require.False(t, anteCtx.IsReCheckTx())
+			require.Equal(t, sender.EvmAddress, anteCtx.EVMSenderAddress())
+			require.Equal(t, sender.AccountAddress, anteCtx.PaxSenderAddress())
+			require.Equal(t, nonce, anteCtx.EVMNonce())
+			anteCtx = anteCtx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1))
+			requireSeqCtxWei(t, new(big.Int).Sub(balance, fee), seqCtxWei(a, anteCtx, sender.EvmAddress))
+			surplus, err = a.EvmKeeper.GetAnteSurplusSum(anteCtx)
+			require.NoError(t, err)
+			require.Equal(t, sdk.NewIntFromBigInt(new(big.Int).Mul(fee, new(big.Int).SetUint64(nonce+1))), surplus)
+			requireSeqCtxWei(t, balance, a.EvmKeeper.GetBalance(a.LatestCtx(), sender.AccountAddress))
+
+			var recheck chan *abci.ResponseCheckTxV2
+			if nonce == 1 {
+				a.EvmKeeper.SetNonce(a.GetCheckCtx(), sender.EvmAddress, 9)
+				recheck = make(chan *abci.ResponseCheckTxV2, 1)
+				go func() {
+					recheck <- a.CheckTx(context.Background(), &abci.RequestCheckTxV2{Tx: encoded, Type: abci.CheckTxTypeV2Recheck})
+				}()
+			}
+			accepted, err := executor.Accept(encoded)
+			require.NoError(t, err)
+			require.NotNil(t, accepted)
+			require.Equal(t, nonce+1, accepted.Seq)
+			require.Equal(t, int(nonce)+1, accepted.TxIndex)
+			require.Equal(t, seqCtxOpen, accepted.Height)
+			require.Equal(t, openTime, accepted.TimestampMs)
+			require.Equal(t, abci.CodeTypeOK, accepted.Result.Code)
+			require.NotNil(t, accepted.Result.EvmTxInfo)
+			require.Equal(t, "", accepted.Result.EvmTxInfo.VmError)
+			require.Equal(t, nonce, accepted.Result.EvmTxInfo.Nonce)
+			if recheck != nil {
+				result := <-recheck
+				require.Equal(t, sdkerrors.ErrWrongSequence.Codespace(), result.Codespace)
+				require.Equal(t, sdkerrors.ErrWrongSequence.ABCICode(), result.Code)
+				require.Equal(t, uint64(9), a.EvmKeeper.GetNonce(a.GetCheckCtx(), sender.EvmAddress))
+			}
+			after := a.LatestCtx()
+			paxAddress, associated := a.EvmKeeper.GetPaxAddress(after, sender.EvmAddress)
+			require.True(t, associated)
+			require.Equal(t, sender.AccountAddress, paxAddress)
+			require.Equal(t, nonce+1, a.EvmKeeper.GetNonce(after, sender.EvmAddress))
+			requireSeqCtxWei(t, new(big.Int).Sub(balance, new(big.Int).Add(value, fee)), seqCtxWei(a, after, sender.EvmAddress))
+			requireSeqCtxWei(t, new(big.Int).Mul(value, new(big.Int).SetUint64(nonce+1)), seqCtxWei(a, after, recipient))
+			surplus, err = a.EvmKeeper.GetAnteSurplusSum(after)
+			require.NoError(t, err)
+			require.Equal(t, sdk.NewIntFromBigInt(new(big.Int).Mul(fee, new(big.Int).SetUint64(nonce+1))), surplus)
+			_, associated = a.EvmKeeper.GetPaxAddress(a.GetCheckCtx(), sender.EvmAddress)
+			require.False(t, associated)
+		}
+	})
+
+	t.Run("cosmos_check_floor_is_skipped_by_deliver", func(t *testing.T) {
+		sender := utils.NewSigner()
+		recipient := utils.NewSigner().AccountAddress
+		a, executor, genesis := newSequencerContextApp(t, false, sender)
+		t.Cleanup(func() { require.NoError(t, a.Close()) })
+		a.SetOpenBlock(executor)
+		require.NoError(t, executor.Open(seqCtxOpen, genesis.Add(time.Second).UnixMilli()))
+		before := a.LatestCtx()
+		account := a.AccountKeeper.GetAccount(before, sender.AccountAddress)
+		require.NotNil(t, account)
+		builder := a.GetTxConfig().NewTxBuilder()
+		require.NoError(t, builder.SetMsgs(banktypes.NewMsgSend(sender.AccountAddress, recipient, sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1)))))
+		builder.SetGasLimit(200_000)
+		builder.SetFeeAmount(sdk.NewCoins(sdk.NewInt64Coin("uhpx", 4_000)))
+		mode := a.GetTxConfig().SignModeHandler().DefaultMode()
+		require.NoError(t, builder.SetSignatures(signing.SignatureV2{
+			PubKey:   sender.PublicKey,
+			Data:     &signing.SingleSignatureData{SignMode: mode},
+			Sequence: account.GetSequence(),
+		}))
+		signature, err := tx.SignWithPrivKey(mode, xauthsigning.SignerData{
+			ChainID:       before.ChainID(),
+			AccountNumber: account.GetAccountNumber(),
+			Sequence:      account.GetSequence(),
+		}, builder, sender.PrivateKey, a.GetTxConfig(), account.GetSequence())
+		require.NoError(t, err)
+		require.NoError(t, builder.SetSignatures(signature))
+		encoded, err := a.GetTxConfig().TxEncoder()(builder.GetTx())
+		require.NoError(t, err)
+		prices, err := sdk.ParseDecCoins("0.05uhpx")
+		require.NoError(t, err)
+		check, _ := a.GetCheckCtx().CacheContext()
+		_, err = a.AnteHandler(check.WithMinGasPrices(prices).WithTxBytes(encoded).WithTxIndex(1), builder.GetTx(), false)
+		require.ErrorIs(t, err, sdkerrors.ErrInsufficientFee)
+		require.ErrorContains(t, err, "required: 10000uhpx")
+		branch, _ := before.CacheContext()
+		anteCtx, err := a.AnteHandler(branch.WithMinGasPrices(prices).WithTxBytes(encoded).WithTxIndex(1), builder.GetTx(), false)
+		require.NoError(t, err)
+		require.False(t, anteCtx.IsCheckTx())
+		require.False(t, anteCtx.IsReCheckTx())
+		anteCtx = anteCtx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1))
+		require.Equal(t, sdk.NewInt(seqCtxFundingUhpx-4_000), a.BankKeeper.GetBalance(anteCtx, sender.AccountAddress, "uhpx").Amount)
+		require.Equal(t, account.GetSequence()+1, a.AccountKeeper.GetAccount(anteCtx, sender.AccountAddress).GetSequence())
+		accepted, err := executor.Accept(encoded)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), accepted.Seq)
+		require.Equal(t, abci.CodeTypeOK, accepted.Result.Code)
+		require.Nil(t, accepted.Result.EvmTxInfo)
+		after := a.LatestCtx()
+		require.Equal(t, sdk.NewInt(seqCtxFundingUhpx-4_001), a.BankKeeper.GetBalance(after, sender.AccountAddress, "uhpx").Amount)
+		require.Equal(t, sdk.OneInt(), a.BankKeeper.GetBalance(after, recipient, "uhpx").Amount)
+		require.Equal(t, account.GetSequence()+1, a.AccountKeeper.GetAccount(after, sender.AccountAddress).GetSequence())
+		require.Equal(t, account.GetSequence(), a.AccountKeeper.GetAccount(a.GetCheckCtx(), sender.AccountAddress).GetSequence())
+		require.Equal(t, sdk.NewInt(seqCtxFundingUhpx), a.BankKeeper.GetBalance(a.GetCheckCtx(), sender.AccountAddress, "uhpx").Amount)
+	})
 }
 
 func TestFeeDenomDecoratorOrder(t *testing.T) {
