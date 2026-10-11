@@ -20291,7 +20291,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.6.9]
 title = "Keep the initial set within the cap"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["5.0.4"]
@@ -27027,7 +27027,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.7.1]
 title = "TEE vendor quote formats for 0x0907"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["6.2.6"]
@@ -27190,7 +27190,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.7.7]
 title = "DaemonLimit counts the projected fee"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = []
@@ -27217,7 +27217,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.7.8]
 title = "Approvals and policy ahead of secp256k1 signing"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = []
@@ -31049,7 +31049,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.7.1]
 title = "Rollout drops retired units"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["7.4.4"]
@@ -36867,7 +36867,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.7.3]
 title = "Gateway mirror-sync worker is removed"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["8.5.4"]
@@ -37274,7 +37274,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.7.18]
 title = "Explorer stops ingesting custody, deposit-root and anchor logs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["8.5.35"]
@@ -42984,7 +42984,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.6.1]
 title = "Stored votes in modules/sequencer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["9.0.19"]
@@ -43040,7 +43040,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.6.3]
 title = "Leader list and activation state in the keeper"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.1", "9.0.19"]
@@ -43096,7 +43096,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.6.5]
 title = "e2e sequencer network"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["9.1.8"]
@@ -43124,7 +43124,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.7.1]
 title = "Executor latency benchmark"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 7
 requires = ["9.2.1", "9.0.16", "9.0.17"]
@@ -51905,7 +51905,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.6.6]
 title = "Selector conformance: every changed and new method selector equals keccak256 of its signature"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.1"]
@@ -61407,7 +61407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.230]
 title = "Re-target arbiter-admission.py, arbiter-native-authority.py, arbiter-prestate-transport.py off the guarantor runtime and 3 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61437,7 +61437,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.231]
 title = "Re-target arbiter_prestate.py, asset-execution-prestate.py, asset-inventory.py off the guarantor runtime and 4 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61469,7 +61469,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.232]
 title = "Re-target authority-evidence-read.py, authority-lni-readiness.py, budget-proof-intake.py off the finality authority, evidence register, receipt authority, authority replica and sequencer handover and 2 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61582,7 +61582,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.236]
 title = "Re-target market-sandbox-capture.py, mcp_daemon_revocation.py, mcp_served_writes.py off the guarantor runtime and 1 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61638,7 +61638,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.238]
 title = "Re-target native-journey-approval.py, native-program-presentation.py, native-programs-link.py off the guarantor runtime and 2 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61750,7 +61750,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.242]
 title = "Re-target registry-router-bootstrap.py, replay-catalogue.py, router-authority-schema.py off the guarantor runtime and 4 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
