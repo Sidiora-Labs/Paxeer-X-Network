@@ -3119,7 +3119,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.5]
 title = "addr 0x1004 LXP revert reasons from the merge plan height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.1"]
@@ -3147,7 +3147,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.6]
 title = "bank 0x1001 context-hash send overload and reason opt-in"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.1"]
@@ -6873,7 +6873,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.2]
 title = "Execute stream rate change after an old-rate settle"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.2"]
@@ -7042,7 +7042,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.8]
 title = "Stream payload encoders including rate change"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.2"]
@@ -10701,7 +10701,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.7]
 title = "MsgSetMarket keeps only flag toggles and the pause rule is checked first"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["3.2.6"]
@@ -19407,7 +19407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.3]
 title = "Params gain kernelNetworkId and programFeeDenoms; MsgSetParams fields 6 and 7"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.4"]
@@ -19492,7 +19492,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.2]
 title = "Keep the event surface"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.2"]
@@ -19577,7 +19577,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.5]
 title = "Read wallet web caps from chain views"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.2"]
@@ -25718,7 +25718,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.21]
 title = "x402 conformance documents regenerated"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["6.5.20"]
@@ -40539,7 +40539,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.46]
 title = "Explorer verifies sequencer receipts R1-R8 against pinned ReceiptKeys"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.45"]
@@ -41100,7 +41100,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.35]
 title = "Golden sequencer receipt vectors from the node signer"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42381,7 +42381,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.7]
 title = "Deterministic position for CosmWasm, Cosmos and precompiles"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.1", "0.2"]
@@ -56357,7 +56357,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.63]
 title = "Re-target checkpoint-settlement.json off the settlement domain and export trust"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -56470,7 +56470,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.67]
 title = "Re-target paxeerXLists.ts, useNavItems.tsx, getPageOgType.ts off the explorer kernel-only views"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1"]
@@ -56498,7 +56498,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.68]
 title = "Re-target description.ts, title.ts, getPageType.ts off the explorer kernel-only views"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1"]
@@ -56666,7 +56666,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.74]
 title = "Re-target model.ts off the checkpoint certificates and guarantor attestations in client evidence"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -56694,7 +56694,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.75]
 title = "Re-target server.rs off the LNI transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -57178,7 +57178,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.92]
 title = "Re-target lib.rs off the LNI transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -57234,7 +57234,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.94]
 title = "Re-target lib.rs off the settlement domain and export trust"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -57830,7 +57830,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.115]
 title = "Re-target lxp_replica.h, lxp_state.h, lxp_tools.h off the guarantor runtime and 3 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -57914,7 +57914,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.118]
 title = "Re-target config.rs, server.rs off the finality authority, evidence register, receipt authority, authority replica and sequencer handover"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58059,7 +58059,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.123]
 title = "Re-target config.example.json off the LNI transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58087,7 +58087,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.124]
 title = "Re-target render-config.py off the LNI transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -58599,7 +58599,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.142]
 title = "Re-target feeder.env.example off the LNI transport"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]

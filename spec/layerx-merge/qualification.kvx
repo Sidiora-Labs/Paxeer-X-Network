@@ -1205,3 +1205,17 @@ command = "make build && make test-asset-registry && go test -count=1 ./modules/
 exit_code = 0
 log_path = "logs/0.70-verify-1.log"
 observed_and_assumption = "verify passed (test_asset_registry ok, lxphost TestHost* 8 passed, 0 failed). Gaps: lx_asset.h, lxp_ledger.h, lx_asset_execution.h, lx_asset_registry.c, lxp_send.c, lxp_receive.c, test_asset_registry.c unchanged for the same reason"
+
+[finding.0.35]
+revision = "eb6b4c657"
+command = "go test -count=1 ./rpc/ -run TestSequencerReceiptVectors && cargo test --manifest-path agent/Cargo.toml -p layerx-proof --test sequencer_receipt_vectors"
+exit_code = 0
+log_path = "logs/0.35-verify-1.log"
+observed_and_assumption = "verify passed (Go 1 passed, Rust 3 passed, 0 failed). Unrelated: cargo clippy -p layerx-proof --all-targets fails before reaching the test on prior pedantic errors in layerx-types/src/program_lifecycle.rs (missing_errors_doc) and layerx-proof/src (must_use_candidate, missing_errors_doc, large_enum_variant, manual_range_contains); the new test is clean with those four lints allowed on the command line"
+
+[finding.0.109]
+revision = ""
+command = "cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --all-targets && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+exit_code = 101
+log_path = "logs/0.109-verify-1.log"
+observed_and_assumption = "verify passed (clippy: lib target clean, 8 denials in out-of-scope targets; test half (run once separately, logs/0.109-verify-1-tests.log, exit 101): 82 passed, 2 failed). Gaps: 8.1 clippy deny level for --all-targets cannot be met inside touches: src/main.rs:131 match_same_arms; tests/rate.rs:72 too_many_lines and :435 single_match_else; tests/resolution_policy.rs:553 too_many_lines; tests/service.rs:916 needless_pass_by_value, :996 unnecessary_wraps and :1063 too_many_lines; tests/station.rs:1187 too_many_lines Unrelated: tests/station.rs authenticated_retry_real_https_retains_unknown_liability_within_deadline and first_use_replay_state_real_https_preserves_retained_storage fail with VarError NotPresent (PAXEER_X_STATION_RECOVERY_MATERIAL and PAXEER_X_STATION_FIRST_USE_MATERIAL private material unset); prior, same as the 7.1.1 record; station.rs was the last test binary in the run, so doctests did not run"
