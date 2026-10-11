@@ -577,8 +577,10 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         Ok((params, result))
     }
+    /// The delegated account's batch nonce read at the pending block tag.
     /// # Errors
-    /// Refuses unavailable replay state or an incompatible delegation.
+    /// Returns the RPC fault of a failed pending read, or refuses unavailable
+    /// replay state or an incompatible delegation.
     pub fn batch_nonce(&self, account: Address) -> Result<Word, StationError> {
         self.replay_word(account, &keccak(b"nonce()")[..4], &json!("pending"))
     }

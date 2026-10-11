@@ -963,6 +963,98 @@ fn refused_send_frees_nonce_without_replacement() -> TestResult {
     lane.finish()
 }
 
+/// The delegated account's batch nonce is read at the pending block tag: a
+/// latest or finalized answer differs and is never the one the station uses.
+#[test]
+fn batch_nonce_reads_pending() -> TestResult {
+    let lane = Lane::new("BATCH_PENDING")?;
+    let account = lane.account_signer.address();
+    let nonce_call = &keccak(b"nonce()")[..4];
+    lane.recorded.fixture.borrow_mut()["phases"]["batch_pending"] = json!([
+        {"method": "eth_call", "params": replay_call(account, nonce_call, &json!("latest")), "result": hex(&word(2))},
+        {"method": "eth_call", "params": replay_call(account, nonce_call, &finalized_anchor()), "result": hex(&word(1))},
+        {"method": "eth_call", "params": replay_call(account, nonce_call, &json!("pending")), "result": hex(&word(3))},
+    ]);
+    lane.phase("batch_pending");
+    let mut station = lane.start()?;
+    assert_eq!(station.batch_nonce(account)?, word(3));
+    let (request, fees) = quote_request(account, 7)?;
+    assert!(matches!(
+        station.quote(&request, fees, 1000)?,
+        QuoteOutcome::Signed(_)
+    ));
+    let key = Key {
+        sponsor: lane.signer.address(),
+        quote_nonce: word(7),
+    };
+    assert_eq!(
+        station.journal().state().items[&key]
+            .quote
+            .as_ref()
+            .map(|quote| quote.batch_nonce),
+        Some(word(3))
+    );
+    assert_eq!(lane.count.get(), 1);
+    assert!(lane.recorded.sent.borrow().is_empty());
+    drop(station);
+    lane.finish()
+}
+
+/// A failed pending read of the batch nonce or of the sponsor nonce refuses
+/// the submission with the RPC fault: nothing is signed, journaled or sent,
+/// and advancing the key afterwards sends nothing either.
+#[test]
+fn pending_nonce_read_failure_sends_nothing() -> TestResult {
+    let lane = Lane::new("NONCE_READ")?;
+    let (mut station, submit) = lane.submitted()?;
+    let key = submit.key;
+    let account = submit.account;
+    let journaled = lane.entries()?;
+    {
+        let mut fixture = lane.recorded.fixture.borrow_mut();
+        fixture["phases"]["batch_nonce_unavailable"] = json!([{
+            "method": "eth_call",
+            "params": replay_call(account, &keccak(b"nonce()")[..4], &json!("pending")),
+            "fault": "unavailable",
+        }]);
+        fixture["phases"]["sponsor_nonce_unavailable"] = json!([{
+            "method": "eth_getTransactionCount",
+            "params": [hex(&key.sponsor), "pending"],
+            "fault": "unavailable",
+        }]);
+    }
+    lane.phase("batch_nonce_unavailable");
+    assert_eq!(
+        station.batch_nonce(account),
+        Err(StationError::Rpc(RpcFault::Unavailable))
+    );
+    for phase in ["batch_nonce_unavailable", "sponsor_nonce_unavailable"] {
+        lane.phase(phase);
+        assert_eq!(
+            station.submit(&submit, 1000),
+            Err(StationError::Rpc(RpcFault::Unavailable))
+        );
+        assert_eq!(station.resume(key, 1000)?, Progress::Pending);
+        let state = station.journal().state();
+        assert!(state.items[&key].submission.is_none());
+        assert!(!state.signing_intents.contains_key(&key));
+        assert!(!state.refused(&key));
+        assert!(!state.holds(key.sponsor, 5));
+        assert!(station.unresolved().is_empty());
+        assert_eq!(lane.entries()?, journaled);
+        assert_eq!(lane.count.get(), 1);
+        assert!(lane.recorded.sent.borrow().is_empty());
+    }
+    lane.phase("accepted");
+    assert_eq!(station.submit(&submit, 1000)?, Progress::Pending);
+    assert_eq!(lane.prepared_nonces()?, vec![5]);
+    assert_eq!(lane.count.get(), 2);
+    assert_eq!(lane.recorded.sent.borrow().len(), 1);
+    assert!(station.journal().state().holds(key.sponsor, 5));
+    drop(station);
+    lane.finish()
+}
+
 #[test]
 fn quote_refused_when_governed_rate_is_stale_or_missing() -> TestResult {
     let mut config = config();
