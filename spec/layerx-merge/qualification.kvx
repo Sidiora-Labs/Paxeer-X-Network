@@ -462,3 +462,31 @@ command = "go test -count=1 ./precompiles/common/ -run TestRetiredAtMergePlan -v
 exit_code = 0
 log_path = "logs/10.0.5-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; RetiredAt takes the upgrade reader as an explicit argument and answers false without one, the retired wire text is the LXPRevert form (LXP_MODULE_DISABLED: module disabled; <name> retired), latestCustomPrecompilesAtHeight in modules/evm/keeper is outside touches so do_5 is not wired, and call sites built WithRevertReasons must return an error whose text matches because Run replaces the returned bytes with RevertReason(err)."
+
+[finding.9.1.1]
+revision = "00fe6b1db"
+command = "go test -count=1 ./consensus/internal/state/ -run 'TestApplyBlock|TestPrune'"
+exit_code = 0
+log_path = "logs/9.1.1-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; BlockExecutor.Stop waits for an in-flight prune but the node OnStop path in consensus/node/node.go and the handshake replay executor are outside touches and do not call it yet, so the shutdown half of the requirement waits on the node-side task."
+
+[finding.13.3.1]
+revision = "5fd2fe038"
+command = "make test-budget-delegate"
+exit_code = 0
+log_path = "logs/13.3.1-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; lx_budget_pull_execute now authorizes, checks revocation and records the grant draw, but the ordinal 11 execute branch in lx_budget_module.c belongs to task 2.4.1 and still answers LXP_ERR_UNKNOWN_ACTIVITY until that task lands, and the delegate-spend module branch calls the authorize and apply helpers directly rather than lx_budget_delegate_spend_execute."
+
+[finding.13.4.5]
+revision = "99cc924b1"
+command = "make test-paxai-blob-lifecycle"
+exit_code = 0
+log_path = "logs/13.4.5-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; the production stage caller in blob_lifecycle.c was already correct, while the Go-side callers that stage the profile from genesis params and through a governance message are outside touches, so until they land only tests call the stage function."
+
+[finding.13.3.4]
+revision = "01ac04bdb"
+command = "go test -count=1 ./precompiles/common/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.3.4-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; registry reasons come through a separate WithLXPReasons opt-in because TestDynamicGasRevertReasons pins WithRevertReasons to bare error text, and framework refusal texts stay byte-identical for replay parity with the registry code carried on a wrapper error."

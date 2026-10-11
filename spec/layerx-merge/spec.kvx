@@ -94637,7 +94637,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.1]
 title = "Budget pull and delegate spend activities"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -94718,7 +94718,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.4]
 title = "Shared revert reasons, wei remainder and fixed gas tables"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -95125,7 +95125,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.4.5]
 title = "Stage the program retirement profile"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["13.2.2"]
