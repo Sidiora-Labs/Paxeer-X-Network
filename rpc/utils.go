@@ -40,6 +40,23 @@ import (
 
 const LatestCtxHeight int64 = -1
 
+// PendingCtxHeight asks the context provider for a read-only snapshot of the
+// open block on the sequencer and standby, taken after the last receipted
+// transaction.
+const PendingCtxHeight int64 = -2
+
+// ErrPendingServedBySequencer refuses a pending-tag read on a node that holds
+// no open block. It maps to JSON-RPC error -32000.
+var ErrPendingServedBySequencer error = &ErrEVMNotSupported{Msg: "pending served by sequencer"}
+
+// PendingSnapshot is the open block the sequencer and standby execute
+// transactions into; sequencer.Executor satisfies it.
+type PendingSnapshot interface {
+	// OpenContext returns a branch of the open block whose writes never reach
+	// it, or an error when no block is open.
+	OpenContext() (sdk.Context, error)
+}
+
 // EVM launch block heights for different chains
 const Pacific1EVMLaunchHeight int64 = 79123881
 
@@ -55,6 +72,13 @@ func GetBlockNumberByNrOrHash(ctx context.Context, tmClient client.LocalClient, 
 			return nil, err
 		}
 		height := block.Block.Height
+		return &height, nil
+	}
+	if *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber {
+		height, err := wm.resolvePending()
+		if err != nil {
+			return nil, err
+		}
 		return &height, nil
 	}
 	return getBlockNumber(ctx, tmClient, *blockNrOrHash.BlockNumber)
@@ -96,8 +120,10 @@ func getHeightFromBigIntBlockNumber(latest int64, blockNumber *big.Int) (int64, 
 	}
 	number := blockNumber.Int64()
 	switch number {
-	case rpc.FinalizedBlockNumber.Int64(), rpc.LatestBlockNumber.Int64(), rpc.SafeBlockNumber.Int64(), rpc.PendingBlockNumber.Int64():
+	case rpc.FinalizedBlockNumber.Int64(), rpc.LatestBlockNumber.Int64(), rpc.SafeBlockNumber.Int64():
 		return latest, nil
+	case rpc.PendingBlockNumber.Int64():
+		return 0, ErrPendingServedBySequencer
 	default:
 		return number, nil
 	}

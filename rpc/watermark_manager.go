@@ -28,6 +28,7 @@ type WatermarkManager struct {
 	ctxProvider  func(int64) sdk.Context
 	stateStore   types.StateStore
 	receiptStore receipt.ReceiptStore
+	pending      PendingSnapshot
 }
 
 func NewWatermarkManager(
@@ -42,6 +43,26 @@ func NewWatermarkManager(
 		stateStore:   stateStore,
 		receiptStore: receiptStore,
 	}
+}
+
+// SetPendingSnapshot makes this node answer pending-tag reads from the open
+// block. Only the sequencer and standby set it, before the server serves
+// requests; every other node refuses pending with ErrPendingServedBySequencer.
+func (m *WatermarkManager) SetPendingSnapshot(pending PendingSnapshot) {
+	m.pending = pending
+}
+
+// resolvePending returns the height of the open block. The branch it opens is
+// read for its height only and never written.
+func (m *WatermarkManager) resolvePending() (int64, error) {
+	if m == nil || m.pending == nil {
+		return 0, ErrPendingServedBySequencer
+	}
+	ctx, err := m.pending.OpenContext()
+	if err != nil {
+		return 0, fmt.Errorf("pending block unavailable: %w", err)
+	}
+	return ctx.BlockHeight(), nil
 }
 
 // Watermarks returns the earliest block height, earliest state height, and
@@ -165,8 +186,15 @@ func (m *WatermarkManager) EarliestStateHeight(ctx context.Context) (int64, erro
 // ResolveHeight normalizes a requested block identifier into a concrete height.
 // If the resolved height sits outside the tracked watermarks, the method returns
 // an error explaining whether it is too old (pruned) or too new (not yet
-// available).
+// available). The pending tag resolves to PendingCtxHeight while a block is
+// open on the sequencer and standby.
 func (m *WatermarkManager) ResolveHeight(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (int64, error) {
+	if blockNrOrHash.BlockHash == nil && blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber {
+		if _, err := m.resolvePending(); err != nil {
+			return 0, err
+		}
+		return PendingCtxHeight, nil
+	}
 	_, stateEarliest, latest, err := m.Watermarks(ctx)
 	if err != nil {
 		return 0, err
@@ -193,7 +221,7 @@ func (m *WatermarkManager) ResolveHeight(ctx context.Context, blockNrOrHash rpc.
 
 	blockNr := *blockNrOrHash.BlockNumber
 	switch blockNr {
-	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber, rpc.PendingBlockNumber:
+	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber:
 		return latest, nil
 	case rpc.EarliestBlockNumber:
 		return stateEarliest, nil
