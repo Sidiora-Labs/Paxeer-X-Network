@@ -160,8 +160,8 @@ func listen(t *testing.T) net.Listener {
 	return l
 }
 
-// requireSameState checks that both hosts hold the same balances and nonces on their L_open.
-func requireSameState(t *testing.T, p *primary, sb *standby, addrs ...common.Address) {
+// requireStandbyState checks that both hosts hold the same balances and nonces on their L_open.
+func requireStandbyState(t *testing.T, p *primary, sb *standby, addrs ...common.Address) {
 	t.Helper()
 	pctx, sctx := p.h.openCtx(), sb.h.openCtx()
 	for _, a := range addrs {
@@ -225,7 +225,7 @@ func TestStandbyReplayMatchesPrimary(t *testing.T) {
 	require.Equal(t, sequencer.Ack{Status: sequencer.AckOK, LastSeq: startSeq + 2}, ack)
 	require.Equal(t, startSeq+2, sb.s.LastSeq())
 	require.NoError(t, sb.s.Err())
-	requireSameState(t, p, sb, sender.EvmAddress, recipient)
+	requireStandbyState(t, p, sb, sender.EvmAddress, recipient)
 	requireWei(t, big.NewInt(3*onePaxInWei), sb.h.weiBalance(sb.h.openCtx(), recipient))
 	require.Equal(t, uint64(2), sb.h.app.EvmKeeper.GetNonce(sb.h.openCtx(), sender.EvmAddress))
 }
@@ -327,7 +327,7 @@ func TestStandbyAppliesInSeqOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sequencer.Ack{Status: sequencer.AckOK, LastSeq: startSeq + 2, GapFrom: startSeq + 1, GapTo: startSeq + 1}, ack)
 	require.Equal(t, startSeq+2, sb.s.LastSeq())
-	requireSameState(t, p, sb, sender.EvmAddress, recipient)
+	requireStandbyState(t, p, sb, sender.EvmAddress, recipient)
 	require.Equal(t, uint64(2), sb.h.app.EvmKeeper.GetNonce(sb.h.openCtx(), sender.EvmAddress))
 }
 
