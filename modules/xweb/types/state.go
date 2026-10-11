@@ -78,16 +78,30 @@ const (
 // DefaultFee is one PAX in base units.
 func DefaultFee() sdk.Int { return sdk.NewInt(1_000_000) }
 
+// The bank denoms of the four mapped assets a program-origin request may pay
+// its fee in.
+const (
+	ProgramFeeDenomPAX  = "uhpx"
+	ProgramFeeDenomSID  = "usid"
+	ProgramFeeDenomUSDC = "uusdc"
+	ProgramFeeDenomUSDL = "uusdl"
+)
+
 // Params holds the module authority (the only account that may send the
 // governance messages), the fee a request pays in the base denom, the payload
-// and callback caps and the timeout in blocks after which an unfulfilled
-// request is refundable.
+// and callback caps, the timeout in blocks after which an unfulfilled request
+// is refundable, the kernel network id program-origin observations name and
+// the denoms a program-origin request may pay its fee in. The two
+// program-origin fields stay unset, zero and empty, until governance sets
+// them.
 type Params struct {
-	Authority       string  `json:"authority"`
-	Fee             sdk.Int `json:"fee"`
-	MaxPayloadBytes uint32  `json:"max_payload_bytes"`
-	MaxCallbackGas  uint64  `json:"max_callback_gas"`
-	TimeoutBlocks   uint64  `json:"timeout_blocks"`
+	Authority        string   `json:"authority"`
+	Fee              sdk.Int  `json:"fee"`
+	MaxPayloadBytes  uint32   `json:"max_payload_bytes"`
+	MaxCallbackGas   uint64   `json:"max_callback_gas"`
+	TimeoutBlocks    uint64   `json:"timeout_blocks"`
+	KernelNetworkId  uint32   `json:"kernel_network_id"`
+	ProgramFeeDenoms []string `json:"program_fee_denoms"`
 }
 
 func DefaultParams(authority string) Params {
@@ -100,11 +114,20 @@ func DefaultParams(authority string) Params {
 	}
 }
 
+// Validate checks every parameter. The unset program-origin pair, network id
+// zero with no denom, is the default the module carries until governance
+// sets the program origin; any other pair must pass ValidateProgramSettings.
 func (p Params) Validate() error {
 	if _, err := sdk.AccAddressFromBech32(p.Authority); err != nil {
 		return ErrInvalidParams.Wrapf("authority: %v", err)
 	}
-	return ValidateSettings(p.Fee, p.MaxPayloadBytes, p.MaxCallbackGas, p.TimeoutBlocks)
+	if err := ValidateSettings(p.Fee, p.MaxPayloadBytes, p.MaxCallbackGas, p.TimeoutBlocks); err != nil {
+		return err
+	}
+	if p.KernelNetworkId == 0 && len(p.ProgramFeeDenoms) == 0 {
+		return nil
+	}
+	return ValidateProgramSettings(p.KernelNetworkId, p.ProgramFeeDenoms)
 }
 
 // ValidateSettings checks the governance-settable parameters.
@@ -120,6 +143,32 @@ func ValidateSettings(fee sdk.Int, maxPayloadBytes uint32, maxCallbackGas, timeo
 	}
 	if timeoutBlocks == 0 {
 		return ErrInvalidParams.Wrap("timeout is zero")
+	}
+	return nil
+}
+
+// ValidateProgramSettings checks the governance-settable program-origin
+// parameters: a non-zero kernel network id and at least one fee denom, each
+// one of the four mapped denoms and none repeated.
+func ValidateProgramSettings(kernelNetworkId uint32, programFeeDenoms []string) error {
+	if kernelNetworkId == 0 {
+		return ErrInvalidParams.Wrap("kernel network id is zero")
+	}
+	if len(programFeeDenoms) == 0 {
+		return ErrInvalidParams.Wrap("no program fee denom")
+	}
+	seen := make(map[string]bool, len(programFeeDenoms))
+	for _, denom := range programFeeDenoms {
+		switch denom {
+		case ProgramFeeDenomPAX, ProgramFeeDenomSID, ProgramFeeDenomUSDC, ProgramFeeDenomUSDL:
+		default:
+			return ErrInvalidParams.Wrapf("program fee denom %q is not one of %s, %s, %s, %s", denom,
+				ProgramFeeDenomPAX, ProgramFeeDenomSID, ProgramFeeDenomUSDC, ProgramFeeDenomUSDL)
+		}
+		if seen[denom] {
+			return ErrInvalidParams.Wrapf("duplicate program fee denom %s", denom)
+		}
+		seen[denom] = true
 	}
 	return nil
 }

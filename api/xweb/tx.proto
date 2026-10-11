@@ -68,9 +68,11 @@ message MsgSetThreshold {
 // MsgSetThresholdResponse is the MsgSetThreshold response.
 message MsgSetThresholdResponse {}
 
-// MsgSetParams sets the fee a request pays, the payload and callback caps and
-// the timeout in blocks after which an unfulfilled request is refundable. The
-// authority itself is unchanged. Authority only.
+// MsgSetParams sets the fee a request pays, the payload and callback caps, the
+// timeout in blocks after which an unfulfilled request is refundable, the
+// kernel network id program-origin observations name and the denoms a
+// program-origin request may pay in. The authority itself is unchanged.
+// Authority only.
 message MsgSetParams {
   option (gogoproto.goproto_stringer) = false;
 
@@ -82,6 +84,8 @@ message MsgSetParams {
   uint32 max_payload_bytes = 3;
   uint64 max_callback_gas = 4;
   uint64 timeout_blocks = 5;
+  uint32 kernel_network_id = 6;
+  repeated string program_fee_denoms = 7;
 }
 
 // MsgSetParamsResponse is the MsgSetParams response.
