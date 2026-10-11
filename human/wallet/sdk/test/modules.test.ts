@@ -43,6 +43,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   FEE_TOKEN_PRECOMPILE,
   GasStationError,
+  LEDGER_PRECOMPILE,
+  PAYER_GRANT_BYTES,
   ModuleError,
   SPONSORED_SUBMIT_PATH,
   WEB_DATA_EVENTS,
@@ -60,6 +62,7 @@ import {
   type ModuleProvider,
   type SponsoredBatchConstruction,
   type SponsoredSubmitRequest,
+  type WebPayerGrant,
 } from '../src/index.js';
 
 type Json = Record<string, unknown>;
@@ -174,6 +177,103 @@ function checkEvents(
 function value<T>(result: GasResult<T>): T {
   if (!result.ok) throw new Error(`${result.refusal.code}: ${result.refusal.field}`);
   return result.value;
+}
+
+const XWEB_FEE = 1_000_000_000_000n;
+const FEE_SELECTOR = abiSelector('fee()');
+const GET_PAYER_GRANT_SELECTOR = abiSelector('getPayerGrant(bytes32)');
+
+function fill(byte: number, length: number): string {
+  return `0x${byte.toString(16).padStart(2, '0').repeat(length)}`;
+}
+
+function grantFixture(seed: number, recurring: boolean, hasReference: boolean, revoked: boolean): WebPayerGrant {
+  return {
+    grantId: fill(seed, 32),
+    from: fill(seed + 1, 32),
+    recipient: fill(seed + 2, 32),
+    asset: fill(seed + 3, 32),
+    perDrawMaximum: 1_000n + BigInt(seed),
+    allowance: (1n << 127n) + BigInt(seed),
+    recurring,
+    windowLength: recurring ? 3_600n : 0n,
+    expiration: (1n << 63n) + BigInt(seed),
+    purposeHash: fill(seed + 4, 32),
+    hasReference,
+    referenceHash: hasReference ? fill(seed + 5, 32) : fill(0, 32),
+    revocationSequence: 9n + BigInt(seed),
+    publicKey: fill(seed + 6, 32),
+    signature: fill(seed + 7, 64),
+    drawnTotal: 2_000n + BigInt(seed),
+    drawnThisPeriod: 500n,
+    windowStart: recurring ? 7_200n : 0n,
+    revokedAt: revoked ? 42n : 0n,
+    revoked,
+    invoiceSettled: hasReference,
+  };
+}
+
+function grantWire(grant: WebPayerGrant): Uint8Array {
+  const be = (value: bigint, length: number): string => value.toString(16).padStart(length * 2, '0');
+  const flag = (value: boolean): string => (value ? '01' : '00');
+  const wire = unhex(
+    `0x${[
+      grant.grantId.slice(2),
+      grant.from.slice(2),
+      grant.recipient.slice(2),
+      grant.asset.slice(2),
+      be(grant.perDrawMaximum, 16),
+      be(grant.allowance, 16),
+      flag(grant.recurring),
+      be(grant.windowLength, 8),
+      be(grant.expiration, 8),
+      grant.purposeHash.slice(2),
+      flag(grant.hasReference),
+      grant.referenceHash.slice(2),
+      be(grant.revocationSequence, 8),
+      grant.publicKey.slice(2),
+      grant.signature.slice(2),
+    ].join('')}`,
+  );
+  expect(wire.length).toBe(PAYER_GRANT_BYTES);
+  return wire;
+}
+
+function getPayerGrantAnswer(grant: WebPayerGrant): string {
+  const head = [
+    (7 * 32).toString(16).padStart(64, '0'),
+    word('uint128', grant.drawnTotal.toString()),
+    word('uint128', grant.drawnThisPeriod.toString()),
+    word('uint64', grant.windowStart.toString()),
+    word('uint64', grant.revokedAt.toString()),
+    word('bool', grant.revoked),
+    word('bool', grant.invoiceSettled),
+  ];
+  return `0x${head.join('')}${tail(grantWire(grant))}`;
+}
+
+class ViewChain implements ModuleProvider {
+  readonly requests: Array<{ method: string; params: readonly unknown[] }> = [];
+  readonly answers = new Map<string, string>();
+
+  async request(argument: { method: string; params?: readonly unknown[] }): Promise<unknown> {
+    const params = argument.params ?? [];
+    this.requests.push({ method: argument.method, params });
+    if (argument.method !== 'eth_call') throw new Error(`method not found: ${argument.method}`);
+    const [call, block] = params as [{ to: string; data: string }, string];
+    const answer = this.answers.get(`${call.to}:${call.data}`);
+    if (block !== 'latest' || answer === undefined) throw new Error('execution reverted: LXP_NO_PAYER_GRANT');
+    return answer;
+  }
+}
+
+function viewChain(grants: readonly WebPayerGrant[]): ViewChain {
+  const chain = new ViewChain();
+  chain.answers.set(`${XWEB_PRECOMPILE}:${FEE_SELECTOR}`, `0x${word('uint256', XWEB_FEE.toString())}`);
+  for (const grant of grants) {
+    chain.answers.set(`${LEDGER_PRECOMPILE}:${GET_PAYER_GRANT_SELECTOR}${grant.grantId.slice(2)}`, getPayerGrantAnswer(grant));
+  }
+  return chain;
 }
 
 const accountKey = keccak_256(new TextEncoder().encode('modules account signer'));
@@ -422,6 +522,73 @@ describe('modules', () => {
     expect(refund).toEqual({ to: XWEB_PRECOMPILE, data: encodeAbiCall('refund', ['uint64'], [7n]), value: 0n });
     expect(known.has(refund.data.slice(0, 10))).toBe(true);
     expect(() => module.fetch('', callbackGas, fee)).toThrow(ModuleError);
+  });
+
+  it('acceptance 5.40.1: fee() eth_calls fee() on 0x1019 and decodes the uint256 answer', async () => {
+    const chain = viewChain([]);
+    expect(await webData(chain).fee()).toBe(XWEB_FEE);
+    expect(chain.requests).toEqual([{ method: 'eth_call', params: [{ to: XWEB_PRECOMPILE, data: '0xddca3f43' }, 'latest'] }]);
+    expect(FEE_SELECTOR).toBe('0xddca3f43');
+    expect(selectors(abi('xweb')).has(FEE_SELECTOR)).toBe(true);
+    const max = (1n << 256n) - 1n;
+    chain.answers.set(`${XWEB_PRECOMPILE}:${FEE_SELECTOR}`, `0x${word('uint256', max.toString())}`);
+    expect(await webData(chain).fee()).toBe(max);
+    chain.answers.set(`${XWEB_PRECOMPILE}:${FEE_SELECTOR}`, `0x${word('uint256', '1')}00`);
+    await expect(webData(chain).fee()).rejects.toMatchObject({ code: 'invalid_answer', field: 'uint' });
+  });
+
+  it('acceptance 5.40.2: caps() reads xweb fee() and layerxledger getPayerGrant through eth_call only', async () => {
+    const recurring = grantFixture(0x11, true, true, false);
+    const single = grantFixture(0xa1, false, false, true);
+    const chain = viewChain([recurring, single]);
+    const caps = await webData(chain).caps([recurring.grantId, single.grantId.toUpperCase().replace('0X', '0x')]);
+    expect(caps).toEqual({ fee: XWEB_FEE, grants: [recurring, single] });
+    expect(Object.isFrozen(caps) && Object.isFrozen(caps.grants) && caps.grants.every((grant) => Object.isFrozen(grant))).toBe(true);
+    expect(chain.requests.map((request) => request.method)).toEqual(['eth_call', 'eth_call', 'eth_call']);
+    expect(chain.requests.some((request) => request.method === 'lx_getWalletCaps')).toBe(false);
+    expect(chain.requests.map((request) => request.params)).toEqual([
+      [{ to: XWEB_PRECOMPILE, data: FEE_SELECTOR }, 'latest'],
+      [{ to: LEDGER_PRECOMPILE, data: `0x423fe4b2${recurring.grantId.slice(2)}` }, 'latest'],
+      [{ to: LEDGER_PRECOMPILE, data: `0x423fe4b2${single.grantId.slice(2)}` }, 'latest'],
+    ]);
+    expect(GET_PAYER_GRANT_SELECTOR).toBe('0x423fe4b2');
+    expect(LEDGER_PRECOMPILE).toBe('0x000000000000000000000000000000000000101a');
+
+    const empty = viewChain([]);
+    expect(await webData(empty).caps([])).toEqual({ fee: XWEB_FEE, grants: [] });
+    expect(empty.requests).toEqual([{ method: 'eth_call', params: [{ to: XWEB_PRECOMPILE, data: FEE_SELECTOR }, 'latest'] }]);
+
+    await expect(webData(chain).caps(['0x1234'])).rejects.toMatchObject({ code: 'invalid_value', field: 'grantId' });
+    await expect(webData(chain).caps([fill(0x99, 32)])).rejects.toThrow('LXP_NO_PAYER_GRANT');
+
+    const key = `${LEDGER_PRECOMPILE}:${GET_PAYER_GRANT_SELECTOR}${recurring.grantId.slice(2)}`;
+    const good = getPayerGrantAnswer(recurring);
+    const patch = (offset: number, value: string): string => `${good.slice(0, 2 + offset * 2)}${value}${good.slice(2 + offset * 2 + value.length)}`;
+    const wire = 8 * 32;
+    for (const bad of [
+      good.slice(0, -2),
+      `${good}00`,
+      patch(31, 'c0'),
+      patch(7 * 32 + 31, '5b'),
+      patch(1 * 32 + 15, '01'),
+      patch(3 * 32 + 23, '01'),
+      patch(5 * 32 + 31, '02'),
+      patch(6 * 32 + 31, '02'),
+      patch(wire + 160, '02'),
+      patch(wire + 209, '02'),
+      patch(wire + PAYER_GRANT_BYTES, '01'),
+      patch(wire, '12'),
+    ]) {
+      chain.answers.set(key, bad);
+      await expect(webData(chain).caps([recurring.grantId])).rejects.toMatchObject({ code: 'invalid_answer', field: 'getPayerGrant' });
+    }
+  });
+
+  it('acceptance 5.40.3: the web-data module source imports nothing from kernel.js', () => {
+    const source = readFileSync(new URL('../src/modules/web-data.ts', import.meta.url), 'utf8');
+    const imports = [...source.matchAll(/^import[\s\S]*?from\s+'([^']+)';$/gmu)].map((match) => match[1]);
+    expect(imports).toEqual(['@sidiora/layerx-sdk/browser', './index.js']);
+    expect(source).not.toMatch(/kernel\.js|readWalletCaps|WalletCapsSnapshot|lx_getWalletCaps/u);
   });
 
   it('modules_events decode logs encoded from each precompile ABI', () => {

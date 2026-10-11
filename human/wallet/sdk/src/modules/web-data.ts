@@ -1,4 +1,3 @@
-import { readWalletCaps, type WalletCapsSnapshot } from '../kernel.js';
 import {
   XWEB_KIND_API,
   XWEB_PRECOMPILE,
@@ -16,9 +15,11 @@ import {
 
 import {
   ModuleError,
+  bytesHex,
   decodeAbiUint,
   decodeModuleEvent,
   ethCall,
+  hexBytes,
   moduleAddress,
   retarget,
   sendModuleTransaction,
@@ -71,6 +72,38 @@ export const WEB_DATA_EVENTS: readonly ModuleEventSpec[] = [
   },
 ];
 
+export const LEDGER_PRECOMPILE = '0x000000000000000000000000000000000000101a';
+export const PAYER_GRANT_BYTES = 346;
+
+export interface WebPayerGrant {
+  readonly grantId: string;
+  readonly from: string;
+  readonly recipient: string;
+  readonly asset: string;
+  readonly perDrawMaximum: bigint;
+  readonly allowance: bigint;
+  readonly recurring: boolean;
+  readonly windowLength: bigint;
+  readonly expiration: bigint;
+  readonly purposeHash: string;
+  readonly hasReference: boolean;
+  readonly referenceHash: string;
+  readonly revocationSequence: bigint;
+  readonly publicKey: string;
+  readonly signature: string;
+  readonly drawnTotal: bigint;
+  readonly drawnThisPeriod: bigint;
+  readonly windowStart: bigint;
+  readonly revokedAt: bigint;
+  readonly revoked: boolean;
+  readonly invoiceSettled: boolean;
+}
+
+export interface WebDataCaps {
+  readonly fee: bigint;
+  readonly grants: readonly WebPayerGrant[];
+}
+
 export interface WebDataModule {
   readonly address: string;
   readonly events: readonly ModuleEventSpec[];
@@ -81,13 +114,85 @@ export interface WebDataModule {
   buildApiRequest(call: XWebApiCall, attestors: XWebAttestorSet, options?: XWebApiBuildOptions): XWebApiRequest;
   refund(requestId: bigint): ModuleTransaction;
   fee(): Promise<bigint>;
-  caps(address: string): Promise<WalletCapsSnapshot>;
+  caps(grantIds: readonly string[]): Promise<WebDataCaps>;
   attestors(): Promise<XWebAttestorSet>;
   send(from: string, tx: ModuleTransaction): Promise<string>;
   decodeEvent(log: ModuleLog): DecodedModuleEvent;
 }
 
 const REQUEST_SELECTOR = abiSelector('request(uint8,bytes,uint64)');
+const FEE_SELECTOR = abiSelector('fee()');
+const GET_PAYER_GRANT_SELECTOR = abiSelector('getPayerGrant(bytes32)');
+const WORD = 32;
+const GRANT_ANSWER_HEAD = 7 * WORD;
+const GRANT_ANSWER_BYTES = GRANT_ANSWER_HEAD + WORD + Math.ceil(PAYER_GRANT_BYTES / WORD) * WORD;
+const BYTES32 = /^0x[0-9a-fA-F]{64}$/u;
+
+function bigEndian(bytes: Uint8Array): bigint {
+  return bytes.reduce((value, byte) => (value << 8n) | BigInt(byte), 0n);
+}
+
+function grantIdHex(value: string): string {
+  if (typeof value !== 'string' || !BYTES32.test(value)) {
+    throw new ModuleError('invalid_value', 'grantId');
+  }
+  return value.toLowerCase();
+}
+
+function decodePayerGrant(answer: string, grantId: string): WebPayerGrant {
+  const data = hexBytes(answer, 'getPayerGrant');
+  const malformed = (): ModuleError => new ModuleError('invalid_answer', 'getPayerGrant');
+  if (data.length !== GRANT_ANSWER_BYTES) {
+    throw malformed();
+  }
+  const word = (slot: number, bits: number): bigint => {
+    const value = bigEndian(data.subarray(slot * WORD, (slot + 1) * WORD));
+    if (value >= 1n << BigInt(bits)) {
+      throw malformed();
+    }
+    return value;
+  };
+  const end = GRANT_ANSWER_HEAD + WORD + PAYER_GRANT_BYTES;
+  if (word(0, 256) !== BigInt(GRANT_ANSWER_HEAD) || word(7, 256) !== BigInt(PAYER_GRANT_BYTES) || data.subarray(end).some((byte) => byte !== 0)) {
+    throw malformed();
+  }
+  const grant = data.subarray(GRANT_ANSWER_HEAD + WORD, end);
+  let offset = 0;
+  const take = (length: number): Uint8Array => grant.subarray(offset, (offset += length));
+  const flag = (bytes: Uint8Array): boolean => {
+    if (bytes[0] !== 0 && bytes[0] !== 1) {
+      throw malformed();
+    }
+    return bytes[0] === 1;
+  };
+  const decoded: WebPayerGrant = {
+    grantId: bytesHex(take(32)),
+    from: bytesHex(take(32)),
+    recipient: bytesHex(take(32)),
+    asset: bytesHex(take(32)),
+    perDrawMaximum: bigEndian(take(16)),
+    allowance: bigEndian(take(16)),
+    recurring: flag(take(1)),
+    windowLength: bigEndian(take(8)),
+    expiration: bigEndian(take(8)),
+    purposeHash: bytesHex(take(32)),
+    hasReference: flag(take(1)),
+    referenceHash: bytesHex(take(32)),
+    revocationSequence: bigEndian(take(8)),
+    publicKey: bytesHex(take(32)),
+    signature: bytesHex(take(64)),
+    drawnTotal: word(1, 128),
+    drawnThisPeriod: word(2, 128),
+    windowStart: word(3, 64),
+    revokedAt: word(4, 64),
+    revoked: word(5, 1) === 1n,
+    invoiceSettled: word(6, 1) === 1n,
+  };
+  if (decoded.grantId !== grantId) {
+    throw malformed();
+  }
+  return Object.freeze(decoded);
+}
 
 function payloadBytes(payload: Uint8Array | string): Uint8Array {
   return typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
@@ -111,9 +216,16 @@ export function webData(provider: ModuleProvider, address: string = XWEB_PRECOMP
   const target = moduleAddress(address);
   const request = (kind: WebDataKind, payload: Uint8Array | string, callbackGas: bigint, fee: bigint): ModuleTransaction =>
     retarget(requestCall(kind, payload, callbackGas, fee), target);
+  const fee = async (): Promise<bigint> => decodeAbiUint(await ethCall(provider, target, FEE_SELECTOR));
+  const grant = async (grantId: string): Promise<WebPayerGrant> =>
+    decodePayerGrant(await ethCall(provider, LEDGER_PRECOMPILE, GET_PAYER_GRANT_SELECTOR + grantId.slice(2)), grantId);
   return {
     address: target,
-    caps: (address) => readWalletCaps(provider, address),
+    caps: async (grantIds) => {
+      const ids = grantIds.map(grantIdHex);
+      const [paid, grants] = await Promise.all([fee(), Promise.all(ids.map(grant))]);
+      return Object.freeze({ fee: paid, grants: Object.freeze(grants) });
+    },
     events: WEB_DATA_EVENTS,
     request,
     fetch: (url, callbackGas, fee) => request(WEB_DATA_KIND_FETCH, url, callbackGas, fee),
@@ -121,7 +233,7 @@ export function webData(provider: ModuleProvider, address: string = XWEB_PRECOMP
     api: (built, callbackGas, fee) => retarget(xwebApiRequestCall(built.payload, callbackGas, fee), target),
     buildApiRequest: (call, attestors, options) => buildXWebApiRequest(call, attestors, options),
     refund: (requestId) => ({ to: target, data: encodeAbiCall('refund', ['uint64'], [requestId]), value: 0n }),
-    fee: async () => decodeAbiUint(await ethCall(provider, target, abiSelector('fee()'))),
+    fee,
     attestors: async () => decodeXWebAttestors(await ethCall(provider, target, xwebGetAttestorsCallData())),
     send: (from, tx) => sendModuleTransaction(provider, from, tx),
     decodeEvent: (log) => decodeModuleEvent(WEB_DATA_EVENTS, target, log),
