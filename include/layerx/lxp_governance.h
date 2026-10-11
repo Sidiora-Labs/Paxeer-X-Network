@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct lxp_kernel lxp_kernel;
+
 enum {
     LXP_GOVERNANCE_MIGRATION_BUDGET = 0x0007000a,
     LXP_GOVERNANCE_PROGRAMS_FEE = 0x0007000b,
@@ -182,5 +184,8 @@ lxp_result lxp_gov_module_enable(
     lxp_gov_emergency_state *state, uint16_t module_id, bool enabled,
     uint32_t attempted_effect_mask, uint64_t ordered_sequence,
     bool governance_authorized, bool ordered_governance_activity);
+lxp_result lxp_governance_session_key_read(const lxp_kernel *kernel,
+                                           const uint8_t grant_id[32],
+                                           uint8_t summary[209]);
 
 #endif

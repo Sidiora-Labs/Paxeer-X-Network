@@ -1,7 +1,11 @@
 #include "layerx/lxp_authority.h"
+#include "layerx/lxp_governance.h"
+#include "layerx/lxp_identity.h"
+#include "layerx/lxp_module_ctx.h"
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define FEE_CHECK(condition) do { if (!(condition)) { \
@@ -109,9 +113,159 @@ static int authentication_sessions(void)
     return 0;
 }
 
+typedef struct session_fixture {
+    lxp_state_store store;
+    lxp_state_journal journal;
+    lxp_kernel kernel;
+    lxp_fee_params parameters;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_arena arena;
+    uint8_t arena_bytes[2U * LXP_MAX_ACTIVITY_BYTES];
+    uint8_t did[32];
+    uint8_t grant_id[32];
+    uint8_t event[209];
+} session_fixture;
+
+static const uint8_t session_owner_did[] = "did:layerx:session-owner";
+
+static void put_be(uint8_t *out, uint64_t value, size_t width)
+{
+    for (size_t i = 0U; i < width; ++i) out[width - 1U - i] = (uint8_t)(value >> (8U * i));
+}
+
+static int session_key_read(session_fixture *f)
+{
+    uint8_t owner_key[32], session_key[32], action_key[32], state[223] = {0};
+    uint8_t grant_storage[1024], payload[1024] = {0x71U, 5U, 1U, 3U}, summary[209];
+    lxp_authority_grant grant;
+    lxp_arena grant_arena;
+    lxp_byte_span body;
+    lxp_activity activity = {0};
+    lxp_authority_resolved authority = {0};
+    void *decoded = NULL;
+    size_t length, events = 0U;
+    for (size_t i = 0U; i < 32U; ++i) {
+        owner_key[i] = (uint8_t)(0x21U + i);
+        session_key[i] = (uint8_t)(0x41U + i);
+        action_key[i] = (uint8_t)(0x61U + i);
+    }
+    f->parameters.version = 1U;
+    f->parameters.multiplier_basis_points = 10000U;
+    FEE_CHECK(lxp_state_store_init(&f->store, 2U) == LXP_OK);
+    FEE_CHECK(lxp_kernel_create(&f->kernel, &f->store, &f->journal, &f->parameters, 1U) == LXP_OK);
+    FEE_CHECK(lxp_kernel_register_module(&f->kernel, lxp_governance_module_iface()) == LXP_OK);
+    FEE_CHECK(lxp_did_id_derive(session_owner_did, sizeof(session_owner_did) - 1U, f->did) == LXP_OK);
+    (void)memcpy(state, "LXGI1", 5U);
+    (void)memcpy(state + 5U, f->did, 32U);
+    (void)memcpy(state + 37U, owner_key, 32U);
+    put_be(state + 69U, 1U, 8U);
+    put_be(state + 215U, 1U, 8U);
+    lxp_module_kv_entry *identity = &f->kernel.module_kv[f->kernel.module_kv_count++];
+    identity->module_id = LXP_MODULE_GOVERNANCE;
+    identity->key_length = 32U;
+    identity->value_length = sizeof(state);
+    (void)memcpy(identity->key, f->did, 32U);
+    (void)memcpy(identity->value, state, sizeof(state));
+    FEE_CHECK(lxp_session_key_bind(&grant, f->did, session_key, 2U, 1U, 9U, 10U, 5000U, 1U) == LXP_OK);
+    (void)memcpy(f->grant_id, grant.grant_id, 32U);
+    FEE_CHECK(lxp_arena_init(&grant_arena, grant_storage, sizeof(grant_storage)) == LXP_OK);
+    FEE_CHECK(lxp_grant_encode(&grant, &grant_arena, &body) == LXP_OK);
+    length = 4U + 4U + body.length + 8U + 4U + 32U;
+    FEE_CHECK(length <= sizeof(payload));
+    put_be(payload + 4U, body.length, 4U);
+    (void)memcpy(payload + 8U, body.bytes, body.length);
+    put_be(payload + 8U + body.length, 100U, 8U);
+    put_be(payload + 16U + body.length, 32U, 4U);
+    (void)memcpy(payload + 20U + body.length, action_key, 32U);
+    activity.protocol_version = 3U;
+    activity.network_id = 77U;
+    activity.activity_type = 0x00070005U;
+    activity.actor_did = (lxp_byte_span){session_owner_did, sizeof(session_owner_did) - 1U};
+    activity.authority = (lxp_byte_span){owner_key, 32U};
+    activity.payload = (lxp_byte_span){payload, length};
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.actor, f->did, 32U);
+    (void)memcpy(authority.verified_key, owner_key, 32U);
+    FEE_CHECK(lxp_arena_init(&f->arena, f->arena_bytes, sizeof(f->arena_bytes)) == LXP_OK);
+    FEE_CHECK(lxp_module_ctx_init(&f->ctx, &f->kernel, LXP_MODULE_GOVERNANCE,
+        1000U, 1U, 2U, 100000U, &f->arena, true) == LXP_OK);
+    FEE_CHECK(lxp_effect_buffer_init(&f->effects) == LXP_OK &&
+        lxp_module_ctx_bind_effects(&f->ctx, &f->effects) == LXP_OK);
+    const lxp_module_iface *module = lxp_governance_module_iface();
+    FEE_CHECK(module->decode(&f->ctx, 5U, payload, length, &decoded) == LXP_OK);
+    FEE_CHECK(module->validate(&f->ctx, &activity, &authority, decoded) == LXP_OK);
+    FEE_CHECK(module->execute(&f->ctx, &activity, &authority, decoded, &f->effects) == LXP_OK);
+    for (size_t i = 0U; i < f->effects.count; ++i) {
+        if (f->effects.effects[i].event_type != 0x7145U) continue;
+        FEE_CHECK(f->effects.effects[i].body_length == sizeof(f->event));
+        (void)memcpy(f->event, f->effects.effects[i].body, sizeof(f->event));
+        ++events;
+    }
+    FEE_CHECK(events == 1U);
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, f->grant_id, summary) == LXP_ERR_UNKNOWN_FIELD);
+    FEE_CHECK(lxp_module_ctx_prepare_commit(&f->ctx) == LXP_OK && lxp_module_ctx_commit(&f->ctx) == LXP_OK);
+    (void)memset(summary, 0, sizeof(summary));
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, f->grant_id, summary) == LXP_OK);
+    FEE_CHECK(memcmp(summary, f->event, sizeof(summary)) == 0);
+    FEE_CHECK(memcmp(summary, "LXGS2", 5U) == 0 && memcmp(summary + 5U, f->grant_id, 32U) == 0 &&
+        memcmp(summary + 37U, f->did, 32U) == 0 && memcmp(summary + 69U, owner_key, 32U) == 0 &&
+        memcmp(summary + 101U, action_key, 32U) == 0 && memcmp(summary + 133U, session_key, 32U) == 0);
+    uint8_t expected[8];
+    put_be(expected, 100U, 8U);
+    FEE_CHECK(memcmp(summary + 165U, expected, 8U) == 0);
+    put_be(expected, 2U, 8U);
+    FEE_CHECK(memcmp(summary + 173U, expected, 8U) == 0);
+    FEE_CHECK(summary[181] == 0U && summary[182] == 1U && summary[183] == 0U && summary[184] == 9U);
+    put_be(expected, 10U, 8U);
+    FEE_CHECK(memcmp(summary + 185U, expected, 8U) == 0);
+    put_be(expected, 5000U, 8U);
+    FEE_CHECK(memcmp(summary + 193U, expected, 8U) == 0);
+    put_be(expected, 1U, 8U);
+    FEE_CHECK(memcmp(summary + 201U, expected, 8U) == 0);
+    lxp_module_kv_entry *stored = NULL;
+    for (size_t i = 0U; i < f->kernel.module_kv_count; ++i)
+        if (f->kernel.module_kv[i].key_length == 33U && f->kernel.module_kv[i].key[0] == 0x15U)
+            stored = &f->kernel.module_kv[i];
+    FEE_CHECK(stored != NULL && stored->module_id == LXP_MODULE_GOVERNANCE);
+    stored->value_length = 208U;
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, f->grant_id, summary) == LXP_ERR_NON_CANONICAL);
+    stored->value_length = 209U;
+    stored->value[4] = (uint8_t)'1';
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, f->grant_id, summary) == LXP_ERR_NON_CANONICAL);
+    stored->value[4] = (uint8_t)'2';
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, f->grant_id, summary) == LXP_OK &&
+        memcmp(summary, f->event, sizeof(summary)) == 0);
+    return 0;
+}
+
+static int session_key_read_absent(session_fixture *f)
+{
+    uint8_t unknown[32], summary[209], untouched[209];
+    (void)memset(unknown, 0x05, sizeof(unknown));
+    (void)memset(summary, 0xa5, sizeof(summary));
+    (void)memcpy(untouched, summary, sizeof(summary));
+    FEE_CHECK(lxp_governance_session_key_read(&f->kernel, unknown, summary) == LXP_ERR_UNKNOWN_FIELD);
+    FEE_CHECK(memcmp(summary, untouched, sizeof(summary)) == 0);
+    FEE_CHECK(lxp_governance_session_key_read(NULL, unknown, summary) == LXP_ERR_NON_CANONICAL);
+    return 0;
+}
+
+static int session_summaries(void)
+{
+    session_fixture *fixture = calloc(1U, sizeof(*fixture));
+    int failed;
+    if (fixture == NULL) return 1;
+    failed = session_key_read(fixture);
+    if (failed == 0) failed = session_key_read_absent(fixture);
+    if (lxp_state_store_destroy(&fixture->store) != LXP_OK) failed = 1;
+    free(fixture);
+    return failed;
+}
+
 int main(void)
 {
-    if (fee_grants() != 0 || authentication_sessions() != 0) return 1;
+    if (fee_grants() != 0 || authentication_sessions() != 0 || session_summaries() != 0) return 1;
     uint8_t storage[1024];
     uint8_t second_storage[1024];
     uint8_t grantor[32] = { 1U };

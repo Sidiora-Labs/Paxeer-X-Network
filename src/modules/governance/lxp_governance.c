@@ -100,6 +100,26 @@ lxp_result lxp_governance_identities_restore(const lxp_kernel *kernel,
     return LXP_OK;
 }
 
+lxp_result lxp_governance_session_key_read(const lxp_kernel *kernel,
+                                           const uint8_t grant_id[32],
+                                           uint8_t summary[209])
+{
+    uint8_t key[33];
+    if (kernel == NULL || grant_id == NULL || summary == NULL) return LXP_ERR_NON_CANONICAL;
+    key[0] = 0x15U;
+    (void)memcpy(key + 1U, grant_id, 32U);
+    for (size_t i = 0U; i < kernel->module_kv_count; ++i) {
+        const lxp_module_kv_entry *entry = &kernel->module_kv[i];
+        if (entry->module_id != LXP_MODULE_GOVERNANCE || entry->key_length != sizeof(key) ||
+            memcmp(entry->key, key, sizeof(key)) != 0) continue;
+        if (entry->value_length != 209U || memcmp(entry->value, "LXGS2", 5U) != 0)
+            return LXP_ERR_NON_CANONICAL;
+        (void)memcpy(summary, entry->value, 209U);
+        return LXP_OK;
+    }
+    return LXP_ERR_UNKNOWN_FIELD;
+}
+
 static lxp_result decode(lxp_module_ctx *ctx, uint16_t ordinal,
                           const uint8_t *bytes, size_t length, void **decoded)
 {
