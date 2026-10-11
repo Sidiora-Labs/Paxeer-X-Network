@@ -5341,3 +5341,18 @@ fix = "Exclude files whose own vocabulary reuses the short ids from the mapping,
 area = "spec / specgen"
 symptom = "`spec/specgen` and `scripts/specgen.sh` point at `../tools/specgen`, which does not exist from those directories, and `go` is not on PATH in a bare shell."
 fix = "Run `/usr/local/go/bin/go run ./tools/specgen -root <repo> render` from the repository root; `requirements.md`/`design.md`/`tasks.md` mirrors are only produced when `[render] markdown_mirror = true` in spec/workflow.kvx."
+
+[gotcha.1154]
+area = "spec / lint"
+symptom = "`cg spec lint` rejects dotted multi-segment requirement ids such as `[req.3.7]` and task `reqs` entries of the form \"3.7.2\"; only single-segment `[req.<n>]` with entries \"<n>.<ac>\" are accepted."
+fix = "Author feature-local requirements as `[req.<N><kkk>]` (N*1000+k) and cite acceptance criteria as \"<N><kkk>.<a>\"; keep the mapping note in [meta] so readers can decode the ids."
+
+[gotcha.1155]
+area = "spec / authoring"
+symptom = "A generated spec part with thousands of near-identical do steps (same sentence with only a symbol substituted) passes lint and size floors but carries no implementation information; it was rejected on sampling."
+fix = "Sample every delivered part before accepting it: grep the do_ lines for the dominant sentence shape and read three random capabilities end to end; template expansion is a rejection criterion independent of line count."
+
+[gotcha.1156]
+area = "spec / public check"
+symptom = "The public-content checker matched product words and paths as if they were internal language: `reputation` from ai_reputation.rs, `governance/owner-rotation`, `agent/unsafe-allowlist.toml`."
+fix = "Match only the sensitive word forms (for example `reputational`, not `reputation`) and strip repository paths and backticked identifiers before matching; keep the exemptions listed beside the pattern so they are reviewable."
