@@ -1,0 +1,642 @@
+{
+  "components": {
+    "verify": {
+      "req": "11001",
+      "title": "Retire the layerxVerify 0x1012 retired executor",
+      "symbols": [
+        "layerxverify",
+        "ILayerXVerify",
+        "layerxVerify"
+      ],
+      "deleted_trees": [],
+      "replacement": "drop the layerxVerify reference; after the plan height every method returns Error(string) LXP_MODULE_DISABLED, so the caller reads the committed header and an ICS23 proof through abci_query prove=true or eth_getProof instead"
+    },
+    "anchor": {
+      "req": "11002",
+      "title": "Retire the layerxAnchor 0x1014 checkpoint and guarantor surface",
+      "symbols": [
+        "layerxanchor",
+        "ILayerXAnchor",
+        "ANCHOR_PRECOMPILE",
+        "PxAnchorHead",
+        "CheckpointRegistry",
+        "GuarantorBond",
+        "layerxAnchor"
+      ],
+      "deleted_trees": [],
+      "replacement": "read finality from the block itself: the committed height and CometBFT commit, or eth_getBlockByNumber(\"finalized\"); a state root comes from the committed app hash with a per-key ICS23 proof at that height"
+    },
+    "custody-claims": {
+      "req": "11003",
+      "title": "Retire the layerxCustody withdrawal claims, forced exit and deposit-root publication",
+      "symbols": [
+        "requestWithdrawal",
+        "finaliseWithdrawal",
+        "requestForcedExit",
+        "executeForcedExit",
+        "registerDepositRoot",
+        "LayerXVault",
+        "register_deposit_root",
+        "depositRootAuthority",
+        "deposit_root_authority"
+      ],
+      "deleted_trees": [],
+      "replacement": "a withdrawal is a native bank or layerxledger move at commit, an outward transfer is 0x1016 bridgeOut, and there is no forced exit or deposit-root publication after the plan height"
+    },
+    "custody-deposit": {
+      "req": "11004",
+      "title": "Retire the layerxCustody deposit escrow and asset and deposit views",
+      "symbols": [
+        "depositToken",
+        "CUSTODY_PRECOMPILE",
+        "layerxcustody",
+        "layerxCustody",
+        "LayerXCustody"
+      ],
+      "deleted_trees": [],
+      "replacement": "funding a kernel sub-account is a bank send to the derived sub-account address; asset facts come from bank 0x1001 name, symbol, decimals and supply and from pointerview 0x100A"
+    },
+    "exchange-intents": {
+      "req": "11005",
+      "title": "Retire the layerxExchange intent store, intent count and proof-carrying views",
+      "symbols": [
+        "getIntent",
+        "requestSettlement",
+        "GetIntentCount",
+        "ProveState",
+        "recordDeposit",
+        "request_settlement"
+      ],
+      "deleted_trees": [],
+      "replacement": "read orders and positions through 0x1015 getOrder and getPosition (direct state reads); getIntent and requestSettlement return LXP_MODULE_DISABLED after the plan height while intentNonce stays"
+    },
+    "guarantor-runtime": {
+      "req": "11008",
+      "title": "Retire the guarantor runtime",
+      "symbols": [
+        "layerx-guarantor",
+        "lxp_guarantor",
+        "LAYERX_GUARANTOR_"
+      ],
+      "deleted_trees": [
+        "cmd/layerx-guarantor",
+        "src/guarantor",
+        "src/paxeer/lxp_paxeer_client.c"
+      ],
+      "replacement": "validators commit the sequencer-proposed block, so the guarantor process, its secrets and its provisioning step are removed"
+    },
+    "finality-authority": {
+      "req": "11009",
+      "title": "Retire the finality authority, evidence register, receipt authority, authority replica and sequencer handover",
+      "symbols": [
+        "finality_authority",
+        "lxp_handover",
+        "receipt_authority",
+        "authority_replica",
+        "handover_history",
+        "layerx-handover",
+        "lxp_daemon_evidence"
+      ],
+      "deleted_trees": [
+        "cmd/layerxd/lxp_daemon_finality_authority.c",
+        "cmd/layerx-handover",
+        "src/protocol/lxp_handover.c"
+      ],
+      "replacement": "handover becomes the pinned leader list with standby takeover on the sequencer WAL; the sequencer receipt key is a governed parameter read from chain state at the receipt height"
+    },
+    "eth-relay": {
+      "req": "11010",
+      "title": "Retire the chain relay boundary of the kernel",
+      "symbols": [
+        "hosted/paxeer/src",
+        "paxeer-relay"
+      ],
+      "deleted_trees": [
+        "platform/hosted/paxeer"
+      ],
+      "replacement": "no relay is needed because the sequencer is the chain; the relay process and its configuration are removed"
+    },
+    "da": {
+      "req": "11011",
+      "title": "Retire the dA bundle build, chunk proofs and verified DA storage",
+      "symbols": [
+        "lxp_da_",
+        "LXP_DA_",
+        "da_bundle",
+        "lxp_da.h"
+      ],
+      "deleted_trees": [
+        "src/network/lxp_da_bundle.c",
+        "src/storage/lxp_da_verified.c"
+      ],
+      "replacement": "block data is the availability record; the DA build and storage are removed with the kernel daemon"
+    },
+    "replica": {
+      "req": "11012",
+      "title": "Retire the replica, authority replica and relay archive",
+      "symbols": [
+        "lxp_replica",
+        "lxp_replay",
+        "relay_archive",
+        "relay-archive",
+        "lxp_daemon_replica",
+        "lxp_divergence",
+        "replica_ingest"
+      ],
+      "deleted_trees": [
+        "src/replica",
+        "platform/relay_archive"
+      ],
+      "replacement": "full and archive paxd nodes serve history; the standby follows the sequencer WAL; the relay archive entries are removed"
+    },
+    "idempotency": {
+      "req": "11013",
+      "title": "Retire the kernel idempotency table",
+      "symbols": [
+        "lxp_idempotency"
+      ],
+      "deleted_trees": [
+        "src/state/lxp_idempotency.c"
+      ],
+      "replacement": "replay protection is the EVM account nonce plus the transaction hash; the hosted module drops its idempotency lookups"
+    },
+    "batch-seal": {
+      "req": "11014",
+      "title": "Retire the kernel batch seal, batch header roots, batch publish, batch WAL and kernel receipt signature",
+      "symbols": [
+        "lxp_batch_seal",
+        "batch_wal",
+        "batch_publish",
+        "batch_seal",
+        "lxp_batch_publish"
+      ],
+      "deleted_trees": [
+        "src/sequencer/lxp_batch_seal.c",
+        "src/network/lxp_batch_publish.c",
+        "cmd/layerxd/lxp_daemon_batch_wal.c"
+      ],
+      "replacement": "the pinned sequencer proposes the block and signs the receipt; the node sequencer WAL replaces the batch WAL"
+    },
+    "oracle-web-roots": {
+      "req": "11015",
+      "title": "Retire the unwired oracle adapter, oracle batch root, web adapter and web batch root",
+      "symbols": [
+        "lx_oracle_adapter",
+        "lx_oracle_root",
+        "lx_web_adapter",
+        "lx_web_root"
+      ],
+      "deleted_trees": [
+        "src/network/lx_oracle_adapter.c",
+        "src/sequencer/lx_oracle_root.c",
+        "src/sequencer/lx_web_root.c"
+      ],
+      "replacement": "no batch header exists after the merge; the oracle encoders linked by the perps intake are kept"
+    },
+    "feed-store": {
+      "req": "11016",
+      "title": "Retire the program state feed store",
+      "symbols": [
+        "feed_store",
+        "state_feed"
+      ],
+      "deleted_trees": [],
+      "replacement": "readers use Cosmos events, PLX logs and the indexer keyed by (height, index) instead of a gap-free kernel sequence"
+    },
+    "fee-relay": {
+      "req": "11017",
+      "title": "Retire the fee-governance relay activity 0x00090008",
+      "symbols": [
+        "LX_PROGRAMS_FEE_GOVERNANCE",
+        "fee_governance"
+      ],
+      "deleted_trees": [],
+      "replacement": "the fee schedule changes through a governance-authority MsgUpdateFeeSchedule on the chain"
+    },
+    "replay-golden": {
+      "req": "11018",
+      "title": "Retire the kernel root replay golden",
+      "symbols": [
+        "test-replay-golden",
+        "lxp_test_golden_replay",
+        "history.lxl"
+      ],
+      "deleted_trees": [
+        "tests/replay/lxp_test_golden_replay.c",
+        "tests/replay/golden/history.lxl"
+      ],
+      "replacement": "the replay golden and its targets are removed with the batch seal and replica; host determinism of the kept C modules is covered by the host determinism test"
+    },
+    "custody-credit": {
+      "req": "11019",
+      "title": "Retire the custody credit and light client",
+      "symbols": [
+        "lxp_bridge_credit",
+        "lxp_bridge_light",
+        "layerx-custody-proof",
+        "bridge_credit"
+      ],
+      "deleted_trees": [
+        "src/modules/bridge/lxp_bridge_credit.c",
+        "src/modules/bridge/lxp_bridge_light.c",
+        "custodyproof/light.go"
+      ],
+      "replacement": "kernel balances are bank balances of derived sub-accounts, so no cross-domain credit exists; custodyproof/verify.go stays as the commit and header verifier"
+    },
+    "custody-disclosure": {
+      "req": "11020",
+      "title": "Retire the cross-domain custody credit disclosure",
+      "symbols": [
+        "paxeer-reserve",
+        "native_custody_credit",
+        "NativeCustodyCredit",
+        "decode_native_custody_credit"
+      ],
+      "deleted_trees": [],
+      "replacement": "a deposit is a native balance, so the reserve account and its credit disclosure are removed"
+    },
+    "lni": {
+      "req": "11021",
+      "title": "Retire the lNI transport",
+      "symbols": [
+        "lni",
+        "LNI",
+        "layerx_lni",
+        "LniArchiveSource",
+        "LniFailure",
+        "lxp_daemon_lni",
+        "lni_"
+      ],
+      "deleted_trees": [
+        "agent/crates/layerx-client/src/lni",
+        "agent/include/layerx_lni_abi.h",
+        "cmd/layerxd/lxp_daemon_lni.c"
+      ],
+      "replacement": "writes are eth_sendRawTransaction through the unified router and reads are eth_call on the precompile views or gRPC queries at a height"
+    },
+    "paxeer-verifier": {
+      "req": "11022",
+      "title": "Retire the layerx-paxeer-verifier crate",
+      "symbols": [
+        "layerx-paxeer-verifier",
+        "layerx_paxeer_verifier"
+      ],
+      "deleted_trees": [
+        "agent/crates/layerx-paxeer-verifier"
+      ],
+      "replacement": "verify the CometBFT commit and header at the height and read native per-key proofs; the bridge relayer keeps only a raw JSON-RPC call moved into its own crate"
+    },
+    "handover-client": {
+      "req": "11023",
+      "title": "Retire the client handover finality and sequencer trust history",
+      "symbols": [
+        "HANDOVER_ACTIVITY",
+        "fetch_next_with_finality",
+        "handover_policy",
+        "LAYERX_AGENT_HANDOVER",
+        "advance_sequencer_history",
+        "layerx_client::handover",
+        "crate::handover"
+      ],
+      "deleted_trees": [
+        "agent/crates/layerx-client/src/handover.rs"
+      ],
+      "replacement": "read the sequencer receipt key from chain state at the receipt height (governed parameter)"
+    },
+    "settlement-domain": {
+      "req": "11024",
+      "title": "Retire the settlement domain and export trust",
+      "symbols": [
+        "SettlementDomain",
+        "settlement_domain",
+        "checkpoint-settlement.json",
+        "SETTLEMENT_DOMAIN",
+        "settlement-domain"
+      ],
+      "deleted_trees": [
+        "agent/crates/layerx-proof/src/settlement.rs"
+      ],
+      "replacement": "offline exports carry chain id 125 and the validator set at the height instead of a settlement domain"
+    },
+    "checkpoint-evidence": {
+      "req": "11025",
+      "title": "Retire the checkpoint certificates and guarantor attestations in client evidence",
+      "symbols": [
+        "SettlementAnchored",
+        "ANCHOR_SETTLEMENT_CONTRACT",
+        "register_finality_evidence",
+        "SETTLEMENT_ANCHORED",
+        "settlement_anchored"
+      ],
+      "deleted_trees": [],
+      "replacement": "remove SettlementAnchored (agent-api major 2); CheckpointFinalised means block commit verified through the commit and header verifier"
+    },
+    "authorized-batch": {
+      "req": "11026",
+      "title": "Retire the human-authority authorized-batch facts",
+      "symbols": [
+        "AuthorizedReceiptBatch",
+        "/v1/agent/authorized-batch"
+      ],
+      "deleted_trees": [],
+      "replacement": "verify the receipt against the block header and commit from the node at the receipt height instead of an authorized kernel batch"
+    },
+    "availability-fetch": {
+      "req": "11027",
+      "title": "Retire the availability fetch of kernel batches",
+      "symbols": [
+        "fetch_batch",
+        "BatchFetch"
+      ],
+      "deleted_trees": [],
+      "replacement": "retrieve the block through eth_getBlockByNumber or the archive node"
+    },
+    "checkpoint-finality": {
+      "req": "11028",
+      "title": "Retire the kernel checkpoint-finality evidence in AI projections and program crates",
+      "symbols": [
+        "verify_certificate",
+        "FINALIZED_RANK",
+        "layerx_proof::checkpoint"
+      ],
+      "deleted_trees": [],
+      "replacement": "use block commit as finality plus an ICS23 proof of LXP program state at the height; retention timers key on block commit"
+    },
+    "envelope-signing": {
+      "req": "11029",
+      "title": "Retire the kernel ed25519 activity envelope signing for agents",
+      "symbols": [
+        "sign_disclosed",
+        "KeystoreSigner",
+        "RemoteSigner",
+        "encode_payment_envelope"
+      ],
+      "deleted_trees": [],
+      "replacement": "sign a secp256k1 EIP-1559 transaction through the same Signer trait; ed25519 stays only for bindLayerX and DID proofs"
+    },
+    "wire-codec": {
+      "req": "11030",
+      "title": "Retire the activity wire codec and its C differential",
+      "symbols": [
+        "layerx_wire::activity",
+        "wire-differential"
+      ],
+      "deleted_trees": [
+        "agent/tools/wire-differential",
+        "agent/crates/layerx-wire"
+      ],
+      "replacement": "encode the operation as an EIP-1559 transaction with the existing RLP encoder; the differential runs against go-ethereum types"
+    },
+    "indexer-kernel-half": {
+      "req": "11031",
+      "title": "Retire the indexer kernel half",
+      "symbols": [
+        "crate::layerx::"
+      ],
+      "deleted_trees": [
+        "platform/hosted/indexer/src/layerx.rs"
+      ],
+      "replacement": "index the chain half only; kernel facts are chain events and PLX logs"
+    },
+    "layerxctl-port": {
+      "req": "11032",
+      "title": "Retire the layerxctl LNI port",
+      "symbols": [
+        "lni",
+        "LNI"
+      ],
+      "deleted_trees": [],
+      "replacement": "talk to the chain over EVM JSON-RPC through the router; the binary, its build target and its images stay"
+    },
+    "intent-ingester": {
+      "req": "11033",
+      "title": "Retire the intent ingester",
+      "symbols": [
+        "layerx-intent-ingester",
+        "intent-ingester"
+      ],
+      "deleted_trees": [
+        "interop/crates/layerx-intent-ingester"
+      ],
+      "replacement": "0x1015 executes synchronously in the transaction, so the ingester and its workspace, image, rollout and CI entries are removed"
+    },
+    "intent-vocabulary": {
+      "req": "11034",
+      "title": "Retire the layerx-intents precompile event vocabulary",
+      "symbols": [
+        "route_event",
+        "RouteBinding"
+      ],
+      "deleted_trees": [
+        "human/crates/layerx-intents/src/precompile.rs"
+      ],
+      "replacement": "disclosure switches to the 0x1015 v2 method kinds; bridge kinds go because the bridge settles natively"
+    },
+    "dual-market-ids": {
+      "req": "11035",
+      "title": "Retire the dual market ids",
+      "symbols": [
+        "MarketMap",
+        "LAYERX_INGESTER_MARKET_MAP"
+      ],
+      "deleted_trees": [
+        "interop/crates/layerx-intent-ingester/src/submit.rs"
+      ],
+      "replacement": "one market id lives in the exchange store and 0x1015 getMarket reads it"
+    },
+    "protocol-adapter": {
+      "req": "11036",
+      "title": "Retire the programs protocol adapter",
+      "symbols": [
+        "layerx-programs-protocol-adapter",
+        "protocol_adapter",
+        "protocol-adapter"
+      ],
+      "deleted_trees": [
+        "programs/crates/layerx-programs-protocol-adapter"
+      ],
+      "replacement": "read program state and balances through the gRPC LXP Query/ProgramState and Query/ProgramBalances with ICS23 proofs"
+    },
+    "programs-ingress": {
+      "req": "11037",
+      "title": "Retire the gateway programs ingress mapping",
+      "symbols": [
+        "/v1/programs/deploy",
+        "/v1/programs/call",
+        "/v1/programs/upgrade",
+        "/v1/programs/wind-down"
+      ],
+      "deleted_trees": [],
+      "replacement": "send the same payload bytes as an EVM transaction to layerxprograms 0x101D; the REST mapping is removed"
+    },
+    "program-events": {
+      "req": "11038",
+      "title": "Retire the kernel-backed lx_getProgramEvents",
+      "symbols": [
+        "lx_getProgramEvents"
+      ],
+      "deleted_trees": [],
+      "replacement": "read eth_getLogs on PLX and xweb events plus LXP Query/ProgramEvents"
+    },
+    "storage-keeper": {
+      "req": "11039",
+      "title": "Retire the paxai-storage-keeper",
+      "symbols": [
+        "paxai-storage-keeper"
+      ],
+      "deleted_trees": [
+        "platform/hosted/paxai-storage-keeper"
+      ],
+      "replacement": "no reservation is needed; historical availability comes from archive nodes"
+    },
+    "kernel-web": {
+      "req": "11040",
+      "title": "Retire the kernel web module",
+      "symbols": [
+        "lx_web_",
+        "PAXEERX_WEB_FEES",
+        "LX_WEB_",
+        "lx_web.h"
+      ],
+      "deleted_trees": [
+        "src/modules/web",
+        "include/layerx/lx_web.h"
+      ],
+      "replacement": "program web requests go to the xweb module with origin 2; the xweb attestor set and threshold serve both origins and the xweb module escrow holds the fee"
+    },
+    "websearch-kernel-relay": {
+      "req": "11041",
+      "title": "Retire the x-websearch kernel relay and kernel 402LXP settlement",
+      "symbols": [
+        "KernelWatcher",
+        "KernelRelay",
+        "SequencerTrust",
+        "lx_getSequence",
+        "KernelAttestor"
+      ],
+      "deleted_trees": [],
+      "replacement": "watch and submit for origin 2 through eth_sendRawTransaction to the sequencer with the signed receipt; one EVM nonce per sender"
+    },
+    "account-naming": {
+      "req": "11042",
+      "title": "Retire the kernel account naming for web payments",
+      "symbols": [
+        "LAYERX-PAYER-DID"
+      ],
+      "deleted_trees": [],
+      "replacement": "name the payer by its EVM address bound through addr 0x1004"
+    },
+    "receive-grant": {
+      "req": "11043",
+      "title": "Retire the kernel RECEIVE and GRANT for web payments",
+      "symbols": [
+        "sign_draw",
+        "lxp_grant"
+      ],
+      "deleted_trees": [],
+      "replacement": "draw the payment through the layerxpay precompile at 0x101B"
+    },
+    "wallet-caps": {
+      "req": "11044",
+      "title": "Retire the lx_getWalletCaps",
+      "symbols": [
+        "lx_getWalletCaps"
+      ],
+      "deleted_trees": [],
+      "replacement": "read layerxpay getBudget, layerxledger getPayerGrant, layerxauth getGrant and xweb fee()"
+    },
+    "router-joins": {
+      "req": "11045",
+      "title": "Retire the router cross-domain joins",
+      "symbols": [
+        "px_getUnifiedHistory",
+        "px_getNetwork",
+        "px_listAssets"
+      ],
+      "deleted_trees": [],
+      "replacement": "keep the method names with one-source answers; response fields stay and kernel.available is derived true"
+    },
+    "wallet-two-domain": {
+      "req": "11046",
+      "title": "Retire the wallet gateway two-domain routes and jobs",
+      "symbols": [
+        "sign-custody",
+        "layerxSync",
+        "depositUSDL",
+        "signCustody"
+      ],
+      "deleted_trees": [
+        "human/wallet/gateway/src/jobs/layerxSync.ts"
+      ],
+      "replacement": "review and send an EVM transaction with the signed receipt; the lx review re-points to EVM review and the deposit action is removed"
+    },
+    "human-two-domain": {
+      "req": "11047",
+      "title": "Retire the human two-domain crates and journeys",
+      "symbols": [
+        "layerx-paxeer-client",
+        "layerx-human-movement-provider",
+        "layerx-explorer-index",
+        "EvmPayoutBinding",
+        "layerx_paxeer_client"
+      ],
+      "deleted_trees": [
+        "human/crates/layerx-paxeer-client",
+        "human/crates/layerx-human-movement-provider",
+        "human/crates/layerx-explorer-index"
+      ],
+      "replacement": "remove the deposit, withdraw, exit and binding hops; balances come from bank state and the explorer pages are the native explorer pages"
+    },
+    "explorer-kernel-views": {
+      "req": "11048",
+      "title": "Retire the explorer kernel-only views",
+      "symbols": [
+        "PaxeerXKernelReceipts",
+        "paxeer-x/anchors",
+        "paxeer-x/receipts"
+      ],
+      "deleted_trees": [
+        "explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex",
+        "explorer/frontend/ui/paxeerX/anchors/PaxeerXAnchorsTable.tsx"
+      ],
+      "replacement": "native block and transaction pages show the data; the unified account folds into the native address page"
+    },
+    "mirror": {
+      "req": "11049",
+      "title": "Mirror kernel-checkpoint input",
+      "symbols": [
+        "statusOf",
+        "LniArchiveSource",
+        "CheckpointSubmitted"
+      ],
+      "deleted_trees": [],
+      "replacement": "the mirror is kept and re-pointed: it publishes the committed header and app hash read from a full node at the mirrored height, and finality is block height and commit"
+    }
+  },
+  "allowed_references": [
+    {
+      "path": "precompiles/setup.go",
+      "lines": [
+        "\"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxanchor\"",
+        "\"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxcustody\"",
+        "\"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxverify\"",
+        "ecommon.HexToAddress(layerxverify.LayerXVerifyAddress):   layerxverify.GetVersioned(latestUpgrade, keepers),",
+        "ecommon.HexToAddress(layerxcustody.LayerXCustodyAddress): layerxcustody.GetVersioned(latestUpgrade, keepers),",
+        "ecommon.HexToAddress(layerxanchor.LayerXAnchorAddress):   layerxanchor.GetVersioned(latestUpgrade, keepers),"
+      ]
+    },
+    {
+      "path": "custodyproof/verify.go",
+      "lines": [
+        "custodytypes \"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types\""
+      ]
+    },
+    {
+      "path": "include/layerx/lxp_result.h",
+      "symbols": [
+        "LXP_MODULE_DISABLED",
+        "LXP_ERR_MODULE_DISABLED"
+      ]
+    }
+  ]
+}
