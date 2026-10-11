@@ -52,13 +52,13 @@ func (m *WatermarkManager) SetPendingSnapshot(pending PendingSnapshot) {
 	m.pending = pending
 }
 
-// resolvePending returns the height of the open block. The branch it opens is
+// resolvePending returns the height of the open block. The snapshot it takes is
 // read for its height only and never written.
 func (m *WatermarkManager) resolvePending() (int64, error) {
 	if m == nil || m.pending == nil {
 		return 0, ErrPendingServedBySequencer
 	}
-	ctx, err := m.pending.OpenContext()
+	ctx, err := m.pending.Snapshot()
 	if err != nil {
 		return 0, fmt.Errorf("pending block unavailable: %w", err)
 	}

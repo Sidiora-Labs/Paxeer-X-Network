@@ -87,7 +87,7 @@ func newPendingSequencer(t *testing.T, committed int64, funded ...utils.TestAcct
 // pending, as the node's RPC context provider does on the sequencer.
 func (s *pendingSequencer) ctxProvider(height int64) sdk.Context {
 	if height == evmrpc.PendingCtxHeight {
-		ctx, err := s.exec.OpenContext()
+		ctx, err := s.exec.Snapshot()
 		if err != nil {
 			panic(err)
 		}

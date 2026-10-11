@@ -52,9 +52,9 @@ var ErrPendingServedBySequencer error = &ErrEVMNotSupported{Msg: "pending served
 // PendingSnapshot is the open block the sequencer and standby execute
 // transactions into; sequencer.Executor satisfies it.
 type PendingSnapshot interface {
-	// OpenContext returns a branch of the open block whose writes never reach
-	// it, or an error when no block is open.
-	OpenContext() (sdk.Context, error)
+	// Snapshot returns a frozen read-only view of the open block as of the last
+	// accepted transaction, or an error when no block is open.
+	Snapshot() (sdk.Context, error)
 }
 
 // EVM launch block heights for different chains
