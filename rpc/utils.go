@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/libs/bytes"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
@@ -55,6 +56,18 @@ type PendingSnapshot interface {
 	// Snapshot returns a frozen read-only view of the open block as of the last
 	// accepted transaction, or an error when no block is open.
 	Snapshot() (sdk.Context, error)
+	// PendingTx returns the receipted transaction with the given EVM hash in
+	// the open block, or false when no block is open or none matches.
+	PendingTx(hash [32]byte) (PendingTx, bool)
+}
+
+// PendingTx is one receipted transaction of the open block.
+type PendingTx struct {
+	TxBytes []byte
+	Height  int64
+	// TxIndex is the position in the block; index 0 holds MsgSequenceBatch.
+	TxIndex int
+	Result  *abci.ExecTxResult
 }
 
 // EVM launch block heights for different chains

@@ -12,6 +12,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
@@ -54,7 +55,13 @@ type Executor interface {
 	// returned context never reach the open layer. A snapshot is point-in-time
 	// until Seal, which flattens the open layer beneath it.
 	Snapshot() (sdk.Context, error)
+	// PendingTx returns the receipted EVM transaction with the given hash in
+	// the open layer, or false when no layer is open or none matches.
+	PendingTx(hash [32]byte) (PendingTx, bool)
 }
+
+// PendingTx is one receipted transaction of the open layer.
+type PendingTx = evmrpc.PendingTx
 
 // Host is the application surface the executor runs on; *node.App satisfies it.
 type Host interface {
@@ -297,6 +304,30 @@ func (s *sequential) Snapshot() (sdk.Context, error) {
 	s.open.ctx = ctx.WithMultiStore(s.open.layers.top())
 	s.mu.Unlock()
 	return ctx.WithMultiStore(frozen.CacheMultiStore()), nil
+}
+
+func (s *sequential) PendingTx(hash [32]byte) (PendingTx, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.open == nil {
+		return PendingTx{}, false
+	}
+	for i, msg := range s.open.evmMsgs {
+		if msg == nil {
+			continue
+		}
+		etx, _ := msg.AsTransaction()
+		if etx == nil || etx.Hash() != hash {
+			continue
+		}
+		return PendingTx{
+			TxBytes: s.open.txs[i],
+			Height:  s.open.height,
+			TxIndex: i + 1,
+			Result:  s.open.results[i],
+		}, true
+	}
+	return PendingTx{}, false
 }
 
 // nextSeqHash is sha256("PAXEER/v1/sequence\0" || prevSeqHash || u64be(seq) || activity_id).
