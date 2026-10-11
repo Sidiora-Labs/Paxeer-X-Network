@@ -40,6 +40,10 @@ typedef struct lxp_snapshot_manifest_record {
     lxp_snapshot_migration_authorization migration;
 } lxp_snapshot_manifest_record;
 
+lxp_result lx_account_record_encode(const lx_account *account, uint8_t *bytes,
+                                    size_t capacity, size_t *length);
+lxp_result lx_account_record_decode(const uint8_t *bytes, size_t length,
+                                    lx_account *account);
 lxp_result lxp_snapshot_write(const lxp_kernel *kernel,
                               uint64_t global_sequence, lxp_arena *arena,
                               lxp_byte_span *snapshot);

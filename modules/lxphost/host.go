@@ -7,8 +7,10 @@ package lxphost
 #cgo LDFLAGS: -L${SRCDIR}/../../build -L${SRCDIR}/../../programs/target/debug -llayerx -llayerx_programs_sandbox -llayerx -lssl -lcrypto -pthread -ldl -lm
 #include <stdlib.h>
 #include <string.h>
+#include "layerx/lx_asset.h"
 #include "layerx/lxp_hash.h"
 #include "layerx/lxp_module_ctx.h"
+#include "layerx/lxp_protocol.h"
 #include "layerx/programs.h"
 
 enum { LXPHOST_ARENA_BYTES = 4194304 };
@@ -32,6 +34,10 @@ typedef struct lxphost_node {
     lxp_receipt receipt;
     lxp_arena arena;
     lxphost_envelope envelope;
+    lx_account_registry accounts;
+    lx_asset_registry assets;
+    lxp_transfer_asset_state transfer_assets[LX_ASSET_REGISTRY_CAPACITY];
+    lx_asset_runtime asset_runtime;
     uint64_t parameters;
     uint64_t epoch;
     int store_ready;
@@ -89,6 +95,7 @@ static void lxphost_node_free(lxphost_node *node)
     if (node == NULL) return;
     lxphost_release_blobs(&node->kernel);
     if (node->store_ready != 0) (void)lxp_state_store_destroy(&node->store);
+    lx_account_registry_release(&node->accounts);
     free(node);
 }
 
@@ -107,15 +114,22 @@ static int32_t lxphost_reset(lxphost_node *node, uint64_t first_sequence)
         status = lxp_state_store_destroy(&node->store);
         if (status != LXP_OK) return status;
     }
+    lx_account_registry_release(&node->accounts);
     (void)memset(node, 0, sizeof(*node));
     node->epoch = epoch;
     node->parameters = 1U;
     node->fees.version = 1U;
     node->fees.multiplier_basis_points = 10000U;
+    status = lx_account_registry_init(&node->accounts);
+    if (status == LXP_OK) status = lx_asset_registry_init(&node->assets, 0U);
+    if (status != LXP_OK) return status;
     status = lxp_state_store_init(&node->store, first_sequence);
     if (status != LXP_OK) return status;
     node->store_ready = 1;
-    status = lxp_idempotency_reserve(&node->store);
+    status = lxp_state_store_bind_accounts(&node->store, &node->accounts);
+    if (status == LXP_OK)
+        status = lxp_state_store_require_account_root(&node->store);
+    if (status == LXP_OK) status = lxp_idempotency_reserve(&node->store);
     if (status == LXP_OK)
         status = lxp_arena_init(&node->arena, node->arena_bytes,
                                 sizeof(node->arena_bytes));
@@ -128,7 +142,46 @@ static int32_t lxphost_reset(lxphost_node *node, uint64_t first_sequence)
     if (status == LXP_OK)
         status = lxp_kernel_register_module(&node->kernel,
                                             programs_module_registration());
+    if (status == LXP_OK)
+        status = lxp_kernel_register_module(&node->kernel,
+                                            lx_asset_module_iface());
+    if (status == LXP_OK)
+        status = lxp_kernel_set_capabilities(&node->kernel, NULL,
+                                             lxp_kernel_canonical_ledger_apply);
     return status;
+}
+
+static void *lxphost_accounts(lxphost_node *node)
+{
+    return &node->accounts;
+}
+
+static int32_t lxphost_bind_assets(lxphost_node *node, uint32_t network_id)
+{
+    size_t count = 0U;
+    size_t i;
+    int32_t status = lx_asset_committed_records(
+        &node->kernel, node->assets.assets, (size_t)LX_ASSET_REGISTRY_CAPACITY,
+        &count);
+    if (status != LXP_OK) return status;
+    if (count > (size_t)LX_ASSET_REGISTRY_CAPACITY) return LXP_FATAL_INVARIANT;
+    node->assets.count = count;
+    for (i = 0U; i < count; ++i) {
+        status = lx_asset_transfer_state(&node->assets.assets[i],
+                                         &node->transfer_assets[i]);
+        if (status != LXP_OK) return status;
+    }
+    (void)memset(&node->asset_runtime, 0, sizeof(node->asset_runtime));
+    node->asset_runtime.accounts = &node->accounts;
+    node->asset_runtime.assets = node->assets.assets;
+    node->asset_runtime.asset_count = count;
+    node->asset_runtime.transfer_assets = node->transfer_assets;
+    node->asset_runtime.transfer_asset_count = count;
+    node->asset_runtime.network_id = network_id;
+    node->asset_runtime.protocol_version =
+        (uint16_t)LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    node->kernel.module_runtime[LXP_MODULE_ASSET] = &node->asset_runtime;
+    return LXP_OK;
 }
 
 static int32_t lxphost_envelope_write(
@@ -427,7 +480,7 @@ static int32_t lxphost_outcome_read(lxphost_node *node, lxphost_outcome *outcome
     lxp_byte_span encoded;
     int32_t status;
     if (node->kernel.publication_poisoned || node->journal.open ||
-        node->store.count != 0U || node->store.accounts != NULL)
+        node->store.count != 0U || node->store.accounts != &node->accounts)
         return LXP_FATAL_INVARIANT;
     status = lxp_arena_reset(&node->arena, 0U);
     if (status == LXP_OK)
@@ -648,6 +701,9 @@ func (h *Host) HostExecute(ctx sdk.Context, activity Activity, authority KernelA
 	if err != nil {
 		return Receipt{}, err
 	}
+	if err := result(C.lxphost_bind_assets(h.node, C.uint32_t(h.cfg.NetworkID))); err != nil {
+		return Receipt{}, err
+	}
 	did, err := h.bindActor()
 	if err != nil {
 		return Receipt{}, err
@@ -725,6 +781,10 @@ func (h *Host) actorSequence(did [32]byte) (uint64, error) {
 	var sequence C.uint64_t
 	err := result(C.lxphost_actor_sequence_get(h.node, bytes32(&did), &sequence))
 	return uint64(sequence), err
+}
+
+func (h *Host) accountRegistry() unsafe.Pointer {
+	return C.lxphost_accounts(h.node)
 }
 
 func (h *Host) loadModuleKV(module uint16, key, value []byte) error {

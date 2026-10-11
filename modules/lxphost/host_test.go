@@ -403,3 +403,227 @@ func TestHostDeterministicAppHash(t *testing.T) {
 	require.Equal(t, hashes, replayHashes)
 	require.NotEqual(t, hashes[0], hashes[1])
 }
+
+const (
+	assetRegisterType    = 0x00010001
+	assetAccountOpenType = 0x00010004
+	assetMintType        = 0x0001000a
+	moduleValueKind      = 13
+	agentAssetKind       = 14
+)
+
+type accountRow struct {
+	id        [32]byte
+	name      string
+	kind      uint8
+	balance   uint64
+	asset     [32]byte
+	hasAsset  bool
+	next      uint64
+	created   uint64
+	frozen    bool
+	reference bool
+	key       [32]byte
+	hasKey    bool
+}
+
+func parseAccountRow(t *testing.T, key, value []byte) accountRow {
+	t.Helper()
+	var row accountRow
+	cursor := 0
+	take := func(n int) []byte {
+		require.LessOrEqual(t, cursor+n, len(value))
+		out := value[cursor : cursor+n]
+		cursor += n
+		return out
+	}
+	fixed := func(out *[32]byte) {
+		require.Equal(t, uint32(32), binary.BigEndian.Uint32(take(4)))
+		copy(out[:], take(32))
+	}
+	flag := func() bool {
+		b := take(1)[0]
+		require.LessOrEqual(t, b, byte(1))
+		return b == 1
+	}
+	fixed(&row.id)
+	row.name = string(take(int(binary.BigEndian.Uint32(take(4)))))
+	row.kind = take(1)[0]
+	balance := take(16)
+	require.Equal(t, make([]byte, 8), balance[:8])
+	row.balance = binary.BigEndian.Uint64(balance[8:])
+	fixed(&row.asset)
+	row.hasAsset = flag()
+	row.next = binary.BigEndian.Uint64(take(8))
+	row.created = binary.BigEndian.Uint64(take(8))
+	row.frozen = flag()
+	row.reference = flag()
+	fixed(&row.key)
+	row.hasKey = flag()
+	require.Equal(t, len(value), cursor)
+	require.Equal(t, accountKey(row.id), key)
+	derived, err := kernelAccountID([]byte(row.name))
+	require.NoError(t, err)
+	require.Equal(t, row.id, derived)
+	return row
+}
+
+func accountRows(t *testing.T, c *testChain) map[[32]byte]accountRow {
+	t.Helper()
+	rows := map[[32]byte]accountRow{}
+	for key, value := range c.dump() {
+		if key[0] == accountPrefix {
+			row := parseAccountRow(t, []byte(key), value)
+			rows[row.id] = row
+		}
+	}
+	return rows
+}
+
+func rawAccountRows(c *testChain) map[string][]byte {
+	rows := map[string][]byte{}
+	for key, value := range c.dump() {
+		if key[0] == accountPrefix {
+			rows[key] = value
+		}
+	}
+	return rows
+}
+
+type testAsset struct {
+	id       [32]byte
+	issuance [32]byte
+	account  [32]byte
+	name     string
+}
+
+func newTestAsset(t *testing.T, issuer testActor, salt byte) testAsset {
+	t.Helper()
+	var asset testAsset
+	material := append([]byte("LX:ASSET:v1"), issuer.id[:]...)
+	asset.id = sha256.Sum256(append(material, bytes.Repeat([]byte{salt}, 32)...))
+	_, issuance, err := IssuanceAccountID(asset.id)
+	require.NoError(t, err)
+	asset.issuance = issuance
+	asset.name = "agent:" + string(issuer.did) + ":asset:" + hex.EncodeToString(asset.id[:])
+	account, err := kernelAccountID([]byte(asset.name))
+	require.NoError(t, err)
+	asset.account = account
+	return asset
+}
+
+func (a testActor) registerAsset(t *testing.T, h *Host, accountSequence uint64, blockTimeMs int64, asset testAsset, salt byte, supplyCap uint64) Activity {
+	payload := append([]byte{0, 1}, asset.id[:]...)
+	payload = append(payload, bytes.Repeat([]byte{salt}, 32)...)
+	payload = append(payload, 1, 'T', 1, 'T', 6)
+	payload = binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(payload, 0), supplyCap)
+	payload = append(payload, 1, 0)
+	return a.activity(t, h, assetRegisterType, accountSequence, blockTimeMs, payload)
+}
+
+func (a testActor) openAssetAccount(t *testing.T, h *Host, accountSequence uint64, blockTimeMs int64, asset testAsset) Activity {
+	return a.activity(t, h, assetAccountOpenType, accountSequence, blockTimeMs, append([]byte{0, 1}, asset.id[:]...))
+}
+
+func (a testActor) mint(t *testing.T, h *Host, accountSequence uint64, blockTimeMs int64, asset testAsset, amount uint64) Activity {
+	payload := append(append([]byte{0, 1}, asset.id[:]...), asset.account[:]...)
+	payload = binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(payload, 0), amount)
+	return a.activity(t, h, assetMintType, accountSequence, blockTimeMs, payload)
+}
+
+func TestHostAssetLedger(t *testing.T) {
+	const blockTime = int64(1700000000000)
+	chain := newTestChain(t)
+	host := chain.host(t)
+	issuer := newTestActor(t, 21)
+	asset := newTestAsset(t, issuer, 0x33)
+
+	registered := execute(t, host, chain.context(1, blockTime, 41), issuer.registerAsset(t, host, 0, blockTime, asset, 0x33, 1000), issuer.authority())
+	require.Equal(t, Code(0), registered.ResultCode)
+	chain.commit()
+	rows := accountRows(t, chain)
+	require.Len(t, rows, 1)
+	issuance := rows[asset.issuance]
+	require.Equal(t, uint8(moduleValueKind), issuance.kind)
+	require.Equal(t, uint64(1000), issuance.balance)
+	require.True(t, issuance.hasAsset)
+	require.Equal(t, asset.id, issuance.asset)
+	require.Equal(t, uint64(41), issuance.created)
+	require.False(t, issuance.hasKey)
+
+	before := chain.dump()
+	ctx := chain.context(2, blockTime+1000, 42)
+	branch, _ := ctx.CacheContext()
+	aborted := execute(t, host, branch, issuer.openAssetAccount(t, host, 1, blockTime+1000, asset), issuer.authority())
+	require.Equal(t, Code(0), aborted.ResultCode)
+	require.Nil(t, chain.get(accountKey(asset.account)))
+	require.Equal(t, before, chain.dump())
+
+	opened := execute(t, host, ctx, issuer.openAssetAccount(t, host, 1, blockTime+1000, asset), issuer.authority())
+	require.Equal(t, Code(0), opened.ResultCode)
+	require.Equal(t, aborted.PreviousStateRoot, opened.PreviousStateRoot)
+	chain.commit()
+	rows = accountRows(t, chain)
+	require.Len(t, rows, 2)
+	holder := rows[asset.account]
+	require.Equal(t, asset.name, holder.name)
+	require.Equal(t, uint8(agentAssetKind), holder.kind)
+	require.Equal(t, uint64(0), holder.balance)
+	require.Equal(t, asset.id, holder.asset)
+	require.True(t, holder.hasKey)
+	require.Equal(t, issuer.public, holder.key)
+	require.Equal(t, uint64(42), holder.created)
+	require.Equal(t, issuance, rows[asset.issuance])
+
+	minted := execute(t, host, chain.context(3, blockTime+2000, 43), issuer.mint(t, host, 2, blockTime+2000, asset, 250), issuer.authority())
+	require.Equal(t, Code(0), minted.ResultCode)
+	require.Equal(t, opened.ResultingStateRoot, minted.PreviousStateRoot)
+	chain.commit()
+	rows = accountRows(t, chain)
+	require.Len(t, rows, 2)
+	require.Equal(t, uint64(750), rows[asset.issuance].balance)
+	require.Equal(t, uint64(250), rows[asset.account].balance)
+	require.Equal(t, holder.next, rows[asset.account].next)
+}
+
+func TestHostAccountsRestore(t *testing.T) {
+	const blockTime = int64(1700000000000)
+	chain := newTestChain(t)
+	first := chain.host(t)
+	issuer := newTestActor(t, 22)
+	asset := newTestAsset(t, issuer, 0x44)
+	steps := []Activity{
+		issuer.registerAsset(t, first, 0, blockTime, asset, 0x44, 1000),
+		issuer.openAssetAccount(t, first, 1, blockTime, asset),
+		issuer.mint(t, first, 2, blockTime, asset, 250),
+	}
+	for index, activity := range steps {
+		receipt := execute(t, first, chain.context(1, blockTime, uint64(41+index)), activity, issuer.authority())
+		require.Equal(t, Code(0), receipt.ResultCode)
+	}
+	chain.commit()
+	committed := rawAccountRows(chain)
+	require.Len(t, committed, 2)
+
+	second := chain.host(t)
+	refused := execute(t, second, chain.context(2, blockTime+1000, 44), issuer.mint(t, second, 3, blockTime+1000, asset, 751), issuer.authority())
+	require.Equal(t, "LXP_ERR_INSUFFICIENT_BALANCE", refused.ResultCode.Error())
+	restored, err := committedAccounts(second.accountRegistry())
+	require.NoError(t, err)
+	require.Equal(t, committed, restored)
+	require.Equal(t, committed, rawAccountRows(chain))
+
+	minted := execute(t, second, chain.context(2, blockTime+1000, 45), issuer.mint(t, second, 4, blockTime+1000, asset, 100), issuer.authority())
+	require.Equal(t, Code(0), minted.ResultCode)
+	chain.commit()
+	rows := accountRows(t, chain)
+	require.Len(t, rows, 2)
+	require.Equal(t, uint64(650), rows[asset.issuance].balance)
+	require.Equal(t, uint64(350), rows[asset.account].balance)
+
+	third := chain.host(t)
+	replayed, err := third.Execute(chain.context(3, blockTime+2000, 45), issuer.mint(t, third, 5, blockTime+2000, asset, 1), issuer.authority())
+	require.Equal(t, codeSequenceReused, err)
+	require.Equal(t, Receipt{}, replayed)
+	require.Equal(t, rows, accountRows(t, chain))
+}

@@ -758,6 +758,35 @@ static lxp_result read_account(lxp_codec_reader *reader, lx_account *account)
     return status;
 }
 
+lxp_result lx_account_record_encode(const lx_account *account, uint8_t *bytes,
+                                    size_t capacity, size_t *length)
+{
+    lxp_codec_writer writer;
+    lxp_result status;
+    if (account == NULL || bytes == NULL || length == NULL ||
+        account->name_length == 0U || account->name_length > LX_ACCOUNT_NAME_MAX)
+        return LXP_ERR_NON_CANONICAL;
+    writer.bytes = bytes;
+    writer.capacity = capacity;
+    writer.length = 0U;
+    status = write_account(&writer, account);
+    if (status == LXP_OK) *length = writer.length;
+    return status;
+}
+
+lxp_result lx_account_record_decode(const uint8_t *bytes, size_t length,
+                                    lx_account *account)
+{
+    lxp_codec_reader reader;
+    lxp_result status;
+    if (bytes == NULL || account == NULL) return LXP_ERR_NON_CANONICAL;
+    status = lxp_codec_reader_init(&reader, bytes, length);
+    if (status == LXP_OK) status = read_account(&reader, account);
+    if (status == LXP_OK && reader.offset != reader.length)
+        status = LXP_ERR_TRAILING_BYTES;
+    return status;
+}
+
 static lxp_result snapshot_load(
     const uint8_t *snapshot, size_t snapshot_length,
     const lxp_snapshot_manifest_record *manifest, lxp_kernel *kernel,

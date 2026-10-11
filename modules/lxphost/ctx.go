@@ -2,10 +2,58 @@
 
 package lxphost
 
+/*
+#include <string.h>
+#include "layerx/lxp_ledger.h"
+#include "layerx/lxp_snapshot.h"
+
+enum { LXPHOST_ACCOUNT_RECORD_BYTES = 256 + LX_ACCOUNT_NAME_MAX };
+
+static int32_t lxphost_account_restore(void *registry, const uint8_t id[32],
+                                       const uint8_t *bytes, size_t length)
+{
+    lx_account account;
+    int32_t status;
+    if (registry == NULL || id == NULL) return LXP_FATAL_INVARIANT;
+    status = lx_account_record_decode(bytes, length, &account);
+    if (status != LXP_OK) return status;
+    if (memcmp(account.id, id, 32U) != 0) return LXP_FATAL_INVARIANT;
+    return lx_account_registry_slot_insert((lx_account_registry *)registry,
+                                           &account, NULL);
+}
+
+static int32_t lxphost_account_index_rebuild(void *registry)
+{
+    if (registry == NULL) return LXP_FATAL_INVARIANT;
+    return lx_account_registry_index_rebuild((lx_account_registry *)registry);
+}
+
+static size_t lxphost_account_count(const void *registry)
+{
+    return registry == NULL ? 0U :
+        ((const lx_account_registry *)registry)->count;
+}
+
+static int32_t lxphost_account_encode(const void *registry, size_t index,
+                                      uint8_t id[32], uint8_t *bytes,
+                                      size_t capacity, size_t *length)
+{
+    const lx_account_registry *accounts = (const lx_account_registry *)registry;
+    if (accounts == NULL || accounts->count > (size_t)LX_ACCOUNT_REGISTRY_CAPACITY ||
+        index >= accounts->count || accounts->accounts == NULL)
+        return LXP_FATAL_INVARIANT;
+    (void)memcpy(id, accounts->accounts[index].id, 32U);
+    return lx_account_record_encode(&accounts->accounts[index], bytes, capacity,
+                                    length);
+}
+*/
+import "C"
+
 import (
 	"bytes"
 	"encoding/binary"
 	"sort"
+	"unsafe"
 
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
@@ -15,6 +63,7 @@ const (
 	lastSequenceKey        byte = 0x02
 	identitySequencePrefix byte = 0x03
 	idempotencyPrefix      byte = 0x04
+	accountPrefix          byte = 0x06
 )
 
 type sequenceContextKey struct{}
@@ -117,7 +166,67 @@ func (b *branchCtx) load(h *Host) error {
 	if err := iterator.Close(); err != nil {
 		return codeFatalInvariant
 	}
+	rows, err := restoreAccounts(b.store, h.accountRegistry())
+	if err != nil {
+		return err
+	}
+	for key, value := range rows {
+		b.loaded[key] = value
+	}
 	return nil
+}
+
+// loadCommittedAccounts restores every persisted kernel account row of the
+// store into the account registry, passed as an opaque pointer, and rebuilds
+// its index.
+func loadCommittedAccounts(store sdk.KVStore, registry unsafe.Pointer) error {
+	_, err := restoreAccounts(store, registry)
+	return err
+}
+
+func restoreAccounts(store sdk.KVStore, registry unsafe.Pointer) (map[string][]byte, error) {
+	rows := map[string][]byte{}
+	iterator := sdk.KVStorePrefixIterator(store, []byte{accountPrefix})
+	for ; iterator.Valid(); iterator.Next() {
+		key := append([]byte(nil), iterator.Key()...)
+		if len(key) != 33 {
+			iterator.Close()
+			return nil, codeFatalInvariant
+		}
+		value := append([]byte(nil), iterator.Value()...)
+		if err := result(C.lxphost_account_restore(registry, bytesPtr(key[1:]), bytesPtr(value), C.size_t(len(value)))); err != nil {
+			iterator.Close()
+			return nil, err
+		}
+		rows[string(key)] = value
+	}
+	if err := iterator.Close(); err != nil {
+		return nil, codeFatalInvariant
+	}
+	if err := result(C.lxphost_account_index_rebuild(registry)); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func committedAccounts(registry unsafe.Pointer) (map[string][]byte, error) {
+	count := int(C.lxphost_account_count(registry))
+	rows := make(map[string][]byte, count)
+	buffer := make([]byte, C.LXPHOST_ACCOUNT_RECORD_BYTES)
+	for i := 0; i < count; i++ {
+		var id [32]byte
+		var length C.size_t
+		if err := result(C.lxphost_account_encode(registry, C.size_t(i), bytes32(&id),
+			bytesPtr(buffer), C.size_t(len(buffer)), &length)); err != nil {
+			return nil, err
+		}
+		key := accountKey(id)
+		if _, duplicate := rows[string(key)]; duplicate {
+			return nil, codeFatalInvariant
+		}
+		rows[string(key)] = append([]byte(nil), buffer[:length]...)
+	}
+	return rows, nil
 }
 
 func (b *branchCtx) commit(h *Host, did [32]byte) error {
@@ -133,7 +242,14 @@ func (b *branchCtx) commit(h *Host, did [32]byte) error {
 	if err != nil {
 		return err
 	}
-	staged := make(map[string][]byte, len(entries))
+	accounts, err := committedAccounts(h.accountRegistry())
+	if err != nil {
+		return err
+	}
+	staged := make(map[string][]byte, len(entries)+len(accounts))
+	for key, value := range accounts {
+		staged[key] = value
+	}
 	for _, entry := range entries {
 		key := moduleKVKey(entry.module, entry.key)
 		if _, duplicate := staged[string(key)]; duplicate {
@@ -178,6 +294,10 @@ func moduleKVKey(module uint16, key []byte) []byte {
 	out[0] = moduleKVPrefix
 	binary.BigEndian.PutUint16(out[1:3], module)
 	return append(out, key...)
+}
+
+func accountKey(id [32]byte) []byte {
+	return append([]byte{accountPrefix}, id[:]...)
 }
 
 func identitySequenceKey(did [32]byte) []byte {
