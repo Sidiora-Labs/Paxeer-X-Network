@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::store::Store;
 use crate::wire::{self, Error, Operation, Request, Result};
-use layerx_client::lni::framing::{read_frame, write_frame};
 use rustls::{ServerConnection, StreamOwned};
 use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -80,7 +80,7 @@ fn connection(
         return Err(Error::Refused);
     }
     let mut tls = StreamOwned::new(connection, tcp);
-    let frame = Zeroizing::new(read_frame(&mut tls, wire::MAX_FRAME).map_err(|_| Error::Refused)?);
+    let frame = read_request(&mut tls)?;
     let request = Request::decode(&frame)?;
     let now = clock
         .sample(std::time::Duration::from_secs(1))
@@ -103,12 +103,34 @@ fn connection(
             .map_err(|_| Error::Unavailable)?
             .dispatch(&request, digest, now)
     });
-    write_frame(
+    write_response(
         &mut tls,
         &wire::response(request.version, request.operation, answer),
-        wire::MAX_FRAME,
     )
-    .map_err(|_| Error::Unavailable)
+}
+fn read_request(reader: &mut impl Read) -> Result<Zeroizing<Vec<u8>>> {
+    let mut prefix = [0_u8; 4];
+    reader.read_exact(&mut prefix).map_err(|_| Error::Refused)?;
+    let length = usize::try_from(u32::from_be_bytes(prefix)).map_err(|_| Error::Refused)?;
+    if length == 0 || length > wire::MAX_FRAME {
+        return Err(Error::Refused);
+    }
+    let mut payload = Zeroizing::new(vec![0_u8; length]);
+    reader
+        .read_exact(&mut payload)
+        .map_err(|_| Error::Refused)?;
+    Ok(payload)
+}
+fn write_response(writer: &mut impl Write, payload: &[u8]) -> Result<()> {
+    if payload.len() > wire::MAX_FRAME {
+        return Err(Error::Unavailable);
+    }
+    let length = u32::try_from(payload.len()).map_err(|_| Error::Unavailable)?;
+    writer
+        .write_all(&length.to_be_bytes())
+        .and_then(|()| writer.write_all(payload))
+        .and_then(|()| writer.flush())
+        .map_err(|_| Error::Unavailable)
 }
 fn validate_sign(request: &Request<'_>, config: &Config, now: u64) -> Result<Option<[u8; 32]>> {
     if request.operation == 13 {
