@@ -84,7 +84,7 @@ func (f *FeeFloor) Open(height int64, timestampMs int64) error {
 	if err := f.Executor.Open(height, timestampMs); err != nil {
 		return err
 	}
-	ctx, err := f.Executor.OpenContext()
+	ctx, err := f.Executor.Snapshot()
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (f *FeeFloor) Open(height int64, timestampMs int64) error {
 // refusal here takes no seq. Undecodable bytes go to Accept, which refuses them.
 func (f *FeeFloor) Accept(txBytes []byte) (*Accepted, error) {
 	if tx, err := f.host.GetTxConfig().TxDecoder()(txBytes); err == nil {
-		ctx, err := f.Executor.OpenContext()
+		ctx, err := f.Executor.Snapshot()
 		if err != nil {
 			return nil, err
 		}

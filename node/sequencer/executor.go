@@ -49,8 +49,11 @@ type Executor interface {
 	// Seal closes the open layer for height and returns its accepted
 	// transactions in seq order with the last seq and seqHash.
 	Seal(height int64) (*Batch, error)
-	// OpenContext returns a branch of the open layer for reads.
-	OpenContext() (sdk.Context, error)
+	// Snapshot returns a read-only view of the open layer as of the last
+	// accepted transaction. Later Accepts never reach it, and writes to the
+	// returned context never reach the open layer. A snapshot is point-in-time
+	// until Seal, which flattens the open layer beneath it.
+	Snapshot() (sdk.Context, error)
 }
 
 // Host is the application surface the executor runs on; *node.App satisfies it.
@@ -110,10 +113,12 @@ type Batch struct {
 }
 
 type openLayer struct {
-	height           int64
-	timestampMs      int64
+	height      int64
+	timestampMs int64
+	// ctx is the open block's context over the top branch of layers, the
+	// only branch Accept writes into.
 	ctx              sdk.Context
-	store            sdk.CacheMultiStore
+	layers           layerStack
 	beginBlockEvents []abci.Event
 	fromSeq          uint64
 	prevSeqHash      [32]byte
@@ -130,6 +135,50 @@ type sequential struct {
 	lastSeq     uint64
 	lastSeqHash [32]byte
 	open        *openLayer
+}
+
+// layerStack is the open layer as a stack of cache branches, each over the one
+// below; the bottom is L_open. Accept writes only into the top branch, which is
+// never handed out: freeze hands out the top and pushes a fresh branch over it,
+// so a handed-out branch is never written again before Seal.
+type layerStack struct {
+	branches []sdk.CacheMultiStore
+	// frozenAt is the accepted transaction count when the top was last
+	// frozen, or -1 before the first freeze.
+	frozenAt int
+}
+
+func newLayerStack(base sdk.CacheMultiStore) layerStack {
+	return layerStack{branches: []sdk.CacheMultiStore{base}, frozenAt: -1}
+}
+
+func (l *layerStack) top() sdk.CacheMultiStore {
+	return l.branches[len(l.branches)-1]
+}
+
+// freeze returns the branch holding the state after the accepted-th
+// transaction and pushes a fresh writable branch over it. With no transaction
+// accepted since the last freeze it returns the branch frozen then and pushes
+// nothing, so reads between two Accepts do not deepen the stack.
+func (l *layerStack) freeze(accepted int) sdk.CacheMultiStore {
+	if accepted == l.frozenAt {
+		return l.branches[len(l.branches)-2]
+	}
+	frozen := l.top()
+	l.branches = append(l.branches, frozen.CacheMultiStore())
+	l.frozenAt = accepted
+	return frozen
+}
+
+// flatten writes every branch into the one below, top first, and returns L_open.
+func (l *layerStack) flatten() sdk.CacheMultiStore {
+	for i := len(l.branches) - 1; i > 0; i-- {
+		l.branches[i].Write()
+	}
+	base := l.branches[0]
+	l.branches = l.branches[:1]
+	l.frozenAt = -1
+	return base
 }
 
 // NewExecutor builds the executor for opts.Mode.
@@ -188,7 +237,7 @@ func (s *sequential) Open(height int64, timestampMs int64) error {
 		height:           height,
 		timestampMs:      timestampMs,
 		ctx:              ctx,
-		store:            store,
+		layers:           newLayerStack(store),
 		beginBlockEvents: events,
 		fromSeq:          s.lastSeq + 1,
 		prevSeqHash:      s.lastSeqHash,
@@ -218,6 +267,7 @@ func (s *sequential) Seal(height int64) (*Batch, error) {
 	}
 	l := s.open
 	s.open = nil
+	store := l.layers.flatten()
 	return &Batch{
 		Height:           l.height,
 		TimestampMs:      l.timestampMs,
@@ -229,18 +279,24 @@ func (s *sequential) Seal(height int64) (*Batch, error) {
 		PrevSeqHash:      l.prevSeqHash,
 		LastSeqHash:      s.lastSeqHash,
 		BeginBlockEvents: l.beginBlockEvents,
-		Ctx:              l.ctx,
-		Store:            l.store,
+		Ctx:              l.ctx.WithMultiStore(store),
+		Store:            store,
 	}, nil
 }
 
-func (s *sequential) OpenContext() (sdk.Context, error) {
+// Snapshot holds the lock only to freeze the top branch; the read-only branch
+// over it is built and read without the lock, so readers never block Accept.
+func (s *sequential) Snapshot() (sdk.Context, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.open == nil {
+		s.mu.Unlock()
 		return sdk.Context{}, ErrLayerNotOpen
 	}
-	return s.open.ctx.WithMultiStore(s.open.store.CacheMultiStore()), nil
+	ctx := s.open.ctx
+	frozen := s.open.layers.freeze(len(s.open.txs))
+	s.open.ctx = ctx.WithMultiStore(s.open.layers.top())
+	s.mu.Unlock()
+	return ctx.WithMultiStore(frozen.CacheMultiStore()), nil
 }
 
 // nextSeqHash is sha256("PAXEER/v1/sequence\0" || prevSeqHash || u64be(seq) || activity_id).

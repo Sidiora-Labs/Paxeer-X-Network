@@ -100,7 +100,7 @@ func (h *harness) open() int64 {
 
 func (h *harness) openCtx() sdk.Context {
 	h.t.Helper()
-	ctx, err := h.exec.OpenContext()
+	ctx, err := h.exec.Snapshot()
 	require.NoError(h.t, err)
 	return ctx
 }
@@ -274,7 +274,7 @@ func TestExecutorAcceptWritesBranchOnSuccess(t *testing.T) {
 
 	_, err = h.exec.Accept(bz2)
 	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
-	_, err = h.exec.OpenContext()
+	_, err = h.exec.Snapshot()
 	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
 	_, err = h.exec.Seal(openHeight)
 	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
@@ -299,7 +299,7 @@ func TestExecutorBeginBlockOncePerOpen(t *testing.T) {
 	require.ErrorIs(t, h.exec.Open(committedTip, openTime.UnixMilli()), sequencer.ErrOpenHeight)
 	require.ErrorIs(t, h.exec.Open(openHeight, 0), sequencer.ErrOpenTimestamp)
 	require.ErrorIs(t, h.exec.Open(openHeight, -1), sequencer.ErrOpenTimestamp)
-	_, err := h.exec.OpenContext()
+	_, err := h.exec.Snapshot()
 	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
 
 	ts := h.openAt(openTime)
@@ -586,4 +586,124 @@ func TestExecutorAdmissionIsAnteChain(t *testing.T) {
 
 	_, err = sequencer.NewExecutor(h.app, sequencer.Options{Mode: sequencer.Mode(1), ChainID: testChainID, ProposerAddress: h.proposer})
 	require.EqualError(t, err, "sequencer: unknown executor mode 1")
+}
+
+func TestExecutorSnapshotIsPointInTime(t *testing.T) {
+	sender := utils.NewSigner()
+	recipient := utils.NewSigner().EvmAddress
+	h := newHarness(t, sender)
+	h.open()
+
+	funded := new(big.Int).Mul(big.NewInt(fundingUhpx), big.NewInt(weiPerUhpx))
+	value := big.NewInt(onePaxInWei)
+	fee := new(big.Int).Mul(big.NewInt(transferGas), big.NewInt(gasPriceWei))
+	afterFirst := new(big.Int).Sub(funded, new(big.Int).Add(value, fee))
+	afterSecond := new(big.Int).Sub(afterFirst, new(big.Int).Add(value, fee))
+
+	_, first := transfer(t, sender, 0, recipient, value)
+	_, err := h.exec.Accept(first)
+	require.NoError(t, err)
+	snap := h.openCtx()
+	// A second snapshot with no Accept in between reads the same state.
+	again := h.openCtx()
+
+	_, second := transfer(t, sender, 1, recipient, value)
+	_, err = h.exec.Accept(second)
+	require.NoError(t, err)
+
+	for _, ctx := range []sdk.Context{snap, again} {
+		requireWei(t, afterFirst, h.weiBalance(ctx, sender.EvmAddress))
+		requireWei(t, value, h.weiBalance(ctx, recipient))
+		require.Equal(t, uint64(1), h.app.EvmKeeper.GetNonce(ctx, sender.EvmAddress))
+		require.Equal(t, openHeight, ctx.BlockHeight())
+	}
+	open := h.openCtx()
+	requireWei(t, afterSecond, h.weiBalance(open, sender.EvmAddress))
+	requireWei(t, new(big.Int).Mul(value, big.NewInt(2)), h.weiBalance(open, recipient))
+	require.Equal(t, uint64(2), h.app.EvmKeeper.GetNonce(open, sender.EvmAddress))
+
+	// A write to a snapshot reaches neither the open layer nor later snapshots.
+	h.app.EvmKeeper.SetNonce(snap, sender.EvmAddress, 99)
+	require.Equal(t, uint64(1), h.app.EvmKeeper.GetNonce(again, sender.EvmAddress))
+	require.Equal(t, uint64(2), h.app.EvmKeeper.GetNonce(h.openCtx(), sender.EvmAddress))
+
+	// Seal flattens every branch into L_open in order.
+	batch, err := h.exec.Seal(openHeight)
+	require.NoError(t, err)
+	require.Equal(t, [][]byte{first, second}, batch.Txs)
+	requireWei(t, afterSecond, h.weiBalance(batch.Ctx, sender.EvmAddress))
+	requireWei(t, new(big.Int).Mul(value, big.NewInt(2)), h.weiBalance(batch.Ctx, recipient))
+	require.Equal(t, uint64(2), h.app.EvmKeeper.GetNonce(batch.Ctx, sender.EvmAddress))
+	_, err = h.exec.Snapshot()
+	require.ErrorIs(t, err, sequencer.ErrLayerNotOpen)
+	requireWei(t, funded, h.weiBalance(h.committedCtx(), sender.EvmAddress))
+}
+
+func TestExecutorSnapshotDoesNotBlockAccept(t *testing.T) {
+	sender := utils.NewSigner()
+	recipient := utils.NewSigner().EvmAddress
+	h := newHarness(t, sender)
+	h.open()
+
+	funded := new(big.Int).Mul(big.NewInt(fundingUhpx), big.NewInt(weiPerUhpx))
+	value := big.NewInt(onePaxInWei)
+	fee := new(big.Int).Mul(big.NewInt(transferGas), big.NewInt(gasPriceWei))
+	const accepts = 5
+	txs := make([][]byte, accepts)
+	for nonce := range txs {
+		_, txs[nonce] = transfer(t, sender, uint64(nonce), recipient, value)
+	}
+
+	snap := h.openCtx()
+	stop := make(chan struct{})
+	type reads struct {
+		count int
+		bad   *big.Int
+	}
+	readerDone := make(chan reads, 1)
+	go func() {
+		// The reader holds and reads its snapshot for as long as Accepts run.
+		var r reads
+		for {
+			select {
+			case <-stop:
+				readerDone <- r
+				return
+			default:
+			}
+			if got := h.weiBalance(snap, sender.EvmAddress); got.Cmp(funded) != 0 {
+				r.bad = got
+			}
+			r.count++
+		}
+	}()
+
+	acceptDone := make(chan error, 1)
+	go func() {
+		for _, bz := range txs {
+			if _, err := h.exec.Accept(bz); err != nil {
+				acceptDone <- err
+				return
+			}
+		}
+		acceptDone <- nil
+	}()
+	select {
+	case err := <-acceptDone:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "Accept blocked while a snapshot was held")
+	}
+	close(stop)
+	r := <-readerDone
+	require.Nil(t, r.bad)
+	require.Positive(t, r.count)
+
+	requireWei(t, funded, h.weiBalance(snap, sender.EvmAddress))
+	require.Equal(t, 0, h.weiBalance(snap, recipient).Sign())
+	spent := new(big.Int).Mul(new(big.Int).Add(value, fee), big.NewInt(accepts))
+	open := h.openCtx()
+	requireWei(t, new(big.Int).Sub(funded, spent), h.weiBalance(open, sender.EvmAddress))
+	requireWei(t, new(big.Int).Mul(value, big.NewInt(accepts)), h.weiBalance(open, recipient))
+	require.Equal(t, uint64(accepts), h.app.EvmKeeper.GetNonce(open, sender.EvmAddress))
 }
