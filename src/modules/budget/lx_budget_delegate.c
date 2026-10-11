@@ -125,18 +125,22 @@ lxp_result lx_budget_delegate_spend_execute(
 
 static lxp_result pull_authorize(const lx_budget_pull_request *request,
                                  const lx_budget_record *record,
-                                 uint64_t batch_timestamp)
+                                 uint64_t batch_timestamp,
+                                 uint64_t global_sequence)
 {
-    const lxp_payer_grant *grant = &request->grant_state->grant;
+    const lxp_grant_state *state = request->grant_state;
+    const lxp_payer_grant *grant = &state->grant;
     lxp_result status = lxp_verify_payer_grant(grant, request->grantor);
     if (status != LXP_OK) return status;
+    if (state->revoked && global_sequence >= state->revoked_at_sequence)
+        return LXP_ERR_GRANT_REVOKED;
+    if (batch_timestamp > grant->expiration) return LXP_ERR_GRANT_EXPIRED;
     if (memcmp(grant->from, record->owner, 32U) != 0 ||
         memcmp(grant->recipient, request->spend.recipient->id, 32U) != 0 ||
         memcmp(grant->asset, record->asset_id, 32U) != 0 ||
         memcmp(grant->purpose_hash, record->purpose_hash, 32U) != 0 ||
         lxp_u128_cmp(request->spend.amount, grant->per_draw_maximum) > 0 ||
         lxp_u128_cmp(request->spend.amount, grant->allowance) > 0 ||
-        grant->expiration < batch_timestamp ||
         grant->revocation_sequence != record->revocation_sequence ||
         (grant->recurring && grant->window_length == 0U))
         return LXP_ERR_GRANT_SCOPE_VIOLATION;
@@ -159,12 +163,9 @@ lxp_result lx_budget_pull_execute(lxp_module_ctx *ctx,
     status = lx_budget_lookup(request->spend.store,
                               request->spend.budget_id, &record);
     if (status == LXP_OK)
-        status = pull_authorize(request, record, batch_timestamp);
+        status = pull_authorize(request, record, batch_timestamp,
+                                lxp_ctx_global_sequence(ctx));
     if (status != LXP_OK) return status;
-    if (request->grant_state->revoked &&
-        lxp_ctx_global_sequence(ctx) >=
-            request->grant_state->revoked_at_sequence)
-        return LXP_ERR_GRANT_REVOKED;
     drawn = *request->grant_state;
     status = lxp_grant_draw_record(&drawn, request->spend.amount,
                                    batch_timestamp);

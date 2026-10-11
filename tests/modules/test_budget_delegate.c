@@ -412,6 +412,8 @@ static const uint8_t delegate_seed[32] = { 22U };
 static const uint8_t budget_one[32] = { 0x0DU, 0xEFU, 0x01U };
 static const uint8_t budget_two[32] = { 0x0DU, 0xEFU, 0x02U };
 static const uint8_t budget_three[32] = { 0x0DU, 0xEFU, 0x03U };
+static const uint8_t budget_four[32] = { 0x0DU, 0xEFU, 0x04U };
+static const uint8_t budget_five[32] = { 0x0DU, 0xEFU, 0x05U };
 
 typedef struct budget_env {
     lx_account_registry accounts;
@@ -426,6 +428,8 @@ typedef struct budget_env {
     lx_account *budget_one;
     lx_account *budget_two;
     lx_account *budget_three;
+    lx_account *budget_four;
+    lx_account *budget_five;
     lx_account *recipient;
     lx_account *other;
     lx_account *delegate;
@@ -514,6 +518,10 @@ static int env_init(void)
                        &env.budget_two) == 0);
     CHECK(open_account("agent:did:key:owner:budget:b3", 0U, NULL,
                        &env.budget_three) == 0);
+    CHECK(open_account("agent:did:key:owner:budget:b4", 0U, NULL,
+                       &env.budget_four) == 0);
+    CHECK(open_account("agent:did:key:owner:budget:b5", 0U, NULL,
+                       &env.budget_five) == 0);
     CHECK(open_account("agent:did:key:recv:main", 0U, NULL,
                        &env.recipient) == 0);
     CHECK(open_account("agent:did:key:other:main", 0U, NULL,
@@ -527,6 +535,8 @@ static int env_init(void)
                             &env.parameters, 0U) == LXP_OK);
     CHECK(lxp_kernel_register_module(&env.kernel,
                                      lx_budget_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(&env.kernel,
+                                     lx_asset_module_iface()) == LXP_OK);
     CHECK(lxp_kernel_set_capabilities(
               &env.kernel, NULL, lxp_kernel_canonical_ledger_apply) == LXP_OK);
     env.asset_runtime.accounts = &env.accounts;
@@ -548,7 +558,7 @@ static int submit(const budget_call *call, lxp_effect_buffer *effects,
 {
     static uint8_t arena_bytes[262144];
     static uint8_t wire_bytes[LXP_MAX_ACTIVITY_BYTES];
-    uint8_t payload_copy[256];
+    uint8_t payload_copy[LX_BUDGET_PULL_PAYLOAD_BYTES];
     uint8_t name[LX_ACCOUNT_NAME_MAX];
     uint8_t principal[32];
     uint8_t public_key[32];
@@ -802,6 +812,209 @@ static int test_delegate_spend_activity(void)
     return 0;
 }
 
+static int seed_grant(lxp_payer_grant *grant, uint64_t expiration,
+                      uint64_t drawn, uint64_t revoked_at)
+{
+    static uint8_t arena_bytes[4096];
+    uint8_t key[38];
+    uint8_t bytes[512];
+    size_t length = 0U;
+    lxp_effect_buffer effects;
+    lxp_module_ctx ctx;
+    lxp_arena arena;
+    (void)memset(grant, 0, sizeof(*grant));
+    (void)memcpy(grant->from, env.owner->id, 32U);
+    (void)memcpy(grant->recipient, env.recipient->id, 32U);
+    (void)memcpy(grant->asset, env.asset.asset_id, 32U);
+    grant->per_draw_maximum = (lxp_u128){ 0U, 10U };
+    grant->allowance = (lxp_u128){ 0U, 30U };
+    grant->expiration = expiration;
+    grant->revocation_sequence = 1U;
+    grant->purpose_hash[0] = 0x55U;
+    CHECK(sign_grant(grant, owner_seed) == 0);
+    CHECK(lxp_payer_grant_encode(grant, bytes, sizeof(bytes) - 50U,
+                                 &length) == LXP_OK);
+    put_u128(bytes + length, 0U, drawn);
+    put_u128(bytes + length + 16U, 0U, drawn);
+    put_u64(bytes + length + 32U, 0U);
+    put_u64(bytes + length + 40U, revoked_at);
+    bytes[length + 48U] = revoked_at != 0U ? 1U : 0U;
+    bytes[length + 49U] = 0U;
+    (void)memcpy(key, "grant:", 6U);
+    (void)memcpy(key + 6U, grant->grant_id, 32U);
+    CHECK(lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) == LXP_OK);
+    CHECK(lxp_effect_buffer_init(&effects) == LXP_OK);
+    ++env.global_sequence;
+    CHECK(lxp_module_ctx_init(&ctx, &env.kernel, LXP_MODULE_ASSET, 400U, 0U,
+                              env.global_sequence, 1000000U, &arena,
+                              true) == LXP_OK);
+    CHECK(lxp_module_ctx_bind_effects(&ctx, &effects) == LXP_OK);
+    CHECK(lxp_ctx_kv_put(&ctx, key, sizeof(key), bytes,
+                         length + 50U) == LXP_OK);
+    CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+    return 0;
+}
+
+static int pull(const uint8_t budget_id[32], const lxp_payer_grant *grant,
+                uint64_t amount, uint64_t timestamp,
+                lxp_effect_buffer *effects, lxp_result *result)
+{
+    uint8_t payload[LX_BUDGET_PULL_PAYLOAD_BYTES] = {0U, 1U};
+    size_t length = 0U;
+    budget_call call;
+    (void)memcpy(payload + 2U, budget_id, 32U);
+    (void)memcpy(payload + 34U, env.recipient->id, 32U);
+    put_u128(payload + 66U, 0U, amount);
+    payload[82] = 0xB5U;
+    payload[113] = (uint8_t)env.global_sequence;
+    CHECK(lxp_payer_grant_encode(
+              grant, payload + LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES,
+              sizeof(payload) - LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES,
+              &length) == LXP_OK);
+    CHECK(length + LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES == sizeof(payload));
+    (void)memset(&call, 0, sizeof(call));
+    call.did = delegate_did;
+    call.seed = delegate_seed;
+    call.timestamp = timestamp;
+    call.activity_type = LX_BUDGET_PULL;
+    call.payload = payload;
+    call.payload_length = sizeof(payload);
+    call.sequence = env.delegate->next_sequence;
+    return submit(&call, effects, result);
+}
+
+static int read_draws(const lxp_payer_grant *grant, uint64_t *drawn)
+{
+    static uint8_t arena_bytes[4096];
+    uint8_t key[45];
+    const uint8_t *bytes = NULL;
+    size_t length = 0U;
+    lxp_module_ctx ctx;
+    lxp_arena arena;
+    lxp_result status;
+    (void)memcpy(key, "budget-grant:", 13U);
+    (void)memcpy(key + 13U, grant->grant_id, 32U);
+    CHECK(lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) == LXP_OK);
+    CHECK(lxp_module_ctx_init(&ctx, &env.kernel, LXP_MODULE_BUDGET, 400U, 0U,
+                              env.global_sequence + 1U, 1000000U, &arena,
+                              false) == LXP_OK);
+    status = lxp_ctx_kv_get(&ctx, key, sizeof(key), &bytes, &length);
+    if (status == LXP_ERR_UNKNOWN_FIELD) {
+        *drawn = 0U;
+        return 0;
+    }
+    CHECK(status == LXP_OK && length == 42U && bytes[0] == 0U &&
+          bytes[1] == 1U && get_u64(bytes + 2U) == 0U &&
+          get_u64(bytes + 18U) == 0U &&
+          get_u64(bytes + 10U) == get_u64(bytes + 26U));
+    *drawn = get_u64(bytes + 10U);
+    return 0;
+}
+
+static int test_pull_execute(void)
+{
+    lxp_payer_grant drawn_grant;
+    lxp_payer_grant shared_grant;
+    lxp_payer_grant revoked_grant;
+    lxp_payer_grant rollback_grant;
+    lxp_payer_grant expired_grant;
+    lxp_payer_grant absent_grant;
+    lxp_effect_buffer effects;
+    lxp_result result = LXP_OK;
+    uint64_t drawn = 0U;
+    uint64_t received;
+    uint8_t before[32];
+    unsigned int i;
+    CHECK(owner_setup(budget_four, env.budget_four, 100U) == 0);
+    CHECK(owner_setup(budget_five, env.budget_five, 5U) == 0);
+    CHECK(seed_grant(&drawn_grant, 1000000U, 0U, 0U) == 0);
+    CHECK(seed_grant(&shared_grant, 1000001U, 20U, 0U) == 0);
+    CHECK(seed_grant(&revoked_grant, 1000002U, 0U, 1U) == 0);
+    CHECK(seed_grant(&rollback_grant, 1000003U, 0U, 0U) == 0);
+    CHECK(seed_grant(&expired_grant, 300U, 0U, 0U) == 0);
+    received = env.recipient->balance.lo;
+
+    CHECK(lxp_state_root(&env.kernel, before) == LXP_OK);
+    CHECK(pull(budget_four, &drawn_grant, 11U, 800U, &effects, &result) == 0);
+    CHECK(read_draws(&drawn_grant, &drawn) == 0);
+    CASE("pull-execute-per-draw-scope",
+         result == LXP_ERR_GRANT_SCOPE_VIOLATION && unchanged(before) &&
+         drawn == 0U && effects.count == 0U &&
+         env.budget_four->balance.lo == 100U);
+
+    for (i = 1U; i <= 3U; ++i) {
+        CHECK(pull(budget_four, &drawn_grant, 10U, 800U + i, &effects,
+                   &result) == 0);
+        CHECK(read_draws(&drawn_grant, &drawn) == 0);
+        CASE("pull-execute-draw",
+             result == LXP_OK && drawn == 10U * i &&
+             env.budget_four->balance.lo == 100U - 10U * i &&
+             env.recipient->balance.hi == 0U &&
+             env.recipient->balance.lo == received + 10U * i &&
+             expect_spent(&effects, budget_four, 10U) == 0);
+    }
+    CHECK(lxp_state_root(&env.kernel, before) == LXP_OK);
+    CHECK(pull(budget_four, &drawn_grant, 10U, 810U, &effects, &result) == 0);
+    CHECK(read_draws(&drawn_grant, &drawn) == 0);
+    CASE("pull-execute-exhausted",
+         result == LXP_ERR_GRANT_EXHAUSTED && unchanged(before) &&
+         drawn == 30U && effects.count == 0U &&
+         env.budget_four->balance.lo == 70U &&
+         env.recipient->balance.lo == received + 30U);
+
+    CHECK(pull(budget_four, &shared_grant, 10U, 820U, &effects, &result) == 0);
+    CHECK(read_draws(&shared_grant, &drawn) == 0);
+    CASE("pull-execute-shares-receive-draws",
+         result == LXP_OK && drawn == 10U &&
+         env.budget_four->balance.lo == 60U &&
+         expect_spent(&effects, budget_four, 10U) == 0);
+    CHECK(lxp_state_root(&env.kernel, before) == LXP_OK);
+    CHECK(pull(budget_four, &shared_grant, 1U, 830U, &effects, &result) == 0);
+    CHECK(read_draws(&shared_grant, &drawn) == 0);
+    CASE("pull-execute-shared-exhausted",
+         result == LXP_ERR_GRANT_EXHAUSTED && unchanged(before) &&
+         drawn == 10U && effects.count == 0U);
+
+    CHECK(lxp_state_root(&env.kernel, before) == LXP_OK);
+    CHECK(pull(budget_four, &revoked_grant, 5U, 840U, &effects, &result) == 0);
+    CHECK(read_draws(&revoked_grant, &drawn) == 0);
+    CASE("pull-execute-revoked",
+         result == LXP_ERR_GRANT_REVOKED && unchanged(before) &&
+         drawn == 0U && effects.count == 0U &&
+         env.budget_four->balance.lo == 60U);
+
+    CHECK(pull(budget_four, &expired_grant, 5U, 850U, &effects, &result) == 0);
+    CASE("pull-execute-expired",
+         result == LXP_ERR_GRANT_EXPIRED && unchanged(before) &&
+         effects.count == 0U);
+
+    absent_grant = drawn_grant;
+    absent_grant.expiration = 1000004U;
+    CHECK(sign_grant(&absent_grant, owner_seed) == 0);
+    CHECK(pull(budget_four, &absent_grant, 5U, 860U, &effects, &result) == 0);
+    CASE("pull-execute-absent-grant",
+         result == LXP_ERR_NO_PAYER_GRANT && unchanged(before) &&
+         effects.count == 0U);
+
+    /* A refused spend leaves the grant draw where it was. */
+    CHECK(lxp_state_root(&env.kernel, before) == LXP_OK);
+    CHECK(pull(budget_five, &rollback_grant, 10U, 870U, &effects,
+               &result) == 0);
+    CHECK(read_draws(&rollback_grant, &drawn) == 0);
+    CASE("pull-execute-draw-rollback",
+         result == LXP_ERR_INSUFFICIENT_BUDGET_FUNDS && unchanged(before) &&
+         drawn == 0U && effects.count == 0U &&
+         env.budget_five->balance.lo == 5U);
+    CHECK(pull(budget_five, &rollback_grant, 5U, 880U, &effects,
+               &result) == 0);
+    CHECK(read_draws(&rollback_grant, &drawn) == 0);
+    CASE("pull-execute-after-rollback",
+         result == LXP_OK && drawn == 5U &&
+         env.budget_five->balance.lo == 0U &&
+         expect_spent(&effects, budget_five, 5U) == 0);
+    return 0;
+}
+
 static int decode_vectors(void)
 {
     static const uint8_t seed[32] = { 9U };
@@ -970,6 +1183,7 @@ static int execute_vectors(void)
          env.recipient->balance.lo == 190U &&
          expect_spent(&effects, budget_two, 40U) == 0);
     CHECK(test_delegate_spend_activity() == 0);
+    CHECK(test_pull_execute() == 0);
     CHECK(lxp_state_store_destroy(&env.state) == LXP_OK);
     return 0;
 }
