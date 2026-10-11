@@ -5,7 +5,9 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
+	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
@@ -46,6 +48,44 @@ type Precompile struct {
 	name     string
 	executor PrecompileExecutor
 	reasons  bool
+	lxp      bool
+	gas      GasTable
+}
+
+// MethodGas is one row of a fixed per-method gas table: the KV read or write
+// cost of the call arguments, as DefaultGasCost charges it, plus a fixed
+// surcharge. The charge depends on the method and the input length only, never
+// on the work the call does.
+type MethodGas struct {
+	Write     bool
+	Surcharge uint64
+}
+
+// GasTable maps an ABI method name to its fixed gas row.
+type GasTable map[string]MethodGas
+
+// Gas is the fixed charge of the row for the call arguments args.
+func (g MethodGas) Gas(args []byte) uint64 {
+	base := DefaultGasCost(args, g.Write)
+	if base > math.MaxUint64-g.Surcharge {
+		return math.MaxUint64
+	}
+	return base + g.Surcharge
+}
+
+// lxpCodedError carries the registry code of a framework refusal while its
+// text stays the text callers saw before the registry existed.
+type lxpCodedError struct {
+	code string
+	err  error
+}
+
+func (e lxpCodedError) Error() string { return e.err.Error() }
+
+func (e lxpCodedError) Unwrap() error { return e.err }
+
+func withLXPCode(code string, err error) error {
+	return lxpCodedError{code: code, err: err}
 }
 
 var _ vm.PrecompiledContract = &Precompile{}
@@ -61,6 +101,22 @@ func (p *Precompile) WithRevertReasons() *Precompile {
 	return p
 }
 
+// WithLXPReasons makes every failed call return the ABI encoding of
+// Error(string) carrying the registry text "LXP_<code>: ..." built by
+// LXPReason. Every precompile served only from the merge plan height uses it.
+func (p *Precompile) WithLXPReasons() *Precompile {
+	p.reasons = true
+	p.lxp = true
+	return p
+}
+
+// WithGasTable charges every method from its fixed row of table and refuses a
+// method without a row instead of charging a default.
+func (p *Precompile) WithGasTable(table GasTable) *Precompile {
+	p.gas = table
+	return p
+}
+
 // RevertReason is the return data of a Solidity revert with a reason string.
 func RevertReason(err error) []byte {
 	stringType, _ := abi.NewType("string", "", nil)
@@ -69,6 +125,41 @@ func RevertReason(err error) []byte {
 		return nil
 	}
 	return append([]byte{0x08, 0xc3, 0x79, 0xa0}, data...)
+}
+
+// LXPReason is the revert data of err in the registry form, packed by
+// RevertReason. Text that already starts with LXP_ is kept as it is; an error
+// carrying a registry code, framework or module, becomes "<code>: <text>"; any
+// other error reverts as LXP_UNKNOWN carrying its text as the detail.
+func LXPReason(err error) []byte {
+	text := err.Error()
+	if strings.HasPrefix(text, "LXP_") {
+		return RevertReason(err)
+	}
+	if code, ok := lxpCodeOf(err); ok {
+		return RevertReason(errors.New(code + ": " + text))
+	}
+	return LXPRevert(lxpUnknownCode, text)
+}
+
+func lxpCodeOf(err error) (string, bool) {
+	var coded lxpCodedError
+	if errors.As(err, &coded) {
+		return coded.code, true
+	}
+	for _, entry := range lxpRevertTable {
+		if entry.goErr != nil && errors.Is(err, entry.goErr) {
+			return entry.code, true
+		}
+	}
+	return "", false
+}
+
+func revertData(err error, lxp bool) []byte {
+	if lxp {
+		return LXPReason(err)
+	}
+	return RevertReason(err)
 }
 
 func (p Precompile) RequiredGas(input []byte) uint64 {
@@ -82,6 +173,14 @@ func (p Precompile) RequiredGas(input []byte) uint64 {
 		// This should never happen since this method is going to fail during Run
 		return UnknownMethodCallGas
 	}
+	if p.gas != nil {
+		row, ok := p.gas[method.Name]
+		if !ok {
+			// Run refuses the method, so only the refusal is charged.
+			return UnknownMethodCallGas
+		}
+		return row.Gas(input[4:])
+	}
 	return p.executor.RequiredGas(input[4:], method)
 }
 
@@ -91,7 +190,7 @@ func (p Precompile) Run(evm *vm.EVM, caller common.Address, callingContract comm
 		HandlePrecompileError(err, evm, operation)
 		if err != nil {
 			if p.reasons {
-				bz = RevertReason(err)
+				bz = revertData(err, p.lxp)
 			}
 			err = vm.ErrExecutionReverted
 		}
@@ -128,7 +227,7 @@ func HandlePrecompileError(err error, evm *vm.EVM, operation string) {
 func (p Precompile) Prepare(evm *vm.EVM, input []byte) (sdk.Context, *abi.Method, []interface{}, error) {
 	ctxer := state.GetDBImpl(evm.StateDB)
 	if ctxer == nil {
-		return sdk.Context{}, nil, nil, errors.New("cannot get context from EVM")
+		return sdk.Context{}, nil, nil, withLXPCode("LXP_PRECOMPILE_NO_CONTEXT", errors.New("cannot get context from EVM"))
 	}
 	methodID, err := ExtractMethodID(input)
 	if err != nil {
@@ -136,7 +235,10 @@ func (p Precompile) Prepare(evm *vm.EVM, input []byte) (sdk.Context, *abi.Method
 	}
 	method, err := p.MethodById(methodID)
 	if err != nil {
-		return sdk.Context{}, nil, nil, err
+		return sdk.Context{}, nil, nil, withLXPCode("LXP_PRECOMPILE_UNKNOWN_METHOD", err)
+	}
+	if _, ok := p.gas[method.Name]; p.gas != nil && !ok {
+		return sdk.Context{}, nil, nil, withLXPCode("LXP_PRECOMPILE_UNKNOWN_METHOD", fmt.Errorf("no method with id: %#x", methodID))
 	}
 
 	argsBz := input[4:]
@@ -173,6 +275,7 @@ type DynamicGasPrecompile struct {
 	*Precompile
 	executor DynamicGasPrecompileExecutor
 	reasons  bool
+	lxp      bool
 }
 
 var _ vm.DynamicGasPrecompiledContract = &DynamicGasPrecompile{}
@@ -186,6 +289,23 @@ func NewDynamicGasPrecompile(a abi.ABI, executor DynamicGasPrecompileExecutor, a
 // height a failed call keeps the revert data it returned before the plan.
 func (d *DynamicGasPrecompile) WithRevertReasons() *DynamicGasPrecompile {
 	d.reasons = true
+	return d
+}
+
+// WithLXPReasons makes every failed call from the merge plan's height on return
+// the ABI encoding of Error(string) carrying the registry text built by
+// LXPReason. Below that height a failed call keeps the revert data it returned
+// before the plan.
+func (d *DynamicGasPrecompile) WithLXPReasons() *DynamicGasPrecompile {
+	d.reasons = true
+	d.lxp = true
+	return d
+}
+
+// WithGasTable makes RequiredGas read every method from its fixed row of table
+// and refuses a method without a row instead of charging a default.
+func (d *DynamicGasPrecompile) WithGasTable(table GasTable) *DynamicGasPrecompile {
+	d.Precompile.WithGasTable(table)
 	return d
 }
 
@@ -213,7 +333,7 @@ func (d DynamicGasPrecompile) RunAndCalculateGas(evm *vm.EVM, caller common.Addr
 		if err != nil {
 			fmt.Printf("precompile %s encountered error: %v\n", d.name, err)
 			if d.reasons && d.mergePlanActive(evm) {
-				ret = RevertReason(err)
+				ret = revertData(err, d.lxp)
 			}
 			err = vm.ErrExecutionReverted
 		}
@@ -245,7 +365,7 @@ func (d DynamicGasPrecompile) GetExecutor() DynamicGasPrecompileExecutor {
 
 func ValidateArgsLength(args []interface{}, length int) error {
 	if len(args) != length {
-		return fmt.Errorf("expected %d arguments but got %d", length, len(args))
+		return withLXPCode("LXP_PRECOMPILE_ARG_COUNT", fmt.Errorf("expected %d arguments but got %d", length, len(args)))
 	}
 
 	return nil
@@ -253,7 +373,7 @@ func ValidateArgsLength(args []interface{}, length int) error {
 
 func ValidateNonPayable(value *big.Int) error {
 	if value != nil && value.Sign() != 0 {
-		return errors.New("sending funds to a non-payable function")
+		return withLXPCode("LXP_PRECOMPILE_NON_PAYABLE", errors.New("sending funds to a non-payable function"))
 	}
 
 	return nil
@@ -262,7 +382,7 @@ func ValidateNonPayable(value *big.Int) error {
 func HandlePaymentUhpx(ctx sdk.Context, precompileAddr sdk.AccAddress, payer sdk.AccAddress, value *big.Int, bankKeeper putils.BankKeeper, evmKeeper putils.EVMKeeper, hooks *tracing.Hooks, depth int) (sdk.Coin, error) {
 	uhpx, wei := state.SplitUhpxWeiAmount(value)
 	if !wei.IsZero() {
-		return sdk.Coin{}, fmt.Errorf("selected precompile function does not allow payment with non-zero wei remainder: received %s", value)
+		return sdk.Coin{}, withLXPCode("LXP_PRECOMPILE_WEI_REMAINDER", fmt.Errorf("selected precompile function does not allow payment with non-zero wei remainder: received %s", value))
 	}
 	coin := sdk.NewCoin(sdk.MustGetBaseDenom(), uhpx)
 	// refund payer because the following precompile logic will debit the payments from payer's account
@@ -313,7 +433,7 @@ func GetRemainingGas(ctx sdk.Context, evmKeeper putils.EVMKeeper) uint64 {
 func ExtractMethodID(input []byte) ([]byte, error) {
 	// Check if the input has at least the length needed for methodID
 	if len(input) < 4 {
-		return nil, errors.New("input too short to extract method ID")
+		return nil, withLXPCode("LXP_PRECOMPILE_INPUT_TOO_SHORT", errors.New("input too short to extract method ID"))
 	}
 	return input[:4], nil
 }
@@ -350,7 +470,7 @@ func GetPaxAddressByEvmAddress(ctx sdk.Context, evmAddress common.Address, evmKe
 func GetPaxAddressFromArg(ctx sdk.Context, arg interface{}, evmKeeper putils.EVMKeeper) (sdk.AccAddress, error) {
 	addr := arg.(common.Address)
 	if addr == (common.Address{}) {
-		return nil, errors.New("invalid addr")
+		return nil, withLXPCode("LXP_PRECOMPILE_INVALID_ADDR", errors.New("invalid addr"))
 	}
 	return GetPaxAddressByEvmAddress(ctx, addr, evmKeeper)
 }
