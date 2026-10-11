@@ -17,9 +17,14 @@ const (
 	FlagReceiptKeyFile     = "sequencer.receipt-key-file"
 	FlagStandbyAddress     = "sequencer.standby-address"
 	FlagReplicationTimeout = "sequencer.replication-timeout"
+	FlagMicroBatchWindow   = "sequencer.microbatch-window"
+	FlagMicroBatchMaxCount = "sequencer.microbatch-max-count"
 )
 
-const modeSequentialName = "sequential"
+const (
+	modeSequentialName = "sequential"
+	modeMicroBatchName = "microbatch"
+)
 
 var (
 	// ErrConfigMode refuses a sequencer mode the executor does not implement.
@@ -52,6 +57,10 @@ type Config struct {
 	// ReplicationTimeout bounds one replication exchange with the standby. It is set at
 	// activation rehearsal; there is no default.
 	ReplicationTimeout time.Duration
+	// MicroBatchWindow and MicroBatchMaxCount bound one MicroBatch group. They are set at
+	// activation rehearsal; there is no default.
+	MicroBatchWindow   time.Duration
+	MicroBatchMaxCount int
 }
 
 // DefaultConfig returns the sequencer section of a node that is not the sequencer.
@@ -64,6 +73,8 @@ func (m Mode) String() string {
 	switch m {
 	case ModeSequential:
 		return modeSequentialName
+	case ModeMicroBatch:
+		return modeMicroBatchName
 	default:
 		return fmt.Sprintf("Mode(%d)", uint8(m))
 	}
@@ -74,6 +85,8 @@ func ParseMode(name string) (Mode, error) {
 	switch name {
 	case modeSequentialName:
 		return ModeSequential, nil
+	case modeMicroBatchName:
+		return ModeMicroBatch, nil
 	default:
 		return 0, fmt.Errorf("%w %q", ErrConfigMode, name)
 	}
@@ -84,7 +97,16 @@ func (c Config) Validate() error {
 	if !c.Enable {
 		return nil
 	}
-	if c.Mode != ModeSequential {
+	switch c.Mode {
+	case ModeSequential:
+	case ModeMicroBatch:
+		if c.MicroBatchWindow <= 0 {
+			return fmt.Errorf("%w: got %s", ErrMicroBatchWindow, c.MicroBatchWindow)
+		}
+		if c.MicroBatchMaxCount <= 0 {
+			return fmt.Errorf("%w: got %d", ErrMicroBatchMaxCount, c.MicroBatchMaxCount)
+		}
+	default:
 		return fmt.Errorf("%w %s", ErrConfigMode, c.Mode)
 	}
 	if c.WALDir == "" {
@@ -145,7 +167,22 @@ func ReadConfig(opts servertypes.AppOptions) (Config, error) {
 			return cfg, fmt.Errorf("%w: %s: %v", ErrConfigValue, FlagReplicationTimeout, err)
 		}
 	}
+	if v := opts.Get(FlagMicroBatchWindow); v != nil {
+		if cfg.MicroBatchWindow, err = cast.ToDurationE(v); err != nil {
+			return cfg, fmt.Errorf("%w: %s: %v", ErrConfigValue, FlagMicroBatchWindow, err)
+		}
+	}
+	if v := opts.Get(FlagMicroBatchMaxCount); v != nil {
+		if cfg.MicroBatchMaxCount, err = cast.ToIntE(v); err != nil {
+			return cfg, fmt.Errorf("%w: %s: %v", ErrConfigValue, FlagMicroBatchMaxCount, err)
+		}
+	}
 	return cfg, cfg.Validate()
+}
+
+// MicroBatchOptions returns the MicroBatch group bounds of the section.
+func (c Config) MicroBatchOptions() MicroBatchOptions {
+	return MicroBatchOptions{Window: c.MicroBatchWindow, MaxCount: c.MicroBatchMaxCount}
 }
 
 // ConfigTemplate is the sequencer section of app.toml with the DefaultConfig values.
@@ -158,7 +195,7 @@ const ConfigTemplate = `
 # enable runs this node as the sequencer. When true, wal-dir and receipt-key-file are required.
 enable = false
 
-# mode selects the executor. Supported: "sequential".
+# mode selects the executor. Supported: "sequential", "microbatch".
 mode = "` + modeSequentialName + `"
 
 # wal-dir is the directory of the sequencer write-ahead log.
@@ -173,4 +210,12 @@ standby-address = ""
 # replication-timeout bounds one replication exchange with the standby; it must be positive
 # when standby-address is set.
 replication-timeout = "0s"
+
+# microbatch-window is how long the first transaction of a MicroBatch group waits for others;
+# it must be positive when mode is "microbatch".
+microbatch-window = "0s"
+
+# microbatch-max-count closes a MicroBatch group early once it holds this many transactions;
+# it must be positive when mode is "microbatch".
+microbatch-max-count = 0
 `

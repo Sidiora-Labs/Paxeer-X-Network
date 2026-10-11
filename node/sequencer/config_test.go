@@ -146,3 +146,77 @@ replication-timeout = "soon"
 `))
 	require.ErrorIs(t, err, sequencer.ErrConfigValue)
 }
+
+func TestSequencerConfigSelectsMicroBatch(t *testing.T) {
+	const section = `
+[sequencer]
+enable = true
+mode = "microbatch"
+wal-dir = "data/sequencer-wal"
+receipt-key-file = "config/receipt_key.hex"
+microbatch-window = "5ms"
+microbatch-max-count = 64
+`
+	cfg, err := sequencer.ReadConfig(seqConfigOptions(t, section))
+	require.NoError(t, err)
+	require.Equal(t, sequencer.Config{
+		Enable:             true,
+		Mode:               sequencer.ModeMicroBatch,
+		WALDir:             "data/sequencer-wal",
+		ReceiptKeyFile:     "config/receipt_key.hex",
+		MicroBatchWindow:   5 * time.Millisecond,
+		MicroBatchMaxCount: 64,
+	}, cfg)
+	require.NoError(t, cfg.Validate())
+	require.Equal(t, "microbatch", cfg.Mode.String())
+	require.Equal(t, sequencer.MicroBatchOptions{Window: 5 * time.Millisecond, MaxCount: 64}, cfg.MicroBatchOptions())
+
+	m, err := sequencer.ParseMode(sequencer.ModeMicroBatch.String())
+	require.NoError(t, err)
+	require.Equal(t, sequencer.ModeMicroBatch, m)
+
+	h := newHarness(t)
+	opts := sequencer.Options{
+		Mode:            cfg.Mode,
+		ChainID:         testChainID,
+		ProposerAddress: h.proposer,
+		LastSeq:         startSeq,
+		LastSeqHash:     startSeqHash,
+		MicroBatch:      cfg.MicroBatchOptions(),
+	}
+	exec, err := sequencer.NewExecutor(h.app, opts)
+	require.NoError(t, err)
+	require.Equal(t, sequencer.ModeMicroBatch, exec.Mode())
+
+	// A host without the OCC batch entry point cannot run MicroBatch.
+	plain := struct{ sequencer.Host }{h.app}
+	_, err = sequencer.NewExecutor(plain, opts)
+	require.EqualError(t, err, "sequencer: micro-batch executor needs a BatchHost, host has type struct { sequencer.Host }")
+
+	// MicroBatch has no default window or maximum count.
+	for _, tc := range []struct {
+		name    string
+		section string
+		want    error
+	}{
+		{"no window", "[sequencer]\nenable = true\nmode = \"microbatch\"\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\nmicrobatch-max-count = 64\n", sequencer.ErrMicroBatchWindow},
+		{"negative window", "[sequencer]\nenable = true\nmode = \"microbatch\"\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\nmicrobatch-window = \"-1ms\"\nmicrobatch-max-count = 64\n", sequencer.ErrMicroBatchWindow},
+		{"no max count", "[sequencer]\nenable = true\nmode = \"microbatch\"\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\nmicrobatch-window = \"5ms\"\n", sequencer.ErrMicroBatchMaxCount},
+		{"negative max count", "[sequencer]\nenable = true\nmode = \"microbatch\"\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\nmicrobatch-window = \"5ms\"\nmicrobatch-max-count = -1\n", sequencer.ErrMicroBatchMaxCount},
+		{"bad window", "[sequencer]\nmicrobatch-window = \"soon\"\n", sequencer.ErrConfigValue},
+		{"bad max count", "[sequencer]\nmicrobatch-max-count = \"many\"\n", sequencer.ErrConfigValue},
+		{"unknown mode", "[sequencer]\nenable = true\nmode = \"parallel\"\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\n", sequencer.ErrConfigMode},
+	} {
+		_, err := sequencer.ReadConfig(seqConfigOptions(t, tc.section))
+		require.ErrorIs(t, err, tc.want, tc.name)
+	}
+
+	// Sequential stays the default and builds the Sequential executor.
+	def, err := sequencer.ReadConfig(seqConfigOptions(t, "[sequencer]\nenable = true\nwal-dir = \"w\"\nreceipt-key-file = \"k\"\n"))
+	require.NoError(t, err)
+	require.Equal(t, sequencer.ModeSequential, def.Mode)
+	opts.Mode = def.Mode
+	exec, err = sequencer.NewExecutor(plain, opts)
+	require.NoError(t, err)
+	require.Equal(t, sequencer.ModeSequential, exec.Mode())
+}

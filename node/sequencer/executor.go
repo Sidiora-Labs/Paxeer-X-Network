@@ -83,6 +83,8 @@ type Options struct {
 	// LastSeq and LastSeqHash continue the stored sequence chain.
 	LastSeq     uint64
 	LastSeqHash [32]byte
+	// MicroBatch bounds one group in ModeMicroBatch and is ignored otherwise.
+	MicroBatch MicroBatchOptions
 }
 
 // Accepted is the execution outcome of one accepted transaction.
@@ -208,6 +210,12 @@ func NewExecutor(host Host, opts Options) (Executor, error) {
 			lastSeq:     opts.LastSeq,
 			lastSeqHash: opts.LastSeqHash,
 		}, nil
+	case ModeMicroBatch:
+		batchHost, ok := host.(BatchHost)
+		if !ok {
+			return nil, fmt.Errorf("sequencer: micro-batch executor needs a BatchHost, host has type %T", host)
+		}
+		return NewMicroBatch(batchHost, opts, opts.MicroBatch)
 	default:
 		return nil, fmt.Errorf("sequencer: unknown executor mode %d", opts.Mode)
 	}
