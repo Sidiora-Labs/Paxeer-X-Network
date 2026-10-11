@@ -3,6 +3,7 @@ package state_test
 import (
 	"context"
 	"encoding/binary"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,6 +70,186 @@ func TestApplyBlock(t *testing.T) {
 
 	// TODO check state and mempool
 	assert.EqualValues(t, 1, state.Version.Consensus.App, "App version wasn't updated")
+}
+
+// pruneTestRetainApp is the test application whose Commit returns the retain
+// height set by the test.
+type pruneTestRetainApp struct {
+	testApp
+	retainHeight atomic.Int64
+}
+
+func (app *pruneTestRetainApp) Commit(context.Context) (*abci.ResponseCommit, error) {
+	return &abci.ResponseCommit{RetainHeight: app.retainHeight.Load()}, nil
+}
+
+// pruneTestGatedStore is the real block store whose PruneBlocks reports each
+// retain height and then waits for the test to release it.
+type pruneTestGatedStore struct {
+	*store.BlockStore
+	entered chan int64
+	release chan struct{}
+}
+
+func (s *pruneTestGatedStore) PruneBlocks(height int64) (uint64, error) {
+	s.entered <- height
+	<-s.release
+	return s.BlockStore.PruneBlocks(height)
+}
+
+type pruneTestChain struct {
+	app        *pruneTestRetainApp
+	state      sm.State
+	stateStore sm.Store
+	blocks     *pruneTestGatedStore
+	blockExec  *sm.BlockExecutor
+	privVals   map[string]types.PrivValidator
+	lastCommit *types.Commit
+}
+
+func newPruneTestChain(t *testing.T) *pruneTestChain {
+	t.Helper()
+	eventBus := eventbus.NewDefault()
+	require.NoError(t, eventBus.Start(t.Context()))
+	app := &pruneTestRetainApp{}
+	state, stateDB, privVals := makeState(t, 1, 1)
+	stateStore := sm.NewStore(stateDB)
+	blocks := &pruneTestGatedStore{
+		BlockStore: store.NewBlockStore(dbm.NewMemDB()),
+		entered:    make(chan int64, 16),
+		release:    make(chan struct{}),
+	}
+	proxyApp := proxy.New(app, proxy.NopMetrics())
+	mp := makeTxMempool(t, proxyApp)
+	blockExec := sm.NewBlockExecutor(stateStore, proxyApp, mp, sm.EmptyEvidencePool{}, blocks, eventBus, sm.NopMetrics(), types.DefaultConsensusPolicy())
+	return &pruneTestChain{
+		app:        app,
+		state:      state,
+		stateStore: stateStore,
+		blocks:     blocks,
+		blockExec:  blockExec,
+		privVals:   privVals,
+		lastCommit: new(types.Commit),
+	}
+}
+
+// apply saves the next block to the block store, as consensus does before
+// ApplyBlock, and applies it with Commit returning retainHeight.
+func (c *pruneTestChain) apply(t *testing.T, retainHeight int64) {
+	t.Helper()
+	ctx := t.Context()
+	height := c.state.LastBlockHeight + 1
+	c.app.retainHeight.Store(retainHeight)
+	block := c.state.MakeBlock(height, factory.MakeNTxs(height, 10), c.lastCommit, nil, c.state.Validators.Validators[0].Address)
+	partSet, err := block.MakePartSet(types.BlockPartSizeBytes)
+	require.NoError(t, err)
+	blockID := types.BlockID{Hash: block.Hash(), PartSetHeader: partSet.Header()}
+	commit, _ := makeValidCommit(ctx, t, height, blockID, c.state.Validators, c.privVals)
+	c.blocks.SaveBlock(block, partSet, commit)
+	c.state, err = c.blockExec.ApplyBlock(ctx, c.state, blockID, block, nil)
+	require.NoError(t, err)
+	c.lastCommit = commit
+}
+
+func (c *pruneTestChain) awaitPrune(t *testing.T) int64 {
+	t.Helper()
+	select {
+	case height := <-c.blocks.entered:
+		return height
+	case <-time.After(10 * time.Second):
+		t.Fatal("prune did not start")
+		return 0
+	}
+}
+
+func (c *pruneTestChain) requirePruned(t *testing.T, retainHeight int64) {
+	t.Helper()
+	require.Eventually(t, func() bool { return c.blocks.Base() == retainHeight }, 10*time.Second, time.Millisecond)
+	for h := int64(1); h < retainHeight; h++ {
+		require.Nil(t, c.blocks.LoadBlockMeta(h), "block meta %d below retain height must be pruned", h)
+		require.Nil(t, c.blocks.LoadBlock(h), "block %d below retain height must be pruned", h)
+	}
+	for h := retainHeight; h <= c.state.LastBlockHeight; h++ {
+		require.NotNil(t, c.blocks.LoadBlock(h), "block %d at or above retain height must be kept", h)
+		_, err := c.stateStore.LoadValidators(h)
+		require.NoError(t, err, "validators %d at or above retain height must be kept", h)
+	}
+}
+
+func TestPruneRunsAfterApplyBlock(t *testing.T) {
+	c := newPruneTestChain(t)
+	for i := 0; i < 3; i++ {
+		c.apply(t, 0)
+	}
+	require.Equal(t, int64(1), c.blocks.Base())
+
+	// ApplyBlock returns while the prune it requested is still held.
+	c.apply(t, 3)
+	require.Equal(t, int64(4), c.state.LastBlockHeight)
+	require.Equal(t, int64(3), c.awaitPrune(t))
+	require.Equal(t, int64(1), c.blocks.Base())
+
+	c.blocks.release <- struct{}{}
+	c.requirePruned(t, 3)
+	c.blockExec.Stop()
+	require.Empty(t, c.blocks.entered)
+}
+
+func TestPruneCoalescesRequests(t *testing.T) {
+	c := newPruneTestChain(t)
+	for i := 0; i < 3; i++ {
+		c.apply(t, 0)
+	}
+	c.apply(t, 2)
+	require.Equal(t, int64(2), c.awaitPrune(t))
+
+	// Requests that arrive while the first prune runs coalesce to the
+	// highest retain height; a lower later request does not lower it.
+	c.apply(t, 3)
+	c.apply(t, 5)
+	c.apply(t, 4)
+	require.Empty(t, c.blocks.entered, "a second prune started while the first was running")
+
+	c.blocks.release <- struct{}{}
+	require.Equal(t, int64(5), c.awaitPrune(t))
+	c.blocks.release <- struct{}{}
+	c.requirePruned(t, 5)
+	c.blockExec.Stop()
+	require.Empty(t, c.blocks.entered)
+}
+
+func TestPruneStopsCleanlyAndKeepsRetainHeight(t *testing.T) {
+	c := newPruneTestChain(t)
+	for i := 0; i < 3; i++ {
+		c.apply(t, 0)
+	}
+	c.apply(t, 3)
+	require.Equal(t, int64(3), c.awaitPrune(t))
+	c.apply(t, 4)
+
+	stopped := make(chan struct{})
+	go func() {
+		c.blockExec.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while a prune was in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	c.blocks.release <- struct{}{}
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop did not return after the in-flight prune finished")
+	}
+	// The request queued before Stop is dropped, and requests after Stop are
+	// refused: nothing at or above retain height 3 is deleted.
+	c.apply(t, 5)
+	require.Empty(t, c.blocks.entered)
+	c.requirePruned(t, 3)
+	require.NoError(t, c.blocks.Close())
 }
 
 // TestApplyBlockProposerPriorityHash verifies that ApplyBlock emits the

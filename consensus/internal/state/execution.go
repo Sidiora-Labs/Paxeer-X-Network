@@ -112,6 +112,9 @@ type BlockExecutor struct {
 
 	// cache the verification results over a single height
 	cache map[string]struct{}
+
+	// pruner prunes below the retain height from Commit in the background.
+	pruner *pruneWorker
 }
 
 // NewBlockExecutor returns a new BlockExecutor with the passed-in EventBus.
@@ -125,7 +128,7 @@ func NewBlockExecutor(
 	metrics *Metrics,
 	consensusPolicy types.ConsensusPolicy,
 ) *BlockExecutor {
-	return &BlockExecutor{
+	blockExec := &BlockExecutor{
 		eventBus:        eventBus,
 		store:           stateStore,
 		app:             app,
@@ -136,6 +139,16 @@ func NewBlockExecutor(
 		blockStore:      blockStore,
 		consensusPolicy: consensusPolicy,
 	}
+	blockExec.pruner = newPruneWorker(blockExec.pruneBlocks, func(d time.Duration) {
+		metrics.PruneBlockLatency.Observe(float64(d.Milliseconds()))
+	})
+	return blockExec
+}
+
+// Stop refuses further prune requests and waits for an in-flight prune to
+// finish. Call it before the block store and state store close.
+func (blockExec *BlockExecutor) Stop() {
+	blockExec.pruner.stop()
 }
 
 func (blockExec *BlockExecutor) Store() Store {
@@ -477,25 +490,8 @@ func (blockExec *BlockExecutor) ApplyBlock(ctx context.Context, state State, blo
 	if saveBlockSpan != nil {
 		saveBlockSpan.End()
 	}
-	// Prune old heights, if requested by ABCI app.
-	var pruneBlockSpan otrace.Span = nil
-	if tracer != nil {
-		_, pruneBlockSpan = tracer.Start(ctx, "cs.state.ApplyBlock.PruneBlock")
-		defer pruneBlockSpan.End()
-	}
-	pruneBlockTime := time.Now()
-	if retainHeight > 0 {
-		pruned, err := blockExec.pruneBlocks(retainHeight)
-		if err != nil {
-			logger.Error("failed to prune blocks", "retain_height", retainHeight, "err", err)
-		} else {
-			logger.Debug("pruned blocks", "pruned", pruned, "retain_height", retainHeight)
-		}
-	}
-	blockExec.metrics.PruneBlockLatency.Observe(float64(time.Since(pruneBlockTime).Milliseconds()))
-	if pruneBlockSpan != nil {
-		pruneBlockSpan.End()
-	}
+	// Prune old heights, if requested by ABCI app, off the ApplyBlock path.
+	blockExec.pruner.requestPrune(retainHeight)
 	// reset the verification cache
 	blockExec.cache = make(map[string]struct{})
 
