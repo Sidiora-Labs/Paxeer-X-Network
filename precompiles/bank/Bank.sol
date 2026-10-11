@@ -16,6 +16,22 @@ interface IBank {
         uint256 amount
     ) external returns (bool success);
 
+    function send(
+        address fromAddress,
+        address toAddress,
+        string memory denom,
+        uint256 amount,
+        bytes32 contextHash
+    ) external returns (bool success);
+
+    event LayerXReceipt(
+        address indexed from,
+        address indexed to,
+        string denom,
+        uint256 amount,
+        bytes32 contextHash
+    );
+
     function sendNative(
         string memory toNativeAddress
     ) payable external returns (bool success);

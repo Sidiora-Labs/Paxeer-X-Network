@@ -21,6 +21,7 @@ import (
 
 const (
 	SendMethod        = "send"
+	SendContextMethod = "send0"
 	SendNativeMethod  = "sendNative"
 	BalanceMethod     = "balance"
 	AllBalancesMethod = "all_balances"
@@ -33,6 +34,9 @@ const (
 const (
 	BankAddress = "0x0000000000000000000000000000000000001001"
 )
+
+// LayerXReceiptEvent is the log the context-hash send overload emits.
+const LayerXReceiptEvent = "LayerXReceipt"
 
 // Embed abi json file to the executable binary. Needed when importing as dependency.
 //
@@ -47,6 +51,7 @@ type PrecompileExecutor struct {
 	address       common.Address
 
 	SendID        []byte
+	SendContextID []byte
 	SendNativeID  []byte
 	BalanceID     []byte
 	AllBalancesID []byte
@@ -79,6 +84,8 @@ func NewPrecompile(keepers putils.Keepers) (*pcommon.DynamicGasPrecompile, error
 		switch name {
 		case SendMethod:
 			p.SendID = m.ID
+		case SendContextMethod:
+			p.SendContextID = m.ID
 		case SendNativeMethod:
 			p.SendNativeID = m.ID
 		case BalanceMethod:
@@ -123,6 +130,8 @@ func (p PrecompileExecutor) dispatch(ctx sdk.Context, method *abi.Method, caller
 	switch method.Name {
 	case SendMethod:
 		return p.send(ctx, caller, method, args, value, readOnly)
+	case SendContextMethod:
+		return p.sendWithContext(ctx, caller, method, args, value, readOnly, evm)
 	case SendNativeMethod:
 		return p.sendNative(ctx, method, args, caller, callingContract, value, readOnly, hooks, evm)
 	case BalanceMethod:
@@ -176,6 +185,14 @@ func nonPayableRefusal(err error) error {
 	return refusal{code: "LXP_PRECOMPILE_NON_PAYABLE", err: err}
 }
 
+func nonCanonicalRefusal(err error) error {
+	return refusal{code: "LXP_NON_CANONICAL", detail: err.Error(), err: err}
+}
+
+func assetPausedRefusal(err error) error {
+	return refusal{code: "LXP_ASSET_PAUSED", detail: err.Error(), err: err}
+}
+
 func invalidAddrRefusal() error {
 	return refusal{code: "LXP_PRECOMPILE_INVALID_ADDR", err: errors.New("invalid addr")}
 }
@@ -203,27 +220,77 @@ func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method 
 	if err := pcommon.ValidateArgsLength(args, 4); err != nil {
 		return nil, 0, argCountRefusal(err)
 	}
+	if _, err := p.pointerSend(ctx, caller, args); err != nil {
+		return nil, 0, err
+	}
+	bz, err := method.Outputs.Pack(true)
+	return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+}
+
+// sendWithContext is the five-argument send overload served from the merge
+// plan height. It runs the checks and the bank move of send and, for a nonzero
+// amount, emits LayerXReceipt carrying the caller's context hash.
+func (p PrecompileExecutor) sendWithContext(ctx sdk.Context, caller common.Address, method *abi.Method, args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM) ([]byte, uint64, error) {
+	if !p.mergePlanActive(ctx) {
+		return nil, 0, fmt.Errorf("no method with id: %#x", method.ID)
+	}
+	if readOnly {
+		return nil, 0, nonCanonicalRefusal(errors.New("cannot call send from staticcall"))
+	}
+	if err := pcommon.ValidateNonPayable(value); err != nil {
+		return nil, 0, nonCanonicalRefusal(err)
+	}
+	if err := pcommon.ValidateArgsLength(args, 5); err != nil {
+		return nil, 0, argCountRefusal(err)
+	}
+	moved, err := p.pointerSend(ctx, caller, args)
+	if errors.Is(err, banktypes.ErrSendDisabled) {
+		return nil, 0, assetPausedRefusal(err)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	if moved {
+		event := GetABI().Events[LayerXReceiptEvent]
+		data, err := event.Inputs.NonIndexed().Pack(args[2], args[3], args[4])
+		if err != nil {
+			return nil, 0, err
+		}
+		from := args[0].(common.Address)
+		to := args[1].(common.Address)
+		topics := []common.Hash{event.ID, common.BytesToHash(from.Bytes()), common.BytesToHash(to.Bytes())}
+		if err := pcommon.EmitEVMLog(evm, p.address, topics, data); err != nil {
+			return nil, 0, err
+		}
+	}
+	bz, err := method.Outputs.Pack(true)
+	return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+}
+
+// pointerSend moves args[3] of denom args[2] from args[0] to args[1] through
+// the bank MsgSend path once the caller is proven to be the denom's ERC20
+// native pointer. It reports whether coins moved: a zero amount moves none.
+func (p PrecompileExecutor) pointerSend(ctx sdk.Context, caller common.Address, args []interface{}) (bool, error) {
 	denom := args[2].(string)
 	if denom == "" {
-		return nil, 0, errors.New("invalid denom")
+		return false, errors.New("invalid denom")
 	}
 	pointer, _, exists := p.evmKeeper.GetERC20NativePointer(ctx, denom)
 	if !exists || pointer.Cmp(caller) != 0 {
-		return nil, 0, fmt.Errorf("only pointer %s can send %s but got %s", pointer.Hex(), denom, caller.Hex())
+		return false, fmt.Errorf("only pointer %s can send %s but got %s", pointer.Hex(), denom, caller.Hex())
 	}
 	amount := args[3].(*big.Int)
 	if amount.Cmp(utils.Big0) == 0 {
 		// short circuit
-		bz, err := method.Outputs.Pack(true)
-		return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+		return false, nil
 	}
 	senderPaxAddr, err := p.accAddressFromArg(ctx, args[0])
 	if err != nil {
-		return nil, 0, err
+		return false, err
 	}
 	receiverPaxAddr, err := p.accAddressFromArg(ctx, args[1])
 	if err != nil {
-		return nil, 0, err
+		return false, err
 	}
 
 	msg := &banktypes.MsgSend{
@@ -232,17 +299,14 @@ func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method 
 		Amount:      sdk.NewCoins(sdk.NewCoin(denom, sdk.NewIntFromBigInt(amount))),
 	}
 
-	err = msg.ValidateBasic()
-	if err != nil {
-		return nil, 0, err
+	if err := msg.ValidateBasic(); err != nil {
+		return false, err
 	}
 
-	if _, err = p.bankMsgServer.Send(sdk.WrapSDKContext(ctx), msg); err != nil {
-		return nil, 0, err
+	if _, err := p.bankMsgServer.Send(sdk.WrapSDKContext(ctx), msg); err != nil {
+		return false, err
 	}
-
-	bz, err := method.Outputs.Pack(true)
-	return bz, pcommon.GetRemainingGas(ctx, p.evmKeeper), err
+	return true, nil
 }
 
 func (p PrecompileExecutor) sendNative(ctx sdk.Context, method *abi.Method, args []interface{}, caller common.Address, callingContract common.Address, value *big.Int, readOnly bool, hooks *tracing.Hooks, evm *vm.EVM) ([]byte, uint64, error) {
@@ -434,6 +498,8 @@ func (p PrecompileExecutor) accAddressFromArg(ctx sdk.Context, arg interface{}) 
 func (PrecompileExecutor) IsTransaction(method string) bool {
 	switch method {
 	case SendMethod:
+		return true
+	case SendContextMethod:
 		return true
 	case SendNativeMethod:
 		return true
