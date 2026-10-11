@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -100,6 +101,7 @@ import (
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
 	"github.com/paxeer-network/paxlog"
+	"github.com/spf13/cast"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -177,6 +179,7 @@ import (
 	oraclemodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	seqtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/types"
 	tokenfactorymodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
@@ -550,6 +553,9 @@ type App struct {
 
 	// openBlock is the sequencer executor's open block; nil in full-node mode.
 	openBlock OpenBlock
+
+	// activationHeight is the node-config height from which blocks are sequenced; 0 never.
+	activationHeight int64
 }
 
 type AppOption func(*App)
@@ -904,6 +910,12 @@ func New(
 		panic(fmt.Sprintf("error reading genesis import config due to %s", err))
 	}
 	app.genesisImportConfig = genesisImportConfig
+
+	activationHeight, err := ReadActivationHeight(appOpts)
+	if err != nil {
+		panic(fmt.Sprintf("error reading sequencer activation height due to %s", err))
+	}
+	app.activationHeight = activationHeight
 
 	epochModule := epochmodule.NewAppModule(appCodec, app.EpochKeeper, app.AccountKeeper, app.BankKeeper)
 
@@ -1459,7 +1471,24 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 	// Start block processing timing (ends at FinalizeBlock)
 	app.StartBenchmarkBlockProcessing()
 
-	typedTxs, err := app.DecodeTxBytesConcurrently(ctx.Context(), req.Txs)
+	// From the activation height tx 0 is the sequence batch, decoded on its own; the gas check
+	// covers the sequenced transactions behind it.
+	sequenced := app.Sequenced(req.Header.Height)
+	var batch seqtypes.MsgSequenceBatch
+	blockTxs := req.Txs
+	if sequenced {
+		if len(req.Txs) == 0 {
+			logger.Error("sequenced proposal has no sequence batch", "height", req.Header.Height)
+			return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
+		}
+		if batch, err = DecodeSequenceBatch(req.Txs[0]); err != nil {
+			logger.Error("sequenced proposal tx 0 is not a sequence batch", "height", req.Header.Height, "err", err)
+			return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
+		}
+		blockTxs = req.Txs[1:]
+	}
+
+	typedTxs, err := app.DecodeTxBytesConcurrently(ctx.Context(), blockTxs)
 	if err != nil {
 		utilmetrics.IncrFailedTotalGasWantedCheck(string(req.Header.ProposerAddress)) // TODO(PLT-327): remove once app_failed_total_gas_wanted_check_total verified
 		appMetrics.failedGasWantedCheck.Add(ctx.Context(), 1,
@@ -1467,6 +1496,14 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 		return &abci.ResponseProcessProposal{
 			Status: abci.ResponseProcessProposal_REJECT,
 		}, nil
+	}
+
+	if sequenced {
+		if root := app.sequencedTxRoot(blockTxs, typedTxs); !bytes.Equal(batch.TxRoot, root[:]) {
+			logger.Error("sequence batch txRoot differs from the sealed sequence", "height", req.Header.Height,
+				"batchTxRoot", fmt.Sprintf("%X", batch.TxRoot), "txRoot", fmt.Sprintf("%X", root))
+			return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
+		}
 	}
 
 	// Use the clean context for gas validation only. We cannot reassign
@@ -1482,6 +1519,11 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 		return &abci.ResponseProcessProposal{
 			Status: abci.ResponseProcessProposal_REJECT,
 		}, nil
+	}
+
+	if sequenced {
+		// ProcessBlock takes one decoded slot per block tx; the batch slot stays undecoded.
+		typedTxs = append([]sdk.Tx{nil}, typedTxs...)
 	}
 
 	app.optimisticProcessingInfoMutex.Lock()
@@ -2943,6 +2985,126 @@ func isolatedRead(ctx sdk.Context) sdk.Context {
 		WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)).
 		WithEventManager(sdk.NewEventManager()).
 		WithEvmEventManager(sdk.NewEVMEventManager())
+}
+
+// lxpModuleReservedCount is LXP_MODULE_RESERVED_COUNT of include/layerx/lxp_module.h.
+const lxpModuleReservedCount uint16 = 11
+
+// EVMReceiptModuleID is the module_id of a sequencer EVM receipt: the next free id after the
+// kernel module set, so no kernel module id is reused.
+const EVMReceiptModuleID = lxpModuleReservedCount + 1
+
+// FlagSequencerActivationHeight is the node-config height from which every block carries
+// MsgSequenceBatch at tx 0 and takes its transactions from the sealed receipt order.
+const FlagSequencerActivationHeight = "sequencer.activation-height"
+
+// ErrSequencerActivationHeight refuses an activation height that is not a non-negative integer.
+var ErrSequencerActivationHeight = errors.New("sequencer config: invalid activation-height")
+
+// ReadActivationHeight reads the sequencer activation height from the node config; unset is 0,
+// which never activates.
+func ReadActivationHeight(opts servertypes.AppOptions) (int64, error) {
+	v := opts.Get(FlagSequencerActivationHeight)
+	if v == nil {
+		return 0, nil
+	}
+	height, err := cast.ToInt64E(v)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrSequencerActivationHeight, err)
+	}
+	if height < 0 {
+		return 0, fmt.Errorf("%w: %d is negative", ErrSequencerActivationHeight, height)
+	}
+	return height, nil
+}
+
+// ActivationHeight returns the sequencer activation height read from the node config; 0 never.
+func (app *App) ActivationHeight() int64 {
+	return app.activationHeight
+}
+
+// SetActivationHeight replaces the activation height read at New with height, read through
+// ReadActivationHeight. It is called before the node processes a block.
+func (app *App) SetActivationHeight(height int64) error {
+	if height < 0 {
+		return fmt.Errorf("%w: %d is negative", ErrSequencerActivationHeight, height)
+	}
+	app.activationHeight = height
+	return nil
+}
+
+// Sequenced reports whether the block at height is built from the sealed receipt order.
+func (app *App) Sequenced(height int64) bool {
+	return app.activationHeight > 0 && height >= app.activationHeight
+}
+
+// sequenceBatchDomain prefixes the tx 0 encoding of MsgSequenceBatch.
+const sequenceBatchDomain = "PAXEER/v1/sequence-batch\x00"
+
+// sequenceBatchTxLength is the domain, three u64 fields, four 32-byte fields and the signature.
+const sequenceBatchTxLength = len(sequenceBatchDomain) + 3*8 + 3*seqtypes.HashLength + seqtypes.KeyIDLength + seqtypes.SignatureLength
+
+// EncodeSequenceBatch encodes m as tx 0 of a sequenced block: domain ‖ u64be height ‖
+// u64be fromSeq ‖ u64be toSeq ‖ prevSeqHash ‖ lastSeqHash ‖ txRoot ‖ keyId ‖ sig.
+func EncodeSequenceBatch(m seqtypes.MsgSequenceBatch) ([]byte, error) {
+	if err := m.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	b := make([]byte, 0, sequenceBatchTxLength)
+	b = append(b, sequenceBatchDomain...)
+	b = binary.BigEndian.AppendUint64(b, m.Height)
+	b = binary.BigEndian.AppendUint64(b, m.FromSeq)
+	b = binary.BigEndian.AppendUint64(b, m.ToSeq)
+	b = append(b, m.PrevSeqHash...)
+	b = append(b, m.LastSeqHash...)
+	b = append(b, m.TxRoot...)
+	b = append(b, m.KeyId...)
+	return append(b, m.Sig...), nil
+}
+
+// DecodeSequenceBatch decodes tx 0 of a sequenced block and checks its field shape.
+func DecodeSequenceBatch(tx []byte) (seqtypes.MsgSequenceBatch, error) {
+	if len(tx) != sequenceBatchTxLength || string(tx[:len(sequenceBatchDomain)]) != sequenceBatchDomain {
+		return seqtypes.MsgSequenceBatch{}, seqtypes.ErrInvalidSequenceBatch.Wrapf("tx 0 is not a sequence batch: %d bytes", len(tx))
+	}
+	rest := tx[len(sequenceBatchDomain):]
+	next := func(n int) []byte {
+		field := bytes.Clone(rest[:n])
+		rest = rest[n:]
+		return field
+	}
+	m := seqtypes.MsgSequenceBatch{
+		Height:  binary.BigEndian.Uint64(next(8)),
+		FromSeq: binary.BigEndian.Uint64(next(8)),
+		ToSeq:   binary.BigEndian.Uint64(next(8)),
+	}
+	m.PrevSeqHash = next(seqtypes.HashLength)
+	m.LastSeqHash = next(seqtypes.HashLength)
+	m.TxRoot = next(seqtypes.HashLength)
+	m.KeyId = next(seqtypes.KeyIDLength)
+	m.Sig = next(seqtypes.SignatureLength)
+	if err := m.ValidateBasic(); err != nil {
+		return seqtypes.MsgSequenceBatch{}, err
+	}
+	return m, nil
+}
+
+// sequencedTxRoot is sha256 over the activity ids of txs in order: keccak256 of the signed EVM
+// transaction, else sha256 of the tx bytes.
+func (app *App) sequencedTxRoot(txs [][]byte, typedTxs []sdk.Tx) [32]byte {
+	root := sha256.New()
+	for i, tx := range txs {
+		id := sha256.Sum256(tx)
+		if msg := app.GetEVMMsg(typedTxs[i]); msg != nil {
+			if etx, _ := msg.AsTransaction(); etx != nil {
+				id = [32]byte(etx.Hash())
+			}
+		}
+		root.Write(id[:])
+	}
+	var out [32]byte
+	copy(out[:], root.Sum(nil))
+	return out
 }
 
 func (app *App) RPCContextProvider(i int64) sdk.Context {

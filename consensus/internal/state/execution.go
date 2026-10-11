@@ -57,9 +57,10 @@ type SealedBlock struct {
 	OpenTime time.Time
 }
 
-// proposalTxs returns the block transactions: the batch at tx 0 followed by
-// the sealed slice in seq order.
-func (sb SealedBlock) proposalTxs(maxDataBytes int64) ([]types.Tx, error) {
+// InjectSequenceBatch returns the block transactions of sb: its sequence
+// batch at tx 0 followed by the sealed slice in seq order, refused when they
+// do not fit maxDataBytes.
+func InjectSequenceBatch(sb SealedBlock, maxDataBytes int64) ([]types.Tx, error) {
 	if len(sb.Batch) == 0 {
 		return nil, ErrSequenceBatchMissing
 	}
@@ -199,7 +200,7 @@ func (blockExec *BlockExecutor) CreateProposalBlock(
 		if err != nil {
 			return nil, fmt.Errorf("seal height %d: %w", height, err)
 		}
-		txs, err := sealed.proposalTxs(maxDataBytes)
+		txs, err := InjectSequenceBatch(sealed, maxDataBytes)
 		if err != nil {
 			return nil, fmt.Errorf("sealed block at height %d: %w", height, err)
 		}
