@@ -114,12 +114,11 @@ log_path = "logs/9.0.9-verify-2.log"
 observed_and_assumption = "the receipt-fed logs and newPendingTransactions cases pass; the one failure is TestSubscribeNewHeadsAutobahn, which fails on main because encodeCommittedBlock refuses every committed head, and task 12.0.13 owns that case, so the branch is held until 12.0.13 lands and the gate reruns."
 
 [finding.0.1]
-revision = "b1fa27b0c"
-command = "go build ./precompiles/..."
+revision = "16e8a8da6"
+command = "go test -count=1 ./precompiles/ -run 'TestFeeTokenRegistration|TestXWebRegistration|TestMergeAddressTable'"
 exit_code = 0
-log_path = "logs/worktrees-b6.log"
-observed_and_assumption = "the task registers twelve LayerX executors but none of the precompiles/layerxledger, layerxpay, layerxauth, layerxprograms or layerxagent packages exist yet, and requires lists only 10.0.1 and 10.0.2; taken as a planning gap, the task stays pending until the executor packages land and its requires are corrected."
-
+log_path = "logs/0.1-verify-1.log"
+observed_and_assumption = "the merge address table is served from registered constructors at the merge plan and the three tests pass; PrecompileLastUpgrade remains map[string]int64 with no reader so the plan-name field of do_3 is not representable without a type change, and the four pure helper addresses keep empty module lists until task 10.6.1 applies decision 49."
 [finding.9.0.23]
 revision = "283495300"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station"
@@ -1141,3 +1140,17 @@ command = "go test -count=1 ./precompiles/layerxagent/eip712/"
 exit_code = 0
 log_path = "logs/6.2.7-verify-1.log"
 observed_and_assumption = "the declared build and verify gates pass and the task is landed"
+
+[finding.6.5.46]
+revision = "a598a9b40"
+command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --all-targets"
+exit_code = 101
+log_path = "logs/6.5.46-clippy-1.log"
+observed_and_assumption = "clippy stops in the layerx-platform-internal dependency on eight deny-level lints in events.rs, producer.rs and tls.rs outside the gateway files of this task; task 0.107 owns them and the 6.5.46 verify_cmd does not include clippy."
+
+[finding.0.92]
+revision = "e45446d3b"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --self-test"
+exit_code = 0
+log_path = "logs/0.92-verify-1.log"
+observed_and_assumption = "retired-caller scan excludes reviewed spec text through documentation_paths and the self-test passes 83 cases; no open gap remains for this task."

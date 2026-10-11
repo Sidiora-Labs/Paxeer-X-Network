@@ -7086,3 +7086,53 @@ fix = "FUND is role-sequenced; start its sequence at 1 in fixtures."
 area = "worktree node_modules"
 symptom = "an SDK node_modules symlinked to the main checkout has no .bin/tsc"
 fix = "Replace the symlink with npm ci --workspaces=false inside the worktree SDK package before building."
+
+[gotcha.1503]
+area = "storage/common/keys store key list"
+symptom = "appending a store name to MemIAVLStoreKeys alone fails TestKVStoreKeyNamesMatchMemIAVLStoreKeys in node/store_keys_test.go"
+fix = "append the constant to MemIAVLStoreKeys in the same change that appends the module StoreKey to kvStoreKeyNames in node/app.go, in the same position."
+
+[gotcha.1504]
+area = "ai-market reputation retention"
+symptom = "a test expects 32 completed summaries right after an epoch opens, but the opening F06 reserve and prune_released already drop the oldest, leaving 31"
+fix = "the retention prune runs at epoch opening (decision 50); assert LIMIT - 1 after the opening and LIMIT after the close."
+
+[gotcha.1505]
+area = "agent/sdk/typescript dependencies"
+symptom = "node_modules/@noble is absent in the main checkout although package.json and package-lock.json list @noble/curves and @noble/hashes"
+fix = "run npm ci --workspaces=false inside agent/sdk/typescript; the lock already pins them."
+
+[gotcha.1506]
+area = "spec public check"
+symptom = "a loopback IPv4 literal in a spec do line fails the public-check IP pattern"
+fix = "name the address in words (the IPv4 loopback address) in public spec text."
+
+[gotcha.1507]
+area = "worktree search"
+symptom = "grep -r across every worktree root runs past the two-minute command limit"
+fix = "locate the task worktree from its run log workdir line and read that one path."
+
+[gotcha.1508]
+area = "tools/paxeer-x tests"
+symptom = "python3 -m py_compile writes tools/paxeer-x/tests/__pycache__ even though the module sets sys.dont_write_bytecode"
+fix = "remove the folder before committing; it is gitignored"
+
+[gotcha.1509]
+area = "cargo worktrees"
+symptom = "sibling worktrees share identical artifact hashes, so a shared CARGO_TARGET_DIR lets one worktree overwrite another crate build and tests link stale code"
+fix = "use CARGO_TARGET_DIR=cargo-target-<task> per worktree"
+
+[gotcha.1510]
+area = "layerx-gas-station clippy"
+symptom = "the crate denies pedantic lints, so one lint anywhere in the library stops clippy before tests/*.rs are linted"
+fix = "fix library lints first, then the tests"
+
+[gotcha.1511]
+area = "layerx-gas-station rate tests"
+symptom = "rate and config fixture files must be written with mode 0600 because the loaders refuse group or other permission bits"
+fix = "create fixtures with 0600 permissions"
+
+[gotcha.1512]
+area = "evm precompile tables"
+symptom = "entries in the built-in vm.PrecompiledContracts tables override custom precompiles at every height, so addPrecompileToVM reached through InitializePrecompiles(false) skips activation height gating"
+fix = "register merge precompiles only through the custom activation path; InitializePrecompiles(false) is for tests"

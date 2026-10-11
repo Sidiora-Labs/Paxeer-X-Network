@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Precompiles | orob resolver 0x0000000000000000000000000000000000000901, batch clearing 0x…0902, oracle aggregator 0x…0903, pofq scorer 0x…0904, scheduler 0x…0905, payment streams 0x…0906, tee attestor 0x…0907, eip712 helper 0x…0908 (the address table rows 0x0901-0x0908; gateway map human/wallet/gateway/src/precompiles.ts:17-29) |
-| Version | 1.0.1 |
+| Version | 1.0.2 |
 | Change control | Changes only by amendment to this contract, recorded with a new version number. |
 | Source revisions | repository at 52b672ac4 (read-only); the earlier implementation, specified from, not copied |
 | Binding decisions | decision D20 A with amendment 1 (all eight kept and ported as real precompiles; 0x0901-0x0904 re-specified here and implemented anew); 0x0901-0x0904 semantics follow the earlier implementation; decision D6 (Error(string) with LXP_ prefix); decision D3 (authz LayerX-scope grants); decision D2 (derived bank addresses); decision D7 (block-open timestamp); the embedded-wallet attestor set governs the tee attestor and every signer rule; 0x0906 executes through the 0x101B stream keeper (pay.md A.7); fixed per-method gas table (D2 gas table below); gateway ABIs frozen; eip712 pure hashing; tee roots set by governance; scheduler job store in receipt order; 0x0903 reads and writes the 0x1015 exchange oracle store |
@@ -85,13 +85,32 @@ Error codes first (A.0), then one row per method; every row's execution function
 | settle(uint256 streamId) (0x8df82800), nonpayable | streamId as open | uint256 paid | principal == payer or recipient (src/modules/stream/lx_stream_execution.h:257-259); the earlier implementation allowed any caller | streamSettle with a derived idempotencyKey (from (streamId, height, tx index); formula set at activation rehearsal): pays min(unsettled, balance) to the recipient (src/modules/stream/lx_stream_settle.c:95); EVM log StreamSettled(streamId, payee, paid, committed = paid) | READ_ONLY, DELEGATECALL, ABI_DECODE, kernel stream codes | precompiles/layerxagent/streams/streams.go Settle → lx_stream_settle_execute src/modules/stream/lx_stream_settle.c:95 | D2 |
 | close(uint256 streamId) (0x0aebeb4e), nonpayable | streamId as open | uint256 finalPaid | payer only (src/modules/stream/lx_stream_lifecycle.c:19-20); the earlier implementation allowed payer or payee | streamClose with a derived idempotencyKey as settle: pays the recipient, refunds the payer, closed record kept (src/modules/stream/lx_stream_lifecycle.c:87); EVM log StreamClosed(streamId, finalPaid, refund) | READ_ONLY, DELEGATECALL, ABI_DECODE, kernel stream codes | precompiles/layerxagent/streams/streams.go Close → lx_stream_close_execute src/modules/stream/lx_stream_lifecycle.c:87 | D2 |
 | updateRate(uint256 streamId, uint256 newRate) (0x405abb41), nonpayable | newRate nonzero, ≤ u128 | none | payer only | settle at the old rate to now (accrual lx_stream_accrue include/layerx/lx_stream.h:217), then set the new rate; EVM log StreamRateUpdated(streamId, oldRate, newRate) | READ_ONLY, DELEGATECALL, ABI_DECODE, OVERFLOW, kernel stream codes | precompiles/layerxagent/streams/streams.go UpdateRate → a kernel stream rate-change activity (accrue at the old rate to now, then set the new rate), a required change in the kernel stream module (pay.md) | D2 |
-| verify(uint8 family, bytes quote) (0x5fa55ca7), view | family 0 TDX, 1 SEV-SNP, 2 NVIDIA H100, 3 SGX; quote = dev envelope "PXVE\x01", ≤ cap (set at activation rehearsal) | (uint8 family, bytes32 mrtd, bytes32 reportData, uint64 timestamp, bool debug) | none to call; the envelope signer must be in the governance-set root list for the family, and the root list is the embedded-wallet attestor set (human/wallet/gateway/src/attestor/client.ts:533) | none; exact-match root lookup, signature over data[0:95], debug refused unless DebugAllowed (false), 0 ≤ now − timestamp ≤ MaxAttestationAge 600 s, now = block-open seconds (decision D7) | ABI_DECODE, TEE_UNKNOWN_FAMILY, TEE_NO_ROOTS, TEE_INVALID_QUOTE, TEE_UNTRUSTED_CHAIN, TEE_STALE, TEE_DEBUG_REFUSED | precompiles/layerxagent/teeattestor/teeattestor.go Verify | D2 |
+| verify(uint8 family, bytes quote) (0x5fa55ca7), view | family 0 TDX, 1 SEV-SNP, 2 NVIDIA H100, 3 SGX; quote = the PXVE v1 envelope of decision 48 (PXVE v1 envelope below), exactly 96 + 65n bytes | (uint8 family, bytes32 mrtd, bytes32 reportData, uint64 timestamp, bool debug) | none to call; the envelope signers must be members of the xweb attestor set (GetAttestorSet, modules/xweb/keeper/keeper.go:90) at its threshold (decision 33, decision 34) | none; signers recovered from keccak256(data[0:95]) in strictly ascending address order, at least threshold members, debug refused unless DebugAllowed (false), 0 ≤ now − timestamp ≤ MaxAttestationAge 600 s, now = block-open seconds (decision D7) | ABI_DECODE, TEE_UNKNOWN_FAMILY, TEE_NO_ROOTS, TEE_INVALID_QUOTE, TEE_UNTRUSTED_CHAIN, TEE_STALE, TEE_DEBUG_REFUSED | precompiles/layerxagent/teeattestor/teeattestor.go Verify | D2 |
 | verifyAndExpect(uint8 family, bytes quote, bytes32 expectedReportData) (0x71ded4b3), view | as verify | as verify | as verify | as verify, then reportData == expectedReportData; replay protection rests with the caller through reportData (the envelope nonce is not checked) | verify codes, TEE_REPORT_DATA_MISMATCH | precompiles/layerxagent/teeattestor/teeattestor.go VerifyAndExpect | D2 |
 | hashTypedData(bytes32 domainSeparator, bytes32 structHash) (0xd61c3c34), pure | none | bytes32 digest = keccak256(0x19 0x01 ‖ domainSeparator ‖ structHash) | none | none | INPUT_TOO_SHORT, UNKNOWN_METHOD, ABI_DECODE | precompiles/layerxagent/eip712/eip712.go HashTypedData | D2 |
 | domainSeparator(string name, string version, uint256 chainId, address verifyingContract) (0xe6d341cd), pure | name and version ≤ cap bytes (cap set at activation rehearsal) | bytes32 = keccak256(typehash ‖ keccak(name) ‖ keccak(version) ‖ chainId ‖ verifyingContract), typehash EIP712Domain(string name,string version,uint256 chainId,address verifyingContract) | none | none | ABI_DECODE, BATCH_TOO_LARGE | precompiles/layerxagent/eip712/eip712.go DomainSeparator | D2 |
 | recoverTypedSigner(bytes32 domainSeparator_, bytes32 structHash, bytes signature) (0xac580b5c), view | signature 65 bytes r‖s‖v, v 27/28 normalized | address signer; zero address on length ≠ 65, bad v, high s (low-s check) or failed recovery | none | none | ABI_DECODE | precompiles/layerxagent/eip712/eip712.go RecoverTypedSigner | D2 |
 
 The signer rule for the tee attestor (one attestor signature or the three-of-five threshold of human/wallet/gateway/src/attestor/client.ts:533, and the attestor key type) and the on-chain registration point of the embedded-wallet attestor set (configured for the gateway at human/wallet/gateway/src/env.ts:201-218) are set at activation rehearsal. Vendor-native quote formats (TDX, SEV-SNP, SGX, NVIDIA) are out of scope for this feature: verify accepts the dev envelope signed by the attestor set, and parsing vendor quotes has no kernel operation.
+
+### PXVE v1 envelope
+Decision 48. Big-endian byte layout of the verify and verifyAndExpect quote argument.
+
+| Offset | Field | Length |
+|---|---|---|
+| 0 | magic "PXVE" | 4 |
+| 4 | version 0x01 | 1 |
+| 5 | family | 1 |
+| 6 | debug, 0 or 1 | 1 |
+| 7 | mrtd | 32 |
+| 39 | reportData | 32 |
+| 71 | timestamp, u64 seconds | 8 |
+| 79 | chainId, u64 | 8 |
+| 87 | nonce, u64 | 8 |
+| 95 | signature count n, u8 | 1 |
+| 96 | n signatures of 65 bytes (r, s, v in {27, 28}, low s) | 65n |
+
+Signatures are over keccak256(data[0:95]); recovered signers are in strictly ascending address order and are members of the xweb attestor set (modules/xweb/keeper/keeper.go:90, the verifySignatures rule of modules/xweb/keeper/fulfil.go:17); total length is exactly 96 + 65n (421 bytes with five attestors). Errors: family > 3 TEE_UNKNOWN_FAMILY; family byte unequal to the argument, wrong chainId, bad magic, version, length or trailing bytes TEE_INVALID_QUOTE; empty set TEE_NO_ROOTS; non-member signer or n below threshold TEE_UNTRUSTED_CHAIN; stale timestamp TEE_STALE; debug set TEE_DEBUG_REFUSED.
 
 ## B. Views
 State reads; errors as A.0.
