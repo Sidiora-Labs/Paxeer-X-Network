@@ -273,6 +273,9 @@ lxp_result lx_asset_account_open(lx_asset_registry *assets,
 lxp_result lx_asset_total_units(lx_asset_registry *assets,
                                 const lx_account_registry *accounts,
                                 const uint8_t asset_id[32], lxp_u128 *total);
+lxp_result lx_asset_payer_grant_read(const struct lxp_kernel *kernel,
+                                     const uint8_t grant_id[32],
+                                     lxp_grant_state *state);
 lxp_result lx_asset_state_root(const lx_asset_registry *assets,
                                const lx_account_registry *accounts,
                                uint8_t root[32]);

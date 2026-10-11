@@ -29,7 +29,7 @@ typedef struct pause_fixture {
     uint64_t parameters;
     uint8_t public_key[32];
     uint8_t signature[64];
-    uint8_t payload[512];
+    uint8_t payload[1024];
 } pause_fixture;
 
 static uint8_t pause_arena_bytes[1048576];
@@ -695,6 +695,199 @@ static int test_withdraw_dispatch(void)
     return 0;
 }
 
+static int grant_sign_domain(const uint8_t seed[32], lxp_domain_tag_id domain,
+                             const uint8_t *message, size_t message_length,
+                             uint8_t signature[64])
+{
+    uint8_t digest[32];
+    uint8_t public_key[32];
+    PAUSE_CHECK(lxp_hash_domain(domain, message, message_length,
+                                digest) == LXP_OK);
+    return pause_sign(seed, digest, 32U, signature, public_key);
+}
+
+static lxp_module_kv_entry *grant_entry(pause_fixture *f, const uint8_t id[32])
+{
+    for (size_t index = 0U; index < f->kernel.module_kv_count; ++index) {
+        lxp_module_kv_entry *entry = &f->kernel.module_kv[index];
+        if (entry->module_id == LXP_MODULE_ASSET && entry->key_length == 38U &&
+            memcmp(entry->key, "grant:", 6U) == 0 &&
+            memcmp(entry->key + 6U, id, 32U) == 0) return entry;
+    }
+    return NULL;
+}
+
+static int test_payer_grant_read(void)
+{
+    static const uint8_t payer_seed[32] = {15U};
+    static const uint8_t merchant_seed[32] = {16U};
+    static const uint8_t payer_did[] = "did:key:grant-payer";
+    static const uint8_t merchant_did[] = "did:key:grant-merchant";
+    const char *names[] = {"agent:did:key:grant-payer:main",
+                           "agent:did:key:grant-merchant:main"};
+    const uint8_t *seeds[] = {payer_seed, merchant_seed};
+    pause_fixture *f = (pause_fixture *)calloc(1U, sizeof(*f));
+    lx_account *opened[2];
+    lxp_payer_grant grant;
+    lxp_receive receive;
+    lxp_grant_state state;
+    lxp_module_kv_entry *entry;
+    uint8_t zero[32] = {0};
+    uint8_t scratch[64];
+    uint8_t message[512];
+    uint8_t payload[1024];
+    uint8_t unknown[32];
+    size_t message_length;
+    size_t payload_length;
+    size_t grant_length;
+    size_t index;
+    uint64_t sequence = 1U;
+    lxp_result result = LXP_OK;
+
+    PAUSE_CHECK(f != NULL);
+    f->genesis_asset.asset_id[0] = 0x5dU;
+    f->genesis_asset.custody_kind = LX_ASSET_CUSTODY_PAXEER;
+    PAUSE_CHECK(lx_asset_transfer_state(&f->genesis_asset,
+                                        &f->genesis_state) == LXP_OK);
+    PAUSE_CHECK(lx_account_registry_init(&f->accounts) == LXP_OK);
+    for (index = 0U; index < 2U; ++index) {
+        uint8_t id[32];
+        PAUSE_CHECK(lx_account_id_from_string((const uint8_t *)names[index],
+                                              strlen(names[index]),
+                                              id) == LXP_OK);
+        PAUSE_CHECK(lx_account_open(&f->accounts, (const uint8_t *)names[index],
+                                    strlen(names[index]), id, 1U,
+                                    LX_ACCOUNT_OPEN_CREDIT, NULL,
+                                    &opened[index]) == LXP_OK);
+        PAUSE_CHECK(lxp_ledger_bootstrap_balance(
+            opened[index], f->genesis_asset.asset_id,
+            (lxp_u128){0U, index == 0U ? 100U : 0U}, 0U) == LXP_OK);
+        PAUSE_CHECK(pause_sign(seeds[index], zero, 32U, scratch,
+                               opened[index]->authority_key) == 0);
+        opened[index]->has_authority_key = true;
+    }
+    f->parameters = 1U;
+    PAUSE_CHECK(lxp_state_store_init(&f->state, 0U) == LXP_OK);
+    PAUSE_CHECK(lxp_state_store_bind_accounts(&f->state, &f->accounts) == LXP_OK);
+    PAUSE_CHECK(lxp_state_store_require_account_root(&f->state) == LXP_OK);
+    PAUSE_CHECK(lxp_kernel_create(&f->kernel, &f->state, &f->journal,
+                                  &f->parameters, 0U) == LXP_OK);
+    PAUSE_CHECK(lxp_kernel_register_module(&f->kernel,
+                                           lx_asset_module_iface()) == LXP_OK);
+    PAUSE_CHECK(lxp_kernel_set_capabilities(
+        &f->kernel, NULL, lxp_kernel_canonical_ledger_apply) == LXP_OK);
+    f->runtime = (lx_asset_runtime){&f->accounts, &f->genesis_asset, 1U,
+        &f->genesis_state, 1U, 7U, LXP_PROTOCOL_VERSION_OCCUPANCY};
+    PAUSE_CHECK(lxp_kernel_bind_module_runtime(&f->kernel, LXP_MODULE_ASSET,
+                                               &f->runtime) == LXP_OK);
+
+    (void)memset(&grant, 0, sizeof(grant));
+    (void)memcpy(grant.from, opened[0]->id, 32U);
+    (void)memcpy(grant.recipient, opened[1]->id, 32U);
+    (void)memcpy(grant.asset, f->genesis_asset.asset_id, 32U);
+    grant.per_draw_maximum = (lxp_u128){0U, 50U};
+    grant.allowance = (lxp_u128){0U, 80U};
+    grant.expiration = 100U;
+    grant.purpose_hash[0] = 8U;
+    grant.revocation_sequence = 5U;
+    (void)memcpy(grant.public_key, opened[0]->authority_key, 32U);
+    PAUSE_CHECK(lxp_grant_authorization_message(&grant, message, sizeof(message),
+                                                &message_length) == LXP_OK);
+    PAUSE_CHECK(lxp_hash_authority(message, message_length,
+                                   grant.grant_id) == LXP_OK);
+    PAUSE_CHECK(grant_sign_domain(payer_seed, LXP_DOMAIN_AUTHORITY_HASH, message,
+                                  message_length, grant.signature) == 0);
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_ERR_NO_PAYER_GRANT);
+
+    PAUSE_CHECK(lxp_payer_grant_encode(&grant, payload, sizeof(payload),
+                                       &grant_length) == LXP_OK);
+    (void)memset(scratch, 0, sizeof(scratch));
+    scratch[0] = 1U;
+    PAUSE_CHECK(pause_submit(f, payer_seed, payer_did, sizeof(payer_did) - 1U,
+                             LX_ASSET_GRANT_ISSUE, payload, grant_length,
+                             scratch, sequence++, false, &result) == 0);
+    PAUSE_CHECK(result == LXP_OK);
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_OK);
+    PAUSE_CHECK(memcmp(&state.grant, &grant, sizeof(grant)) == 0 &&
+                lxp_u128_is_zero(state.drawn_total) && !state.revoked &&
+                !state.invoice_settled);
+
+    (void)memset(&receive, 0, sizeof(receive));
+    (void)memcpy(receive.from, opened[0]->id, 32U);
+    (void)memcpy(receive.to, opened[1]->id, 32U);
+    (void)memcpy(receive.asset, f->genesis_asset.asset_id, 32U);
+    receive.amount = (lxp_u128){0U, 40U};
+    (void)memcpy(receive.grant_id, grant.grant_id, 32U);
+    receive.receiver_sequence = opened[1]->next_sequence;
+    receive.idempotency_key[0] = 2U;
+    PAUSE_CHECK(lxp_hash_context_value(grant.purpose_hash, 32U,
+                                       receive.context_hash) == LXP_OK);
+    receive.receiver_authorization.kind = LXP_AUTH_OWNER;
+    (void)memcpy(receive.receiver_authorization.controller, opened[1]->id, 32U);
+    (void)memcpy(receive.receiver_authorization.public_key,
+                 opened[1]->authority_key, 32U);
+    (void)memcpy(receive.receiver_authorization.signed_context_hash,
+                 receive.context_hash, 32U);
+    receive.receiver_authorization.network_id = 7U;
+    receive.receiver_authorization.protocol_version =
+        LXP_PROTOCOL_VERSION_OCCUPANCY;
+    receive.payer_grant = grant;
+    PAUSE_CHECK(lxp_receive_authorization_message(&receive, message,
+                                                  sizeof(message),
+                                                  &message_length) == LXP_OK);
+    PAUSE_CHECK(grant_sign_domain(merchant_seed, LXP_DOMAIN_SIGNATURE_PREIMAGE,
+                                  message, message_length,
+                                  receive.receiver_authorization.signature) == 0);
+    PAUSE_CHECK(lxp_receive_encode(&receive, payload, sizeof(payload),
+                                   &payload_length) == LXP_OK);
+    PAUSE_CHECK(pause_submit(f, merchant_seed, merchant_did,
+                             sizeof(merchant_did) - 1U, LX_ASSET_RECEIVE,
+                             payload, payload_length, receive.idempotency_key,
+                             sequence++, false, &result) == 0);
+    PAUSE_CHECK(result == LXP_OK);
+    PAUSE_CHECK(opened[0]->balance.lo == 60U && opened[1]->balance.lo == 40U);
+
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_OK);
+    PAUSE_CHECK(memcmp(&state.grant, &grant, sizeof(grant)) == 0 &&
+                state.drawn_total.hi == 0U && state.drawn_total.lo == 40U &&
+                !state.revoked && state.revoked_at_sequence == 0U &&
+                !state.invoice_settled);
+
+    (void)memcpy(unknown, grant.grant_id, 32U);
+    unknown[31] ^= 1U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, unknown, &state) ==
+                LXP_ERR_NO_PAYER_GRANT);
+
+    entry = grant_entry(f, grant.grant_id);
+    PAUSE_CHECK(entry != NULL && entry->value_length == grant_length + 50U);
+    entry->value_length -= 1U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_ERR_NON_CANONICAL);
+    entry->value_length = 49U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_ERR_NON_CANONICAL);
+    entry->value_length = (uint32_t)(grant_length + 50U);
+    entry->value[grant_length + 48U] = 2U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_ERR_NON_CANONICAL);
+    entry->value[grant_length + 48U] = 0U;
+    entry->key[37] ^= 1U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, unknown, &state) ==
+                LXP_ERR_NON_CANONICAL);
+    entry->key[37] ^= 1U;
+    PAUSE_CHECK(lx_asset_payer_grant_read(&f->kernel, grant.grant_id, &state) ==
+                LXP_OK && state.drawn_total.lo == 40U);
+    PAUSE_CHECK(lx_asset_payer_grant_read(NULL, grant.grant_id, &state) ==
+                LXP_ERR_NON_CANONICAL);
+
+    PAUSE_CHECK(lxp_state_store_destroy(&f->state) == LXP_OK);
+    free(f);
+    return 0;
+}
+
 #undef PAUSE_CHECK
 
 int main(void)
@@ -834,5 +1027,6 @@ int main(void)
     if (test_pause_dispatch() != 0) return 1;
     if (test_supply_binding_dispatch() != 0) return 1;
     if (test_withdraw_dispatch() != 0) return 1;
+    if (test_payer_grant_read() != 0) return 1;
     return 0;
 }

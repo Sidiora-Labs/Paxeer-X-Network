@@ -838,6 +838,39 @@ lxp_result lx_asset_committed_records(const lxp_kernel *kernel,
     return LXP_OK;
 }
 
+lxp_result lx_asset_payer_grant_read(const lxp_kernel *kernel,
+                                     const uint8_t grant_id[32],
+                                     lxp_grant_state *state)
+{
+    uint8_t key[38];
+    const lxp_module_kv_entry *entry = NULL;
+    size_t length;
+    lxp_result status;
+    if (kernel == NULL || grant_id == NULL || state == NULL ||
+        kernel->module_kv_count > LXP_KERNEL_MAX_MODULE_KV) return LXP_ERR_NON_CANONICAL;
+    grant_key(key, grant_id);
+    for (size_t i = 0U; i < kernel->module_kv_count && entry == NULL; ++i)
+        if (kernel->module_kv[i].module_id == LXP_MODULE_ASSET &&
+            kernel->module_kv[i].key_length == sizeof(key) &&
+            memcmp(kernel->module_kv[i].key, key, sizeof(key)) == 0)
+            entry = &kernel->module_kv[i];
+    if (entry == NULL) return LXP_ERR_NO_PAYER_GRANT;
+    length = entry->value_length;
+    if (length < 50U || length > sizeof(entry->value)) return LXP_ERR_NON_CANONICAL;
+    length -= 50U;
+    (void)memset(state, 0, sizeof(*state));
+    status = lxp_payer_grant_decode(entry->value, length, &state->grant);
+    if (status != LXP_OK || entry->value[length + 48U] > 1U ||
+        entry->value[length + 49U] > 1U) return LXP_ERR_NON_CANONICAL;
+    (void)lxp_u128_from_be(entry->value + length, &state->drawn_total);
+    (void)lxp_u128_from_be(entry->value + length + 16U, &state->drawn_this_period);
+    state->window_start = asset_u64_read(entry->value + length + 32U);
+    state->revoked_at_sequence = asset_u64_read(entry->value + length + 40U);
+    state->revoked = entry->value[length + 48U] != 0U;
+    state->invoice_settled = entry->value[length + 49U] != 0U;
+    return memcmp(grant_id, state->grant.grant_id, 32U) == 0 ? LXP_OK : LXP_ERR_NON_CANONICAL;
+}
+
 lxp_result lx_asset_record_migrate_v2(const uint8_t *bytes, size_t length,
     const uint8_t salt[32], uint8_t *output, size_t capacity, size_t *output_length)
 {
