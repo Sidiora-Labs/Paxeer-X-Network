@@ -3,50 +3,6 @@
   "first_batch_number": 1,
   "poll_interval_ms": 5000,
   "status_listen": "127.0.0.1:9091",
-  "node": {
-    "socket": "/run/layerx/lni.sock",
-    "expected_protocol_version": 3,
-    "expected_network_id": 1,
-    "maximum_frame_bytes": 67108864,
-    "maximum_connections": 2,
-    "maximum_streams": 2,
-    "maximum_queued_bytes": 67108864,
-    "deadline_ms": 30000,
-    "maximum_archive_bytes": 67108864,
-    "maximum_archive_chunks": 65536,
-    "checkpoint_policy": {
-      "rpc": {
-        "endpoints": [
-          {
-            "url": "https://paxeer-a.example/rpc",
-            "ca_certificate_der": "/run/secrets/paxeer-a.ca.der",
-            "bearer_token_file": "/run/secrets/paxeer-a.token",
-            "independent_backend": "paxeer-a"
-          },
-          {
-            "url": "https://paxeer-b.example/rpc",
-            "ca_certificate_der": "/run/secrets/paxeer-b.ca.der",
-            "bearer_token_file": "/run/secrets/paxeer-b.token",
-            "independent_backend": "paxeer-b"
-          },
-          {
-            "url": "https://paxeer-c.example/rpc",
-            "ca_certificate_der": "/run/secrets/paxeer-c.ca.der",
-            "bearer_token_file": "/run/secrets/paxeer-c.token",
-            "independent_backend": "paxeer-c"
-          }
-        ],
-        "quorum": 2,
-        "connect_timeout_ms": 3000,
-        "request_timeout_ms": 15000,
-        "maximum_response_bytes": 16777216
-      },
-      "chain_id": 125,
-      "genesis_hash_hex": "0000000000000000000000000000000000000000000000000000000000000001",
-      "sequencer_public_key_hex": "0000000000000000000000000000000000000000000000000000000000000001",
-      "confirmations": 12
-    }
-  },
   "ethereum": {
     "rpc": {
       "endpoints": [
