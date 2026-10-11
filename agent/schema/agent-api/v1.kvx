@@ -51,6 +51,7 @@ fields = ["major:u16","minor:u16"]
 
 [record.VersionRequest]
 fields = ["request_id:Sequence","supported:ContractVersion"]
+unsupported_major = "unsupported_major"
 
 [record.VersionResponse]
 fields = ["request_id:Sequence","contract:ContractVersion","node_interface_major:u16"]
@@ -126,7 +127,7 @@ authority = "The daemon authenticates these exact coordinates; the agent is take
 
 [record.AgentHttpSuccess]
 fields = ["request_id:Sequence","value:canonical-map","verification_status:VerificationStatus"]
-verification_status = "Either {state:\"achieved\",level:L} or {state:\"unverified\",requested:L,achieved:L,reason:ReasonCode} with achieved strictly below requested; L is one of Unverified, SequencerSigned, BatchIncluded, StateProven, CheckpointFinalised, SettlementAnchored. An unverified status that violates the ordering is refused as VerificationFailure verification.inconsistent."
+verification_status = "Either {state:\"achieved\",rung:R} or {state:\"unverified\",requested:R,achieved:R,reason:ReasonCode} with achieved strictly below requested; R is one of submitted, receipted, committed. An unverified status that violates the ordering is refused as VerificationFailure verification.inconsistent."
 
 [record.AgentHttpError]
 fields = ["class:ErrorClass","protocol_result_code:i32?","retriability:Retriability","request_id:Sequence","reason:utf8"]

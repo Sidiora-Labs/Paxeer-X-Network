@@ -1,14 +1,18 @@
-use layerx_agent_api::identity::{ActivityType, AgentDid, Asset, AuthorityRef, ExplicitSet};
+use layerx_agent_api::identity::{
+    ActivityType, AgentDid, Asset, AuthorityRef, ContractError, ExplicitSet,
+};
 use layerx_agent_api::prepare::{
     CanonicalBytes, Disclosure, IdempotencyRef, PreparationRef, Prepared, SigningPreimage,
 };
+use layerx_agent_api::submit::SignatureBytes;
 use layerx_agent_api::track::{
     ReceiptRef, SubmissionRef, SubmissionState, TrackedSubmission, WaitRequest, WaitResult,
 };
-use layerx_agent_api::verify::Level;
 use layerx_agent_api::{Amount, TimestampSeconds};
+use layerx_types::rung::Rung;
 
 const SCHEMA: &str = include_str!("../../../schema/agent-api/write.kvx");
+const GOLDEN: &str = include_str!("../../../schema/agent-api/golden/write.kvx");
 
 fn required<T>(result: Result<T, layerx_agent_api::identity::ContractError>) -> T {
     result.unwrap_or_else(|error| panic!("valid contract value: {error:?}"))
@@ -41,15 +45,17 @@ fn preparation_binds_exact_bytes_preimage_disclosure_and_expiry() {
 }
 
 #[test]
-fn state_machine_is_exact_and_unknown_is_a_value() {
+fn submission_states_major_two() {
     let states = [
         SubmissionState::Prepared,
         SubmissionState::Signed,
         SubmissionState::Queued,
         SubmissionState::Submitted,
-        SubmissionState::Acknowledged,
         SubmissionState::Unknown,
         SubmissionState::Executed {
+            receipt_ref: required(ReceiptRef::new("receipt-1")),
+        },
+        SubmissionState::Committed {
             receipt_ref: required(ReceiptRef::new("receipt-1")),
         },
         SubmissionState::Failed {
@@ -64,19 +70,27 @@ fn state_machine_is_exact_and_unknown_is_a_value() {
             "signed",
             "queued",
             "submitted",
-            "acknowledged",
             "unknown",
             "executed",
+            "committed",
             "failed",
             "expired",
         ]
     );
+    assert!(SCHEMA.contains(
+        "variants = [\"Prepared\",\"Signed\",\"Queued\",\"Submitted\",\"Unknown\",\"Executed\",\"Committed\",\"Failed\",\"Expired\"]"
+    ));
+    assert!(SCHEMA.contains("Unknown.rung = \"submitted\""));
+    assert!(SCHEMA.contains("Executed.rung = \"receipted\""));
     assert!(SCHEMA.contains("Unknown.semantics = \"first_class_terminal_pending\""));
 }
 
 #[test]
 fn executed_state_cannot_exist_without_a_receipt_reference() {
-    assert!(ReceiptRef::new("").is_err());
+    assert_eq!(
+        ReceiptRef::new(""),
+        Err(ContractError::Empty("receipt_ref"))
+    );
     let executed = SubmissionState::Executed {
         receipt_ref: required(ReceiptRef::new("receipt-9")),
     };
@@ -88,25 +102,98 @@ fn executed_state_cannot_exist_without_a_receipt_reference() {
 }
 
 #[test]
-fn wait_returns_actual_level_even_when_deadline_elapsed() {
+fn wait_returns_actual_rung_even_when_deadline_elapsed() {
     let submission_ref = required(SubmissionRef::new("submission-1"));
     let request = WaitRequest {
         submission_ref: submission_ref.clone(),
-        requested_verification_level: Level::CheckpointFinalised,
+        requested_rung: Rung::Committed,
         deadline: TimestampSeconds(50),
     };
     let tracked = TrackedSubmission {
         submission_ref,
-        state: SubmissionState::Acknowledged,
+        state: SubmissionState::Unknown,
         evidence: Vec::new(),
-        verification_level: Level::SequencerSigned,
+        rung: Rung::Submitted,
         transitions: Vec::new(),
     };
     let result = WaitResult {
         submission: tracked,
-        actual_verification_level: Level::SequencerSigned,
+        actual_rung: Rung::Submitted,
         deadline_elapsed: true,
     };
     assert!(result.deadline_elapsed);
-    assert!(result.actual_verification_level < request.requested_verification_level);
+    assert_eq!(result.actual_rung, result.submission.rung);
+    assert_eq!(result.actual_rung, Rung::Submitted);
+    assert_eq!(request.requested_rung, Rung::Committed);
+    assert_eq!(result.submission.state, SubmissionState::Unknown);
+    assert!(result.actual_rung < request.requested_rung);
+}
+
+#[test]
+fn sign_signature_is_65_bytes() {
+    let response = GOLDEN
+        .split_once("[golden.response.sign]\n")
+        .map(|(_, response)| response)
+        .unwrap_or_else(|| panic!("golden sign response missing"));
+    let signature_text = response
+        .lines()
+        .take_while(|line| !line.starts_with('['))
+        .find_map(|line| {
+            line.strip_prefix("signature = \"")
+                .and_then(|value| value.strip_suffix('"'))
+        })
+        .unwrap_or_else(|| panic!("golden sign signature missing"));
+    assert_eq!(signature_text.len(), 130);
+    let decoded = required(signature_text.parse::<SignatureBytes>());
+    let mut expected = vec![1; 32];
+    expected.extend_from_slice(&[2; 32]);
+    expected.push(0);
+    assert_eq!(decoded.as_bytes(), expected);
+    assert_eq!(decoded.as_bytes().len(), 65);
+    assert_eq!(required(SignatureBytes::new(expected)), decoded);
+    assert!(SCHEMA.contains("signature_encoding = \"130 lowercase hex characters, 65 bytes\""));
+    for length in [0, 1, 63, 64, 66, 130] {
+        assert_eq!(
+            SignatureBytes::new(vec![1; length]),
+            Err(ContractError::Malformed("signature"))
+        );
+        assert_eq!(
+            "01".repeat(length).parse::<SignatureBytes>(),
+            Err(ContractError::Malformed("signature"))
+        );
+    }
+    for malformed in [
+        format!("0x{signature_text}"),
+        format!(" {signature_text}"),
+        format!("{signature_text}\n"),
+        format!("A{}", &signature_text[1..]),
+        format!("g{}", &signature_text[1..]),
+        format!("é{}", &signature_text[2..]),
+        signature_text[..129].to_owned(),
+        format!("{signature_text}0"),
+    ] {
+        assert_eq!(
+            malformed.parse::<SignatureBytes>(),
+            Err(ContractError::Malformed("signature"))
+        );
+    }
+}
+
+#[test]
+fn committed_state_requires_a_receipt_reference() {
+    assert_eq!(
+        ReceiptRef::new(""),
+        Err(ContractError::Empty("receipt_ref"))
+    );
+    let committed = SubmissionState::Committed {
+        receipt_ref: required(ReceiptRef::new("receipt-9")),
+    };
+    let SubmissionState::Committed { receipt_ref } = committed else {
+        panic!("committed variant expected");
+    };
+    assert_eq!(receipt_ref.as_str(), "receipt-9");
+    assert!(SCHEMA.contains("Committed.required = [\"receipt_ref\"]"));
+    assert!(SCHEMA.contains("Committed.rung = \"committed\""));
+    assert!(Rung::Submitted < Rung::Receipted);
+    assert!(Rung::Receipted < Rung::Committed);
 }

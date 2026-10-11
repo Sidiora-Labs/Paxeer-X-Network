@@ -66,6 +66,10 @@ fn integer(entries: &BTreeMap<String, String>, key: &str) -> Result<u16, String>
         .map_err(|error| format!("invalid {key}: {error}"))
 }
 
+fn quoted_entry<'a>(entries: &'a BTreeMap<String, String>, key: &str) -> Result<&'a str, String> {
+    unquote(entries.get(key).ok_or_else(|| format!("missing {key}"))?)
+}
+
 fn validate(entries: &BTreeMap<String, String>) -> Result<(), String> {
     for (key, value) in entries {
         let language_type = key
@@ -192,14 +196,11 @@ fn settlement_domain_gate(
 }
 
 fn generated_source(entries: &BTreeMap<String, String>) -> Result<String, String> {
-    let name = unquote(
-        entries
-            .get("schema.name")
-            .ok_or_else(|| "missing schema.name".to_owned())?,
-    )?;
+    let name = quoted_entry(entries, "schema.name")?;
     let major = integer(entries, "schema.major")?;
     let minor = integer(entries, "schema.minor")?;
     let node_major = integer(entries, "schema.node_interface_major")?;
+    let unsupported_major = quoted_entry(entries, "record.VersionRequest.unsupported_major")?;
     Ok(format!(
         r#"//! Generated from `agent/schema/agent-api/v1.kvx`; do not hand-edit.
 
@@ -236,6 +237,22 @@ pub struct VersionResponse {{
     pub node_interface_major: u16,
 }}
 
+impl TryFrom<VersionRequest> for VersionResponse {{
+    type Error = &'static str;
+
+    fn try_from(request: VersionRequest) -> Result<Self, Self::Error> {{
+        let contract = agent_api_schema_v1();
+        if request.supported.major != contract.version.major {{
+            return Err("{unsupported_major}");
+        }}
+        Ok(Self {{
+            request_id: request.request_id,
+            contract: contract.version,
+            node_interface_major: contract.node_interface_major,
+        }})
+    }}
+}}
+
 macro_rules! exact_integer {{
     ($name:ident, $inner:ty) => {{
         #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -263,7 +280,7 @@ exact_integer!(Sequence, u64);
 exact_integer!(BudgetLimit, u128);
 exact_integer!(TimestampSeconds, u64);
 
-/// Returns the immutable v1 contract descriptor.
+/// Returns the immutable contract descriptor.
 #[must_use]
 pub const fn agent_api_schema_v1() -> ContractSchema {{
     ContractSchema {{

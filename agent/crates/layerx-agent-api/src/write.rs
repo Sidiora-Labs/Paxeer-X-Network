@@ -1,27 +1,42 @@
 //! Prepare, sign, submit, track, and wait contract types.
 
 use crate::identity::{
-    ActivityType, AgentDid, Asset, AuthorityRef, CapabilityId, ContractError, ExplicitSet,
+    strict_hex32, ActivityType, AgentDid, Asset, AuthorityRef, CapabilityId, ContractError,
+    ExplicitSet,
 };
-use crate::verify::Level;
 use crate::{Amount, Sequence, TimestampSeconds};
 use layerx_types::result::ResultCode;
+use layerx_types::rung::Rung;
 
 macro_rules! required_bytes {
     ($name:ident, $field:literal) => {
+        required_bytes!($name, $field, Vec<u8>, |value: Vec<u8>| {
+            if value.is_empty() {
+                return Err(ContractError::Empty($field));
+            }
+            Ok(value)
+        });
+    };
+    ($name:ident, $field:literal, $length:literal) => {
+        required_bytes!($name, $field, [u8; $length], |value: Vec<u8>| {
+            value
+                .try_into()
+                .map_err(|_| ContractError::Malformed($field))
+        });
+    };
+    ($name:ident, $field:literal, $storage:ty, $construct:expr) => {
         #[derive(Clone, Debug, Eq, PartialEq)]
-        pub struct $name(Vec<u8>);
+        pub struct $name($storage);
 
         impl $name {
-            /// Constructs a required non-empty byte string.
+            /// Constructs a required byte string in its canonical length.
             ///
             /// # Errors
-            /// Returns [`ContractError::Empty`] for an empty value.
+            /// Returns [`ContractError::Empty`] for an empty variable-length value or
+            /// [`ContractError::Malformed`] for an invalid fixed-length value.
             pub fn new(value: Vec<u8>) -> Result<Self, ContractError> {
-                if value.is_empty() {
-                    return Err(ContractError::Empty($field));
-                }
-                Ok(Self(value))
+                let construct: fn(Vec<u8>) -> Result<$storage, ContractError> = $construct;
+                construct(value).map(Self)
             }
 
             #[must_use]
@@ -60,7 +75,28 @@ macro_rules! required_reference {
 
 required_bytes!(CanonicalBytes, "canonical_bytes");
 required_bytes!(SigningPreimage, "signing_preimage");
-required_bytes!(SignatureBytes, "signature");
+required_bytes!(SignatureBytes, "signature", 65);
+
+impl core::str::FromStr for SignatureBytes {
+    type Err = ContractError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        if text.len() != 130
+            || !text
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            return Err(ContractError::Malformed("signature"));
+        }
+        let mut signature = [0_u8; 65];
+        signature[..32].copy_from_slice(&strict_hex32(&text[..64], "signature")?);
+        signature[32..64].copy_from_slice(&strict_hex32(&text[64..128], "signature")?);
+        signature[64] = u8::from_str_radix(&text[128..], 16)
+            .map_err(|_| ContractError::Malformed("signature"))?;
+        Ok(Self(signature))
+    }
+}
+
 required_bytes!(PayloadBytes, "payload");
 required_reference!(PreparationRef, "preparation_ref");
 required_reference!(SubmissionRef, "submission_ref");
@@ -177,9 +213,9 @@ pub enum SubmissionState {
     Signed,
     Queued,
     Submitted,
-    Acknowledged,
     Unknown,
     Executed { receipt_ref: ReceiptRef },
+    Committed { receipt_ref: ReceiptRef },
     Failed { result: ResultCode },
     Expired,
 }
@@ -192,9 +228,9 @@ impl SubmissionState {
             Self::Signed => "signed",
             Self::Queued => "queued",
             Self::Submitted => "submitted",
-            Self::Acknowledged => "acknowledged",
             Self::Unknown => "unknown",
             Self::Executed { .. } => "executed",
+            Self::Committed { .. } => "committed",
             Self::Failed { .. } => "failed",
             Self::Expired => "expired",
         }
@@ -228,26 +264,26 @@ pub struct EvidenceRef {
     pub digest: [u8; 32],
 }
 
-/// Current state and only the level actually justified by attached evidence.
+/// Current state and only the rung actually justified by attached evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrackedSubmission {
     pub submission_ref: SubmissionRef,
     pub state: SubmissionState,
     pub evidence: Vec<EvidenceRef>,
-    pub verification_level: Level,
+    pub rung: Rung,
     pub transitions: Vec<Transition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WaitRequest {
     pub submission_ref: SubmissionRef,
-    pub requested_verification_level: Level,
+    pub requested_rung: Rung,
     pub deadline: TimestampSeconds,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WaitResult {
     pub submission: TrackedSubmission,
-    pub actual_verification_level: Level,
+    pub actual_rung: Rung,
     pub deadline_elapsed: bool,
 }

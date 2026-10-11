@@ -1,6 +1,6 @@
 [module]
 name = "write"
-contract_major = 1
+contract_major = 2
 compatibility = "additive_only"
 
 [operation.prepare]
@@ -8,6 +8,9 @@ request = "PrepareRequest"
 required = ["actor","authority","account_sequence","timestamp_bound","idempotency_key","fee_limit","payload","payload_hash"]
 response = "Prepared"
 response_required = ["preparation_ref","unsigned_canonical_bytes","signing_preimage","disclosure","expiry"]
+optional = ["capability_id"]
+capability_id = "64 lowercase hex characters naming a capability record of the authenticated tenant and agent. When present the request is the nine preserved prepare fields plus capability_id at the same level; the preserved nine-field request is unchanged."
+capability_binding = "The optional capability_id is decoded and bound to the prepared activity by the daemon capability binding; it is refused only when the capability is unknown, expired, revoked or purpose-mismatched. When absent the nine-field request is served unchanged."
 
 [type.Disclosure]
 required = ["canonical_digest","activity_type","actor","authority","counterparties","amounts","asset","fee_limit","expiry","idempotency_key"]
@@ -17,28 +20,81 @@ origin = "decoded_from_unsigned_canonical_bytes"
 request = "SignRequest"
 required = ["preparation_ref","signature"]
 response = "Signed"
+idempotency_key = "required"
+signature_encoding = "130 lowercase hex characters, 65 bytes"
+response_required = ["activity_id","submission","receipt"]
+activity_id = "lowercase_hex"
+receipt = "Receipt object only when the submission state is Executed or Committed, otherwise null"
+expiry_time_source = "core_batch_time_ms is the protocol timestamp of one fresh core preparation snapshot for the prepared actor; expiry holds when core_batch_time_ms is greater than not_after. Never wall clock and never a sequence."
 
 [operation.submit]
 request = "SubmitRequest"
 required = ["preparation_ref","signature"]
 response = "TrackedSubmission"
+response_required = ["state","evidence","rung","transitions"]
+rung = "Rung"
 
 [operation.track]
 request = "TrackRequest"
 required = ["submission_ref"]
 response = "TrackedSubmission"
-response_required = ["state","evidence","verification_level","transitions"]
+response_required = ["state","evidence","rung","transitions"]
+rung = "Rung"
 
 [type.SubmissionState]
-variants = ["Prepared","Signed","Queued","Submitted","Acknowledged","Unknown","Executed","Failed","Expired"]
+variants = ["Prepared","Signed","Queued","Submitted","Unknown","Executed","Committed","Failed","Expired"]
+Submitted.rung = "submitted"
 Unknown.semantics = "first_class_terminal_pending"
+Unknown.rung = "submitted"
 Executed.required = ["receipt_ref"]
+Executed.settlement_domain = "Paxeer"
+Executed.rung = "receipted"
+Committed.required = ["receipt_ref"]
+Committed.rung = "committed"
+Failed.rung = "receipted for a verified status-0 receipt; submitted for a send refusal without a receipt"
 
 [type.Transition]
 required = ["from","to","cause","at"]
 
 [operation.wait]
 request = "WaitRequest"
-required = ["submission_ref","requested_verification_level","deadline"]
+required = ["submission_ref","requested_rung","deadline"]
+requested_rung = "Rung"
 response = "WaitResult"
-response_required = ["submission","actual_verification_level","deadline_elapsed"]
+response_required = ["submission","actual_rung","deadline_elapsed"]
+actual_rung = "Rung"
+deadline_elapsed = "Return the actual reached rung when the deadline elapses; never hide it behind an error or promote an unverified receipt."
+
+[type.PrepareWithCapability]
+required = ["request","capability_id"]
+request = "PrepareRequest, unchanged"
+capability_id = "64 lowercase hex characters"
+operation = "prepare"
+
+
+[type.NativeDisclosureV1]
+operation = "prepare"
+request = "NativeDisclosureRequestV1"
+response = "NativeDisclosureResultV1"
+credential = "Required current full credential and exact MCP Prepare permission; tenant and principal are resolved by the existing daemon owner."
+legacy = "Every existing prepare and sign request and refusal is retained unchanged."
+
+[type.McpExternalSignatureV1]
+operation = "sign"
+variant = "external_signature_v1"
+required = ["variant","preparation_ref","signature"]
+signature = "Exact caller-supplied 65-byte secp256k1 external signature, r || s || v, encoded as 130 lowercase hex characters; canonical MCP boundary removes only the explicit carrier variant before the SignRequest owner. No implicit signer."
+
+[golden.response.sign]
+signature = "0101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020200"
+
+
+[type.McpNativeWriteV1]
+variant = "native_write_v1"
+required = ["variant","intent","preparation","canonical_bytes","signature","signer_public_key"]
+operations = ["wallet.send","token.transfer","token.mint","grant.issue","grant.draw","token.create"]
+canonical_bytes = "Actual unsigned canonical preview bytes; independently decoded with the genuine owner registry and compared to every native preparation field, signed purpose digest and preparation identity before any Prepare reservation. The actual owner Prepare bytes must subsequently equal these exact bytes."
+external_signature = "Caller-supplied signature over those exact bytes; the ordinary Sign owner verifies the real owner key."
+authorization = "Each genuine Prepare, Sign, Submit and Track stage reauthorizes the same full current MCP session credential for that exact operation. No umbrella permit or automatic signer."
+registration = "token.create carries preparation variant native_registration_v1 and intent symbol, decimals, supply_cap and idempotency_key; it is admitted only by the owner-approved native-registration-v1 profile, available to every principal holding the native effect policy and a native capability chain permitting Asset 1. The existing abbreviated token.create supply schema and legacy Register refusal are unchanged."
+result = "Actual ordinary Track response, or original held Prepare response when approval is required. Unknown remains pending and only genuine receipt evidence establishes execution."

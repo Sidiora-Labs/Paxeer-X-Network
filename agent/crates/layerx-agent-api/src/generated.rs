@@ -33,6 +33,22 @@ pub struct VersionResponse {
     pub node_interface_major: u16,
 }
 
+impl TryFrom<VersionRequest> for VersionResponse {
+    type Error = &'static str;
+
+    fn try_from(request: VersionRequest) -> Result<Self, Self::Error> {
+        let contract = agent_api_schema_v1();
+        if request.supported.major != contract.version.major {
+            return Err("unsupported_major");
+        }
+        Ok(Self {
+            request_id: request.request_id,
+            contract: contract.version,
+            node_interface_major: contract.node_interface_major,
+        })
+    }
+}
+
 macro_rules! exact_integer {
     ($name:ident, $inner:ty) => {
         #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -60,12 +76,12 @@ exact_integer!(Sequence, u64);
 exact_integer!(BudgetLimit, u128);
 exact_integer!(TimestampSeconds, u64);
 
-/// Returns the immutable v1 contract descriptor.
+/// Returns the immutable contract descriptor.
 #[must_use]
 pub const fn agent_api_schema_v1() -> ContractSchema {
     ContractSchema {
         name: "LayerX Agent API",
-        version: ContractVersion { major: 1, minor: 11 },
+        version: ContractVersion { major: 2, minor: 0 },
         node_interface_major: 1,
     }
 }

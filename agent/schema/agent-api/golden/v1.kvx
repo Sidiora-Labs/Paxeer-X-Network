@@ -1,11 +1,11 @@
 [schema]
 name = "LayerX Agent API"
-major = 1
+major = 2
 minor = 0
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
-includes = ["identity.kvx","write.kvx","read.kvx","stream.kvx","errors.kvx"]
+includes = ["identity.kvx","write.kvx","read.kvx","stream.kvx","errors.kvx","approval.kvx","programs.kvx"]
 
 [encoding]
 request = "contract_major:u16be contract_minor:u16be request_id:u64be operation:utf8 payload:canonical-map"
@@ -40,23 +40,908 @@ python = "int"
 wire = "decimal_string"
 consensus_integer = true
 
+[type.SettlementDomain]
+variants = ["Paxeer"]
+sole_domain = "Paxeer is the sole valid settlement domain in this contract version. The custody and withdrawal guarantee remains Paxeer exclusively and no other venue is a place funds live."
+reservation = "Every custody-boundary claim and receipt shape names its settlement domain through this vocabulary, so adding a settlement domain later is an additive schema change by construction: a new variant appended to this list with every existing declaration untouched."
+one_ledger = "One identity, one balance system and one canonical order are preserved unchanged by this vocabulary."
+
 [record.ContractVersion]
 fields = ["major:u16","minor:u16"]
 
 [record.VersionRequest]
 fields = ["request_id:Sequence","supported:ContractVersion"]
+unsupported_major = "unsupported_major"
 
 [record.VersionResponse]
 fields = ["request_id:Sequence","contract:ContractVersion","node_interface_major:u16"]
 
 [golden.request.version]
-encoded_hex = "00010000000000000000000700000000010000"
+encoded_hex = "00020000000000000000000700000000020000"
 
 [golden.response.version]
-encoded_hex = "0001000000000000000000070000000000000100000001"
+encoded_hex = "0002000000000000000000070000000000000200000001"
+
+[golden.request.version_1_1]
+encoded_hex = "00010001000000000000000700000000010001"
+
+[golden.response.version_1_1]
+encoded_hex = "0001000100000000000000070000000000000100010001"
 
 [compatibility.matrix]
 sdk = "0.1.x"
-contract = "1.x"
+contract = "2.x"
 node_interface = "1.x"
 daemon = "0.1.x"
+
+[compatibility.history.1_1]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.0"
+change = "Adds approval.kvx without changing any contract 1.0 declaration."
+
+[compatibility.history.1_2]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.1"
+change = "Adds the receipt-verified Programs operation family and its bounded canonical call contract."
+
+[compatibility.feature.programs]
+introduced_contract = "1.2"
+classification = "additive_only"
+
+[compatibility.feature.approval]
+introduced_contract = "1.1"
+classification = "additive_only"
+
+[compatibility.feature.settlement_domain]
+introduced_contract = "1.1"
+classification = "additive_only"
+note = "Reserves the settlement-domain claim vocabulary with Paxeer as the sole valid domain and tags every custody-boundary claim and receipt shape. Adding a settlement domain is an additive change by construction: a new SettlementDomain variant is appended and no contract 1.x declaration changes."
+
+[transport.agent_http]
+version = 1
+external_route = "POST /v1/agent/rpc on the unified gateway, rewritten exactly to POST /rpc on the agent daemon RPC listener"
+native_routes_unchanged = "The native JSON-RPC /rpc and /rpc/schema routes and every Programs route keep their existing distinct contracts."
+content_type = "application/json"
+max_body_bytes = 1048576
+max_header_bytes = 16384
+framing = "Exactly one canonical decimal Content-Length; Transfer-Encoding is rejected."
+encoding = "UTF-8 JSON object; duplicate keys, unknown keys, trailing bytes, truncated or non-UTF-8 input are rejected"
+listener = "Dedicated agent RPC mutual-TLS listener; a verified gateway client certificate is required; no plaintext fallback."
+authorities = "Gateway API-key admission and the tenant session credential are two distinct authorities. No header-supplied principal is accepted; program bearer or LayerX-Key possession never authorizes catalogue writes."
+
+[record.AgentHttpEnvelope]
+fields = ["version:u8","request_id:Sequence","operation:utf8","request:canonical-map","credential:AgentHttpCredential?","idempotency_key:hex32?"]
+credential = "Required for every operation except the bootstrap operations agent.register and session.open, where it is null and the existing bootstrap authority of the owner decides."
+version = "Exactly 1; any other value is rejected as ProtocolIncompatibility."
+operation = "Exactly one generated catalogue operation name; an unknown name is rejected as ProtocolIncompatibility."
+idempotency_key = "Lowercase 64-hex non-zero key, required for every mutating catalogue operation and absent or null for every non-mutating operation; a violation is IdempotencyConflict."
+request = "The operation request object of the named catalogue operation."
+
+[record.AgentHttpCredential]
+fields = ["tenant:utf8","session_id:hex32","token_id:hex32","generation:Sequence"]
+tenant = "Non-empty UTF-8, at most 255 bytes, no NUL."
+session_id = "Lowercase 64-hex, 32 bytes."
+token_id = "Lowercase 64-hex, 32 bytes."
+generation = "Canonical decimal string of a u64: no sign, no leading zero except the single digit 0, no whitespace."
+authority = "The daemon authenticates these exact coordinates; the agent is taken only from the authenticated token. A tenant or agent coordinate inside the request that differs from the authenticated principal is PolicyRefusal. A LayerX-Tenant, LayerX-Agent or Authorization header reaching the daemon is PolicyRefusal."
+
+[record.AgentHttpSuccess]
+fields = ["request_id:Sequence","value:canonical-map","verification_status:VerificationStatus"]
+verification_status = "Either {state:\"achieved\",rung:R} or {state:\"unverified\",requested:R,achieved:R,reason:ReasonCode} with achieved strictly below requested; R is one of submitted, receipted, committed. An unverified status that violates the ordering is refused as VerificationFailure verification.inconsistent."
+
+[record.AgentHttpError]
+fields = ["class:ErrorClass","protocol_result_code:i32?","retriability:Retriability","request_id:Sequence","reason:utf8"]
+request_id = "The envelope request_id when it was parsed, otherwise 0."
+
+[transport.agent_http.semantics]
+retired = "faucet.claim returns UnavailableCapability with reason unavailable_capability.faucet.claim and Terminal retriability."
+ambiguity = "A mutating request whose outcome is not known to the client is Unknown and is never resent automatically; a repeat with the same idempotency key and body returns the original result, a different body under the same key is IdempotencyConflict."
+
+body_digest = "Internal and derived server side only: for operations executed through the durable store it is SHA-256 over the domain LXP/agent/request/v1 followed by one NUL byte and the exact canonical request bytes of the selected owner typed operation. It is never supplied by the caller, never a raw JSON hash, and token_id and request_id are not inputs. The public envelope carries only idempotency_key. Existing Human prepare, submit and owner-install digests are unchanged. Same key with the same digest replays the recorded outcome; same key with a different digest is IdempotencyConflict."
+
+[compatibility.history.1_3]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.2"
+change = "Adds the version 1 Agent HTTP operation envelope transport and its session credential binding without changing any contract 1.2 declaration."
+
+[compatibility.feature.agent_http]
+introduced_contract = "1.3"
+classification = "additive_only"
+
+[transport.agent_http.idempotency]
+rule = "idempotency_key is required if and only if Operation::mutating() is true for the named operation; a missing key on a mutating operation or a key on a non-mutating operation is IdempotencyConflict envelope.idempotency_key."
+keyed_execution = "prepare and submit carry the key in the owner mutation envelope directly; every other mutating operation is executed through the durable idempotency store only when canonical request bytes are defined for it, otherwise it is UnavailableCapability idempotency.unsupported_operation."
+
+[transport.agent_http.dispositions]
+served_dispatcher_arm = "Decoded into the owner typed request and executed by an arm of the daemon dispatcher."
+served_adapter_arm = "Decoded into the owner typed request and executed by a named owner adapter arm that the daemon dispatcher routes the operation to."
+refused_pending_bootstrap_artifact = "A bootstrap operation with a null credential; refused until the authenticated bootstrap artifact exists. Never served."
+unmatched_by_ruling = "Deliberately given no arm. Never served."
+retired = "Refused before dispatch as UnavailableCapability unavailable_capability.faucet.claim, Terminal."
+not_served_no_arm = "A catalogue operation with no dispatcher or adapter arm in this contract revision. Never served."
+surface = "Subscribe class operations use the Subscription caller surface, Export class operations the Export surface, every other operation the Contract surface."
+
+[transport.agent_http.operation.agent.register]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "none"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "refused_pending_bootstrap_artifact"
+
+[transport.agent_http.operation.approval.approve]
+request = "ApprovalDecisionRequest"
+access = "mutation"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.approval.get]
+request = "ApprovalGetRequest"
+access = "read"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.approval.list]
+request = "ApprovalListRequest"
+access = "read"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.approval.reject]
+request = "ApprovalDecisionRequest"
+access = "mutation"
+operation_class = "Approve"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.availability.fetch]
+request = "AvailabilityWire, deny_unknown_fields, decoded by the availability_fetch adapter into AvailabilityRequest: optional tenant, optional agent, selector, requested_verification_level (kebab-case level), maximum_bytes (decimal_string u64), maximum_chunks (decimal_string u32), deadline (decimal_string u64 seconds)."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.create]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetCreate>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the owner create method over the versioned core budget codecs and the durable daemon limit registry exist."
+request = "BudgetCreateWire, deny_unknown_fields: tenant, agent_did, asset, limit (decimal_string u128), enforcement (ProtocolBudget or DaemonLimit), expiry (decimal_string u64 seconds), optional purpose (TextV1 text label, checked by equality against the signed identity purpose by the owner budget_create), and optional authorization, the signed-authorization carrier {preparation_ref, signature, optional signer_public_key}."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.fund]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetFund>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the optional enforcement assertion, and the owner fund method over the versioned core fund codec and the verified budget state exist."
+request = "BudgetFundWire, deny_unknown_fields: tenant, agent_did, budget_id, amount (decimal_string u128), enforcement (ProtocolBudget or DaemonLimit), and optional authorization, the signed-authorization carrier BudgetAuthorizationWire {preparation_ref, signature, optional signer_public_key}."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.reconciliation]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.revoke]
+
+owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetTarget>>"
+response = "AuthorityResponse<BudgetRecord>"
+phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the owner revoke method over the core revoke codec, the verified budget state and the durable daemon limit registry exist."
+request = "BudgetTargetWire, deny_unknown_fields: tenant, agent_did, budget_id, and optional authorization, the signed-authorization carrier BudgetAuthorizationWire {preparation_ref, signature, optional signer_public_key}."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.budget.state]
+owner_request = "BudgetTarget"
+response = "AuthorityResponse<BudgetState>"
+refusals = "budget.not_found, BudgetRefusal Terminal, for a budget the authenticated lookup does not name; a state without a durable producing activity is refused by the owner."
+request = "BudgetTarget"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.capability.attenuate]
+request = "CapabilityAttenuateWire, deny_unknown_fields: tenant, agent_did, parent_id, dimensions CapabilityDimensionsWire {activity_types (decimal_string u16 array), counterparties, assets, amount_ceilings [AmountCeilingWire {asset, amount}], rate_ceilings [RateCeilingWire {window_seconds, maximum_actions}], purpose_constraints, expiry (decimal_string u64 seconds)}."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+owner_request = "MutationEnvelope<CapabilityAttenuate>"
+response = "AuthorityResponse<CapabilityRecord>"
+
+[transport.agent_http.operation.capability.create]
+request = "CapabilityCreateWire, deny_unknown_fields: tenant, agent_did, dimensions CapabilityDimensionsWire {activity_types (decimal_string u16 array), counterparties, assets, amount_ceilings [AmountCeilingWire {asset, amount}], rate_ceilings [RateCeilingWire {window_seconds, maximum_actions}], purpose_constraints, expiry (decimal_string u64 seconds)}."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+owner_request = "MutationEnvelope<CapabilityCreate>"
+response = "AuthorityResponse<CapabilityRecord>"
+
+[transport.agent_http.operation.capability.list]
+request = "CapabilityListWire, deny_unknown_fields: tenant, agent_did."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+owner_request = "CapabilityList"
+authority = "operation_permit"
+response = "AuthorityResponse<CapabilityRecords>"
+
+[transport.agent_http.operation.capability.revoke]
+request = "CapabilityRevokeWire, deny_unknown_fields: tenant, agent_did, capability_id."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+owner_request = "MutationEnvelope<CapabilityRevoke>"
+response = "AuthorityResponse<CapabilityRecord>"
+
+[transport.agent_http.operation.export.offline]
+
+owner_request = "ReadRequest<FactRef[]>"
+response = "VerifiedRead<OfflineExport>"
+phase_b_dependency = "Served only once the dispatcher arm, the export adapter, the per-fact export producers and the owner export method with its independent export trust exist."
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Export"
+surface = "Export"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.faucet.claim]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "retired"
+
+[transport.agent_http.operation.policy.dry_run]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+owner_request = "PolicyDryRunRequest"
+legacy_request = "LegacyPolicyDryRun: context and canonical_intent, key set disjoint from PolicyDryRunRequest; canonical_intent decodes as PolicyIntent. A body mixing both key sets or carrying unknown keys is malformed. The response is unchanged."
+response = "PolicyDryRunResult"
+phase_b_dependency = "Served only once the generated catalogue operation, the dispatcher arm, the policy adapter and the owner policy dry-run method over the loaded tenant policy registries exist."
+
+[transport.agent_http.operation.prepare]
+
+capability_request = "PrepareWithCapability: the nine preserved prepare fields plus an optional capability_id. When present it is decoded and bound to the prepared activity by the daemon capability binding; when absent the nine-field request is served unchanged."
+request = "owner typed Human prepare request"
+access = "mutation"
+operation_class = "Prepare"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.program.activity]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.call]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.deploy]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.discover]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.program.interface]
+request = "ProgramDiscoverWire: program_id and requested_verification_level=sequencer-signed; unknown fields refused."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.program.receipt]
+request = "ActivityLookupRequest"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.program.simulate]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.upgrade]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.program.wind-down]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "not_served_no_arm"
+
+[transport.agent_http.operation.project]
+
+owner_request = "FeeProjectionRequest"
+response = "ProjectionResult<FeeProjection>"
+phase_b_dependency = "Served only once the dispatcher arm, the fee projection adapter and the owner fee projection method over the node fee estimate of one captured authenticated head exist. The earlier policy payload is refused as policy.legacy_project_payload."
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.read.account]
+request = "ReadAccountRequest"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.balance]
+request = "CoordinatesOnly"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.batch]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.read.checkpoint]
+request = "CoordinatesOnly"
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.read.history]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+cursor_text = "112 lowercase hex characters"
+page_limit_bound = "65535"
+
+[transport.agent_http.operation.read.module_state]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.read.proof_bundle]
+request = "Exactly target and requested_verification_level. target is lowercase hex canonical native PB1: version u16be 1, kind 1 Activity or 3 Receipt plus nonzero activity_id32 (35 bytes); kind 2 AccountState adds nonzero account_id32 (67 bytes). No authority overrides or unknown fields."
+response = "VerifiedRead<ProofBundle>: exact target, exactly one lowercase-hex LXPB1 record, achieved_verification_level and Freshness. Record <=262144 bytes, complete JSON body <=1048576 bytes. LXPB1 variant 1 Activity, 2 Account, 3 Receipt, 4 MaintainedAccount; nonempty u32be-counted canonical_value and native_proof, variant 4 additionally original activity_receipt and activity_receipt_sp1."
+verification = "Activity/Receipt cap BatchIncluded; Account/MaintainedAccount cap StateProven. Requested level cannot exceed achieved level. Envelope Achieved status equals response level. Native proof authority remains mandatory; framing alone is not verification."
+ownership = "Bound authenticated subject, retained tenant/principal-owned signed outbox activity, signed actor equal authenticated agent, fresh subject account and asset, verified stored receipt. AccountState selector equals the bound account."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.session.close]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.session.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.tenant.readiness]
+request = "Exactly an empty object. Tenant and agent come exclusively from the current authenticated session credential and retained owner binding."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+response = "TenantReadiness"
+authority = "operation_permit"
+
+[transport.agent_http.operation.session.open]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "none"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "refused_pending_bootstrap_artifact"
+
+[transport.agent_http.operation.session.refresh]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.sign]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+response = "Signed"
+
+[transport.agent_http.operation.submit]
+request = "owner typed Human submit request"
+access = "mutation"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.subscription.acknowledge]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.subscription.create]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+owner_request = "MutationEnvelope<SubscriptionCreate>"
+body_digest = "subscription_create_digest over the canonical SubscriptionCreate"
+
+[transport.agent_http.operation.subscription.delete]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.subscription.health]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+authority = "operation_permit"
+
+[transport.agent_http.operation.subscription.list]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+authority = "operation_permit"
+
+[transport.agent_http.operation.subscription.pause]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.subscription.resume]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "mutation"
+operation_class = "Subscribe"
+surface = "Subscription"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.track]
+request = "TrackRequest"
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_dispatcher_arm"
+
+[transport.agent_http.operation.wait]
+request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+access = "read"
+operation_class = "Write"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+
+[transport.agent_http.errors]
+classes = "Every error is one ErrorClass variant from errors.kvx: TransportFailure, Deadline, ProtocolIncompatibility, UnavailableCapability, CoreRejection, VerificationFailure, PolicyRefusal, CapabilityRefusal, BudgetRefusal, RateLimit, IdempotencyConflict, InternalFault."
+transport_ambiguity = "A mutating request whose outcome the client cannot know is reported to the caller as Unknown."
+"envelope.oversized" = "ProtocolIncompatibility Terminal. Body above max_body_bytes."
+"envelope.malformed" = "ProtocolIncompatibility Terminal. Body is not one well-formed envelope object."
+"envelope.unknown_field" = "ProtocolIncompatibility Terminal. Envelope or request object carries an unknown key."
+"envelope.version" = "ProtocolIncompatibility Terminal. Envelope version other than 1."
+"envelope.unknown_operation" = "ProtocolIncompatibility Terminal. Operation is not a catalogue operation name."
+"envelope.noncanonical_integer" = "ProtocolIncompatibility Terminal. An integer string is not canonical decimal."
+"envelope.credential" = "ProtocolIncompatibility Terminal. Credential missing or a credential coordinate is malformed."
+"refused_pending_bootstrap_artifact" = "PolicyRefusal Terminal. agent.register or session.open before the authenticated bootstrap artifact exists."
+"unmatched_by_ruling" = "UnavailableCapability Terminal. Historical program.interface refusal; retained as a reserved compatibility reason."
+"envelope.idempotency_key" = "IdempotencyConflict Terminal. Idempotency key presence violates the idempotency rule or the key is malformed."
+"envelope.coordinate_mismatch" = "PolicyRefusal Terminal. A request tenant or agent coordinate differs from the authenticated principal."
+"envelope.header_principal" = "PolicyRefusal Terminal. A LayerX-Tenant, LayerX-Agent or Authorization header reached the daemon."
+"envelope.peer_unmapped" = "PolicyRefusal Terminal. The authenticated principal maps to no owner peer."
+"unavailable_capability.faucet.claim" = "UnavailableCapability Terminal. The retired faucet.claim operation."
+"idempotency.unsupported_operation" = "UnavailableCapability Terminal. A keyed mutation without defined canonical request bytes."
+"idempotency.body_changed" = "IdempotencyConflict Terminal. Same idempotency key with a different body digest."
+"outcome.unknown" = "TransportFailure Terminal. Mutation outcome is Unknown; never resent automatically."
+"session.scope_denied" = "CapabilityRefusal Terminal. Session scope does not admit the operation surface."
+"session.expired" = "PolicyRefusal Terminal. Session expired."
+"session.revoked" = "PolicyRefusal Terminal. Session revoked."
+"session.invalid_request" = "ProtocolIncompatibility Terminal. Session authorization request is invalid."
+"session.not_authorized" = "PolicyRefusal Terminal. Session authority does not authorize the credential."
+"owner.degraded" = "UnavailableCapability Retriable. Owner is not Healthy."
+"owner.unavailable" = "InternalFault Retriable. Owner unavailable at the daemon; the dispatcher maps an owner Unavailable error to UnavailableCapability Retriable with this reason."
+"owner.refused" = "PolicyRefusal Terminal. Owner refused the typed operation."
+
+"policy.legacy_project_payload" = "PolicyRefusal Terminal. A project request carries the earlier policy dry-run payload; it is never read as a fee request."
+"policy.intent_binding_missing" = "PolicyRefusal Terminal. A LegacyPolicyDryRun canonical_intent carries raw canonical unsigned activity bytes whose typed semantics or retained purpose binding does not exist."
+"budget.not_found" = "BudgetRefusal Terminal. The authenticated budget lookup names no budget of this tenant and agent."
+"capability.expiry" = "CapabilityRefusal Terminal. Owner refused the typed operation: core protocol time is at or past the capability not_after."
+"capability.activity_type" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the activity type."
+"capability.counterparty" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the counterparty."
+"capability.asset" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the asset."
+"capability.amount" = "CapabilityRefusal Terminal. Owner refused the typed operation: the amount exceeds the capability ceiling."
+"capability.rate" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability rate window is exhausted."
+"capability.purpose" = "CapabilityRefusal Terminal. Owner refused the typed operation: the capability does not admit the purpose."
+"owner.response_malformed" = "InternalFault Terminal. Owner response did not decode."
+"verification.inconsistent" = "VerificationFailure Terminal. Verification status violates the level ordering."
+
+[compatibility.history.1_4]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.3"
+change = "Adds the Agent HTTP per-operation disposition table, the emitted error reason list and the idempotency rule without changing any contract 1.3 declaration."
+
+[compatibility.history.1_5]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.4"
+change = "Marks the Agent HTTP operations that the daemon dispatcher now routes to owner adapter arms as served_adapter_arm."
+
+[compatibility.history.1_6]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.5"
+change = "Marks budget.list, read.batch, read.history, read.module_state, session.close, session.refresh, wait, sign, subscription.create, subscription.list, subscription.pause, subscription.resume, subscription.delete, subscription.health and subscription.acknowledge as served_adapter_arm: the daemon dispatcher routes each to a named owner adapter arm. Source compatibility statement only."
+owner_body_incomplete = ["sign","subscription.create","subscription.list","subscription.health","read.history"]
+adapter_arm_scope = "served_adapter_arm asserts only that a dispatch arm and adapter exist; it does not assert a completed real owner, working behaviour or qualification."
+
+[compatibility.history.1_7]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.6"
+change = "Declares the subscription.create mutation envelope and creation identity, permit-bound subscription.list and subscription.health, the read.history cursor text, page limit bound and kind byte table, and the sign response shape. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
+
+[compatibility.history.1_8]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.7"
+change = "Declares CapabilityRecord, CapabilityRecords, CapabilityState and AuthorityDescription, the capability.create, attenuate and revoke mutation envelopes, identities and replay rules, permit-bound capability.list, and the owner request and response of the four capability Agent HTTP rows. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
+capability_disposition = "capability.create, capability.attenuate, capability.list and capability.revoke stay not_served_no_arm: no owner adapter or owner body exists in this contract revision."
+capability_refusal_reasons = "Adds the emitted error reasons capability.expiry, capability.activity_type, capability.counterparty, capability.asset, capability.amount, capability.rate and capability.purpose, each CapabilityRefusal Terminal: the dispatcher maps an owner capability refusal to the existing CapabilityRefusal class with the refused dimension as the reason. No new error class; owner.refused and owner.unavailable unchanged."
+
+[compatibility.history.1_9]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.8"
+change = "Declares the fee projection request and result of project, the separate policy.dry_run catalogue operation and its local result, the budget authorization carrier, BudgetRecord and BudgetRecords, the offline export fact grammar, record encodings and level rule, the freshness wire form, the optional prepare capability_id and the kind 5 interface limitation. Adds keys, sections and one catalogue operation; no existing declaration or disposition changes. Source compatibility statement only."
+new_operation = "policy.dry_run, budget.state"
+dispositions = "project, export.offline, program.discover, budget.state and policy.dry_run are served_adapter_arm. budget.create, budget.fund and budget.revoke stay not_served_no_arm: their dispatcher arms, adapters and owner methods are not in this contract revision."
+capability_binding = "prepare serves the nine-field request and accepts an optional capability_id, decoded and bound by the daemon capability binding."
+sdk_policy_dry_run = "The SDK envelope transport policy_dry_run method names policy.dry_run with the typed request and preserves the policy dry-run semantics. A Project request carrying the earlier policy payload is refused as policy.legacy_project_payload, never reinterpreted."
+legacy_project_reason = "Adds the emitted error reason policy.legacy_project_payload, PolicyRefusal Terminal. No new error class."
+legacy_policy = "policy.dry_run accepts the second request shape LegacyPolicyDryRun with the PolicyIntent grammar and adds the emitted error reason policy.intent_binding_missing, PolicyRefusal Terminal. Typed request and response unchanged."
+budget_state = "Adds the catalogue operation budget.state, BudgetTarget to AuthorityResponse<BudgetState>, served_adapter_arm, and the emitted error reason budget.not_found, BudgetRefusal Terminal. No new error class."
+
+[compatibility.feature.agent_http_operations]
+introduced_contract = "1.4"
+classification = "additive_only"
+
+
+[record.NativeActivityV1]
+rust = "layerx_agent_api::identity::NativeActivity"
+wire_type = "NativeActivityV1Wire"
+fields = ["version:decimal_string","module:decimal_string","ordinal:decimal_string"]
+version = "Exactly the canonical decimal string 1."
+module = "Canonical decimal u16 accepted by layerx_types::payload::ModuleId::from_u16; unknown module identifiers are refused."
+ordinal = "Canonical decimal u16 greater than zero. The module and ordinal together identify the native activity; equal ordinals in different modules remain distinct."
+binary = "Exactly five bytes: version u8 1, module u16 big-endian, ordinal u16 big-endian. Unknown versions, unknown modules, zero ordinal, truncation and trailing bytes are refused."
+wire = "All three fields are required strings. Unknown or duplicate fields, numeric JSON values, signs, whitespace, leading zeros and overflow are refused."
+compatibility = "Separate additive native contract. The legacy identity ActivityType u16 and all legacy session, capability, policy and request codecs are unchanged."
+
+[record.NativePreparationPurposeV1]
+rust = "layerx_agent_api::identity::NativePreparationPurposeV1"
+wire_type = "NativePreparationPurposeV1Wire"
+fields = ["version:decimal_string","tenant:utf8","agent_did:utf8","session_id:hex32","generation:decimal_string","expires_at_ms:decimal_string","capability_id:hex32","preparation_id:hex32","canonical_digest:hex32","commitment:hex32"]
+version = "Exactly the canonical decimal string 1."
+tenant = "Non-empty UTF-8, at most 255 bytes, no NUL; preserved byte-for-byte."
+agent_did = "Non-empty UTF-8 accepted by the real layerx_types::ids::Did byte bound; preserved byte-for-byte without normalization or a new DID grammar."
+session_id = "Exactly 64 lowercase hex characters decoded to 32 bytes."
+generation = "Canonical decimal u64 greater than zero; no signs, whitespace, leading zeros or overflow."
+expires_at_ms = "Required canonical decimal u64 greater than zero, in milliseconds; no signs, whitespace, leading zeros or overflow. The authenticated owner must refuse the carrier at or after this bound using its authoritative clock."
+capability_id = "Exactly 64 lowercase hex characters decoded to 32 bytes."
+preparation_id = "Exactly 64 lowercase hex characters decoded to the preparation's 32-byte identifier."
+canonical_digest = "Exactly 64 lowercase hex characters decoded to the prepared canonical activity's 32-byte digest."
+commitment = "Exactly 64 lowercase hex characters decoded to the explicitly supplied 32-byte purpose commitment. No label or other text is hashed, interpreted as a commitment or silently substituted."
+canonical_bytes = "UTF-8 LayerX/native/preparation-purpose/v1 followed by one NUL byte, version u8 1, tenant UTF-8 with u32 big-endian byte length, agent DID UTF-8 with u32 big-endian byte length, session_id 32 bytes, generation u64 big-endian, expires_at_ms u64 big-endian, capability_id 32 bytes, preparation_id 32 bytes, canonical_digest 32 bytes, commitment 32 bytes, in that exact order."
+wire = "Every field is required, unknown or duplicate fields are refused, integer fields are decimal strings and all hex fields are lowercase with no prefix. Canonical JSON is produced only after conversion through the contract validator."
+authentication_seam = "This carrier is data, not authority. Before serving it, the existing authenticated prepare path must authenticate a separate SignedNativePreparationPurposeV1 over SHA-256 of these exact canonical purpose bytes, verify tenant, agent, session and generation against the authenticated principal and capability and preparation against their retained records, and verify canonical_digest against the prepared activity, and enforce expires_at_ms against the authoritative clock. A separately supplied commitment or matching text does not authorize preparation, signing or submission."
+serving_status = "Additive source contract only; no catalogue operation or unauthenticated dispatch path is introduced. Authenticated signed-prepare integration and its qualification are separate required work."
+compatibility = "All legacy prepare payloads, codecs, purpose labels and request dispatch paths retain their current representation and behavior."
+
+
+[record.SignedNativePreparationPurposeV1]
+rust = "layerx_agent_api::identity::SignedNativePreparationPurposeV1"
+wire_type = "SignedNativePreparationPurposeV1Wire"
+fields = ["purpose:NativePreparationPurposeV1","owner_public_key:hex32","signature:hex64"]
+purpose = "Required nested NativePreparationPurposeV1; all identifiers, generation and nonzero expires_at_ms are validated through its existing contract validator."
+owner_public_key = "Exactly 64 lowercase hex characters decoded to 32 bytes. This is an assertion against the current revalidated primary owner authority; caller-supplied key bytes never select authority."
+signature = "Exactly 128 lowercase hex characters decoded to 64 bytes; the length is checked before decoding. No prefix, whitespace, uppercase, truncation, trailing bytes or unknown fields are accepted."
+signature_digest = "SHA-256(purpose.canonical_bytes()), with the exact domain, version, length-delimited identities, generation, expiry and remaining bytes defined by NativePreparationPurposeV1."
+signing = "The actual daemon Ed25519 producer signs the 32-byte signature_digest using the current revalidated primary owner authority. This purpose signature is separate from and independent of the original canonical activity signature; neither signature substitutes for the other."
+validation = "The API and wire validators enforce structure and purpose-contract bounds only. Byte length or presence does not prove key validity, signature validity, authority or freshness. The daemon must enforce actual Ed25519 validity against its current revalidated primary authority, exact authenticated and retained purpose coordinates, and authoritative expires_at_ms before accepting the carrier."
+canonical_json = "Object with exactly purpose as the nested NativePreparationPurposeV1 canonical object, owner_public_key as lowercase hex32 and signature as lowercase hex64."
+serving_status = "Separate additive source carrier. No new catalogue operation, dispatcher path or signature authority is introduced by this declaration."
+
+
+[record.NativePrepareRequestV1]
+rust = "layerx_agent_api::identity::NativePrepareRequestV1"
+wire_type = "NativePrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_v1. An explicit native variant of prepare on the same Agent operation route, never a standalone endpoint."
+activity = "Required NativeActivityV1 with the real Programs module identifier 9 and nonzero ordinal; both module and ordinal survive the checked conversion to the native packed u32."
+actor = "Nonempty UTF-8 accepted by the real layerx_types::ids::Did byte bound; exactly equal to purpose.purpose.agent_did."
+authority = "Nonempty UTF-8 with byte length at most layerx_types::limits::MAX_AUTHORITY_BYTES; actual authority is validated by the existing runtime owner."
+account_sequence = "Canonical decimal u64 string."
+not_before = "Canonical decimal u64 string preserving the native prepare timestamp unit."
+not_after = "Canonical decimal u64 string greater than or equal to not_before; preserving the native prepare timestamp unit."
+idempotency_key = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes."
+fee_limit = "Canonical decimal u128 string."
+payload = "Required nonempty lowercase hexadecimal decoded to at most layerx_types::limits::MAX_PAYLOAD_BYTES; the encoded byte count is bounded before hex allocation."
+payload_hash = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. API validation does not authenticate the hash; the real runtime must verify it against the payload."
+capability_id = "Exactly 64 lowercase hexadecimal characters naming the same capability as purpose.purpose.capability_id; supplied explicitly to HumanPrepare as Some(bytes)."
+purpose = "Required SignedNativePreparationPurposeV1. Its current owner signature, authenticated principal, retained preparation coordinates and expiry must be verified by the existing runtime before native prepare admission."
+local_grant = "Optional NativeLocalGrantConsentV1 for owner-approved first local grant installation. Canonical JSON always includes local_grant, either its full versioned object or null."
+canonical_json = "Exactly these fields including variant native_v1, nested native activity, nested signed purpose and local_grant; all numeric values are canonical decimal strings and bytes lowercase hex."
+wire = "All fields except optional local_grant are required. Unknown fields, legacy activity_type substitution, omitted variant, wrong native version, numeric JSON integers and noncanonical decimal or hexadecimal forms are refused."
+conversion = "native_human_prepare validates the typed request and produces the existing HumanPrepare with real ActivityType.value(), exact actor and authority, account sequence, timestamp bounds, idempotency bytes encoded as lowercase hex, fee limit, payload, payload hash and explicit capability bytes. The signed purpose remains separately available on the native request for runtime verification and admission."
+serving_status = "Source request and conversion contract only. Integration uses the existing authenticated Agent prepare route with the explicit native_v1 discriminant. No legacy decoder or dispatch path is changed by this declaration."
+
+
+[record.NativeApprovalListV1]
+rust = "layerx_agent_api::identity::NativeApprovalListV1"
+wire_type = "NativeApprovalListV1Wire"
+fields = ["variant:utf8"]
+variant = "Required exact string native_v1 on the existing Agent approval.list route. Unknown fields are refused."
+
+[record.NativeApprovalGetV1]
+rust = "layerx_agent_api::identity::NativeApprovalGetV1"
+wire_type = "NativeApprovalGetV1Wire"
+fields = ["variant:utf8","approval_id:hex32"]
+variant = "Required exact string native_v1 on the existing Agent approval.get route."
+approval_id = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. All fields required; unknown fields refused."
+
+[record.NativeApprovalDecisionV1]
+rust = "layerx_agent_api::identity::NativeApprovalDecisionV1"
+wire_type = "NativeApprovalDecisionV1Wire"
+fields = ["variant:utf8","approval_id:hex32","held_digest:hex32","current_sequence:decimal_string"]
+variant = "Required exact string native_v1 on the existing Agent approval decision routes."
+encoding = "All fields are required. approval_id and held_digest are exactly 64 lowercase hex characters. current_sequence is a canonical decimal u64 string. Unknown fields are refused. Canonical JSON preserves every field."
+
+[record.NativePrepareResultV1]
+rust = "layerx_agent_api::identity::NativePrepareResultV1"
+wire_type = "NativePrepareResultV1Wire"
+fields = ["version:decimal_string","preparation_id:hex32","canonical_bytes:lowercase_hex","signing_preimage:hex32","activity:NativeActivityV1","approval_required:bool","approval_id:hex32_or_null"]
+version = "Required exact canonical decimal string 1."
+encoding = "All fields are required; unknown fields refused. preparation_id and signing_preimage are exact lowercase hex32; canonical_bytes is nonempty lowercase hex bounded before allocation to layerx_wire::limits::MAX_MESSAGE_BYTES decoded bytes (1048576). activity preserves its version, full module and ordinal as decimal strings. approval_required is a JSON boolean and equals whether approval_id is a non-null exact lowercase hex32. Absent optional reference is encoded explicitly as null."
+
+[record.NativeApprovalResultV1]
+rust = "layerx_agent_api::identity::NativeApprovalResultV1"
+wire_type = "NativeApprovalResultV1Wire"
+fields = ["version:decimal_string","approval_id:hex32","held_digest:hex32","activity:NativeActivityV1","state:utf8","submission_ref:hex32_or_null"]
+version = "Required exact canonical decimal string 1."
+state = "Exactly one of Awaiting, Granted, Rejected, Expired, Defective, NotRequired, preserving owner case."
+encoding = "All fields are required; unknown fields refused. approval_id and held_digest are exact lowercase hex32. activity preserves its version, full module and ordinal as decimal strings. submission_ref is exact lowercase hex32 or explicit JSON null."
+
+[record.NativeApprovalListResultV1]
+rust = "layerx_agent_api::identity::NativeApprovalListResultV1"
+wire_type = "NativeApprovalListResultV1Wire"
+fields = ["version:decimal_string","approvals:NativeApprovalResultV1[]"]
+version = "Required exact canonical decimal string 1."
+encoding = "All fields required; unknown fields refused. approvals contains at most 100 strict NativeApprovalResultV1 entries. Canonical JSON retains the versioned wrapper and every nested field."
+
+[record.NativeLocalGrantConsentV1]
+rust = "layerx_agent_api::identity::NativeLocalGrantConsentV1"
+wire_type = "NativeLocalGrantConsentV1Wire"
+fields = ["version:decimal_string","capability:lowercase_hex","session_scope:lowercase_hex","expires_at_ms:decimal_string","owner_public_key:hex32","signature:hex64"]
+version = "Required exact canonical decimal string 1."
+capability = "Nonempty exact encoded NativeTimedCapabilityV1 bytes in lowercase hex, bounded before allocation to layerx_wire::limits::MAX_MESSAGE_BYTES decoded bytes (1048576). native_local_grant decodes the real timed capability and refuses malformed or trailing record bytes."
+session_scope = "Nonempty exact encoded NativeSessionScopeV1 bytes in lowercase hex with the same bound. native_local_grant decodes the real native session scope; no conversion to legacy u16 activity scopes."
+expires_at_ms = "Canonical nonzero decimal u64 string; the actual owner admission enforces expiry against authoritative time."
+owner_public_key = "Exact lowercase hex32 equality assertion against the current revalidated primary owner authority, never caller-selected authority."
+signature = "Exact lowercase hex64 (128 characters); length checked before decoding. Actual Ed25519 validity is enforced by the daemon owner."
+signature_digest = "SHA-256 of UTF-8 LayerX/native/local-grant/v1 followed by NUL, expires_at_ms u64 big-endian, owner_public_key 32 bytes, capability u32 big-endian byte length and exact bytes, then session_scope u32 big-endian byte length and exact bytes."
+authority = "Explicit local capability and session-scope installation consent only. It is separate from the signed preparation-purpose carrier and from original protocol activity signing; neither local consent nor purpose commitment supplies protocol signing authority."
+wire = "All fields required; unknown fields and noncanonical decimal or hexadecimal encodings refused. Native prepare canonical JSON includes this complete object or null under local_grant."
+
+[encoding.NativePreparationPurposeV1_restore]
+decoder = "NativePreparationPurposeV1::from_canonical_bytes is the exact inverse of canonical_bytes, including the nonzero expiry after generation. It validates domain/version, bounded UTF-8 identities, exact fixed fields, canonical lowercase session and capability identifiers, no truncation or trailing bytes, and byte-exact canonical re-encoding before restoring durable purpose data."
+
+[encoding.NativePrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-prepare/v1 followed by NUL and serde_json::to_vec of the validated native request Canonical value, including explicit local_grant null or full object. Digest production is daemon-owned; the API has no hashing dependency."
+
+[record.NativeEffectPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeEffectPrepareRequestV1"
+wire_type = "NativeEffectPrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_effect_v1. An explicit native variant of prepare on the same Agent operation route, never a standalone endpoint."
+activity = "Required NativeActivityV1 with a registered non-Programs module and nonzero ordinal; Programs is refused by this separate profile and the existing native_v1 Programs-only validator remains unchanged. Admission derives only supported genuine effects; module and ordinal survive checked packed-u32 conversion."
+actor = "Nonempty UTF-8 accepted by the real layerx_types::ids::Did byte bound; exactly equal to purpose.purpose.agent_did."
+authority = "Nonempty UTF-8 with byte length at most layerx_types::limits::MAX_AUTHORITY_BYTES; actual authority is validated by the existing runtime owner."
+account_sequence = "Canonical decimal u64 string."
+not_before = "Canonical decimal u64 string preserving the native prepare timestamp unit."
+not_after = "Canonical decimal u64 string greater than or equal to not_before; preserving the native prepare timestamp unit."
+idempotency_key = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes."
+fee_limit = "Canonical decimal u128 string."
+payload = "Required nonempty lowercase hexadecimal decoded to at most layerx_types::limits::MAX_PAYLOAD_BYTES; the encoded byte count is bounded before hex allocation."
+payload_hash = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. API validation does not authenticate the hash; the real runtime must verify it against the payload."
+capability_id = "Exactly 64 lowercase hexadecimal characters naming the same capability as purpose.purpose.capability_id; supplied explicitly to HumanPrepare as Some(bytes)."
+purpose = "Required SignedNativePreparationPurposeV1. Its current owner signature, authenticated principal, retained preparation coordinates and expiry must be verified by the existing runtime before native prepare admission."
+local_grant = "Optional NativeLocalGrantConsentV1 for owner-approved first local grant installation. Canonical JSON always includes local_grant, either its full versioned object or null."
+canonical_json = "Exactly these fields including variant native_effect_v1, nested native activity, nested signed purpose and local_grant; all numeric values are canonical decimal strings and bytes lowercase hex."
+wire = "All fields except optional local_grant are required. Unknown fields, legacy activity_type substitution, omitted variant, wrong native version, numeric JSON integers and noncanonical decimal or hexadecimal forms are refused."
+conversion = "native_effect_human_prepare validates the typed request and produces the existing HumanPrepare with real ActivityType.value(), exact actor and authority, account sequence, timestamp bounds, idempotency bytes encoded as lowercase hex, fee limit, payload, payload hash and explicit capability bytes. The signed purpose remains separately available on the native request for runtime verification and admission."
+serving_status = "Source request and conversion contract only. Integration uses the existing authenticated Agent prepare route with the explicit native_effect_v1 discriminant. No legacy decoder or dispatch path is changed by this declaration."
+
+[encoding.NativeEffectPrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-effect-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeEffectPrepareRequestV1 canonical JSON value, including exact native_effect_v1 discriminator and explicit local_grant null or full object. Existing native prepare digest remains unchanged."
+
+[record.NativeRegistrationPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeRegistrationPrepareRequestV1"
+wire_type = "NativeEffectPrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_registration_v1 on the existing authenticated Agent prepare route; a native_effect_v1 request is never relabelled as registration."
+activity = "Exactly Asset module 1 ordinal 1 with protocol 3; the wrapped NativeEffectPrepareRequestV1 validation applies unchanged."
+admission_profile = "native-registration-v1: canonical Payment::Register with issuer_kind 1, empty custody_ref, asset equal to SHA256(LX:ASSET:v1 || actor_did_id32 || salt32) and 0 < supply_cap < u128::MAX. Custody-backed issuer_kind 2 stays unsupported for every principal."
+commitment = "Signed purpose commitment equals SHA256(LayerX/native/asset-registration/v1 NUL || u16be protocol_version || u32be network_id || canonical_unsigned_digest32 || actor_did_id32 || asset_id32 || fee_asset_id32) with the native fee asset of the verified fee-policy snapshot."
+effects = "One SupplyCap authorization on the actor's native fee principal for the registered asset and supply_cap plus one rate action; no issuance, transfer or initial mint. Native fees are the unchanged native_effect_fee."
+retention = "Version-2 NativeEffectApprovalCarrier with admission_profile native-registration-v1; version-1 carriers, the native_effect_v1 refusal of Register and the legacy Register refusal are unchanged."
+canonical_json = "The NativeEffectPrepareRequestV1 canonical JSON with variant native_registration_v1."
+
+[encoding.NativeRegistrationPrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-registration-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeRegistrationPrepareRequestV1 canonical JSON value."
+
+
+[record.NativeSendPurposeV1]
+rust = "layerx_agent_api::identity::NativeSendPurposeV1"
+wire_type = "NativeSendPurposeV1Wire"
+fields = ["version:decimal_string", "tenant:utf8", "agent_did:utf8", "owner_did:utf8", "owner_public_key:hex32", "session_id:hex32", "generation:decimal_string", "expires_at_ms:decimal_string", "capability_id:hex32", "protocol_version:decimal_string", "network_id:decimal_string", "activity:NativeActivityV1", "preparation_id:hex32", "canonical_digest:hex32", "economic_action:hex32", "idempotency_key:hex32", "commitment:hex32"]
+canonical_bytes = "LayerX/native/send-purpose/v1 NUL, u8 version1, u32BE-length UTF8 tenant/agent_did/owner_did, owner_public_key32, session32, generation u64BE, expiry u64BE, capability32, protocol u16BE, network u32BE, NativeActivity.encode five bytes, preparation32, canonical_digest32, economic_action32, idempotency32, immutable economic commitment32."
+validation = "Closed version1, protocol3, nonzero kernel network, ordinary Asset Send module1 ordinal5, actual owner_did exactly did:layerx: plus owner_public_key lowercasehex; canonical identifiers, nonzero generation/expiry/digests, bounded texts, exact inverse decoder and reencoding, no trailing bytes."
+authority = "Owner signatures authenticate this distinct consent statement, never an embedded protocol purpose; validate actual principal/session/generation/capability/current authority, native active chain, exact canonical Send and economic action from retained production owners. Existing preparation-purpose and local-grant encodings and refusals remain unchanged."
+
+[record.SignedNativeSendPurposeV1]
+rust = "layerx_agent_api::identity::SignedNativeSendPurposeV1"
+wire_type = "SignedNativeSendPurposeV1Wire"
+fields = ["purpose:NativeSendPurposeV1", "owner_public_key:hex32", "signature:hex64"]
+signature_digest = "SHA256 exact NativeSendPurposeV1 canonical bytes; duplicate owner_public_key must equal nested owner key and actual current HumanPrimary owner."
+validation = "Data carrier only. Actual cryptographic signer/daemon validates genuine owner signature and fresh authority; local structural validation never establishes authority."
+
+[record.NativeSendPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeSendPrepareRequestV1"
+wire_type = "NativeSendPrepareV1Wire"
+fields = ["variant:utf8", "activity:NativeActivityV1", "actor:utf8", "authority:utf8", "account_sequence:decimal_string", "not_before:decimal_string", "not_after:decimal_string", "idempotency_key:hex32", "fee_limit:decimal_string", "payload:lowercase_hex", "payload_hash:hex32", "capability_id:hex32", "purpose:SignedNativeSendPurposeV1", "local_grant:NativeLocalGrantConsentV1?"]
+variant = "Exactly native_send_v1; preview selector66. Existing native_effect_v1 and selectors63/65 retain all behavior and refusals."
+validation = "Closed ordinary Send1/5, exact actor/capability/idempotency/activity binds signed distinct purpose; canonical activity and payload remain original. Genuine profile-specific runtime authenticates and retains immutable economic request before hold/submit/resume."
+
+[transport.agent_http.operation.mcp.invoke]
+request = "Exactly tool and arguments. tool names one existing canonical MCP catalogue entry; arguments is its closed validated object. All tenant/session/token/generation authority comes from the complete current credential."
+access = "mutation"
+operation_class = "none"
+surface = "Mcp"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+response = "The exact daemon-owned MCP tool result, or a typed revoked/expired/unavailable refusal. No umbrella operation permit exists: the owner resolves the named tool to its original operation before execution and final release."
+authority = "exact_tool_operation_permit"
+
+
+[record.NativeDisclosureRequestV1]
+rust = "layerx_agent_api::identity::NativeDisclosureRequestV1"
+wire_type = "NativeDisclosureV1Wire"
+fields = ["variant:utf8","canonical_bytes:lowercase_hex"]
+variant = "Exactly native_disclosure_v1 on the existing authenticated prepare operation."
+canonical_bytes = "Nonempty exact unsigned canonical bytes, bounded by MAX_MESSAGE_BYTES; daemon resolves SHA256 preparation identity in the authenticated tenant and principal and restores its genuine native carrier."
+wire = "Closed request; unknown fields, noncanonical hex, missing bytes and unowned or changed preparation refuse."
+side_effects = "None: validates stored disclosure binding and current session permit without creating a preparation or consuming a rate allowance."
+
+[record.NativeDisclosureResultV1]
+rust = "layerx_agent_api::identity::NativeDisclosureResultV1"
+fields = ["version:decimal_string","preparation_id:hex32","canonical_bytes:lowercase_hex","disclosure_digest:hex32","activity_type:decimal_string","actor:lowercase_hex","authority:lowercase_hex","asset:hex32","fee_limit:decimal_string","not_before:decimal_string","not_after:decimal_string","payload_expires_at:decimal_string","idempotency_key:hex32"]
+version = "Exactly 1."
+origin = "Actual stored Prepared disclosure verified against exact canonical bytes; SDK independently binds the disclosure through the actual module registry and compares every response field and audit digest."
+verification = "No invented receipt or state proof; this is an authenticated canonical preparation disclosure."

@@ -13,6 +13,9 @@ const READ_SOURCE: &str = include_str!("../../../schema/agent-api/read.kvx");
 const STREAM_SOURCE: &str = include_str!("../../../schema/agent-api/stream.kvx");
 const PROGRAMS_SOURCE: &str = include_str!("../../../schema/agent-api/programs.kvx");
 const PROGRAMS_BASELINE: &str = include_str!("../../../schema/agent-api/golden/programs.kvx");
+const WRITE_BASELINE: &str = include_str!("../../../schema/agent-api/golden/write.kvx");
+const ERRORS_SOURCE: &str = include_str!("../../../schema/agent-api/errors.kvx");
+const ERRORS_BASELINE: &str = include_str!("../../../schema/agent-api/golden/errors.kvx");
 
 const CUSTODY_CLAIM_TAGS: &[(&str, &str)] = &[
     (
@@ -101,10 +104,11 @@ fn hex(value: &str) -> Vec<u8> {
 fn generated_contract_is_pinned_to_the_schema() {
     let contract = agent_api_schema_v1();
     assert_eq!(contract.name, "LayerX Agent API");
-    assert_eq!(contract.version, ContractVersion { major: 1, minor: 2 });
+    assert_eq!(contract.version, ContractVersion { major: 2, minor: 0 });
     assert_eq!(contract.node_interface_major, 1);
     let baseline = declarations(BASELINE);
     let current = declarations(AGENT_API_V1_SOURCE);
+    assert_eq!(baseline, current);
     for (key, value) in baseline {
         if key == "schema.includes" {
             assert!(
@@ -115,11 +119,11 @@ fn generated_contract_is_pinned_to_the_schema() {
             assert_eq!(
                 current.get(&key),
                 Some(&value),
-                "contract 1.0 declaration changed at {key}"
+                "contract 2.0 declaration changed at {key}"
             );
         }
     }
-    assert_eq!(current.get("schema.minor").map(String::as_str), Some("2"));
+    assert_eq!(current.get("schema.minor").map(String::as_str), Some("0"));
     assert!(current["schema.includes"].contains("approval.kvx"));
     assert!(current["schema.includes"].contains("programs.kvx"));
     assert_eq!(
@@ -142,6 +146,104 @@ fn generated_contract_is_pinned_to_the_schema() {
     };
     assert_eq!(request.request_id.get(), 7);
     assert_eq!(response.contract, request.supported);
+}
+
+#[test]
+fn major_two_refuses_major_one() {
+    let contract = agent_api_schema_v1();
+    assert_eq!(contract.version, ContractVersion { major: 2, minor: 0 });
+    assert_eq!(
+        declarations(AGENT_API_V1_SOURCE)["record.VersionRequest.unsupported_major"],
+        "\"unsupported_major\""
+    );
+    for major in [0, 1, 3, u16::MAX] {
+        let request = VersionRequest {
+            request_id: Sequence(7),
+            supported: ContractVersion { major, minor: 0 },
+        };
+        assert_eq!(VersionResponse::try_from(request), Err("unsupported_major"));
+    }
+    for minor in [0, 1, u16::MAX] {
+        let request = VersionRequest {
+            request_id: Sequence(7),
+            supported: ContractVersion { major: 2, minor },
+        };
+        assert_eq!(
+            VersionResponse::try_from(request),
+            Ok(VersionResponse {
+                request_id: Sequence(7),
+                contract: contract.version,
+                node_interface_major: 1,
+            })
+        );
+    }
+}
+
+#[test]
+fn write_and_error_goldens_match_major_two_schema() {
+    assert_eq!(WRITE_SOURCE, WRITE_BASELINE);
+    assert_eq!(ERRORS_SOURCE, ERRORS_BASELINE);
+    let errors = declarations(ERRORS_SOURCE);
+    assert_eq!(errors["module.contract_major"], "2");
+    assert!(!errors.contains_key("type.Level.variants"));
+    assert_eq!(
+        errors["type.Rung.variants"],
+        "[\"Submitted\",\"Receipted\",\"Committed\"]"
+    );
+    assert_eq!(
+        errors["type.Rung.wire_names"],
+        "[\"submitted\",\"receipted\",\"committed\"]"
+    );
+    assert_eq!(
+        errors["type.VerificationStatus.Achieved.required"],
+        "[\"rung\"]"
+    );
+    assert_eq!(errors["type.VerificationStatus.Achieved.rung"], "\"Rung\"");
+    assert_eq!(
+        errors["type.VerificationStatus.Unverified.requested"],
+        "\"Rung\""
+    );
+    assert_eq!(
+        errors["type.VerificationStatus.Unverified.achieved"],
+        "\"Rung\""
+    );
+    assert_eq!(
+        errors["error.LXP_IDEMPOTENT_REPLAY.class"],
+        "\"CoreRejection\""
+    );
+    assert_eq!(
+        errors["error.LXP_IDEMPOTENT_REPLAY.protocol_result_code"],
+        "-302"
+    );
+    assert_eq!(
+        errors["error.LXP_IDEMPOTENT_REPLAY.retriability"],
+        "\"Terminal\""
+    );
+    assert_eq!(
+        errors["error.LXP_IDEMPOTENT_REPLAY.reason"],
+        "\"idempotent_replay\""
+    );
+    assert_eq!(
+        errors["error.receipt_key_unknown.class"],
+        "\"VerificationFailure\""
+    );
+    assert_eq!(
+        errors["error.receipt_key_unknown.protocol_result_code"],
+        "null"
+    );
+    assert_eq!(
+        errors["error.receipt_key_unknown.retriability"],
+        "\"Terminal\""
+    );
+    assert_eq!(
+        errors["error.receipt_key_unknown.reason"],
+        "\"receipt_key_unknown\""
+    );
+    let root = declarations(AGENT_API_V1_SOURCE);
+    assert_eq!(
+        root["record.AgentHttpSuccess.verification_status"],
+        "\"Either {state:\\\"achieved\\\",rung:R} or {state:\\\"unverified\\\",requested:R,achieved:R,reason:ReasonCode} with achieved strictly below requested; R is one of submitted, receipted, committed. An unverified status that violates the ordering is refused as VerificationFailure verification.inconsistent.\""
+    );
 }
 
 #[test]
@@ -175,9 +277,9 @@ fn programs_contract_is_included_with_receipt_resolution_and_call_idempotency() 
 fn golden_request_and_response_vectors_are_reviewable_exact_bytes() {
     let request = hex(REQUEST_VECTOR);
     let response = hex(RESPONSE_VECTOR);
-    assert_eq!(&request[..4], &[0, 1, 0, 0]);
+    assert_eq!(&request[..4], &[0, 2, 0, 0]);
     assert_eq!(&request[4..12], &7_u64.to_be_bytes());
-    assert_eq!(&response[..4], &[0, 1, 0, 0]);
+    assert_eq!(&response[..4], &[0, 2, 0, 0]);
     assert_eq!(&response[4..12], &7_u64.to_be_bytes());
     assert!(AGENT_API_V1_SOURCE.contains(REQUEST_VECTOR.trim()));
     assert!(AGENT_API_V1_SOURCE.contains(RESPONSE_VECTOR.trim()));
@@ -289,7 +391,7 @@ fn adding_a_settlement_domain_is_additive_by_construction() {
     )
     .is_err());
     let baseline = declarations(BASELINE);
-    assert!(!baseline.contains_key("type.SettlementDomain.variants"));
+    assert_eq!(baseline["type.SettlementDomain.variants"], "[\"Paxeer\"]");
 }
 
 #[test]

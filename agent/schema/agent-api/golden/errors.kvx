@@ -1,6 +1,6 @@
 [module]
 name = "errors"
-contract_major = 1
+contract_major = 2
 compatibility = "additive_only"
 
 [type.ApiError]
@@ -13,14 +13,35 @@ UnavailableCapability.semantics = "A required node capability was not in the neg
 [type.Retriability]
 variants = ["Terminal","Retriable"]
 
-[type.Level]
-variants = ["Unverified","SequencerSigned","BatchIncluded","StateProven","CheckpointFinalised","SettlementAnchored"]
+[error.LXP_IDEMPOTENT_REPLAY]
+class = "CoreRejection"
+protocol_result_code = -302
+retriability = "Terminal"
+reason = "idempotent_replay"
+original_result = "Read the first result through resultByIdempotency(bytes32 didId,bytes32 idempotencyKey); never resubmit at a new nonce."
+
+[error.receipt_key_unknown]
+class = "VerificationFailure"
+protocol_result_code = null
+retriability = "Terminal"
+reason = "receipt_key_unknown"
+condition = "Receipt key identifier is absent from the pinned ReceiptKeys list or the receipt height is outside its entry's inclusive range."
+
+[type.Rung]
+variants = ["Submitted","Receipted","Committed"]
+wire_names = ["submitted","receipted","committed"]
 ordering = "declaration_order"
+Submitted.semantics = "Send issued with exact raw signed bytes and transaction hash; no verified sequencer receipt. Timeout and transport loss stay submitted, never success."
+Receipted.semantics = "Canonical sequencer receipt passes every pinned-key, height, transaction, field and sequence check. Status 1 executes; status 0 reverts and is never success."
+Committed.semantics = "Landing receipt has a non-null block hash and matching status, gas and logs at a height greater than or equal to the signed receipt height; the block sequence covers the receipt and its Comet commit verifies with more than two-thirds voting power."
 
 [type.VerificationStatus]
 variants = ["Achieved","Unverified"]
-Achieved.required = ["level"]
+Achieved.required = ["rung"]
+Achieved.rung = "Rung"
 Unverified.required = ["requested","achieved","reason"]
+Unverified.requested = "Rung"
+Unverified.achieved = "Rung"
 
 [response.success]
 envelope = "ApiSuccess"
