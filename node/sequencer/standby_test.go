@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math/big"
 	"net"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer/wal"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -364,4 +367,190 @@ func TestStandbyRefusesSharedKeys(t *testing.T) {
 	cfg.PrimaryReceiptKey = primaryReceiptKey.Public().(ed25519.PublicKey)
 	_, err = sequencer.NewStandby(context.Background(), cfg)
 	require.ErrorIs(t, err, sequencer.ErrSharedKey)
+}
+
+// replicatorResendDialer dials the standby at addr, records every group written on its links,
+// and can cut the current link and refuse new ones.
+type replicatorResendDialer struct {
+	mu     sync.Mutex
+	addr   string
+	down   bool
+	conn   net.Conn
+	writes [][]byte
+}
+
+func (d *replicatorResendDialer) dial(ctx context.Context) (net.Conn, error) {
+	d.mu.Lock()
+	addr, down := d.addr, d.down
+	d.mu.Unlock()
+	if down {
+		return nil, errors.New("standby link down")
+	}
+	var nd net.Dialer
+	conn, err := nd.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	d.conn = conn
+	d.mu.Unlock()
+	return replicatorResendConn{Conn: conn, d: d}, nil
+}
+
+// cut closes the current link and refuses new ones until restore.
+func (d *replicatorResendDialer) cut() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.down = true
+	if d.conn != nil {
+		_ = d.conn.Close()
+	}
+}
+
+func (d *replicatorResendDialer) restore(addr string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.down, d.addr = false, addr
+}
+
+// groups returns the record kinds of every group written so far, in write order.
+func (d *replicatorResendDialer) groups(t *testing.T) [][]wal.EntryKind {
+	t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([][]wal.EntryKind, len(d.writes))
+	for i, b := range d.writes {
+		require.GreaterOrEqual(t, len(b), 4)
+		n := binary.BigEndian.Uint32(b[:4])
+		off := 4
+		for range n {
+			require.GreaterOrEqual(t, len(b), off+8)
+			end := off + 8 + int(binary.BigEndian.Uint32(b[off+4:off+8]))
+			require.GreaterOrEqual(t, len(b), end)
+			e, err := wal.DecodeEntry(b[off+8 : end])
+			require.NoError(t, err)
+			out[i] = append(out[i], e.Kind())
+			off = end
+		}
+		require.Equal(t, len(b), off)
+	}
+	return out
+}
+
+type replicatorResendConn struct {
+	net.Conn
+	d *replicatorResendDialer
+}
+
+func (c replicatorResendConn) Write(b []byte) (int, error) {
+	c.d.mu.Lock()
+	c.d.writes = append(c.d.writes, append([]byte(nil), b...))
+	c.d.mu.Unlock()
+	return c.Conn.Write(b)
+}
+
+// replicatorResendRecorder records the OPEN, SEAL, COMMITTED and LEASE records it applies.
+type replicatorResendRecorder struct {
+	appReplayer
+	applied *[]wal.Entry
+}
+
+func (r replicatorResendRecorder) Apply(e wal.Entry) error {
+	*r.applied = append(*r.applied, e)
+	return r.appReplayer.Apply(e)
+}
+
+func TestReplicatorResendsAfterLostCommitted(t *testing.T) {
+	ctx := context.Background()
+	sender := utils.NewSigner()
+	recipient := utils.NewSigner().EvmAddress
+	l := listen(t)
+	p := newPrimary(t, l.Addr().String(), replicationTimeout, sender)
+	d := &replicatorResendDialer{addr: l.Addr().String()}
+	repl, err := sequencer.NewReplicator(sequencer.ReplicatorConfig{WAL: p.wal, Dial: d.dial, ReplicationTimeout: replicationTimeout})
+	require.NoError(t, err)
+	t.Cleanup(repl.Close)
+	sb := newStandby(t, p, sender)
+	sb.serve(t, l)
+
+	// OPEN(2), ACCEPT(seq 42, height 2) and SEAL(2, 42) are acknowledged.
+	_, bz := transfer(t, sender, 0, recipient, big.NewInt(onePaxInWei))
+	open := p.open()
+	a := p.accept(bz)
+	require.Equal(t, startSeq+1, a.Seq)
+	require.Equal(t, uint64(openHeight), a.Height)
+	batch, err := p.h.exec.Seal(openHeight)
+	require.NoError(t, err)
+	seal := &wal.Seal{Height: uint64(openHeight), FromSeq: batch.FromSeq, ToSeq: batch.LastSeq, LastSeqHash: batch.LastSeqHash}
+	require.Equal(t, a.Seq, seal.ToSeq)
+	ack, err := repl.Release(ctx, open, a, seal)
+	require.NoError(t, err)
+	require.Equal(t, sequencer.Ack{Status: sequencer.AckOK, LastSeq: a.Seq}, ack)
+
+	// The link is cut: COMMITTED(2, 42) is durable on the primary and retained, but never reaches
+	// the wire.
+	d.cut()
+	committed := &wal.Committed{Height: uint64(openHeight), LastSeq: a.Seq}
+	ack, err = repl.Release(ctx, committed)
+	require.ErrorIs(t, err, sequencer.ErrNoAck)
+	require.Equal(t, sequencer.Ack{}, ack)
+	require.Nil(t, sb.wal.LastCommitted())
+
+	// The link is back: LEASE(1) has no committed-height prerequisite, yet the fresh link carries
+	// the retained window first, so the standby takes COMMITTED(2) before the lease.
+	d.restore(l.Addr().String())
+	lease := &wal.Lease{Epoch: 1, ExpiryMs: uint64(p.openMs)}
+	ack, err = repl.Release(ctx, lease)
+	require.NoError(t, err)
+	require.Equal(t, sequencer.Ack{Status: sequencer.AckOK, LastSeq: a.Seq, GapFrom: a.Seq, GapTo: a.Seq}, ack)
+	require.Equal(t, committed, sb.wal.LastCommitted())
+	require.Equal(t, a.Seq, sb.s.LastSeq())
+	require.NoError(t, sb.s.Err())
+	require.Equal(t, [][]wal.EntryKind{
+		{wal.KindOpen, wal.KindAccept, wal.KindSeal},
+		{wal.KindOpen, wal.KindAccept, wal.KindSeal, wal.KindCommitted, wal.KindLease},
+	}, d.groups(t))
+
+	// The standby recovers from its WAL on a host that committed height 2: replay starts after
+	// COMMITTED(2) and applies only the lease, so the next block opens at height 3.
+	repl.Close()
+	require.NoError(t, l.Close())
+	sb.wal.Close()
+	rec := newHarness(t, sender)
+	require.Equal(t, openHeight+1, commitBlock(rec, func(sdk.Context) {}))
+	w, err := wal.OpenWAL(sb.dir, wal.DefaultConfig())
+	require.NoError(t, err)
+	t.Cleanup(w.Close)
+	primaryPub, err := p.pv.GetPubKey(ctx)
+	require.NoError(t, err)
+	var applied []wal.Entry
+	recovered, err := sequencer.NewStandby(ctx, sequencer.StandbyConfig{
+		WAL:                 w,
+		Executor:            replicatorResendRecorder{appReplayer: appReplayer{exec: rec.exec}, applied: &applied},
+		ConsensusKey:        sb.s.ConsensusKey(),
+		ReceiptKey:          sb.s.ReceiptKey(),
+		PrimaryConsensusKey: primaryPub,
+		PrimaryReceiptKey:   p.receipt,
+		CommittedHeight:     uint64(openHeight),
+		LastSeq:             a.Seq,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []wal.Entry{lease}, applied)
+	require.Equal(t, a.Seq, recovered.LastSeq())
+
+	// The acknowledged LEASE pruned the window through COMMITTED(2): the next fresh link carries
+	// only the lease ahead of OPEN(3), and the recovered standby opens height 3.
+	l2 := listen(t)
+	t.Cleanup(func() { _ = l2.Close() })
+	go func() { _ = recovered.Serve(l2) }()
+	d.restore(l2.Addr().String())
+	open3 := &wal.Open{Height: uint64(openHeight + 1), OpenTimeMs: uint64(p.openMs + 1000), BaseFee: uint256.NewInt(0)}
+	ack, err = repl.Release(ctx, open3)
+	require.NoError(t, err)
+	require.Equal(t, sequencer.Ack{Status: sequencer.AckOK, LastSeq: a.Seq}, ack)
+	require.NoError(t, recovered.Err())
+	require.Equal(t, []wal.EntryKind{wal.KindLease, wal.KindOpen}, d.groups(t)[2])
+	openCtx, err := rec.exec.Snapshot()
+	require.NoError(t, err)
+	require.Equal(t, openHeight+1, openCtx.BlockHeight())
 }

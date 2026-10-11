@@ -66,8 +66,9 @@ type Ack struct {
 	// LastSeq is the last seq the standby holds synced and re-executed.
 	LastSeq uint64
 	// GapFrom..GapTo is the seq range a gap answer requests; GapTo below GapFrom means only
-	// non-ACCEPT records are missing. On an Ack returned by Release they name the range the
-	// standby requested and the primary resent, zero when there was none.
+	// non-ACCEPT records are missing. On an Ack returned by Release they name the ACCEPT seqs the
+	// primary resent ahead of the group, either requested by a gap answer or retained and sent on
+	// a fresh link, zero when there were none.
 	GapFrom uint64
 	GapTo   uint64
 }
@@ -183,9 +184,11 @@ type Replicator struct {
 	retained []retainedFrame
 }
 
-// retainedFrame is a record kept for gap refill until the standby acknowledges a later COMMITTED.
+// retainedFrame is a record kept until the standby acknowledges a later COMMITTED; the retained
+// window is resent on every fresh link and on a gap answer.
 type retainedFrame struct {
 	frame     wal.Frame
+	seq       uint64
 	committed bool
 }
 
@@ -206,7 +209,8 @@ func NewReplicator(cfg ReplicatorConfig) (*Replicator, error) {
 // Release appends entries to the local WAL, waits for the group fsync that covers them, streams
 // them to the standby and waits for its ack. The receipts of the ACCEPT entries may be returned
 // only when Release returns nil; on ErrNoAck or ErrStandbyRefused the send fails and no receipt
-// is issued. Records the standby has not acknowledged are resent when it requests a gap.
+// is issued. Records the standby has not acknowledged are resent on every fresh link and when it
+// requests a gap.
 func (r *Replicator) Release(ctx context.Context, entries ...wal.Entry) (Ack, error) {
 	if len(entries) == 0 {
 		return Ack{}, errors.New("sequencer: empty release group")
@@ -232,8 +236,14 @@ func (r *Replicator) Release(ctx context.Context, entries ...wal.Entry) (Ack, er
 		if err != nil {
 			return Ack{}, err
 		}
-		_, committed := e.(*wal.Committed)
-		r.retained = append(r.retained, retainedFrame{frame: frames[i], committed: committed})
+		rf := retainedFrame{frame: frames[i]}
+		switch v := e.(type) {
+		case *wal.Accept:
+			rf.seq = v.Seq
+		case *wal.Committed:
+			rf.committed = true
+		}
+		r.retained = append(r.retained, rf)
 		pending = append(pending, p)
 	}
 	if _, err := r.wal.GroupSync(); err != nil {
@@ -252,20 +262,23 @@ func (r *Replicator) Release(ctx context.Context, entries ...wal.Entry) (Ack, er
 	return ack, nil
 }
 
-// replicate sends frames and, on a gap answer, the whole retained window, all within the
-// replication timeout.
+// replicate sends frames, the tail of the retained window, all within the replication timeout.
+// A fresh link may follow a failed Release whose records are retained but were never
+// acknowledged, so it carries the whole retained window; the standby skips the records it holds.
+// On an open link a gap answer is refilled with the whole retained window.
 func (r *Replicator) replicate(ctx context.Context, frames []wal.Frame, maxSeq uint64) (Ack, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	ack, err := r.exchange(ctx, frames)
 	var gap Ack
-	if err == nil && ack.Status == AckGap {
+	fresh := r.conn == nil
+	if fresh {
+		gap.GapFrom, gap.GapTo = r.retainedSeqs(len(r.retained) - len(frames))
+		frames = r.window()
+	}
+	ack, err := r.exchange(ctx, frames)
+	if err == nil && ack.Status == AckGap && !fresh {
 		gap = ack
-		window := make([]wal.Frame, len(r.retained))
-		for i, rf := range r.retained {
-			window[i] = rf.frame
-		}
-		ack, err = r.exchange(ctx, window)
+		ack, err = r.exchange(ctx, r.window())
 	}
 	if err != nil {
 		r.dropConn()
@@ -284,6 +297,30 @@ func (r *Replicator) replicate(ctx context.Context, frames []wal.Frame, maxSeq u
 	default:
 		return Ack{}, fmt.Errorf("%w: standby holds seq %d", ErrStandbyRefused, ack.LastSeq)
 	}
+}
+
+// window returns the frames of the retained window in WAL order.
+func (r *Replicator) window() []wal.Frame {
+	window := make([]wal.Frame, len(r.retained))
+	for i, rf := range r.retained {
+		window[i] = rf.frame
+	}
+	return window
+}
+
+// retainedSeqs returns the first and last ACCEPT seq among the first n retained records, zero
+// when they hold none.
+func (r *Replicator) retainedSeqs(n int) (from, to uint64) {
+	for _, rf := range r.retained[:n] {
+		if rf.seq == 0 {
+			continue
+		}
+		if from == 0 {
+			from = rf.seq
+		}
+		to = rf.seq
+	}
+	return from, to
 }
 
 func (r *Replicator) exchange(ctx context.Context, frames []wal.Frame) (Ack, error) {
@@ -320,7 +357,9 @@ func (r *Replicator) dropConn() {
 	}
 }
 
-// pruneRetained drops the records up to the last COMMITTED the standby has acknowledged.
+// pruneRetained drops the records up to the last retained COMMITTED once the standby has
+// acknowledged a group. The retained window is resent on every fresh link, so that COMMITTED was
+// sent and acknowledged on the link that carried the group.
 func (r *Replicator) pruneRetained() {
 	for i := len(r.retained) - 1; i >= 0; i-- {
 		if r.retained[i].committed {
