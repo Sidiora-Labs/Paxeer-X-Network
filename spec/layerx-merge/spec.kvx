@@ -3149,7 +3149,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.5]
 title = "addr 0x1004 LXP revert reasons from the merge plan height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.1"]
@@ -41664,7 +41664,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.109]
 title = "Gas station crate passes its clippy deny level in every target"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -41823,7 +41823,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.115]
 title = "Exchange keeper genesis and authority test seeds its market before the flag toggles"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["3.2.7"]
@@ -42606,7 +42606,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.7]
 title = "Deterministic position for CosmWasm, Cosmos and precompiles"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.1", "0.2"]
