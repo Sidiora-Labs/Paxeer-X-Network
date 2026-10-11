@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .account_derivation import keccak256
+from .exchange import PrecompileCall
 
 XWEB_PRECOMPILE = "0x0000000000000000000000000000000000001019"
 XWEB_KIND_API = 3
@@ -42,7 +43,12 @@ XWEB_MAX_CREDENTIAL_BYTES = 1024
 XWEB_ENVELOPE_KEY_LENGTH = 33
 XWEB_ENVELOPE_NONCE_LENGTH = 12
 XWEB_ENVELOPE_TAG_LENGTH = 16
-XWEB_ENVELOPE_OVERHEAD = 20 + XWEB_ENVELOPE_KEY_LENGTH + XWEB_ENVELOPE_NONCE_LENGTH + XWEB_ENVELOPE_TAG_LENGTH
+XWEB_ENVELOPE_OVERHEAD = (
+    20
+    + XWEB_ENVELOPE_KEY_LENGTH
+    + XWEB_ENVELOPE_NONCE_LENGTH
+    + XWEB_ENVELOPE_TAG_LENGTH
+)
 XWEB_MAX_ENVELOPE_BYTES = XWEB_ENVELOPE_OVERHEAD + XWEB_MAX_CREDENTIAL_BYTES
 
 XWebApiMethod = Literal["GET", "POST"]
@@ -50,10 +56,21 @@ XWebApiMethod = Literal["GET", "POST"]
 _ZERO_ADDRESS = "0x" + "00" * 20
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _HEX = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
-_TOKEN = frozenset(b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+_TOKEN = frozenset(
+    b"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+)
 _AUTHORITY = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789.-:[]")
 _RESTRICTED_HEADERS = frozenset(
-    {"host", "content-length", "transfer-encoding", "connection", "keep-alive", "te", "trailer", "upgrade"}
+    {
+        "host",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "te",
+        "trailer",
+        "upgrade",
+    }
 )
 _SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 _WORD = 32
@@ -138,13 +155,7 @@ class XWebApiRequest:
     envelopes: tuple[XWebSealedEnvelope, ...]
 
 
-@dataclass(frozen=True)
-class XWebPrecompileCall:
-    """A transaction to the precompile; ``value`` is the attached PAX in wei."""
-
-    to: str
-    data: str
-    value: int
+XWebPrecompileCall = PrecompileCall
 
 
 def _api_error(detail: str) -> XWebApiError:
@@ -238,9 +249,14 @@ def xweb_api_origin(url: str) -> str:
             raise _api_error(f"url {url!r} has a malformed port")
         hostname = authority if colon < 0 else authority[:colon]
     query = rest.find("?")
-    path = "" if match is None else rest[end : len(rest) if query < 0 else max(query, end)]
+    path = (
+        "" if match is None else rest[end : len(rest) if query < 0 else max(query, end)]
+    )
     for index, character in enumerate(path):
-        if character == "%" and re.fullmatch(r"[0-9A-Fa-f]{2}", path[index + 1 : index + 3]) is None:
+        if (
+            character == "%"
+            and re.fullmatch(r"[0-9A-Fa-f]{2}", path[index + 1 : index + 3]) is None
+        ):
             raise _api_error(f"url {url!r} has an invalid escape")
     if hostname == "":
         raise _api_error(f"url {url!r} has no host")
@@ -254,22 +270,32 @@ def _validate_headers(what: str, headers: Sequence[XWebApiHeader], bound: int) -
     for index, header in enumerate(headers):
         name = _utf8(header.name)
         if len(name) == 0 or len(name) > XWEB_MAX_HEADER_NAME_BYTES:
-            raise _api_error(f"{what} {index} name is {len(name)} bytes, want 1 to {XWEB_MAX_HEADER_NAME_BYTES}")
+            raise _api_error(
+                f"{what} {index} name is {len(name)} bytes, want 1 to {XWEB_MAX_HEADER_NAME_BYTES}"
+            )
         for byte in name:
             if byte not in _TOKEN:
-                raise _api_error(f"{what} {index} name {header.name!r} holds {chr(byte)!r}, not a token character")
+                raise _api_error(
+                    f"{what} {index} name {header.name!r} holds {chr(byte)!r}, not a token character"
+                )
         lower = header.name.lower()
         if lower in _RESTRICTED_HEADERS:
-            raise _api_error(f"{what} {index} is {header.name}, which the sidecar sets itself")
+            raise _api_error(
+                f"{what} {index} is {header.name}, which the sidecar sets itself"
+            )
         if lower in seen:
             raise _api_error(f"{what} {index} repeats {header.name}")
         seen.add(lower)
         value = _utf8(header.value)
         if len(value) > XWEB_MAX_HEADER_VALUE_BYTES:
-            raise _api_error(f"{what} {header.name} value is {len(value)} bytes, bound {XWEB_MAX_HEADER_VALUE_BYTES}")
+            raise _api_error(
+                f"{what} {header.name} value is {len(value)} bytes, bound {XWEB_MAX_HEADER_VALUE_BYTES}"
+            )
         for at, byte in enumerate(value):
             if byte != 0x09 and (byte < 0x20 or byte > 0x7E):
-                raise _api_error(f"{what} {header.name} value byte {at} is 0x{byte:02x}")
+                raise _api_error(
+                    f"{what} {header.name} value byte {at} is 0x{byte:02x}"
+                )
 
 
 def _validate_pointers(pointers: Sequence[str]) -> None:
@@ -282,7 +308,9 @@ def _validate_pointers(pointers: Sequence[str]) -> None:
         except UnicodeEncodeError:
             raise _api_error(f"pointer {index} is not UTF-8") from None
         if len(encoded) > XWEB_MAX_POINTER_BYTES:
-            raise _api_error(f"pointer {index} is {len(encoded)} bytes, bound {XWEB_MAX_POINTER_BYTES}")
+            raise _api_error(
+                f"pointer {index} is {len(encoded)} bytes, bound {XWEB_MAX_POINTER_BYTES}"
+            )
         if pointer != "" and not pointer.startswith("/"):
             raise _api_error(f"pointer {pointer!r} does not start with /")
         for at, character in enumerate(pointer):
@@ -296,17 +324,25 @@ def _validate_pointers(pointers: Sequence[str]) -> None:
 def _public_key(data: bytes, label: str):
     ec = _crypto()[0]
     if len(data) != XWEB_ENVELOPE_KEY_LENGTH or data[0] not in (0x02, 0x03):
-        raise XWebApiError("invalid_envelope", f"{label} is not a 33-byte compressed secp256k1 key")
+        raise XWebApiError(
+            "invalid_envelope", f"{label} is not a 33-byte compressed secp256k1 key"
+        )
     try:
         return ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), data)
     except ValueError:
-        raise XWebApiError("invalid_envelope", f"{label} is not a point on secp256k1") from None
+        raise XWebApiError(
+            "invalid_envelope", f"{label} is not a point on secp256k1"
+        ) from None
 
 
 def xweb_attestor_address(public_key: bytes | str) -> str:
     """The EVM address a compressed secp256k1 public key signs as, lower-case."""
     serialization = _crypto()[2]
-    key = _unhex(public_key, "public key", "invalid_envelope") if isinstance(public_key, str) else bytes(public_key)
+    key = (
+        _unhex(public_key, "public key", "invalid_envelope")
+        if isinstance(public_key, str)
+        else bytes(public_key)
+    )
     point = _public_key(key, "public key").public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
     )
@@ -314,7 +350,10 @@ def xweb_attestor_address(public_key: bytes | str) -> str:
 
 
 def _validate_envelope(envelope: bytes, index: int) -> str:
-    if len(envelope) < XWEB_ENVELOPE_OVERHEAD + 1 or len(envelope) > XWEB_MAX_ENVELOPE_BYTES:
+    if (
+        len(envelope) < XWEB_ENVELOPE_OVERHEAD + 1
+        or len(envelope) > XWEB_MAX_ENVELOPE_BYTES
+    ):
         raise _api_error(
             f"envelope {index}: {len(envelope)} bytes, want {XWEB_ENVELOPE_OVERHEAD + 1} to {XWEB_MAX_ENVELOPE_BYTES}"
         )
@@ -334,7 +373,10 @@ def _validate_payload(payload: XWebApiPayload) -> None:
     zero = attestor == bytes(20)
     if payload.level == XWEB_LEVEL_MAJORITY:
         if not zero:
-            raise XWebApiError("invalid_level", f"majority level names attestor {payload.attestor.lower()}")
+            raise XWebApiError(
+                "invalid_level",
+                f"majority level names attestor {payload.attestor.lower()}",
+            )
     elif payload.level == XWEB_LEVEL_SINGLE:
         if zero:
             raise XWebApiError("invalid_level", "single level names no attestor")
@@ -343,12 +385,16 @@ def _validate_payload(payload: XWebApiPayload) -> None:
     xweb_api_origin(payload.url)
     _validate_headers("header", payload.headers, XWEB_MAX_HEADERS)
     if len(payload.body) > XWEB_MAX_BODY_BYTES:
-        raise _api_error(f"body is {len(payload.body)} bytes, bound {XWEB_MAX_BODY_BYTES}")
+        raise _api_error(
+            f"body is {len(payload.body)} bytes, bound {XWEB_MAX_BODY_BYTES}"
+        )
     if payload.method == "GET" and len(payload.body) != 0:
         raise _api_error(f"GET carries a {len(payload.body)}-byte body")
     _validate_pointers(payload.pointers)
     if len(payload.envelopes) > XWEB_MAX_ENVELOPES:
-        raise _api_error(f"{len(payload.envelopes)} envelopes, bound {XWEB_MAX_ENVELOPES}")
+        raise _api_error(
+            f"{len(payload.envelopes)} envelopes, bound {XWEB_MAX_ENVELOPES}"
+        )
     addressed: set[str] = set()
     for index, envelope in enumerate(payload.envelopes):
         to = _validate_envelope(envelope, index)
@@ -356,7 +402,9 @@ def _validate_payload(payload: XWebApiPayload) -> None:
             raise _api_error(f"envelope {index} repeats attestor {to}")
         addressed.add(to)
         if payload.level == XWEB_LEVEL_SINGLE and to != payload.attestor.lower():
-            raise _api_error(f"envelope {index} is addressed to {to}, the single level names {payload.attestor.lower()}")
+            raise _api_error(
+                f"envelope {index} is addressed to {to}, the single level names {payload.attestor.lower()}"
+            )
 
 
 class _Writer:
@@ -384,7 +432,9 @@ def encode_xweb_api_payload(payload: XWebApiPayload) -> bytes:
     """Validates ``payload`` and returns its api payload bytes, exactly as modules/xweb encodes them."""
     _validate_payload(payload)
     writer = _Writer()
-    writer.out += bytes((XWEB_API_VERSION, xweb_method_code(payload.method), payload.level))
+    writer.out += bytes(
+        (XWEB_API_VERSION, xweb_method_code(payload.method), payload.level)
+    )
     writer.out += _address(payload.attestor, "attestor")
     writer.field("url", _utf8(payload.url))
     writer.headers("header", payload.headers)
@@ -423,7 +473,9 @@ class _Reader:
         for index in range(count):
             name = self.field(f"{what} {index} name")
             value = self.field(f"{what} {index} value")
-            headers.append(XWebApiHeader(name.decode("latin-1"), value.decode("latin-1")))
+            headers.append(
+                XWebApiHeader(name.decode("latin-1"), value.decode("latin-1"))
+            )
         return tuple(headers)
 
 
@@ -453,7 +505,9 @@ def decode_xweb_api_payload(raw: bytes) -> XWebApiPayload:
     rest = len(reader.data) - reader.at
     if rest != 0:
         raise _api_error(f"{rest} bytes follow the last envelope")
-    payload = XWebApiPayload(method, level, attestor, url, headers, body, tuple(pointers), tuple(envelopes))
+    payload = XWebApiPayload(
+        method, level, attestor, url, headers, body, tuple(pointers), tuple(envelopes)
+    )
     _validate_payload(payload)
     return payload
 
@@ -471,7 +525,9 @@ def encode_xweb_credential(
     writer = _Writer()
     writer.headers("credential header", headers)
     if len(writer.out) > XWEB_MAX_CREDENTIAL_BYTES:
-        raise _api_error(f"credential is {len(writer.out)} bytes, bound {XWEB_MAX_CREDENTIAL_BYTES}")
+        raise _api_error(
+            f"credential is {len(writer.out)} bytes, bound {XWEB_MAX_CREDENTIAL_BYTES}"
+        )
     return bytes(writer.out)
 
 
@@ -489,10 +545,13 @@ def seal_xweb_envelope(
     ec, hashes, serialization, AESGCM, HKDF = _crypto()
     if len(plaintext) == 0 or len(plaintext) > XWEB_MAX_CREDENTIAL_BYTES:
         raise XWebApiError(
-            "invalid_envelope", f"plaintext is {len(plaintext)} bytes, want 1 to {XWEB_MAX_CREDENTIAL_BYTES}"
+            "invalid_envelope",
+            f"plaintext is {len(plaintext)} bytes, want 1 to {XWEB_MAX_CREDENTIAL_BYTES}",
         )
     recipient_bytes = (
-        _unhex(public_key, "public key", "invalid_envelope") if isinstance(public_key, str) else bytes(public_key)
+        _unhex(public_key, "public key", "invalid_envelope")
+        if isinstance(public_key, str)
+        else bytes(public_key)
     )
     recipient = _public_key(recipient_bytes, "public key")
     attestor = bytes.fromhex(xweb_attestor_address(recipient_bytes)[2:])
@@ -501,11 +560,17 @@ def seal_xweb_envelope(
         nonce = secrets.token_bytes(XWEB_ENVELOPE_NONCE_LENGTH)
     else:
         scalar = int.from_bytes(randomness.ephemeral_private_key, "big")
-        if len(randomness.ephemeral_private_key) != 32 or not 0 < scalar < _SECP256K1_ORDER:
-            raise XWebApiError("invalid_envelope", "ephemeral private key is not a secp256k1 scalar")
+        if (
+            len(randomness.ephemeral_private_key) != 32
+            or not 0 < scalar < _SECP256K1_ORDER
+        ):
+            raise XWebApiError(
+                "invalid_envelope", "ephemeral private key is not a secp256k1 scalar"
+            )
         if len(randomness.nonce) != XWEB_ENVELOPE_NONCE_LENGTH:
             raise XWebApiError(
-                "invalid_envelope", f"nonce is {len(randomness.nonce)} bytes, want {XWEB_ENVELOPE_NONCE_LENGTH}"
+                "invalid_envelope",
+                f"nonce is {len(randomness.nonce)} bytes, want {XWEB_ENVELOPE_NONCE_LENGTH}",
             )
         ephemeral = ec.derive_private_key(scalar, ec.SECP256K1())
         nonce = bytes(randomness.nonce)
@@ -513,18 +578,39 @@ def seal_xweb_envelope(
         serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint
     )
     shared = ephemeral.exchange(ec.ECDH(), recipient)
-    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=ephemeral_key, info=XWEB_ENVELOPE_INFO).derive(shared)
-    ciphertext = AESGCM(key).encrypt(nonce, bytes(plaintext), attestor + origin.encode("ascii"))
+    key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=ephemeral_key,
+        info=XWEB_ENVELOPE_INFO,
+    ).derive(shared)
+    ciphertext = AESGCM(key).encrypt(
+        nonce, bytes(plaintext), attestor + origin.encode("ascii")
+    )
     return attestor + ephemeral_key + nonce + ciphertext
 
 
-def _envelope_recipients(call: XWebApiCall, attestors: XWebAttestorSet) -> tuple[XWebAttestor, ...]:
+def _envelope_recipients(
+    call: XWebApiCall, attestors: XWebAttestorSet
+) -> tuple[XWebAttestor, ...]:
     if call.single is not None:
-        named = next((entry for entry in attestors.attestors if entry.signer.lower() == call.single.lower()), None)
+        named = next(
+            (
+                entry
+                for entry in attestors.attestors
+                if entry.signer.lower() == call.single.lower()
+            ),
+            None,
+        )
         if named is None:
-            raise XWebApiError("unknown_attestor", f"the single level names {call.single.lower()}")
+            raise XWebApiError(
+                "unknown_attestor", f"the single level names {call.single.lower()}"
+            )
         if len(named.public_key) == 0:
-            raise XWebApiError("invalid_attestors", f"attestor {named.signer.lower()} takes no credential envelopes")
+            raise XWebApiError(
+                "invalid_attestors",
+                f"attestor {named.signer.lower()} takes no credential envelopes",
+            )
         return (named,)
     keyed = tuple(entry for entry in attestors.attestors if len(entry.public_key) != 0)
     if len(keyed) < attestors.required or len(keyed) == 0:
@@ -553,8 +639,14 @@ def build_xweb_api_request(
     """
     origin = xweb_api_origin(call.url)
     level = XWEB_LEVEL_MAJORITY if call.single is None else XWEB_LEVEL_SINGLE
-    attestor = _ZERO_ADDRESS if call.single is None else _hex(_address(call.single, "single attestor"))
-    if call.single is not None and not any(entry.signer.lower() == attestor for entry in attestors.attestors):
+    attestor = (
+        _ZERO_ADDRESS
+        if call.single is None
+        else _hex(_address(call.single, "single attestor"))
+    )
+    if call.single is not None and not any(
+        entry.signer.lower() == attestor for entry in attestors.attestors
+    ):
         raise XWebApiError("unknown_attestor", f"the single level names {attestor}")
     sealed: list[XWebSealedEnvelope] = []
     if credential is not None:
@@ -563,11 +655,20 @@ def build_xweb_api_request(
             signer = _hex(_address(recipient.signer, "attestor signer"))
             derived = xweb_attestor_address(recipient.public_key)
             if derived != signer:
-                raise XWebApiError("invalid_attestors", f"public key of {signer} belongs to {derived}")
+                raise XWebApiError(
+                    "invalid_attestors", f"public key of {signer} belongs to {derived}"
+                )
             chosen = None if randomness is None else randomness(signer)
-            sealed.append(XWebSealedEnvelope(signer, seal_xweb_envelope(recipient.public_key, origin, plaintext, chosen)))
+            sealed.append(
+                XWebSealedEnvelope(
+                    signer,
+                    seal_xweb_envelope(recipient.public_key, origin, plaintext, chosen),
+                )
+            )
     if len(sealed) > len(attestors.attestors):
-        raise _api_error(f"{len(sealed)} envelopes for {len(attestors.attestors)} registered attestors")
+        raise _api_error(
+            f"{len(sealed)} envelopes for {len(attestors.attestors)} registered attestors"
+        )
     body = call.body.encode("utf-8") if isinstance(call.body, str) else bytes(call.body)
     payload = encode_xweb_api_payload(
         XWebApiPayload(
@@ -582,18 +683,27 @@ def build_xweb_api_request(
         )
     )
     if len(payload) > max_payload_bytes:
-        raise XWebApiError("payload_too_large", f"payload is {len(payload)} bytes, cap {max_payload_bytes}")
-    return XWebApiRequest(payload, _hex(keccak256(payload)), origin, level, attestor, tuple(sealed))
+        raise XWebApiError(
+            "payload_too_large",
+            f"payload is {len(payload)} bytes, cap {max_payload_bytes}",
+        )
+    return XWebApiRequest(
+        payload, _hex(keccak256(payload)), origin, level, attestor, tuple(sealed)
+    )
 
 
 def _selector(signature: str) -> str:
     return _hex(keccak256(signature.encode("ascii"))[:4])
 
 
-def xweb_api_request_call(payload: bytes, callback_gas: int, fee: int) -> XWebPrecompileCall:
+def xweb_api_request_call(
+    payload: bytes, callback_gas: int, fee: int
+) -> PrecompileCall:
     """The request(uint8,bytes,uint64) transaction for an api payload, paying ``fee`` wei of PAX."""
     if not 0 < callback_gas < 1 << 64:
-        raise XWebApiError("invalid_abi", f"callback gas {callback_gas} is not a positive uint64")
+        raise XWebApiError(
+            "invalid_abi", f"callback gas {callback_gas} is not a positive uint64"
+        )
     if not 0 <= fee < 1 << 256:
         raise XWebApiError("invalid_abi", f"fee {fee} is not a uint256")
     padded = bytes(payload) + b"\x00" * (-len(payload) % _WORD)
@@ -604,7 +714,9 @@ def xweb_api_request_call(payload: bytes, callback_gas: int, fee: int) -> XWebPr
         + len(payload).to_bytes(_WORD, "big")
         + padded
     )
-    return XWebPrecompileCall(XWEB_PRECOMPILE, _selector("request(uint8,bytes,uint64)") + words.hex(), fee)
+    return PrecompileCall(
+        XWEB_PRECOMPILE, _selector("request(uint8,bytes,uint64)") + words.hex(), fee
+    )
 
 
 def xweb_get_attestors_call_data() -> str:
@@ -618,7 +730,9 @@ class _AbiReader:
 
     def word(self, offset: int) -> bytes:
         if offset < 0 or offset + _WORD > len(self.data):
-            raise XWebApiError("invalid_abi", f"getAttestors answer ends before byte {offset + _WORD}")
+            raise XWebApiError(
+                "invalid_abi", f"getAttestors answer ends before byte {offset + _WORD}"
+            )
         return self.data[offset : offset + _WORD]
 
     def uint(self, offset: int, bits: int) -> int:
@@ -653,13 +767,19 @@ def decode_xweb_attestors(answer: str) -> XWebAttestorSet:
         entry = base + reader.uint(base + index * _WORD, 32)
         signer = reader.address(entry)
         try:
-            payout = reader.bytes_at(entry + reader.uint(entry + _WORD, 32)).decode("utf-8")
+            payout = reader.bytes_at(entry + reader.uint(entry + _WORD, 32)).decode(
+                "utf-8"
+            )
         except UnicodeDecodeError:
-            raise XWebApiError("invalid_abi", f"payout of {signer} is not UTF-8") from None
+            raise XWebApiError(
+                "invalid_abi", f"payout of {signer} is not UTF-8"
+            ) from None
         public_key = reader.bytes_at(entry + reader.uint(entry + 2 * _WORD, 32))
         if public_key:
             derived = xweb_attestor_address(public_key)
             if derived != signer:
-                raise XWebApiError("invalid_attestors", f"public key of {signer} belongs to {derived}")
+                raise XWebApiError(
+                    "invalid_attestors", f"public key of {signer} belongs to {derived}"
+                )
         attestors.append(XWebAttestor(signer, payout, public_key))
     return XWebAttestorSet(tuple(attestors), required)

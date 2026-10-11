@@ -13,7 +13,9 @@ from .account_derivation import keccak256
 
 LAYERX_EXCHANGE_PRECOMPILE = "0x0000000000000000000000000000000000001015"
 
-AbiType = Literal["address", "bool", "bytes32", "bytes[]", "string", "uint8", "uint64", "uint256"]
+AbiType = Literal[
+    "address", "bool", "bytes32", "bytes[]", "string", "uint8", "uint64", "uint256"
+]
 AbiValue = Union[int, bool, str, Sequence[str]]
 EventValue = Union[int, bool, str]
 WalletRequest = Callable[[str, list[object]], object]
@@ -80,7 +82,11 @@ def _bits(kind: AbiType) -> int:
 
 
 def _uint(value: int, bits: int, label: str) -> bytes:
-    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < 1 << bits:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 0 <= value < 1 << bits
+    ):
         raise PrecompileAbiError("invalid_value", label)
     return value.to_bytes(_WORD, "big")
 
@@ -133,7 +139,9 @@ def abi_selector(signature: str) -> str:
     return "0x" + keccak256(signature.encode())[:4].hex()
 
 
-def encode_abi_call(name: str, types: Sequence[AbiType], values: Sequence[AbiValue]) -> str:
+def encode_abi_call(
+    name: str, types: Sequence[AbiType], values: Sequence[AbiValue]
+) -> str:
     """ABI-encodes a call to ``name(types...)`` with ``values``."""
     if len(types) != len(values):
         raise PrecompileAbiError("invalid_value", "argument count")
@@ -149,7 +157,10 @@ def encode_abi_call(name: str, types: Sequence[AbiType], values: Sequence[AbiVal
             tail_offset += len(tail)
         else:
             heads.append(_static(kind, value, label))
-    return abi_selector(abi_signature(name, types)) + (b"".join(heads) + b"".join(tails)).hex()
+    return (
+        abi_selector(abi_signature(name, types))
+        + (b"".join(heads) + b"".join(tails)).hex()
+    )
 
 
 def precompile_transaction_request(sender: str, call: PrecompileCall) -> dict[str, str]:
@@ -159,11 +170,17 @@ def precompile_transaction_request(sender: str, call: PrecompileCall) -> dict[st
     return {"from": sender, "to": call.to, "data": call.data, "value": hex(call.value)}
 
 
-def send_precompile_call(request: WalletRequest, sender: str, call: PrecompileCall) -> str:
+def send_precompile_call(
+    request: WalletRequest, sender: str, call: PrecompileCall
+) -> str:
     """Asks an EIP-1193 ``request(method, params)`` to send a precompile write; returns its hash."""
-    answer = request("eth_sendTransaction", [precompile_transaction_request(sender, call)])
+    answer = request(
+        "eth_sendTransaction", [precompile_transaction_request(sender, call)]
+    )
     if not isinstance(answer, str) or not _BYTES32.match(answer):
-        raise PrecompileAbiError("malformed_wallet_answer", "wallet returned no transaction hash")
+        raise PrecompileAbiError(
+            "malformed_wallet_answer", "wallet returned no transaction hash"
+        )
     return answer
 
 
@@ -202,9 +219,15 @@ def _decode_string(data: bytes, head: int) -> str:
         raise PrecompileAbiError("invalid_string") from error
 
 
-def decode_event_with_spec(spec: EventSpec, address: str, topics: Sequence[str], data: str) -> DecodedEvent:
+def decode_event_with_spec(
+    spec: EventSpec, address: str, topics: Sequence[str], data: str
+) -> DecodedEvent:
     """Decodes one log against one event spec."""
-    if address.lower() != spec.precompile or not topics or topics[0].lower() != spec.topic0:
+    if (
+        address.lower() != spec.precompile
+        or not topics
+        or topics[0].lower() != spec.topic0
+    ):
         raise PrecompileAbiError("unknown_event", spec.name)
     indexed = [item for item in spec.inputs if item.indexed]
     if len(topics) != len(indexed) + 1:
@@ -221,14 +244,23 @@ def decode_event_with_spec(spec: EventSpec, address: str, topics: Sequence[str],
             fields[item.name] = _decode_word(item.type, _unhex(value, item.name))
             topic += 1
         else:
-            fields[item.name] = _decode_string(body, head) if item.type == "string" else _decode_word(item.type, _word(body, head))
+            fields[item.name] = (
+                _decode_string(body, head)
+                if item.type == "string"
+                else _decode_word(item.type, _word(body, head))
+            )
             head += _WORD
-    if not any(not item.indexed and item.type == "string" for item in spec.inputs) and len(body) != head:
+    if (
+        not any(not item.indexed and item.type == "string" for item in spec.inputs)
+        and len(body) != head
+    ):
         raise PrecompileAbiError("data_length", str(len(body)))
     return DecodedEvent(spec.name, spec.precompile, spec.topic0, fields)
 
 
-def decode_event_from(specs: Sequence[EventSpec], address: str, topics: Sequence[str], data: str) -> DecodedEvent:
+def decode_event_from(
+    specs: Sequence[EventSpec], address: str, topics: Sequence[str], data: str
+) -> DecodedEvent:
     """Finds the spec a log belongs to and decodes it."""
     topic0 = topics[0].lower() if topics else ""
     for spec in specs:
@@ -238,7 +270,9 @@ def decode_event_from(specs: Sequence[EventSpec], address: str, topics: Sequence
 
 
 def _event(name: str, *inputs: tuple[str, AbiType, bool]) -> EventSpec:
-    return EventSpec(name, LAYERX_EXCHANGE_PRECOMPILE, tuple(EventInput(*item) for item in inputs))
+    return EventSpec(
+        name, LAYERX_EXCHANGE_PRECOMPILE, tuple(EventInput(*item) for item in inputs)
+    )
 
 
 EXCHANGE_EVENTS: tuple[EventSpec, ...] = (
@@ -289,67 +323,125 @@ EXCHANGE_EVENTS: tuple[EventSpec, ...] = (
 )
 
 
-def decode_exchange_event(address: str, topics: Sequence[str], data: str) -> DecodedEvent:
+def decode_exchange_event(
+    address: str, topics: Sequence[str], data: str
+) -> DecodedEvent:
     return decode_event_from(EXCHANGE_EVENTS, address, topics, data)
 
 
-def _call(name: str, types: Sequence[AbiType], values: Sequence[AbiValue], value: int = 0) -> PrecompileCall:
-    return PrecompileCall(LAYERX_EXCHANGE_PRECOMPILE, encode_abi_call(name, types, values), value)
+def _call(
+    name: str, types: Sequence[AbiType], values: Sequence[AbiValue], value: int = 0
+) -> PrecompileCall:
+    return PrecompileCall(
+        LAYERX_EXCHANGE_PRECOMPILE, encode_abi_call(name, types, values), value
+    )
 
 
-def exchange_place_order_call(market_id: str, side: int, price: int, quantity: int, time_in_force: int) -> PrecompileCall:
-    """``placeOrder(bytes32,uint8,uint256,uint256,uint8)``."""
-    return _call("placeOrder", ["bytes32", "uint8", "uint256", "uint256", "uint8"], [market_id, side, price, quantity, time_in_force])
+def exchange_place_order_call(
+    market_id: str,
+    margin_account: str,
+    side: int,
+    price: int,
+    quantity: int,
+    time_in_force: int,
+) -> PrecompileCall:
+    """``placeOrder(bytes32,bytes32,uint8,uint256,uint256,uint8)``."""
+    return _call(
+        "placeOrder",
+        ["bytes32", "bytes32", "uint8", "uint256", "uint256", "uint8"],
+        [market_id, margin_account, side, price, quantity, time_in_force],
+    )
 
 
-def exchange_cancel_order_call(order_id: str) -> PrecompileCall:
-    """``cancelOrder(bytes32)``."""
-    return _call("cancelOrder", ["bytes32"], [order_id])
+def exchange_cancel_order_call(market_id: str, order_id: str) -> PrecompileCall:
+    """``cancelOrder(bytes32,bytes32)``."""
+    return _call("cancelOrder", ["bytes32", "bytes32"], [market_id, order_id])
 
 
-def exchange_request_settlement_call(position_id: str) -> PrecompileCall:
-    """``requestSettlement(bytes32)``."""
-    return _call("requestSettlement", ["bytes32"], [position_id])
+def exchange_request_settlement_call(
+    market_id: str, position_id: str
+) -> PrecompileCall:
+    """``closePosition(bytes32,bytes32)``."""
+    return _call("closePosition", ["bytes32", "bytes32"], [market_id, position_id])
 
 
-def exchange_deposit_margin_call(account: str, amount_wei: int) -> PrecompileCall:
+def exchange_deposit_margin_call(market_id: str, amount_wei: int) -> PrecompileCall:
     """``depositMargin(bytes32)``, payable with the native amount in wei."""
     if amount_wei <= 0:
         raise PrecompileAbiError("invalid_value", "deposit amount")
-    return _call("depositMargin", ["bytes32"], [account], amount_wei)
+    return _call("depositMargin", ["bytes32"], [market_id], amount_wei)
 
 
-def exchange_deposit_margin_token_call(pointer: str, amount: int, account: str) -> PrecompileCall:
+def exchange_deposit_margin_token_call(
+    pointer: str, amount: int, market_id: str
+) -> PrecompileCall:
     """``depositMarginToken(address,uint256,bytes32)``."""
-    return _call("depositMarginToken", ["address", "uint256", "bytes32"], [pointer, amount, account])
+    return _call(
+        "depositMarginToken",
+        ["address", "uint256", "bytes32"],
+        [pointer, amount, market_id],
+    )
 
 
-def exchange_withdraw_margin_call(account: str, asset_id: str, amount: int) -> PrecompileCall:
-    """``withdrawMargin(bytes32,bytes32,uint256)``."""
-    return _call("withdrawMargin", ["bytes32", "bytes32", "uint256"], [account, asset_id, amount])
+def exchange_withdraw_margin_call(market_id: str, amount: int) -> PrecompileCall:
+    """``withdrawMargin(bytes32,uint256)``."""
+    return _call("withdrawMargin", ["bytes32", "uint256"], [market_id, amount])
 
 
 def send_exchange_place_order(
-    request: WalletRequest, sender: str, market_id: str, side: int, price: int, quantity: int, time_in_force: int
+    request: WalletRequest,
+    sender: str,
+    market_id: str,
+    margin_account: str,
+    side: int,
+    price: int,
+    quantity: int,
+    time_in_force: int,
 ) -> str:
-    return send_precompile_call(request, sender, exchange_place_order_call(market_id, side, price, quantity, time_in_force))
+    return send_precompile_call(
+        request,
+        sender,
+        exchange_place_order_call(
+            market_id, margin_account, side, price, quantity, time_in_force
+        ),
+    )
 
 
-def send_exchange_cancel_order(request: WalletRequest, sender: str, order_id: str) -> str:
-    return send_precompile_call(request, sender, exchange_cancel_order_call(order_id))
+def send_exchange_cancel_order(
+    request: WalletRequest, sender: str, market_id: str, order_id: str
+) -> str:
+    return send_precompile_call(
+        request, sender, exchange_cancel_order_call(market_id, order_id)
+    )
 
 
-def send_exchange_request_settlement(request: WalletRequest, sender: str, position_id: str) -> str:
-    return send_precompile_call(request, sender, exchange_request_settlement_call(position_id))
+def send_exchange_request_settlement(
+    request: WalletRequest, sender: str, market_id: str, position_id: str
+) -> str:
+    return send_precompile_call(
+        request, sender, exchange_request_settlement_call(market_id, position_id)
+    )
 
 
-def send_exchange_deposit_margin(request: WalletRequest, sender: str, account: str, amount_wei: int) -> str:
-    return send_precompile_call(request, sender, exchange_deposit_margin_call(account, amount_wei))
+def send_exchange_deposit_margin(
+    request: WalletRequest, sender: str, market_id: str, amount_wei: int
+) -> str:
+    return send_precompile_call(
+        request, sender, exchange_deposit_margin_call(market_id, amount_wei)
+    )
 
 
-def send_exchange_deposit_margin_token(request: WalletRequest, sender: str, pointer: str, amount: int, account: str) -> str:
-    return send_precompile_call(request, sender, exchange_deposit_margin_token_call(pointer, amount, account))
+def send_exchange_deposit_margin_token(
+    request: WalletRequest, sender: str, pointer: str, amount: int, market_id: str
+) -> str:
+    return send_precompile_call(
+        request, sender, exchange_deposit_margin_token_call(pointer, amount, market_id)
+    )
 
 
-def send_exchange_withdraw_margin(request: WalletRequest, sender: str, account: str, asset_id: str, amount: int) -> str:
-    return send_precompile_call(request, sender, exchange_withdraw_margin_call(account, asset_id, amount))
+def send_exchange_withdraw_margin(
+    request: WalletRequest, sender: str, market_id: str, amount: int
+) -> str:
+    return send_precompile_call(
+        request, sender, exchange_withdraw_margin_call(market_id, amount)
+    )
