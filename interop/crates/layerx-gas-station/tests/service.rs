@@ -3,7 +3,7 @@ use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use k256::ecdsa::SigningKey;
@@ -22,7 +22,7 @@ use layerx_gas_station::rpc::{
 };
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
-use layerx_gas_station::station::GasStation;
+use layerx_gas_station::station::{GasStation, StationError};
 use layerx_gas_station::tx::{
     authorization_digest, batch_digest, encode_sponsored, recover, Authorization, Call,
 };
@@ -30,6 +30,11 @@ use layerx_gas_station::SignedQuote;
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+/// Held by every test that sets or removes `GAS_STATION_DID_GAS_LIMIT` while
+/// a station starts, since `GasStation::new` reads it from the process
+/// environment.
+static DID_GAS_LIMIT_ENV: Mutex<()> = Mutex::new(());
 
 const CHAIN_ID: u64 = 1325;
 const PAYMASTER: Address = [0x44; 20];
@@ -292,7 +297,6 @@ fn spawn_service(
     listener: TcpListener,
     mut log: SharedLog,
 ) -> TestResult {
-    std::env::set_var("GAS_STATION_DID_GAS_LIMIT", "1000000");
     let (ready, started) = mpsc::channel();
     std::thread::spawn(move || {
         let built = (|| -> Result<_, Box<dyn std::error::Error>> {
@@ -349,6 +353,52 @@ fn start_with_rate_age(
     start_configured(name, |config, _| config.station.max_rate_age = max_rate_age)
 }
 
+/// The recorded node answering from `fixture` for the station whose sponsor
+/// is `sponsor`, quoting for `account`.
+fn recording(
+    sponsor: Address,
+    account: Address,
+    fixture: Value,
+) -> Result<Arc<Recording>, Box<dyn std::error::Error>> {
+    let bindings = [
+        ("$sponsor", hex(&sponsor)),
+        ("$paymaster", hex(&PAYMASTER)),
+        ("$current_rate_call", hex(&keccak(b"currentRate()")[..4])),
+        ("$rate_updated_call", hex(&keccak(b"rateUpdatedAt()")[..4])),
+        ("$account", hex(&account)),
+        ("$zero", hex(&word(0))),
+        ("$one", hex(&word(1))),
+        ("$batch_nonce_call", hex(&keccak(b"nonce()")[..4])),
+        ("$latest_block", hex(&[0x10; 32])),
+        ("$finalized_block", hex(&[0x0f; 32])),
+        ("$did_precompile", hex(&DID_PRECOMPILE)),
+        (
+            "$did_call",
+            hex(&[
+                &keccak(b"getLayerXDid(address)")[..4],
+                address_word(account).as_slice(),
+            ]
+            .concat()),
+        ),
+        ("$did_binding", hex(&did_binding(&[0xd1; 32])?)),
+        (
+            "$delegated_code",
+            hex(&[[0xef, 0x01, 0x00].as_slice(), PAYMASTER.as_slice()].concat()),
+        ),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), json!(v)))
+    .collect();
+    let recorded = Arc::new(Recording {
+        fixture,
+        phase: Mutex::new("submit".into()),
+        bindings: Mutex::new(bindings),
+        sent: Mutex::new(vec![]),
+    });
+    recorded.expect_quote_nonce(sponsor, 1);
+    Ok(recorded)
+}
+
 /// Starts the service with its configuration changed by `adjust`, which also
 /// receives the address of the account the harness quotes for.
 fn start_configured(
@@ -367,44 +417,11 @@ fn start_configured(
     if journal.exists() {
         std::fs::remove_file(&journal)?;
     }
-    let bindings = [
-        ("$sponsor", hex(&sponsor)),
-        ("$paymaster", hex(&PAYMASTER)),
-        ("$current_rate_call", hex(&keccak(b"currentRate()")[..4])),
-        ("$rate_updated_call", hex(&keccak(b"rateUpdatedAt()")[..4])),
-        ("$account", hex(&account.address())),
-        ("$zero", hex(&word(0))),
-        ("$one", hex(&word(1))),
-        ("$batch_nonce_call", hex(&keccak(b"nonce()")[..4])),
-        ("$latest_block", hex(&[0x10; 32])),
-        ("$finalized_block", hex(&[0x0f; 32])),
-        ("$did_precompile", hex(&DID_PRECOMPILE)),
-        (
-            "$did_call",
-            hex(&[
-                &keccak(b"getLayerXDid(address)")[..4],
-                address_word(account.address()).as_slice(),
-            ]
-            .concat()),
-        ),
-        ("$did_binding", hex(&did_binding(&[0xd1; 32])?)),
-        (
-            "$delegated_code",
-            hex(&[[0xef, 0x01, 0x00].as_slice(), PAYMASTER.as_slice()].concat()),
-        ),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_owned(), json!(v)))
-    .collect();
-    let recorded = Arc::new(Recording {
-        fixture: with_sequencer_endpoint_rules(serde_json::from_str(include_str!(
-            "fixtures/cycle.json"
-        ))?)?,
-        phase: Mutex::new("submit".into()),
-        bindings: Mutex::new(bindings),
-        sent: Mutex::new(vec![]),
-    });
-    recorded.expect_quote_nonce(sponsor, 1);
+    let recorded = recording(
+        sponsor,
+        account.address(),
+        with_sequencer_endpoint_rules(serde_json::from_str(include_str!("fixtures/cycle.json"))?)?,
+    )?;
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
     let mut config = ServiceConfig {
@@ -416,6 +433,10 @@ fn start_configured(
     };
     adjust(&mut config, account.address());
     let log = SharedLog(Arc::new(Mutex::new(Vec::new())));
+    let _did_env = DID_GAS_LIMIT_ENV
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    std::env::set_var("GAS_STATION_DID_GAS_LIMIT", "1000000");
     spawn_service(
         config,
         signer,
@@ -1009,5 +1030,171 @@ fn sequencer_receipt_is_requested_by_transaction_hash() -> TestResult {
     harness.recorded.phase("refused");
     assert_eq!(rpc.sequencer_receipt(&hash)?, None);
     harness.assert_log_clean(&["/quote 200", "/submit 200"]);
+    harness.finish()
+}
+
+/// Starts the real service from exactly the inputs
+/// interop/deploy/gas-station/railway.env.example documents: every key it
+/// lists is set, the blanks and the sequencer endpoint reference with test
+/// values, the configuration is rendered the way docker/gas-station/init.sh
+/// renders it, and the relayer key comes from the variable the file names.
+/// Without `GAS_STATION_DID_GAS_LIMIT` the same station refuses to start.
+#[test]
+fn documented_deploy_inputs_start_service() -> TestResult {
+    let _did_env = DID_GAS_LIMIT_ENV
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let relayer_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
+    let owner_secret = hex(&SigningKey::random(&mut OsRng).to_bytes());
+    let mut fills: BTreeMap<&str, String> = [
+        ("GAS_STATION_ENDPOINTS", "https://sequencer.test".to_owned()),
+        ("GAS_STATION_PAYMASTER", hex(&PAYMASTER)),
+        ("GAS_STATION_MAX_RATE_AGE", "300".to_owned()),
+        ("GAS_STATION_MARGIN_BPS", "100".to_owned()),
+        ("GAS_STATION_PER_QUOTE_LIMIT", "4000000".to_owned()),
+        ("GAS_STATION_PER_ACCOUNT_LIMIT", "8000000".to_owned()),
+        ("GAS_STATION_PER_INTERVAL_LIMIT", "16000000".to_owned()),
+        ("GAS_STATION_INTERVAL_SECONDS", "60".to_owned()),
+        ("GAS_STATION_BALANCE_FLOOR", "100".to_owned()),
+        ("GAS_STATION_GAS_LIMIT", "200000".to_owned()),
+        (
+            "GAS_STATION_MAX_PRIORITY_FEE_PER_GAS",
+            "1000000000".to_owned(),
+        ),
+        ("GAS_STATION_DID_GAS_LIMIT", "1000000".to_owned()),
+        ("GAS_STATION_RATE_GAS_BUDGET_PER_DAY", "2000000".to_owned()),
+        ("GAS_STATION_RATE_BALANCE_FLOOR", "100".to_owned()),
+        ("GAS_STATION_BROWSER_ORIGINS", "https://app.test".to_owned()),
+        ("GAS_STATION_RELAYER_KEY", relayer_secret.clone()),
+        ("GAS_STATION_RATE_OWNER_KEY", owner_secret.clone()),
+    ]
+    .into_iter()
+    .collect();
+    let mut listed = Vec::new();
+    for line in include_str!("../../../deploy/gas-station/railway.env.example").lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (key, value) = line.split_once('=').ok_or("env line without '='")?;
+        let value = if value.is_empty() || value == "SEQUENCER_RPC_URL" {
+            fills
+                .remove(key)
+                .ok_or_else(|| format!("no test value for {key}"))?
+        } else {
+            value.to_owned()
+        };
+        std::env::set_var(key, value);
+        listed.push(key);
+    }
+    assert_eq!(fills.into_keys().collect::<Vec<_>>(), Vec::<&str>::new());
+    assert!(listed.contains(&"GAS_STATION_DID_GAS_LIMIT"));
+
+    let var = |key: &str| std::env::var(key);
+    let endpoints = var("GAS_STATION_ENDPOINTS")?
+        .split(' ')
+        .map(|url| format!("\"{url}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let rendered = format!(
+        r#"{{"listen":"{}","gas_limit":{},"max_priority_fee_per_gas":{},"chain_id":{},"endpoints":[{}],"paymaster":"{}","token":"{}","decimals":{},"max_rate_age":{},"spread_bps":{},"margin_bps":{},"per_account_limit":{},"per_interval_limit":{},"per_quote_limit":{},"interval_seconds":{},"balance_floor":{},"relayer_key_env":"{}"}}"#,
+        var("GAS_STATION_LISTEN")?,
+        var("GAS_STATION_GAS_LIMIT")?,
+        var("GAS_STATION_MAX_PRIORITY_FEE_PER_GAS")?,
+        var("GAS_STATION_CHAIN_ID")?,
+        endpoints,
+        var("GAS_STATION_PAYMASTER")?,
+        var("GAS_STATION_TOKEN")?,
+        var("GAS_STATION_DECIMALS")?,
+        var("GAS_STATION_MAX_RATE_AGE")?,
+        var("GAS_STATION_SPREAD_BPS")?,
+        var("GAS_STATION_MARGIN_BPS")?,
+        var("GAS_STATION_PER_ACCOUNT_LIMIT")?,
+        var("GAS_STATION_PER_INTERVAL_LIMIT")?,
+        var("GAS_STATION_PER_QUOTE_LIMIT")?,
+        var("GAS_STATION_INTERVAL_SECONDS")?,
+        var("GAS_STATION_BALANCE_FLOOR")?,
+        var("GAS_STATION_RELAYER_KEY_ENV")?,
+    );
+    let config = ServiceConfig::parse(&rendered)?;
+    assert_eq!(config.station.relayer_key_env, "GAS_STATION_RELAYER_KEY");
+
+    let signer = LocalSigner::from_config(&config.station)?;
+    let sponsor = signer.address();
+    let (account, account_secret) = ephemeral_signer(&station_config("DEPLOY"))?;
+    let mut fixture =
+        with_sequencer_endpoint_rules(serde_json::from_str(include_str!("fixtures/cycle.json"))?)?;
+    fixture["phases"]["submit"]
+        .as_array_mut()
+        .ok_or("fixture without a submit phase")?
+        .insert(
+            0,
+            json!({"method": "eth_chainId", "params": [],
+                "result": format!("{:#x}", config.station.chain_id)}),
+        );
+    let recorded = recording(sponsor, account.address(), fixture)?;
+    let journal_path = |role: &str| {
+        std::env::temp_dir().join(format!(
+            "paxeer-service-deploy-{role}-{}.jsonl",
+            std::process::id()
+        ))
+    };
+    let (journal, refused_journal) = (journal_path("served"), journal_path("refused"));
+    for path in [&journal, &refused_journal] {
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+    }
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    let log = SharedLog(Arc::new(Mutex::new(Vec::new())));
+    spawn_service(
+        config.clone(),
+        signer,
+        Arc::clone(&recorded),
+        journal.clone(),
+        listener,
+        log.clone(),
+    )?;
+    let harness = Harness {
+        address,
+        recorded,
+        account,
+        sponsor,
+        secrets: vec![relayer_secret, owner_secret, account_secret],
+        log,
+        journal,
+    };
+    let (status, body) = harness.exchange(b"GET /healthz HTTP/1.1\r\nHost: station\r\n\r\n")?;
+    assert_eq!((status, body), (200, json!({"status": "ok"})));
+    harness.assert_log_clean(&["/healthz 200"]);
+
+    let station = || -> Result<_, Box<dyn std::error::Error>> {
+        Ok(GasStation::new(
+            config.station.clone(),
+            LocalSigner::from_config(&config.station)?,
+            ConfiguredRpc::new(
+                &config.station,
+                ReplayExchange(Arc::clone(&harness.recorded)),
+            )?,
+            PaymasterRateSource::new(
+                ConfiguredRpc::new(
+                    &config.station,
+                    ReplayExchange(Arc::clone(&harness.recorded)),
+                )?,
+                config.station.paymaster,
+            ),
+            Journal::open(&refused_journal)?,
+        ))
+    };
+    let documented = var("GAS_STATION_DID_GAS_LIMIT")?;
+    std::env::remove_var("GAS_STATION_DID_GAS_LIMIT");
+    assert!(matches!(station()?, Err(StationError::Invalid)));
+    std::env::set_var("GAS_STATION_DID_GAS_LIMIT", documented);
+    assert!(station()?.is_ok());
+
+    for key in listed {
+        std::env::remove_var(key);
+    }
+    std::fs::remove_file(&refused_journal)?;
     harness.finish()
 }
