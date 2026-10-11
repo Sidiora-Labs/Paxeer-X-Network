@@ -73,6 +73,7 @@ type Market struct {
 	CreationTime         int64       `json:"creation_time"`
 	CumulativeVolume     sdk.Int     `json:"cumulative_volume"`
 	PriceSnapshots       []sdk.Int   `json:"price_snapshots"`
+	SnapshotHeights      []uint64    `json:"snapshot_heights"`
 	SnapshotIndex        uint64      `json:"snapshot_index"`
 	SnapshotCount        uint64      `json:"snapshot_count"`
 	AccumulatedQuoteFees sdk.Int     `json:"accumulated_quote_fees"`
@@ -141,6 +142,9 @@ func (m Market) Validate() error {
 	}
 	if len(m.PriceSnapshots) != SnapshotSlots || m.SnapshotIndex >= SnapshotSlots || m.SnapshotCount > SnapshotSlots {
 		return fmt.Errorf("%w: snapshot ring", ErrInvalidMarket)
+	}
+	if len(m.SnapshotHeights) != 0 && len(m.SnapshotHeights) != SnapshotSlots {
+		return fmt.Errorf("%w: snapshot heights", ErrInvalidMarket)
 	}
 	for _, price := range m.PriceSnapshots {
 		if err := nonNegative("price snapshot", price); err != nil {

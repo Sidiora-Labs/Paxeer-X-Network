@@ -48,28 +48,38 @@ type HoldingCheckpoint struct {
 	Balance sdk.Int `json:"balance"`
 }
 
+type ProtocolFeeEntry struct {
+	Token  string  `json:"token"`
+	Amount sdk.Int `json:"amount"`
+}
+
 type GenesisState struct {
-	Params              Params               `json:"params"`
-	Markets             []Market             `json:"markets"`
-	AirdropEpochs       []AirdropEpochAmount `json:"airdrop_epochs"`
-	AirdropClaims       []AirdropClaim       `json:"airdrop_claims"`
-	ProtocolFeesPending sdk.Int              `json:"protocol_fees_pending"`
-	AirdropBases        []AirdropEpochBasis  `json:"airdrop_bases,omitempty"`
-	HoldingHistories    []HoldingHistory     `json:"holding_histories,omitempty"`
-	HoldingCheckpoints  []HoldingCheckpoint  `json:"holding_checkpoints,omitempty"`
+	Params             Params               `json:"params"`
+	Markets            []Market             `json:"markets"`
+	AirdropEpochs      []AirdropEpochAmount `json:"airdrop_epochs"`
+	AirdropClaims      []AirdropClaim       `json:"airdrop_claims"`
+	ProtocolFees       []ProtocolFeeEntry   `json:"protocol_fees"`
+	AirdropBases       []AirdropEpochBasis  `json:"airdrop_bases,omitempty"`
+	HoldingHistories   []HoldingHistory     `json:"holding_histories,omitempty"`
+	HoldingCheckpoints []HoldingCheckpoint  `json:"holding_checkpoints,omitempty"`
 }
 
 func DefaultGenesis() *GenesisState {
 	return &GenesisState{Params: DefaultParams(), Markets: []Market{}, AirdropEpochs: []AirdropEpochAmount{},
-		AirdropClaims: []AirdropClaim{}, ProtocolFeesPending: sdk.ZeroInt()}
+		AirdropClaims: []AirdropClaim{}, ProtocolFees: []ProtocolFeeEntry{}}
 }
 
 func (gs GenesisState) Validate() error {
 	if err := gs.Params.Validate(); err != nil {
 		return err
 	}
-	if gs.ProtocolFeesPending.IsNil() || gs.ProtocolFeesPending.IsNegative() {
-		return fmt.Errorf("%w: protocol fees pending", ErrInvalidGenesis)
+	feeTokens := map[string]bool{}
+	for _, entry := range gs.ProtocolFees {
+		if sdk.ValidateDenom(entry.Token) != nil || feeTokens[entry.Token] || entry.Amount.IsNil() ||
+			entry.Amount.IsNegative() || entry.Amount.BigInt().Cmp(MaxUint256()) > 0 {
+			return fmt.Errorf("%w: protocol fees %s", ErrInvalidGenesis, entry.Token)
+		}
+		feeTokens[entry.Token] = true
 	}
 	denoms := map[string]Market{}
 	indexes := map[uint64]bool{}

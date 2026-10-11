@@ -2,6 +2,7 @@ package launchpad_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -192,6 +193,7 @@ func TestRequiredGasIsPinned(t *testing.T) {
 		{h.input(launchpad.PauseMethod, token), 3000 + 16*32 + 5000},
 		{h.input(launchpad.UnpauseMethod, token), 3000 + 16*32 + 5000},
 		{h.input(launchpad.QuoteBuyMethod, token, big.NewInt(1)), 3000 + 16*64},
+		{h.input(launchpad.GetProtocolFeesMethod, token), 3000 + 16*32},
 		{h.input(launchpad.GetMarketsMethod, big.NewInt(0), big.NewInt(10)), 3000 + 16*64},
 		{h.input(launchpad.GetMarketCountMethod), 3000},
 		{h.input(launchpad.GetConfigMethod), 3000},
@@ -200,6 +202,7 @@ func TestRequiredGasIsPinned(t *testing.T) {
 	}
 	require.Equal(t, uint64(9_066_584), h.precompile.RequiredGas(h.input(launchpad.CreateMarketMethod, "Kindle Token", "KNDL", uint8(0))))
 	require.Equal(t, uint64(45_560), h.precompile.RequiredGas(h.input(launchpad.BuyMethod, token, big.NewInt(1), big.NewInt(0), token, deadline)))
+	require.Equal(t, crypto.Keccak256([]byte("getProtocolFees(address)"))[:4], h.method(launchpad.GetProtocolFeesMethod).ID)
 }
 
 func TestNewPrecompileNeedsTheLaunchpadKeeper(t *testing.T) {
@@ -239,6 +242,7 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	require.Equal(t, big.NewInt(1000), config.ProtocolFeeBps)
 	require.Equal(t, big.NewInt(100_000_000), config.CreationFee)
 	require.Equal(t, big.NewInt(300), h.view(launchpad.GetFeeBpsMethod, token)[0])
+	require.Equal(t, 0, h.view(launchpad.GetProtocolFeesMethod, token)[0].(*big.Int).Sign())
 
 	quoted := h.view(launchpad.QuoteBuyMethod, token, big.NewInt(100_000_000))
 	require.Equal(t, []interface{}{big.NewInt(9_606_813_905_120), big.NewInt(300), big.NewInt(3_000_000)}, quoted)
@@ -247,6 +251,7 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	require.Equal(t, sdk.NewInt(9_606_813_905_120), h.balance(h.callerAcc, denom))
 	require.Equal(t, sdk.NewInt(800_000_000), h.balance(h.callerAcc, quote))
 	require.Equal(t, sdk.NewInt(100_300_000), h.balance(h.keeper.TreasuryAddress(), quote))
+	require.Equal(t, big.NewInt(300_000), h.view(launchpad.GetProtocolFeesMethod, token)[0])
 	swaps := h.logs("Swap(address,address,address,bool,uint256,uint256,uint256,uint256)")
 	require.Len(t, swaps, 1)
 	require.Equal(t, []common.Hash{swaps[0].Topics[0], addressTopic(token), addressTopic(h.caller), addressTopic(h.caller)}, swaps[0].Topics)
@@ -270,8 +275,8 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	require.Equal(t, big.NewInt(1), snapshots[2])
 	require.Equal(t, big.NewInt(2_700_000), h.view(launchpad.GetAccumulatedFeesMethod, token)[0])
 
-	require.Contains(t, h.reverts(h.caller, launchpad.SellMethod, token, big.NewInt(4_803_406_952_560),
-		big.NewInt(47_278_913), h.caller, deadline), "slippage")
+	require.Equal(t, "LXP_LAUNCHPAD_SLIPPAGE_EXCEEDED", h.reverts(h.caller, launchpad.SellMethod, token,
+		big.NewInt(4_803_406_952_560), big.NewInt(47_278_913), h.caller, deadline))
 	require.Equal(t, []interface{}{big.NewInt(47_278_912), big.NewInt(300), big.NewInt(144_102_208_576)},
 		h.view(launchpad.QuoteSellMethod, token, big.NewInt(4_803_406_952_560)))
 	out = h.call(h.caller, launchpad.SellMethod, token, big.NewInt(4_803_406_952_560), big.NewInt(47_278_912), h.caller, deadline)
@@ -280,20 +285,64 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	market = h.market(token)
 	require.Equal(t, big.NewInt(49_721_088), market.RealQuoteBalance)
 	require.Equal(t, big.NewInt(144_102_208_576), market.AccumulatedTokenFees)
+	require.Equal(t, big.NewInt(300_000), h.view(launchpad.GetProtocolFeesMethod, token)[0])
 	require.Len(t, h.logs("FeeRecorded(address,uint256,uint256,uint256)"), 1, "a sell records no quote fee")
 
 	_, other := h.fund(10)
 	require.Contains(t, h.reverts(other, launchpad.BuyMethod, token, big.NewInt(1_000_000), big.NewInt(0), other, deadline),
 		"insufficient funds")
-	require.Contains(t, h.reverts(h.caller, launchpad.BuyMethod, token, big.NewInt(1_000_000), big.NewInt(0), common.Address{}, deadline),
-		"zero address")
-	require.Contains(t, h.reverts(h.caller, launchpad.BuyMethod, token, big.NewInt(1_000_000), big.NewInt(0), h.caller,
-		big.NewInt(genesisTime.Unix()-1)), "deadline")
-	require.Contains(t, h.reverts(h.caller, launchpad.BuyMethod, h.caller, big.NewInt(1_000_000), big.NewInt(0), h.caller, deadline),
-		"unknown market")
-	require.Contains(t, h.reverts(h.caller, launchpad.CreateMarketMethod, "Kindle Token", "KNDL", uint8(4)), "strategy")
+	require.Equal(t, "LXP_LAUNCHPAD_ZERO_ADDRESS", h.reverts(h.caller, launchpad.BuyMethod, token,
+		big.NewInt(1_000_000), big.NewInt(0), common.Address{}, deadline))
+	require.Equal(t, "LXP_LAUNCHPAD_DEADLINE_EXPIRED", h.reverts(h.caller, launchpad.BuyMethod, token,
+		big.NewInt(1_000_000), big.NewInt(0), h.caller, big.NewInt(genesisTime.Unix()-1)))
+	require.Equal(t, fmt.Sprintf("LXP_LAUNCHPAD_UNKNOWN_MARKET: token %s", h.caller.Hex()),
+		h.reverts(h.caller, launchpad.BuyMethod, h.caller, big.NewInt(1_000_000), big.NewInt(0), h.caller, deadline))
+	require.Equal(t, "LXP_LAUNCHPAD_INVALID_STRATEGY: 4", h.reverts(h.caller, launchpad.CreateMarketMethod,
+		"Kindle Token", "KNDL", uint8(4)))
+	h.call(h.caller, launchpad.PauseMethod, token)
+	pausedMarket := h.market(token)
+	quoteBalance, tokenBalance := h.balance(h.callerAcc, quote), h.balance(h.callerAcc, denom)
+	require.Equal(t, "LXP_LAUNCHPAD_PAUSED", h.reverts(h.caller, launchpad.SellMethod, token,
+		big.NewInt(1), big.NewInt(0), h.caller, deadline))
+	sameJSON(t, pausedMarket, h.market(token))
+	require.Equal(t, quoteBalance, h.balance(h.callerAcc, quote))
+	require.Equal(t, tokenBalance, h.balance(h.callerAcc, denom))
+	require.Equal(t, big.NewInt(300_000), h.view(launchpad.GetProtocolFeesMethod, token)[0])
 	message, broken := launchpadkeeper.SolvencyInvariant(h.keeper)(h.stateDB.Ctx())
 	require.False(t, broken, message)
+	t.Run("TestGetProtocolFeesPerMarket", TestGetProtocolFeesPerMarket)
+}
+
+func TestGetProtocolFeesPerMarket(t *testing.T) {
+	h := newHarness(t)
+	params := h.keeper.GetParams(h.stateDB.Ctx())
+	params.MinFeeBps, params.MaxFeeBps, params.BaseFeeBps = 100, 100, 100
+	params.ProtocolFeeBps = 2000
+	require.NoError(t, h.keeper.UpdateParams(h.stateDB.Ctx(), h.keeper.Authority(), params))
+	first, firstDenom := h.create()
+	second, secondDenom := h.create()
+	require.NotEqual(t, first, second)
+	require.NotEqual(t, firstDenom, secondDenom)
+	require.Equal(t, 0, h.view(launchpad.GetProtocolFeesMethod, first)[0].(*big.Int).Sign())
+	require.Equal(t, 0, h.view(launchpad.GetProtocolFeesMethod, second)[0].(*big.Int).Sign())
+	h.call(h.caller, launchpad.BuyMethod, first, big.NewInt(10_000), big.NewInt(0), h.caller, deadline)
+	require.Equal(t, big.NewInt(20), h.view(launchpad.GetProtocolFeesMethod, first)[0])
+	require.Equal(t, 0, h.view(launchpad.GetProtocolFeesMethod, second)[0].(*big.Int).Sign())
+	h.call(h.caller, launchpad.BuyMethod, second, big.NewInt(10_000), big.NewInt(0), h.caller, deadline)
+	require.Equal(t, big.NewInt(20), h.view(launchpad.GetProtocolFeesMethod, first)[0])
+	require.Equal(t, big.NewInt(20), h.view(launchpad.GetProtocolFeesMethod, second)[0])
+	for _, denom := range []string{firstDenom, secondDenom} {
+		fees, err := h.keeper.GetProtocolFees(h.stateDB.Ctx(), denom)
+		require.NoError(t, err)
+		require.Equal(t, sdk.NewInt(20), fees)
+	}
+	require.Equal(t, []string{"quoteDenom", "virtualQuoteDefault", "virtualTokenDefault", "minFeeBps", "maxFeeBps",
+		"baseFeeBps", "protocolFeeBps", "feeDecayRate", "volatilityWeight", "concentrationWeight", "creationFee"},
+		h.method(launchpad.GetConfigMethod).Outputs[0].Type.TupleRawNames)
+	config := *abi.ConvertType(h.view(launchpad.GetConfigMethod)[0], new(launchpad.Config)).(*launchpad.Config)
+	require.Equal(t, big.NewInt(2000), config.ProtocolFeeBps)
+	_, reason := h.run(h.caller, launchpad.GetProtocolFeesMethod, nil, true, false, h.caller)
+	require.Equal(t, fmt.Sprintf("LXP_LAUNCHPAD_UNKNOWN_MARKET: token %s", h.caller.Hex()), reason)
 }
 
 func TestFeeRightsAndGuardianThroughThePrecompile(t *testing.T) {

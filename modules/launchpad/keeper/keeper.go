@@ -111,9 +111,9 @@ func (k *Keeper) GetProtocolFees(ctx sdk.Context, denom string) (sdk.Int, error)
 	}
 	var out sdk.Int
 	if err := out.Unmarshal(bz); err != nil {
-		return sdk.Int{}, fmt.Errorf("launchpad: corrupt protocol fees for %s: %w", denom, err)
+		return sdk.Int{}, fmt.Errorf("%w: protocol fees %s: %v", types.ErrOverflow, denom, err)
 	}
-	if out.IsNegative() {
+	if out.IsNil() || out.IsNegative() || out.BigInt().Cmp(types.MaxUint256()) > 0 {
 		return sdk.Int{}, types.ErrOverflow
 	}
 	return out, nil
@@ -123,7 +123,7 @@ func (k *Keeper) setProtocolFees(ctx sdk.Context, denom string, value sdk.Int) e
 	if denom == "" {
 		return types.ErrUnknownMarket
 	}
-	if value.IsNil() || value.IsNegative() {
+	if value.IsNil() || value.IsNegative() || value.BigInt().Cmp(types.MaxUint256()) > 0 {
 		return types.ErrOverflow
 	}
 	bz, err := value.Marshal()

@@ -15,7 +15,11 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 	if err := k.setParams(ctx, gs.Params); err != nil {
 		panic(err)
 	}
-	k.setProtocolFeesPending(ctx, gs.ProtocolFeesPending)
+	for _, entry := range gs.ProtocolFees {
+		if err := k.setProtocolFees(ctx, entry.Token, entry.Amount); err != nil {
+			panic(err)
+		}
+	}
 	for _, market := range gs.Markets {
 		k.setMarket(ctx, market)
 		k.indexMarket(ctx, market)
@@ -49,7 +53,16 @@ func (k *Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) {
 func (k *Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	gs := types.DefaultGenesis()
 	gs.Params = k.GetParams(ctx)
-	gs.ProtocolFeesPending = k.GetProtocolFeesPending(ctx)
+	fees := sdk.KVStorePrefixIterator(k.store(ctx), types.ProtocolFeesPrefix)
+	defer fees.Close()
+	for ; fees.Valid(); fees.Next() {
+		token := string(fees.Key()[len(types.ProtocolFeesPrefix):])
+		amount, err := k.GetProtocolFees(ctx, token)
+		if err != nil {
+			panic(err)
+		}
+		gs.ProtocolFees = append(gs.ProtocolFees, types.ProtocolFeeEntry{Token: token, Amount: amount})
+	}
 	k.IterateMarkets(ctx, func(market types.Market) bool {
 		gs.Markets = append(gs.Markets, market)
 		for epoch := uint64(1); epoch <= market.AirdropEpoch; epoch++ {

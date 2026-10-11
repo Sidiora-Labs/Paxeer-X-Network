@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+uint256 constant LAUNCHPAD_ABI_MAJOR = 2;
+
 address constant LAUNCHPAD_PRECOMPILE_ADDRESS = 0x0000000000000000000000000000000000001017;
 
 ILaunchpad constant LAUNCHPAD_CONTRACT = ILaunchpad(LAUNCHPAD_PRECOMPILE_ADDRESS);
@@ -65,7 +67,6 @@ interface ILaunchpad {
         uint256 volatilityWeight;
         uint256 concentrationWeight;
         uint256 creationFee;
-        uint256 protocolFeesPending;
     }
 
     event MarketCreated(address indexed token, address indexed creator, string denom, string name, string symbol, uint8 feeStrategy);
@@ -103,5 +104,6 @@ interface ILaunchpad {
     function getMarketsByCreator(address creator) external view returns (Market[] memory);
     function getMarketCount() external view returns (uint256);
     function getAccumulatedFees(address token) external view returns (uint256);
+    function getProtocolFees(address token) external view returns (uint256);
     function getConfig() external view returns (Config memory);
 }

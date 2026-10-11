@@ -82,7 +82,8 @@ func (k *Keeper) CreateMarket(ctx sdk.Context, evm *vm.EVM, creator sdk.AccAddre
 		Creator: creator.String(), Guardian: creator.String(), FeeRightsHolder: creator.String(), FeeStrategy: strategy,
 		TotalSupply: supply, VirtualQuoteReserve: params.VirtualQuoteDefault, RealQuoteBalance: sdk.ZeroInt(),
 		TokenReserve: supply, CreationTime: ctx.BlockTime().Unix(), CumulativeVolume: sdk.ZeroInt(),
-		PriceSnapshots: snapshots, AccumulatedQuoteFees: sdk.ZeroInt(), AccumulatedTokenFees: sdk.ZeroInt(),
+		PriceSnapshots: snapshots, SnapshotHeights: make([]uint64, types.SnapshotSlots),
+		AccumulatedQuoteFees: sdk.ZeroInt(), AccumulatedTokenFees: sdk.ZeroInt(),
 		AccumulatedFees: sdk.ZeroInt(), AirdropBalance: sdk.ZeroInt(),
 	}
 	k.setMarket(ctx, market)

@@ -12,6 +12,8 @@ import (
 
 	"encoding/json"
 	"math/big"
+	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,12 +22,16 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachemulti"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/multiversion"
+	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 )
 
 const quote = types.DefaultQuoteDenom
@@ -191,7 +197,9 @@ func TestSwapVectors(t *testing.T) {
 	require.Equal(t, uint64(1), m.SnapshotCount)
 	require.Equal(t, i(9_606_813_905_120), e.balance(alice, denom))
 	require.Equal(t, i(100_300_000), e.balance(e.k.TreasuryAddress(), quote))
-	require.Equal(t, i(300_000), e.k.GetProtocolFeesPending(e.ctx))
+	protocolFees, err := e.k.GetProtocolFees(e.ctx, denom)
+	require.NoError(t, err)
+	require.Equal(t, i(300_000), protocolFees)
 
 	tokenReserveBefore := m.TokenReserve
 	sell := e.swap(alice, denom, false, 4_803_406_952_560)
@@ -235,7 +243,22 @@ func TestSnapshotRingWraps(t *testing.T) {
 	creator := e.account(100_000_000)
 	alice := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
+	require.Equal(t, make([]uint64, types.SnapshotSlots), e.market(denom).SnapshotHeights)
+	legacy := e.k.ExportGenesis(e.ctx)
+	legacy.Markets[0].SnapshotHeights = nil
+	require.NoError(t, legacy.Validate())
+	e.k.InitGenesis(e.ctx, *legacy)
+	for _, length := range []int{1, types.SnapshotSlots - 1, types.SnapshotSlots + 1} {
+		invalid := legacy.Markets[0]
+		invalid.SnapshotHeights = make([]uint64, length)
+		require.ErrorIs(t, invalid.Validate(), types.ErrInvalidMarket)
+	}
 	for n := 0; n < types.SnapshotSlots+2; n++ {
+		e.ctx = e.ctx.WithBlockHeight(int64(n + 1))
+		before := e.market(denom)
+		_, err := e.k.QuoteBuy(e.ctx, denom, b(1_000_000))
+		require.NoError(t, err)
+		sameJSON(t, before, e.market(denom))
 		e.swap(alice, denom, true, 1_000_000)
 	}
 	m := e.market(denom)
@@ -244,6 +267,8 @@ func TestSnapshotRingWraps(t *testing.T) {
 	price, err := m.Price()
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewIntFromBigInt(price), m.PriceSnapshots[1])
+	require.Equal(t, []uint64{9, 10, 3, 4, 5, 6, 7, 8}, m.SnapshotHeights)
+	require.NoError(t, m.Validate())
 }
 
 // TestQuoteConservation checks, after every swap of a buy/sell sequence by
@@ -307,30 +332,42 @@ func TestQuoteConservation(t *testing.T) {
 func TestSwapRejections(t *testing.T) {
 	e := newEnv(t)
 	creator := e.account(100_000_000)
-	alice := e.account(1_000_000_000)
+	trader := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
 	e.at(time.Hour)
 	swap := func(isBuy bool, amount, minOut int64, recipient sdk.AccAddress, deadline uint64) error {
-		_, err := e.k.Swap(e.ctx, alice, denom, isBuy, b(amount), b(minOut), recipient, deadline)
+		_, err := e.k.Swap(e.ctx, trader, denom, isBuy, b(amount), b(minOut), recipient, deadline)
 		return err
 	}
 	now := uint64(genesisTime.Add(time.Hour).Unix())
-	require.ErrorIs(t, swap(true, 1_000_000, 0, alice, now-1), types.ErrDeadlineExpired)
-	require.NoError(t, swap(true, 1_000_000, 0, alice, now), "the deadline block itself is allowed")
-	require.ErrorIs(t, swap(true, 0, 0, alice, now), types.ErrInsufficientInput)
+	require.ErrorIs(t, swap(true, 1_000_000, 0, trader, now-1), types.ErrDeadlineExpired)
+	require.NoError(t, swap(true, 1_000_000, 0, trader, now), "the deadline block itself is allowed")
+	require.ErrorIs(t, swap(true, 0, 0, trader, now), types.ErrInsufficientInput)
 	require.ErrorIs(t, swap(true, 1_000_000, 0, nil, now), types.ErrZeroAddress)
-	require.ErrorIs(t, swap(true, 1_000_000, 1_000_000_000_000_000, alice, now), types.ErrSlippageExceeded)
-	require.ErrorIs(t, swap(false, 1, 1_000_000_000, alice, now), types.ErrSlippageExceeded)
-	require.Error(t, swap(true, 2_000_000_000, 0, alice, now), "more quote than alice holds")
-	_, err := e.k.Swap(e.ctx, alice, "factory/nobody/lp9", true, b(1), b(0), alice, now)
+	before := e.k.ExportGenesis(e.ctx)
+	quoteBefore := e.balance(trader, quote)
+	tokenBefore := e.balance(trader, denom)
+	require.ErrorIs(t, swap(true, 1_000_000, 1_000_000_000_000_000, trader, now), types.ErrSlippageExceeded)
+	require.ErrorIs(t, swap(false, 1, 1_000_000_000, trader, now), types.ErrSlippageExceeded)
+	sameJSON(t, before, e.k.ExportGenesis(e.ctx))
+	require.Equal(t, quoteBefore, e.balance(trader, quote))
+	require.Equal(t, tokenBefore, e.balance(trader, denom))
+	require.NoError(t, e.k.Pause(e.ctx, creator, denom))
+	paused := e.k.ExportGenesis(e.ctx)
+	require.ErrorIs(t, swap(true, 1_000_000, 0, trader, now), types.ErrPaused)
+	require.ErrorIs(t, swap(false, 1, 0, trader, now), types.ErrPaused)
+	sameJSON(t, paused, e.k.ExportGenesis(e.ctx))
+	require.NoError(t, e.k.Unpause(e.ctx, creator, denom))
+	require.Error(t, swap(true, 2_000_000_000, 0, trader, now), "more quote than trader holds")
+	_, err := e.k.Swap(e.ctx, trader, "factory/nobody/lp9", true, b(1), b(0), trader, now)
 	require.ErrorIs(t, err, types.ErrUnknownMarket)
 
 	// The virtual floor: a sell may never pay out virtual quote. Genesis
-	// state with no real quote left behind the tokens alice holds.
+	// state with no real quote left behind the tokens trader holds.
 	gs := e.k.ExportGenesis(e.ctx)
 	gs.Markets[0].RealQuoteBalance = sdk.ZeroInt()
 	e.k.InitGenesis(e.ctx, *gs)
-	require.ErrorIs(t, swap(false, e.balance(alice, denom).Int64(), 0, alice, now), types.ErrVirtualFloorBreached)
+	require.ErrorIs(t, swap(false, e.balance(trader, denom).Int64(), 0, trader, now), types.ErrVirtualFloorBreached)
 }
 
 func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
@@ -345,7 +382,175 @@ func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
 	require.Equal(t, b(9_000_000), result.PoolCut)
 	require.Equal(t, treasury.AddRaw(1_000_000), e.balance(e.k.TreasuryAddress(), quote))
 	require.Equal(t, i(9_000_000), e.market(denom).AccumulatedFees)
-	require.Equal(t, i(1_000_000), e.k.GetProtocolFeesPending(e.ctx))
+	protocolFees, err := e.k.GetProtocolFees(e.ctx, denom)
+	require.NoError(t, err)
+	require.Equal(t, i(1_000_000), protocolFees)
+	t.Run("fee_split_and_solvency", func(t *testing.T) {
+		e := newEnv(t)
+		params := e.k.GetParams(e.ctx)
+		params.ProtocolFeeBps = 2000
+		require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
+		creator := e.account(200_000_000)
+		trader := e.account(1_000_000_000)
+		markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
+			e.create(creator, types.FeeStrategyClaim).Denom}
+		treasury := e.balance(e.k.TreasuryAddress(), quote)
+		result := e.swap(trader, markets[0], true, 3334)
+		require.Equal(t, b(100), result.FeeAmount)
+		require.Equal(t, b(20), result.ProtocolCut)
+		require.Equal(t, b(80), result.PoolCut)
+		require.Equal(t, treasury.AddRaw(20), e.balance(e.k.TreasuryAddress(), quote))
+		require.Equal(t, i(80), e.market(markets[0]).AccumulatedFees)
+		e.solvent()
+		protocol := []sdk.Int{i(20), sdk.ZeroInt()}
+		pool := []sdk.Int{i(80), sdk.ZeroInt()}
+		random := rand.New(rand.NewSource(1))
+		for n := 0; n < 50; n++ {
+			index := random.Intn(len(markets))
+			denom := markets[index]
+			isBuy := random.Intn(2) == 0 || e.balance(trader, denom).IsZero()
+			amount := int64(random.Intn(1_000_000) + 1)
+			if !isBuy {
+				amount = e.balance(trader, denom).QuoRaw(int64(random.Intn(4) + 2)).Int64()
+			}
+			result := e.swap(trader, denom, isBuy, amount)
+			protocol[index] = protocol[index].Add(sdk.NewIntFromBigInt(result.ProtocolCut))
+			pool[index] = pool[index].Add(sdk.NewIntFromBigInt(result.PoolCut))
+			fees, err := e.k.GetProtocolFees(e.ctx, denom)
+			require.NoError(t, err)
+			require.Equal(t, protocol[index], fees)
+			require.Equal(t, pool[index], e.market(denom).AccumulatedFees)
+			require.Equal(t, treasury.Add(protocol[0]).Add(protocol[1]), e.balance(e.k.TreasuryAddress(), quote))
+			e.solvent()
+		}
+	})
+}
+
+func TestProtocolFeesPerMarket(t *testing.T) {
+	e := newEnv(t)
+	params := e.k.GetParams(e.ctx)
+	params.ProtocolFeeBps = 2000
+	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
+	creator := e.account(200_000_000)
+	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
+	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
+		e.create(creator, types.FeeStrategyClaim).Denom}
+	key := sdk.NewKVStoreKey(types.StoreKey)
+	store := e.ctx.KVStore(key)
+	for index, denom := range markets {
+		fees, err := e.k.GetProtocolFees(e.ctx, denom)
+		require.NoError(t, err)
+		require.Equal(t, sdk.ZeroInt(), fees)
+		require.NoError(t, e.k.AddProtocolFees(e.ctx, denom, sdk.ZeroInt()))
+		require.False(t, store.Has(types.ProtocolFeesKey(denom)))
+		result := e.swap(traders[index], denom, true, 3334)
+		require.Equal(t, b(100), result.FeeAmount)
+		require.Equal(t, b(20), result.ProtocolCut)
+		fees, err = e.k.GetProtocolFees(e.ctx, denom)
+		require.NoError(t, err)
+		require.Equal(t, i(20), fees)
+		require.Equal(t, []byte("20"), store.Get(types.ProtocolFeesKey(denom)))
+	}
+	require.NotEqual(t, types.ProtocolFeesKey(markets[0]), types.ProtocolFeesKey(markets[1]))
+	require.False(t, store.Has(types.ProtocolFeesPrefix))
+	e.solvent()
+	t.Run("bounds", func(t *testing.T) {
+		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], sdk.Int{}), types.ErrOverflow)
+		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(-1)), types.ErrOverflow)
+		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, "", i(1)), types.ErrUnknownMarket)
+		_, err := e.k.GetProtocolFees(e.ctx, "")
+		require.ErrorIs(t, err, types.ErrUnknownMarket)
+		max := sdk.NewIntFromBigInt(types.MaxUint256())
+		require.NoError(t, e.k.AddProtocolFees(e.ctx, markets[0], max.SubRaw(20)))
+		fees, err := e.k.GetProtocolFees(e.ctx, markets[0])
+		require.NoError(t, err)
+		require.Equal(t, max, fees)
+		require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(1)), types.ErrOverflow)
+		fees, err = e.k.GetProtocolFees(e.ctx, markets[0])
+		require.NoError(t, err)
+		require.Equal(t, max, fees)
+		require.Equal(t, []byte("20"), store.Get(types.ProtocolFeesKey(markets[1])))
+		for _, corrupt := range [][]byte{[]byte("invalid"), []byte("-1"), []byte(new(big.Int).Add(types.MaxUint256(), b(1)).String())} {
+			store.Set(types.ProtocolFeesKey(markets[0]), corrupt)
+			_, err := e.k.GetProtocolFees(e.ctx, markets[0])
+			require.ErrorIs(t, err, types.ErrOverflow)
+			require.ErrorIs(t, e.k.AddProtocolFees(e.ctx, markets[0], i(1)), types.ErrOverflow)
+			require.Equal(t, corrupt, store.Get(types.ProtocolFeesKey(markets[0])))
+		}
+	})
+	t.Run("parallel_market_state", testProtocolFeeMarketStateIsolation)
+}
+
+func testProtocolFeeMarketStateIsolation(t *testing.T) {
+	e := newEnv(t)
+	params := e.k.GetParams(e.ctx)
+	params.ProtocolFeeBps = 2000
+	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
+	creator := e.account(200_000_000)
+	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
+	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
+		e.create(creator, types.FeeStrategyClaim).Denom}
+	key := sdk.NewKVStoreKey(types.StoreKey)
+	versions := multiversion.NewMultiVersionStore(e.ctx.MultiStore().GetKVStore(key))
+	app := testkeeper.EVMTestApp
+	transactionKeeper := keeper.NewKeeper(key, app.BankKeeper, tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
+	contexts := make([]sdk.Context, len(markets))
+	transactions := make([]*multiversion.VersionIndexedStore, len(markets))
+	for index := range markets {
+		parents := map[storetypes.StoreKey]storetypes.CacheWrapper{}
+		keys := map[string]storetypes.StoreKey{}
+		for _, parentKey := range e.ctx.MultiStore().StoreKeys() {
+			parents[parentKey] = e.ctx.MultiStore().GetStore(parentKey)
+			keys[parentKey.Name()] = parentKey
+		}
+		parents[key] = e.ctx.MultiStore().GetKVStore(key)
+		keys[key.Name()] = key
+		db := dbm.NewMemDB()
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		branch := cachemulti.NewStore(db, parents, keys, nil, nil, nil, 0)
+		transactions[index] = versions.VersionedIndexedStore(index, 0, nil)
+		branch.SetKVStores(func(storeKey storetypes.StoreKey, branchStore storetypes.KVStore) storetypes.CacheWrap {
+			if storeKey == key {
+				return transactions[index]
+			}
+			return branchStore.(storetypes.CacheWrap)
+		})
+		contexts[index] = e.ctx.WithMultiStore(branch).WithEventManager(sdk.NewEventManager()).
+			WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(e.ctx))
+	}
+	results := make([]keeper.SwapResult, len(markets))
+	errors := make([]error, len(markets))
+	var wait sync.WaitGroup
+	for index := range markets {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			results[index], errors[index] = transactionKeeper.Swap(contexts[index], traders[index], markets[index], true,
+				b(3334), b(0), traders[index], farDeadline)
+		}(index)
+	}
+	wait.Wait()
+	for index := range markets {
+		require.NoError(t, errors[index])
+		require.Equal(t, b(20), results[index].ProtocolCut)
+		fees, err := transactionKeeper.GetProtocolFees(contexts[index], markets[index])
+		require.NoError(t, err)
+		require.Equal(t, i(20), fees)
+		require.Equal(t, []byte("20"), transactions[index].GetWriteset()[string(types.ProtocolFeesKey(markets[index]))])
+		require.Len(t, transactions[index].GetWriteset(), 2)
+		_, global := transactions[index].GetWriteset()[string(types.ProtocolFeesPrefix)]
+		require.False(t, global)
+		transactions[index].WriteToMultiVersionStore()
+	}
+	for firstKey := range transactions[0].GetWriteset() {
+		_, shared := transactions[1].GetWriteset()[firstKey]
+		require.False(t, shared)
+	}
+	for index := range transactions {
+		valid, conflicts := versions.ValidateTransactionState(index)
+		require.True(t, valid)
+		require.Empty(t, conflicts)
+	}
 }
 
 func TestFeeStrategies(t *testing.T) {
@@ -507,25 +712,51 @@ func TestParamsChangeOnlyThroughGovernance(t *testing.T) {
 
 func TestGenesisRoundTrip(t *testing.T) {
 	e := newEnv(t)
+	params := e.k.GetParams(e.ctx)
+	params.ProtocolFeeBps = 2000
+	require.NoError(t, e.k.UpdateParams(e.ctx, e.k.Authority(), params))
 	creator := e.account(200_000_000)
-	alice := e.account(1_000_000_000)
+	trader := e.account(1_000_000_000)
 	first := e.create(creator, types.FeeStrategyClaim).Denom
-	e.create(creator, types.FeeStrategyLpRewards)
-	e.swap(alice, first, true, 50_000_000)
-	e.swap(alice, first, false, e.balance(alice, first).QuoRaw(2).Int64())
+	second := e.create(creator, types.FeeStrategyLpRewards).Denom
+	e.swap(trader, first, true, 3334)
+	e.swap(trader, second, true, 5834)
+	e.swap(trader, first, false, e.balance(trader, first).QuoRaw(2).Int64())
 	require.NoError(t, e.k.Pause(e.ctx, creator, first))
 	exported := e.k.ExportGenesis(e.ctx)
 	require.NoError(t, exported.Validate())
 	require.Len(t, exported.Markets, 2)
+	require.Equal(t, []types.ProtocolFeeEntry{{Token: first, Amount: i(20)}, {Token: second, Amount: i(35)}}, exported.ProtocolFees)
+	raw, err := json.Marshal(exported)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "protocol_fees_pending")
+	var decoded types.GenesisState
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	require.NoError(t, decoded.Validate())
 
 	fresh, ctx := launchpadtest.NewKeeper(testkeeper.EVMTestApp, e.ctx)
-	fresh.InitGenesis(ctx, *exported)
+	fresh.InitGenesis(ctx, decoded)
 	sameJSON(t, exported, fresh.ExportGenesis(ctx))
 	sameJSON(t, e.k.GetMarkets(e.ctx, 0, 10), fresh.GetMarkets(ctx, 0, 10))
 	pointer := common.HexToAddress(exported.Markets[0].Pointer)
 	market, found := fresh.GetMarketByPointer(ctx, pointer)
 	require.True(t, found)
 	require.True(t, market.Paused)
+	for index, denom := range []string{first, second} {
+		fees, err := fresh.GetProtocolFees(ctx, denom)
+		require.NoError(t, err)
+		require.Equal(t, exported.ProtocolFees[index].Amount, fees)
+	}
+	require.False(t, ctx.KVStore(sdk.NewKVStoreKey(types.StoreKey)).Has(types.ProtocolFeesPrefix))
+	for _, entries := range [][]types.ProtocolFeeEntry{
+		{{Token: first, Amount: i(20)}, {Token: first, Amount: i(35)}},
+		{{Token: first, Amount: i(-1)}}, {{Token: first, Amount: sdk.Int{}}}, {{Token: "", Amount: i(1)}},
+		{{Token: "!", Amount: i(1)}},
+	} {
+		invalid := *exported
+		invalid.ProtocolFees = entries
+		require.ErrorIs(t, invalid.Validate(), types.ErrInvalidGenesis)
+	}
 
 	broken := *exported
 	broken.Markets = []types.Market{exported.Markets[1]}

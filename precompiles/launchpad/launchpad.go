@@ -66,6 +66,7 @@ const (
 	GetMarketsByCreatorMethod  = "getMarketsByCreator"
 	GetMarketCountMethod       = "getMarketCount"
 	GetAccumulatedFeesMethod   = "getAccumulatedFees"
+	GetProtocolFeesMethod      = "getProtocolFees"
 	GetConfigMethod            = "getConfig"
 
 	MarketCreatedEvent      = "MarketCreated"
@@ -96,7 +97,7 @@ var f embed.FS
 // Keeper is the launchpad module surface the precompile drives.
 type Keeper interface {
 	GetParams(ctx sdk.Context) types.Params
-	GetProtocolFeesPending(ctx sdk.Context) sdk.Int
+	GetProtocolFees(ctx sdk.Context, denom string) (sdk.Int, error)
 	GetMarketCount(ctx sdk.Context) uint64
 	GetMarketByPointer(ctx sdk.Context, pointer common.Address) (types.Market, bool)
 	GetMarkets(ctx sdk.Context, offset, limit uint64) []types.Market
@@ -165,7 +166,6 @@ type Config struct {
 	VolatilityWeight    *big.Int
 	ConcentrationWeight *big.Int
 	CreationFee         *big.Int
-	ProtocolFeesPending *big.Int
 }
 
 type PrecompileExecutor struct {
@@ -325,6 +325,16 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 			return nil, err
 		}
 		return method.Outputs.Pack(market.AccumulatedFees.BigInt())
+	case GetProtocolFeesMethod:
+		market, err := p.market(ctx, args, 1)
+		if err != nil {
+			return nil, err
+		}
+		fees, err := p.keeper.GetProtocolFees(ctx, market.Denom)
+		if err != nil {
+			return nil, err
+		}
+		return method.Outputs.Pack(fees.BigInt())
 	case GetConfigMethod:
 		return method.Outputs.Pack(p.config(ctx))
 	}
@@ -404,8 +414,7 @@ func (p PrecompileExecutor) config(ctx sdk.Context) Config {
 		VirtualTokenDefault: params.VirtualTokenDefault.BigInt(), MinFeeBps: u(params.MinFeeBps),
 		MaxFeeBps: u(params.MaxFeeBps), BaseFeeBps: u(params.BaseFeeBps), ProtocolFeeBps: u(params.ProtocolFeeBps),
 		FeeDecayRate: u(params.FeeDecayRate), VolatilityWeight: u(params.VolatilityWeight),
-		ConcentrationWeight: u(params.ConcentrationWeight), CreationFee: params.CreationFee.BigInt(),
-		ProtocolFeesPending: p.keeper.GetProtocolFeesPending(ctx).BigInt()}
+		ConcentrationWeight: u(params.ConcentrationWeight), CreationFee: params.CreationFee.BigInt()}
 }
 
 // log emits one ABI event from the launchpad address: indexed values become

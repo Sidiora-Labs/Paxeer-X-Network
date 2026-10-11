@@ -153,6 +153,13 @@ func (k *Keeper) Swap(ctx sdk.Context, trader sdk.AccAddress, denom string, isBu
 	if minAmountOut != nil && result.AmountOut.Cmp(minAmountOut) < 0 {
 		return SwapResult{}, types.ErrSlippageExceeded
 	}
+	if ctx.BlockHeight() < 0 || (len(updated.SnapshotHeights) != 0 && len(updated.SnapshotHeights) != types.SnapshotSlots) {
+		return SwapResult{}, types.ErrInvalidMarket
+	}
+	heights := make([]uint64, types.SnapshotSlots)
+	copy(heights, updated.SnapshotHeights)
+	heights[market.SnapshotIndex] = uint64(ctx.BlockHeight())
+	updated.SnapshotHeights = heights
 
 	escrow := k.ModuleAddress()
 	inDenom, outDenom := denom, params.QuoteDenom
