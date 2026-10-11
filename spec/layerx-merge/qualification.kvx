@@ -1256,9 +1256,8 @@ observed_and_assumption = "verify passed (4 passed (TestEventTopics + 3 subtests
 revision = ""
 command = "cd human/wallet/sdk && npx vitest run test/modules.test.ts"
 exit_code = 1
-log_path = "logs/5.2.5-verify-1.log"
-observed_and_assumption = "verify passed (11 passed, 1 failed (the three 5.40.1-5.40.3 cases pass; the failure is the prior modules_gas_station flow case)). Gaps: caps() now takes grant ids (caps(grantIds) -> {fee, grants}) because no holder listing exists (contract clients.md O71 says list by holder comes from the indexer, absent); the consumer human/apps/wallet/src/surfaces/useSurface.ts:351 still calls caps(address) expecting WalletCapsState and needs its own task to switch; the layerxledger 0x101A precompile is not in the tree yet, so getPayerGrant answers in the test are ABI-encoded per ledger-auth.md B (selector 0x423fe4b2, 346-byte grant wire per src/ledger/lxp_receive.c read_grant) Unrelated: test/modules.test.ts modules_gas_station 'flow signs, assembles and submits' throws ModuleError unavailable: submissionStore (src/modules/gas-station.ts:276) because the case passes no submissionStore and the node test environment has no localStorage"
-
+log_path = "logs/5.2.5-verify-2.log"
+observed_and_assumption = "verify passed (11 passed, 1 failed (5.40.1-5.40.3 cases pass; failure is the modules_gas_station flow case)). Gaps: caps() takes grant ids (caps(grantIds) -> {fee, grants}) since no holder listing exists (clients.md O71: indexer, absent); human/apps/wallet/src/surfaces/useSurface.ts:351 still calls caps(address) and needs its own task; layerxledger 0x101A is not in the tree, so getPayerGrant answers in the test are ABI-encoded per ledger-auth.md B (selector 0x423fe4b2, 346-byte grant wire per src/ledger/lxp_receive.c read_grant) Unrelated: modules_gas_station 'flow signs, assembles and submits' is stale against gas-station.ts submitApproved (commit ac4357552): the flow now needs eth_accounts/eth_chainId session checks, a confirm consent callback, batchNonce eth_call, eth_getTransactionCount, an EIP-7702 authorization eth_sign and a station-evidence gateway answer, and it posts a SponsoredAdapterRequest (adds quote_decimals and authorization), so the case's exact assertion on submissions[0] cannot hold without rewriting that assertion; no second repair attempted because it would require changing assertions"
 [finding.1.1.5]
 revision = ""
 command = "go test -count=1 ./precompiles/addr/ -run 'TestLayerX"
@@ -1272,3 +1271,10 @@ command = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run 'T
 exit_code = 0
 log_path = "logs/5.1.3-verify-1.log"
 observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: acceptance 5.7.1-5.7.4 tests (TestUpdateParamsOriginTwoFields, TestGovernanceMessagesRequireTheAuthority) belong to task 5.2.1"
+
+[finding.1.1.6]
+revision = "81409aabc"
+command = "go test -count=1 ./precompiles/bank/ -run 'TestRun"
+exit_code = 0
+log_path = "logs/1.1.6-verify-1.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: TestSendContextHashSelector/Refusals/ZeroAmount/Receipt and TestSendReasonsFromPlanHeight (acceptance 1.6.1-1.6.5, 1.7.2) not written: precompiles/bank/bank_test.go is outside this task's touches; selector 0x2e4c85ac, 0x5c05961b and topic0 0x4b11729a..65f checked with cast only"

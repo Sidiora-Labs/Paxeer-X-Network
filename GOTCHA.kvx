@@ -7206,3 +7206,63 @@ fix = "diff against HEAD, not origin/main"
 area = "rpc logs"
 symptom = "wire log addresses are lowercase hex, never checksummed"
 fix = "encode expected addresses with hexutil.Encode(addr.Bytes())"
+
+[gotcha.1527]
+area = "rustfmt"
+symptom = "running rustfmt on a crate lib.rs without --config skip_children=true reformats every child module"
+fix = "format only the touched files, or pass skip_children=true"
+
+[gotcha.1528]
+area = "kernel host runtime"
+symptom = "lxp_kernel_bind_module_runtime refuses an asset runtime with asset_count 0"
+fix = "the host sets module_runtime[LXP_MODULE_ASSET] directly"
+
+[gotcha.1529]
+area = "kernel asset mint"
+symptom = "asset mint returns BALANCE_BYPASS unless lxp_kernel_set_capabilities is given lxp_kernel_canonical_ledger_apply"
+fix = "pass the canonical ledger apply capability before minting"
+
+[gotcha.1530]
+area = "cgo"
+symptom = "C struct types differ between Go files with different cgo preambles"
+fix = "pass registries across files as `unsafe.Pointer`"
+
+[gotcha.1531]
+area = "kernel build"
+symptom = "a cold make build takes over thirty minutes on the shared machine"
+fix = "keep the per-task build directory between runs"
+
+[gotcha.1532]
+area = "comet fixtures"
+symptom = "types.MakeCommit panics in VoteSet.MakeCommit when fewer than two thirds sign"
+fix = "build a below-threshold fixture by replacing signatures in a full commit with NewCommitSigAbsent"
+
+[gotcha.1533]
+area = "comet fixtures"
+symptom = "NewValidatorSet reorders validators by power then address, so MakeCommit signers must follow that order or signatures land on the wrong indexes"
+fix = "sort signers like NewValidatorSet before signing"
+
+[gotcha.1534]
+area = "explorer mix gates"
+symptom = "the first mix run in a fresh worktree compiles every dependency into a new build volume and takes over twenty minutes"
+fix = "reuse the builder volume across runs of one worktree"
+
+[gotcha.1535]
+area = "node sequencer tests"
+symptom = "node/sequencer imports rpc, so a test that uses the node signer must live in package evmrpc_test and reach SequencerReceiptResult through the pax_sequencerReceipt HTTP API"
+fix = "write the test as an external package test"
+
+[gotcha.1536]
+area = "rust receipt decoder"
+symptom = "the receipt decoder is strict, so a signature flag of 2 is refused at ReceiptCheck::Decode, never at CanonicalEncoding"
+fix = "assert the Decode rung for malformed flags"
+
+[gotcha.1537]
+area = "sequencer receipt tests"
+symptom = "the EVM base denom is uhpx while the older sequencer receipt test uses upax as its fee denom"
+fix = "use uhpx in new fixtures"
+
+[gotcha.1538]
+area = "cargo clippy"
+symptom = "cargo clippy --all-targets stops at the first denied target, so a lint task scoped to lib files cannot pass while bin and tests targets still carry pedantic denials"
+fix = "scope lint tasks to the whole crate"
