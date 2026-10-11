@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
@@ -356,6 +357,61 @@ func TestMsgChangeAdmin(t *testing.T) {
 			require.NoError(t, test.msg().ValidateBasic(), "test: %v", test.name)
 		} else {
 			require.Error(t, test.msg().ValidateBasic(), "test: %v", test.name)
+		}
+	}
+}
+
+// TestMsgSetDenomPaused tests if valid/invalid set denom paused messages are properly validated/invalidated
+func TestMsgSetDenomPaused(t *testing.T) {
+	pk1 := ed25519.GenerateSecretKey().Public()
+	addr1 := sdk.AccAddress(pk1.Address())
+	denom := fmt.Sprintf("factory/%s/usdl", addr1.String())
+
+	msg := types.NewMsgSetDenomPaused(addr1.String(), denom, true)
+	require.Equal(t, types.RouterKey, msg.Route())
+	require.Equal(t, "set_denom_paused", msg.Type())
+	require.Equal(t, []sdk.AccAddress{addr1}, msg.GetSigners())
+	require.Equal(t,
+		fmt.Sprintf(`{"type":"tokenfactory/MsgSetDenomPaused","value":{"denom":"%s","paused":true,"sender":"%s"}}`, denom, addr1.String()),
+		string(msg.GetSignBytes()),
+	)
+
+	tests := []struct {
+		name    string
+		msg     *types.MsgSetDenomPaused
+		wantErr error
+	}{
+		{
+			name: "proper pause msg",
+			msg:  types.NewMsgSetDenomPaused(addr1.String(), denom, true),
+		},
+		{
+			name: "proper unpause msg",
+			msg:  types.NewMsgSetDenomPaused(addr1.String(), denom, false),
+		},
+		{
+			name:    "empty sender",
+			msg:     types.NewMsgSetDenomPaused("", denom, true),
+			wantErr: sdkerrors.ErrInvalidAddress,
+		},
+		{
+			name:    "denom outside the factory namespace",
+			msg:     types.NewMsgSetDenomPaused(addr1.String(), "upax", true),
+			wantErr: types.ErrInvalidDenom,
+		},
+		{
+			name:    "denom with a wrong namespace prefix",
+			msg:     types.NewMsgSetDenomPaused(addr1.String(), fmt.Sprintf("bank/%s/usdl", addr1.String()), true),
+			wantErr: types.ErrInvalidDenom,
+		},
+	}
+
+	for _, test := range tests {
+		err := test.msg.ValidateBasic()
+		if test.wantErr == nil {
+			require.NoError(t, err, "test: %v", test.name)
+		} else {
+			require.ErrorIs(t, err, test.wantErr, "test: %v", test.name)
 		}
 	}
 }

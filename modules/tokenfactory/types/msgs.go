@@ -14,6 +14,7 @@ const (
 	TypeMsgBurn             = "burn"
 	TypeMsgChangeAdmin      = "change_admin"
 	TypeMsgSetDenomMetadata = "set_denom_metadata"
+	TypeMsgSetDenomPaused   = "set_denom_paused"
 )
 
 var _ sdk.Msg = &MsgCreateDenom{}
@@ -232,6 +233,47 @@ func (m MsgSetDenomMetadata) GetSignBytes() []byte {
 }
 
 func (m MsgSetDenomMetadata) GetSigners() []sdk.AccAddress {
+	sender, _ := sdk.AccAddressFromBech32(m.Sender)
+	return []sdk.AccAddress{sender}
+}
+
+var _ sdk.Msg = &MsgSetDenomPaused{}
+
+// NewMsgSetDenomPaused creates a message to pause or unpause a denom
+func NewMsgSetDenomPaused(sender, denom string, paused bool) *MsgSetDenomPaused {
+	return &MsgSetDenomPaused{
+		Sender: sender,
+		Denom:  denom,
+		Paused: paused,
+	}
+}
+
+func (m MsgSetDenomPaused) Route() string { return RouterKey }
+func (m MsgSetDenomPaused) Type() string  { return TypeMsgSetDenomPaused }
+func (m MsgSetDenomPaused) ValidateBasic() error {
+	_, err := sdk.AccAddressFromBech32(m.Sender)
+	if err != nil {
+		return sdkerrors.Wrapf(sdkerrors.ErrInvalidAddress, "Invalid sender address (%s)", err)
+	}
+
+	creator, subdenom, err := DeconstructDenom(m.Denom)
+	if err != nil {
+		return err
+	}
+
+	_, err = GetTokenDenom(creator, subdenom)
+	if err != nil {
+		return sdkerrors.Wrap(ErrInvalidDenom, err.Error())
+	}
+
+	return nil
+}
+
+func (m MsgSetDenomPaused) GetSignBytes() []byte {
+	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+}
+
+func (m MsgSetDenomPaused) GetSigners() []sdk.AccAddress {
 	sender, _ := sdk.AccAddressFromBech32(m.Sender)
 	return []sdk.AccAddress{sender}
 }
