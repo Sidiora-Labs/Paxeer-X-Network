@@ -288,6 +288,21 @@ func agentShape(name, marker []byte) bool {
 	return false
 }
 
+func agentAssetShape(name []byte) bool {
+	const identifierBytes = 64
+	marker := []byte(":asset:")
+	if len(name) <= 77 || !bytes.HasPrefix(name, []byte("agent:")) ||
+		!bytes.Equal(name[len(name)-identifierBytes-len(marker):len(name)-identifierBytes], marker) {
+		return false
+	}
+	for _, b := range name[len(name)-identifierBytes:] {
+		if !((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
 func systemFunding(name, suffix []byte) bool {
 	prefix := []byte("system:funding:")
 	return len(name) > len(prefix)+len(suffix) && bytes.HasPrefix(name, prefix) && bytes.HasSuffix(name, suffix) &&
@@ -342,6 +357,8 @@ func AccountKind(name []byte) (uint8, bool) {
 		return 8, true
 	case bytes.HasPrefix(name, []byte("agent:")) && len(name) > 11 && bytes.HasSuffix(name, []byte(":main")):
 		return 1, true
+	case agentAssetShape(name):
+		return 14, true
 	case agentShape(name, []byte(":budget:")):
 		return 2, true
 	case agentShape(name, []byte(":escrow:")):
