@@ -1,0 +1,108 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxprograms;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxprograms/types";
+
+service Msg {
+  rpc UpdateFeeSchedule(MsgUpdateFeeSchedule) returns (MsgUpdateFeeScheduleResponse);
+  rpc UpdateMeteringSchedule(MsgUpdateMeteringSchedule) returns (MsgUpdateMeteringScheduleResponse);
+  rpc StageRetirementProfile(MsgStageRetirementProfile) returns (MsgStageRetirementProfileResponse);
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+}
+
+message FeeSchedule {
+  uint32 version = 1;
+  uint64 cpu = 2;
+  uint64 memory_byte = 3;
+  uint64 storage_read_byte = 4;
+  uint64 storage_write_byte = 5;
+  uint64 output_value = 6;
+  uint64 output_byte = 7;
+  uint64 occupancy_byte_batch = 8;
+}
+
+enum MeteringAuthorityKind {
+  METERING_AUTHORITY_KIND_UNSPECIFIED = 0;
+  METERING_AUTHORITY_KIND_GENESIS = 1;
+  METERING_AUTHORITY_KIND_GOVERNANCE = 2;
+}
+
+message MeteringSchedule {
+  uint32 version = 1;
+  repeated uint64 coefficients = 2;
+  uint64 activation_height = 3;
+  MeteringAuthorityKind authority_kind = 4;
+  bytes authority_digest = 5;
+}
+
+message RetirementProfile {
+  uint32 version = 1;
+  uint32 network_id = 2;
+  bytes controller = 3;
+  bytes archive_key_1 = 4;
+  bytes archive_key_2 = 5;
+  bytes paxai_program_id = 6;
+  uint64 hot_horizon = 7;
+}
+
+message MigrationProfile {
+  uint32 version = 1;
+  uint32 module_version = 2;
+  uint32 parameter_version = 3;
+  uint64 activation_epoch = 4;
+  bytes authority_digest = 5;
+  repeated uint64 limits = 6;
+}
+
+message Params {
+  bool paused = 1;
+  FeeSchedule fee_schedule = 2 [(gogoproto.nullable) = false];
+  MeteringSchedule metering_schedule = 3 [(gogoproto.nullable) = false];
+  bytes occupancy_asset_id = 4;
+  uint64 target_occupancy_byte_batches = 5;
+  uint64 response_denominator = 6;
+  uint64 maximum_change_numerator = 7;
+  uint64 maximum_change_denominator = 8;
+  uint64 minimum_fee_units_per_occupancy_byte_batch = 9;
+  uint64 maximum_fee_units_per_occupancy_byte_batch = 10;
+  RetirementProfile retirement_profile = 11;
+  MigrationProfile migration_profile = 12;
+}
+
+message MsgUpdateFeeSchedule {
+  string authority = 1;
+  FeeSchedule schedule = 2 [(gogoproto.nullable) = false];
+  bytes occupancy_asset_id = 3;
+  uint64 target_occupancy_byte_batches = 4;
+  uint64 response_denominator = 5;
+  uint64 maximum_change_numerator = 6;
+  uint64 maximum_change_denominator = 7;
+  uint64 minimum_fee_units_per_occupancy_byte_batch = 8;
+  uint64 maximum_fee_units_per_occupancy_byte_batch = 9;
+  uint64 activation_height = 10;
+}
+
+message MsgUpdateFeeScheduleResponse {}
+
+message MsgUpdateMeteringSchedule {
+  string authority = 1;
+  MeteringSchedule schedule = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateMeteringScheduleResponse {}
+
+message MsgStageRetirementProfile {
+  string authority = 1;
+  RetirementProfile profile = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgStageRetirementProfileResponse {}
+
+message MsgUpdateParams {
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateParamsResponse {}

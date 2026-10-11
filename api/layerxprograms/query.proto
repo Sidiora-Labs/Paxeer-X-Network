@@ -1,0 +1,86 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxprograms;
+
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "gogoproto/gogo.proto";
+import "tendermint/crypto/proof.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxprograms/types";
+
+service Query {
+  rpc ProgramState(QueryProgramStateRequest) returns (QueryProgramStateResponse);
+  rpc ProgramBalances(QueryProgramBalancesRequest) returns (QueryProgramBalancesResponse);
+  rpc ProgramEvents(QueryProgramEventsRequest) returns (QueryProgramEventsResponse);
+}
+
+message QueryProgramStateRequest {
+  bytes program_id = 1;
+  bytes key = 2;
+  int64 height = 3;
+  bool prove = 4;
+}
+
+message QueryProgramStateResponse {
+  bytes program_id = 1;
+  bytes key = 2;
+  bytes value = 3;
+  bytes state_record = 4;
+  int64 height = 5;
+  bytes app_hash = 6;
+  tendermint.crypto.ProofOps proof_ops = 7;
+  tendermint.crypto.ProofOps state_record_proof_ops = 8;
+}
+
+message QueryProgramBalancesRequest {
+  bytes program_id = 1;
+  int64 height = 2;
+  bool prove = 3;
+  cosmos.base.query.v1beta1.PageRequest pagination = 4;
+}
+
+message ProgramBalance {
+  bytes program_id = 1;
+  bytes account_id = 2;
+  bytes asset_id = 3;
+  bytes seed = 4;
+  uint32 record_version = 5;
+  uint64 registered_sequence = 6;
+  bytes registration_event_digest = 7;
+  bytes balance_be = 8;
+  bool frozen = 9;
+  bytes account_record = 10;
+  tendermint.crypto.ProofOps proof_ops = 11;
+  tendermint.crypto.ProofOps binding_proof_ops = 12;
+}
+
+message QueryProgramBalancesResponse {
+  bytes program_id = 1;
+  repeated ProgramBalance balances = 2 [(gogoproto.nullable) = false];
+  int64 height = 3;
+  bytes app_hash = 4;
+  cosmos.base.query.v1beta1.PageResponse pagination = 5;
+  bytes state_record = 6;
+  tendermint.crypto.ProofOps state_record_proof_ops = 7;
+}
+
+message QueryProgramEventsRequest {
+  bytes program_id = 1;
+  int64 from_height = 2;
+  int64 to_height = 3;
+  cosmos.base.query.v1beta1.PageRequest pagination = 4;
+}
+
+message ProgramEvent {
+  bytes program_id = 1;
+  int64 height = 2;
+  uint64 log_index = 3;
+  bytes transaction_hash = 4;
+  uint32 event_type = 5;
+  repeated bytes topics = 6;
+  bytes data = 7;
+}
+
+message QueryProgramEventsResponse {
+  repeated ProgramEvent events = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}

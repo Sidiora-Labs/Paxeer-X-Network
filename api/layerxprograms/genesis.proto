@@ -1,0 +1,23 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxprograms;
+
+import "gogoproto/gogo.proto";
+import "layerxprograms/tx.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxprograms/types";
+
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+  repeated ProgramStoreEntry program_store = 2 [(gogoproto.nullable) = false];
+  repeated ProgramBlob program_blobs = 3 [(gogoproto.nullable) = false];
+}
+
+message ProgramStoreEntry {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message ProgramBlob {
+  bytes key = 1;
+  bytes value = 2;
+}
