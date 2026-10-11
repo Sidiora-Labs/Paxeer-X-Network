@@ -434,3 +434,17 @@ command = "go test -count=1 ./precompiles/feetoken/ -run TestFeeDenom -v"
 exit_code = 0
 log_path = "logs/10.2.3-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; the Execute-time LXP_FEETOKEN_KEEPER_MISSING refusal keeps its old revert text because the merge plan height is read through the keeper that is absent, and SetAccountFeeDenom returns formatted errors rather than the ErrFeeTokenDenomNotAllowed sentinel so refusals map to codes by exact text."
+
+[finding.10.1.3]
+revision = "d458986d6"
+command = "python3 -m pytest -q tests/agent/sdk/python/test_revert.py"
+exit_code = 0
+log_path = "logs/10.1.3-verify-3.log"
+observed_and_assumption = "the gate passes and the task is landed (pytest had to be installed on the build host first; verify-2 exited 1 with no pytest module); the do_5 wiring of decode_revert_reason into agent/sdk/python/layerx_sdk/agent_http.py is outside touches and revert.py exposes raise_for_receipt_status for that call site."
+
+[finding.10.2.4]
+revision = "ac72591c0"
+command = "go test -count=1 ./precompiles/layerxbridge/ -run TestBridgeInRefusalsThroughThePrecompile|TestBridgeRevertCodes -v"
+exit_code = 0
+log_path = "logs/10.2.4-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; LXP_BRIDGE_UNAUTHORIZED is reachable only through governance message paths so its mapping is checked through RevertCode on the registered error, and static-gas precompiles must gate the plan-height revert text themselves through the EVM keeper's UpgradeKeeper because precompiles/common renders RevertReason with no plan-height gate."

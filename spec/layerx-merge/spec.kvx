@@ -48684,7 +48684,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.3]
 title = "Python client error table: decode Error(string) LXP_ reverts into code, message and retriability"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
@@ -48712,7 +48712,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.1]
 title = "addr 0x1004 opts into the LXP_ reason path with the LXP_ADDR_ codes"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.3", "10.0.4"]
@@ -48796,7 +48796,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.4]
 title = "layerxBridge 0x1016 revert text carries the LXP_BRIDGE_ codes"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.4"]
