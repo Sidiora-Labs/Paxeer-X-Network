@@ -613,6 +613,20 @@
       "replacement": "the mirror is kept and re-pointed: it publishes the committed header and app hash read from a full node at the mirrored height, and finality is block height and commit"
     }
   },
+  "documentation_paths": [
+    {
+      "path": "spec/layerx-merge/spec.kvx",
+      "reason": "reviewed merge specification: requirement, acceptance and task text names each retired component it retires"
+    },
+    {
+      "path": "spec/layerx-merge/qualification.kvx",
+      "reason": "reviewed qualification log: recorded findings name the retired component a gate ran against"
+    },
+    {
+      "path": "spec/layerx-merge/docs",
+      "reason": "reviewed retirement documentation and decision records name the components they retire"
+    }
+  ],
   "allowed_references": [
     {
       "path": "precompiles/setup.go",

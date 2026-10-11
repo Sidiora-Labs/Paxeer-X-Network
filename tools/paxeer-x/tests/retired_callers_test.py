@@ -13,6 +13,9 @@ import tempfile
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[3]
 CATALOGUE = ROOT / "tools/paxeer-x/retired_callers.json"
+CATALOGUE_PATH = "tools/paxeer-x/retired_callers.json"
+CHECKER_PATH = "tools/paxeer-x/tests/retired_callers_test.py"
+DOCUMENTATION_SUFFIXES = {".kvx", ".md"}
 KEPT_CODES = {"LXP_MODULE_DISABLED", "LXP_ERR_MODULE_DISABLED"}
 COUNT = 0
 
@@ -69,7 +72,8 @@ def string_list(value, name, empty=False):
 def validate_catalogue(document):
     require(isinstance(document, dict), "catalogue must be an object")
     require(
-        set(document) <= {"components", "allowed_references", "schema"},
+        set(document)
+        <= {"components", "allowed_references", "documentation_paths", "schema"},
         "unknown catalogue field",
     )
     components = document.get("components")
@@ -112,6 +116,35 @@ def validate_catalogue(document):
         for key in ("symbols", "lines"):
             if key in entry:
                 string_list(entry[key], "allowed " + key)
+    documentation = document.get("documentation_paths", [])
+    require(isinstance(documentation, list), "documentation paths must be a list")
+    deleted_trees = [
+        tree for entry in components.values() for tree in entry["deleted_trees"]
+    ]
+    seen = set()
+    for entry in documentation:
+        require(
+            isinstance(entry, dict) and set(entry) == {"path", "reason"},
+            "invalid documentation path",
+        )
+        path = entry["path"]
+        require(relative_path(path) == path, "noncanonical documentation path: " + path)
+        require(path not in seen, "duplicate documentation path: " + path)
+        seen.add(path)
+        require(
+            isinstance(entry["reason"], str)
+            and entry["reason"].strip()
+            and "\n" not in entry["reason"],
+            "documentation reason is missing: " + path,
+        )
+        require(
+            not any(below(path, tree) or below(tree, path) for tree in deleted_trees),
+            "documentation path overlaps deleted tree: " + path,
+        )
+        require(
+            not below(CATALOGUE_PATH, path) and not below(CHECKER_PATH, path),
+            "documentation path covers the checker: " + path,
+        )
     return document
 
 
@@ -218,6 +251,14 @@ def scan(root, catalogue, component_ids, paths, deleted=False):
     require(all(name in components for name in selected), "unknown component")
     tracked = tracked_paths(root)
     filters = path_filters(root, paths, tracked)
+    documentation = [
+        entry["path"] for entry in catalogue.get("documentation_paths", [])
+    ]
+    for tree in documentation:
+        require(
+            any(below(candidate, tree) for candidate in tracked),
+            "documentation path has no tracked files: " + tree,
+        )
     deleted_trees = {
         tree for entry in components.values() for tree in entry["deleted_trees"]
     }
@@ -236,8 +277,12 @@ def scan(root, catalogue, component_ids, paths, deleted=False):
         path
         for path in tracked
         if (not filters or any(not scope or below(path, scope) for scope in filters))
-        and path != "tools/paxeer-x/retired_callers.json"
+        and path != CATALOGUE_PATH
         and not is_test_file(path)
+        and not (
+            PurePosixPath(path).suffix in DOCUMENTATION_SUFFIXES
+            and any(below(path, tree) for tree in documentation)
+        )
         and not any(below(path, tree) for tree in deleted_trees)
     ]
     patterns = [
@@ -305,6 +350,33 @@ def check_equal(actual, expected, name):
     print("ok retired-callers-case " + str(COUNT) + " " + name, flush=True)
 
 
+def write_tracked(root, files):
+    for path, text in files.items():
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    git(root, ["add", "--", *files])
+
+
+def documentation_files(catalogue, text):
+    return {
+        (
+            entry["path"]
+            if PurePosixPath(entry["path"]).suffix
+            else entry["path"] + "/retirements.md"
+        ): text
+        for entry in catalogue.get("documentation_paths", [])
+    }
+
+
+def refusal(function, *arguments):
+    try:
+        function(*arguments)
+    except Invalid as error:
+        return str(error)
+    raise Invalid("self-test failed: refusal expected")
+
+
 def self_test(catalogue):
     components = catalogue["components"]
     spec = (ROOT / "spec/layerx-merge/spec.kvx").read_text()
@@ -317,6 +389,15 @@ def self_test(catalogue):
         {entry.get("req") for entry in components.values()},
         {str(11000 + number) for number in range(1, 50) if number not in {6, 7}},
         "every retirement requirement represented",
+    )
+    check_equal(
+        [entry["path"] for entry in catalogue["documentation_paths"]],
+        [
+            "spec/layerx-merge/spec.kvx",
+            "spec/layerx-merge/qualification.kvx",
+            "spec/layerx-merge/docs",
+        ],
+        "reviewed documentation paths",
     )
     check_equal(
         "layerxverify" in components["verify"]["symbols"], True, "real verifier symbol"
@@ -472,6 +553,7 @@ def self_test(catalogue):
             "pkg/tests/live.rs": "layerxverify\n",
             "odd:name\nfile.rs": "layerxverify\n",
             "clean.rs": "retained_layerxverify layerxverifyExtra\n",
+            **documentation_files(catalogue, "retained\n"),
         }
         for entry in allowances:
             if "lines" in entry:
@@ -481,11 +563,7 @@ def self_test(catalogue):
             retired if PurePosixPath(retired).suffix else retired + "/src/lib.rs"
         )
         files[retired_file] = "layerxverify\n"
-        for path, text in files.items():
-            target = root / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
-        git(root, ["add", "--", *files])
+        write_tracked(root, files)
         (root / "untracked.rs").write_text("layerxverify\n")
         expected = [
             ("examples/vectors.rs", 1, "verify", "layerxverify"),
@@ -579,6 +657,189 @@ def self_test(catalogue):
             [(retired, 1, "paxeer-verifier", "deleted tree still exists")],
             "dangling deleted-tree symlink refused",
         )
+    with tempfile.TemporaryDirectory(prefix="retired-callers-docs-") as directory:
+        root = Path(directory)
+        git(root, ["init", "-q"])
+        title = "Retire the layerx-paxeer-verifier crate\n"
+        write_tracked(
+            root,
+            {
+                **documentation_files(catalogue, "retained\n"),
+                "spec/layerx-merge/spec.kvx": 'title = "' + title.strip() + '"\n',
+                "spec/layerx-merge/docs/retirements.md": "# " + title,
+            },
+        )
+        check_equal(
+            scan(root, catalogue, ["paxeer-verifier"], []),
+            [],
+            "reviewed documentation is not a caller",
+        )
+        write_tracked(
+            root,
+            {
+                "agent/Cargo.toml": (
+                    "[workspace]\nmembers = [\n"
+                    '    "crates/layerx-agentd",\n'
+                    '    "crates/layerx-paxeer-verifier",\n]\n'
+                ),
+                "agent/crates/layerx-agentd/src/main.rs": (
+                    "fn main() {\n    layerx_paxeer_verifier::verify();\n}\n"
+                ),
+            },
+        )
+        callers = [
+            ("agent/Cargo.toml", 4, "paxeer-verifier", "layerx-paxeer-verifier"),
+            (
+                "agent/crates/layerx-agentd/src/main.rs",
+                2,
+                "paxeer-verifier",
+                "layerx_paxeer_verifier",
+            ),
+        ]
+        check_equal(
+            scan(root, catalogue, ["paxeer-verifier"], []),
+            callers,
+            "real callers reported beside documentation",
+        )
+        write_tracked(
+            root,
+            {
+                "spec/layerx-merge/docs/build/lib.rs": "use layerx_paxeer_verifier;\n",
+                "spec/layerx-merge/docs/build/Cargo.toml": (
+                    "[dependencies]\nlayerx_paxeer_verifier = "
+                    '{ path = "../../../../agent" }\n'
+                ),
+                "spec/other/notes.kvx": 'title = "' + title.strip() + '"\n',
+            },
+        )
+        check_equal(
+            scan(root, catalogue, ["paxeer-verifier"], []),
+            sorted(
+                callers
+                + [
+                    (
+                        "spec/layerx-merge/docs/build/Cargo.toml",
+                        2,
+                        "paxeer-verifier",
+                        "layerx_paxeer_verifier",
+                    ),
+                    (
+                        "spec/layerx-merge/docs/build/lib.rs",
+                        1,
+                        "paxeer-verifier",
+                        "layerx_paxeer_verifier",
+                    ),
+                    (
+                        "spec/other/notes.kvx",
+                        1,
+                        "paxeer-verifier",
+                        "layerx-paxeer-verifier",
+                    ),
+                ]
+            ),
+            "only reviewed documentation text is excluded",
+        )
+        for path, expected_exit, expected_output in (
+            ("spec/layerx-merge/spec.kvx", 0, ""),
+            (
+                "agent/Cargo.toml",
+                1,
+                "agent/Cargo.toml:4: paxeer-verifier: layerx-paxeer-verifier\n",
+            ),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                exit_code = main(
+                    ["--component", "paxeer-verifier", "--path", path], root
+                )
+            check_equal(
+                (exit_code, output.getvalue()),
+                (expected_exit, expected_output),
+                "documentation filter exit " + path,
+            )
+        missing = {
+            **catalogue,
+            "documentation_paths": [
+                {"path": "spec/absent", "reason": "reviewed retirement notes"}
+            ],
+        }
+        check_equal(
+            refusal(scan, root, missing, ["paxeer-verifier"], []),
+            "documentation path has no tracked files: spec/absent",
+            "untracked documentation path refused",
+        )
+    for path, reason, message in (
+        (
+            "agent/crates/layerx-paxeer-verifier",
+            "reviewed retirement notes",
+            "documentation path overlaps deleted tree: "
+            "agent/crates/layerx-paxeer-verifier",
+        ),
+        (
+            "agent/crates/layerx-paxeer-verifier/README.md",
+            "reviewed retirement notes",
+            "documentation path overlaps deleted tree: "
+            "agent/crates/layerx-paxeer-verifier/README.md",
+        ),
+        (
+            "agent",
+            "reviewed retirement notes",
+            "documentation path overlaps deleted tree: agent",
+        ),
+        (
+            "/spec/layerx-merge/docs",
+            "reviewed retirement notes",
+            "path must name a repository-relative file or tree",
+        ),
+        (
+            "spec/layerx-merge/../docs",
+            "reviewed retirement notes",
+            "path must name a repository-relative file or tree",
+        ),
+        (
+            "spec/layerx-merge/./docs",
+            "reviewed retirement notes",
+            "noncanonical documentation path: spec/layerx-merge/./docs",
+        ),
+        (
+            "spec/layerx-merge/docs",
+            " ",
+            "documentation reason is missing: spec/layerx-merge/docs",
+        ),
+        (
+            "tools/paxeer-x",
+            "reviewed retirement notes",
+            "documentation path covers the checker: tools/paxeer-x",
+        ),
+        (
+            CHECKER_PATH,
+            "reviewed retirement notes",
+            "documentation path covers the checker: " + CHECKER_PATH,
+        ),
+    ):
+        document = {
+            **catalogue,
+            "documentation_paths": [{"path": path, "reason": reason}],
+        }
+        check_equal(
+            refusal(validate_catalogue, document),
+            message,
+            "documentation path exact refusal " + path,
+        )
+    check_equal(
+        refusal(
+            validate_catalogue,
+            {
+                **catalogue,
+                "documentation_paths": [
+                    {"path": "spec/layerx-merge/docs", "reason": "reviewed notes"},
+                    {"path": "spec/layerx-merge/docs", "reason": "reviewed notes"},
+                ],
+            },
+        ),
+        "duplicate documentation path: spec/layerx-merge/docs",
+        "duplicate documentation path refused",
+    )
     for document, message in (
         ({}, "components are missing"),
         ({"components": {}}, "components are missing"),
