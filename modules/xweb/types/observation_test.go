@@ -150,10 +150,11 @@ func observationHex(t *testing.T, raw string) []byte {
 func TestDecodeObservationFixture(t *testing.T) {
 	raw := observationFixture(t)
 	t.Run("5.12.1", func(t *testing.T) {
+		const adapterNetwork uint32 = 9
 		observation, err := types.DecodeObservation(raw)
 		require.NoError(t, err)
 		require.Equal(t, uint8(2), observation.Origin)
-		assert.Equal(t, uint32(1), observation.NetworkID)
+		assert.Equal(t, adapterNetwork, observation.NetworkID)
 		var program types.Hash32
 		for i := range program {
 			program[i] = byte(0xa0 + i)
