@@ -784,3 +784,10 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-pla
 exit_code = "not-run"
 log_path = "none"
 observed_and_assumption = "no change was made: the shared EVM sender and EvmTreasury interfaces from tasks 7.0.8 and 7.5.10 are absent and the core Config has no withdrawal fields; the task returns to pending behind those tasks."
+
+[finding.2.4.1]
+revision = "7b15f9b29"
+command = "make test-budget-delegate"
+exit_code = 0
+log_path = "logs/2.4.1-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; the budget module context writes only budget-scoped kv and no interface stages the asset module grant record, so pulls read the shared grant state plus pull draws kept under budget kv while the 0x101A receive path does not see pull draws, and a cross-module grant-state stage in lxp_module_ctx.c is needed to close 2010.5 and 2021.3."

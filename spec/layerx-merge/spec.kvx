@@ -6959,7 +6959,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.4.1]
 title = "Execute budget pull with the grant draw record"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["2.3.1"]
