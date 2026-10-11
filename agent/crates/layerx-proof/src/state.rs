@@ -524,8 +524,6 @@ fn account_kind(name: &[u8]) -> Option<u8> {
         Some(9)
     } else if name == b"system:fees" {
         Some(10)
-    } else if name == b"system:paxeer-reserve" {
-        Some(11)
     } else if name == b"system:paxeer-withdrawals" {
         Some(12)
     } else if system_tail(name, b"system:liquidity:") {
@@ -687,5 +685,75 @@ impl<'a> Reader<'a> {
         } else {
             Err(AccountProofError::AccountEncoding)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account_value(name: &[u8], kind: u8) -> Result<Vec<u8>, String> {
+        let length = u16::try_from(name.len()).map_err(|e| e.to_string())?;
+        let mut value = Vec::new();
+        value.extend_from_slice(&length.to_be_bytes());
+        value.extend_from_slice(name);
+        value.push(kind);
+        value.extend_from_slice(&5_000_000_000_000_000_000_u128.to_be_bytes());
+        value.extend_from_slice(&[0x33; 32]);
+        value.push(1);
+        value.extend_from_slice(&7_u64.to_be_bytes());
+        value.extend_from_slice(&1_u64.to_be_bytes());
+        value.extend_from_slice(&[0, 0]);
+        value.extend_from_slice(&[0; 32]);
+        value.push(0);
+        Ok(value)
+    }
+
+    #[test]
+    fn custody_reserve_account_state_is_refused() -> Result<(), String> {
+        for name in [
+            b"system:paxeer-reserve".as_slice(),
+            b"system:paxeer-reserve:pax",
+        ] {
+            let id = derive_account_id(name).map_err(|e| format!("{e:?}"))?;
+            assert_eq!(account_kind(name), None);
+            for kind in 0..=u8::MAX {
+                assert_eq!(
+                    decode_account_value(id, &account_value(name, kind)?),
+                    Err(AccountProofError::AccountIdentity)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn native_main_balance_and_remaining_system_kinds_are_preserved() -> Result<(), String> {
+        for (name, kind) in [
+            (b"agent:did:layerx:holder:main".as_slice(), 1),
+            (b"system:insurance", 9),
+            (b"system:fees", 10),
+            (b"system:paxeer-withdrawals", 12),
+        ] {
+            let id = derive_account_id(name).map_err(|e| format!("{e:?}"))?;
+            let account = decode_account_value(id, &account_value(name, kind)?)
+                .map_err(|e| format!("{e:?}"))?;
+            assert_eq!(account.name, name);
+            assert_eq!(account.kind, kind);
+            assert_eq!(account.account_id, id);
+            assert_eq!(
+                account.asset,
+                Some(AccountAsset {
+                    asset_id: [0x33; 32],
+                    balance: 5_000_000_000_000_000_000
+                })
+            );
+            assert_eq!(account.next_sequence, 7);
+            assert_eq!(account.created_at_sequence, 1);
+            assert_eq!(account.authority_key, None);
+            assert!(!account.frozen);
+            assert!(!account.has_open_reference);
+        }
+        Ok(())
     }
 }

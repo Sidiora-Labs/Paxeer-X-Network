@@ -4,7 +4,7 @@ mod native;
 mod program;
 
 pub use program::{
-    DisclosedProgramDeploy, DisclosedProgramUpgrade, DisclosedProgramCall,
+    DisclosedProgramCall, DisclosedProgramDeploy, DisclosedProgramUpgrade,
     DisclosedProgramWindDown, DisclosedProgramWindDownOperation,
 };
 
@@ -382,9 +382,6 @@ fn decode_bridge_deposit_credit(
     payload: &[u8],
     activity: &Activity,
 ) -> Result<SendSemantics, DisclosureError> {
-    if payload.starts_with(b"LXDC") {
-        return decode_native_custody_credit(payload, activity);
-    }
     let mut decoder = Decoder::new(payload, 0);
     if decoder.u16()? != BRIDGE_DEPOSIT_CREDIT_WIRE_TAG
         || decoder.u16()? != BRIDGE_DEPOSIT_CREDIT_FIELD_COUNT
@@ -400,61 +397,6 @@ fn decode_bridge_deposit_credit(
     let idempotency_key = fixed(&mut decoder)?;
     decoder.finish()?;
     if idempotency_key != activity.idempotency_key() || amount == 0 || from == to {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    Ok(SendSemantics {
-        from,
-        to,
-        asset,
-        amount,
-        sequence: activity.account_sequence(),
-        idempotency_key,
-        expires_at: activity.timestamp_bound().not_after,
-    })
-}
-
-fn decode_native_custody_credit(
-    payload: &[u8],
-    activity: &Activity,
-) -> Result<SendSemantics, DisclosureError> {
-    if payload.len() < 368
-        || payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES
-        || &payload[..5] != b"LXDC3"
-        || &payload[363..368] != b"LXLB1"
-        || payload[327..359] != Sha256::digest(&payload[363..])[..]
-        || payload[359..363] != 2_u32.to_be_bytes()
-        || activity.protocol_version() != 3
-        || payload[37..41] != activity.network_id().to_be_bytes()
-        || payload[41..43] != activity.protocol_version().to_be_bytes()
-    {
-        return Err(DisclosureError::MalformedPayload);
-    }
-    let field = |start: usize| -> Result<[u8; 32], DisclosureError> {
-        payload[start..start + 32]
-            .try_into()
-            .map_err(|_| DisclosureError::MalformedPayload)
-    };
-    let reserve = layerx_types::account::AccountId::parse("system:paxeer-reserve")
-        .map_err(|_| DisclosureError::MalformedPayload)?;
-    let from = hash::account_id_for_protocol(&reserve, activity.protocol_version())?;
-    let to = field(107)?;
-    let asset = field(75)?;
-    let amount = u128::from_be_bytes(
-        payload[191..207]
-            .try_into()
-            .map_err(|_| DisclosureError::MalformedPayload)?,
-    );
-    let mut nullifier = Sha256::new();
-    nullifier.update(b"LX:DEPOSIT:NULLIFIER:v1");
-    nullifier.update(field(43)?);
-    let idempotency_key: [u8; 32] = nullifier.finalize().into();
-    if from == to
-        || to == [0; 32]
-        || asset == [0; 32]
-        || amount == 0
-        || idempotency_key != activity.idempotency_key()
-        || activity.authority() != &payload[139..171]
-    {
         return Err(DisclosureError::MalformedPayload);
     }
     Ok(SendSemantics {
@@ -555,9 +497,7 @@ fn decode_evm_payout_binding(
 fn semantics(activity: &Activity) -> Result<SendSemantics, DisclosureError> {
     let activity_type = activity.activity_type();
     let kind = (activity_type.module(), activity_type.ordinal());
-    let native_credit = kind == (ModuleId::Bridge, BRIDGE_DEPOSIT_CREDIT_ORDINAL)
-        && activity.payload().starts_with(b"LXDC");
-    if !native_credit && activity.payload().len() > MAX_SEND_PAYLOAD_BYTES {
+    if activity.payload().len() > MAX_SEND_PAYLOAD_BYTES {
         return Err(DisclosureError::MalformedPayload);
     }
     match kind {
@@ -1074,9 +1014,7 @@ impl Disclosure {
             });
         }
         match (self.activity_type.module(), self.activity_type.ordinal()) {
-            (ModuleId::Asset, 5 | 6) => {
-                Ok(Some(semantics(&self.activity)?.sequence))
-            }
+            (ModuleId::Asset, 5 | 6) => Ok(Some(semantics(&self.activity)?.sequence)),
             _ => Ok(None),
         }
     }
@@ -1367,4 +1305,93 @@ fn bind_with(
         signing_digest: message.digest(),
         budget_context,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use layerx_types::activity::{Authority, EnvelopeBuilder, TimestampBound as EnvelopeBound};
+    use layerx_types::amount::Amount;
+    use layerx_types::ids::{Did, IdempotencyKey};
+    use layerx_types::payload::{ModuleRegistration, Payload};
+    use layerx_wire::activity::encode_unsigned_envelope;
+
+    fn custody_credit_payload(length: usize) -> Vec<u8> {
+        let mut payload = vec![0; length];
+        payload[..5].copy_from_slice(b"LXDC3");
+        payload[37..41].copy_from_slice(&17_u32.to_be_bytes());
+        payload[41..43].copy_from_slice(&3_u16.to_be_bytes());
+        payload[43..75].fill(0x11);
+        payload[75..107].fill(0x33);
+        payload[107..139].fill(0x22);
+        payload[139..171].fill(0x44);
+        payload[191..207].copy_from_slice(&25_u128.to_be_bytes());
+        payload[359..363].copy_from_slice(&2_u32.to_be_bytes());
+        payload[363..368].copy_from_slice(b"LXLB1");
+        let proof_hash = Sha256::digest(&payload[363..]);
+        payload[327..359].copy_from_slice(&proof_hash);
+        payload
+    }
+
+    fn custody_credit_envelope(
+        payload: &[u8],
+        protocol: u16,
+    ) -> Result<(Vec<u8>, ModuleRegistry), String> {
+        let kind = ActivityType::new(ModuleId::Bridge, 1).map_err(|e| format!("{e:?}"))?;
+        let registration =
+            ModuleRegistration::new(ModuleId::Bridge, &[kind]).map_err(|e| format!("{e:?}"))?;
+        let registry = ModuleRegistry::new(&[registration]).map_err(|e| format!("{e:?}"))?;
+        let payload = Payload::new(&registry, kind, payload).map_err(|e| format!("{e:?}"))?;
+        let actor = Did::new(b"did:layerx:holder").map_err(|e| format!("{e:?}"))?;
+        let mut nullifier = Sha256::new();
+        nullifier.update(b"LX:DEPOSIT:NULLIFIER:v1");
+        nullifier.update([0x11; 32]);
+        let mut builder = EnvelopeBuilder::new();
+        builder
+            .protocol_version(protocol)
+            .and_then(|b| b.network_id(17))
+            .and_then(|b| b.activity_type(kind))
+            .and_then(|b| b.actor_did(actor))
+            .and_then(|b| b.authority(Authority::protocol_module(&[0x44; 32])?))
+            .and_then(|b| b.account_sequence(7))
+            .and_then(|b| b.timestamp_bound(EnvelopeBound::new(10, 100)?))
+            .and_then(|b| b.idempotency_key(IdempotencyKey::new(nullifier.finalize().into())))
+            .and_then(|b| b.fee_limit(Amount::from_u128(20)))
+            .map_err(|e| format!("{e:?}"))?;
+        builder
+            .payload_hash(hash::payload_hash_for(&payload).map_err(|e| format!("{e:?}"))?)
+            .and_then(|b| b.payload(payload))
+            .map_err(|e| format!("{e:?}"))?;
+        let envelope = builder.build().map_err(|e| format!("{e:?}"))?;
+        let canonical = encode_unsigned_envelope(&envelope).map_err(|e| format!("{e:?}"))?;
+        Ok((canonical, registry))
+    }
+
+    #[test]
+    fn no_custody_credit_kind() -> Result<(), String> {
+        for length in [368, 512, 513, layerx_types::limits::MAX_PAYLOAD_BYTES] {
+            let payload = custody_credit_payload(length);
+            for protocol in [1, 2, 3] {
+                let (canonical, registry) = custody_credit_envelope(&payload, protocol)?;
+                assert_eq!(
+                    bind(&canonical, &registry),
+                    Err(DisclosureError::MalformedPayload),
+                    "length {length}, protocol {protocol}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn custody_credit_refusal_preserves_payload_commitment() -> Result<(), String> {
+        let (mut canonical, registry) = custody_credit_envelope(&custody_credit_payload(368), 3)?;
+        let last = canonical.last_mut().ok_or("empty canonical envelope")?;
+        *last ^= 1;
+        assert_eq!(
+            bind(&canonical, &registry),
+            Err(DisclosureError::PayloadHash)
+        );
+        Ok(())
+    }
 }

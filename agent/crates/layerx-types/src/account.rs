@@ -21,8 +21,6 @@ pub enum AccountNamespace {
     SystemInsurance,
     /// `system:fees`.
     SystemFees,
-    /// `system:paxeer-reserve`.
-    SystemPaxeerReserve,
     /// `system:paxeer-withdrawals`.
     SystemPaxeerWithdrawals,
 }
@@ -61,8 +59,6 @@ impl AccountId {
             AccountNamespace::SystemInsurance
         } else if canonical == "system:fees" {
             AccountNamespace::SystemFees
-        } else if canonical == "system:paxeer-reserve" {
-            AccountNamespace::SystemPaxeerReserve
         } else if canonical == "system:paxeer-withdrawals" {
             AccountNamespace::SystemPaxeerWithdrawals
         } else if let Some(market) = canonical.strip_prefix("system:liquidity:") {
@@ -180,6 +176,37 @@ fn parse_agent(agent: &str) -> Result<AccountNamespace, AccountError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custody_reserve_namespace_is_refused() {
+        for name in [
+            "system:paxeer-reserve",
+            "system:paxeer-reserve:pax",
+            "system:paxeer-reserve:sid",
+        ] {
+            assert_eq!(AccountId::parse(name), Err(AccountError::UnknownNamespace));
+        }
+    }
+
+    #[test]
+    fn native_asset_uses_the_main_account() {
+        assert_eq!(
+            AccountId::for_asset("did:layerx:holder", [0x33; 32], [0x33; 32])
+                .map(|account| (account.namespace(), account.canonical().to_owned())),
+            Ok((
+                AccountNamespace::AgentMain,
+                "agent:did:layerx:holder:main".to_owned()
+            ))
+        );
+        assert_eq!(
+            AccountId::parse("system:fees").map(|a| a.namespace()),
+            Ok(AccountNamespace::SystemFees)
+        );
+        assert_eq!(
+            AccountId::parse("system:paxeer-withdrawals").map(|a| a.namespace()),
+            Ok(AccountNamespace::SystemPaxeerWithdrawals)
+        );
+    }
 
     #[test]
     fn per_asset_namespace_is_exact() {
