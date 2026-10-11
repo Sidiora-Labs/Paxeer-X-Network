@@ -19,7 +19,9 @@ pub use external::{
     ExternalPresentationError, ExternalVerificationError, VerifiedExternalEvidence,
 };
 pub use receipt::{
-    PortableReceipt, PortableReceiptError, PortableVerifiedReceipt, PORTABLE_RECEIPT_FORMAT,
+    verify_portable_json, PortableReceipt, PortableReceiptError, PortableReceiptV2,
+    PortableVerified, PortableVerifiedReceipt, PortableVerifiedReceiptV2, ReceiptKeyEntry,
+    PORTABLE_RECEIPT_FORMAT, PORTABLE_RECEIPT_FORMAT_V2,
 };
 
 /// Codify anchor for portable receipt export and typed external verification.
