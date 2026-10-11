@@ -32,6 +32,7 @@ import (
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -227,20 +228,21 @@ func (p Precompile) RunAndCalculateGas(evm *vm.EVM, caller common.Address, calli
 }
 
 func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller common.Address, _ common.Address,
-	args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, hooks *tracing.Hooks) ([]byte, error) {
+	args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, hooks *tracing.Hooks) (ret []byte, err error) {
+	defer func() { err = lxpError(err) }()
 	if err := p.guard(ctx.EVMPrecompileCalledFromDelegateCall(), method.Name, readOnly); err != nil {
 		return nil, err
 	}
 	if method.Name != RequestMethod {
 		if err := pcommon.ValidateNonPayable(value); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("LXP_PRECOMPILE_NON_PAYABLE: %w", err)
 		}
 	}
 	switch method.Name {
 	case RequestMethod:
 		return p.request(ctx, method, caller, args, value, evm, hooks)
 	case FulfilMethod:
-		return nil, errors.New("xweb: fulfil runs only through the EVM, which meters its callback")
+		return nil, errors.New("LXP_XWEB_FULFIL_EVM_ONLY: xweb: fulfil runs only through the EVM, which meters its callback")
 	case RefundMethod:
 		return p.refund(ctx, method, args, evm)
 	case GetRequestMethod:
@@ -249,7 +251,7 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 		return p.getResult(ctx, method, args)
 	case GetAttestorsMethod:
 		if err := pcommon.ValidateArgsLength(args, 0); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 		}
 		set := p.keeper.GetAttestorSet(ctx)
 		attestors := make([]AttestorView, len(set.Attestors))
@@ -263,17 +265,17 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 		return method.Outputs.Pack(attestors, set.Threshold)
 	case ThresholdMethod:
 		if err := pcommon.ValidateArgsLength(args, 0); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 		}
 		return method.Outputs.Pack(p.keeper.Threshold(ctx))
 	case FeeMethod:
 		if err := pcommon.ValidateArgsLength(args, 0); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 		}
 		return method.Outputs.Pack(wei(p.keeper.Fee(ctx)))
 	case GetParamsMethod:
 		if err := pcommon.ValidateArgsLength(args, 0); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 		}
 		params := p.keeper.GetParams(ctx)
 		return method.Outputs.Pack(ParamsView{Fee: wei(params.Fee), MaxPayloadBytes: params.MaxPayloadBytes,
@@ -283,17 +285,24 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 	}
 }
 
+func lxpError(err error) error {
+	if name, mapped := types.LXPName(err); mapped {
+		return sdkerrors.Wrap(err, name)
+	}
+	return err
+}
+
 // guard refuses a delegatecall, a state change from a static call and any
 // call while no xweb keeper is wired.
 func (p PrecompileExecutor) guard(delegate bool, method string, readOnly bool) error {
 	if delegate {
-		return errors.New("cannot delegatecall xweb")
+		return errors.New("LXP_XWEB_DELEGATECALL: cannot delegatecall xweb")
 	}
 	if readOnly && isTransaction(method) {
-		return fmt.Errorf("cannot call xweb %s from staticcall", method)
+		return fmt.Errorf("LXP_XWEB_STATICCALL: cannot call xweb %s from staticcall", method)
 	}
 	if p.keeper == nil {
-		return errors.New("xweb: the xweb keeper is not wired into this application")
+		return errors.New("LXP_XWEB_KEEPER_MISSING: xweb: the xweb keeper is not wired into this application")
 	}
 	return nil
 }
@@ -306,7 +315,7 @@ func wei(amount sdk.Int) *big.Int {
 func (p PrecompileExecutor) request(ctx sdk.Context, method *abi.Method, caller common.Address, args []interface{},
 	value *big.Int, evm *vm.EVM, hooks *tracing.Hooks) ([]byte, error) {
 	if err := pcommon.ValidateArgsLength(args, 3); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 	}
 	kind, payload, callbackGas := args[0].(uint8), args[1].([]byte), args[2].(uint64)
 	paid := sdk.ZeroInt()
@@ -314,6 +323,9 @@ func (p PrecompileExecutor) request(ctx sdk.Context, method *abi.Method, caller 
 		coin, err := pcommon.HandlePaymentUhpx(ctx, p.evmKeeper.GetPaxAddressOrDefault(ctx, p.address),
 			p.evmKeeper.GetPaxAddressOrDefault(ctx, caller), value, p.bankKeeper, p.evmKeeper, hooks, evm.GetDepth())
 		if err != nil {
+			if _, remainder := state.SplitUhpxWeiAmount(value); !remainder.IsZero() {
+				return nil, fmt.Errorf("LXP_PRECOMPILE_WEI_REMAINDER: %w", err)
+			}
 			return nil, err
 		}
 		paid = coin.Amount
@@ -332,7 +344,7 @@ func (p PrecompileExecutor) request(ctx sdk.Context, method *abi.Method, caller 
 
 func (p PrecompileExecutor) refund(ctx sdk.Context, method *abi.Method, args []interface{}, evm *vm.EVM) ([]byte, error) {
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 	}
 	request, err := p.keeper.Refund(ctx, args[0].(uint64))
 	if err != nil {
@@ -347,7 +359,7 @@ func (p PrecompileExecutor) refund(ctx sdk.Context, method *abi.Method, args []i
 
 func (p PrecompileExecutor) getRequest(ctx sdk.Context, method *abi.Method, args []interface{}) ([]byte, error) {
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 	}
 	id := args[0].(uint64)
 	request, found := p.keeper.GetRequest(ctx, id)
@@ -362,7 +374,7 @@ func (p PrecompileExecutor) getRequest(ctx sdk.Context, method *abi.Method, args
 
 func (p PrecompileExecutor) getResult(ctx sdk.Context, method *abi.Method, args []interface{}) ([]byte, error) {
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 	}
 	id := args[0].(uint64)
 	result, found := p.keeper.GetResult(ctx, id)
@@ -390,6 +402,7 @@ func (p Precompile) fulfil(evm *vm.EVM, caller common.Address, input []byte, bud
 		if abortErr, ok := err.(vm.AbortError); ok && abortErr.IsAbortError() {
 			return
 		}
+		err = lxpError(err)
 		pcommon.HandlePrecompileError(err, evm, FulfilMethod)
 		ret, used, err = pcommon.RevertReason(err), 0, vm.ErrExecutionReverted
 	}()
@@ -402,10 +415,10 @@ func (p Precompile) fulfil(evm *vm.EVM, caller common.Address, input []byte, bud
 		return nil, 0, err
 	}
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("LXP_PRECOMPILE_NON_PAYABLE: %w", err)
 	}
 	if err := pcommon.ValidateArgsLength(args, 5); err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("LXP_PRECOMPILE_ARG_COUNT: %w", err)
 	}
 	id, response, digest := args[0].(uint64), args[1].([]byte), args[2].([32]byte)
 	fullLength, signatures := args[3].(uint32), args[4].([][]byte)
@@ -414,7 +427,7 @@ func (p Precompile) fulfil(evm *vm.EVM, caller common.Address, input []byte, bud
 	ctx = ctx.WithEventManager(sdk.NewEventManager())
 	if pending, found := x.keeper.GetRequest(ctx, id); found {
 		if bound := x.callbackBound(ctx, pending); budget < bound+CallbackRecordGas {
-			return nil, 0, fmt.Errorf("xweb: fulfil of request %d needs %d gas for its callback and its record, %d left",
+			return nil, 0, fmt.Errorf("LXP_XWEB_CALLBACK_BUDGET: xweb: fulfil of request %d needs %d gas for its callback and its record, %d left",
 				id, bound+CallbackRecordGas, budget)
 		}
 	}

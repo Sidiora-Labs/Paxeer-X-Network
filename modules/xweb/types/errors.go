@@ -1,6 +1,10 @@
 package types
 
-import sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+import (
+	"errors"
+
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+)
 
 var (
 	ErrUnauthorized     = sdkerrors.Register(ModuleName, 2, "unauthorized")
@@ -28,3 +32,62 @@ var (
 	ErrInvalidEnvelope  = sdkerrors.Register(ModuleName, 24, "invalid credential envelope")
 	ErrInvalidLevel     = sdkerrors.Register(ModuleName, 25, "invalid attestation level")
 )
+
+func LXPName(err error) (string, bool) {
+	var registered *sdkerrors.Error
+	if !errors.As(err, &registered) || registered == nil || registered.Codespace() != ModuleName {
+		return "", false
+	}
+	switch registered.ABCICode() {
+	case 2:
+		return "LXP_XWEB_UNAUTHORIZED", true
+	case 3:
+		return "LXP_XWEB_INVALID_GENESIS", true
+	case 4:
+		return "LXP_XWEB_INVALID_PARAMS", true
+	case 5:
+		return "LXP_XWEB_INVALID_ATTESTORS", true
+	case 6:
+		return "LXP_XWEB_INVALID_THRESHOLD", true
+	case 7:
+		return "LXP_XWEB_PAUSED", true
+	case 8:
+		return "LXP_XWEB_UNKNOWN_KIND", true
+	case 9:
+		return "LXP_XWEB_PAYLOAD_SIZE", true
+	case 10:
+		return "LXP_XWEB_CALLBACK_GAS", true
+	case 11:
+		return "LXP_XWEB_WRONG_FEE", true
+	case 12:
+		return "LXP_XWEB_UNKNOWN_REQUEST", true
+	case 13:
+		return "LXP_XWEB_ALREADY_FULFILLED", true
+	case 14:
+		return "LXP_XWEB_REFUNDED", true
+	case 15:
+		return "LXP_XWEB_RESPONSE_TOO_LARGE", true
+	case 16:
+		return "LXP_XWEB_INVALID_LENGTH", true
+	case 17:
+		return "LXP_XWEB_BAD_SIGNATURE", true
+	case 18:
+		return "LXP_XWEB_BELOW_THRESHOLD", true
+	case 19:
+		return "LXP_XWEB_NOT_EXPIRED", true
+	case 20:
+		return "LXP_XWEB_UNKNOWN_ATTESTOR", true
+	case 21:
+		return "LXP_XWEB_CALLBACK_RECORDED", true
+	case 22:
+		return "LXP_XWEB_INVALID_REQUEST", true
+	case 23:
+		return "LXP_XWEB_INVALID_API", true
+	case 24:
+		return "LXP_XWEB_INVALID_ENVELOPE", true
+	case 25:
+		return "LXP_XWEB_INVALID_LEVEL", true
+	default:
+		return "", false
+	}
+}

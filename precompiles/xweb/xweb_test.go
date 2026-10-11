@@ -3,6 +3,7 @@ package xweb_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"math"
 	"math/big"
@@ -19,6 +20,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/xweb"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -288,33 +290,143 @@ func TestRequestTakesTheFeeAndEmits(t *testing.T) {
 func TestRequestRefusesWrongPayment(t *testing.T) {
 	h := newHarness(t)
 	before := h.balance(h.account(recorder))
+	moduleBefore := h.balance(h.keeper.ModuleAddress())
 	_, left, reason := h.call(recorder, xweb.RequestMethod, weiOf(fee-1), supplied, types.KindFetch, payload, callbackGas)
-	require.Contains(t, reason, "fee")
+	require.Equal(t, "LXP_XWEB_WRONG_FEE: paid 1000002, fee 1000003: paid amount is not the current fee", reason)
 	input := h.input(xweb.RequestMethod, types.KindFetch, payload, callbackGas)
 	require.Equal(t, supplied-cost(input, xweb.WriteBaseGas, 0), left)
 
 	withRemainder := new(big.Int).Add(weiOf(fee), big.NewInt(1))
 	_, _, reason = h.call(recorder, xweb.RequestMethod, withRemainder, supplied, types.KindFetch, payload, callbackGas)
-	require.Contains(t, reason, "non-zero wei remainder")
+	require.Equal(t, "LXP_PRECOMPILE_WEI_REMAINDER: selected precompile function does not allow payment with non-zero wei remainder: received "+withRemainder.String(), reason)
 
 	_, _, reason = h.call(recorder, xweb.RequestMethod, nil, supplied, types.KindFetch, payload, callbackGas)
-	require.Contains(t, reason, "fee")
+	require.Equal(t, "LXP_XWEB_WRONG_FEE: paid 0, fee 1000003: paid amount is not the current fee", reason)
 
 	_, _, reason = h.call(recorder, xweb.RequestMethod, weiOf(fee), supplied, types.KindFetch, payload, callbackCap+1)
-	require.Contains(t, reason, "callback gas")
+	require.Equal(t, "LXP_XWEB_CALLBACK_GAS: 300001, cap 300000: callback gas zero or over the callback cap", reason)
+
+	_, _, reason = h.call(recorder, xweb.RefundMethod, big.NewInt(1), supplied, uint64(1))
+	require.Equal(t, "LXP_PRECOMPILE_NON_PAYABLE: sending funds to a non-payable function", reason)
 
 	requireAmount(t, before, h.balance(h.account(recorder)))
+	requireAmount(t, moduleBefore, h.balance(h.keeper.ModuleAddress()))
+	require.True(t, h.balance(h.account(precompile)).IsZero())
 	require.Equal(t, uint64(0), h.keeper.Nonce(h.ctx()))
 	require.Empty(t, h.logs("XWebRequested"))
 
 	input = h.input(xweb.RequestMethod, types.KindFetch, payload, callbackGas)
-	_, left, err := h.evm.StaticCall(recorder, precompile, input, supplied)
+	ret, left, err := h.evm.StaticCall(recorder, precompile, input, supplied)
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
 	require.Equal(t, supplied-cost(input, xweb.WriteBaseGas, 0), left)
+	reason, err = abi.UnpackRevert(ret)
+	require.NoError(t, err)
+	require.Equal(t, "LXP_XWEB_STATICCALL: cannot call xweb request from staticcall", reason)
 
 	_, left, err = h.evm.Call(recorder, precompile, input, cost(input, xweb.WriteBaseGas, 0)-1, uint256.NewInt(0))
 	require.ErrorIs(t, err, vm.ErrOutOfGas)
 	require.Zero(t, left)
+}
+
+func TestLXPNames(t *testing.T) {
+	errors := []struct {
+		err  *sdkerrors.Error
+		code uint32
+		name string
+		text string
+	}{
+		{types.ErrUnauthorized, 2, "LXP_XWEB_UNAUTHORIZED", "unauthorized"},
+		{types.ErrInvalidGenesis, 3, "LXP_XWEB_INVALID_GENESIS", "invalid genesis"},
+		{types.ErrInvalidParams, 4, "LXP_XWEB_INVALID_PARAMS", "invalid params"},
+		{types.ErrInvalidAttestors, 5, "LXP_XWEB_INVALID_ATTESTORS", "invalid attestor set"},
+		{types.ErrInvalidThreshold, 6, "LXP_XWEB_INVALID_THRESHOLD", "threshold is not a majority of the attestor set"},
+		{types.ErrPaused, 7, "LXP_XWEB_PAUSED", "xweb paused"},
+		{types.ErrUnknownKind, 8, "LXP_XWEB_UNKNOWN_KIND", "unknown request kind"},
+		{types.ErrPayloadSize, 9, "LXP_XWEB_PAYLOAD_SIZE", "payload empty or over the payload cap"},
+		{types.ErrCallbackGas, 10, "LXP_XWEB_CALLBACK_GAS", "callback gas zero or over the callback cap"},
+		{types.ErrWrongFee, 11, "LXP_XWEB_WRONG_FEE", "paid amount is not the current fee"},
+		{types.ErrUnknownRequest, 12, "LXP_XWEB_UNKNOWN_REQUEST", "request not found"},
+		{types.ErrAlreadyFulfilled, 13, "LXP_XWEB_ALREADY_FULFILLED", "request already fulfilled"},
+		{types.ErrRefunded, 14, "LXP_XWEB_REFUNDED", "request already refunded"},
+		{types.ErrResponseTooLarge, 15, "LXP_XWEB_RESPONSE_TOO_LARGE", "response over the stored response bound"},
+		{types.ErrInvalidLength, 16, "LXP_XWEB_INVALID_LENGTH", "full length shorter than the response"},
+		{types.ErrBadSignature, 17, "LXP_XWEB_BAD_SIGNATURE", "invalid attestor signature"},
+		{types.ErrBelowThreshold, 18, "LXP_XWEB_BELOW_THRESHOLD", "attestor signatures below threshold"},
+		{types.ErrNotExpired, 19, "LXP_XWEB_NOT_EXPIRED", "request not yet past its timeout"},
+		{types.ErrUnknownAttestor, 20, "LXP_XWEB_UNKNOWN_ATTESTOR", "attestor not registered"},
+		{types.ErrCallbackRecorded, 21, "LXP_XWEB_CALLBACK_RECORDED", "callback outcome already recorded"},
+		{types.ErrInvalidRequest, 22, "LXP_XWEB_INVALID_REQUEST", "invalid request"},
+		{types.ErrInvalidApi, 23, "LXP_XWEB_INVALID_API", "invalid api payload"},
+		{types.ErrInvalidEnvelope, 24, "LXP_XWEB_INVALID_ENVELOPE", "invalid credential envelope"},
+		{types.ErrInvalidLevel, 25, "LXP_XWEB_INVALID_LEVEL", "invalid attestation level"},
+	}
+	for _, tc := range errors {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.code, tc.err.ABCICode())
+			require.Equal(t, types.ModuleName, tc.err.Codespace())
+			require.Equal(t, tc.text, tc.err.Error())
+			for _, err := range []error{tc.err, tc.err.Wrap("context"), fmt.Errorf("outer: %w", tc.err.Wrap("context"))} {
+				name, mapped := types.LXPName(err)
+				require.True(t, mapped)
+				require.Equal(t, tc.name, name)
+				require.ErrorIs(t, err, tc.err)
+			}
+		})
+	}
+	t.Run("unmapped", func(t *testing.T) {
+		var nilError *sdkerrors.Error
+		for _, err := range []error{nil, nilError, sdkerrors.ErrUnauthorized, sdkerrors.New(types.ModuleName, 1, "unused")} {
+			name, mapped := types.LXPName(err)
+			require.False(t, mapped)
+			require.Empty(t, name)
+		}
+	})
+	t.Run("paused_request", func(t *testing.T) {
+		h := newHarness(t)
+		before := h.balance(h.account(recorder))
+		moduleBefore := h.balance(h.keeper.ModuleAddress())
+		require.NoError(t, h.keeper.Pause(h.ctx(), types.MsgPause{Authority: authority}))
+		_, left, reason := h.call(recorder, xweb.RequestMethod, weiOf(fee), supplied, types.KindFetch, payload, callbackGas)
+		require.Equal(t, "LXP_XWEB_PAUSED: xweb paused", reason)
+		require.Equal(t, supplied-cost(h.input(xweb.RequestMethod, types.KindFetch, payload, callbackGas), xweb.WriteBaseGas, 0), left)
+		requireAmount(t, before, h.balance(h.account(recorder)))
+		requireAmount(t, moduleBefore, h.balance(h.keeper.ModuleAddress()))
+		require.Equal(t, uint64(0), h.keeper.Nonce(h.ctx()))
+		require.Empty(t, h.logs("XWebRequested"))
+	})
+	t.Run("wrapped_errors_and_fulfil_pipeline", func(t *testing.T) {
+		h := newHarness(t)
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: request 7: request not found", h.viewReverts(xweb.GetRequestMethod, uint64(7)))
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: no result for request 7: request not found", h.viewReverts(xweb.GetResultMethod, uint64(7)))
+		input := h.input(xweb.FulfilMethod, uint64(7), response, digest, fullLength, [][]byte{})
+		_, left, reason := h.call(stranger, xweb.FulfilMethod, nil, supplied, uint64(7), response, digest, fullLength, [][]byte{})
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: request 7: request not found", reason)
+		require.Equal(t, supplied-cost(input, xweb.WriteBaseGas, 0), left)
+		require.Empty(t, h.logs("XWebFulfilled"))
+		method := h.method(xweb.FulfilMethod)
+		ret, err := h.precompile.GetExecutor().Execute(h.ctx(), &method, stranger, stranger, nil, nil, false, h.evm, nil)
+		require.Nil(t, ret)
+		require.EqualError(t, err, "LXP_XWEB_FULFIL_EVM_ONLY: xweb: fulfil runs only through the EVM, which meters its callback")
+		method = h.method(xweb.GetAttestorsMethod)
+		ret, err = h.precompile.GetExecutor().Execute(h.ctx(), &method, stranger, stranger, []interface{}{uint64(1)}, nil, false, h.evm, nil)
+		require.Nil(t, ret)
+		require.EqualError(t, err, "LXP_PRECOMPILE_ARG_COUNT: expected 0 arguments but got 1")
+	})
+	t.Run("callback_budget", func(t *testing.T) {
+		h := newHarness(t)
+		id := h.request(recorder, callbackGas)
+		signatures := h.signatures(id, response, digest, fullLength)
+		input := h.input(xweb.FulfilMethod, id, response, digest, fullLength, signatures)
+		gas := cost(input, xweb.WriteBaseGas, 2) + callbackGas + xweb.CallbackRecordGas - 1
+		_, left, reason := h.call(stranger, xweb.FulfilMethod, nil, gas, id, response, digest, fullLength, signatures)
+		require.Equal(t, "LXP_XWEB_CALLBACK_BUDGET: xweb: fulfil of request 1 needs 210000 gas for its callback and its record, 209999 left", reason)
+		require.Equal(t, uint64(209999), left)
+		require.Equal(t, uint8(types.StatusPending), h.requestView(id).Status)
+		_, found := h.keeper.GetResult(h.ctx(), id)
+		require.False(t, found)
+		require.Empty(t, h.logs("XWebFulfilled"))
+	})
+	t.Run("wrong_payment", TestRequestRefusesWrongPayment)
 }
 
 func TestFulfilDeliversTheCallback(t *testing.T) {
@@ -498,24 +610,23 @@ func TestViews(t *testing.T) {
 func TestRefusesDelegateCallAndAnUnwiredKeeper(t *testing.T) {
 	h := newHarness(t)
 	input := h.input(xweb.FeeMethod)
-	ret, left, err := h.precompile.RunAndCalculateGas(h.evm, stranger, stranger, input, supplied, big.NewInt(0), nil, false, true)
+	ret, left, err := h.evm.DelegateCall(stranger, stranger, precompile, input, supplied, uint256.NewInt(0))
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
 	require.Equal(t, supplied-cost(input, xweb.ViewBaseGas, 0), left)
 	reason, err := abi.UnpackRevert(ret)
 	require.NoError(t, err)
-	require.Contains(t, reason, "delegatecall")
+	require.Equal(t, "LXP_XWEB_DELEGATECALL: cannot delegatecall xweb", reason)
 
 	appKeepers, wires := testkeeper.EVMTestApp.GetPrecompileKeepers().(utils.XWebKeepers)
 	require.True(t, wires)
 	require.NotNil(t, appKeepers.XWebK())
 
-	unwired, err := xweb.NewPrecompile(&utils.EmptyKeepers{})
-	require.NoError(t, err)
+	unwired := xweb.NewPrecompileWithKeeper(nil, testkeeper.EVMTestApp.BankKeeper, &testkeeper.EVMTestApp.EvmKeeper)
 	ret, _, err = unwired.RunAndCalculateGas(h.evm, stranger, stranger, input, supplied, big.NewInt(0), nil, true, false)
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
 	reason, err = abi.UnpackRevert(ret)
 	require.NoError(t, err)
-	require.Contains(t, reason, "not wired")
+	require.Equal(t, "LXP_XWEB_KEEPER_MISSING: xweb: the xweb keeper is not wired into this application", reason)
 
 	signatures := h.signatures(h.request(recorder, callbackGas), response, digest, fullLength)
 	fulfil := h.input(xweb.FulfilMethod, uint64(1), response, digest, fullLength, signatures)
@@ -523,7 +634,21 @@ func TestRefusesDelegateCallAndAnUnwiredKeeper(t *testing.T) {
 	require.ErrorIs(t, err, vm.ErrExecutionReverted)
 	reason, err = abi.UnpackRevert(ret)
 	require.NoError(t, err)
-	require.Contains(t, reason, "not wired")
+	require.Equal(t, "LXP_XWEB_KEEPER_MISSING: xweb: the xweb keeper is not wired into this application", reason)
+
+	ret, left, err = h.evm.DelegateCall(stranger, stranger, precompile, fulfil, supplied, uint256.NewInt(0))
+	require.ErrorIs(t, err, vm.ErrExecutionReverted)
+	require.Equal(t, supplied-cost(fulfil, xweb.WriteBaseGas, 2), left)
+	reason, err = abi.UnpackRevert(ret)
+	require.NoError(t, err)
+	require.Equal(t, "LXP_XWEB_DELEGATECALL: cannot delegatecall xweb", reason)
+
+	ret, left, err = h.evm.StaticCall(stranger, precompile, fulfil, supplied)
+	require.ErrorIs(t, err, vm.ErrExecutionReverted)
+	require.Equal(t, supplied-cost(fulfil, xweb.WriteBaseGas, 2), left)
+	reason, err = abi.UnpackRevert(ret)
+	require.NoError(t, err)
+	require.Equal(t, "LXP_XWEB_STATICCALL: cannot call xweb fulfil from staticcall", reason)
 }
 
 // TestABIMatchesTheSolidityInterface pins abi.json to the signatures the
