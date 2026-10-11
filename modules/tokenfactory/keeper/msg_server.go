@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
@@ -214,4 +215,31 @@ func (server msgServer) SetDenomMetadata(goCtx context.Context, msg *types.MsgSe
 	})
 
 	return &types.MsgSetDenomMetadataResponse{}, nil
+}
+
+func (server msgServer) SetDenomPaused(goCtx context.Context, msg *types.MsgSetDenomPaused) (*types.MsgSetDenomPausedResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	authorityMetadata, err := server.GetAuthorityMetadata(ctx, msg.Denom)
+	if err != nil {
+		return nil, err
+	}
+
+	if msg.Sender != authorityMetadata.GetAdmin() {
+		return nil, types.ErrUnauthorized
+	}
+
+	if err := server.setDenomPaused(ctx, msg.Denom, msg.Paused); err != nil {
+		return nil, err
+	}
+
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.TypeMsgSetDenomPaused,
+			sdk.NewAttribute(types.AttributeDenom, msg.Denom),
+			sdk.NewAttribute("paused", strconv.FormatBool(msg.Paused)),
+		),
+	})
+
+	return &types.MsgSetDenomPausedResponse{}, nil
 }

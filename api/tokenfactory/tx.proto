@@ -15,6 +15,7 @@ service Msg {
   rpc Burn(MsgBurn) returns (MsgBurnResponse);
   rpc ChangeAdmin(MsgChangeAdmin) returns (MsgChangeAdminResponse);
   rpc SetDenomMetadata(MsgSetDenomMetadata) returns (MsgSetDenomMetadataResponse);
+  rpc SetDenomPaused(MsgSetDenomPaused) returns (MsgSetDenomPausedResponse);
 }
 
 // MsgCreateDenom defines the message structure for the CreateDenom gRPC service

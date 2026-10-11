@@ -15,6 +15,10 @@ func (k Keeper) mintTo(ctx sdk.Context, amount sdk.Coin, mintTo string) error {
 		return err
 	}
 
+	if k.IsDenomPaused(ctx, amount.Denom) {
+		return types.ErrDenomPaused
+	}
+
 	logger.Info("Minting amount for module", "amount", amount, "module", types.ModuleName)
 	err = k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(amount))
 	if err != nil {
@@ -37,6 +41,10 @@ func (k Keeper) burnFrom(ctx sdk.Context, amount sdk.Coin, burnFrom string) erro
 	_, _, err := types.DeconstructDenom(amount.Denom)
 	if err != nil {
 		return err
+	}
+
+	if k.IsDenomPaused(ctx, amount.Denom) {
+		return types.ErrDenomPaused
 	}
 
 	addr, err := sdk.AccAddressFromBech32(burnFrom)
