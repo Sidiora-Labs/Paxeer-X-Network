@@ -43,7 +43,37 @@ func (k Keeper) setAdmin(ctx sdk.Context, denom string, admin string) error {
 		return err
 	}
 
-	metadata.Admin = admin
+	return k.setAuthorityMetadata(ctx, denom, types.DenomAuthorityMetadata{
+		Admin:     admin,
+		IssuerDid: metadata.IssuerDid,
+	})
+}
 
+// SetIssuerDid binds the denom to the LayerX DID of its issuer; a denom already
+// bound to a different issuer is refused and rebinding the same issuer is a no-op.
+func (k Keeper) SetIssuerDid(ctx sdk.Context, denom string, issuerDid string) error {
+	if _, found := k.bankKeeper.GetDenomMetaData(ctx, denom); !found {
+		return types.ErrDenomDoesNotExist.Wrapf("denom: %s", denom)
+	}
+	metadata, err := k.GetAuthorityMetadata(ctx, denom)
+	if err != nil {
+		return err
+	}
+	if metadata.IssuerDid == issuerDid {
+		return nil
+	}
+	if metadata.IssuerDid != "" {
+		return types.ErrInvalidAuthorityMetadata.Wrapf("denom %s already has issuer did %s", denom, metadata.IssuerDid)
+	}
+	metadata.IssuerDid = issuerDid
 	return k.setAuthorityMetadata(ctx, denom, metadata)
+}
+
+// IssuerDid returns the LayerX DID the denom is bound to, empty for a denom without an issuer.
+func (k Keeper) IssuerDid(ctx sdk.Context, denom string) (string, error) {
+	metadata, err := k.GetAuthorityMetadata(ctx, denom)
+	if err != nil {
+		return "", err
+	}
+	return metadata.IssuerDid, nil
 }

@@ -2,9 +2,12 @@ package keeper_test
 
 import (
 	"fmt"
+	"strings"
+	"testing"
 
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 )
@@ -292,5 +295,104 @@ func (suite *KeeperTestSuite) TestSetDenomMetaData() {
 				suite.Require().Error(err)
 			}
 		})
+	}
+}
+
+func adminsIssuerSuite(t *testing.T) *KeeperTestSuite {
+	s := new(KeeperTestSuite)
+	s.SetT(t)
+	s.SetupTest()
+	s.CreateDefaultDenom()
+	return s
+}
+
+func adminsIssuerDid(fill byte) string {
+	var key [32]byte
+	for i := range key {
+		key[i] = fill
+	}
+	return evmtypes.LayerXDid(key)
+}
+
+func TestIssuerDidValidate(t *testing.T) {
+	s := adminsIssuerSuite(t)
+	k := s.App.TokenFactoryKeeper
+	admin := s.TestAccs[0].String()
+	issuer := adminsIssuerDid(0xab)
+	s.Require().Equal(evmtypes.LayerXDidPrefix+strings.Repeat("ab", 32), issuer)
+
+	existing, err := k.GetAuthorityMetadata(s.Ctx, s.defaultDenom)
+	s.Require().NoError(err)
+	s.Require().Equal(types.DenomAuthorityMetadata{Admin: admin}, existing)
+	s.Require().NoError(existing.Validate())
+	did, err := k.IssuerDid(s.Ctx, s.defaultDenom)
+	s.Require().NoError(err)
+	s.Require().Equal("", did)
+
+	for _, refused := range []string{
+		issuer[:len(issuer)-1],
+		issuer + "a",
+		evmtypes.LayerXDidPrefix + strings.Repeat("AB", 32),
+		evmtypes.LayerXDidPrefix + strings.Repeat("g", 64),
+		"did:other:" + strings.Repeat("ab", 32),
+		strings.Repeat("ab", 32),
+	} {
+		metadata := types.DenomAuthorityMetadata{Admin: admin, IssuerDid: refused}
+		s.Require().ErrorIs(metadata.Validate(), types.ErrInvalidAuthorityMetadata, refused)
+		s.Require().ErrorIs(k.SetIssuerDid(s.Ctx, s.defaultDenom, refused), types.ErrInvalidAuthorityMetadata, refused)
+		did, err = k.IssuerDid(s.Ctx, s.defaultDenom)
+		s.Require().NoError(err)
+		s.Require().Equal("", did)
+	}
+
+	s.Require().NoError(types.DenomAuthorityMetadata{Admin: admin, IssuerDid: issuer}.Validate())
+	s.Require().NoError(k.SetIssuerDid(s.Ctx, s.defaultDenom, issuer))
+	stored, err := k.GetAuthorityMetadata(s.Ctx, s.defaultDenom)
+	s.Require().NoError(err)
+	s.Require().Equal(types.DenomAuthorityMetadata{Admin: admin, IssuerDid: issuer}, stored)
+
+	s.Require().NoError(k.SetIssuerDid(s.Ctx, s.defaultDenom, issuer))
+	s.Require().ErrorIs(k.SetIssuerDid(s.Ctx, s.defaultDenom, adminsIssuerDid(0xcd)), types.ErrInvalidAuthorityMetadata)
+	s.Require().ErrorIs(k.SetIssuerDid(s.Ctx, s.defaultDenom, ""), types.ErrInvalidAuthorityMetadata)
+	did, err = k.IssuerDid(s.Ctx, s.defaultDenom)
+	s.Require().NoError(err)
+	s.Require().Equal(issuer, did)
+
+	missing := fmt.Sprintf("factory/%s/missing", admin)
+	s.Require().ErrorIs(k.SetIssuerDid(s.Ctx, missing, issuer), types.ErrDenomDoesNotExist)
+	did, err = k.IssuerDid(s.Ctx, missing)
+	s.Require().NoError(err)
+	s.Require().Equal("", did)
+}
+
+func TestIssuerDidSurvivesChangeAdmin(t *testing.T) {
+	s := adminsIssuerSuite(t)
+	k := s.App.TokenFactoryKeeper
+	issuer := adminsIssuerDid(0x5a)
+	s.Require().NoError(k.SetIssuerDid(s.Ctx, s.defaultDenom, issuer))
+
+	for _, step := range []struct {
+		sender   string
+		newAdmin string
+	}{
+		{s.TestAccs[0].String(), s.TestAccs[1].String()},
+		{s.TestAccs[1].String(), ""},
+	} {
+		_, err := s.msgServer.ChangeAdmin(sdk.WrapSDKContext(s.Ctx), types.NewMsgChangeAdmin(step.sender, s.defaultDenom, step.newAdmin))
+		s.Require().NoError(err)
+
+		stored, err := k.GetAuthorityMetadata(s.Ctx, s.defaultDenom)
+		s.Require().NoError(err)
+		s.Require().Equal(types.DenomAuthorityMetadata{Admin: step.newAdmin, IssuerDid: issuer}, stored)
+
+		queried, err := s.queryClient.DenomAuthorityMetadata(s.Ctx.Context(), &types.QueryDenomAuthorityMetadataRequest{Denom: s.defaultDenom})
+		s.Require().NoError(err)
+		s.Require().Equal(issuer, queried.AuthorityMetadata.IssuerDid)
+		s.Require().Equal(step.newAdmin, queried.AuthorityMetadata.Admin)
+
+		did, err := k.IssuerDid(s.Ctx, s.defaultDenom)
+		s.Require().NoError(err)
+		s.Require().Equal(issuer, did)
+		s.Require().ErrorIs(k.SetIssuerDid(s.Ctx, s.defaultDenom, adminsIssuerDid(0x01)), types.ErrInvalidAuthorityMetadata)
 	}
 }
