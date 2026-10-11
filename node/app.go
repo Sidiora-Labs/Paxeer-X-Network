@@ -179,6 +179,8 @@ import (
 	oraclemodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	sequencermodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer"
+	seqkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/keeper"
 	seqtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/types"
 	tokenfactorymodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
@@ -272,6 +274,7 @@ var (
 		layerxbridgemodule.AppModuleBasic{},
 		launchpadmodule.AppModuleBasic{},
 		xwebmodule.AppModuleBasic{},
+		sequencermodule.AppModuleBasic{},
 		// this line is used by starport scaffolding # stargate/app/moduleBasic
 	)
 
@@ -322,6 +325,7 @@ var (
 		layerxbridgetypes.StoreKey,
 		launchpadtypes.StoreKey,
 		xwebtypes.StoreKey,
+		seqtypes.StoreKey,
 		// this line is used by starport scaffolding # stargate/app/storeKey
 	}
 
@@ -475,6 +479,7 @@ type App struct {
 	LayerXBridgeKeeper   layerxbridgekeeper.Keeper
 	LaunchpadKeeper      *launchpadkeeper.Keeper
 	XWebKeeper           xwebkeeper.Keeper
+	SequencerKeeper      seqkeeper.Keeper
 
 	// customPrecompiles is the full custom precompile set of LatestUpgrade;
 	// the EVM keeper serves it without the xweb entry until the xweb module
@@ -803,6 +808,7 @@ func New(
 	app.BankKeeper.(bankkeeper.BaseKeeper).RegisterBalanceChangeHook(launchpadtypes.ModuleName, app.LaunchpadKeeper.BeforeBalanceChange)
 	app.GigaBankKeeper.RegisterBalanceChangeHook(launchpadtypes.ModuleName, app.LaunchpadKeeper.BeforeBalanceChange)
 	app.XWebKeeper = xwebkeeper.NewKeeper(keys[xwebtypes.StoreKey], app.BankKeeper, &app.EvmKeeper)
+	app.SequencerKeeper = seqkeeper.NewKeeper(keys[seqtypes.StoreKey])
 
 	bApp.SetPreCommitHandler(app.HandlePreCommit)
 	bApp.SetCloseHandler(app.HandleClose)
@@ -992,6 +998,7 @@ func New(
 		layerxbridgemodule.NewAppModule(app.LayerXBridgeKeeper),
 		launchpadmodule.NewAppModule(app.LaunchpadKeeper),
 		xwebmodule.NewAppModule(app.XWebKeeper),
+		sequencermodule.NewAppModule(app.SequencerKeeper, app.GetSubspace(seqtypes.ModuleName)),
 		// this line is used by starport scaffolding # stargate/app/appModule
 	)
 
@@ -1070,6 +1077,7 @@ func New(
 		layerxbridgetypes.ModuleName,
 		launchpadtypes.ModuleName,
 		xwebtypes.ModuleName,
+		seqtypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	)
 
@@ -1728,7 +1736,9 @@ func (app *App) DeliverTxWithResult(ctx sdk.Context, tx []byte, typedTx sdk.Tx) 
 	}
 }
 
-func (app *App) ProcessTxsSynchronousV2(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx) []*abci.ExecTxResult {
+// ProcessTxsSynchronousV2 delivers txs[firstTx:] in order, each at its block position, and
+// returns their results; the txs before firstTx are not executed.
+func (app *App) ProcessTxsSynchronousV2(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx, firstTx int) []*abci.ExecTxResult {
 	blockProcessStart := time.Now()
 	defer func() {
 		utilmetrics.BlockProcessLatency(blockProcessStart, utilmetrics.Synchronous) // TODO(PLT-327): remove once app_block_process_duration_seconds verified
@@ -1736,10 +1746,10 @@ func (app *App) ProcessTxsSynchronousV2(ctx sdk.Context, txs [][]byte, typedTxs 
 			otelmetric.WithAttributes(attribute.String("type", utilmetrics.Synchronous)))
 	}()
 
-	txResults := make([]*abci.ExecTxResult, 0, len(txs))
-	for i, tx := range txs {
+	txResults := make([]*abci.ExecTxResult, 0, len(txs)-firstTx)
+	for i := firstTx; i < len(txs); i++ {
 		ctx = ctx.WithTxIndex(i)
-		res := app.DeliverTxWithResult(ctx, tx, typedTxs[i])
+		res := app.DeliverTxWithResult(ctx, txs[i], typedTxs[i])
 		txResults = append(txResults, res)
 		utilmetrics.IncrTxProcessTypeCounter(utilmetrics.Synchronous) // TODO(PLT-327): remove once app_tx_process_type_total verified
 		appMetrics.txProcessType.Add(ctx.Context(), 1,
@@ -1748,7 +1758,9 @@ func (app *App) ProcessTxsSynchronousV2(ctx sdk.Context, txs [][]byte, typedTxs 
 	return txResults
 }
 
-func (app *App) ProcessTxsSynchronousGiga(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx) []*abci.ExecTxResult {
+// ProcessTxsSynchronousGiga runs txs[firstTx:] in order through the Giga executor, each at its
+// block position, and returns their results; the txs before firstTx are not executed.
+func (app *App) ProcessTxsSynchronousGiga(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx, firstTx int) []*abci.ExecTxResult {
 	blockProcessGigaStart := time.Now()
 	defer func() {
 		utilmetrics.BlockProcessLatency(blockProcessGigaStart, utilmetrics.Synchronous) // TODO(PLT-327): remove once app_block_process_duration_seconds verified
@@ -1767,14 +1779,15 @@ func (app *App) ProcessTxsSynchronousGiga(ctx sdk.Context, txs [][]byte, typedTx
 		return nil
 	}
 
-	txResults := make([]*abci.ExecTxResult, len(txs))
-	for i, tx := range txs {
+	txResults := make([]*abci.ExecTxResult, len(txs)-firstTx)
+	for i := firstTx; i < len(txs); i++ {
+		tx, slot := txs[i], i-firstTx
 		ctx = ctx.WithTxIndex(i)
 		evmMsg := app.GetEVMMsg(typedTxs[i])
 		// If not an EVM tx, fall back to v2 processing
 		if evmMsg == nil {
 			result := app.DeliverTxWithResult(ctx, tx, typedTxs[i])
-			txResults[i] = result
+			txResults[slot] = result
 			ms.Write()
 			continue
 		}
@@ -1834,7 +1847,7 @@ func (app *App) ProcessTxsSynchronousGiga(ctx sdk.Context, txs [][]byte, typedTx
 			utilmetrics.IncrGigaFallbackToV2Counter() // TODO(PLT-327): remove once app_giga_fallback_to_v2_total verified
 			appMetrics.gigaFallback.Add(ctx.Context(), 1)
 			res := app.DeliverTxWithResult(ctx, tx, typedTxs[i])
-			txResults[i] = res
+			txResults[slot] = res
 			ms.Write()
 			continue
 		}
@@ -1843,18 +1856,18 @@ func (app *App) ProcessTxsSynchronousGiga(ctx sdk.Context, txs [][]byte, typedTx
 			// Check if this is a fail-fast error (Cosmos precompile interop detected)
 			if gigautils.ShouldExecutionAbort(execErr) {
 				res := app.DeliverTxWithResult(ctx, tx, typedTxs[i])
-				txResults[i] = res
+				txResults[slot] = res
 				ms.Write()
 				continue
 			}
-			txResults[i] = &abci.ExecTxResult{
+			txResults[slot] = &abci.ExecTxResult{
 				Code: 1,
 				Log:  fmt.Sprintf("[BUG] giga executor error: %v", execErr),
 			}
 			continue
 		}
 
-		txResults[i] = result
+		txResults[slot] = result
 		ctx.GigaMultiStore().WriteGiga()
 		utilmetrics.IncrTxProcessTypeCounter(utilmetrics.Synchronous) // TODO(PLT-327): remove once app_tx_process_type_total verified
 		appMetrics.txProcessType.Add(ctx.Context(), 1,
@@ -1901,21 +1914,22 @@ func (app *App) CacheContext(ctx sdk.Context) (sdk.Context, sdk.CacheMultiStore)
 	return ctx.WithMultiStore(msCache), msCache
 }
 
-// ExecuteTxsConcurrently calls the appropriate function for processing transacitons
-func (app *App) ExecuteTxsConcurrently(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx) ([]*abci.ExecTxResult, sdk.Context) {
-	processSynchronously := app.shouldProcessSingleRecipientEVMTransfersSynchronously(typedTxs)
+// ExecuteTxsConcurrently calls the appropriate function for processing transacitons. Only
+// txs[firstTx:] are executed, each at its block position; the results are theirs, in order.
+func (app *App) ExecuteTxsConcurrently(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx, firstTx int) ([]*abci.ExecTxResult, sdk.Context) {
+	processSynchronously := app.shouldProcessSingleRecipientEVMTransfersSynchronously(typedTxs[firstTx:])
 	if app.GigaExecutorEnabled && app.GigaOCCEnabled && !processSynchronously {
-		return app.ProcessTXsWithOCCGiga(ctx, txs, typedTxs)
+		return app.ProcessTXsWithOCCGiga(ctx, txs, typedTxs, firstTx)
 	} else if app.GigaExecutorEnabled {
-		return app.ProcessTxsSynchronousGiga(ctx, txs, typedTxs), ctx
+		return app.ProcessTxsSynchronousGiga(ctx, txs, typedTxs, firstTx), ctx
 	} else if !ctx.IsOCCEnabled() {
-		return app.ProcessTxsSynchronousV2(ctx, txs, typedTxs), ctx
+		return app.ProcessTxsSynchronousV2(ctx, txs, typedTxs, firstTx), ctx
 	}
 	if processSynchronously {
-		return app.ProcessTxsSynchronousV2(ctx, txs, typedTxs), ctx
+		return app.ProcessTxsSynchronousV2(ctx, txs, typedTxs, firstTx), ctx
 	}
 
-	return app.ProcessTXsWithOCCV2(ctx, txs, typedTxs)
+	return app.ProcessTXsWithOCCV2(ctx, txs, typedTxs, firstTx)
 }
 
 func (app *App) GetDeliverTxEntry(ctx sdk.Context, txIndex int, bz []byte, tx sdk.Tx) (res *sdk.DeliverTxEntry) {
@@ -1928,23 +1942,25 @@ func (app *App) GetDeliverTxEntry(ctx sdk.Context, txIndex int, bz []byte, tx sd
 	return
 }
 
-// ProcessTXsWithOCCV2 runs the transactions concurrently via OCC, using the V2 executor
-func (app *App) ProcessTXsWithOCCV2(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx) ([]*abci.ExecTxResult, sdk.Context) {
+// ProcessTXsWithOCCV2 runs txs[firstTx:] concurrently via OCC, using the V2 executor, each with
+// its block position as AbsoluteIndex
+func (app *App) ProcessTXsWithOCCV2(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx, firstTx int) ([]*abci.ExecTxResult, sdk.Context) {
 	blockProcessStart := time.Now()
 	defer func() {
 		appMetrics.blockProcessDuration.Record(ctx.Context(), time.Since(blockProcessStart).Seconds(),
 			otelmetric.WithAttributes(attribute.String("type", utilmetrics.OccConcurrent)))
 	}()
 
-	entries := make([]*sdk.DeliverTxEntry, len(txs))
-	for txIndex, tx := range txs {
-		entries[txIndex] = app.GetDeliverTxEntry(ctx, txIndex, tx, typedTxs[txIndex])
+	entries := make([]*sdk.DeliverTxEntry, 0, len(txs)-firstTx)
+	for txIndex := firstTx; txIndex < len(txs); txIndex++ {
+		entries = append(entries, app.GetDeliverTxEntry(ctx, txIndex, txs[txIndex], typedTxs[txIndex]))
 	}
 
 	batchResult := app.DeliverTxBatch(ctx, sdk.DeliverTxBatchRequest{TxEntries: entries})
 
 	execResults := make([]*abci.ExecTxResult, 0, len(batchResult.Results))
-	for i, r := range batchResult.Results {
+	for slot, r := range batchResult.Results {
+		i := firstTx + slot
 		utilmetrics.IncrTxProcessTypeCounter(utilmetrics.OccConcurrent) // TODO(PLT-327): remove once app_tx_process_type_total verified
 		appMetrics.txProcessType.Add(ctx.Context(), 1,
 			otelmetric.WithAttributes(attribute.String("type", utilmetrics.OccConcurrent)))
@@ -1998,8 +2014,9 @@ func (app *App) ProcessTXsWithOCCV2(ctx sdk.Context, txs [][]byte, typedTxs []sd
 	return execResults, ctx
 }
 
-// ProcessTXsWithOCCGiga runs the transactions concurrently via OCC, using the Giga executor
-func (app *App) ProcessTXsWithOCCGiga(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx) ([]*abci.ExecTxResult, sdk.Context) {
+// ProcessTXsWithOCCGiga runs txs[firstTx:] concurrently via OCC, using the Giga executor, each
+// with its block position as AbsoluteIndex
+func (app *App) ProcessTXsWithOCCGiga(ctx sdk.Context, txs [][]byte, typedTxs []sdk.Tx, firstTx int) ([]*abci.ExecTxResult, sdk.Context) {
 	blockProcessStart := time.Now()
 	delegatedToV2 := false
 	defer func() {
@@ -2009,16 +2026,17 @@ func (app *App) ProcessTXsWithOCCGiga(ctx sdk.Context, txs [][]byte, typedTxs []
 		}
 	}()
 
-	evmEntries := make([]*sdk.DeliverTxEntry, 0, len(txs))
-	v2Entries := make([]*sdk.DeliverTxEntry, 0, len(txs))
+	evmEntries := make([]*sdk.DeliverTxEntry, 0, len(txs)-firstTx)
+	v2Entries := make([]*sdk.DeliverTxEntry, 0, len(txs)-firstTx)
 	firstCosmosSeen := false
-	for txIndex, tx := range txs {
+	for txIndex := firstTx; txIndex < len(txs); txIndex++ {
+		tx := txs[txIndex]
 		if app.GetEVMMsg(typedTxs[txIndex]) != nil {
 			if firstCosmosSeen {
 				logger.Error("Giga OCC cannot execute block due to tx ordering, falling back to V2")
 				// Oops! This isn't "all EVM txs, then all Cosmos txs" - we need to fallback to V2.
 				delegatedToV2 = true
-				return app.ProcessTXsWithOCCV2(ctx, txs, typedTxs)
+				return app.ProcessTXsWithOCCV2(ctx, txs, typedTxs, firstTx)
 			}
 
 			evmEntries = append(evmEntries, app.GetDeliverTxEntry(ctx, txIndex, tx, typedTxs[txIndex]))
@@ -2071,9 +2089,9 @@ func (app *App) ProcessTXsWithOCCGiga(ctx sdk.Context, txs [][]byte, typedTxs []
 			appMetrics.gigaFallback.Add(ctx.Context(), 1)
 			// Discard all EVM changes by skipping cache writes, then re-run all txs via DeliverTx.
 			evmBatchResult = nil
-			v2Entries = make([]*sdk.DeliverTxEntry, len(txs))
-			for txIndex, tx := range txs {
-				v2Entries[txIndex] = app.GetDeliverTxEntry(ctx, txIndex, tx, typedTxs[txIndex])
+			v2Entries = make([]*sdk.DeliverTxEntry, 0, len(txs)-firstTx)
+			for txIndex := firstTx; txIndex < len(txs); txIndex++ {
+				v2Entries = append(v2Entries, app.GetDeliverTxEntry(ctx, txIndex, txs[txIndex], typedTxs[txIndex]))
 			}
 		} else {
 			// Commit EVM cache to main store before processing non-EVM txs.
@@ -2160,24 +2178,48 @@ func (app *App) ProcessBlock(ctx sdk.Context, txs [][]byte, req *BlockProcessReq
 	blockSpan.SetAttributes(attribute.Int64("height", req.Height))
 	ctx = ctx.WithTraceSpanContext(blockSpanCtx)
 
+	// From the activation height tx 0 is the sequence batch: it is applied after BeginBlock and
+	// the transactions behind it execute at their block positions.
+	firstTx := 0
+	var batch seqtypes.MsgSequenceBatch
+	if app.Sequenced(req.Height) {
+		if len(txs) == 0 {
+			return nil, nil, abci.ResponseEndBlock{}, seqtypes.ErrInvalidSequenceBatch.Wrapf("sequenced block %d has no sequence batch", req.Height)
+		}
+		if batch, err = DecodeSequenceBatch(txs[0]); err != nil {
+			return nil, nil, abci.ResponseEndBlock{}, err
+		}
+		firstTx = 1
+	}
+
 	beginBlockResp := app.BeginBlock(ctx, req.Height, lastCommit.Votes, req.ByzantineValidators, true)
 	events = append(events, beginBlockResp.Events...)
+
+	if firstTx == 1 {
+		if err := app.SequencerKeeper.DeliverSequenceBatch(ctx.WithTxIndex(0), batch); err != nil {
+			return nil, nil, abci.ResponseEndBlock{}, err
+		}
+	}
 
 	evmTxs := make([]*evmtypes.MsgEVMTransaction, len(txs)) // nil for non-EVM txs
 	var typedTxs []sdk.Tx
 	if len(preDecoded) == len(txs) {
 		typedTxs = preDecoded
-		app.FinalizeDecodedTransactionsConcurrently(ctx, typedTxs)
+		app.FinalizeDecodedTransactionsConcurrently(ctx, typedTxs[firstTx:])
 	} else {
-		typedTxs = app.DecodeTransactionsConcurrently(ctx, txs)
+		typedTxs = append(make([]sdk.Tx, firstTx), app.DecodeTransactionsConcurrently(ctx, txs[firstTx:])...)
 	}
 
-	for i := range txs {
+	for i := firstTx; i < len(txs); i++ {
 		evmTxs[i] = app.GetEVMMsg(typedTxs[i])
 	}
 
-	// Execute all transactions
-	txResults, ctx = app.ExecuteTxsConcurrently(ctx, txs, typedTxs)
+	// Execute all transactions behind the batch; txResults[0] of a sequenced block is the batch
+	// result, code 0 with zero gas.
+	txResults, ctx = app.ExecuteTxsConcurrently(ctx, txs, typedTxs, firstTx)
+	if firstTx == 1 {
+		txResults = append([]*abci.ExecTxResult{{}}, txResults...)
+	}
 
 	midBlockEvents := app.MidBlock(ctx, req.Height)
 	events = append(events, midBlockEvents...)
@@ -3403,6 +3445,7 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(evmtypes.ModuleName)
 	paramsKeeper.Subspace(epochmoduletypes.ModuleName)
 	paramsKeeper.Subspace(tokenfactorytypes.ModuleName)
+	paramsKeeper.Subspace(seqtypes.ModuleName).WithKeyTable(seqkeeper.ParamKeyTable())
 	// this line is used by starport scaffolding # stargate/app/paramSubspace
 
 	return paramsKeeper

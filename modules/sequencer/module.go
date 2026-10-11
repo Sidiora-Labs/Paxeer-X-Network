@@ -4,6 +4,7 @@
 package sequencer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -29,9 +30,55 @@ var (
 	_ module.AppModuleBasic = AppModuleBasic{}
 )
 
-// genesisState is the receipt key part of the sequencer genesis.
+// genesisState is the JSON form of the sequencer genesis. A genesis with a
+// leader list is the activation genesis: it decodes to types.GenesisState, is
+// written to the module store and pins the same receipt keys in the
+// ReceiptKeys param. A genesis with no leader is the module before
+// activation: it pins only the ReceiptKeys param.
 type genesisState struct {
+	Leaders     [][]byte           `json:"leaders,omitempty"`
 	ReceiptKeys keeper.ReceiptKeys `json:"receipt_keys"`
+	LastSeq     uint64             `json:"last_seq,omitempty"`
+}
+
+// decodeGenesis decodes bz and returns the receipt key list for the param and,
+// when the genesis carries a leader list, the validated activation state.
+func decodeGenesis(bz json.RawMessage) (keeper.ReceiptKeys, *types.GenesisState, error) {
+	var genesis genesisState
+	if err := json.Unmarshal(bz, &genesis); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
+	}
+	if err := genesis.ReceiptKeys.Validate(); err != nil {
+		return nil, nil, err
+	}
+	if len(genesis.Leaders) == 0 {
+		if genesis.LastSeq != 0 {
+			return nil, nil, types.ErrInvalidGenesis.Wrapf("lastSeq is %d with no leader list", genesis.LastSeq)
+		}
+		return genesis.ReceiptKeys, nil, nil
+	}
+	state := types.GenesisState{
+		Leaders:     make([][32]byte, len(genesis.Leaders)),
+		ReceiptKeys: make([]types.ReceiptKey, len(genesis.ReceiptKeys)),
+		LastSeq:     genesis.LastSeq,
+	}
+	for i, leader := range genesis.Leaders {
+		if len(leader) != len(state.Leaders[i]) {
+			return nil, nil, types.ErrInvalidGenesis.Wrapf("leader %d is %d bytes, want %d", i, len(leader), len(state.Leaders[i]))
+		}
+		copy(state.Leaders[i][:], leader)
+	}
+	for i, entry := range genesis.ReceiptKeys {
+		key := &state.ReceiptKeys[i]
+		copy(key.KeyId[:], entry.KeyId)
+		copy(key.PublicKey[:], entry.PublicKey)
+		key.FirstHeight = entry.FirstHeight
+		key.LastHeight = entry.LastHeight
+	}
+	if err := state.Validate(); err != nil {
+		return nil, nil, err
+	}
+	return genesis.ReceiptKeys, &state, nil
 }
 
 type AppModuleBasic struct{}
@@ -52,11 +99,8 @@ func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
 }
 
 func (AppModuleBasic) ValidateGenesis(_ codec.JSONCodec, _ client.TxEncodingConfig, bz json.RawMessage) error {
-	var genesis genesisState
-	if err := json.Unmarshal(bz, &genesis); err != nil {
-		return fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
-	}
-	return genesis.ReceiptKeys.Validate()
+	_, _, err := decodeGenesis(bz)
+	return err
 }
 
 func (am AppModuleBasic) ValidateGenesisStream(cdc codec.JSONCodec, config client.TxEncodingConfig, genesisCh <-chan json.RawMessage) error {
@@ -76,19 +120,21 @@ func (AppModuleBasic) GetTxCmd() *cobra.Command { return nil }
 
 func (AppModuleBasic) GetQueryCmd() *cobra.Command { return nil }
 
-// AppModule holds the sequencer param subspace. It routes no message: the
+// AppModule holds the sequencer keeper and param subspace. It routes no
+// message: the batch reaches the keeper only as tx 0 of a block, and the
 // receipt key list has no Msg write path.
 type AppModule struct {
 	AppModuleBasic
+	keeper     keeper.Keeper
 	paramSpace paramtypes.Subspace
 }
 
 // NewAppModule registers the ReceiptKeys param on the subspace.
-func NewAppModule(paramSpace paramtypes.Subspace) AppModule {
+func NewAppModule(k keeper.Keeper, paramSpace paramtypes.Subspace) AppModule {
 	if !paramSpace.HasKeyTable() {
 		paramSpace = paramSpace.WithKeyTable(keeper.ParamKeyTable())
 	}
-	return AppModule{paramSpace: paramSpace}
+	return AppModule{keeper: k, paramSpace: paramSpace}
 }
 
 func (AppModule) Route() sdk.Route { return sdk.Route{} }
@@ -101,23 +147,41 @@ func (AppModule) RegisterServices(_ module.Configurator) {}
 
 func (AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
+// InitGenesis writes the activation state to the module store and the same
+// receipt key list to the ReceiptKeys param, so the batch signature check and
+// the param read one key set.
 func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, gs json.RawMessage) []abci.ValidatorUpdate {
-	var genesis genesisState
-	if err := json.Unmarshal(gs, &genesis); err != nil {
+	keys, state, err := decodeGenesis(gs)
+	if err != nil {
 		panic(err)
 	}
-	if err := keeper.InitReceiptKeys(ctx, am.paramSpace, genesis.ReceiptKeys); err != nil {
+	if state != nil {
+		if err := am.keeper.InitGenesis(ctx, *state); err != nil {
+			panic(err)
+		}
+	}
+	if err := keeper.InitReceiptKeys(ctx, am.paramSpace, keys); err != nil {
 		panic(err)
 	}
 	return []abci.ValidatorUpdate{}
 }
 
+// ExportGenesis returns the leader list and lastSeq from the module store and
+// the governed ReceiptKeys param.
 func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMessage {
+	state, err := am.keeper.ExportGenesis(ctx)
+	if err != nil {
+		panic(err)
+	}
 	keys := keeper.GetReceiptKeys(ctx, am.paramSpace)
 	if keys == nil {
 		keys = keeper.ReceiptKeys{}
 	}
-	encoded, err := json.Marshal(genesisState{ReceiptKeys: keys})
+	genesis := genesisState{ReceiptKeys: keys, LastSeq: state.LastSeq}
+	for _, leader := range state.Leaders {
+		genesis.Leaders = append(genesis.Leaders, bytes.Clone(leader[:]))
+	}
+	encoded, err := json.Marshal(genesis)
 	if err != nil {
 		panic(err)
 	}
