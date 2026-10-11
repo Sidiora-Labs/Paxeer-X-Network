@@ -22,6 +22,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/tx/signing"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -259,6 +260,75 @@ func TestRun(t *testing.T) {
 	// invalid input
 	_, _, err = p.RunAndCalculateGas(&evm, common.Address{}, common.Address{}, []byte{1, 2, 3, 4}, 100000, nil, nil, false, false)
 	require.NotNil(t, err)
+}
+
+func TestBankRevertReasons(t *testing.T) {
+	testApp := testkeeper.EVMTestApp
+	const planHeight = int64(100)
+	ctx, _ := testApp.NewContext(false, tmtypes.Header{}).CacheContext()
+	k := &testApp.EvmKeeper
+	_, callerEVMAddr := testkeeper.MockAddressPair()
+
+	p, err := bank.NewPrecompile(testApp.GetPrecompileKeepers())
+	require.Nil(t, err)
+	executor := p.GetExecutor().(*bank.PrecompileExecutor)
+	balance, err := p.ABI.MethodById(executor.BalanceID)
+	require.Nil(t, err)
+
+	executeShortArgs := func(height int64) ([]byte, uint64, error) {
+		return executor.Execute(ctx.WithBlockHeight(height), balance, callerEVMAddr, callerEVMAddr, []interface{}{callerEVMAddr}, nil, true, nil, 100000, nil)
+	}
+	run := func(height int64, input []byte, value *big.Int) []byte {
+		evm := vm.EVM{StateDB: state.NewDBImpl(ctx.WithBlockHeight(height), k, false)}
+		ret, _, err := p.RunAndCalculateGas(&evm, callerEVMAddr, callerEVMAddr, input, 100000, value, nil, true, false)
+		require.Equal(t, vm.ErrExecutionReverted, err)
+		return ret
+	}
+	nonPayableArgs, err := balance.Inputs.Pack(callerEVMAddr, "uhpx")
+	require.Nil(t, err)
+	nonPayableInput := append(append([]byte{}, executor.BalanceID...), nonPayableArgs...)
+	invalidAddrArgs, err := balance.Inputs.Pack(common.Address{}, "uhpx")
+	require.Nil(t, err)
+	invalidAddrInput := append(append([]byte{}, executor.BalanceID...), invalidAddrArgs...)
+
+	// Before the plan is applied every refusal keeps today's text and bytes.
+	ret, gas, err := executeShortArgs(planHeight)
+	require.Nil(t, ret)
+	require.Equal(t, uint64(0), gas)
+	require.EqualError(t, err, "expected 2 arguments but got 1")
+	require.Nil(t, run(planHeight, nonPayableInput, big.NewInt(1)))
+	require.Nil(t, run(planHeight, invalidAddrInput, nil))
+
+	testApp.UpgradeKeeper.SetDone(ctx.WithBlockHeight(planHeight), pcommon.MergeUpgrade)
+
+	// Below the plan height every refusal keeps today's text and bytes.
+	ret, gas, err = executeShortArgs(planHeight - 1)
+	require.Nil(t, ret)
+	require.Equal(t, uint64(0), gas)
+	require.EqualError(t, err, "expected 2 arguments but got 1")
+	require.Nil(t, run(planHeight-1, nonPayableInput, big.NewInt(1)))
+	require.Nil(t, run(planHeight-1, invalidAddrInput, nil))
+
+	// At and above the plan height each refusal reverts with its LXP_ code.
+	for _, height := range []int64{planHeight, planHeight + 1} {
+		ret, gas, err = executeShortArgs(height)
+		require.Nil(t, ret)
+		require.Equal(t, uint64(0), gas)
+		require.EqualError(t, err, "LXP_PRECOMPILE_ARG_COUNT: expected N arguments but got M; expected 2 arguments but got 1")
+		require.Equal(t, pcommon.LXPRevert("LXP_PRECOMPILE_ARG_COUNT", "expected 2 arguments but got 1"), pcommon.RevertReason(err))
+
+		nonPayable := run(height, nonPayableInput, big.NewInt(1))
+		require.Equal(t, pcommon.LXPRevert("LXP_PRECOMPILE_NON_PAYABLE", ""), nonPayable)
+		reason, err := abi.UnpackRevert(nonPayable)
+		require.Nil(t, err)
+		require.Equal(t, "LXP_PRECOMPILE_NON_PAYABLE: sending funds to a non-payable function", reason)
+
+		invalidAddr := run(height, invalidAddrInput, nil)
+		require.Equal(t, pcommon.LXPRevert("LXP_PRECOMPILE_INVALID_ADDR", ""), invalidAddr)
+		reason, err = abi.UnpackRevert(invalidAddr)
+		require.Nil(t, err)
+		require.Equal(t, "LXP_PRECOMPILE_INVALID_ADDR: invalid addr", reason)
+	}
 }
 
 func TestSendForUnlinkedReceiver(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -95,7 +96,7 @@ func NewPrecompile(keepers putils.Keepers) (*pcommon.DynamicGasPrecompile, error
 		}
 	}
 
-	return pcommon.NewDynamicGasPrecompile(newAbi, p, p.address, "bank"), nil
+	return pcommon.NewDynamicGasPrecompile(newAbi, p, p.address, "bank").WithRevertReasons(), nil
 }
 
 // RequiredGas returns the required bare minimum gas to execute the precompile.
@@ -110,6 +111,15 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 			err = fmt.Errorf("execution reverted: %v", r)
 		}
 	}()
+	ret, remainingGas, err = p.dispatch(ctx, method, caller, callingContract, args, value, readOnly, evm, hooks)
+	var refused refusal
+	if errors.As(err, &refused) && p.mergePlanActive(ctx) {
+		err = refused.lxpError()
+	}
+	return ret, remainingGas, err
+}
+
+func (p PrecompileExecutor) dispatch(ctx sdk.Context, method *abi.Method, caller common.Address, callingContract common.Address, args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, hooks *tracing.Hooks) ([]byte, uint64, error) {
 	switch method.Name {
 	case SendMethod:
 		return p.send(ctx, caller, method, args, value, readOnly)
@@ -128,7 +138,58 @@ func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller 
 	case SupplyMethod:
 		return p.totalSupply(ctx, method, args, value)
 	}
-	return
+	return nil, 0, nil
+}
+
+// refusal is a framework refusal of a bank call. Its text is the text the
+// call reverted with before the merge plan; from the plan's height Execute
+// replaces it with the registry text of its code.
+type refusal struct {
+	code   string
+	detail string
+	err    error
+}
+
+func (r refusal) Error() string {
+	return r.err.Error()
+}
+
+func (r refusal) Unwrap() error {
+	return r.err
+}
+
+// lxpError returns the error whose revert reason is LXPRevert of the
+// refusal's code and detail.
+func (r refusal) lxpError() error {
+	reason, err := abi.UnpackRevert(pcommon.LXPRevert(r.code, r.detail))
+	if err != nil {
+		return r.err
+	}
+	return errors.New(reason)
+}
+
+func argCountRefusal(err error) error {
+	return refusal{code: "LXP_PRECOMPILE_ARG_COUNT", detail: err.Error(), err: err}
+}
+
+func nonPayableRefusal(err error) error {
+	return refusal{code: "LXP_PRECOMPILE_NON_PAYABLE", err: err}
+}
+
+func invalidAddrRefusal() error {
+	return refusal{code: "LXP_PRECOMPILE_INVALID_ADDR", err: errors.New("invalid addr")}
+}
+
+// mergePlanActive reports whether the merge plan is active at the height of
+// the call's block. It reads the plan without charging the call.
+func (p PrecompileExecutor) mergePlanActive(ctx sdk.Context) bool {
+	getter, ok := p.evmKeeper.(interface {
+		UpgradeKeeper() *upgradekeeper.Keeper
+	})
+	if !ok {
+		return false
+	}
+	return getter.UpgradeKeeper().IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), pcommon.MergeUpgrade, ctx.BlockHeight())
 }
 
 func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method *abi.Method, args []interface{}, value *big.Int, readOnly bool) ([]byte, uint64, error) {
@@ -136,11 +197,11 @@ func (p PrecompileExecutor) send(ctx sdk.Context, caller common.Address, method 
 		return nil, 0, errors.New("cannot call send from staticcall")
 	}
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 4); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 	denom := args[2].(string)
 	if denom == "" {
@@ -192,7 +253,7 @@ func (p PrecompileExecutor) sendNative(ctx sdk.Context, method *abi.Method, args
 		return nil, 0, errors.New("cannot delegatecall sendNative")
 	}
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 	if value == nil || value.Sign() == 0 {
 		return nil, 0, errors.New("set `value` field to non-zero to send")
@@ -200,12 +261,12 @@ func (p PrecompileExecutor) sendNative(ctx sdk.Context, method *abi.Method, args
 
 	senderPaxAddr, ok := p.evmKeeper.GetPaxAddress(ctx, caller)
 	if !ok {
-		return nil, 0, errors.New("invalid addr")
+		return nil, 0, invalidAddrRefusal()
 	}
 
 	receiverAddr, ok := (args[0]).(string)
 	if !ok || receiverAddr == "" {
-		return nil, 0, errors.New("invalid addr")
+		return nil, 0, invalidAddrRefusal()
 	}
 
 	receiverPaxAddr, err := sdk.AccAddressFromBech32(receiverAddr)
@@ -246,11 +307,11 @@ func (p PrecompileExecutor) sendNative(ctx sdk.Context, method *abi.Method, args
 
 func (p PrecompileExecutor) balance(ctx sdk.Context, method *abi.Method, args []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 2); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 
 	addr, err := p.accAddressFromArg(ctx, args[0])
@@ -268,11 +329,11 @@ func (p PrecompileExecutor) balance(ctx sdk.Context, method *abi.Method, args []
 
 func (p PrecompileExecutor) all_balances(ctx sdk.Context, method *abi.Method, args []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 
 	addr, err := p.accAddressFromArg(ctx, args[0])
@@ -298,11 +359,11 @@ func (p PrecompileExecutor) all_balances(ctx sdk.Context, method *abi.Method, ar
 
 func (p PrecompileExecutor) name(ctx sdk.Context, method *abi.Method, args []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 
 	denom := args[0].(string)
@@ -316,11 +377,11 @@ func (p PrecompileExecutor) name(ctx sdk.Context, method *abi.Method, args []int
 
 func (p PrecompileExecutor) symbol(ctx sdk.Context, method *abi.Method, args []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 
 	denom := args[0].(string)
@@ -334,7 +395,7 @@ func (p PrecompileExecutor) symbol(ctx sdk.Context, method *abi.Method, args []i
 
 func (p PrecompileExecutor) decimals(ctx sdk.Context, method *abi.Method, _ []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	// all native tokens are integer-based, returns decimals for microdenom (uhpx)
@@ -344,11 +405,11 @@ func (p PrecompileExecutor) decimals(ctx sdk.Context, method *abi.Method, _ []in
 
 func (p PrecompileExecutor) totalSupply(ctx sdk.Context, method *abi.Method, args []interface{}, value *big.Int) ([]byte, uint64, error) {
 	if err := pcommon.ValidateNonPayable(value); err != nil {
-		return nil, 0, err
+		return nil, 0, nonPayableRefusal(err)
 	}
 
 	if err := pcommon.ValidateArgsLength(args, 1); err != nil {
-		return nil, 0, err
+		return nil, 0, argCountRefusal(err)
 	}
 
 	denom := args[0].(string)
@@ -360,7 +421,7 @@ func (p PrecompileExecutor) totalSupply(ctx sdk.Context, method *abi.Method, arg
 func (p PrecompileExecutor) accAddressFromArg(ctx sdk.Context, arg interface{}) (sdk.AccAddress, error) {
 	addr := arg.(common.Address)
 	if addr == (common.Address{}) {
-		return nil, errors.New("invalid addr")
+		return nil, invalidAddrRefusal()
 	}
 	paxAddr, found := p.evmKeeper.GetPaxAddress(ctx, addr)
 	if !found {
