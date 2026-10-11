@@ -6959,7 +6959,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.4.1]
 title = "Execute budget pull with the grant draw record"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["2.3.1"]
@@ -10506,7 +10506,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.4]
 title = "Store-backed asset state for spot validation"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14707,7 +14707,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.6]
 title = "AI commit and reveal windows by execution height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14734,7 +14734,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.7]
 title = "AI chain domain, epoch heights and aggregation bounds"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14815,7 +14815,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.10]
 title = "AI evaluator authority and challenge"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14923,7 +14923,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.14]
 title = "Sandbox crate drops the kernel proof dependency"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -25087,7 +25087,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.1]
 title = "secp256k1 signing in agentd and layerx-crypto"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -25141,7 +25141,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.3]
 title = "Client submit on eth_sendRawTransaction and pax_sequencerReceipt"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -25249,10 +25249,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.7]
 title = "Rung evidence in finality: receipt keys, inclusion and commit"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
-requires = ["0.3"]
+requires = ["0.3", "0.22"]
 reqs = ["6021.1", "6021.2", "6021.3"]
 capabilities = ["6.3.8"]
 do_1 = "Replace Level with Rung in augment (agent/crates/layerx-agentd/src/finality.rs:77) and augment_verified (agent/crates/layerx-agentd/src/finality.rs:173); this depends on first-wave task 0.3."
@@ -25330,10 +25330,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.10]
 title = "Refuse key rotation per decision.16"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
-requires = []
+requires = ["0.22"]
 reqs = ["6039.1", "6039.2", "6039.3"]
 capabilities = ["6.5.8"]
 do_1 = "Refuse the managed rotation commit at agent/crates/layerx-agentd/src/managed_agent_rotation.rs:131 with rotation_unsupported."
@@ -25384,7 +25384,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.12]
 title = "agent-api major 2 read schema"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -25573,7 +25573,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.19]
 title = "Portable receipt v2"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -25789,7 +25789,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.27]
 title = "Go and JVM verifiers on the sequencer receipt"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -25925,7 +25925,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.32]
 title = "px reads with commit finality and ReceiptKeys"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26007,7 +26007,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.35]
 title = "AI market writes as layerxprograms calls"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26061,7 +26061,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.37]
 title = "Perps and spot builders as 0x1015 ABI calls"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26088,7 +26088,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.38]
 title = "EVM helpers submit with a sequencer receipt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26115,7 +26115,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.39]
 title = "Account derivation and bind as the first write step"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26143,7 +26143,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.40]
 title = "Sponsored gas and fee denomination in the TS gas station client"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26172,7 +26172,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.41]
 title = "Gas station returns the sequencer receipt and enforces DID budgets"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -26199,7 +26199,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.42]
 title = "CLI wallet writes on the pending nonce and EIP-1559"
-status = "in_progress"
+status = "blocked"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -30299,7 +30299,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.5]
 title = "Merchant settlement verifies against the ReceiptKeys list"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2", "0.3"]
@@ -30467,10 +30467,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.11]
 title = "Core boundary withdrawal caps from configuration and treasury balance from bank"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
-requires = []
+requires = ["7.0.8", "7.5.10"]
 reqs = ["7019.1", "7019.2", "7019.3", "7019.4"]
 capabilities = ["7.4.3"]
 do_1 = "Hold withdrawal configuration in the service configuration instead of the LNI registry read (platform/hosted/core/src/withdrawal.rs:8)."
@@ -36245,7 +36245,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.31]
 title = "Activity evidence comes from sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36299,7 +36299,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.33]
 title = "Bridge relayer journal keys releases by receipt"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36326,7 +36326,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.34]
 title = "Bridge precompile keeps bridgeIn, bridgeOut, reads and governance"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36353,7 +36353,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.35]
 title = "Explorer status uses the three rungs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36407,7 +36407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.37]
 title = "Explorer transaction pages show the sequencer signature"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36434,7 +36434,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.38]
 title = "Explorer capabilities drop the custody and anchor probes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36461,7 +36461,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.39]
 title = "Explorer unified account becomes the native address page"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36488,7 +36488,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.40]
 title = "Explorer market events, bindings and identity stay"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36515,7 +36515,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.41]
 title = "Explorer frontend status ladder shows three rungs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -39751,7 +39751,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.4]
 title = "Send path returns the signed receipt on the sequencer and forwards elsewhere"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.3"]
@@ -40189,6 +40189,83 @@ time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.20]
+title = "Gateway maintained receipt reads keep hash-identified batches under receipt key selection"
+status = "pending"
+wave = 1
+requires = ["0.15"]
+reqs = ["9024.1", "9024.2", "9026.1"]
+capabilities = []
+do_1 = "In platform/hosted/gateway/src/lib.rs, ReceiptKeyList::authorization_for_facts no longer parses every batch_id as a zero-padded height. Add a selection path that takes the key id and an authenticated batch number: for maintained documents the batch number comes from the signed header (expose it from platform/hosted/gateway/src/authority_evidence.rs if it is not already reachable), for sequencer receipts the height-encoded batch_id path stays exactly as task 0.15 left it, and verify_receipt keeps its canonical-height refusal."
+do_2 = "In platform/hosted/gateway/src/main.rs the maintained branch of authority_response selects the key with that authenticated batch number and the key id of the document, then runs maintained.authorize as before; a one-key list behaves as it did before task 0.15 for both representations; no signature, inclusion or root check is weakened."
+do_3 = "In platform/hosted/gateway/tests/receipt_keys.rs add maintained_hash_batch_id_verifies_with_single_and_two_key_lists: load the real fixture platform/hosted/gateway/tests/fixtures/maintained-authority.json, configure a one-entry ReceiptKeyList with independent pins and bounds and assert authorization succeeds; repeat with a two-entry list; exercise the same fixture through Config, authority_response and the authorized receipt GET route and assert the read succeeds; keep the existing height-encoded cases unchanged."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/authority_evidence.rs", "platform/hosted/gateway/tests/receipt_keys.rs"]
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --tests"
+verify_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys maintained_hash_batch_id_verifies_with_single_and_two_key_lists"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.21]
+title = "Pending subscription overflow is observable at the RPC boundary and never silently stops delivery"
+status = "pending"
+wave = 1
+requires = ["13.1.5"]
+reqs = ["13003.1", "13003.2", "13003.3"]
+capabilities = []
+do_1 = "In rpc/send.go the pending listener feed no longer closes and deletes a listener whose buffer is full. On overflow the hash is dropped for that listener and a per-listener lag counter is incremented under the feed lock; the listener stays registered until the subscription forwarder removes it on notifier close or unsubscribe."
+do_2 = "The forwarder goroutine, before delivering the next hash after a lag, reads and resets the lag counter and delivers one lag notification object {\"lagged\": \"0x<count>\"} on the same subscription so the client can resynchronise through pending-block reads; hashes resume after it. Document the object shape and the buffer size beside the subscription method."
+do_3 = "In rpc/resolution_pending_test.go add TestResolutionPendingSubscriptionOverflow: with a stalled consumer receipt more hashes than the buffer holds, then drain; assert the consumer receives the buffered hashes, exactly one lag object with the exact dropped count, then every later hash in order, and that the feed still holds the listener. Add the ordering acceptance line for overflow to acceptance.13.3.2 wording in this block: either delivery continues with a lag marker or the subscription ends with an error; the pinned RPC notifier exposes no server-side close, so this task implements the marker form."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["rpc/send.go", "rpc/resolution_pending_test.go"]
+build_cmd = "go build ./rpc/..."
+verify_cmd = "go test -count=1 ./rpc/ -run TestResolutionPendingSubscription"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.22]
+title = "Agent operation catalogue restores mcp.invoke so the agent daemon and SDK compile"
+status = "pending"
+wave = 1
+requires = []
+reqs = ["6.15", "6.39", "6.51"]
+capabilities = []
+do_1 = "agent/schema/agent-api/v1.kvx declares [transport.agent_http.operation.mcp.invoke], and agent/crates/layerx-agentd (tenant.rs, agent_rpc_dispatch.rs, agent_rpc.rs, human_runtime.rs) and agent/crates/layerx-sdk/src/agent_envelope.rs reference Operation::McpInvoke, but agent/crates/layerx-agent-api/src/operation_generated.rs no longer has the variant, so every agentd and sdk build fails with E0599. Restore the McpInvoke variant in the enum, in the catalogue list, in the name mapping as mcp.invoke and in the mutating set, matching the schema entry exactly."
+do_2 = "If operation_generated.rs is produced by a generator in agent/tools, regenerate through it and keep the output byte-identical to the hand edit; if a golden under agent/schema/agent-api/golden pins the catalogue, update that golden to the schema truth rather than deleting it."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/schema/agent-api/golden"]
+build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd -p layerx-sdk --tests"
+verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --lib operation"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
 [task.9.0.6]
 title = "Pending state, call and estimate"
 status = "done"
@@ -41115,7 +41192,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.2.7]
 title = "Ante chain in deliver mode on the open block"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.11"]
@@ -49357,7 +49434,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.16]
 title = "Python XWebPrecompileCall becomes PrecompileCall and exchange calls follow 0x1015 version 2"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -49413,7 +49490,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.18]
 title = "Python x402 RPC moves from lx_sendActivity to eth_sendRawTransaction and receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.3"]
@@ -49889,7 +49966,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.33]
 title = "Bring-up check-live probes move from lx_* to eth_* and px_*"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -49917,7 +49994,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.34]
 title = "Qualification scripts move from lx_* to eth_* and px_*"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -49945,7 +50022,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.35]
 title = "Testnet journeys move from lx_* to eth_* and px_*"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -94745,7 +94822,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.5]
 title = "addr 0x1004 opts into reason reverts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.3.4"]
@@ -94772,7 +94849,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.6]
 title = "bank precompile reason reverts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.3.4"]

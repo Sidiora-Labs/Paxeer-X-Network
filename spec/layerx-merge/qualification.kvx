@@ -490,3 +490,297 @@ command = "go test -count=1 ./precompiles/common/ -run TestResolution"
 exit_code = 0
 log_path = "logs/13.3.4-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; registry reasons come through a separate WithLXPReasons opt-in because TestDynamicGasRevertReasons pins WithRevertReasons to bare error text, and framework refusal texts stay byte-identical for replay parity with the registry code carried on a wrapper error."
+
+[finding.13.3.5]
+revision = "dcd7dc50d"
+command = "go test -count=1 ./precompiles/addr/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.3.5-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed with no gaps."
+
+[finding.13.3.6]
+revision = "fba9df88f"
+command = "go test -count=1 ./precompiles/bank/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.3.6-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; no bank call path refuses a wei remainder because sendNative accepts wei, so the test checks the HandlePaymentUhpx refusal, and bank opts in with WithRevertReasons rather than WithLXPReasons since bank.go was outside touches, so only refusal-typed failures carry LXP_ codes."
+
+[finding.9.2.7]
+revision = "c54c5bedc"
+command = "go test -count=1 ./node/ -run TestAnte"
+exit_code = 0
+log_path = "logs/9.2.7-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed with no gaps."
+
+[finding.3.2.4]
+revision = "24f966b9a"
+command = "make test-spot-book"
+exit_code = 0
+log_path = "logs/3.2.4-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed with no gaps."
+
+[finding.6.5.12]
+revision = "a477f4728"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test read"
+exit_code = 0
+log_path = "logs/6.5.12-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; package clippy reports 32 pre-existing errors in identity.rs and read.rs outside touches."
+
+[finding.9.0.4]
+revision = "2ed7c7ffc"
+command = "go test -count=1 ./rpc/ -run TestSendSequencer -v"
+exit_code = 0
+log_path = "logs/9.0.4-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; no composed receipter, WAL and replicator release pipeline exists in the tree, so the SequencerAccepter contract names it and wiring SendConfig.Sequencer from node configuration is outside touches."
+
+[finding.4.2.6]
+revision = "fd7b0c119"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f04_windows"
+exit_code = 0
+log_path = "logs/4.2.6-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the activation rehearsal offsets are not supplied by the design input so the specified 64/80/80/96 values are retained."
+
+[finding.4.2.7]
+revision = "6c023f2bc"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f05_aggregation_runtime"
+exit_code = 0
+log_path = "logs/4.2.7-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; dispatch.rs still refuses the F05 selectors with UNKNOWN_OPERATION and the fuel-metered executor path is outside touches, so the F05 route and the rehearsal chain-domain value remain open."
+
+[finding.4.2.10]
+revision = "9a6f03000"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test f03_evaluator_authority"
+exit_code = 0
+log_path = "logs/4.2.10-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; proof-backed challenge exclusion has no adjudication interface so admission.rs records advisory allegations only, and the workspace clippy failures are in the SDK bindgen files outside touches."
+
+[finding.6.5.32]
+revision = "168429329"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/px.test.js"
+exit_code = 0
+log_path = "logs/6.5.32-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the gateway still emits anchor fields and has no px_getReceiptKeys route, acceptance.6.72.2 forbids overlapping key ranges while contracts/clients.md B13 and contracts/sequencer.md a3 permit primary and standby overlap, and the implementation follows the contracts; the Python stub and test are outside touches."
+
+[finding.6.5.35]
+revision = "e88114a88"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/ai-market.test.js"
+exit_code = 0
+log_path = "logs/6.5.35-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; the Rust client receipt test is outside touches and Python has no sequencer receipt or commit verifier interface, so resolution and finalization refuse explicitly there."
+
+[finding.6.5.37]
+revision = "308b629ec"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/trading-payload.test.js"
+exit_code = 0
+log_path = "logs/6.5.37-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the Python perps and spot ABI migration files are outside touches so byte parity across both SDKs is still open."
+
+[finding.6.5.39]
+revision = "ecf2fabbd"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/account-derivation.test.js"
+exit_code = 0
+log_path = "logs/6.5.39-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the live bind and readback, the standalone Python derivation test and the Rust V6 test are outside touches."
+
+[finding.6.5.40]
+revision = "ca25705d8"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/gas-station.test.js"
+exit_code = 0
+log_path = "logs/6.5.40-verify-3.log"
+observed_and_assumption = "the gate passes and the task is landed; the station service.rs is outside touches so it does not yet accept the did request field, emit feeDenom in quotes or enforce a daily cap, and the Python counterpart module is absent."
+
+[finding.6.5.38]
+revision = "ce0222907"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/xweb-api.test.js"
+exit_code = 0
+log_path = "logs/6.5.38-verify-1.log"
+observed_and_assumption = "the gate passes and the committed calldata vectors are landed; raw submission with receipt return needs bridge.ts and launchpad.ts to return receipts, and the Python parity modules are outside touches."
+
+[finding.9.2.6]
+revision = "8c711b16c"
+command = "go test -count=1 ./node/ -run TestFeeToken"
+exit_code = 1
+log_path = "logs/9.2.6-verify-2.log"
+observed_and_assumption = "three cases fail and the branch is held: the sequencer accept path rebuilds the stale-rate refusal as an ABCI internal error so ErrFeeTokenRateStale leaves the error chain, and the receipt executor Seal omits the end-of-block routing and WriteDeferredBalances that live in seal.go outside touches, so the SID holding balance stays zero."
+
+[finding.9.2.8]
+revision = "b1ce1e74d"
+command = "go test -count=1 ./node/sequencer/ -run TestHandover"
+exit_code = 1
+log_path = "logs/9.2.8-verify-3.log"
+observed_and_assumption = "six cases fail and the branch is held: the consensus SequencerSource and SealedBlock types have no public node adapter and MsgSequenceBatch has no SDK transaction encoding, so transfer refuses mismatched store contents before the 500-record comparison is reached."
+
+[finding.9.2.9]
+revision = "f74f67151"
+command = "go test -count=1 ./node/sequencer/ -run TestFailover"
+exit_code = 1
+log_path = "logs/9.2.9-verify-1.log"
+observed_and_assumption = "two cases fail exact committed-result equality and the branch is held: the MsgSequenceBatch transaction-0 encoding and insertion are absent so transaction-index-dependent fee-recipient events differ, and WAL replay has no durable acknowledged frontier."
+
+[finding.2.2.2]
+revision = "662d861ef"
+command = "make test-stream-open"
+exit_code = 2
+log_path = "logs/2.2.2-verify-1.log"
+observed_and_assumption = "the build fails at the daemon link because programs/target/release/liblayerx_programs_sandbox.a is absent in a fresh checkout, and tests/modules/test_stream_open.c line 336 still expects ordinal 8 to return LXP_ERR_UNKNOWN_ACTIVITY while do_4 admits it; both are left intact and the branch is held."
+
+[finding.4.2.2]
+revision = "4e00c4963"
+command = "make test-programs-sandbox-execute"
+exit_code = 2
+log_path = "logs/4.2.2-verify-1.log"
+observed_and_assumption = "two cases fail and the branch is held: native Fund in src/modules/programs/sandbox.c returns LXP_ERR_NON_CANONICAL and the native sweep in sandbox_expiry.c refuses bound 128, both outside touches, so the activation, settlement and 300-lease backlog assertions are unreachable."
+
+[finding.4.2.9]
+revision = "d0a75efae"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_state_boundary"
+exit_code = 101
+log_path = "logs/4.2.9-verify-2.log"
+observed_and_assumption = "two cases fail and the branch is held: expired accepted-task cancellation returns F01_TASK_ALREADY_ACCEPTED and stale metadata returns Ok instead of WRONG_ROSTER, contradicting the scoped guards, and the build diagnostics reference another checkout because the cargo target directory was shared."
+
+[finding.6.5.11]
+revision = "9443df8f2"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test write"
+exit_code = 101
+log_path = "logs/6.5.11-verify-1.log"
+observed_and_assumption = "the build fails because build.rs refuses src/generated.rs at version 1.11 against schema 2.0; the generated Rust, the version goldens and tests/write.rs are outside touches, so the branch is held."
+
+[finding.6.5.13]
+revision = "b707989f7"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors"
+exit_code = 101
+log_path = "logs/6.5.13-verify-1.log"
+observed_and_assumption = "the build fails on unmigrated VerificationLevel references across agent/crates/layerx-proof and on the Level re-export in lib.rs, all outside touches, so the Rung migration is held on its branch."
+
+[finding.6.5.16]
+revision = "2267fbfe5"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-mcp --test faucet"
+exit_code = 101
+log_path = "logs/6.5.16-verify-1.log"
+observed_and_assumption = "the build fails before the owned targets because Operation::McpInvoke is absent from the agent-api catalogue (task 0.22); the px_requestFunds router boundary is also absent so the funding quota cases cannot be exercised; the branch is held for a re-run after 0.22."
+
+[finding.6.5.28]
+revision = "7a3750200"
+command = "dotnet test platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --no-restore --nologo"
+exit_code = 127
+log_path = "logs/6.5.28-verify-1.log"
+observed_and_assumption = "dotnet and swift toolchains are not installed on the build host so neither gate ran; the branch is held until a host with those toolchains runs the gate."
+
+[finding.6.5.29]
+revision = "0a272b81c"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/receipt-fixture.test.js"
+exit_code = 2
+log_path = "logs/6.5.29-verify-1.log"
+observed_and_assumption = "the TypeScript build fails on type errors in examples, programs.ts, web-search.ts, x402/draw.ts and three native tests outside touches, and no committed fixture or commit verifier interface exists; the branch is held."
+
+[finding.6.5.30]
+revision = "174aa8069"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/agent-operation-envelope.test.js"
+exit_code = 1
+log_path = "logs/6.5.30-verify-1.log"
+observed_and_assumption = "one case fails because the schema, generated clients and version golden remain at major 1 outside touches, so the major-2 assertion cannot hold; the branch is held."
+
+[finding.6.5.36]
+revision = "95b8afabd"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/intent.test.js"
+exit_code = 1
+log_path = "logs/6.5.36-verify-1.log"
+observed_and_assumption = "one case fails because the intent plan fixture remains major 1 without nonce bindings and the human intent_submit journey still requires account_sequence, both outside touches; the branch is held."
+
+[finding.4.2.4]
+revision = "71dca9ed6"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_protocol_boundary"
+exit_code = 0
+log_path = "logs/4.2.4-verify-1.log"
+observed_and_assumption = "the gate passes but tests/host_boundary.rs in the same crate still asserts UNKNOWN_OPERATION for the newly routed selectors, so the task touches are widened to that file and the worker re-runs."
+
+[finding.4.2.5]
+revision = "8ddee5c64"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test admission_lifecycle"
+exit_code = 101
+log_path = "logs/4.2.5-verify-1.log"
+observed_and_assumption = "the verify failed to resolve items that the build compiled because several checkouts shared one cargo target directory; the worker re-runs with a per-task target directory."
+
+[finding.4.2.11]
+revision = "b1a423af2"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native"
+exit_code = 101
+log_path = "logs/4.2.11-verify-2.log"
+observed_and_assumption = "the verify emitted type errors from another checkout because the cargo target directory was shared, and the F06 dispatch routing was reported outside touches although dispatch.rs is in the task touches; the worker re-runs with a per-task target directory."
+
+[finding.6.5.31]
+revision = "fb2f077fb"
+command = "cd agent/sdk/typescript && npm run build && node dist/test/rpc.test.js"
+exit_code = 127
+log_path = "logs/6.5.31-verify-1.log"
+observed_and_assumption = "tsc was not on PATH in the checkout so neither gate ran; the worker re-runs after installing the package dependencies."
+
+[finding.4.2.14]
+revision = "71cb31804"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-sandbox --test lease"
+exit_code = 0
+log_path = "logs/4.2.14-verify-1.log"
+observed_and_assumption = "no change was made: the registry exposes no chain-header or ICS23 replacement verifier for activity proofs, and removing layerx-proof breaks lease.rs, expiry.rs and the registry test support outside touches; the task is set blocked pending that interface."
+
+[finding.6.5.1]
+revision = "4b63e3321"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test signing"
+exit_code = "not-run"
+log_path = "logs/6.5.1-build-1.log"
+observed_and_assumption = "no change was made: Prepared exposes no EIP-1559 call or DID-to-EVM binding and the 64-byte signature type is consumed by callers outside touches; the task is set blocked pending those interfaces."
+
+[finding.6.5.3]
+revision = "4b63e3321"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-client --test submit"
+exit_code = "not-run"
+log_path = "logs/6.5.3-blocked.log"
+observed_and_assumption = "no change was made: the client crate has no sha3 or EVM transaction codec dependency and the crypto crate keeps its RLP helpers private, all outside the two authorised files; the task is set blocked."
+
+[finding.6.5.7]
+revision = "4b63e3321"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test finality"
+exit_code = 101
+log_path = "logs/6.5.7-verify-1.log"
+observed_and_assumption = "no change was made: the build fails on the absent Operation::McpInvoke (task 0.22) and no Rung type, commit verifier or receipt-trie inclusion interface exists; the task returns to pending behind 0.22."
+
+[finding.6.5.10]
+revision = "a58d0d010"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test w7_owner_binding"
+exit_code = 101
+log_path = "logs/6.5.10-verify-1.log"
+observed_and_assumption = "no change was made: the build fails on the absent Operation::McpInvoke (task 0.22) and the rotation refusal reason and tenant getLayerXDid read are outside touches; the task returns to pending behind 0.22."
+
+[finding.6.5.19]
+revision = "f4db18452"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-portable --test receipt_vectors"
+exit_code = 0
+log_path = "logs/6.5.19-verify-1.log"
+observed_and_assumption = "no change was made: committed v2 export needs CometBFT header, commit and validator-set codecs and an EVM receipt-trie interface absent from the declared dependencies, and Cargo.toml is outside touches; the task is set blocked."
+
+[finding.6.5.27]
+revision = "f4db18452"
+command = "cd platform/sdk/go && go test -count=1 ./..."
+exit_code = 1
+log_path = "logs/6.5.27-verify-1.log"
+observed_and_assumption = "no change was made: the Go SDK module has no dependencies and the JVM SDK no Comet or receipt-trie codec, and two existing tests need an envelope case file and a signed corpus from the environment; the task is set blocked."
+
+[finding.6.5.41]
+revision = "10df4fe79"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test service"
+exit_code = "not-run"
+log_path = "none"
+observed_and_assumption = "no change was made: rpc.rs discards canonical receipt bytes, key id and logs and keeps its decoder private, and station.rs absorbs refusals as pending, all outside touches; the task is set blocked."
+
+[finding.6.5.42]
+revision = "10df4fe79"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-cli --test wallet_send"
+exit_code = "not-run"
+log_path = "none"
+observed_and_assumption = "no change was made: platform/cli rpc.rs refuses every eth_ method and credential.rs exposes only Ed25519 custody, both outside the touches; the task is set blocked."
+
+[finding.7.5.11]
+revision = "b73550ab3"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core"
+exit_code = "not-run"
+log_path = "none"
+observed_and_assumption = "no change was made: the shared EVM sender and EvmTreasury interfaces from tasks 7.0.8 and 7.5.10 are absent and the core Config has no withdrawal fields; the task returns to pending behind those tasks."
