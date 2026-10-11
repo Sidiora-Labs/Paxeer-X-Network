@@ -133,3 +133,192 @@ command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-
 exit_code = 101
 log_path = "logs/7.0.6-verify-2.log"
 observed_and_assumption = "11 of 13 cases pass; one needs a private signed publication file from the environment and cadence_must_stay_below_max_rate_age asserts that cadence 299 with max_rate_age 300 parses while validate requires cadence plus the 60 s confirmation retry below max_rate_age, both left as written, so the branch is held pending the rate-age ruling and the private material."
+
+[finding.9.0.6]
+revision = "023240407"
+command = "go test -count=1 ./rpc/ -run TestPendingSimulate"
+exit_code = 0
+log_path = "logs/9.0.6-verify-2.log"
+observed_and_assumption = "the gate passes with 8 cases; acceptance 9013.2 needs the sequencer send path in rpc/send.go to report the executed gasUsed instead of simulating, which task 9.0.4 owns and did not include, so a follow-up on rpc/send.go is needed before 9013.2 can be claimed."
+
+[finding.12.2.1]
+revision = "dfe9c99a5"
+command = "ls tests/parity/kernel_chain modules/layerxgov/keeper modules/layerxledger/keeper modules/layerxauth/keeper modules/layerxpay/keeper precompiles/layerxpay"
+exit_code = 2
+log_path = "logs/worktrees-b6.log"
+observed_and_assumption = "tasks 12.2.1, 12.2.12, 12.2.22, 12.2.23, 12.2.24, 12.2.37 and 2.4.9 list no requires but create tests or ABI files inside packages that do not exist yet, so they are not dispatched until the keeper and precompile packages land and their requires are corrected."
+
+[finding.9.2.2]
+revision = "e84a9eaa1"
+command = "go test -count=1 ./occ_tests/ -run TestSequencerOCCMatchesSequential"
+exit_code = 1
+log_path = "logs/9.2.2-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 3.6: all 200 V2 signed receipt indices are one greater than committed indices; app hash and remaining comparisons passed. 9035.3: the real Giga EvmoneVM is unavailable; its required assertion stops Giga execution."
+
+[finding.9.2.3]
+revision = "6cf1860db"
+command = "go test -count=1 ./node/ -run TestOptimisticProcessingTestSuite"
+exit_code = 0
+log_path = "logs/9.2.3-verify-1.log"
+observed_and_assumption = "no commit was produced, the task returns to pending; 9004.5: node/app.go lacks adoptSealed and a sealed-state/transaction-matching interface; production edits are outside touches, so the sequencer adoption test cannot be implemented. 9035.5: FinalizeBlocker cannot consume SealedLayer; OpenBlock exposes only Snapshot, and importing node/sequencer into the in-package suite creates an import cycle. The passing gate covers existing tests only. Unrelated: Required fleet commit helper exited 1 with nothing to commit, working tree clean; no task commit was created. Evidence: logs/9.2.3-commit.log"
+
+[finding.9.2.4]
+revision = "6cf1860db"
+command = "go test -count=1 ./node/ -run TestCheckTotalBlockGas_SequencerSealFits"
+exit_code = "NOT_RUN"
+log_path = "logs/9.2.4-verify-1.log"
+observed_and_assumption = "no commit was produced, the task returns to pending; 9004.3: node/check_total_block_gas_test.go is package app; importing the real Seal creates app -> sequencer -> app. No cycle-free bridge exists; an external test file requires expanded touches. 9041.3: real sealed-prefix and next-height sequence assertions are blocked by the same missing interface."
+
+[finding.2.2.3]
+revision = "b0008092d"
+command = "make test-result"
+exit_code = 0
+log_path = "logs/2.2.3-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; Build qualification requires matching ArbiterRequired, UnauthorizedArbiter and EscrowLinkMismatch variants in agent/crates/layerx-types/src/result.rs; outside touches."
+
+[finding.2.2.4]
+revision = "96ecaae3e"
+command = "make test-stream-accrual"
+exit_code = 2
+log_path = "logs/2.2.4-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 2024.3 zero last-accrual fixture is refused by lx_stream_record_validate, which requires nonzero start and last >= start; equivalent nonzero-start 30-unit vector added without changing validation. Unrelated: Makefile:678-682 omits the Programs runtime library from the accrual test link, leaving layerx_programs_* unresolved; Makefile is outside touches (existing GOTCHA 1165)."
+
+[finding.2.2.6]
+revision = "09536dcdc"
+command = "go test -count=1 ./modules/layerxpay/types/ -run TestRevertTextCarriesKernelCode"
+exit_code = 1
+log_path = "logs/2.2.6-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 2023.1: precompiles/layerxpay is absent; WithRevertReasons integration and unchanged executor-error propagation require files outside touches. 2023.3: fatal classification and normalization implemented; service-audit no-write and host-halt behavior cannot be qualified through the existing result-name interface. Task normalization conflicts with pay.md preserving fatal names and address-table.md requiring host halt. Unrelated: existing lxphost native prerequisites are unavailable: linker cannot find -llayerx or -llayerx_programs_sandbox; native-library preparation is outside touches."
+
+[finding.3.2.6]
+revision = "e1d00a3de"
+command = "go test -count=1 ./modules/layerxexchange/types/"
+exit_code = 0
+log_path = "logs/3.2.6-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 8.7/3019.2: Paused flag added; pause refusals and exit exemptions require keeper/precompile edits outside touches. 3019.3: PlaceOrder still reads NativeGenesisCapability in modules/layerxexchange/keeper/intents.go; witness replacement is outside touches."
+
+[finding.3.2.8]
+revision = "254308d99"
+command = "go test -count=1 ./precompiles/layerxexchange/ -run 'TestRevertReasonIsLxpCode"
+exit_code = "TestKernelCodeTable'"
+log_path = "exit 1"
+observed_and_assumption = "the worktree is held unlanded; 3035.1 / acceptance.3.35.1: modules/layerxexchange/keeper/intents.go:105 only records PlaceOrder intents without kernel dispatch or margin checks; precompiles/layerxexchange/layerxexchange.go:198 returns raw errors and its constructor does not invoke RevertError; both integration files are outside touches. Exact production refusal assertions remain intact. 7.6: the existing RequiredGas formula has no fixed per-method table; implementing its gas requirement requires precompiles/layerxexchange/layerxexchange.go outside touches. Unrelated: native linker cannot find liblayerx and liblayerx_programs_sandbox; build/liblayerx.a and programs/target/debug/liblayerx_programs_sandbox.a are absent. Go vet exited 0; evidence: logs/3.2.8-vet-1.log."
+
+[finding.3.2.9]
+revision = "85be4b7e8"
+command = "go test -count=1 ./modules/layerxexchange/types/ -run TestEvent"
+exit_code = 0
+log_path = "logs/3.2.9-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 2.1: in-chain trading execution requires the separate keeper rewrite; current keeper still records intents. 3036.1: all 18 Cosmos schemas and codecs implemented; EVM topics/emission remain outside touches and unqualified here. Unrelated: modules/layerxexchange/keeper/intents.go:73-147 uses removed event names/fields and string amounts; constructor migration is outside touches."
+
+[finding.3.2.10]
+revision = "efafedbe8"
+command = "go test -count=1 -run History ./modules/launchpad/keeper/"
+exit_code = 1
+log_path = "logs/3.2.10-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; acceptance.3.23.2 / req.2 ac_7: PriceSnapshots stores prices without block heights, and Swap records none; both are outside touches. Empty and unrestricted ring reads are implemented; bounded queries explicitly refuse without inferred heights. acceptance.3.23.3: types.ErrInvalidRange and canonical LXP_LAUNCHPAD error text are absent from types/errors.go, owned by task 3.2.13. Build and verify stop at history.go:20; go vet also exited 1 (logs/3.2.10-vet-1.log)."
+
+[finding.3.2.11]
+revision = "e61e04ac0"
+command = "go test -count=1 ./modules/launchpad/keeper/ -run 'TestSwapVectors"
+exit_code = "TestSwapRejections"
+log_path = "TestQuoteConservation'"
+observed_and_assumption = "the worktree is held unlanded; 2.3: getProtocolFees(address) remains absent from the precompile interface and ABI; their migration is outside touches. 3021.3: TestProtocolFeesPerMarket is absent and existing tests call the retired global getter; keeper_test.go belongs to task 3.3.9. Unrelated: Cross-task dependency: modules/launchpad/keeper/genesis.go:18 and :52 still call setProtocolFeesPending and GetProtocolFeesPending; migration belongs to task 3.2.12 and blocks both declared gates."
+
+[finding.4.2.8]
+revision = "71cb31804"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test view_binding"
+exit_code = "UNRUN"
+log_path = "none"
+observed_and_assumption = "no commit was produced, the task returns to pending; 4038.2 requires reusable Rust ICS23 membership verification and authenticated block-commit evidence; neither interface exists in programs/sdk/rust or the scoped crate, and Cargo.toml/dependency/FFI changes are outside touches. Stopped before implementation and qualification; no commit created. 4038.1 simulateCall integration and 4038.3 gateway/indexer/webhook/client integration live outside touches; their end-to-end acceptance remains unqualified."
+
+[finding.4.2.17]
+revision = "4a6ce1638"
+command = "buf lint api"
+exit_code = 127
+log_path = "logs/4.2.17-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; acceptance.4.6.3 names a fuel limit absent from lx_programs_metering_schedule; schema preserves the real coefficients. Unrelated: buf executable unavailable; buf format api/layerxprograms -w | exit 127 | logs/4.2.17-format-1.log"
+
+[finding.6.2.12]
+revision = "25225fff0"
+command = "make test-service-attest"
+exit_code = 2
+log_path = "logs/6.2.12-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 6012.1: real signed acceptance and mismatched-key vectors cannot be added; tests/modules/test_service_attest.c is outside touches. 6012.2: the required NULL and repeated-byte accessor vector is absent; tests/modules/test_service_attest.c is outside touches."
+
+[finding.9.1.5]
+revision = "02f951ad0"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-authority --test receipt_keys"
+exit_code = 101
+log_path = "logs/9.1.5-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 9.2: Authority still uses LNI receipt lookup and kernel replica evidence; its chain RPC receipt/inclusion adapter is absent. 10.2: Authority routes still return authorized-batch facts; the submitted/receipted/committed chain-rung interface is absent. Unrelated: verify exit 101: agent/crates/layerx-sdk/src/agent_envelope.rs:250,254 references missing layerx_agent_api::Operation::McpInvoke; logs/9.1.5-verify-1.log"
+
+[finding.1.1.12]
+revision = "0d633909e"
+command = "make build && go test -count=1 ./modules/lxphost/ -run 'TestExecute"
+exit_code = "TestResultErrorText'"
+log_path = "exit 1"
+observed_and_assumption = "the worktree is held unlanded; 1001.2: Host lacks asset registration and branch account persistence; ACCOUNT_OPEN isolation and principal-sequence admission cannot execute. TestExecuteLedgerAdmission retains its success assertion and fails with LXP_MODULE_DISABLED. 1010.2: bound author fields pass through the governance path, but main-account SEND cannot reach asset checks; the asset path also retains mandatory Ed25519 activity verification without an EVM substitution interface."
+
+[finding.1.1.13]
+revision = "f1a49cb47"
+command = "make build && go test -count=1 ./modules/lxphost/ -run TestReadBridge"
+exit_code = 1
+log_path = "logs/1.1.13-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 1004.3 / acceptance.1.4.3: Host.Execute refuses asset registration with LXP_ERR_MODULE_DISABLED; the 250-unit asset value assertions remain intact and unreached. 4.1: Host has no persisted/restored lx_account_registry interface; ReadBalance, ReadTotalUnits, ReadAccount and ReadAccountOwner cannot supply account-backed values. Unrelated: modules/lxphost/host.go: lxphost_reset registers only governance and Programs; lxphost_outcome_read rejects account-backed state."
+
+[finding.5.1.1]
+revision = "394df70af"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test attest"
+exit_code = 101
+log_path = "logs/5.1.1-verify-1.log"
+observed_and_assumption = "the worktree is held unlanded; 5.17.1: getKernelNetworkId and KernelNetworkId are absent from precompiles/xweb and modules/xweb; no genuine PAXEER_X_XWEB_RPC was supplied. 5.17.3: config.rs still requires kernel_network_id; main.rs still supplies it to KernelAttestor. Both files are outside touches. Unrelated: cargo clippy --locked --manifest-path interop/Cargo.toml -p x-websearch --all-targets | exit 101 | logs/5.1.1-clippy-2.log | existing errors in kernel.rs, payment.rs, submit.rs and watch.rs blocked integration-test lint; owned source findings were corrected during formatting."
+
+[finding.2.2.1]
+revision = "7cdcbefd8"
+command = "make test-budget-delegate"
+exit_code = 0
+log_path = "logs/2.2.1-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; 2009.1 literal ten-entry acceptance conflicts with do_4; both required types produce eleven entries."
+
+[finding.3.2.13]
+revision = "51e681223"
+command = "go test -count=1 ./modules/launchpad/types/ -run TestLaunchpadErrorStrings"
+exit_code = 0
+log_path = "logs/3.2.13-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; acceptance.3.22.5 requires bare LXP_LAUNCHPAD_PAUSED, but binding spec/layerx-merge/contracts/address-table.md:202 requires a message suffix; both cannot be satisfied. spec/layerx-merge/contracts/address-table.md:208 requires height-dependent replay parity; SDK registered errors lack height context and the necessary precompile files are outside touches."
+
+[finding.6.2.1]
+revision = "af0cc7965"
+command = "go test -count=1 ./precompiles/layerxagent/common/"
+exit_code = 0
+log_path = "logs/6.2.1-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; acceptance.6.1.1: registered orob precompile is absent; common unknown-selector refusal passed. acceptance.6.1.2: scheduler and streams precompiles are absent; concrete job-state assertion unavailable."
+
+[finding.7.1.3]
+revision = "832884bef"
+command = "bash tools/rollout/tests/rollout.test.sh"
+exit_code = 0
+log_path = "logs/7.1.3-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; 7038.1: tools/rollout/rollout.py rejects pruning fields; the allowed files cannot configure pruning off. Historical routing remains assigned to task 7.6.3. 7038.2: acceptance.7.38.2 requires removing relay archives, but do_1 explicitly retains them until retirement task 7.7.1."
+
+[finding.9.1.6]
+revision = "f2492d637"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys"
+exit_code = 0
+log_path = "logs/9.1.6-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; 10.3/9026.4: gateway activation-state interface is absent; HTTP and WebSocket dispatchers are in src/rpc.rs and src/ws.rs outside touches; lx_ingress_refused_after_activation is not implemented. 9.2/10.4: existing settlement verifier still requires kernel AuthorityFacts and ledger balance checks and refuses sequencer operation 0 with ReceiptCheck::Operation; these checks were preserved. Unrelated: cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-gateway --all-targets | exit 101 | logs/9.1.6-clippy-1.log | existing errors in platform/hosted/internal/src/events.rs, producer.rs and tls.rs prevented gateway lint qualification."
+
+[finding.7.0.5]
+revision = "ecb29782c"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test service"
+exit_code = 0
+log_path = "logs/7.0.5-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; registered sender budgets are parsed and validated on ServiceConfig but QuotePolicy::reserve in policy.rs still applies per_account_limit and never calls account_budget, and the new JsonRpc pending_nonce, pending_gas_estimate and sequencer_receipt calls are not yet used by station.rs, so 7022.6 and 7022.1 need the policy.rs and station.rs follow-up that task 7.1.1 and a budget-enforcement task own."
+
+[finding.12.3.17]
+revision = "ae58b08bc"
+command = "python3 tooling/fleet-status.py eligible --no-git"
+exit_code = 0
+log_path = "logs/land-batch-12.log"
+observed_and_assumption = "every pending domain-12 task with an empty requires list (waves 2 to 7) creates tests for behaviour that its subject tasks have not landed, the same shape as the wave-0 domain-12 batch that returned blocked, so they are moved to wave 8 behind 9.7.2 like that batch and will be dispatched once the subject tasks are done."
