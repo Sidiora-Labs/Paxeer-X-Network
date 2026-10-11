@@ -96,9 +96,9 @@ func NewSubscriptionAPI(tmClient client.LocalClient, k *keeper.Keeper, ctxProvid
 					continue
 				}
 				gasLimit := cp.Block.MaxGas
-				ethHeader, err := encodeTmHeader(eventHeader, baseFeePerGas, gasLimit)
+				ethHeader, err := encodeTmHeader(tmClient, eventHeader, baseFeePerGas, gasLimit)
 				if err != nil {
-					fmt.Printf("error encoding new head event %#v due to %s\n", res.Data, err)
+					fmt.Printf("dropping newHeads event at height %d: %v\n", eventHeader.Header.Height, err)
 					continue
 				}
 				api.broadcastNewHead(ethHeader)
@@ -130,7 +130,7 @@ func (a *SubscriptionAPI) runNewHeadsFromNotifier(notifier *BlockHeaderNotifier,
 			continue
 		}
 		gasLimit := cp.Block.MaxGas
-		ethHeader, err := encodeCommittedBlock(evt, baseFeePerGas, gasLimit)
+		ethHeader, err := encodeCommittedHead(a.tmClient, evt, baseFeePerGas, gasLimit)
 		if err != nil {
 			fmt.Printf("dropping invalid newHeads event at height %d: %v\n", evt.header.Height, err)
 			continue
@@ -425,11 +425,28 @@ func (s *SubscriptionManager) Unsubscribe(ctx context.Context, id SubscriberID) 
 	return nil
 }
 
+// encodeCommittedHead encodes the committed Autobahn head H with receiptsRoot
+// set to the Comet results root of block H, the value header H+1 commits as
+// LastResultsHash. A head whose results are unreadable is refused.
+func encodeCommittedHead(tmClient client.LocalClient, evt blockHeaderEvent, baseFee *big.Int, gasLimit int64) (map[string]interface{}, error) {
+	ethHeader, err := encodeCommittedBlock(evt, baseFee, gasLimit)
+	if err != nil {
+		return nil, err
+	}
+	receiptsRoot, err := readBlockResultsRoot(tmClient, evt.header.Height)
+	if err != nil {
+		return nil, err
+	}
+	ethHeader["receiptsRoot"] = receiptsRoot
+	return ethHeader, nil
+}
+
 // encodeCommittedBlock encodes the committed Autobahn head as an Ethereum
 // newHeads payload: parentHash from the last block id, transactionsRoot from
 // the data hash, receiptsRoot from the last results hash and stateRoot from the
 // finalize response's app hash. A head missing any of them is refused rather
-// than published with zero roots.
+// than published with zero roots. encodeCommittedHead replaces receiptsRoot
+// with the results root of the head's own block.
 func encodeCommittedBlock(evt blockHeaderEvent, baseFee *big.Int, gasLimit int64) (map[string]interface{}, error) {
 	if evt.header == nil || evt.response == nil {
 		return nil, errors.New("committed head is missing header or finalize response")
@@ -456,18 +473,47 @@ func encodeCommittedBlock(evt blockHeaderEvent, baseFee *big.Int, gasLimit int64
 	}, evt.response.TxResults, baseFee, gasLimit)
 }
 
+// encodeTmHeader encodes the consensus head H with receiptsRoot set to the
+// Comet results root of block H, the value header H+1 commits as
+// LastResultsHash. A head whose results are unreadable is refused.
 func encodeTmHeader(
+	tmClient client.LocalClient,
 	header tmtypes.EventDataNewBlockHeader,
 	baseFee *big.Int,
 	gasLimit int64,
 ) (map[string]interface{}, error) {
+	receiptsRoot, err := readBlockResultsRoot(tmClient, header.Header.Height)
+	if err != nil {
+		return nil, err
+	}
 	return encodeHead(header.Header.Height, header.Header.Time, common.HexToAddress(header.Header.ProposerAddress.String()), headRoots{
 		hash:     common.HexToHash(header.Header.Hash().String()),
 		parent:   common.HexToHash(header.Header.LastBlockID.Hash.String()),
 		txs:      common.HexToHash(header.Header.DataHash.String()),
-		receipts: common.HexToHash(header.Header.LastResultsHash.String()),
+		receipts: receiptsRoot,
 		state:    common.HexToHash(header.Header.AppHash.String()),
 	}, header.ResultFinalizeBlock.TxResults, baseFee, gasLimit)
+}
+
+// readBlockResultsRoot reads block height's results through the consensus
+// client and returns their Comet results root.
+func readBlockResultsRoot(tmClient client.LocalClient, height int64) (common.Hash, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), currentHeaderLookupTimeout)
+	defer cancel()
+	return loadBlockResultsRoot(ctx, tmClient, height)
+}
+
+// loadBlockResultsRoot reads block height's results through tmClient and
+// returns the root header height+1 commits as LastResultsHash.
+func loadBlockResultsRoot(ctx context.Context, tmClient client.LocalClient, height int64) (common.Hash, error) {
+	if tmClient == nil {
+		return common.Hash{}, fmt.Errorf("block %d results are unreadable without a consensus client", height)
+	}
+	results, err := tmClient.BlockResults(ctx, &height)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("load block %d results: %w", height, err)
+	}
+	return blockResultsRoot(height, results)
 }
 
 // headRoots are the hashes a newHeads payload carries.

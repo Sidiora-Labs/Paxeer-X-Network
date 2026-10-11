@@ -881,6 +881,10 @@ func (b *Backend) getHeader(ctx context.Context, tmBlock *coretypes.ResultBlock)
 	if blockTimeUnix < 0 {
 		return nil, fmt.Errorf("block %d has a pre-epoch timestamp", height)
 	}
+	receiptsRoot, err := loadBlockResultsRoot(ctx, b.tmClient, height)
+	if err != nil {
+		return nil, err
+	}
 
 	header := &ethtypes.Header{
 		Difficulty:    common.Big0,
@@ -892,7 +896,7 @@ func (b *Backend) getHeader(ctx context.Context, tmBlock *coretypes.ResultBlock)
 		ParentHash:    common.BytesToHash(tmBlock.Block.LastBlockID.Hash),
 		Root:          common.BytesToHash(tmBlock.Block.AppHash),
 		TxHash:        common.BytesToHash(tmBlock.Block.DataHash),
-		ReceiptHash:   common.BytesToHash(tmBlock.Block.LastResultsHash),
+		ReceiptHash:   receiptsRoot,
 		Coinbase:      common.BytesToAddress(tmBlock.Block.ProposerAddress),
 	}
 	b.headerMu.Lock()
