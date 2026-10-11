@@ -337,8 +337,9 @@ func (b *Backend) ctxAtHeight(height int64) sdk.Context {
 }
 
 // pendingStateAndHeader reads a snapshot of the open block. Its header carries
-// the open height, the open time, the open block's base fee and gas limit, and
-// no hash or state root, since the block is not sealed.
+// the open height, the open time, the open block's base fee and gas limit, the
+// committed parent's hash, and no hash or state root, since the block is not
+// sealed.
 func (b *Backend) pendingStateAndHeader(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (vm.StateDB, *ethtypes.Header, error) {
 	height, err := b.watermarks.ResolveHeight(ctx, blockNrOrHash)
 	if err != nil {
@@ -362,10 +363,19 @@ func (b *Backend) pendingStateAndHeader(ctx context.Context, blockNrOrHash rpc.B
 	if err != nil {
 		return nil, nil, fmt.Errorf("open block %d: %w", openHeight, err)
 	}
+	parentHeight := openHeight - 1
+	parent, err := blockByNumberRespectingWatermarks(ctx, b.tmClient, b.watermarks, &parentHeight, 1)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open block %d: parent block %d is unreadable: %w", openHeight, parentHeight, err)
+	}
+	if parent.Block == nil || len(parent.BlockID.Hash) == 0 {
+		return nil, nil, fmt.Errorf("open block %d: parent block %d has no hash", openHeight, parentHeight)
+	}
 	zeroExcessBlobGas := uint64(0)
 	header := &ethtypes.Header{
 		Difficulty:    common.Big0,
 		Number:        big.NewInt(openHeight),
+		ParentHash:    common.BytesToHash(parent.BlockID.Hash),
 		BaseFee:       b.keeper.GetNextBaseFeePerGas(sdkCtx).TruncateInt().BigInt(),
 		GasLimit:      uint64(gasLimit),
 		Time:          uint64(openTime),

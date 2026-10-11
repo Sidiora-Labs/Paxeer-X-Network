@@ -59,6 +59,7 @@ type pendingSimulateNode struct {
 	state   *evmrpc.StateAPI
 	sim     *evmrpc.SimulationAPI
 	backend *evmrpc.Backend
+	block   *evmrpc.BlockAPI
 }
 
 func pendingSimulateAPIs(s *pendingSequencer, wm *evmrpc.WatermarkManager) pendingSimulateNode {
@@ -82,6 +83,7 @@ func pendingSimulateAPIs(s *pendingSequencer, wm *evmrpc.WatermarkManager) pendi
 			s.app.BaseApp, s.app.TracerAnteHandler, evmrpc.ConnectionTypeHTTP, evmrpc.NewBlockCache(3000), &sync.Mutex{}, wm),
 		backend: evmrpc.NewBackend(ctxProvider, &s.app.EvmKeeper, legacyabci.BeginBlockKeepers{}, txConfigProvider, tmClient, cfg,
 			s.app.BaseApp, s.app.TracerAnteHandler, evmrpc.NewBlockCache(3000), &sync.Mutex{}, wm),
+		block: evmrpc.NewBlockAPI(tmClient, &s.app.EvmKeeper, ctxProvider, txConfigProvider, evmrpc.ConnectionTypeHTTP, wm, nil, &sync.Mutex{}),
 	}
 }
 
@@ -517,4 +519,74 @@ func TestPendingSimulateStandbyEqualsPrimary(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, hexutil.Uint64(pendingTransferGas), se)
 	require.Equal(t, pe, se)
+}
+
+// pendingSimulateInitCode wraps runtime in creation code that copies it to
+// memory and returns it.
+func pendingSimulateInitCode(runtime []byte) []byte {
+	return append([]byte{
+		0x60, byte(len(runtime)), // PUSH1 len
+		0x80,       // DUP1
+		0x60, 0x0b, // PUSH1 11, the runtime offset
+		0x60, 0x00, // PUSH1 0
+		0x39,       // CODECOPY
+		0x60, 0x00, // PUSH1 0
+		0xf3, // RETURN
+	}, runtime...)
+}
+
+func TestPendingSimulateBlockhashParent(t *testing.T) {
+	const committed = int64(10)
+	sender := utils.NewSigner()
+	s := newPendingSequencer(t, committed, sender)
+	n := pendingSimulateAPIs(s, s.wm)
+	ctx := context.Background()
+
+	// Returns blockhash(block.number - 1).
+	reader := []byte{
+		0x60, 0x01, // PUSH1 1
+		0x43,       // NUMBER
+		0x03,       // SUB
+		0x40,       // BLOCKHASH
+		0x60, 0x00, // PUSH1 0
+		0x52,       // MSTORE
+		0x60, 0x20, // PUSH1 32
+		0x60, 0x00, // PUSH1 0
+		0xf3, // RETURN
+	}
+	// Reverts when blockhash(block.number - 1) is zero, else stores 1 at slot 0.
+	brancher := []byte{
+		0x60, 0x01, // PUSH1 1
+		0x43,       // NUMBER
+		0x03,       // SUB
+		0x40,       // BLOCKHASH
+		0x60, 0x0c, // PUSH1 12, the JUMPDEST
+		0x57,       // JUMPI
+		0x60, 0x00, // PUSH1 0
+		0x80,       // DUP1
+		0xfd,       // REVERT
+		0x5b,       // JUMPDEST
+		0x60, 0x01, // PUSH1 1
+		0x60, 0x00, // PUSH1 0
+		0x55, // SSTORE
+		0x00, // STOP
+	}
+	pendingSimulateAccept(t, s.exec, pendingSimulateTx(t, sender, 0, nil, big.NewInt(0), pendingSimulateInitCode(reader), pendingSimulateDeployGas))
+	pendingSimulateAccept(t, s.exec, pendingSimulateTx(t, sender, 1, nil, big.NewInt(0), pendingSimulateInitCode(brancher), pendingSimulateDeployGas))
+	readerAddr := crypto.CreateAddress(sender.EvmAddress, 0)
+	brancherAddr := crypto.CreateAddress(sender.EvmAddress, 1)
+
+	block, err := n.block.GetBlockByNumber(ctx, rpc.BlockNumber(committed), false)
+	require.NoError(t, err)
+	parentHash, ok := block["hash"].(common.Hash)
+	require.True(t, ok, "hash is %T", block["hash"])
+	require.NotEqual(t, common.Hash{}, parentHash)
+
+	got, err := n.sim.Call(ctx, pendingSimulateArgs(sender.EvmAddress, readerAddr, big.NewInt(0), nil), &pendingSimulateTag, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, hexutil.Bytes(parentHash.Bytes()), got)
+
+	estimate, err := n.sim.EstimateGas(ctx, pendingSimulateArgs(sender.EvmAddress, brancherAddr, big.NewInt(0), nil), &pendingSimulateTag, nil)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, uint64(estimate), uint64(pendingSimulateSetFloorGas))
 }
