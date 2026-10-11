@@ -21,17 +21,41 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 const PAYMASTER: Address = [0x44; 20];
 const NOW: u64 = 1_900_000_000;
 
-/// The paymaster and the owner account as the node reports them.
+const BLOCK: u64 = 0x10;
+const BLOCK_HASH: Word = [0x77; 32];
+const FEE_TOKEN: Address = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x18,
+];
+
+/// The paymaster, the owner account and the sequencer as the node reports
+/// them: `rung` is how far the sequencer has taken every sent transaction
+/// ("unknown", "submitted", "receipted" or "committed"); a receipted
+/// transaction advances the pending nonce, a committed one the finalized nonce.
 struct Chain {
     rate: u128,
     updated_at: u64,
     owner: Address,
     balance: u128,
     nonce: u64,
+    finalized: u64,
     status: u64,
     gas_used: u64,
     effective_gas_price: u128,
+    rung: &'static str,
     sent: Vec<Vec<u8>>,
+    nonces: Vec<(Word, u64)>,
+}
+impl Chain {
+    fn executed(&self) -> Option<u64> {
+        matches!(self.rung, "receipted" | "committed")
+            .then(|| self.nonces.iter().map(|(_, n)| n + 1).max())
+            .flatten()
+    }
+    fn nonce_of(&self, hash: &Word) -> Option<u64> {
+        self.nonces
+            .iter()
+            .find_map(|(h, n)| (h == hash).then_some(*n))
+    }
 }
 struct ChainExchange(Rc<RefCell<Chain>>);
 impl Exchange for ChainExchange {
@@ -48,12 +72,22 @@ impl Exchange for ChainExchange {
     fn request(&self, _: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
         let mut chain = self.0.borrow_mut();
         let quantity = |v: u128| Value::String(format!("{v:#x}"));
+        let hash_param = || -> Result<Word, RpcFault> {
+            bytes(params[0].as_str().ok_or(RpcFault::Malformed)?)?
+                .try_into()
+                .map_err(|_| RpcFault::Malformed)
+        };
         Ok(match method {
             "eth_chainId" => quantity(1325),
-            "eth_getBlockByNumber" => {
-                assert_eq!(params, &json!(["latest", false]));
-                json!({"timestamp": quantity(NOW.into()), "baseFeePerGas": quantity(1_000_000_000)})
-            }
+            "eth_getBlockByNumber" => match params[0].as_str() {
+                Some("latest") => {
+                    json!({"timestamp": quantity(NOW.into()), "baseFeePerGas": quantity(1_000_000_000)})
+                }
+                Some("finalized" | "0x10") => {
+                    json!({"number": quantity(BLOCK.into()), "hash": hex(&BLOCK_HASH)})
+                }
+                _ => return Err(RpcFault::Rejected { code: -32602 }),
+            },
             "eth_call" => {
                 assert_eq!(params[0]["to"], hex(&PAYMASTER));
                 let selector = |name: &[u8]| hex(&keccak(name)[..4]);
@@ -70,20 +104,78 @@ impl Exchange for ChainExchange {
                 Value::String(hex(&value))
             }
             "eth_getBalance" => quantity(chain.balance),
-            "eth_getTransactionCount" => quantity(chain.nonce.into()),
+            "eth_getTransactionCount" => {
+                let executed = chain.executed().unwrap_or(0);
+                match params[1].as_str() {
+                    Some("pending") => quantity(chain.nonce.max(executed).into()),
+                    Some("finalized") if chain.rung == "committed" => {
+                        quantity(chain.finalized.max(executed).into())
+                    }
+                    Some("finalized") => quantity(chain.finalized.into()),
+                    _ => return Err(RpcFault::Rejected { code: -32602 }),
+                }
+            }
             "eth_sendRawTransaction" => {
                 let raw = bytes(params[0].as_str().ok_or(RpcFault::Malformed)?)?;
-                chain.sent.push(raw.clone());
-                Value::String(hex(&keccak(&raw)))
+                let hash = keccak(&raw);
+                chain.sent.push(raw);
+                if chain.rung == "unknown" {
+                    return Err(RpcFault::Rejected { code: -32000 });
+                }
+                if chain.nonce_of(&hash).is_none() {
+                    let nonce = chain.nonce.max(chain.executed().unwrap_or(0));
+                    chain.nonces.push((hash, nonce));
+                }
+                Value::String(hex(&hash))
             }
-            "eth_getTransactionReceipt" => {
-                let Some(raw) = chain.sent.last() else {
+            "pax_sequencerReceipt" => {
+                let hash = hash_param()?;
+                let Some(nonce) = chain.nonce_of(&hash) else {
                     return Ok(Value::Null);
                 };
-                let hash = keccak(raw);
-                assert_eq!(params[0], hex(&hash));
+                match chain.rung {
+                    "submitted" => json!({"rung": "submitted", "txHash": hex(&hash),
+                        "nonce": quantity(nonce.into())}),
+                    rung => {
+                        let raw = chain
+                            .sent
+                            .iter()
+                            .find(|raw| keccak(raw) == hash)
+                            .ok_or(RpcFault::Malformed)?;
+                        let (to, rate, from) =
+                            published_rate(raw).map_err(|_| RpcFault::Malformed)?;
+                        let logs = if chain.status == 1 {
+                            json!([{"address": hex(&to),
+                                "topics": [hex(&keccak(b"RateUpdated(uint256,uint256)"))],
+                                "data": hex(&[rate, word(NOW.into())].concat()),
+                                "logIndex": "0x0"}])
+                        } else {
+                            json!([])
+                        };
+                        let mut receipt = json!({"rung": rung, "txHash": hex(&hash),
+                            "seq": quantity(nonce.into()), "height": quantity(BLOCK.into()),
+                            "index": "0x1", "timestamp": quantity(NOW.into()),
+                            "status": quantity(chain.status.into()), "returnData": "0x",
+                            "logs": logs, "gasUsed": quantity(chain.gas_used.into()),
+                            "cumulativeGasUsed": quantity(chain.gas_used.into()),
+                            "effectiveGasPrice": quantity(chain.effective_gas_price),
+                            "from": hex(&from), "to": hex(&to), "contractAddress": Value::Null,
+                            "nonce": quantity(nonce.into()), "vmError": ""});
+                        if rung == "committed" {
+                            receipt["blockHash"] = Value::String(hex(&BLOCK_HASH));
+                        }
+                        receipt
+                    }
+                }
+            }
+            "eth_getTransactionReceipt" => {
+                let hash = hash_param()?;
+                if chain.rung != "committed" || chain.nonce_of(&hash).is_none() {
+                    return Ok(Value::Null);
+                }
                 json!({"transactionHash": hex(&hash), "from": hex(&chain.owner), "to": hex(&PAYMASTER),
-                    "blockNumber": "0x10", "gasUsed": quantity(chain.gas_used.into()),
+                    "blockNumber": quantity(BLOCK.into()), "blockHash": hex(&BLOCK_HASH),
+                    "gasUsed": quantity(chain.gas_used.into()),
                     "effectiveGasPrice": quantity(chain.effective_gas_price),
                     "status": quantity(chain.status.into())})
             }
@@ -115,18 +207,23 @@ impl Lane {
                 owner,
                 balance: 10_u128.pow(18),
                 nonce: 7,
+                finalized: 7,
                 status: 1,
                 gas_used: 35_000,
                 effective_gas_price: 1_500_000_000,
+                rung: "committed",
                 sent: Vec::new(),
+                nonces: Vec::new(),
             })),
             owner,
             key,
         })
     }
     fn rate_file(&self, text: &str) -> Result<PathBuf, std::io::Error> {
+        use std::os::unix::fs::PermissionsExt as _;
         let path = self.dir.join("rate.toml");
         std::fs::write(&path, text)?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         Ok(path)
     }
     fn publisher(
@@ -145,6 +242,25 @@ impl Lane {
         let mut value = config_json();
         value["rate_gas_budget_per_day"] = json!(budget);
         value["rate_max_fee_per_gas"] = json!(ceiling);
+        self.publisher_from(&value, Duration::ZERO)
+    }
+    /// A publisher that waits `retry` seconds for a sequencer receipt,
+    /// polling every 10 ms.
+    fn publisher_confirming_within(
+        &self,
+        retry: u64,
+    ) -> Result<RatePublisher<LocalSigner, ConfiguredRpc<ChainExchange>>, Box<dyn std::error::Error>>
+    {
+        let mut value = config_json();
+        value["rate_confirmation_retry_seconds"] = json!(retry);
+        self.publisher_from(&value, Duration::from_millis(10))
+    }
+    fn publisher_from(
+        &self,
+        value: &Value,
+        poll: Duration,
+    ) -> Result<RatePublisher<LocalSigner, ConfiguredRpc<ChainExchange>>, Box<dyn std::error::Error>>
+    {
         let config = PublisherConfig::parse(&value.to_string())?;
         let rpc = ConfiguredRpc::new(&config.station, ChainExchange(self.chain.clone()))?;
         let journal = Journal::open(&self.dir.join("rate.jsonl"))?;
@@ -153,7 +269,7 @@ impl Lane {
             signer(&self.key)?,
             rpc,
             journal,
-            Duration::ZERO,
+            poll,
         )?)
     }
     fn sent(&self) -> usize {
@@ -257,8 +373,19 @@ fn publishes_the_owner_rate_with_set_rate_and_journals_it() -> TestResult {
         .lines()
         .map(serde_json::from_str)
         .collect::<Result<_, _>>()?;
-    assert!(matches!(entries[0], Entry::RatePublished { .. }));
-    assert!(matches!(entries[1], Entry::RateSettled { .. }));
+    assert_eq!(entries.len(), 3);
+    assert!(
+        matches!(&entries[0], Entry::RatePrepared { transaction } if transaction.publication == publication && transaction.raw == raw)
+    );
+    assert_eq!(
+        entries[1],
+        Entry::RateBroadcast {
+            hash: publication.hash
+        }
+    );
+    assert!(
+        matches!(&entries[2], Entry::RateFinalized { hash, settlement, .. } if *hash == publication.hash && settlement.succeeded)
+    );
     assert!(!lines.contains(&hex(&lane.key)[2..]));
     Ok(())
 }
@@ -305,13 +432,14 @@ fn refusals_never_publish() -> TestResult {
             RateRefusal::Unchanged { age: 119 },
         ),
     ] {
-        let path = lane.dir.join("rate.toml");
-        match text {
-            Some(text) => std::fs::write(&path, text)?,
+        let path = match text {
+            Some(text) => lane.rate_file(text)?,
             None => {
+                let path = lane.dir.join("rate.toml");
                 let _ = std::fs::remove_file(&path);
+                path
             }
-        }
+        };
         if refusal == (RateRefusal::Unchanged { age: 119 }) {
             lane.chain.borrow_mut().updated_at = NOW - 119;
         }
@@ -359,6 +487,7 @@ fn cadence_must_stay_below_max_rate_age() {
         ("rate_gas_budget_per_day", json!(RATE_GAS_LIMIT - 1)),
         ("rate_balance_floor", json!(0)),
         ("rate_max_fee_per_gas", json!(1_000_000_000)),
+        ("paymaster", json!(hex(&FEE_TOKEN))),
     ] {
         let mut value_map = config_json();
         value_map[name] = value;
@@ -435,7 +564,7 @@ fn fee_above_the_ceiling_is_refused_unsigned() -> TestResult {
 fn unsettled_publications_reserve_their_most_against_the_floor() -> TestResult {
     let lane = Lane::new("reserve")?;
     let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
-    let pending = Publication {
+    let legacy = Publication {
         owner: lane.owner,
         nonce: 7,
         hash: word(0xabc),
@@ -446,24 +575,46 @@ fn unsettled_publications_reserve_their_most_against_the_floor() -> TestResult {
     };
     let mut journal = Journal::open(&lane.dir.join("rate.jsonl"))?;
     journal.append(&Entry::RatePublished {
-        publication: pending,
+        publication: legacy,
     })?;
     assert_eq!(journal.state().reserved_wei(), 4_000_000_000 * 60_000);
     drop(journal);
+    let refused = lane
+        .publisher(1_000_000)
+        .err()
+        .ok_or("legacy journal accepted")?;
+    assert_eq!(
+        refused.downcast_ref::<RateRefusal>(),
+        Some(&RateRefusal::LegacyUnresolved)
+    );
+    std::fs::remove_file(lane.dir.join("rate.jsonl"))?;
     let floor = 10_u128.pow(15);
-    let needed = floor + RESERVE + 4_000_000_000 * 60_000;
-    lane.chain.borrow_mut().balance = needed - 1;
+    lane.chain.borrow_mut().rung = "receipted";
+    lane.chain.borrow_mut().balance = floor + RESERVE - 1;
     let mut publisher = lane.publisher(1_000_000)?;
     assert_eq!(publisher.publish(&file), Err(RateRefusal::BelowFloor));
     assert_eq!(lane.sent(), 0);
-    lane.chain.borrow_mut().balance = needed;
-    lane.chain.borrow_mut().nonce = 8;
+    lane.chain.borrow_mut().balance = floor + RESERVE;
     let publication = publisher.publish(&file)?;
-    assert_eq!(publication.nonce, 8);
+    assert_eq!(publication.nonce, 7);
+    let state = publisher.journal().state();
+    assert_eq!(state.unsettled(), vec![publication]);
+    assert_eq!(state.reserved_wei(), RESERVE);
+    assert_eq!(
+        state.publication_gas(NOW / 86_400),
+        u128::from(RATE_GAS_LIMIT)
+    );
+    assert_eq!(state.publications[&publication.hash].1, None);
+    lane.chain.borrow_mut().rung = "committed";
+    assert_eq!(publisher.publish(&file)?, publication);
+    assert_eq!(lane.sent(), 1);
     let state = publisher.journal().state();
     assert!(state.unsettled().is_empty());
     assert_eq!(state.reserved_wei(), 0);
-    assert_eq!(state.publications[&pending.hash].1, None);
+    assert_eq!(
+        state.publications[&publication.hash].1.map(|s| s.cost_wei),
+        Some(1_500_000_000 * 35_000)
+    );
     Ok(())
 }
 
@@ -492,6 +643,124 @@ fn settlement_records_the_actual_cost() -> TestResult {
         Err(RateRefusal::Rpc(RpcFault::Malformed))
     );
     assert_eq!(publisher.journal().state().unsettled().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn cadence_equal_to_max_rate_age_is_refused_at_load() -> TestResult {
+    use std::os::unix::fs::PermissionsExt as _;
+    let lane = Lane::new("load")?;
+    let path = lane.dir.join("publisher.json");
+    let mut value = config_json();
+    value["rate_cadence_seconds"] = json!(300);
+    std::fs::write(&path, value.to_string())?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    assert_eq!(
+        PublisherConfig::load(&path),
+        Err(ConfigError {
+            field: "rate_cadence_seconds"
+        })
+    );
+    value["rate_cadence_seconds"] = json!(120);
+    value["max_rate_age"] = json!(301);
+    std::fs::write(&path, value.to_string())?;
+    assert_eq!(
+        PublisherConfig::load(&path),
+        Err(ConfigError {
+            field: "max_rate_age"
+        })
+    );
+    value["max_rate_age"] = json!(300);
+    value["rate_cadence_seconds"] = json!(298);
+    value["rate_confirmation_retry_seconds"] = json!(1);
+    std::fs::write(&path, value.to_string())?;
+    assert_eq!(PublisherConfig::load(&path)?.cadence_seconds, 298);
+    Ok(())
+}
+
+#[test]
+fn publication_waits_for_the_sequencer_receipt_and_is_never_resent_at_its_nonce() -> TestResult {
+    let lane = Lane::new("unconfirmed")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    lane.chain.borrow_mut().rung = "submitted";
+    let mut publisher = lane.publisher_confirming_within(1)?;
+    assert_eq!(publisher.publish(&file), Err(RateRefusal::ReceiptTimeout));
+    assert_eq!(lane.sent(), 1);
+    let raw = lane.chain.borrow().sent[0].clone();
+    let hash = keccak(&raw);
+    let state = publisher.journal().state();
+    assert_eq!(state.rate_active.get(&(lane.owner, 7)), Some(&hash));
+    assert_eq!(state.rate_transactions.len(), 1);
+    assert_eq!(state.rate_broadcast.len(), 1);
+    assert_eq!(state.unsettled().len(), 1);
+    assert_eq!(publisher.publish(&file), Err(RateRefusal::ReceiptTimeout));
+    assert_eq!(lane.sent(), 1);
+    assert_eq!(publisher.journal().state().rate_transactions.len(), 1);
+    lane.chain.borrow_mut().rung = "committed";
+    let publication = publisher.publish(&file)?;
+    assert_eq!((publication.nonce, publication.hash), (7, hash));
+    assert_eq!(lane.sent(), 1);
+    let state = publisher.journal().state();
+    assert!(state.rate_active.is_empty());
+    assert_eq!(
+        state.publications[&hash]
+            .1
+            .map(|s| (s.gas_used, s.succeeded)),
+        Some((35_000, true))
+    );
+    let next = publisher.publish(&file)?;
+    assert_eq!(next.nonce, 8);
+    assert_eq!(lane.sent(), 2);
+    Ok(())
+}
+
+#[test]
+fn publication_unknown_to_the_sequencer_is_resent_as_its_exact_bytes() -> TestResult {
+    let lane = Lane::new("unknown")?;
+    let file = lane.rate_file("rate = 3200000\nset_at = 1899000000\n")?;
+    lane.chain.borrow_mut().rung = "unknown";
+    let mut publisher = lane.publisher_confirming_within(1)?;
+    assert_eq!(
+        publisher.publish(&file),
+        Err(RateRefusal::Rpc(RpcFault::Rejected { code: -32000 }))
+    );
+    assert_eq!(lane.sent(), 1);
+    assert!(publisher.journal().state().rate_broadcast.is_empty());
+    lane.chain.borrow_mut().rung = "receipted";
+    let publication = publisher.publish(&file)?;
+    let sent = lane.chain.borrow().sent.clone();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0], sent[1]);
+    assert_eq!(publication.hash, keccak(&sent[0]));
+    assert_eq!(publication.nonce, 7);
+    let state = publisher.journal().state();
+    assert_eq!(state.rate_transactions.len(), 1);
+    assert!(state.rate_broadcast.contains(&publication.hash));
+    assert_eq!(state.unsettled(), vec![publication]);
+    Ok(())
+}
+
+#[test]
+fn publisher_targets_only_the_paymaster_never_the_fee_token() -> TestResult {
+    let lane = Lane::new("targets")?;
+    let file = lane.rate_file("rate = 3114000\nset_at = 1899000000\n")?;
+    let mut fee_token = config_json();
+    fee_token["paymaster"] = json!(hex(&FEE_TOKEN));
+    assert_eq!(
+        PublisherConfig::parse(&fee_token.to_string()).err(),
+        Some(ConfigError { field: "paymaster" })
+    );
+    lane.chain.borrow_mut().updated_at = NOW - 120;
+    let mut publisher = lane.publisher(1_000_000)?;
+    let publication = publisher.publish(&file)?;
+    assert_eq!(publication.rate, word(3_114_000));
+    let sent = lane.chain.borrow().sent.clone();
+    assert_eq!(sent.len(), 1);
+    for raw in &sent {
+        let (to, rate, from) = published_rate(raw)?;
+        assert_eq!((to, rate, from), (PAYMASTER, word(3_114_000), lane.owner));
+        assert_ne!(to, FEE_TOKEN);
+    }
     Ok(())
 }
 

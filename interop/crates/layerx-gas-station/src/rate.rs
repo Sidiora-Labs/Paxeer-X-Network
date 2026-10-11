@@ -215,7 +215,9 @@ impl PublisherConfig {
 
     /// # Errors
     /// Names the first field that is inconsistent: a cadence not below
-    /// `max_rate_age`, a budget below one publication, a zero floor, a fee
+    /// `max_rate_age`, a budget below one publication, a zero floor, a
+    /// paymaster in the precompile range (the fee token at 0x1018 and every
+    /// other system address, whose rates move only by governance), a fee
     /// ceiling not above the priority fee or whose daily worst case overflows,
     /// or an owner key env that is invalid or the sponsor's.
     pub fn validate(&self) -> Result<(), ConfigError> {
@@ -246,6 +248,7 @@ impl PublisherConfig {
                         .is_some_and(|bound| bound < self.station.max_rate_age),
             ),
             ("rate_balance_floor", self.balance_floor > 0),
+            ("paymaster", self.station.paymaster[..18] != [0; 18]),
             (
                 "rate_max_fee_per_gas",
                 self.max_fee_per_gas > self.max_priority_fee_per_gas
@@ -352,8 +355,8 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         ))
     }
 
-    /// Publishes the rate file's rate once, waits for its receipt and returns
-    /// the journalled publication.
+    /// Publishes the rate file's rate once to the sequencer, confirms it by
+    /// its `pax_sequencerReceipt` and returns the journalled publication.
     /// # Errors
     /// Refuses a missing, malformed, zero, not yet set or expired rate file,
     /// a rate unchanged on chain within the cadence, a signer that is not the
@@ -361,9 +364,10 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
     /// ceiling, an owner balance that would fall below its floor once this
     /// publication and every unsettled one pay their most, a reverted or
     /// unconfirmed publication, and node or journal failures. Before the
-    /// budget and balance checks it settles every unsettled publication whose
-    /// receipt the node now has. A refusal never publishes, so the paymaster's rate ages
-    /// until `currentRate` reverts with `StaleRate`.
+    /// budget and balance checks it confirms every unconfirmed publication and
+    /// settles every one whose committed receipt the node now has. A refusal
+    /// never publishes, so the paymaster's rate ages until `currentRate`
+    /// reverts with `StaleRate`.
     pub fn publish(&mut self, rate_file: &Path) -> Result<Publication, RateRefusal> {
         self.rpc.set_deadline(Some(
             Instant::now() + Duration::from_secs(self.config.confirmation_retry_seconds),
@@ -471,9 +475,17 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             transaction: transaction.clone(),
         })?;
         self.broadcast(&transaction)?;
-        self.settle(&publication)
+        self.confirm_by_receipt(&transaction)
     }
 
+    /// Settles every journalled publication whose committed receipt the node
+    /// has, and waits for the sequencer receipt of every other one. A
+    /// publication the sequencer has no record of is resent as its exact
+    /// journalled bytes; no other transaction is ever signed at its nonce.
+    /// # Errors
+    /// Refuses a signer that is not the paymaster owner, a reverted or
+    /// unconfirmed publication, a nonce consumed by another transaction, and
+    /// node or journal failures.
     pub fn recover_pending(&mut self) -> Result<Option<Publication>, RateRefusal> {
         let owner = self.paymaster_word(b"owner()")?;
         if owner[..12] != [0; 12] || owner[12..] != self.signer.address() {
@@ -492,19 +504,9 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
                 .collect();
             let mut complete = None;
             for transaction in candidates {
-                let receipt = self.rpc.call(
-                    "eth_getTransactionReceipt",
-                    json!([hex(&transaction.publication.hash)]),
-                )?;
-                if !receipt.is_null() {
-                    match self.record(&transaction.publication, &receipt) {
-                        Ok(settlement) => {
-                            complete = Some((transaction.publication, settlement));
-                            break;
-                        }
-                        Err(RateRefusal::ReceiptTimeout) => {}
-                        Err(error) => return Err(error),
-                    }
+                if let Some(settlement) = self.try_finalize(&transaction)? {
+                    complete = Some((transaction.publication, settlement));
+                    break;
                 }
             }
             if let Some((publication, settlement)) = complete {
@@ -535,13 +537,14 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             if quantity(&finalized_nonce)? > u128::from(nonce) {
                 return Err(RpcFault::Divergence.into());
             }
-            let known = self
+            if self
                 .rpc
-                .call("eth_getTransactionByHash", json!([hex(&hash)]))?;
-            if known.is_null() {
+                .call("pax_sequencerReceipt", json!([hex(&hash)]))?
+                .is_null()
+            {
                 self.broadcast(&transaction)?;
             }
-            recovered = Some(self.settle(&transaction.publication)?);
+            recovered = Some(self.confirm_by_receipt(&transaction)?);
         }
         Ok(recovered)
     }
@@ -569,8 +572,8 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             Err(error) => {
                 let seen = self
                     .rpc
-                    .call("eth_getTransactionByHash", json!([hex(&publication.hash)]))?;
-                if seen["hash"] == hex(&publication.hash) {
+                    .call("pax_sequencerReceipt", json!([hex(&publication.hash)]))?;
+                if seen["txHash"] == hex(&publication.hash) {
                     Ok(())
                 } else {
                     Err(error.into())
@@ -579,130 +582,82 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         }
     }
 
-    pub fn replace_pending(
+    /// Waits up to `rate_confirmation_retry_seconds` for the sequencer to
+    /// receipt the publication: `pax_sequencerReceipt` at rung receipted or
+    /// committed, from the owner to the paymaster at the publication's nonce,
+    /// within its gas limit and fee ceiling, and on success carrying the
+    /// paymaster's `RateUpdated` event with the published rate. An unknown or
+    /// submitted publication is waited on, never resent or replaced. A
+    /// confirmed publication whose committed receipt the node has finalized is
+    /// settled in the journal.
+    /// # Errors
+    /// Refuses a reverted publication, a receipt that does not match it, a
+    /// publication still unreceipted at the deadline, a committed receipt
+    /// that disagrees with the sequencer's, and node or journal failures.
+    pub fn confirm_by_receipt(
         &mut self,
-        hash: Word,
-        fees: Fees,
-        cancellation: bool,
+        transaction: &PublicationTransaction,
     ) -> Result<Publication, RateRefusal> {
-        self.rpc.set_deadline(Some(
-            Instant::now() + Duration::from_secs(self.config.confirmation_retry_seconds),
-        ))?;
-        let old = self
-            .journal
-            .state()
-            .rate_transactions
-            .get(&hash)
-            .cloned()
-            .ok_or(JournalError::Conflict)?;
-        if fees.max_fee_per_gas > self.config.max_fee_per_gas {
-            return Err(RateRefusal::FeeAboveCeiling {
-                required: fees.max_fee_per_gas,
-                ceiling: self.config.max_fee_per_gas,
-            });
-        }
-        let owner = self.paymaster_word(b"owner()")?;
-        if owner[..12] != [0; 12] || owner[12..] != self.signer.address() {
-            return Err(RateRefusal::NotOwner);
-        }
-        let balance: String = read(
-            &self.rpc,
-            "eth_getBalance",
-            json!([hex(&self.signer.address()), "pending"]),
-        )?;
-        let replacement_cost = fees.gas_cost()?;
-        let group_reserve = self
-            .journal
-            .state()
-            .unsettled()
-            .iter()
-            .filter(|p| p.owner == old.publication.owner && p.nonce == old.publication.nonce)
-            .map(|p| p.max_fee_per_gas.saturating_mul(u128::from(p.gas_limit)))
-            .max()
-            .unwrap_or(0);
-        if self
-            .journal
-            .state()
-            .reserved_wei()
-            .checked_sub(group_reserve)
-            .and_then(|cost| cost.checked_add(group_reserve.max(replacement_cost)))
-            .and_then(|cost| cost.checked_add(self.config.balance_floor))
-            .is_none_or(|cost| quantity(&balance).map_or(true, |funds| funds < cost))
-        {
-            return Err(RateRefusal::BelowFloor);
-        }
-        if self
-            .journal
-            .state()
-            .rate_active
-            .get(&(old.publication.owner, old.publication.nonce))
-            != Some(&hash)
-        {
-            return Err(JournalError::Conflict.into());
-        }
-        let finalized_nonce: String = read(
-            &self.rpc,
-            "eth_getTransactionCount",
-            json!([hex(&self.signer.address()), "finalized"]),
-        )?;
-        if quantity(&finalized_nonce)? > u128::from(old.publication.nonce) {
-            return Err(RpcFault::Divergence.into());
-        }
-        let data = if cancellation {
-            Vec::new()
-        } else {
-            [
-                &keccak(b"setRate(uint256)")[..4],
-                old.publication.rate.as_slice(),
-            ]
-            .concat()
-        };
-        let to = if cancellation {
-            self.signer.address()
-        } else {
-            old.paymaster
-        };
-        let signed = tx::sign_call(
-            old.chain_id,
-            old.publication.nonce,
-            fees,
-            to,
-            &data,
-            &self.signer,
-        )?;
-        let mut transaction = old.clone();
-        transaction.raw = signed.raw;
-        transaction.cancellation = cancellation;
-        transaction.max_priority_fee_per_gas = fees.max_priority_fee_per_gas;
-        transaction.publication.hash = signed.hash;
-        transaction.publication.gas_limit = fees.gas_limit;
-        transaction.publication.max_fee_per_gas = fees.max_fee_per_gas;
-        self.journal.append(&Entry::RateReplaced {
-            previous: hash,
-            transaction: transaction.clone(),
-        })?;
-        self.broadcast(&transaction)?;
-        self.settle(&transaction.publication)
-    }
-
-    fn settle(&mut self, publication: &Publication) -> Result<Publication, RateRefusal> {
+        let publication = transaction.publication;
         let deadline = Instant::now() + Duration::from_secs(self.config.confirmation_retry_seconds);
+        self.rpc.set_deadline(Some(deadline))?;
         loop {
-            let receipt = self
-                .rpc
-                .call("eth_getTransactionReceipt", json!([hex(&publication.hash)]))?;
-            if !receipt.is_null() {
-                match self.record(publication, &receipt) {
-                    Ok(settlement) if settlement.succeeded => return Ok(*publication),
-                    Ok(_) => return Err(RateRefusal::Reverted),
-                    Err(RateRefusal::ReceiptTimeout) => {}
-                    Err(error) => return Err(error),
-                }
-            }
             if Instant::now() >= deadline {
                 return Err(RateRefusal::ReceiptTimeout);
             }
+            let receipt = match self
+                .rpc
+                .call("pax_sequencerReceipt", json!([hex(&publication.hash)]))
+            {
+                Err(RpcFault::Unavailable) if Instant::now() >= deadline => {
+                    return Err(RateRefusal::ReceiptTimeout);
+                }
+                result => result?,
+            };
+            if !receipt.is_null() {
+                if receipt["txHash"] != hex(&publication.hash)
+                    || field_quantity(&receipt, "nonce")? != u128::from(publication.nonce)
+                {
+                    return Err(RpcFault::Malformed.into());
+                }
+                match receipt["rung"].as_str() {
+                    Some("submitted") => {}
+                    Some("receipted" | "committed") => {
+                        if !sequencer_outcome(transaction, &receipt)? {
+                            return Err(RateRefusal::Reverted);
+                        }
+                        if self
+                            .try_finalize(transaction)?
+                            .is_some_and(|settlement| !settlement.succeeded)
+                        {
+                            return Err(RpcFault::Divergence.into());
+                        }
+                        return Ok(publication);
+                    }
+                    _ => return Err(RpcFault::Malformed.into()),
+                }
+            }
             std::thread::sleep(self.poll);
+        }
+    }
+
+    /// Journals the settlement of a publication whose committed receipt the
+    /// node has finalized; `None` while it has none.
+    fn try_finalize(
+        &mut self,
+        transaction: &PublicationTransaction,
+    ) -> Result<Option<Settlement>, RateRefusal> {
+        let receipt = self.rpc.call(
+            "eth_getTransactionReceipt",
+            json!([hex(&transaction.publication.hash)]),
+        )?;
+        if receipt.is_null() {
+            return Ok(None);
+        }
+        match self.record(&transaction.publication, &receipt) {
+            Ok(settlement) => Ok(Some(settlement)),
+            Err(RateRefusal::ReceiptTimeout) => Ok(None),
+            Err(error) => Err(error),
         }
     }
 
@@ -764,6 +719,54 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
 
 fn field_quantity(value: &Value, name: &str) -> Result<u128, RpcFault> {
     quantity(value[name].as_str().ok_or(RpcFault::Malformed)?)
+}
+
+/// Whether a receipted or committed `pax_sequencerReceipt` reports the
+/// publication succeeded; a setRate that succeeded must carry the paymaster's
+/// `RateUpdated(rate, updatedAt)` event with the published rate.
+fn sequencer_outcome(
+    transaction: &PublicationTransaction,
+    receipt: &Value,
+) -> Result<bool, RpcFault> {
+    let p = transaction.publication;
+    let to = if transaction.cancellation {
+        p.owner
+    } else {
+        transaction.paymaster
+    };
+    let gas = field_quantity(receipt, "gasUsed")?;
+    let price = field_quantity(receipt, "effectiveGasPrice")?;
+    let status = field_quantity(receipt, "status")?;
+    if receipt["from"] != hex(&p.owner)
+        || receipt["to"] != hex(&to)
+        || gas == 0
+        || gas > u128::from(p.gas_limit)
+        || price > p.max_fee_per_gas
+        || status > 1
+    {
+        return Err(RpcFault::Malformed);
+    }
+    if status == 0 || transaction.cancellation {
+        return Ok(status == 1);
+    }
+    let topic = hex(&keccak(b"RateUpdated(uint256,uint256)"));
+    let logs = receipt["logs"].as_array().ok_or(RpcFault::Malformed)?;
+    let mut updated = false;
+    for log in logs {
+        if log["address"] != hex(&transaction.paymaster) || log["topics"] != json!([topic]) {
+            continue;
+        }
+        let data = bytes(log["data"].as_str().ok_or(RpcFault::Malformed)?)?;
+        if data.len() != 64 || data[..32] != p.rate {
+            return Err(RpcFault::Malformed);
+        }
+        updated = true;
+    }
+    if updated {
+        Ok(true)
+    } else {
+        Err(RpcFault::Malformed)
+    }
 }
 
 pub(crate) fn publication_settlement(
