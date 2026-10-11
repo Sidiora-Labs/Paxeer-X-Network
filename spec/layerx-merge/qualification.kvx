@@ -995,3 +995,87 @@ exit_code = 0
 log_path = "logs/0.22-verify-2.log"
 observed_and_assumption = "the verify gate passes (14 lib tests); build_cmd stops on the layerx-agentd lib test target in files outside the original touches (hex dependency, purpose_hash field, u16 identity values, Asn1TimeRef, CARGO_BIN_EXE); the task scope is widened to the agentd crate and the worker continues"
 
+[finding.0.24]
+revision = "94a75f4f2"
+command = "npm --prefix human/wallet/sdk test -- test/point.test.ts"
+exit_code = 0
+log_path = "logs/0.24-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed"
+
+[finding.11.5.1]
+revision = "65051608e"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --self-test"
+exit_code = 0
+log_path = "logs/11.5.1-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; unrelated: spec/layerx-merge/spec.kvx req.11045.ac_2 retains px_getUnifiedHistory, px_getNetwork and px_listAssets while ac_4 forbids them; the catalogue preserves ac_4.; spec/layerx-merge/spec.kvx:61119 declares deletion of the wire-codec tree while :37355 retains its receipt codec; the catalogue preserves th"
+
+[finding.3.6.18]
+revision = "54752c84b"
+command = "make build"
+exit_code = 0
+log_path = "logs/3.6.18-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed"
+
+[finding.8.5.34]
+revision = "061e9d3ba"
+command = "go test -count=1 ./precompiles/layerxbridge/..."
+exit_code = 0
+log_path = "logs/8.5.34-verify-2.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; recorded gaps: acceptance.8.50.2: precompiles/layerxledger and modules/layerxledger/keeper are absent; cannot exercise receipted 0x101A sends of bridged funds.; acceptance.8.51.2: the absent ledger interfaces prevent testing bridgeOut of a balance received through 0x101A."
+
+[finding.8.5.35]
+revision = "cbe7ff0d1"
+command = "explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/status_test.exs (declared: cd explorer/backend && mix test apps/explorer/test/explorer/chain/paxeer_x/status_test.exs)"
+exit_code = 0
+log_path = "logs/8.5.35-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed (both gates ran through explorer/deploy/tools/mix-in-builder.sh, which executes the declared mix commands inside the explorer builder image, because mix is not yet installed on the build host); recorded gaps: 8073.1 / acceptance.8.73.1: Explorer has no signed sequencer receipt consumer/verifier or pending sequencer receipt schema; receipted is declared but cannot be selected with the real interfaces present.; 10.2: clients.md R1-R8 cannot be fully qualified through the present Explorer interfaces; committed currently uses the indexed consensus height.; 8073.3: the status caller supplies only block_number, and the renderer"
+
+[finding.8.5.40]
+revision = "bbd405341"
+command = "explorer/deploy/tools/mix-in-builder.sh test apps/explorer/test/explorer/chain/paxeer_x/market_event_test.exs"
+exit_code = 0
+log_path = "logs/8.5.40-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed (both gates ran through explorer/deploy/tools/mix-in-builder.sh, which executes the declared mix commands inside the explorer builder image, because mix is not yet installed on the build host); recorded gaps: req.2.1/do_4: precompiles/layerxexchange/abi.json contains historical events; v2 ABI is absent, and adding decoder topics requires changes outside touches.; req.8078.1-3: binding and identity tests implemented in account_binding_test.exs are not selected by the prescribed verify_cmd."
+
+[finding.10.5.33]
+revision = "eb0611bdd"
+command = "bash tools/bringup/check-live.test.sh"
+exit_code = 1
+log_path = "logs/10.5.33-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 0); gaps: Qualification stopped before the migrated fixture cases; the two subsequent repairs passed syntax checks only, and verification was not rerun.; acceptance.10.45.2 requires eth_sendRawTransaction, but the existing external encoder produces kernel activities and no EVM signing interface is present; the settlement assertion remains intact.; acceptance.10.45.1 and acceptance.10.37.3-4 prohibit every lx_ probe, while do_4; unrelated: ca_issue_receipt_authority_on_the_volume: certificate issuance refused.; ca_issue_lands_the_material_on_the_volume: required certificate material absent.; check_live_edge_passing: route resolution failed.; check_live_edge_failing: route/output mismatch.; check_live_paxeer_boundary_failing: machine-"
+
+[finding.6.5.22]
+revision = "19440c5e7"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-sdk --test sdk"
+exit_code = 101
+log_path = "logs/6.5.22-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: acceptance.6.62.1: raw submission and pending nonce are implemented; successful submission/receipt flow remains unexecuted because SDK compilation is blocked and no real sequencer fixture is available.; acceptance.6.62.2: px_register provisions the principal only; sponsored bind lacks a Rust 7702 signer/gas-station interface. Required px_register, px_requestFunds, px_getCommit and px_getValidators server handlers and; unrelated: cross-task dependency: agent/crates/layerx-sdk/src/wallet.rs:234,293 still call get_identity_sequence and send_activity; caller migration is outside touches.; agent/crates/layerx-sdk/src/agent_envelope.rs:250,254 reference absent layerx_agent_api::Operation::McpInvoke.; cargo clippy --locked --manif"
+
+[finding.6.5.43]
+revision = "8daa5ad16"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-cli --test wallet_derive"
+exit_code = 101
+log_path = "logs/6.5.43-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: acceptance.6.67.2: live binding remains unqualified; no isolated sequencer endpoint or funded unbound fixture configured through PAXEER_BIND_RPC_URL.; acceptance.6.67.3: canonical 7702 authorization signing and sponsored-batch APIs are not exposed through CLI dependencies; adding the required dependency exceeds touches; --sponsored explicitly refuses and its success assertion remains intact.; unrelated: SDK compilation fails at agent/crates/layerx-sdk/src/agent_envelope.rs:250 and :254 because Operation::McpInvoke is absent; both gates aborted before executing tests.; Clippy reached the same SDK error; remaining jobs belonging to that failed lint invocation were stopped, exit 255; owned-file lint q"
+
+[finding.6.5.44]
+revision = "d94f76e62"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-cli --test rpc_identity"
+exit_code = 101
+log_path = "logs/6.5.44-verify-1.log"
+observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: 6068.1: Sponsored bind lacks a real 7702 signer/submission interface in the CLI's Ed25519 credential path; gateway px_register/px_requestFunds handlers are absent; the required platform/cli/tests/rpc_identity.rs extension is excluded by touches.; 6068.2: Gateway pax_sequencerReceipt routing is absent; platform/cli/src/a2a.rs raw submission and platform/cli/tests/commands.rs acceptance work are outside touches; receip; unrelated: agent/crates/layerx-sdk/src/agent_envelope.rs:250,254 references absent layerx_agent_api::Operation::McpInvoke; lint, build and verify exit 101 before CLI test execution.; CLI Clippy also fails on unowned Programs SDK generator errors through platform/emulator/build.rs; exit 101 | (private log)"
+
+[finding.13.5.4]
+revision = "c1a455237"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-authority --test resolution_receipt_trust"
+exit_code = 101
+log_path = "logs/13.5.4-verify-1.log"
+observed_and_assumption = "no commits; both gates stopped on the agent workspace compile error repaired by task 0.22, so the task returns to pending with 0.22 in requires; gaps: 13021.2: No Rust Comet commit/header or EVM receipt-trie verifier is available; authority trust.rs and indexer settlement.rs use legacy checkpoint verification. Authority ReceiptKeys configuration in src/main.rs and indexer integration are outside touches; no migrated receipt/equivocation path or real committed-proof test interface is available.; 13027.4: interop/crates/layerx-portable/src/receipt"
+
+[finding.6.5.49]
+revision = "b73550ab3"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test subscription"
+exit_code = 101
+log_path = "logs/6.5.49-verify-1.log"
+observed_and_assumption = "no commits; both gates stopped on the agent workspace compile error repaired by task 0.22, so the task returns to pending with 0.22 in requires; gaps: 6042.1: agent/crates/layerx-agent-api/src/stream.rs:120 and agent/crates/layerx-agentd/src/events/subscription.rs:35 retain sequence cursors; agent/crates/layerx-agentd/src/human_runtime.rs:15635 creates local records only. Durable triple migration and router integration require changes outside touches.; 6042.2: agent/crates/layerx-client/src/client.rs:1668 supplies only the LNI connection to subs"
+

@@ -7026,3 +7026,28 @@ fix = "Wrap the vector expression in parentheses so the macro takes it as an exp
 area = "agent/crates/layerx-agentd"
 symptom = "The lib test target stops at its first macro error, so fixing it exposes the remaining type errors behind it"
 fix = "Expect several compile rounds; collect every error class from the first full build log before repairing."
+
+[gotcha.1491]
+area = "agent/crates/layerx-agentd"
+symptom = "The package has autobins = false and its binary is built by layerx-agentd-host, so integration tests under layerx-agentd/tests cannot use CARGO_BIN_EXE_layerx-agentd"
+fix = "Register binary-driven tests in layerx-agentd-host with a [[test]] path into the agentd crate."
+
+[gotcha.1492]
+area = "cargo"
+symptom = "cargo build stops at the first failing target, hiding the other test-target errors"
+fix = "Use --keep-going to collect every test-target error in one pass."
+
+[gotcha.1493]
+area = "human/wallet/sdk"
+symptom = "The wallet SDK build and test scripts call pnpm, which is not on the standard toolchain PATH"
+fix = "corepack enable --install-directory <scratch>/bin pnpm provides the cached pnpm shim without editing the tree."
+
+[gotcha.1494]
+area = "human/wallet/sdk"
+symptom = "build:agent-sdk runs npm ci in agent/sdk/typescript, which replaces a symlinked node_modules in a worktree with a real directory"
+fix = "Expected in worktrees; the main checkout's directory is untouched."
+
+[gotcha.1495]
+area = "fleet commit helper"
+symptom = "git add -A in a worktree stages untracked node_modules symlinks"
+fix = "Stage only the owned files and run the helper with NOADD=1."

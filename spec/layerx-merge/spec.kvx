@@ -11570,7 +11570,8 @@ do_1 = "Rewrite exchangePlaceOrderCall, exchangeCancelOrderCall and exchangeWith
 do_2 = "Replace the requestSettlement builder (agent/sdk/typescript/src/exchange.ts:458) with closePosition and remove the getIntent decoder (:467-494)."
 do_3 = "Keep intentNonce (agent/sdk/typescript/src/exchange.ts:416) as the nonce read."
 do_4 = "Update agent/sdk/typescript/test/precompile-calls.test.ts with 'placeOrder v2 calldata' and drop the intent cases."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "The rewritten wallet-signed helper performs the address-binding preflight of requirement 6079 ac_3 before invoking any signer: an unbound or wrong-DID sender is refused before signing through the addr precompile read, explicit bind operations stay usable, and tests through the public helper cover unbound, wrong-DID and correctly bound senders."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["exchangePlaceOrderCall", "exchangeClosePositionCall"]
 touches = ["agent/sdk/typescript/src/exchange.ts", "agent/sdk/typescript/test/precompile-calls.test.ts"]
 build_cmd = "npm --prefix agent/sdk/typescript run build"
@@ -11624,7 +11625,8 @@ do_1 = "Rewrite the call builders in agent/sdk/python/layerx_sdk/exchange.py:300
 do_2 = "Replace the settlement request builder (agent/sdk/python/layerx_sdk/exchange.py:327) with closePosition and drop the getIntent decoder (:332-354)."
 do_3 = "Keep the intentNonce read (agent/sdk/python/layerx_sdk/exchange.py:292)."
 do_4 = "Update tests/agent/sdk/python/test_precompile_calls.py with test_withdraw_margin_v2 asserting byte equality with the TypeScript encoding."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "The rewritten wallet-signed helper performs the address-binding preflight of requirement 6079 ac_3 before invoking any signer: an unbound or wrong-DID sender is refused before signing through the addr precompile read, explicit bind operations stay usable, and tests through the public helper cover unbound, wrong-DID and correctly bound senders."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["exchange_withdraw_margin_call", "exchange_close_position_call"]
 touches = ["agent/sdk/python/layerx_sdk/exchange.py", "tests/agent/sdk/python/test_precompile_calls.py"]
 build_cmd = "python3 -m compileall -q agent/sdk/python/layerx_sdk"
@@ -11678,7 +11680,8 @@ do_1 = "Change the exchange module in human/wallet/sdk/src/modules/exchange.ts:3
 do_2 = "Decode OrderPlaced with fillCount and quantity and MarginWithdrawn in place of the request events (human/wallet/sdk/src/modules/exchange.ts:36-40)."
 do_3 = "Keep depositMargin carrying the PAX value."
 do_4 = "Update human/wallet/sdk/test/modules.test.ts with an 'exchange v2' case."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "The rewritten wallet-signed helper performs the address-binding preflight of requirement 6079 ac_3 before invoking any signer: an unbound or wrong-DID sender is refused before signing through the addr precompile read, explicit bind operations stay usable, and tests through the public helper cover unbound, wrong-DID and correctly bound senders."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["exchangeModule"]
 touches = ["human/wallet/sdk/src/modules/exchange.ts", "human/wallet/sdk/test/modules.test.ts"]
 build_cmd = "pnpm --dir human/wallet/sdk run build"
@@ -11965,7 +11968,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.6.18]
 title = "Daemon reference clients stop calling the oracle adapter"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -26466,10 +26469,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.49]
 title = "Client and agentd subscriptions on eth_subscribe"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
-requires = []
+requires = ["0.22"]
 reqs = ["6042.1", "6042.2", "6042.3"]
 capabilities = ["6.5.11"]
 do_1 = "Rewrite subscribe (agent/crates/layerx-client/src/stream.rs:322) on eth_subscribe."
@@ -26873,7 +26876,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.11]
 title = "Retire handover finality and sequencer trust history"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -26927,7 +26930,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.13]
 title = "Retire the custody credit disclosure"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -30881,7 +30884,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.6.2]
 title = "Account mapping v2 at one finalized height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -36404,7 +36407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.34]
 title = "Bridge precompile keeps bridgeIn, bridgeOut, reads and governance"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36431,7 +36434,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.35]
 title = "Explorer status uses the three rungs"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36566,7 +36569,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.40]
 title = "Explorer market events, bindings and identity stay"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -40321,7 +40324,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.22]
 title = "Agent operation catalogue restores mcp.invoke so the agent daemon and SDK compile"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["6.15", "6.39", "6.51"]
@@ -40331,7 +40334,7 @@ do_2 = "If operation_generated.rs is produced by a generator in agent/tools, reg
 do_3 = "The two test targets that still do not compile are in scope: agent/crates/layerx-sdk/tests/agent_operation_envelope.rs imports ApiSuccess, Key, Level and VerificationStatus from layerx_agent_api::error where they no longer live, and dereferences an Operation at two sites; agent/crates/layerx-agentd/src/policy/native_program.rs has a test whose json-style macro call passes a vector expression the macro does not accept. Bring both to the real current exports and types with every assertion kept; nothing is deleted or weakened."
 do_4 = "The layerx-agentd lib test target and tests/runtime_mode.rs are in scope as well so build_cmd reaches exit 0: the hex uses in budget/program_sources.rs and budget/program_lifecycle_settlement.rs and the further E0433 sites get a declared dependency or the existing hex helper; the BudgetStateContext constructors in capability/effects.rs supply purpose_hash; the u32 literals in config.rs, budget/mod.rs, budget/reserve.rs and policy/approval.rs become the u16 the identity type declares; human_runtime.rs passes the Asn1TimeRef the API expects; tests/runtime_mode.rs resolves its binary through the crate bin target. Every assertion is kept and nothing is deleted or weakened."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-touches = ["agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/schema/agent-api/golden", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-agentd", "agent/Cargo.lock"]
+touches = ["agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/schema/agent-api/golden", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-agentd", "agent/crates/layerx-agentd-host/Cargo.toml", "agent/Cargo.lock"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd -p layerx-sdk --tests"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --lib"
 symbols = []
@@ -40348,7 +40351,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.23]
 title = "Human workspace lock file matches its manifests so locked builds run"
-status = "pending"
+status = "in_progress"
 wave = 1
 requires = []
 reqs = ["8.36", "8.46"]
@@ -40373,7 +40376,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.24]
 title = "Wallet SDK builds against its pinned curves release"
-status = "pending"
+status = "done"
 wave = 1
 requires = []
 reqs = ["8.13", "8.12"]
@@ -40386,6 +40389,65 @@ build_cmd = "npm --prefix human/wallet/sdk run build"
 verify_cmd = "npm --prefix human/wallet/sdk test -- test/point.test.ts"
 symbols = []
 planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.90]
+title = "Spot market creation reads genesis asset records through the context store"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["1.2", "2.1", "4.1", "3033.3", "3040.1"]
+capabilities = []
+do_1 = "The canonical asset key stays the 38-byte 'asset:'+asset_id that the asset module writes (src/modules/asset/lx_asset_execution.h asset_key) and that spot requests. The genesis representation stays the raw 32-byte asset_id: lxp_genesis_module_value.key is a fixed 32-byte field (include/layerx/lxp_genesis.h:152-157) that parse_request in cmd/layerx-genesis/lxp_genesis_build_cli.c:209 fills and module_value_materialize in src/protocol/lxp_genesis.c:946-961 inserts with key length 32, and both feed the genesis state root, so the reconciliation happens in the reader through the store and the manifest format, state root and snapshot bytes do not change."
+do_2 = "In src/modules/spot/lx_spot_dispatch.c asset_state reads 'asset:'+asset_id through lxp_ctx_kv_get under LXP_MODULE_ASSET first; only on LXP_ERR_UNKNOWN_FIELD it reads the raw 32-byte asset_id key through the same lxp_ctx_kv_get call, so staged records and committed records of both forms resolve through the context store and nothing scans ctx->kernel->module_kv or the asset runtime. The prefixed record takes precedence over the raw one, matching the second pass of lx_asset_committed_records (src/modules/asset/lx_asset_registry.c:794-835). module_id and staged_count are saved and restored around both reads exactly as today."
+do_3 = "A decoded record whose asset_id differs from the requested id returns LXP_ERR_ASSET_MISMATCH for both key forms, an undecodable value returns LXP_ERR_ASSET_MISMATCH, an absent id in both forms returns LXP_ERR_ASSET_MISMATCH, and market_assets keeps the unregistered refusal and the LXP_ERR_ASSET_PAUSED refusal (src/modules/spot/lx_spot_dispatch.c:77-90) unchanged; validate_market_create and validate_order_place keep their order of checks."
+do_4 = "In tests/test_genesis_builder_cli.c add genesis_spot_market_case: write a request through the existing request_writer helpers that registers two unpaused asset records (base and quote, zero total_units, issuer_kind other than 1) with a v3 fee schedule and the spot module gate enabled, run lxp_genesis_build_artifacts, parse genesis.manifest with lxp_genesis_parse, assert protocol_version is LXP_PROTOCOL_VERSION_STATE_COMMITMENT and that both asset module values carry the raw 32-byte asset_id key, materialize it into a kernel with lxp_genesis_materialize, register lx_spot_module_iface, then decode and validate a market-create activity through iface->decode and iface->validate with the market administrator as the authority actor and assert LXP_OK."
+do_5 = "In the same case assert the refusals on the genesis path: a market naming an asset id absent from genesis returns LXP_ERR_ASSET_MISMATCH; a genesis built with the base asset record paused returns LXP_ERR_ASSET_PAUSED on market create; after a staged 'asset:'+id record with paused set is written through lxp_ctx_kv_put under LXP_MODULE_ASSET and committed, market create on the genesis asset returns LXP_ERR_ASSET_PAUSED, proving the prefixed record takes precedence. Call genesis_spot_market_case from main and remove its temporary files like the v3 case does."
+do_6 = "tests/modules/test_spot_book.c market_create_case keeps its prefixed-record seeding, its malformed-record LXP_ERR_ASSET_MISMATCH assertion and its paused LXP_ERR_ASSET_PAUSED assertions unchanged, and every spot case keeps passing; make test-spot-book runs once on the merged wave with rg on PATH."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["src/modules/spot/lx_spot_dispatch.c", "tests/test_genesis_builder_cli.c", "tests/modules/test_spot_book.c"]
+build_cmd = "make build/tests/test_genesis_builder_cli build/tests/test_spot_book"
+verify_cmd = "make build/tests/test_genesis_builder_cli && build/tests/test_genesis_builder_cli"
+symbols = ["asset_state", "market_assets", "validate_market_create", "lxp_ctx_kv_get", "lx_asset_committed_records", "module_value_materialize", "lxp_genesis_build_artifacts", "genesis_spot_market_case", "market_create_case"]
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.91]
+title = "SDK trading and AI write entry points refuse unbound and wrong-DID addresses before signing"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["6079.3"]
+capabilities = []
+do_1 = "In agent/sdk/typescript/src/perps.ts TradingWriter.send runs the binding preflight before TradingWriter.transactionRequest is called: readLayerXBindState(transport, derived.evmAddress) followed by requireLayerXBinding(derived, state), both from agent/sdk/typescript/src/account-derivation.ts. An unbound address raises address_unbound and a different bound DID raises bound_to_different_did, with no secp256k1 signature created and no eth_getTransactionCount or eth_sendRawTransaction request sent. The pending nonce check and hash comparison stay as they are."
+do_2 = "TradingWriter.transactionRequest stays an offline primitive; its doc comment states the precondition that the caller has established the address binding through readLayerXBindState and requireLayerXBinding, and that TradingWriter.send performs that check itself. precompileTransactionRequest and sendBoundLayerXCall keep their current behaviour."
+do_3 = "In agent/sdk/typescript/src/ai_market.ts Approval.sign takes the binding transport (Eip1193Requester) and the expected LayerX public key as required parameters. Before signer.sign it derives the EVM address of the approved secp256k1 key (keccak of the uncompressed point, last 20 bytes), calls readLayerXBindState on that address and requireLayerXBinding against the expected LayerX public key, so unbound and wrong-DID approving keys are refused before the signer is invoked. Narrow the requireLayerXBinding parameter to Pick<DerivedAccount, \"layerxPublicKey\"> so both callers share it; requireCurrent, the UnauthorizedKey check and signature recovery stay in place."
+do_4 = "In agent/sdk/python/layerx_sdk/ai_market.py Approval.sign takes a WalletRequest and the expected LayerX public key and, before signer.sign, calls read_layerx_bind_state(request, address) and require_layerx_binding from agent/sdk/python/layerx_sdk/account_derivation.py for the EVM address of self.key, raising address_unbound or bound_to_different_did before signing; narrow require_layerx_binding to read only layerx_public_key so a DerivedAccount or the expected key holder both satisfy it. _require_current, the ReviewMismatch and UnauthorizedKey checks stay in place."
+do_5 = "Explicit bind operations stay usable for an unbound address: planLayerXBind, layerXBindTransactionRequest and the Python bind transport in account_derivation.py are not gated by the preflight, and a test binds an unbound account through them and then writes through TradingWriter.send."
+do_6 = "Update every existing caller of Approval.sign in agent/sdk/typescript/test/ai-market.test.ts and tests/agent/sdk/python/test_ai_market.py to pass a transport whose addr precompile answers bind the approving key address to the expected DID, keeping every existing assertion unchanged."
+do_7 = "Add agent/sdk/typescript/test/binding-preflight.test.ts (node:test) driving TradingWriter.send and Approval.sign through an Eip1193Requester that answers addr precompile eth_call reads: unbound and wrong-DID cases assert the refusal code, zero signer invocations and that no eth_getTransactionCount or eth_sendRawTransaction request was made; the correctly bound case signs and sends; the bind-then-write case succeeds. Add tests/agent/sdk/python/test_binding_preflight.py covering the same three cases through Python Approval.sign with a counting Secp256k1Signer. Register binding-preflight.test.js in the package.json test script."
+do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["agent/sdk/typescript/src/perps.ts", "agent/sdk/typescript/src/account-derivation.ts", "agent/sdk/typescript/src/ai_market.ts", "agent/sdk/python/layerx_sdk/ai_market.py", "agent/sdk/python/layerx_sdk/account_derivation.py", "agent/sdk/typescript/package.json", "agent/sdk/typescript/test/binding-preflight.test.ts", "agent/sdk/typescript/test/ai-market.test.ts", "tests/agent/sdk/python/test_binding_preflight.py", "tests/agent/sdk/python/test_ai_market.py"]
+build_cmd = "npm --prefix agent/sdk/typescript run build"
+verify_cmd = "node agent/sdk/typescript/dist/test/binding-preflight.test.js && cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_binding_preflight.py"
+symbols = ["TradingWriter.send", "TradingWriter.transactionRequest", "Approval.sign", "readLayerXBindState", "requireLayerXBinding", "read_layerx_bind_state", "require_layerx_binding"]
+planned_paths = ["agent/sdk/typescript/test/binding-preflight.test.ts", "tests/agent/sdk/python/test_binding_preflight.py"]
 mode = "BUILD"
 gate_kind = "planned"
 max_builds = 1
@@ -49508,7 +49570,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.40]
 title = "TypeScript AI market views read program state through eth_call"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.2"]
@@ -49592,7 +49654,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.17]
 title = "Python bind transport: bind_transaction_request submitted through eth_sendRawTransaction"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.16"]
@@ -49648,7 +49710,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.19]
 title = "Python x402 HTTP seller and receive encoders use ledger payments"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.18"]
@@ -49676,7 +49738,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.20]
 title = "Python x402 grant and draw use layerxpay 0x101B"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.18"]
@@ -49704,7 +49766,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.42]
 title = "Python x402 receive binding uses the txHash"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.18"]
@@ -49732,7 +49794,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.21]
 title = "Python px_ client keeps the method table and history read"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.3"]
@@ -49788,7 +49850,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.23]
 title = "Python web search pays through ledger accounts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.18"]
@@ -49816,7 +49878,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.24]
 title = "Python AI market operations through layerxprograms 0x101D"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.3"]
@@ -53330,7 +53392,7 @@ activation = "Deletions land in the same release as the merge plan; the rehearsa
 
 [task.11.5.1]
 title = "Retired-caller check and its catalogue"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -95440,7 +95502,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.5.2]
 title = "Wallet gateway routes sponsorship through the gas station"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["13.1.3"]
@@ -95494,10 +95556,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.5.4]
 title = "Authority trusts receipts by pinned keys; portable v2"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
-requires = ["13.1.4"]
+requires = ["13.1.4", "0.22"]
 reqs = ["13021.1", "13021.2", "13021.3", "13021.4", "13027.1", "13027.2", "13027.3", "13027.4"]
 do_1 = "Verify receipts through the commit verifier (platform/hosted/authority/src/trust.rs:14)."
 do_2 = "Use ReceiptKeys by height (agent/crates/layerx-proof/src/receipt.rs:631)."
