@@ -13,6 +13,8 @@ static const char payer_name[] = "agent:did:key:payer:main";
 static const char provider_name[] = "agent:did:key:provider:main";
 static const char stream_one_name[] = "agent:did:key:payer:stream:s1";
 static const char stream_two_name[] = "agent:did:key:payer:stream:s2";
+static const char payer_two_name[] = "agent:did:key:payer-two:main";
+static const char stream_three_name[] = "agent:did:key:payer-two:stream:s3";
 
 static struct {
     size_t calls;
@@ -65,6 +67,8 @@ static lx_account *payer;
 static lx_account *provider;
 static lx_account *stream_one;
 static lx_account *stream_two;
+static lx_account *payer_two;
+static lx_account *stream_three;
 static lx_asset_record asset;
 static lxp_transfer_asset_state asset_state;
 static lx_stream_runtime runtime;
@@ -100,7 +104,11 @@ static int fixture_init(void)
     if (open_account(provider_name, &provider) != 0) return 1;
     if (open_account(stream_one_name, &stream_one) != 0) return 1;
     if (open_account(stream_two_name, &stream_two) != 0) return 1;
+    if (open_account(payer_two_name, &payer_two) != 0) return 1;
+    if (open_account(stream_three_name, &stream_three) != 0) return 1;
     CHECK(lxp_ledger_bootstrap_balance(payer, asset.asset_id,
+                                       (lxp_u128){ 0U, 100U }, 0U) == LXP_OK);
+    CHECK(lxp_ledger_bootstrap_balance(payer_two, asset.asset_id,
                                        (lxp_u128){ 0U, 100U }, 0U) == LXP_OK);
     CHECK(lxp_state_store_init(&state, 0U) == LXP_OK);
     CHECK(lxp_state_store_bind_accounts(&state, &accounts) == LXP_OK);
@@ -553,6 +561,237 @@ static int close_atomicity(void)
     return 0;
 }
 
+static int rate_change_payload_vectors(void)
+{
+    const lxp_module_iface *iface = lx_stream_module_iface();
+    lx_stream_rate_change_payload decoded;
+    uint8_t bytes[LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES] = { 0U };
+    uint8_t canonical[LX_STREAM_RATE_CHANGE_PAYLOAD_BYTES];
+
+    CHECK(iface->activity_type_count == 8U);
+    CHECK(iface->activity_types[6] == (uint32_t)LX_STREAM_CLOSE);
+    CHECK(iface->activity_types[7] == (uint32_t)LX_STREAM_RATE_CHANGE);
+    CHECK(LX_STREAM_RATE_CHANGE == 0x00040008U);
+
+    bytes[1] = (uint8_t)LX_STREAM_PAYLOAD_VERSION;
+    bytes[2] = 3U;
+    CHECK(lxp_u128_to_be((lxp_u128){ 0U, 5U }, bytes + 34U) == LXP_OK);
+    bytes[50] = 0x51U;
+    (void)memcpy(canonical, bytes, sizeof(canonical));
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), &decoded) ==
+          LXP_OK);
+    CHECK(decoded.stream_id[0] == 3U &&
+          lxp_ct_is_zero(decoded.stream_id + 1U, 31U));
+    CHECK(decoded.new_rate.hi == 0U && decoded.new_rate.lo == 5U);
+    CHECK(decoded.idempotency_key[0] == 0x51U &&
+          lxp_ct_is_zero(decoded.idempotency_key + 1U, 31U));
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes) - 1U,
+                                       &decoded) == LXP_ERR_NON_CANONICAL);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), NULL) ==
+          LXP_ERR_NON_CANONICAL);
+
+    /* A keyed payload is too short to be a rate change. */
+    CHECK(lx_stream_rate_change_decode(bytes,
+                                       (size_t)LX_STREAM_KEYED_PAYLOAD_BYTES,
+                                       &decoded) == LXP_ERR_NON_CANONICAL);
+    bytes[1] = 2U;
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), &decoded) ==
+          LXP_ERR_VERSION_UNSUPPORTED);
+    (void)memcpy(bytes, canonical, sizeof(bytes));
+    (void)memset(bytes + 34U, 0, 16U);
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    (void)memcpy(bytes, canonical, sizeof(bytes));
+    bytes[50] = 0U;
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    (void)memcpy(bytes, canonical, sizeof(bytes));
+    bytes[2] = 0U;
+    CHECK(lx_stream_rate_change_decode(bytes, sizeof(bytes), &decoded) ==
+          LXP_ERR_NON_CANONICAL);
+    return 0;
+}
+
+static lxp_transfer_asset_state rate_asset;
+static lxp_authority_resolved rate_authority;
+
+static lxp_result rate_change(uint8_t marker, uint8_t key_marker,
+                              uint64_t new_rate, uint64_t timestamp,
+                              uint64_t sequence, const uint8_t principal[32],
+                              lxp_receipt *receipt)
+{
+    lx_stream_lifecycle_request request;
+    uint8_t id[32] = { 0U };
+    lxp_result status = begin_ctx(timestamp, sequence);
+    if (status != LXP_OK) return status;
+    id[0] = marker;
+    rate_asset = asset_state;
+    (void)memset(&rate_authority, 0, sizeof(rate_authority));
+    rate_authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(rate_authority.principal, principal, 32U);
+    (void)memset(&request, 0, sizeof(request));
+    (void)memset(receipt, 0, sizeof(*receipt));
+    (void)memset(&observed, 0, sizeof(observed));
+    request.stream_id = id;
+    request.stream_account = stream_three;
+    request.payer = payer_two;
+    request.recipient = provider;
+    (void)memcpy(request.asset_id, asset.asset_id, 32U);
+    request.authority = &rate_authority;
+    request.idempotency_key[0] = key_marker;
+    request.context.assets = &rate_asset;
+    request.context.asset_count = 1U;
+    return lx_stream_rate_change_execute(&ctx, &request,
+                                         (lxp_u128){ 0U, new_rate }, receipt);
+}
+
+static int rate_record(uint64_t rate, uint64_t accrued, uint64_t settled,
+                       uint64_t last_accrual)
+{
+    lx_stream_record record;
+    uint8_t id[32] = { 0U };
+    id[0] = 3U;
+    CHECK(lx_stream_load(&ctx, id, &record) == LXP_OK);
+    CHECK(record.rate.hi == 0U && record.rate.lo == rate);
+    CHECK(record.rate_unit == 1000U);
+    CHECK(record.accrued_total.hi == 0U && record.accrued_total.lo == accrued);
+    CHECK(record.settled_total.hi == 0U && record.settled_total.lo == settled);
+    CHECK(record.last_accrual_timestamp == last_accrual);
+    CHECK(lxp_u128_is_zero(record.remainder_carry));
+    CHECK(!record.paused && !record.underfunded);
+    return 0;
+}
+
+static int rate_change_lifecycle(void)
+{
+    lx_stream_open_payload open;
+    lx_stream_economic_result result;
+    lxp_receipt receipt;
+    lxp_receipt replayed;
+    uint8_t change_root[32];
+    uint8_t open_bytes[LX_STREAM_OPEN_PAYLOAD_MAX];
+    uint8_t id[32] = { 0U };
+    size_t length = 0U;
+    lxp_result module_result = LXP_OK;
+    bool found = false;
+    id[0] = 3U;
+
+    (void)memset(&open, 0, sizeof(open));
+    open.record.stream_id[0] = 3U;
+    (void)memcpy(open.record.stream_account, stream_three->id, 32U);
+    (void)memcpy(open.record.recipient, provider->id, 32U);
+    (void)memcpy(open.record.asset_id, asset.asset_id, 32U);
+    open.record.mode = LX_STREAM_MODE_TIME;
+    open.record.rate = (lxp_u128){ 0U, 3U };
+    open.record.rate_unit = 1000U;
+    open.record.start_timestamp = 20000U;
+    open.record.total_cap = (lxp_u128){ 0U, 500U };
+    open.initial_funding = (lxp_u128){ 0U, 100U };
+    CHECK(lx_stream_open_encode(&open, open_bytes, sizeof(open_bytes),
+                                &length) == LXP_OK);
+    CHECK(run(LX_STREAM_OPEN, open_bytes, length, payer_two->id, 20000U, 13U,
+              &module_result) == LXP_OK);
+    CHECK(module_result == LXP_OK);
+    CHECK(payer_two->balance.lo == 0U && stream_three->balance.lo == 100U);
+    CHECK(provider->balance.lo == 60U);
+    CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+
+    /* Only the payer may change the rate; the payee is refused and nothing
+     * is settled or written. */
+    CHECK(rate_change(3U, 0x50U, 5U, 30000U, 14U, provider->id, &receipt) ==
+          LXP_ERR_UNAUTHORIZED_DEBIT);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(stream_three->balance.lo == 100U && provider->balance.lo == 60U);
+    if (rate_record(3U, 0U, 0U, 20000U) != 0) return 1;
+
+    /* A rate change never settles across a time regression. */
+    CHECK(rate_change(3U, 0x50U, 5U, 19999U, 14U, payer_two->id, &receipt) ==
+          LXP_ERR_NON_MONOTONIC_TIME);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    if (rate_record(3U, 0U, 0U, 20000U) != 0) return 1;
+
+    /* A zero rate is refused before anything runs. */
+    CHECK(rate_change(3U, 0x50U, 0U, 30000U, 14U, payer_two->id, &receipt) ==
+          LXP_ERR_NON_CANONICAL);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+
+    /* A key already stored by a settle on another stream or by a close is
+     * refused. */
+    CHECK(rate_change(3U, 0x30U, 5U, 30000U, 14U, payer_two->id, &receipt) ==
+          LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(rate_change(3U, 0x31U, 5U, 30000U, 14U, payer_two->id, &receipt) ==
+          LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    if (rate_record(3U, 0U, 0U, 20000U) != 0) return 1;
+
+    /* The change first settles 10 s at the old rate of 3 per second, then
+     * applies the new rate from that settle's accrual point. */
+    CHECK(rate_change(3U, 0x51U, 5U, 30000U, 14U, payer_two->id, &receipt) ==
+          LXP_OK);
+    CHECK(observed.calls == 1U && observed.leg_count == 1U);
+    CHECK(observed.reasons[0] == (uint16_t)LXP_REASON_STREAM_DRAW);
+    CHECK(observed.authority_kind == LXP_AUTH_PROTOCOL_MODULE);
+    CHECK(memcmp(observed.authorized_from, stream_three->id, 32U) == 0);
+    CHECK(observed.origin_module_id == (uint16_t)LXP_MODULE_STREAM);
+    CHECK(observed.actor_sequence == 0U);
+    CHECK(stream_three->next_sequence == 1U);
+    CHECK(stream_three->balance.lo == 70U && provider->balance.lo == 90U);
+    CHECK(payer_two->balance.lo == 0U);
+    CHECK(memcmp(receipt.transfer_set_root, observed.transfer_set_root,
+                 32U) == 0);
+    (void)memcpy(change_root, receipt.transfer_set_root, 32U);
+    if (rate_record(5U, 30U, 30U, 30000U) != 0) return 1;
+    CHECK(lx_stream_result_load(&ctx, (const uint8_t[32]){ 0x51U }, &result,
+                                &found) == LXP_OK);
+    CHECK(found && result.ordinal == 4U && result.leg_count == 1U);
+    CHECK(memcmp(result.stream_id, id, 32U) == 0);
+    CHECK(result.paid.hi == 0U && result.paid.lo == 30U);
+    CHECK(lxp_u128_is_zero(result.refunded));
+    CHECK(memcmp(result.transfer_set_root, change_root, 32U) == 0);
+    CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+
+    /* Replaying the key on the same stream returns the stored result and
+     * moves nothing; the rate stays 5. */
+    CHECK(rate_change(3U, 0x51U, 9U, 31000U, 15U, payer_two->id, &replayed) ==
+          LXP_OK);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(memcmp(replayed.transfer_set_root, change_root, 32U) == 0);
+    CHECK(stream_three->balance.lo == 70U && provider->balance.lo == 90U);
+    CHECK(stream_three->next_sequence == 1U);
+    if (rate_record(5U, 30U, 30U, 30000U) != 0) return 1;
+
+    /* The same key on another stream is a context mismatch. */
+    CHECK(rate_change(1U, 0x51U, 5U, 31000U, 15U, payer->id, &replayed) ==
+          LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+
+    /* The next 10 s accrue at the new rate of 5 per second: 50 more, 80 in
+     * total. */
+    if (keyed(LX_STREAM_SETTLE, 3U, 0x52U, 40000U, 16U, provider->id,
+              &module_result) != 0) return 1;
+    CHECK(module_result == LXP_OK);
+    CHECK(observed.calls == 1U && observed.leg_count == 1U);
+    CHECK(stream_three->balance.lo == 20U && provider->balance.lo == 140U);
+    if (rate_record(5U, 80U, 80U, 40000U) != 0) return 1;
+    CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+
+    if (keyed(LX_STREAM_CLOSE, 3U, 0x53U, 40000U, 17U, payer_two->id,
+              &module_result) != 0) return 1;
+    CHECK(module_result == LXP_OK);
+    CHECK(stream_three->balance.lo == 0U && payer_two->balance.lo == 20U);
+    CHECK(provider->balance.lo == 140U);
+    CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+
+    /* A closed stream refuses a rate change under a fresh key. */
+    CHECK(rate_change(3U, 0x54U, 7U, 41000U, 18U, payer_two->id, &receipt) ==
+          LXP_ERR_STREAM_CLOSED);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(lx_stream_result_load(&ctx, (const uint8_t[32]){ 0x54U }, &result,
+                                &found) == LXP_OK);
+    CHECK(!found);
+    return 0;
+}
+
 static lxp_result count_streams(const lx_stream_record *record, void *user)
 {
     size_t *count = (size_t *)user;
@@ -566,13 +805,16 @@ static int final_state(void)
     size_t count = 0U;
     lxp_u128 total;
     CHECK(lx_stream_iter(&ctx, count_streams, &count) == LXP_OK);
-    CHECK(count == 2U);
+    CHECK(count == 3U);
     CHECK(lxp_u128_add(payer->balance, provider->balance, &total) == LXP_OK);
     CHECK(lxp_u128_add(total, stream_one->balance, &total) == LXP_OK);
     CHECK(lxp_u128_add(total, stream_two->balance, &total) == LXP_OK);
-    CHECK(total.hi == 0U && total.lo == 100U);
+    CHECK(lxp_u128_add(total, payer_two->balance, &total) == LXP_OK);
+    CHECK(lxp_u128_add(total, stream_three->balance, &total) == LXP_OK);
+    CHECK(total.hi == 0U && total.lo == 200U);
     CHECK(lxp_u128_is_zero(stream_one->balance));
     CHECK(lxp_u128_is_zero(stream_two->balance));
+    CHECK(lxp_u128_is_zero(stream_three->balance));
     return 0;
 }
 
@@ -583,6 +825,8 @@ int main(void)
     if (pause_and_resume() != 0) return 1;
     if (close_stream() != 0) return 1;
     if (close_atomicity() != 0) return 1;
+    if (rate_change_payload_vectors() != 0) return 1;
+    if (rate_change_lifecycle() != 0) return 1;
     if (final_state() != 0) return 1;
     if (lxp_state_store_destroy(&state) != LXP_OK) return 1;
     return 0;

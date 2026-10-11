@@ -256,6 +256,9 @@ lxp_result lx_stream_resume_execute(
 lxp_result lx_stream_close_execute(
     lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
     lxp_receipt *receipt);
+lxp_result lx_stream_rate_change_execute(
+    lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
+    lxp_u128 new_rate, lxp_receipt *receipt);
 lxp_result lx_stream_authority_check(const lx_account *account,
                                      lxp_authorization_kind authority_kind,
                                      uint16_t origin_module_id,

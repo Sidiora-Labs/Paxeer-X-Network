@@ -117,6 +117,21 @@ static lxp_result stream_event_settle(lxp_module_ctx *ctx,
     return lxp_ctx_emit_event(ctx, 4U, body, sizeof(body));
 }
 
+static lxp_result stream_event_rate_change(lxp_module_ctx *ctx,
+                                           const lx_stream_record *record,
+                                           lxp_u128 old_rate,
+                                           lxp_u128 paid)
+{
+    uint8_t body[80];
+    lxp_result status;
+    (void)memcpy(body, record->stream_id, 32U);
+    status = lxp_u128_to_be(old_rate, body + 32U);
+    if (status == LXP_OK) status = lxp_u128_to_be(record->rate, body + 48U);
+    if (status == LXP_OK) status = lxp_u128_to_be(paid, body + 64U);
+    if (status != LXP_OK) return status;
+    return lxp_ctx_emit_event(ctx, 8U, body, sizeof(body));
+}
+
 static lxp_result stream_event_lifecycle(lxp_module_ctx *ctx,
                                          uint16_t event_type,
                                          const lx_stream_record *record)
@@ -350,6 +365,56 @@ static lxp_result stream_execute_close(
     return stream_event_close(ctx, &record, &result);
 }
 
+static lxp_result stream_execute_rate_change(
+    lxp_module_ctx *ctx, const lxp_authority_resolved *authority,
+    const lx_stream_rate_change_payload *payload)
+{
+    lx_stream_lifecycle_request request;
+    lx_stream_record record;
+    lx_stream_economic_result result;
+    lxp_transfer_asset_state asset;
+    lxp_receipt receipt;
+    lxp_u128 old_rate;
+    lx_account *payer;
+    lx_account *stream_account;
+    lx_account *recipient;
+    bool replayed;
+    bool found;
+    lxp_result status = lx_stream_load(ctx, payload->stream_id, &record);
+    if (status != LXP_OK) return status;
+    old_rate = record.rate;
+    status = stream_parties(ctx, &record, &payer, &stream_account, &recipient);
+    if (status != LXP_OK) return status;
+    status = stream_asset_state(ctx, record.asset_id, &asset);
+    if (status != LXP_OK) return status;
+    status = lx_stream_result_load(ctx, payload->idempotency_key, &result,
+                                   &replayed);
+    if (status != LXP_OK) return status;
+    (void)memset(&request, 0, sizeof(request));
+    (void)memset(&receipt, 0, sizeof(receipt));
+    request.stream_id = record.stream_id;
+    request.stream_account = stream_account;
+    request.payer = payer;
+    request.recipient = recipient;
+    (void)memcpy(request.asset_id, record.asset_id, 32U);
+    request.authority = authority;
+    (void)memcpy(request.idempotency_key, payload->idempotency_key, 32U);
+    request.context.assets = &asset;
+    request.context.asset_count = 1U;
+    status = lx_stream_rate_change_execute(ctx, &request, payload->new_rate,
+                                           &receipt);
+    if (status != LXP_OK || replayed) return status;
+    status = lx_stream_result_load(ctx, payload->idempotency_key, &result,
+                                   &found);
+    if (status != LXP_OK) return status;
+    if (!found) return LXP_FATAL_INVARIANT;
+    status = lx_stream_load(ctx, payload->stream_id, &record);
+    if (status == LXP_OK)
+        status = stream_event_settle(ctx, &record, result.paid);
+    if (status != LXP_OK) return status;
+    return stream_event_rate_change(ctx, &record, old_rate, result.paid);
+}
+
 static lxp_result stream_execute_typed(lxp_module_ctx *ctx,
                                        const lxp_activity *activity,
                                        const lxp_authority_resolved *authority,
@@ -375,6 +440,8 @@ static lxp_result stream_execute_typed(lxp_module_ctx *ctx,
     case 5U:
     case 6U: return stream_execute_lifecycle(ctx, authority, value->ordinal,
                                              &value->typed->id);
+    case 8U: return stream_execute_rate_change(ctx, authority,
+                                               &value->typed->rate_change);
     default: return stream_execute_close(ctx, authority,
                                          &value->typed->keyed);
     }

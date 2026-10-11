@@ -92,12 +92,27 @@ static lxp_result settle_check(const lx_stream_settle_request *request)
     return LXP_OK;
 }
 
-lxp_result lx_stream_settle_execute(lxp_module_ctx *ctx,
-                                    const lx_stream_settle_request *request,
-                                    lxp_receipt *receipt)
+static lxp_result settle_replay(lxp_module_ctx *ctx,
+                                const uint8_t idempotency_key[32],
+                                const uint8_t *stream_id,
+                                lxp_receipt *receipt, bool *found)
 {
-    lx_stream_record record;
     lx_stream_economic_result result;
+    lxp_result status = lx_stream_result_load(ctx, idempotency_key, &result,
+                                              found);
+    if (status != LXP_OK || !*found) return status;
+    if (stream_id == NULL || result.ordinal != 4U ||
+        memcmp(result.stream_id, stream_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    return lx_stream_result_receipt(&result, receipt);
+}
+
+static lxp_result settle_accrued(lxp_module_ctx *ctx,
+                                 const lx_stream_settle_request *request,
+                                 lx_stream_record *record,
+                                 lx_stream_economic_result *result,
+                                 lxp_receipt *receipt)
+{
     lxp_transfer_set set;
     lxp_transfer_source_authority source;
     lxp_u128 newly_accrued;
@@ -107,82 +122,126 @@ lxp_result lx_stream_settle_execute(lxp_module_ctx *ctx,
     lxp_u128 settled_total;
     uint64_t timestamp;
     lxp_result status;
+    if (memcmp(record->stream_account, request->stream_account->id, 32U) != 0 ||
+        memcmp(record->recipient, request->recipient->id, 32U) != 0 ||
+        memcmp(record->asset_id, request->asset_id, 32U) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    timestamp = lxp_ctx_batch_timestamp_ms(ctx);
+    if (timestamp < record->last_accrual_timestamp)
+        return LXP_ERR_NON_MONOTONIC_TIME;
+    if (record->mode == LX_STREAM_MODE_TIME) {
+        status = lx_stream_accrue(record, timestamp, &newly_accrued);
+        if (status != LXP_OK) return status;
+    }
+    status = lx_stream_settle_amount(record, &unsettled);
+    if (status != LXP_OK) return status;
+    status = lxp_state_balance_get(request->stream_account, record->asset_id,
+                                   &balance);
+    if (status != LXP_OK) return status;
+    amount = lxp_u128_cmp(unsettled, balance) > 0 ? balance : unsettled;
+    (void)memset(result, 0, sizeof(*result));
+    (void)memset(receipt, 0, sizeof(*receipt));
+    result->ordinal = 4U;
+    (void)memcpy(result->stream_id, request->stream_id, 32U);
+    if (lxp_u128_is_zero(amount)) {
+        if (!lxp_u128_is_zero(unsettled))
+            return lx_stream_mark_underfunded(record, timestamp, amount);
+        return LXP_OK;
+    }
+    if (lxp_u128_cmp(amount, unsettled) < 0) {
+        status = lx_stream_mark_underfunded(record, timestamp, amount);
+    } else {
+        status = lxp_u128_add(record->settled_total, amount, &settled_total);
+        if (status == LXP_OK) record->settled_total = settled_total;
+    }
+    if (status != LXP_OK) return status;
+    (void)memset(&set, 0, sizeof(set));
+    set.leg_count = 1U;
+    set.legs[0].from = request->stream_account;
+    set.legs[0].to = request->recipient;
+    (void)memcpy(set.legs[0].asset_id, record->asset_id, 32U);
+    set.legs[0].amount = amount;
+    set.legs[0].reason = LXP_REASON_STREAM_DRAW;
+    status = lx_stream_draw_context(ctx, request->stream_account,
+                                    &request->context, &source, &set.context);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_emit_transfer_set(ctx, &set, receipt);
+    if (status != LXP_OK) return status;
+    (void)memcpy(result->transfer_set_root, receipt->transfer_set_root, 32U);
+    result->paid = amount;
+    result->leg_count = 1U;
+    return LXP_OK;
+}
+
+static lxp_result settle_save(lxp_module_ctx *ctx,
+                              const uint8_t idempotency_key[32],
+                              const lx_stream_record *record,
+                              const lx_stream_economic_result *result)
+{
+    lxp_result status = lx_stream_save(ctx, record);
+    if (status == LXP_OK)
+        status = lx_stream_result_save(ctx, idempotency_key, result);
+    if (status != LXP_OK) lxp_module_ctx_rollback(ctx);
+    return status;
+}
+
+lxp_result lx_stream_settle_execute(lxp_module_ctx *ctx,
+                                    const lx_stream_settle_request *request,
+                                    lxp_receipt *receipt)
+{
+    lx_stream_record record;
+    lx_stream_economic_result result;
+    lxp_result status;
     bool found;
     if (ctx == NULL || receipt == NULL) return LXP_ERR_NON_CANONICAL;
     status = settle_check(request);
     if (status != LXP_OK) return status;
-    status = lx_stream_result_load(ctx, request->idempotency_key, &result,
-                                   &found);
-    if (status != LXP_OK) return status;
-    if (found) {
-        if (request->stream_id == NULL || result.ordinal != 4U ||
-            memcmp(result.stream_id, request->stream_id, 32U) != 0)
-            return LXP_ERR_CONTEXT_MISMATCH;
-        return lx_stream_result_receipt(&result, receipt);
-    }
+    status = settle_replay(ctx, request->idempotency_key, request->stream_id,
+                           receipt, &found);
+    if (status != LXP_OK || found) return status;
     status = lx_stream_load(ctx, request->stream_id, &record);
     if (status != LXP_OK) return status;
     if (record.closed) return LXP_ERR_STREAM_CLOSED;
-    if (memcmp(record.stream_account, request->stream_account->id, 32U) != 0 ||
-        memcmp(record.recipient, request->recipient->id, 32U) != 0 ||
-        memcmp(record.asset_id, request->asset_id, 32U) != 0)
+    status = settle_accrued(ctx, request, &record, &result, receipt);
+    if (status != LXP_OK) return status;
+    return settle_save(ctx, request->idempotency_key, &record, &result);
+}
+
+lxp_result lx_stream_rate_change_execute(
+    lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
+    lxp_u128 new_rate, lxp_receipt *receipt)
+{
+    lx_stream_settle_request settle;
+    lx_stream_record record;
+    lx_stream_economic_result result;
+    lxp_result status;
+    bool found;
+    if (ctx == NULL || request == NULL || receipt == NULL ||
+        request->stream_id == NULL || request->authority == NULL ||
+        request->payer == NULL || lxp_u128_is_zero(new_rate) ||
+        lxp_ct_is_zero(request->idempotency_key, 32U))
         return LXP_ERR_NON_CANONICAL;
-    timestamp = lxp_ctx_batch_timestamp_ms(ctx);
-    if (timestamp < record.last_accrual_timestamp)
-        return LXP_ERR_NON_MONOTONIC_TIME;
-    if (record.mode == LX_STREAM_MODE_TIME) {
-        status = lx_stream_accrue(&record, timestamp, &newly_accrued);
-        if (status != LXP_OK) return status;
-    }
-    status = lx_stream_settle_amount(&record, &unsettled);
+    (void)memset(&settle, 0, sizeof(settle));
+    settle.stream_id = request->stream_id;
+    settle.stream_account = request->stream_account;
+    settle.recipient = request->recipient;
+    (void)memcpy(settle.asset_id, request->asset_id, 32U);
+    (void)memcpy(settle.idempotency_key, request->idempotency_key, 32U);
+    settle.context = request->context;
+    status = settle_check(&settle);
     if (status != LXP_OK) return status;
-    status = lxp_state_balance_get(request->stream_account, record.asset_id,
-                                   &balance);
+    status = settle_replay(ctx, request->idempotency_key, request->stream_id,
+                           receipt, &found);
+    if (status != LXP_OK || found) return status;
+    status = lx_stream_load(ctx, request->stream_id, &record);
     if (status != LXP_OK) return status;
-    amount = lxp_u128_cmp(unsettled, balance) > 0 ? balance : unsettled;
-    (void)memset(&result, 0, sizeof(result));
-    (void)memset(receipt, 0, sizeof(*receipt));
-    result.ordinal = 4U;
-    (void)memcpy(result.stream_id, request->stream_id, 32U);
-    if (lxp_u128_is_zero(amount)) {
-        if (!lxp_u128_is_zero(unsettled)) {
-            status = lx_stream_mark_underfunded(&record, timestamp, amount);
-            if (status != LXP_OK) return status;
-        }
-    } else {
-        if (lxp_u128_cmp(amount, unsettled) < 0) {
-            status = lx_stream_mark_underfunded(&record, timestamp, amount);
-        } else {
-            status = lxp_u128_add(record.settled_total, amount,
-                                  &settled_total);
-            if (status == LXP_OK) record.settled_total = settled_total;
-        }
-        if (status != LXP_OK) return status;
-        (void)memset(&set, 0, sizeof(set));
-        set.leg_count = 1U;
-        set.legs[0].from = request->stream_account;
-        set.legs[0].to = request->recipient;
-        (void)memcpy(set.legs[0].asset_id, record.asset_id, 32U);
-        set.legs[0].amount = amount;
-        set.legs[0].reason = LXP_REASON_STREAM_DRAW;
-        status = lx_stream_draw_context(ctx, request->stream_account,
-                                        &request->context, &source,
-                                        &set.context);
-        if (status != LXP_OK) return status;
-        status = lxp_ctx_emit_transfer_set(ctx, &set, receipt);
-        if (status != LXP_OK) return status;
-        (void)memcpy(result.transfer_set_root, receipt->transfer_set_root,
-                     32U);
-        result.paid = amount;
-        result.leg_count = 1U;
-    }
-    status = lx_stream_save(ctx, &record);
-    if (status == LXP_OK)
-        status = lx_stream_result_save(ctx, request->idempotency_key,
-                                       &result);
-    if (status != LXP_OK) {
-        lxp_module_ctx_rollback(ctx);
-        return status;
-    }
-    return LXP_OK;
+    if (record.closed) return LXP_ERR_STREAM_CLOSED;
+    if (memcmp(request->authority->principal, record.payer, 32U) != 0)
+        return LXP_ERR_UNAUTHORIZED_DEBIT;
+    if (memcmp(request->payer->id, record.payer, 32U) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    status = settle_accrued(ctx, &settle, &record, &result, receipt);
+    if (status != LXP_OK) return status;
+    record.rate = new_rate;
+    return settle_save(ctx, request->idempotency_key, &record, &result);
 }
