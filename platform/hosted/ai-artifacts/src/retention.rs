@@ -1,11 +1,13 @@
-//! Retention ledger beside the durable store: verified terminal-finality
-//! timers, dispute/evidence holds, the binding projection, immutable tombstone
-//! records, pending-purge accounting and restart reconciliation of deletion
-//! intents. Terminal finality and bindings are read only from a
-//! `SnapshotBinding` over the exact market state bytes it names; a missing
-//! producer, record or authority fails closed and keeps the bytes. The ledger
-//! has its own live high-water mark outside the restorable data directory.
-use crate::store::{ObjectRecord, ObjectState, Store, RETENTION_SECS};
+//! Retention ledger beside the durable store: block-commit terminal timers,
+//! dispute/evidence holds, the binding projection, immutable tombstone
+//! records, pending-purge accounting, restart reconciliation of deletion
+//! intents and payload restoration from replicas. Evidence is promoted only on
+//! `CommitFinality`: the block commit plus state proof at the committed height
+//! of a `SnapshotBinding` over the exact market state bytes it names. A missing
+//! producer, record, authority or payload fails closed, keeps the bytes and is
+//! never reported present. The ledger has its own live high-water mark outside
+//! the restorable data directory.
+use crate::store::{ObjectRecord, ObjectState, SessionState, Store, RETENTION_SECS};
 use layerx_programs_ai_market::codec;
 use layerx_programs_ai_market::errors::ApplicationError;
 use layerx_programs_ai_market::evidence::{decode_manifest, ArtifactError, ArtifactKind};
@@ -13,6 +15,7 @@ use layerx_programs_ai_market::queries::SnapshotBinding;
 use layerx_programs_ai_market::registry_ops::PolicySection;
 use layerx_programs_ai_market::state::{decode_shared_state, Section};
 use layerx_programs_ai_market::tasks::{TaskBinding, TaskSet, TaskStatus};
+use layerx_programs_ai_market::types::Digest32;
 use layerx_programs_ai_market::types::TaskId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -43,7 +46,7 @@ pub fn reason_name(reason: u8) -> Option<&'static str> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Refusal {
     Artifact(ArtifactError),
-    /// The snapshot is below verified finality (rank 4).
+    /// The state head's block is not committed, or names no committed height.
     FinalityUnavailable,
     /// A required record, producer or reference is absent from the evidence.
     EvidenceUnavailable,
@@ -106,13 +109,45 @@ impl Binding {
     }
 }
 
-/// First verified terminal observation; it fixes day 0 and is never moved.
+/// The block commit plus state proof that finalizes one state head: the
+/// commit at the head's own execution height, bound by `bind_snapshot` to the
+/// head's native state root; the market state bytes are proven against the
+/// head by their state digest before anything is promoted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommitFinality {
+    pub height: u64,
+    pub commit: Digest32,
+}
+
+impl CommitFinality {
+    /// The committed head only: a block below commit rank or a head with no
+    /// committed height is `FinalityUnavailable`.
+    pub fn of(snapshot: &SnapshotBinding) -> Result<Self, Refusal> {
+        snapshot
+            .require_finalized()
+            .map_err(|_| Refusal::FinalityUnavailable)?;
+        if snapshot.execution_height == 0 {
+            return Err(Refusal::FinalityUnavailable);
+        }
+        Ok(Self {
+            height: snapshot.execution_height,
+            commit: snapshot.checkpoint,
+        })
+    }
+}
+
+/// First committed terminal observation; it fixes day 0 and is never moved.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Terminal {
     pub task: String,
     pub snapshot: String,
     pub observed_at: u64,
     pub retain_until: u64,
+    /// Committed height and block commit of the terminal head.
+    #[serde(default)]
+    pub height: u64,
+    #[serde(default)]
+    pub commit: String,
 }
 
 /// Append-only; a reinstatement never removes an earlier tombstone.
@@ -142,13 +177,16 @@ pub struct Entry {
     pub terminal: Option<Terminal>,
     pub holds: BTreeMap<String, u64>,
     pub binding: Binding,
+    /// Commit height at which the binding was promoted to `FINALIZED`.
+    #[serde(default)]
+    pub committed_height: Option<u64>,
     pub purge_failures: u32,
     pub history: Vec<Event>,
 }
 
 impl Entry {
     /// Physical deletion deadline: the terminal floor raised by every hold;
-    /// none while terminal finality is unverified or a binding is ambiguous.
+    /// none while the terminal head is uncommitted or a binding is ambiguous.
     pub fn purge_after(&self) -> Option<u64> {
         if self.binding == Binding::Pending {
             return None;
@@ -176,7 +214,7 @@ impl Entry {
     }
 
     /// Ordinary deletion (`EXPIRED`, `OWNER_WITHDRAWN`): only with no ambiguous
-    /// binding, after verified terminal finality plus 30 days, with no active hold.
+    /// binding, after the committed terminal head plus 30 days, with no active hold.
     pub fn admit_deletion(&self, at: u64) -> Result<(), Refusal> {
         if self.binding == Binding::Pending {
             return Err(Refusal::BindingPending);
@@ -290,6 +328,67 @@ fn known(store: &Store, root: &str) -> Result<(), Refusal> {
     }
 }
 
+fn manifest_bytes(record: &ObjectRecord) -> Result<Vec<u8>, ArtifactError> {
+    hex::decode(&record.manifest).map_err(|_| ArtifactError::Malformed)
+}
+
+/// Present only when every durable chunk of `session` re-verifies against the
+/// record's manifest; a missing, short or altered chunk is absent.
+fn payload_present(store: &Store, record: &ObjectRecord, session: &str) -> bool {
+    manifest_bytes(record)
+        .and_then(|bytes| store.verify_content(session, &decode_manifest(&bytes)?))
+        .is_ok()
+}
+
+/// Every retained root whose primary payload fails verification is served from
+/// a published replica session of the same root that re-verifies in full; a
+/// root with no such replica stays unrestored and is never reported present.
+// ponytail: re-reads every retained payload at startup; track per-root
+// verification marks if stores grow large enough to slow restart.
+fn restore_payloads(store: &mut Store) -> Result<(), ArtifactError> {
+    let mut restored = Vec::new();
+    let mut missing = Vec::new();
+    for (root, record) in &store.state.objects {
+        if !matches!(
+            record.state,
+            ObjectState::Available | ObjectState::Quarantined | ObjectState::Tombstoned
+        ) || payload_present(store, record, &record.session)
+        {
+            continue;
+        }
+        let replica = store
+            .state
+            .sessions
+            .iter()
+            .filter(|(id, s)| {
+                **id != record.session
+                    && s.state == SessionState::Published
+                    && s.root.as_deref() == Some(root.as_str())
+            })
+            .map(|(id, _)| id)
+            .find(|id| payload_present(store, record, id));
+        match replica {
+            Some(id) => restored.push((root.clone(), id.clone())),
+            None => missing.push(root.clone()),
+        }
+    }
+    for (root, session) in &restored {
+        if let Some(record) = store.state.objects.get_mut(root) {
+            record.session = session.clone();
+        }
+    }
+    if !restored.is_empty() {
+        store.persist()?;
+    }
+    for (root, session) in &restored {
+        store.event(&format!("restored root={root} replica={session}"))?;
+    }
+    for root in &missing {
+        store.event(&format!("payload-missing root={root}"))?;
+    }
+    Ok(())
+}
+
 /// The artifact's kind and its subject task record in the exact snapshot
 /// state: the state digest, chain, program and market must all match.
 fn subject_task(
@@ -303,7 +402,7 @@ fn subject_task(
         .objects
         .get(root)
         .ok_or(ArtifactError::ContentUnavailable)?;
-    let bytes = hex::decode(&record.manifest).map_err(|_| ArtifactError::Malformed)?;
+    let bytes = manifest_bytes(record)?;
     let manifest = decode_manifest(&bytes)?;
     let context = manifest.context;
     if context.chain != snapshot.chain
@@ -407,8 +506,8 @@ impl Ledger {
         Ok(())
     }
 
-    /// Starts the 30-day terminal timer from a rank-4 snapshot in which the
-    /// artifact's subject task is cancelled. Admitted or accepted tasks are
+    /// Starts the 30-day terminal timer from a committed state head in which
+    /// the artifact's subject task is cancelled. Admitted or accepted tasks are
     /// unresolved; a committed result needs the worker's terminal outcome
     /// evidence, which this ledger never assumes.
     pub fn observe_terminal(
@@ -420,9 +519,7 @@ impl Ledger {
         at: u64,
     ) -> Result<u64, Refusal> {
         known(store, root)?;
-        snapshot
-            .require_finalized()
-            .map_err(|_| Refusal::FinalityUnavailable)?;
+        let commit = CommitFinality::of(snapshot)?;
         let (_, record) = subject_task(store, root, snapshot, state)?;
         let record = record.ok_or(Refusal::EvidenceUnavailable)?;
         match record.status {
@@ -445,6 +542,8 @@ impl Ledger {
             snapshot: snapshot_id,
             observed_at,
             retain_until,
+            height: commit.height,
+            commit: hex::encode(commit.commit.bytes()),
         });
         self.commit()?;
         self.sync(store)?;
@@ -468,9 +567,10 @@ impl Ledger {
         Ok(Binding::Pending)
     }
 
-    /// The root bound by its subject task record (INPUT by the input digest,
-    /// RESULT by the result digest) is FINALIZED only at rank 4; below it the
-    /// binding stays pending. A finalized binding is never downgraded.
+    /// The sealed digest bound by its subject task record (INPUT by the input
+    /// digest, RESULT by the result digest) is FINALIZED at its commit height
+    /// only on `CommitFinality`; an uncommitted head leaves the binding
+    /// pending. A finalized binding is never downgraded.
     pub fn observe_binding(
         &mut self,
         store: &mut Store,
@@ -490,7 +590,8 @@ impl Ledger {
         if !referenced {
             return Err(Refusal::EvidenceUnavailable);
         }
-        let next = if snapshot.require_finalized().is_ok() {
+        let commit = CommitFinality::of(snapshot).ok();
+        let next = if commit.is_some() {
             Binding::Finalized
         } else {
             Binding::Pending
@@ -500,6 +601,7 @@ impl Ledger {
             return Ok(entry.binding);
         }
         entry.binding = next;
+        entry.committed_height = commit.map(|c| c.height);
         self.commit()?;
         self.sync(store)?;
         store.event(&format!("binding root={root} status={}", next.name()))?;
@@ -712,12 +814,15 @@ impl Ledger {
     }
 
     /// Restart pass, before serving: both the store and the ledger must be at
-    /// their live marks; a tombstone intent the store never applied is
-    /// completed; deletion deadlines are re-derived. Returns completed intents.
+    /// their live marks; a retained payload missing from its primary copy is
+    /// restored from a verified replica; a tombstone intent the store never
+    /// applied is completed; deletion deadlines are re-derived. Returns
+    /// completed intents.
     pub fn recover(&mut self, store: &mut Store) -> Result<usize, Refusal> {
         if !store.restore_ready() || !self.ready() {
             return Err(Refusal::RestoreNotReady);
         }
+        restore_payloads(store)?;
         let standing: Vec<(String, u8, u64)> = self
             .state
             .entries
@@ -753,9 +858,11 @@ impl Ledger {
         let removed = matches!(record.state, ObjectState::Tombstoned | ObjectState::Purged);
         let restricted = record.state == ObjectState::Purged
             || (removed && record.tombstone_reason == Some(POLICY_RESTRICTED));
-        let availability = if record.state == ObjectState::Available {
+        let present = record.state == ObjectState::Available
+            && payload_present(store, record, &record.session);
+        let availability = if present {
             "AVAILABLE"
-        } else if restricted {
+        } else if restricted || record.state == ObjectState::Available {
             "EVIDENCE_UNAVAILABLE"
         } else {
             "UNAVAILABLE"
@@ -793,4 +900,439 @@ fn apply_tombstone(
     store.state.revocation_mark = store.state.revocation_mark.checked_add(1).ok_or(FAIL)?;
     store.persist()?;
     store.event(&format!("tombstone root={root} reason={reason}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{ObjectRecord, Session, Transition};
+    use layerx_programs_ai_market::codec::{
+        decode_envelope, derive_market, encode_envelope, Envelope,
+    };
+    use layerx_programs_ai_market::dispatch;
+    use layerx_programs_ai_market::evidence::{
+        chunk_count, encode_manifest, manifest_root, object_content_root, ArtifactContext,
+        ArtifactManifest, Items, Privacy, CHUNK_BYTES, MAX_MANIFEST_BYTES,
+    };
+    use layerx_programs_ai_market::policy::{PolicyCommitments, TaskPolicyV1, TASK_POLICY_BYTES};
+    use layerx_programs_ai_market::queries::{
+        bind_snapshot, CaptureFacts, FinalityEvidence, ReadProof,
+    };
+    use layerx_programs_ai_market::registry::{derive_rewards_account, F01_SECTION_CAP};
+    use layerx_programs_ai_market::registry_ops::{self, CallContext, Outcome};
+    use layerx_programs_ai_market::state::{self, SharedState};
+    use layerx_programs_ai_market::types::{
+        AssetId, Authentication, ChainDomain, PolicyDigest, Presence, PrincipalId, ProgramId,
+        RequestId, RubricDigest, WorkerId,
+    };
+    use layerx_programs_ai_market::{MAX_CHUNK_BYTES, MAX_EVENT_BYTES};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const TENANT: &str = "tenant-a";
+    const CHAIN: [u8; 32] = [0x11; 32];
+    const PROGRAM: [u8; 32] = [0x22; 32];
+    const DAY: u64 = 86_400;
+
+    fn chain() -> ChainDomain {
+        ChainDomain::new(CHAIN).unwrap()
+    }
+    fn program() -> ProgramId {
+        ProgramId::new(PROGRAM).unwrap()
+    }
+    fn digest(byte: u8) -> Digest32 {
+        Digest32::new([byte; 32]).unwrap()
+    }
+    fn ctx() -> ArtifactContext {
+        ArtifactContext {
+            chain: chain(),
+            program: program(),
+            market: derive_market(chain(), program()).unwrap(),
+            policy: PolicyDigest::new([0x44; 32]).unwrap(),
+        }
+    }
+    fn dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "ai-artifacts-retention-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+    fn open(dir: &Path) -> (Store, Ledger) {
+        let store = Store::open(&dir.join("store"), &dir.join("revocation.mark")).unwrap();
+        let ledger = Ledger::open(&dir.join("store"), &dir.join("retention.mark")).unwrap();
+        (store, ledger)
+    }
+
+    /// A public INPUT payload of two chunks whose manifest subject is `task`.
+    fn payload(fill: u8) -> Vec<u8> {
+        vec![fill; CHUNK_BYTES as usize + 4_096]
+    }
+    fn manifest(bytes: &[u8], task: u8) -> Vec<u8> {
+        let count = chunk_count(bytes.len() as u64).unwrap();
+        let mut scratch = vec![[0u8; 32]; count as usize];
+        let manifest = ArtifactManifest {
+            kind: ArtifactKind::Input,
+            privacy: Privacy::Public,
+            context: ctx(),
+            epoch: 9,
+            publisher: PrincipalId::new([0x55; 32]).unwrap(),
+            subject: [task; 32],
+            byte_length: bytes.len() as u64,
+            chunk_count: count,
+            content_root: object_content_root(bytes, &mut scratch).unwrap(),
+            parents: Items::Typed(&[]),
+            declaration_root: [0; 32],
+            reproduction_root: [0; 32],
+            access_policy_root: [0; 32],
+            not_after_height: 0,
+        };
+        let mut out = vec![0; MAX_MANIFEST_BYTES];
+        let n = encode_manifest(&manifest, &mut out).unwrap();
+        out.truncate(n);
+        out
+    }
+    /// Durable chunks of one published session bound to `root`.
+    fn session(store: &mut Store, id: u8, root: &str, bytes: &[u8]) -> String {
+        let id = hex::encode([id; 32]);
+        store.create_session_dir(&id).unwrap();
+        for (i, chunk) in bytes.chunks(CHUNK_BYTES as usize).enumerate() {
+            store.write_chunk(&id, i as u32, chunk).unwrap();
+        }
+        store.state.sessions.insert(
+            id.clone(),
+            Session {
+                tenant: TENANT.to_string(),
+                request_id: id.clone(),
+                kind: ArtifactKind::Input as u8,
+                privacy: Privacy::Public as u8,
+                context: hex::encode(ctx().bytes()),
+                byte_length: bytes.len() as u64,
+                chunk_count: chunk_count(bytes.len() as u64).unwrap(),
+                expected_root: None,
+                created_at: 1,
+                state: SessionState::Published,
+                root: Some(root.to_string()),
+                wrapped_key: None,
+            },
+        );
+        id
+    }
+    /// An AVAILABLE object over its primary session; returns its root.
+    fn publish(store: &mut Store, task: u8, bytes: &[u8]) -> String {
+        let manifest = manifest(bytes, task);
+        let root = hex::encode(manifest_root(&manifest).unwrap().bytes());
+        let primary = session(store, task, &root, bytes);
+        store.state.objects.insert(
+            root.clone(),
+            ObjectRecord {
+                tenant: TENANT.to_string(),
+                session: primary,
+                manifest: hex::encode(&manifest),
+                envelope: String::new(),
+                declaration: None,
+                declared_purposes: None,
+                rights: None,
+                record_digest: hex::encode([task; 32]),
+                state: ObjectState::Available,
+                privacy: Privacy::Public as u8,
+                byte_length: bytes.len() as u64,
+                chunk_count: chunk_count(bytes.len() as u64).unwrap(),
+                publisher: hex::encode([0x55; 32]),
+                generation: 1,
+                wrapped_key: None,
+                access_generation: 1,
+                published_at: 1,
+                tombstone_reason: None,
+                retention_until: None,
+                history: vec![Transition {
+                    state: ObjectState::Available,
+                    at: 1,
+                }],
+            },
+        );
+        store.persist().unwrap();
+        root
+    }
+
+    fn encode_shared(shared: &SharedState<'_>) -> Vec<u8> {
+        let mut out = vec![0; shared.encoded_len().unwrap()];
+        let mut scratch = vec![0; Section::Control.payload_cap()];
+        let n = state::encode_shared_state(shared, &mut out, &mut scratch).unwrap();
+        out.truncate(n);
+        out
+    }
+    /// Real F01 CREATE through `registry_ops::apply`.
+    fn created_state() -> Vec<u8> {
+        let policy = TaskPolicyV1::bounded_default(
+            1,
+            1,
+            PolicyCommitments {
+                model_artifact: digest(1),
+                dataset_artifact: [2; 32],
+                benchmark_suite: digest(3),
+                rubric: RubricDigest::new([4; 32]).unwrap(),
+                task_schema: digest(5),
+                result_schema: digest(6),
+                service_terms: digest(7),
+            },
+            100,
+            1,
+        )
+        .unwrap();
+        let mut encoded_policy = vec![0; TASK_POLICY_BYTES];
+        policy.encode(&mut encoded_policy).unwrap();
+        let asset = [13; 32];
+        let rewards = derive_rewards_account(program(), AssetId::new(asset).unwrap()).unwrap();
+        let mut payload = [12; 32].to_vec();
+        payload.extend_from_slice(&asset);
+        payload.extend_from_slice(rewards.as_bytes());
+        payload.extend_from_slice(&[14; 32]);
+        payload.push(0);
+        payload.extend_from_slice(&encoded_policy);
+        payload.extend_from_slice(&[16; 32]);
+        let owner = PrincipalId::new([12; 32]).unwrap();
+        let envelope = Envelope {
+            operation: dispatch::CREATE,
+            chain: chain(),
+            program: program(),
+            market: derive_market(chain(), program()).unwrap(),
+            actor: owner,
+            epoch: 0,
+            config: 1,
+            roster: Presence::Absent,
+            sequence: 1,
+            expiry: 1_000_000,
+            request: RequestId::new([1; 32]).unwrap(),
+            payload: &payload,
+            authentication: Authentication::Native,
+        };
+        let mut encoded = vec![0; 16_384];
+        let n = encode_envelope(&envelope, &mut encoded).unwrap();
+        let validated = decode_envelope(&encoded[..n]).unwrap();
+        let call = CallContext {
+            chain: chain(),
+            program: program(),
+            principal: owner,
+            height: 600,
+        };
+        let mut section = vec![0; F01_SECTION_CAP];
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        match registry_ops::apply(&call, None, &validated, &mut section, &mut event).unwrap() {
+            Outcome::Applied { state, .. } => encode_shared(&state),
+            Outcome::AlreadyApplied(_) => panic!("fresh create retried"),
+        }
+    }
+    /// The created market whose task region holds `tasks` (id, status, input).
+    fn market(tasks: &[(u8, TaskStatus, &str)]) -> Vec<u8> {
+        let mut sorted: Vec<TaskBinding> = tasks
+            .iter()
+            .map(|(id, status, root)| TaskBinding {
+                task: TaskId::new([*id; 32]).unwrap(),
+                requester: PrincipalId::new([0x61; 32]).unwrap(),
+                worker: WorkerId::new([0x62; 32]).unwrap(),
+                input: Digest32::new(root_bytes(root).unwrap()).unwrap(),
+                deadline: 5_000,
+                status: *status,
+                acknowledgement: (*status != TaskStatus::Cancelled).then(|| digest(0x63)),
+                result: None,
+                admission: digest(0x65),
+            })
+            .collect();
+        sorted.sort_by_key(|t| t.task);
+        let mut region = u16::try_from(sorted.len()).unwrap().to_be_bytes().to_vec();
+        region.push(0);
+        for binding in &sorted {
+            region.extend_from_slice(&binding.encode().unwrap());
+        }
+        let base = created_state();
+        let shared = decode_shared_state(&base).unwrap();
+        let mut section =
+            PolicySection::decode(shared.section(Section::PolicyLifecycle).unwrap()).unwrap();
+        section.task_region = &region;
+        let mut bytes = vec![0; Section::PolicyLifecycle.payload_cap()];
+        let n = section.encode(&mut bytes).unwrap();
+        encode_shared(
+            &shared
+                .replace_section(Section::PolicyLifecycle, &bytes[..n])
+                .unwrap(),
+        )
+    }
+    /// The state head read at `height` with the block commit `commit` at that
+    /// height over its native state root, bound as the service binds it.
+    fn head(state: &[u8], height: u64, commit: u8, rank: u8) -> SnapshotBinding {
+        let proof = ReadProof {
+            chain: chain(),
+            program: program(),
+            native_state_root: digest(0x5a),
+            observed_sequence: height + 7,
+            execution_height: height,
+            batch_id: digest(0xbb),
+        };
+        let facts = CaptureFacts {
+            proof,
+            revision: decode_shared_state(state).unwrap().revision,
+            digest: codec::state_digest(state).unwrap(),
+            total_bytes: u32::try_from(state.len()).unwrap(),
+            chunks: state.len().div_ceil(MAX_CHUNK_BYTES),
+        };
+        let finality = FinalityEvidence {
+            native_state_root: proof.native_state_root,
+            checkpoint: digest(commit),
+            settlement: Presence::Absent,
+            rank,
+        };
+        bind_snapshot(state, &facts, &finality, 1_700_000_000_000).unwrap()
+    }
+
+    #[test]
+    fn state_head_finality_is_the_commit_at_its_height() {
+        let state = market(&[]);
+        assert_eq!(
+            CommitFinality::of(&head(&state, 700, 0xc7, 4)),
+            Ok(CommitFinality {
+                height: 700,
+                commit: digest(0xc7),
+            })
+        );
+        assert_eq!(
+            CommitFinality::of(&head(&state, 700, 0xc7, 3)),
+            Err(Refusal::FinalityUnavailable)
+        );
+        assert_eq!(
+            CommitFinality::of(&head(&state, 0, 0xc7, 4)),
+            Err(Refusal::FinalityUnavailable)
+        );
+    }
+
+    #[test]
+    fn sealed_digest_promoted_at_its_commit_height() {
+        let dir = dir("commit-height");
+        let (mut store, mut ledger) = open(&dir);
+        let bound = publish(&mut store, 0x31, &payload(0x31));
+        let ended = publish(&mut store, 0x32, &payload(0x32));
+        let state = market(&[
+            (0x31, TaskStatus::Accepted, bound.as_str()),
+            (0x32, TaskStatus::Cancelled, ended.as_str()),
+        ]);
+
+        assert_eq!(
+            ledger.observe_binding(&mut store, &bound, &head(&state, 640, 0xc6, 3), &state),
+            Ok(Binding::Pending)
+        );
+        assert_eq!(ledger.entry(&bound).unwrap().committed_height, None);
+        assert_eq!(
+            ledger.observe_binding(&mut store, &bound, &head(&state, 640, 0xc6, 4), &state),
+            Ok(Binding::Finalized)
+        );
+        assert_eq!(ledger.entry(&bound).unwrap().committed_height, Some(640));
+        assert_eq!(
+            ledger.observe_binding(&mut store, &bound, &head(&state, 700, 0xc7, 4), &state),
+            Ok(Binding::Finalized)
+        );
+        assert_eq!(ledger.entry(&bound).unwrap().committed_height, Some(640));
+        assert_eq!(
+            ledger.orphan_binding(&mut store, &bound),
+            Err(Refusal::Artifact(ArtifactError::IntegrityConflict))
+        );
+        assert_eq!(
+            ledger.projection(&store, &bound),
+            Ok(Projection {
+                state: "AVAILABLE",
+                availability: "AVAILABLE",
+                binding: "FINALIZED",
+                tombstone_reason: None,
+                tombstone_version: 0,
+                retain_until: None,
+            })
+        );
+
+        let at = 1_000 * DAY;
+        assert_eq!(
+            ledger.observe_terminal(&mut store, &ended, &head(&state, 640, 0xc6, 3), &state, at),
+            Err(Refusal::FinalityUnavailable)
+        );
+        assert_eq!(
+            ledger.observe_terminal(&mut store, &ended, &head(&state, 640, 0xc6, 4), &state, at),
+            Ok(at + RETENTION_SECS)
+        );
+        let terminal = ledger.entry(&ended).unwrap().terminal.clone().unwrap();
+        assert_eq!(
+            (terminal.height, terminal.commit, terminal.retain_until),
+            (640, hex::encode([0xc6; 32]), at + RETENTION_SECS)
+        );
+
+        drop((store, ledger));
+        let (store, ledger) = open(&dir);
+        assert_eq!(ledger.entry(&bound).unwrap().committed_height, Some(640));
+        assert_eq!(
+            ledger
+                .entry(&ended)
+                .unwrap()
+                .terminal
+                .as_ref()
+                .map(|t| t.height),
+            Some(640)
+        );
+        assert_eq!(
+            ledger.projection(&store, &bound).unwrap().binding,
+            "FINALIZED"
+        );
+    }
+
+    #[test]
+    fn missing_primary_payload_is_restored_from_a_replica() {
+        let dir = dir("replica");
+        let (mut store, mut ledger) = open(&dir);
+        let bytes = payload(0x41);
+        let root = publish(&mut store, 0x41, &bytes);
+        let replica = session(&mut store, 0x42, &root, &bytes);
+        let lonely = publish(&mut store, 0x43, &payload(0x43));
+        store.persist().unwrap();
+        let primary = store.state.objects[&root].session.clone();
+        let staging = dir.join("store").join("staging");
+        fs::remove_file(staging.join(&primary).join("1")).unwrap();
+        fs::remove_file(
+            staging
+                .join(store.state.objects[&lonely].session.clone())
+                .join("0"),
+        )
+        .unwrap();
+
+        for missing in [&root, &lonely] {
+            assert_eq!(
+                ledger.projection(&store, missing).unwrap().availability,
+                "EVIDENCE_UNAVAILABLE"
+            );
+        }
+        assert_eq!(ledger.recover(&mut store), Ok(0));
+        let record = &store.state.objects[&root];
+        assert_eq!(record.session, replica);
+        let manifest = hex::decode(&record.manifest).unwrap();
+        let manifest = decode_manifest(&manifest).unwrap();
+        assert_eq!(store.verify_content(&record.session, &manifest), Ok(()));
+        let mut scratch = vec![[0u8; 32]; manifest.chunk_count as usize];
+        assert_eq!(
+            object_content_root(&bytes, &mut scratch).unwrap(),
+            manifest.content_root
+        );
+        assert_eq!(
+            ledger.projection(&store, &root).unwrap().availability,
+            "AVAILABLE"
+        );
+        assert_eq!(
+            ledger.projection(&store, &lonely).unwrap().availability,
+            "EVIDENCE_UNAVAILABLE"
+        );
+
+        let (store, _) = open(&dir);
+        assert_eq!(store.state.objects[&root].session, replica);
+        let log = fs::read_to_string(dir.join("store").join("events.log")).unwrap();
+        assert!(log.contains(&format!("restored root={root} replica={replica}")));
+        assert!(log.contains(&format!("payload-missing root={lonely}")));
+    }
 }

@@ -22,10 +22,12 @@ pub struct Config {
     /// absent, it sits beside `revocation_mark`.
     #[serde(default)]
     pub retention_mark: Option<PathBuf>,
-    /// Tenants whose finality observations the retention ledger accepts; none
-    /// by default, so no caller-asserted finality starts or binds anything.
-    #[serde(default)]
-    pub finality_observers: Vec<String>,
+    /// Tenants that run a full-node commit reader: each submits the ai-market
+    /// state head read through 0x101D `getStateHead` at a committed height with
+    /// the block commit at that height. None by default, so no caller-asserted
+    /// commit starts or binds anything.
+    #[serde(default, alias = "finality_observers")]
+    pub commit_readers: Vec<String>,
     pub tenants: Vec<Tenant>,
     pub publishers: Vec<Publisher>,
 }
@@ -84,8 +86,8 @@ impl Config {
         })
     }
 
-    pub fn observer(&self, tenant: &Tenant) -> Result<(), ArtifactError> {
-        if self.finality_observers.contains(&tenant.id) {
+    pub fn commit_reader(&self, tenant: &Tenant) -> Result<(), ArtifactError> {
+        if self.commit_readers.contains(&tenant.id) {
             Ok(())
         } else {
             Err(ArtifactError::Unauthorized)

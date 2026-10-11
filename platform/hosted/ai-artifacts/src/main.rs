@@ -4,7 +4,7 @@
 //! generation revocation, locator admission, pinned TLS locator import and
 //! delivery reconciliation, served over TLS unless the config explicitly names
 //! a plaintext listener. Key releases are durable intents before any byte is
-//! sent; tombstones, holds, finality-observed retention timers, bindings and
+//! sent; tombstones, holds, block-commit retention timers, bindings and
 //! reinstatement go through the retention ledger, and payloads are purged only
 //! at its deletion deadline; a restore below the live revocation or retention
 //! high-water mark never becomes ready.
@@ -49,7 +49,7 @@ use store::{
 };
 
 const MAX_API_REQUEST: usize = 65_536;
-/// A finality observation carries the whole hex-encoded market state.
+/// A state head read carries the whole hex-encoded market state.
 const MAX_OBSERVATION_REQUEST: usize = 2 * MAX_STATE_BYTES + 4_096;
 const MAX_HEAD: usize = 8_192;
 const MAX_LEASE_SECS: u64 = 365 * 86_400;
@@ -319,10 +319,13 @@ struct ReinstateReq {
     decision: String,
 }
 
-/// One market state read and the finality evidence for its native root; the
-/// chain and program come from the artifact's own manifest context.
+/// The ai-market state head a full-node commit reader read through 0x101D
+/// `getStateHead` at `execution_height`: the market state bytes, its state
+/// proof (native state root, sequence, batch) and the block commit at that
+/// height. Rank 4 means the block is committed; below it the head is
+/// uncommitted. The chain and program come from the artifact's own manifest.
 #[derive(Deserialize)]
-struct ObserveReq {
+struct StateHeadReq {
     request_id: String,
     root: String,
     state: String,
@@ -330,8 +333,8 @@ struct ObserveReq {
     observed_sequence: u64,
     execution_height: u64,
     batch_id: String,
-    checkpoint: String,
-    settlement: Option<String>,
+    #[serde(alias = "checkpoint")]
+    commit: String,
     rank: u8,
     publication_time_ms: u64,
 }
@@ -528,14 +531,14 @@ impl Service {
                 |r| &r.request_id,
                 |s, r| self.orphan_binding(s, tenant, &r),
             ),
-            "/v1/retention/terminal" => self.with_id::<ObserveReq, _>(
+            "/v1/retention/terminal" => self.with_id::<StateHeadReq, _>(
                 tenant,
                 path,
                 body,
                 |r| &r.request_id,
                 |s, r| self.observe_terminal(s, tenant, &r),
             ),
-            "/v1/retention/binding" => self.with_id::<ObserveReq, _>(
+            "/v1/retention/binding" => self.with_id::<StateHeadReq, _>(
                 tenant,
                 path,
                 body,
@@ -1031,7 +1034,7 @@ impl Service {
         tenant: &Tenant,
         r: &RootReq,
     ) -> Result<Value, Refusal> {
-        self.config.observer(tenant)?;
+        self.config.commit_reader(tenant)?;
         let root = hex::encode(unhex::<32>(&r.root)?);
         let binding = self.ledger().orphan_binding(store, &root)?;
         Ok(json!({ "root": root, "binding": binding.name() }))
@@ -1041,10 +1044,10 @@ impl Service {
         &self,
         store: &mut Store,
         tenant: &Tenant,
-        r: &ObserveReq,
+        r: &StateHeadReq,
     ) -> Result<Value, Refusal> {
-        self.config.observer(tenant)?;
-        let (root, snapshot, state) = observed(store, r)?;
+        self.config.commit_reader(tenant)?;
+        let (root, snapshot, state) = state_head(store, r)?;
         let until = self
             .ledger()
             .observe_terminal(store, &root, &snapshot, &state, now())?;
@@ -1055,10 +1058,10 @@ impl Service {
         &self,
         store: &mut Store,
         tenant: &Tenant,
-        r: &ObserveReq,
+        r: &StateHeadReq,
     ) -> Result<Value, Refusal> {
-        self.config.observer(tenant)?;
-        let (root, snapshot, state) = observed(store, r)?;
+        self.config.commit_reader(tenant)?;
+        let (root, snapshot, state) = state_head(store, r)?;
         let binding = self
             .ledger()
             .observe_binding(store, &root, &snapshot, &state)?;
@@ -1445,10 +1448,14 @@ impl Service {
     }
 }
 
-/// Captures the observed state's identity and binds it to the finality
-/// evidence with `queries::bind_snapshot`; the ledger then checks the subject
-/// task record in that exact state.
-fn observed(store: &Store, r: &ObserveReq) -> Result<(String, SnapshotBinding, Vec<u8>), Refusal> {
+/// Captures the state head's identity and binds it with `queries::bind_snapshot`
+/// to its finality evidence: the block commit at the head's own height over
+/// its native state root. The ledger promotes it only through
+/// `CommitFinality` and checks the subject task record in that exact state.
+fn state_head(
+    store: &Store,
+    r: &StateHeadReq,
+) -> Result<(String, SnapshotBinding, Vec<u8>), Refusal> {
     let root = hex::encode(unhex::<32>(&r.root)?);
     let record = store
         .state
@@ -1477,11 +1484,8 @@ fn observed(store: &Store, r: &ObserveReq) -> Result<(String, SnapshotBinding, V
     };
     let finality = FinalityEvidence {
         native_state_root: proof.native_state_root,
-        checkpoint: digest(&r.checkpoint)?,
-        settlement: match &r.settlement {
-            Some(text) => Presence::Present(digest(text)?),
-            None => Presence::Absent,
-        },
+        checkpoint: digest(&r.commit)?,
+        settlement: Presence::Absent,
         rank: r.rank,
     };
     let snapshot =
