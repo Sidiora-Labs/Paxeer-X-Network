@@ -121,7 +121,7 @@ func NewPrecompile(keepers putils.Keepers) (*pcommon.DynamicGasPrecompile, error
 		}
 	}
 
-	return pcommon.NewDynamicGasPrecompile(newAbi, p, common.HexToAddress(AddrAddress), "addr").WithRevertReasons(), nil
+	return pcommon.NewDynamicGasPrecompile(newAbi, p, common.HexToAddress(AddrAddress), "addr").WithLXPReasons(), nil
 }
 
 // RequiredGas returns the required bare minimum gas to execute the precompile.
