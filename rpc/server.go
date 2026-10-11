@@ -32,6 +32,12 @@ type EVMServer interface {
 	Stop()
 }
 
+// ServerOption configures NewEVMHTTPServer: a TraceContextProvider or a SequencerReceiptOption.
+type ServerOption interface{ serverOption() }
+
+func (TraceContextProvider) serverOption()   {}
+func (SequencerReceiptOption) serverOption() {}
+
 func NewEVMHTTPServer(
 	config evmrpcconfig.Config,
 	tmClient client.LocalClient,
@@ -43,7 +49,7 @@ func NewEVMHTTPServer(
 	txConfigProvider func(int64) client.TxConfig,
 	homeDir string,
 	stateStore types.StateStore,
-	traceCtxProviders ...TraceContextProvider,
+	opts ...ServerOption,
 ) (EVMServer, error) {
 	if tmClient == nil || k == nil || ctxProvider == nil || txConfigProvider == nil || app == nil {
 		return nil, errors.New("EVM HTTP server dependencies are not configured")
@@ -96,8 +102,20 @@ func NewEVMHTTPServer(
 	sendAPI := NewSendAPI(tmClient, txConfigProvider, &SendConfig{slow: config.Slow, keyringEnabled: config.EnableUnsafeKeyringRPC}, k, beginBlockKeepers, ctxProvider, homeDir, simulateConfig, app, antehandler, ConnectionTypeHTTP, methodTimeout, globalBlockCache, cacheCreationMutex, watermarks)
 
 	traceCtxProvider := defaultTraceContextProvider(ctxProvider)
-	if len(traceCtxProviders) > 0 && traceCtxProviders[0] != nil {
-		traceCtxProvider = traceCtxProviders[0]
+	var sequencerReceipts SequencerReceiptOption
+	for _, opt := range opts {
+		switch o := opt.(type) {
+		case TraceContextProvider:
+			if o != nil {
+				traceCtxProvider = o
+			}
+		case SequencerReceiptOption:
+			sequencerReceipts = o
+		}
+	}
+	sequencerReceiptAPI, err := newSequencerReceiptAPI(tmClient, ctxProvider, sequencerReceipts, ConnectionTypeHTTP)
+	if err != nil {
+		return nil, err
 	}
 	txAPI := NewTransactionAPI(tmClient, k, ctxProvider, txConfigProvider, homeDir, ConnectionTypeHTTP, methodTimeout, watermarks, globalBlockCache, cacheCreationMutex, config.EnableUnsafeKeyringRPC)
 	debugAPI := NewDebugAPI(tmClient, k, beginBlockKeepers, ctxProvider, txConfigProvider, simulateConfig, app, antehandler, ConnectionTypeHTTP, config, globalBlockCache, cacheCreationMutex, watermarks)
@@ -145,6 +163,10 @@ func NewEVMHTTPServer(
 		{
 			Namespace: "pax",
 			Service:   paxTxAPI,
+		},
+		{
+			Namespace: "pax",
+			Service:   sequencerReceiptAPI,
 		},
 		{
 			Namespace: "eth",

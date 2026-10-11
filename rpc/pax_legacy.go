@@ -142,7 +142,7 @@ func paxLegacyMethodDisabledMessage(method string) string {
 }
 
 func paxLegacyIsGatedNamespaceMethod(method string) bool {
-	return strings.HasPrefix(method, "pax2_") || strings.HasPrefix(method, "pax_")
+	return method != SequencerReceiptMethod && (strings.HasPrefix(method, "pax2_") || strings.HasPrefix(method, "pax_"))
 }
 
 // paxLegacyGateError enforces [evm].enabled_legacy_pax_apis when allowlist is non-nil.
