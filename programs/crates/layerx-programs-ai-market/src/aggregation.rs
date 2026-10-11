@@ -44,10 +44,10 @@ use crate::{
         decode_reward_state, EpochStatus, RewardEffect, RewardEpoch, RewardState,
         REWARD_STATE_BYTES,
     },
-    state::{decode_shared_state, encode_shared_state, HeightWindow, Section, SharedState},
+    state::{decode_shared_state, encode_shared_state, Section, SharedState},
     types::{
-        Digest32, EvaluatorId, EvaluatorRosterEntry, FrozenBinding, Presence, ResultDigest, Score,
-        Version, WorkerRosterEntry,
+        Digest32, EpochWindows, EvaluatorId, EvaluatorRosterEntry, FrozenBinding, Presence,
+        ResultDigest, Score, Version, WorkerRosterEntry,
     },
     workers::WorkerTable,
 };
@@ -352,8 +352,6 @@ pub fn aggregate_epoch(view: &AggregationInputView<'_>) -> CodecResult<EpochWeig
     })
 }
 
-const SETTLEMENT_OPENS: u64 = 96;
-const EPOCH_HEIGHTS: u64 = 128;
 const REPORT_COMMITMENT_BYTES: usize = 64;
 const PROCESS_PAYLOAD_BYTES: usize = 34;
 const FINALIZE_PAYLOAD_BYTES: usize = 32;
@@ -985,8 +983,7 @@ fn begin(
     }
     call.check_envelope()?;
     let origin = view.section.header.origin_height;
-    let settlement_opens =
-        HeightWindow::epoch(origin, view.frozen.epoch, SETTLEMENT_OPENS, EPOCH_HEIGHTS)?.start;
+    let settlement_opens = EpochWindows::new(origin, view.frozen.epoch)?.settlement;
     if call.ctx.height < settlement_opens {
         return Err(WRONG_PHASE);
     }
