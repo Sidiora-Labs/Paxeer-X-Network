@@ -169,7 +169,9 @@ func (k *Keeper) Swap(ctx sdk.Context, trader sdk.AccAddress, denom string, isBu
 		if err := k.bankKeeper.SendCoins(ctx, escrow, k.TreasuryAddress(), coins(params.QuoteDenom, result.ProtocolCut)); err != nil {
 			return SwapResult{}, err
 		}
-		k.setProtocolFeesPending(ctx, k.GetProtocolFeesPending(ctx).Add(sdk.NewIntFromBigInt(result.ProtocolCut)))
+		if err := k.AddProtocolFees(ctx, denom, sdk.NewIntFromBigInt(result.ProtocolCut)); err != nil {
+			return SwapResult{}, err
+		}
 	}
 	k.setMarket(ctx, updated)
 

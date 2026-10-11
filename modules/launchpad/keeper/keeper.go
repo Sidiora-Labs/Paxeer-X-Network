@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -100,25 +101,58 @@ func (k *Keeper) GetMarketCount(ctx sdk.Context) uint64 {
 	return k.getUint64(ctx, types.MarketCountKey)
 }
 
-// GetProtocolFeesPending is FeeAccumulator's running total of protocol cuts.
-func (k *Keeper) GetProtocolFeesPending(ctx sdk.Context) sdk.Int {
-	bz := k.store(ctx).Get(types.ProtocolFeesPendingKey)
+func (k *Keeper) GetProtocolFees(ctx sdk.Context, denom string) (sdk.Int, error) {
+	if denom == "" {
+		return sdk.Int{}, types.ErrUnknownMarket
+	}
+	bz := k.store(ctx).Get(types.ProtocolFeesKey(denom))
 	if bz == nil {
-		return sdk.ZeroInt()
+		return sdk.ZeroInt(), nil
 	}
 	var out sdk.Int
 	if err := out.Unmarshal(bz); err != nil {
-		panic(fmt.Errorf("launchpad: corrupt protocol fees: %w", err))
+		return sdk.Int{}, fmt.Errorf("launchpad: corrupt protocol fees for %s: %w", denom, err)
 	}
-	return out
+	if out.IsNegative() {
+		return sdk.Int{}, types.ErrOverflow
+	}
+	return out, nil
 }
 
-func (k *Keeper) setProtocolFeesPending(ctx sdk.Context, value sdk.Int) {
+func (k *Keeper) setProtocolFees(ctx sdk.Context, denom string, value sdk.Int) error {
+	if denom == "" {
+		return types.ErrUnknownMarket
+	}
+	if value.IsNil() || value.IsNegative() {
+		return types.ErrOverflow
+	}
 	bz, err := value.Marshal()
 	if err != nil {
-		panic(err)
+		return err
 	}
-	k.store(ctx).Set(types.ProtocolFeesPendingKey, bz)
+	k.store(ctx).Set(types.ProtocolFeesKey(denom), bz)
+	return nil
+}
+
+func (k *Keeper) AddProtocolFees(ctx sdk.Context, denom string, amount sdk.Int) error {
+	if denom == "" {
+		return types.ErrUnknownMarket
+	}
+	if amount.IsNil() || amount.IsNegative() {
+		return types.ErrOverflow
+	}
+	if amount.IsZero() {
+		return nil
+	}
+	current, err := k.GetProtocolFees(ctx, denom)
+	if err != nil {
+		return err
+	}
+	total := new(big.Int).Add(current.BigInt(), amount.BigInt())
+	if total.Cmp(types.MaxUint256()) > 0 {
+		return types.ErrOverflow
+	}
+	return k.setProtocolFees(ctx, denom, sdk.NewIntFromBigInt(total))
 }
 
 func (k *Keeper) GetMarket(ctx sdk.Context, denom string) (types.Market, bool) {

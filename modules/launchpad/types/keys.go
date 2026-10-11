@@ -33,19 +33,19 @@ const (
 )
 
 var (
-	ParamsKey              = []byte{0x01}
-	MarketCountKey         = []byte{0x02}
-	ProtocolFeesPendingKey = []byte{0x03}
-	MarketPrefix           = []byte{0x10}
-	MarketIndexPrefix      = []byte{0x11}
-	MarketPointerPrefix    = []byte{0x12}
-	CreatorMarketPrefix    = []byte{0x13}
-	AirdropEpochPrefix     = []byte{0x20}
-	AirdropClaimPrefix     = []byte{0x21}
-	HoldingHistoryPrefix   = []byte{0x22}
-	HoldingCountPrefix     = []byte{0x23}
-	HoldingEntryPrefix     = []byte{0x24}
-	AirdropBasisPrefix     = []byte{0x25}
+	ParamsKey            = []byte{0x01}
+	MarketCountKey       = []byte{0x02}
+	ProtocolFeesPrefix   = []byte{0x03}
+	MarketPrefix         = []byte{0x10}
+	MarketIndexPrefix    = []byte{0x11}
+	MarketPointerPrefix  = []byte{0x12}
+	CreatorMarketPrefix  = []byte{0x13}
+	AirdropEpochPrefix   = []byte{0x20}
+	AirdropClaimPrefix   = []byte{0x21}
+	HoldingHistoryPrefix = []byte{0x22}
+	HoldingCountPrefix   = []byte{0x23}
+	HoldingEntryPrefix   = []byte{0x24}
+	AirdropBasisPrefix   = []byte{0x25}
 )
 
 func join(prefix []byte, parts ...[]byte) []byte {
@@ -62,6 +62,7 @@ func lengthPrefixed(value []byte) []byte {
 
 func uint64Bytes(value uint64) []byte { return binary.BigEndian.AppendUint64(nil, value) }
 
+func ProtocolFeesKey(denom string) []byte      { return join(ProtocolFeesPrefix, []byte(denom)) }
 func MarketKey(denom string) []byte            { return join(MarketPrefix, []byte(denom)) }
 func MarketIndexKey(index uint64) []byte       { return join(MarketIndexPrefix, uint64Bytes(index)) }
 func MarketPointerKey(pointer [20]byte) []byte { return join(MarketPointerPrefix, pointer[:]) }
