@@ -51,6 +51,7 @@ message ProgramBalance {
   bytes account_record = 10;
   tendermint.crypto.ProofOps proof_ops = 11;
   tendermint.crypto.ProofOps binding_proof_ops = 12;
+  bytes binding_record = 13;
 }
 
 message QueryProgramBalancesResponse {
@@ -68,6 +69,7 @@ message QueryProgramEventsRequest {
   int64 from_height = 2;
   int64 to_height = 3;
   cosmos.base.query.v1beta1.PageRequest pagination = 4;
+  uint64 after_sequence = 5;
 }
 
 message ProgramEvent {
@@ -78,9 +80,15 @@ message ProgramEvent {
   uint32 event_type = 5;
   repeated bytes topics = 6;
   bytes data = 7;
+  uint64 global_sequence = 8;
+  uint32 ordinal = 9;
+  uint32 activity_type = 10;
+  bytes receipt_digest = 11;
 }
 
 message QueryProgramEventsResponse {
   repeated ProgramEvent events = 1 [(gogoproto.nullable) = false];
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
+  uint64 complete_through = 3;
+  uint64 scanned_through = 4;
 }
