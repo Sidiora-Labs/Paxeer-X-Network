@@ -1,5 +1,4 @@
 #include "layerx/lx_spot.h"
-#include "../asset/committed.h"
 
 #include "lx_spot_codec.h"
 
@@ -48,55 +47,32 @@ static lxp_result work_alloc(lxp_module_ctx *ctx, size_t size,
     return LXP_OK;
 }
 
-static const lx_asset_record *runtime_asset_record(
-    const lx_asset_runtime *runtime, const uint8_t asset_id[32])
-{
-    size_t i;
-    if (runtime == NULL || runtime->assets == NULL ||
-        runtime->asset_count == 0U ||
-        runtime->asset_count > LX_ASSET_REGISTRY_CAPACITY)
-        return NULL;
-    for (i = 0U; i < runtime->asset_count; ++i)
-        if (memcmp(runtime->assets[i].asset_id, asset_id, 32U) == 0)
-            return &runtime->assets[i];
-    return NULL;
-}
-
 static lxp_result asset_state(lxp_module_ctx *ctx, const uint8_t asset_id[32],
                               lxp_transfer_asset_state *state)
 {
-    static const uint8_t prefix[] = "asset:";
-    const lx_asset_runtime *runtime;
-    const lx_asset_record *base;
+    uint8_t key[38] = "asset:";
+    const uint8_t *value = NULL;
+    size_t value_length = 0U;
+    uint16_t module_id;
+    size_t staged_count;
     lx_asset_record record;
-    size_t i;
+    lxp_result status;
     if (ctx == NULL || ctx->kernel == NULL || asset_id == NULL ||
         state == NULL)
         return LXP_ERR_NON_CANONICAL;
-    if (ctx->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
-        const lx_asset_record *committed;
-        lxp_result status =
-            lxp_module_committed_asset(ctx, asset_id, &committed);
-        return status == LXP_OK ? lx_asset_transfer_state(committed, state) :
-                                  status;
-    }
-    for (i = 0U; i < ctx->kernel->module_kv_count; ++i) {
-        const lxp_module_kv_entry *entry = &ctx->kernel->module_kv[i];
-        if (entry->module_id != LXP_MODULE_ASSET ||
-            entry->key_length != sizeof(prefix) - 1U + 32U ||
-            memcmp(entry->key, prefix, sizeof(prefix) - 1U) != 0 ||
-            memcmp(entry->key + sizeof(prefix) - 1U, asset_id, 32U) != 0)
-            continue;
-        if (lx_asset_record_decode(entry->value, entry->value_length,
-                                   &record) != LXP_OK)
-            return LXP_ERR_ASSET_MISMATCH;
-        return lx_asset_transfer_state(&record, state);
-    }
-    runtime = (const lx_asset_runtime *)
-        ctx->kernel->module_runtime[LXP_MODULE_ASSET];
-    base = runtime_asset_record(runtime, asset_id);
-    if (base == NULL) return LXP_ERR_ASSET_MISMATCH;
-    return lx_asset_transfer_state(base, state);
+    (void)memcpy(key + 6U, asset_id, 32U);
+    module_id = ctx->module_id;
+    staged_count = ctx->staged_count;
+    ctx->module_id = LXP_MODULE_ASSET;
+    ctx->staged_count = 0U;
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &value, &value_length);
+    ctx->module_id = module_id;
+    ctx->staged_count = staged_count;
+    if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_ERR_ASSET_MISMATCH;
+    if (status != LXP_OK) return status;
+    if (lx_asset_record_decode(value, value_length, &record) != LXP_OK)
+        return LXP_ERR_ASSET_MISMATCH;
+    return lx_asset_transfer_state(&record, state);
 }
 
 static lxp_result market_assets(lxp_module_ctx *ctx,

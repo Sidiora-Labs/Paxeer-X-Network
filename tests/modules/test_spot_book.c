@@ -247,6 +247,64 @@ static lxp_result market_create(const lx_spot_market *market,
     return run(LX_SPOT_MARKET_CREATE, did, payload, sizeof(payload));
 }
 
+static lxp_result market_validate(const lx_spot_market *market,
+                                  uint16_t protocol_version)
+{
+    const lxp_module_iface *iface = lx_spot_module_iface();
+    static const uint8_t shadow[] = { 0U, 0U };
+    uint8_t key[38] = "asset:";
+    uint8_t payload[LX_SPOT_MARKET_PAYLOAD_BYTES];
+    lxp_activity activity;
+    lxp_authority_resolved authority;
+    void *decoded = NULL;
+    lxp_result status = lx_spot_market_encode(market, payload);
+    if (status != LXP_OK) return status;
+    if (ctx_open() != 0) return LXP_FATAL_INVARIANT;
+    ctx.protocol_version = protocol_version;
+    (void)memcpy(key + 6U, market->base_asset, 32U);
+    status = lxp_ctx_kv_put(&ctx, key, sizeof(key), shadow, sizeof(shadow));
+    if (status != LXP_OK) return status;
+    (void)memset(&activity, 0, sizeof(activity));
+    activity.protocol_version = protocol_version;
+    activity.activity_type = LX_SPOT_MARKET_CREATE;
+    activity.payload = (lxp_byte_span){ payload, sizeof(payload) };
+    (void)memset(&authority, 0, sizeof(authority));
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.actor, administrator, 32U);
+    status = iface->decode(&ctx, 1U, payload, sizeof(payload), &decoded);
+    if (status == LXP_OK)
+        status = iface->validate(&ctx, &activity, &authority, decoded);
+    return ctx.module_id == LXP_MODULE_SPOT && ctx.staged_count == 1U &&
+                   ctx.staged[0].value_length == sizeof(shadow) &&
+                   memcmp(ctx.staged[0].value, shadow, sizeof(shadow)) == 0 ?
+               status : LXP_FATAL_INVARIANT;
+}
+
+static lxp_result asset_store_bytes(const uint8_t asset_id[32],
+                                    const uint8_t *bytes, size_t length)
+{
+    uint8_t key[38] = "asset:";
+    lxp_result status;
+    if (ctx_open() != 0) return LXP_FATAL_INVARIANT;
+    ctx.module_id = LXP_MODULE_ASSET;
+    (void)memcpy(key + 6U, asset_id, 32U);
+    status = lxp_ctx_kv_put(&ctx, key, sizeof(key), bytes, length);
+    if (status == LXP_OK) status = lxp_module_ctx_prepare_commit(&ctx);
+    if (status == LXP_OK) status = lxp_module_ctx_commit(&ctx);
+    if (status != LXP_OK) lxp_module_ctx_rollback(&ctx);
+    return status;
+}
+
+static lxp_result asset_store_record(const lx_asset_record *record)
+{
+    uint8_t bytes[LXP_MODULE_MAX_VALUE_BYTES];
+    size_t length = 0U;
+    lxp_result status = lx_asset_record_encode(record, bytes, sizeof(bytes),
+                                               &length);
+    return status == LXP_OK ?
+               asset_store_bytes(record->asset_id, bytes, length) : status;
+}
+
 static lxp_result market_state(uint32_t activity_type, const char *did)
 {
     lx_spot_market_command command;
@@ -355,17 +413,70 @@ static int balances_are(const trader *party, uint64_t quote, uint64_t base)
 
 static int market_create_case(void)
 {
+    static const uint16_t protocol_versions[] = {
+        LXP_PROTOCOL_VERSION_LEGACY, LXP_PROTOCOL_VERSION_OCCUPANCY,
+        LXP_PROTOCOL_VERSION_STATE_COMMITMENT
+    };
+    static const uint8_t malformed[] = { 0U, 0U };
     lx_spot_market market;
     lx_spot_market stored;
+    lx_asset_record record;
     uint8_t market_id[32];
     const lx_account *base_escrow;
     const lx_account *quote_escrow;
+    const size_t version_count = sizeof(protocol_versions) /
+                                 sizeof(protocol_versions[0]);
+    size_t i;
+    size_t version;
     market_defaults(1U, &market);
     REQUIRE(market_create(&market, "did:key:bob") ==
             LXP_ERR_UNAUTHORIZED_DEBIT);
+    for (version = 0U; version < version_count; ++version)
+        REQUIRE(market_validate(&market, protocol_versions[version]) ==
+                LXP_ERR_ASSET_MISMATCH);
+    for (i = 0U; i < 2U; ++i) {
+        record = asset_records[i];
+        record.name_length = record.symbol_length;
+        (void)memcpy(record.name, record.symbol, record.name_length);
+        record.issuer_kind = 2U;
+        (void)memcpy(record.issuer_did32, administrator, 32U);
+        asset_records[i] = record;
+        REQUIRE(asset_store_record(&record) == LXP_OK);
+        if (i == 0U)
+            for (version = 0U; version < version_count; ++version)
+                REQUIRE(market_validate(&market, protocol_versions[version]) ==
+                        LXP_ERR_ASSET_MISMATCH);
+    }
+    REQUIRE(asset_store_bytes(base_asset_id, malformed, sizeof(malformed)) ==
+            LXP_OK);
+    for (version = 0U; version < version_count; ++version)
+        REQUIRE(market_validate(&market, protocol_versions[version]) ==
+                LXP_ERR_ASSET_MISMATCH);
+    REQUIRE(asset_store_record(&asset_records[0]) == LXP_OK);
+    for (i = 0U; i < 2U; ++i) {
+        record = asset_records[i];
+        record.paused = true;
+        REQUIRE(asset_store_record(&record) == LXP_OK);
+        for (version = 0U; version < version_count; ++version)
+            REQUIRE(market_validate(&market, protocol_versions[version]) ==
+                    LXP_ERR_ASSET_PAUSED);
+        REQUIRE(market_create(&market, admin_did) == LXP_ERR_ASSET_PAUSED);
+        REQUIRE(asset_store_record(&asset_records[i]) == LXP_OK);
+    }
+    for (version = 0U; version < version_count; ++version)
+        REQUIRE(market_validate(&market, protocol_versions[version]) == LXP_OK);
     REQUIRE(market_create(&market, admin_did) == LXP_OK);
     REQUIRE(market_create(&market, admin_did) ==
             LXP_ERR_MARKET_ALREADY_EXISTS);
+    for (i = 0U; i < 2U; ++i) {
+        record = asset_records[i];
+        record.paused = true;
+        REQUIRE(asset_store_record(&record) == LXP_OK);
+        REQUIRE(limit(64U, &alice, LX_SPOT_SIDE_ASK, 100U, 1U) ==
+                LXP_ERR_ASSET_PAUSED);
+        REQUIRE(order_is(64U, 0U, 0U));
+        REQUIRE(asset_store_record(&asset_records[i]) == LXP_OK);
+    }
     identifier(1U, market_id);
     REQUIRE(ctx_open() == 0);
     REQUIRE(lx_spot_market_lookup(&ctx, market_id, &stored) == LXP_OK);
