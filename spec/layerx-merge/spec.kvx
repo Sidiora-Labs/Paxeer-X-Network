@@ -40017,7 +40017,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.13]
 title = "Pending log filter resolves latest, safe and finalized fromBlock against its install-time base"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = []
 reqs = ["9028.1", "9028.2", "9028.3"]
@@ -48656,7 +48656,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.2]
 title = "TypeScript client error table: decode Error(string) LXP_ reverts into code, message and retriability"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
@@ -48740,7 +48740,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.2]
 title = "bank 0x1001 opts into the LXP_ reason path"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.3", "10.0.4"]
@@ -48768,7 +48768,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.3]
 title = "feeToken 0x1018 revert text carries the LXP_FEETOKEN_ codes"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.4"]
@@ -94989,7 +94989,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.14]
 title = "Per-module pause replaces kernel halt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]

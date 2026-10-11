@@ -406,3 +406,31 @@ command = "cargo test --manifest-path platform/Cargo.toml -p layerx-platform-gat
 exit_code = 0
 log_path = "logs/0.15-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; read_receipt's HTTP 200 is exercised through verify_live_receipt rather than over HTTP because main.rs is a binary, program discovery proofs carry no batch height so they are checked against the configured key without a window, and pedantic clippy on the gateway stops in the hosted internal dependency (logs/0.15-clippy.log) while cargo check --all-targets passes."
+
+[finding.13.3.14]
+revision = "723a5dc57"
+command = "go test -count=1 ./modules/layerxgov/types/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.3.14-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; layerxpay has Params.Paused but no MsgUpdateParams and layerxexchange Params has no Paused field (generated proto outside touches), so a governance proposal cannot pause pay or exchange yet and the origin-2 precompile revert of 13025.3 belongs to the xweb resolution test; a task adding the pay message and the exchange field is needed."
+
+[finding.10.1.1]
+revision = "f6e325f57"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test errors"
+exit_code = 101
+log_path = "logs/10.1.1-verify-1.log"
+observed_and_assumption = "the branch is held: six cases pass and kernel_revert_retriability_matches_the_registry_column fails because the contracts error registry Retryable column and the result.rs mirror disagree on seventeen kernel codes (mirror retriable, registry not: MODULE_DISABLED, SEQUENCE_GAP, SEQUENCE_MISMATCH, DEPOSIT_PROOF_NOT_FINAL, CHALLENGE_WINDOW_OPEN, OFFER_UNAVAILABLE, BATCH_GAP, ATTESTATION_THRESHOLD, DA_MISSING, ARENA_EXHAUSTED; mirror terminal, registry retriable: IDENTITY_FROZEN, INSUFFICIENT_BALANCE, GAS_EXHAUSTED, FEE_UNPAYABLE, BUDGET_PERIOD_CAP, MARGIN_INSUFFICIENT, INSUFFICIENT_BUDGET_FUNDS); both sides are left as written and a ruling on which column is authoritative is needed before the branch lands."
+
+[finding.10.1.2]
+revision = "bad4b1efa"
+command = "npm --prefix agent/sdk/typescript run build && node agent/sdk/typescript/dist/test/revert.test.js"
+exit_code = 0
+log_path = "logs/10.1.2-verify-2.log"
+observed_and_assumption = "the gate passes and the task is landed; LXP_RETRYABLE follows contracts/address-table.md section (b) which marks LXP_MODULE_DISABLED not retryable while do_2 names it as retryable and the Rust mirror marks it Retriable (see finding.10.1.1), and the agent-http.ts wiring of do_5 is outside touches with no receipt status-0 returnData path today."
+
+[finding.10.2.3]
+revision = "8fe1e1fce"
+command = "go test -count=1 ./precompiles/feetoken/ -run TestFeeDenom -v"
+exit_code = 0
+log_path = "logs/10.2.3-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the Execute-time LXP_FEETOKEN_KEEPER_MISSING refusal keeps its old revert text because the merge plan height is read through the keeper that is absent, and SetAccountFeeDenom returns formatted errors rather than the ErrFeeTokenDenomNotAllowed sentinel so refusals map to codes by exact text."
