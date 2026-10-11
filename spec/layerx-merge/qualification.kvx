@@ -798,3 +798,17 @@ command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-pro
 exit_code = 0
 log_path = "logs/4.3.3-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; evidence.rs already stored only the seal record so only the test file changed, the 4037.2 and 4037.3 tests live in artifact_contract.rs and the ai-artifacts retention test outside touches, and cargo clippy on any programs crate stops at 17 pre-existing lint errors in the layerx-program-sdk build script."
+
+[finding.10.5.18]
+revision = "ae289bd96"
+command = "cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_x402.py"
+exit_code = 0
+log_path = "logs/10.5.18-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; verifier.py still accepts AuthorizedReceiptBatch because the ReceiptKeys, rung and commit interfaces belong to task 10.5.25, the Python x402 fixtures remain legacy vectors, and x402_http.py and x402_draw.py outside touches still call the two-argument send, so the PaymentDrawn and PaymentExact legs and the major-2 conformance conversion stay open."
+
+[finding.6.5.20]
+revision = "1ac3d798f"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402 --test seller"
+exit_code = 101
+log_path = "logs/6.5.20-verify-1.log"
+observed_and_assumption = "fifteen cases fail because tests/seller.rs, the verify target itself, still carries layerx:beta offers and legacy settlement goldens that the new seller refuses; the task touches are widened to that test file and the worker re-runs; ExecutedPayment and GatewayCore still use AuthorizedBatch and X402Error has no transaction_form, which remain open."

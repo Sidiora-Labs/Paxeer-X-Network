@@ -25612,7 +25612,7 @@ do_3 = "Refuse the lxp: form in the buyer (interop/crates/layerx-x402/src/buyer.
 do_4 = "Use the eip155 network id."
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["settled"]
-touches = ["interop/crates/layerx-x402/src/seller.rs", "interop/crates/layerx-x402/src/buyer.rs", "interop/crates/layerx-x402/src/facilitator.rs"]
+touches = ["interop/crates/layerx-x402/src/seller.rs", "interop/crates/layerx-x402/src/buyer.rs", "interop/crates/layerx-x402/src/facilitator.rs", "interop/crates/layerx-x402/tests/seller.rs"]
 build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-x402 --tests"
 verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402 --test seller"
 gate_kind = "existing"
@@ -49490,7 +49490,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.18]
 title = "Python x402 RPC moves from lx_sendActivity to eth_sendRawTransaction and receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.3"]
