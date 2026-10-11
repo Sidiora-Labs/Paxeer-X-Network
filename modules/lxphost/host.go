@@ -205,6 +205,82 @@ static int32_t lxphost_load_kv(lxphost_node *node, uint16_t module_id,
     return LXP_OK;
 }
 
+typedef struct lxphost_blob_view {
+    uint16_t module_id;
+    const uint8_t *key;
+    const uint8_t *bytes;
+    size_t length;
+} lxphost_blob_view;
+
+static int32_t lxphost_load_blob(lxphost_node *node, uint16_t module_id,
+                                 const uint8_t key[32], const uint8_t *bytes,
+                                 size_t length)
+{
+    lxp_module_blob *blob;
+    uint8_t digest[32];
+    uint8_t *copy;
+    int32_t status;
+    if (module_id == 0U || key == NULL || bytes == NULL || length == 0U ||
+        length > (size_t)LXP_KERNEL_MAX_BLOB_BYTES ||
+        node->kernel.blob_total_bytes > (size_t)LXP_KERNEL_MAX_BLOB_TOTAL_BYTES ||
+        length > (size_t)LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
+                     node->kernel.blob_total_bytes)
+        return LXP_FATAL_INVARIANT;
+    if (node->kernel.blob_count >= (size_t)LXP_KERNEL_MAX_BLOBS)
+        return LXP_ERR_ARENA_EXHAUSTED;
+    status = lxp_hash_sha256(bytes, length, digest);
+    if (status != LXP_OK) return status;
+    if (memcmp(digest, key, 32U) != 0) return LXP_FATAL_INVARIANT;
+    copy = (uint8_t *)malloc(length);
+    if (copy == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    (void)memcpy(copy, bytes, length);
+    blob = &node->kernel.blobs[node->kernel.blob_count++];
+    (void)memset(blob, 0, sizeof(*blob));
+    blob->module_id = module_id;
+    (void)memcpy(blob->key, key, 32U);
+    blob->length = length;
+    blob->bytes = copy;
+    node->kernel.blob_total_bytes += length;
+    return LXP_OK;
+}
+
+static size_t lxphost_blob_count(const lxphost_node *node)
+{
+    return node->kernel.blob_count;
+}
+
+static int32_t lxphost_blob_read(const lxphost_node *node, size_t index,
+                                 lxphost_blob_view *view)
+{
+    const lxp_module_blob *blob;
+    if (node->kernel.blob_count > (size_t)LXP_KERNEL_MAX_BLOBS ||
+        index >= node->kernel.blob_count)
+        return LXP_FATAL_INVARIANT;
+    blob = &node->kernel.blobs[index];
+    if (blob->module_id == 0U || blob->deleted || blob->bytes == NULL ||
+        blob->length == 0U || blob->length > (size_t)LXP_KERNEL_MAX_BLOB_BYTES)
+        return LXP_FATAL_INVARIANT;
+    view->module_id = blob->module_id;
+    view->key = blob->key;
+    view->bytes = blob->bytes;
+    view->length = blob->length;
+    return LXP_OK;
+}
+
+static int32_t lxphost_account_kind(const uint8_t *name, size_t name_length,
+                                    uint16_t *kind)
+{
+    lx_account_kind parsed;
+    int32_t status;
+    if (name == NULL || name_length == 0U ||
+        name_length > (size_t)LX_ACCOUNT_NAME_MAX)
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_account_kind_of(name, name_length, &parsed);
+    if (status != LXP_OK) return status;
+    *kind = (uint16_t)parsed;
+    return LXP_OK;
+}
+
 static size_t lxphost_kv_count(const lxphost_node *node)
 {
     return node->kernel.module_kv_count;
@@ -351,8 +427,7 @@ static int32_t lxphost_outcome_read(lxphost_node *node, lxphost_outcome *outcome
     lxp_byte_span encoded;
     int32_t status;
     if (node->kernel.publication_poisoned || node->journal.open ||
-        node->store.count != 0U || node->store.accounts != NULL ||
-        node->kernel.blob_count != 0U)
+        node->store.count != 0U || node->store.accounts != NULL)
         return LXP_FATAL_INVARIANT;
     status = lxp_arena_reset(&node->arena, 0U);
     if (status == LXP_OK)
@@ -373,10 +448,15 @@ static int32_t lxphost_outcome_read(lxphost_node *node, lxphost_outcome *outcome
 import "C"
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"runtime"
+	"sort"
 	"sync"
 	"unsafe"
 
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
@@ -391,6 +471,24 @@ const (
 	codeSequenceReused = Code(C.LXP_ERR_SEQUENCE_REUSED)
 	codeFatalInvariant = Code(C.LXP_FATAL_INVARIANT)
 )
+
+const blobPrefix byte = 0x05
+
+const (
+	accountKindMain   = uint16(C.LX_ACCOUNT_AGENT_MAIN)
+	accountKindMargin = uint16(C.LX_ACCOUNT_AGENT_MARGIN)
+	accountKindAsset  = uint16(C.LX_ACCOUNT_AGENT_ASSET)
+)
+
+// KernelAccount is one kernel account of a DID: its canonical name, kernel
+// id, sub-account kind, parent DID kernel id and the bank address holding it.
+type KernelAccount struct {
+	Name    string
+	ID      [32]byte
+	Kind    uint16
+	Parent  [32]byte
+	Address sdk.AccAddress
+}
 
 type Config struct {
 	StoreKey          sdk.StoreKey
@@ -465,7 +563,66 @@ func (h *Host) Close() {
 	h.node = nil
 }
 
+// DeriveKernelAccount derives the kernel account of the DID key for one
+// sub-account kind: the main account takes a zero qualifier, a margin account
+// the perps market id and an asset sub-account the asset id. The kernel
+// classifies the name and derives its parent DID id; the bank address is
+// address.Module("layerx", kernel account id).
+func DeriveKernelAccount(didKey [32]byte, kind uint16, qualifier [32]byte) (KernelAccount, error) {
+	var account KernelAccount
+	var err error
+	unqualified := qualifier == [32]byte{}
+	switch {
+	case kind == accountKindMain && unqualified:
+		account.Name, account.ID, err = MainAccountID(didKey)
+	case kind == accountKindMargin && !unqualified:
+		account.Name = "agent:" + evmtypes.LayerXDid(didKey) + ":margin:" + hex.EncodeToString(qualifier[:])
+		account.ID, err = kernelAccountID([]byte(account.Name))
+	case kind == accountKindAsset && !unqualified:
+		account.Name, account.ID, err = AssetAccountID(didKey, qualifier)
+	default:
+		return KernelAccount{}, codeNonCanonical
+	}
+	if err != nil {
+		return KernelAccount{}, err
+	}
+	name := []byte(account.Name)
+	var classified C.uint16_t
+	if err := result(C.lxphost_account_kind(bytesPtr(name), C.size_t(len(name)), &classified)); err != nil {
+		return KernelAccount{}, err
+	}
+	kernelID, err := kernelAccountID(name)
+	if err != nil {
+		return KernelAccount{}, err
+	}
+	parent, err := HolderDid(name)
+	if err != nil {
+		return KernelAccount{}, err
+	}
+	did, err := DIDID([]byte(evmtypes.LayerXDid(didKey)))
+	if err != nil {
+		return KernelAccount{}, err
+	}
+	if uint16(classified) != kind || kernelID != account.ID || parent != did {
+		return KernelAccount{}, codeFatalInvariant
+	}
+	account.Kind = kind
+	account.Parent = parent
+	account.Address = BankAddress(account.ID)
+	return account, nil
+}
+
+// Execute runs one activity through HostExecute.
 func (h *Host) Execute(ctx sdk.Context, activity Activity, authority KernelAuthority) (Receipt, error) {
+	return h.HostExecute(ctx, activity, authority)
+}
+
+// HostExecute enters the validate and execute functions of the kernel module
+// registered for the activity type through cgo. Kernel time is the block-open
+// timestamp of ctx and the batch number its height; module values, module
+// blobs, idempotency records and identity sequences are loaded from and
+// committed to the host store.
+func (h *Host) HostExecute(ctx sdk.Context, activity Activity, authority KernelAuthority) (Receipt, error) {
 	branch, err := newBranchCtx(ctx, h.cfg.StoreKey)
 	if err != nil {
 		return Receipt{}, err
@@ -485,6 +642,10 @@ func (h *Host) Execute(ctx sdk.Context, activity Activity, authority KernelAutho
 	}
 	C.lxphost_authority_write(h.node, bytes32(&authority.Actor), bytes32(&authority.Principal), bytes32(&authority.VerifiedKey))
 	if err := branch.load(h); err != nil {
+		return Receipt{}, err
+	}
+	loadedBlobs, err := h.loadBlobs(branch.store)
+	if err != nil {
 		return Receipt{}, err
 	}
 	did, err := h.bindActor()
@@ -515,9 +676,14 @@ func (h *Host) Execute(ctx sdk.Context, activity Activity, authority KernelAutho
 		ResultingStateRoot: *(*[32]byte)(unsafe.Pointer(&outcome.resulting_state_root[0])),
 		Encoded:            C.GoBytes(unsafe.Pointer(outcome.encoded), C.int(outcome.encoded_length)),
 	}
+	stagedBlobs, err := h.moduleBlobs()
+	if err != nil {
+		return Receipt{}, err
+	}
 	if err := branch.commit(h, did); err != nil {
 		return Receipt{}, err
 	}
+	commitBlobs(branch.store, loadedBlobs, stagedBlobs)
 	return receipt, nil
 }
 
@@ -585,6 +751,76 @@ func (h *Host) moduleKV() ([]kvEntry, error) {
 		})
 	}
 	return entries, nil
+}
+
+func (h *Host) loadBlobs(store sdk.KVStore) (map[string][]byte, error) {
+	loaded := map[string][]byte{}
+	iterator := sdk.KVStorePrefixIterator(store, []byte{blobPrefix})
+	for ; iterator.Valid(); iterator.Next() {
+		key := append([]byte(nil), iterator.Key()...)
+		if len(key) != 35 {
+			iterator.Close()
+			return nil, codeFatalInvariant
+		}
+		value := append([]byte(nil), iterator.Value()...)
+		if err := result(C.lxphost_load_blob(h.node, C.uint16_t(binary.BigEndian.Uint16(key[1:3])),
+			bytesPtr(key[3:]), bytesPtr(value), C.size_t(len(value)))); err != nil {
+			iterator.Close()
+			return nil, err
+		}
+		loaded[string(key)] = value
+	}
+	if err := iterator.Close(); err != nil {
+		return nil, codeFatalInvariant
+	}
+	return loaded, nil
+}
+
+func (h *Host) moduleBlobs() (map[string][]byte, error) {
+	count := int(C.lxphost_blob_count(h.node))
+	blobs := make(map[string][]byte, count)
+	for i := 0; i < count; i++ {
+		var view C.lxphost_blob_view
+		if err := result(C.lxphost_blob_read(h.node, C.size_t(i), &view)); err != nil {
+			return nil, err
+		}
+		key := blobKey(uint16(view.module_id), C.GoBytes(unsafe.Pointer(view.key), 32))
+		if _, duplicate := blobs[string(key)]; duplicate {
+			return nil, codeFatalInvariant
+		}
+		blobs[string(key)] = C.GoBytes(unsafe.Pointer(view.bytes), C.int(view.length))
+	}
+	return blobs, nil
+}
+
+func commitBlobs(store sdk.KVStore, loaded, staged map[string][]byte) {
+	keys := make([]string, 0, len(staged)+len(loaded))
+	for key := range staged {
+		keys = append(keys, key)
+	}
+	for key := range loaded {
+		if _, kept := staged[key]; !kept {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value, kept := staged[key]
+		previous, existed := loaded[key]
+		switch {
+		case !kept:
+			store.Delete([]byte(key))
+		case !existed || !bytes.Equal(previous, value):
+			store.Set([]byte(key), value)
+		}
+	}
+}
+
+func blobKey(module uint16, key []byte) []byte {
+	out := make([]byte, 3, 3+len(key))
+	out[0] = blobPrefix
+	binary.BigEndian.PutUint16(out[1:3], module)
+	return append(out, key...)
 }
 
 func (h *Host) idempotencyFrom(start int) ([]idempotencyEntry, error) {
