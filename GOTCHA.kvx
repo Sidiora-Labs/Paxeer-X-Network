@@ -7071,3 +7071,18 @@ fix = "Size request buffers at 2048 bytes and keep build and materialize calls i
 area = "plan merge tool"
 symptom = "a plan block followed by # NOTE comment lines carries those lines into spec.kvx"
 fix = "merge-plan.py strips comment lines from every block and handles RETIRE and ACCEPTANCE directives."
+
+[gotcha.1500]
+area = "TypeScript SDK tests"
+symptom = "a Python program embedded in a TS template literal turns backslash escapes such as b'\\0' into real control characters and execFileSync refuses arguments containing NUL"
+fix = "Build padding with bytes(n) arithmetic instead of escaped literals inside template strings."
+
+[gotcha.1501]
+area = "AI market codec"
+symptom = "a FUND envelope with sequence 0 is refused as Application NON_CANONICAL 0x0002 at prepare time rather than as a sequence error"
+fix = "FUND is role-sequenced; start its sequence at 1 in fixtures."
+
+[gotcha.1502]
+area = "worktree node_modules"
+symptom = "an SDK node_modules symlinked to the main checkout has no .bin/tsc"
+fix = "Replace the symlink with npm ci --workspaces=false inside the worktree SDK package before building."
