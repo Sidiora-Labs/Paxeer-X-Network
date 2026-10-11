@@ -1284,3 +1284,10 @@ command = "go test -count=1 ./node/sequencer/ -run TestSealBatch -v"
 exit_code = 0
 log_path = "logs/0.72-verify-1.log"
 observed_and_assumption = "verify passed (3 passed (6 subtests), 0 failed). Gaps: none (L_N equality with ProcessBlock is asserted as equal results, events, end-block response and every mounted module store; a cache branch exposes no app hash)"
+
+[finding.0.108]
+revision = "e30166ae8"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test rate -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption"
+exit_code = 0
+log_path = "logs/0.108-verify-3.log"
+observed_and_assumption = "verify passed (13 passed, 0 failed). Gaps: init.sh checks only that the list is non-empty and readable; weak-key, keyId and range checks happen when PublisherConfig::parse loads the config (the binary has no check-only mode) Unrelated: cargo clippy -p layerx-gas-station --all-targets: prior pedantic errors in tx.rs, journal.rs, rpc.rs, policy.rs (logs/0.108-clippy.log)"
