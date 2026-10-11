@@ -2,6 +2,7 @@ package evmrpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -26,6 +27,10 @@ import (
 const SleepInterval = 5 * time.Second
 const NewHeadsListenerBuffer = 10
 
+// ReceiptListenerBuffer is how many receipted transactions a receipt-fed
+// subscriber may lag behind Accept before it is dropped.
+const ReceiptListenerBuffer = 1024
+
 type SubscriptionAPI struct {
 	tmClient            client.LocalClient
 	subscriptionManager *SubscriptionManager
@@ -35,6 +40,9 @@ type SubscriptionAPI struct {
 	newHeadListenersMtx *sync.RWMutex
 	newHeadListeners    map[rpc.ID]chan map[string]interface{}
 	connectionType      ConnectionType
+	// receipts is set only on the sequencer; it feeds the logs and
+	// newPendingTransactions subscriptions from Accept.
+	receipts *ReceiptStream
 }
 
 type SubscriptionConfig struct {
@@ -42,7 +50,12 @@ type SubscriptionConfig struct {
 	newHeadLimit         uint64
 }
 
-func NewSubscriptionAPI(tmClient client.LocalClient, k *keeper.Keeper, ctxProvider func(int64) sdk.Context, logFetcher *LogFetcher, subscriptionConfig *SubscriptionConfig, filterConfig *FilterConfig, connectionType ConnectionType, blockHeaderNotifier *BlockHeaderNotifier) (*SubscriptionAPI, error) {
+// NewSubscriptionAPI serves eth_subscribe. The sequencer passes the
+// ReceiptStream its Accept path publishes to; every other node passes none.
+func NewSubscriptionAPI(tmClient client.LocalClient, k *keeper.Keeper, ctxProvider func(int64) sdk.Context, logFetcher *LogFetcher, subscriptionConfig *SubscriptionConfig, filterConfig *FilterConfig, connectionType ConnectionType, blockHeaderNotifier *BlockHeaderNotifier, receipts ...*ReceiptStream) (*SubscriptionAPI, error) {
+	if len(receipts) > 1 {
+		return nil, errors.New("subscription API takes at most one receipt stream")
+	}
 	if k == nil || ctxProvider == nil || logFetcher == nil || subscriptionConfig == nil || filterConfig == nil {
 		return nil, errors.New("subscription API dependencies are not configured")
 	}
@@ -60,6 +73,9 @@ func NewSubscriptionAPI(tmClient client.LocalClient, k *keeper.Keeper, ctxProvid
 		// subscriptionManager is only constructed for the legacy
 		// event-bus path below; under Autobahn the notifier feeds the
 		// fan-out directly and the manager is unused.
+	}
+	if len(receipts) == 1 {
+		api.receipts = receipts[0]
 	}
 	if blockHeaderNotifier != nil {
 		// Autobahn (and any future direct-channel) path. The producer
@@ -164,7 +180,7 @@ func (a *SubscriptionAPI) broadcastNewHead(ethHeader map[string]interface{}) {
 	}
 }
 
-func handleListener(c chan map[string]interface{}, ethHeader map[string]interface{}) bool {
+func handleListener[T any](c chan T, ethHeader T) bool {
 	// if the channel is already closed, sending to it/closing it will panic
 	defer func() { _ = recover() }()
 	select {
@@ -276,6 +292,12 @@ func (a *SubscriptionAPI) Logs(ctx context.Context, filter *filters.FilterCriter
 		return rpcSub, nil
 	}
 
+	if a.receipts != nil {
+		listener := a.receipts.addLogs(rpcSub.ID)
+		go a.receipts.receiptLogStream(notifier, rpcSub, *filter, listener, wpMetrics)
+		return rpcSub, nil
+	}
+
 	go func() {
 		var err error
 		defer recoverAndLog()
@@ -311,6 +333,244 @@ func (a *SubscriptionAPI) Logs(ctx context.Context, filter *filters.FilterCriter
 	}()
 
 	return rpcSub, nil
+}
+
+// NewPendingTransactions streams the hashes of receipted transactions in
+// receipt order. Only the sequencer serves it; other nodes refuse with
+// ErrPendingServedBySequencer.
+func (a *SubscriptionAPI) NewPendingTransactions(ctx context.Context) (s *rpc.Subscription, err error) {
+	startTime := time.Now()
+	defer func() {
+		recordMetricsWithError(ctx, "eth_newPendingTransactions", a.connectionType, startTime, err, recover())
+	}()
+	if a.receipts == nil {
+		return nil, ErrPendingServedBySequencer
+	}
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	}
+	rpcSub := notifier.CreateSubscription()
+	wpMetrics := GetGlobalMetrics()
+	wpMetrics.RecordSubscriptionStart()
+	listener := a.receipts.addTxs(rpcSub.ID)
+	go func() {
+		defer recoverAndLog()
+		defer wpMetrics.RecordSubscriptionEnd()
+		defer a.receipts.removeTxs(rpcSub.ID)
+		for {
+			select {
+			case hash, ok := <-listener:
+				if !ok {
+					return
+				}
+				if err := notifier.Notify(rpcSub.ID, hash); err != nil {
+					return
+				}
+			case <-rpcSub.Err():
+				return
+			}
+		}
+	}()
+	return rpcSub, nil
+}
+
+// ErrReceiptOrder refuses a receipted transaction published out of receipt
+// order.
+var ErrReceiptOrder = errors.New("receipt published out of order")
+
+// SubscriptionReceipt is one transaction receipted by Accept on the
+// sequencer.
+type SubscriptionReceipt struct {
+	Seq    uint64
+	Height int64
+	// TxIndex is the position of the transaction in the open block.
+	TxIndex uint32
+	Hash    common.Hash
+	Logs    []*evmtypes.Log
+}
+
+type receiptedLogs struct {
+	seq  uint64
+	logs []*ethtypes.Log
+}
+
+// receiptLog is a receipted log as notified to a logs subscriber: the log
+// fields plus the seq of the transaction that emitted it.
+type receiptLog struct {
+	log *ethtypes.Log
+	seq uint64
+}
+
+func (l receiptLog) MarshalJSON() ([]byte, error) {
+	enc, err := l.log.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(enc, &fields); err != nil {
+		return nil, err
+	}
+	seq, err := json.Marshal(hexutil.Uint64(l.seq))
+	if err != nil {
+		return nil, err
+	}
+	fields["seq"] = seq
+	return json.Marshal(fields)
+}
+
+// ReceiptStream fans transactions receipted by Accept out to the sequencer's
+// logs and newPendingTransactions subscriptions. Logs are numbered within the
+// open block the way committed logs are numbered, so a committed log keeps
+// the index it was first notified with.
+type ReceiptStream struct {
+	mu           sync.Mutex
+	lastSeq      uint64
+	height       int64
+	nextLogIndex uint
+	logs         map[rpc.ID]chan receiptedLogs
+	txs          map[rpc.ID]chan common.Hash
+}
+
+func NewReceiptStream() *ReceiptStream {
+	return &ReceiptStream{
+		logs: make(map[rpc.ID]chan receiptedLogs),
+		txs:  make(map[rpc.ID]chan common.Hash),
+	}
+}
+
+// Publish hands one receipted transaction to the subscribers. The Accept path
+// calls it once per receipted transaction, in seq order; a seq that is not
+// after the last published one, or a height below the current one, is
+// refused with ErrReceiptOrder.
+func (s *ReceiptStream) Publish(r SubscriptionReceipt) error {
+	if r.Height <= 0 {
+		return fmt.Errorf("receipted transaction %s has invalid height %d", r.Hash.Hex(), r.Height)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r.Seq <= s.lastSeq {
+		return fmt.Errorf("%w: seq %d after seq %d", ErrReceiptOrder, r.Seq, s.lastSeq)
+	}
+	if r.Height < s.height {
+		return fmt.Errorf("%w: height %d after height %d", ErrReceiptOrder, r.Height, s.height)
+	}
+	logIndex := s.nextLogIndex
+	if r.Height != s.height {
+		logIndex = 0
+	}
+	logs := make([]*ethtypes.Log, 0, len(r.Logs))
+	for i, l := range r.Logs {
+		if l == nil {
+			return fmt.Errorf("receipted transaction %s has a nil log at %d", r.Hash.Hex(), i)
+		}
+		topics := make([]common.Hash, len(l.Topics))
+		for j, topic := range l.Topics {
+			topics[j] = common.HexToHash(topic)
+		}
+		logs = append(logs, &ethtypes.Log{
+			Address:     common.HexToAddress(l.Address),
+			Topics:      topics,
+			Data:        l.Data,
+			BlockNumber: uint64(r.Height), //nolint:gosec // height checked positive above
+			TxHash:      r.Hash,
+			TxIndex:     uint(r.TxIndex),
+			Index:       logIndex,
+		})
+		logIndex++
+	}
+	s.lastSeq, s.height, s.nextLogIndex = r.Seq, r.Height, logIndex
+	if len(logs) > 0 {
+		fanOutReceipted(s.logs, receiptedLogs{seq: r.Seq, logs: logs})
+	}
+	fanOutReceipted(s.txs, r.Hash)
+	return nil
+}
+
+// fanOutReceipted delivers v to every listener; a listener whose buffer is
+// full is closed and dropped. The caller holds the stream lock.
+func fanOutReceipted[T any](listeners map[rpc.ID]chan T, v T) {
+	for id, c := range listeners {
+		select {
+		case c <- v:
+		default:
+			close(c)
+			delete(listeners, id)
+		}
+	}
+}
+
+func (s *ReceiptStream) addLogs(id rpc.ID) chan receiptedLogs {
+	c := make(chan receiptedLogs, ReceiptListenerBuffer)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logs[id] = c
+	return c
+}
+
+func (s *ReceiptStream) addTxs(id rpc.ID) chan common.Hash {
+	c := make(chan common.Hash, ReceiptListenerBuffer)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.txs[id] = c
+	return c
+}
+
+func (s *ReceiptStream) removeLogs(id rpc.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.logs[id]; ok {
+		close(c)
+		delete(s.logs, id)
+	}
+}
+
+func (s *ReceiptStream) removeTxs(id rpc.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.txs[id]; ok {
+		close(c)
+		delete(s.txs, id)
+	}
+}
+
+// receiptLogStream notifies the receipted logs matching crit, each tagged with
+// its seq. It never reads committed logs, so a log is notified once, when it
+// is receipted. A non-negative ToBlock ends the subscription once the open
+// block passes it.
+func (s *ReceiptStream) receiptLogStream(notifier *rpc.Notifier, sub *rpc.Subscription, crit filters.FilterCriteria, listener chan receiptedLogs, wpMetrics *WorkerPoolMetrics) {
+	defer recoverAndLog()
+	defer wpMetrics.RecordSubscriptionEnd()
+	defer s.removeLogs(sub.ID)
+	from, to := int64(-1), int64(-1)
+	if crit.FromBlock != nil && crit.FromBlock.IsInt64() {
+		from = crit.FromBlock.Int64()
+	}
+	if crit.ToBlock != nil && crit.ToBlock.IsInt64() {
+		to = crit.ToBlock.Int64()
+	}
+	for {
+		select {
+		case batch, ok := <-listener:
+			if !ok {
+				return
+			}
+			for _, l := range batch.logs {
+				height := int64(l.BlockNumber) //nolint:gosec // Publish takes positive int64 heights
+				if to >= 0 && height > to {
+					return
+				}
+				if height < from || !MatchesCriteria(l, crit) {
+					continue
+				}
+				if err := notifier.Notify(sub.ID, receiptLog{log: l, seq: batch.seq}); err != nil {
+					return
+				}
+			}
+		case <-sub.Err():
+			return
+		}
+	}
 }
 
 const SubscriberPrefix = "evm.rpc."
