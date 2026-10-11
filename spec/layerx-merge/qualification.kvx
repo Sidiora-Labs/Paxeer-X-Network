@@ -1495,3 +1495,10 @@ command = "npm --prefix agent/sdk/typescript run build && node agent/sdk/typescr
 exit_code = 0
 log_path = "logs/10.5.40-rebase-verify-2.log"
 observed_and_assumption = "verify passed (26 passed, 0 failed). Gaps: do_5: agent/sdk/typescript/src/agent-http.ts is outside touches; scoped submission and verified receipt reverts are mapped in ai_market.ts, but shared service mapping is unchanged."
+
+[finding.13.3.11]
+revision = "2fb71373b"
+command = "go test -count=1 ./precompiles/layerxagent/teeattestor/ -run TestResolution"
+exit_code = 0
+log_path = "logs/13.3.11-rebase-verify-2.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed). Gaps: 13014.1: the node binary does not import the teeattestor package, so its init registration runs only where the package is linked (tests); a blank import in node/ is outside touches"
