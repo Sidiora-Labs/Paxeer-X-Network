@@ -1,0 +1,33 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxauth;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxauth/types";
+
+service Msg {
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+}
+
+message MsgUpdateParams {
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateParamsResponse {}
+
+message Params {
+  bool paused = 1;
+  uint64 idempotency_retention = 2;
+}
+
+message LayerXScopeAuthorization {
+  uint64 module_mask = 1;
+  uint32 ordinal_min = 2;
+  uint32 ordinal_max = 3;
+  bytes asset_id = 4;
+  string max_per_activity = 5;
+  string max_total = 6;
+  uint64 revocation_epoch = 7;
+  bytes grant_id = 8;
+}
