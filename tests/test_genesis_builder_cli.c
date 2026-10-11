@@ -4,7 +4,9 @@
 
 #include "layerx/lxp_crypto.h"
 #include "layerx/lx_asset.h"
+#include "layerx/lx_spot.h"
 #include "layerx/lxp_fee.h"
+#include "layerx/lxp_kernel.h"
 
 #include <fcntl.h>
 #include <stdint.h>
@@ -14,7 +16,7 @@
 #include <unistd.h>
 
 typedef struct request_writer {
-    uint8_t bytes[1024];
+    uint8_t bytes[2048];
     size_t length;
 } request_writer;
 
@@ -331,6 +333,225 @@ static int withdrawal_genesis(const request_writer *legacy, const char *base,
     return rmdir(output) != 0 || unlink(input) != 0;
 }
 
+static struct spot_genesis_fixture {
+    lx_account_registry accounts;
+    lxp_state_store state;
+    lxp_state_journal journal;
+    lxp_kernel kernel;
+    lxp_module_ctx ctx;
+    lxp_arena arena;
+    uint8_t arena_bytes[4U * 1024U * 1024U];
+} spot_genesis;
+
+static void spot_asset_record(lx_asset_record *record, const uint8_t asset_id[32],
+                              const char *symbol, uint8_t reference, bool paused)
+{
+    (void)memset(record, 0, sizeof(*record));
+    (void)memcpy(record->asset_id, asset_id, 32U);
+    record->symbol_length = 4U;
+    (void)memcpy(record->symbol, symbol, 4U);
+    record->name_length = 4U;
+    (void)memcpy(record->name, symbol, 4U);
+    record->decimals = 6U;
+    record->custody_kind = LX_ASSET_CUSTODY_PAXEER;
+    record->custody_reference_length = 32U;
+    record->custody_reference[31] = reference;
+    record->issuer_kind = 2U;
+    record->issuer_did32[0] = 7U;
+    record->salt[0] = reference;
+    record->paused = paused;
+}
+
+static int spot_genesis_build(const char *base, const char *key_path, const char *name,
+                              const uint8_t asset_id[32], const lx_asset_record records[2],
+                              lxp_genesis_manifest *manifest)
+{
+    static const char *const names[] = {"genesis.manifest", "00000000000000000000.lxs",
+        "paxeer-registration-request.lxrr", "paxeer-deployment-descriptor.lxgd"};
+    static uint8_t manifest_bytes[LXP_GENESIS_MAX_ENCODED_BYTES];
+    static request_writer request;
+    request_writer legacy;
+    lxp_fee_params schedule = {0};
+    uint8_t enable_key[32];
+    uint8_t enabled[32] = {0U};
+    uint8_t encoded[LXP_MODULE_MAX_VALUE_BYTES];
+    size_t length;
+    char input[192], output[192], path[224];
+    enabled[31] = 1U;
+    schedule.version = 3U;
+    schedule.multiplier_basis_points = 10000U;
+    schedule.asset_price_count = LXP_ASSET_FEE_PRICE_COUNT_V3;
+    for (size_t i = 0U; i < LXP_ASSET_FEE_PRICE_COUNT_V3; ++i) schedule.asset_prices[i].lo = i + 1U;
+    (void)memset(&request, 0, sizeof(request));
+    if (build_legacy_request(&legacy, asset_id) != 0 ||
+        lxp_genesis_module_enable_key(LXP_MODULE_SPOT, enable_key) != LXP_OK ||
+        append(&request, legacy.bytes, 4U) != 0 || append_u8(&request, 2U) != 0 ||
+        append_u16(&request, LXP_PROTOCOL_VERSION_STATE_COMMITMENT) != 0 ||
+        append(&request, legacy.bytes + 7U, 12U) != 0 || append_u16(&request, 2U) != 0 ||
+        append_u16(&request, LXP_MODULE_GOVERNANCE) != 0 ||
+        append(&request, enable_key, sizeof(enable_key)) != 0 ||
+        append(&request, enabled, sizeof(enabled)) != 0 ||
+        append(&request, legacy.bytes + 21U, legacy.length - 21U) != 0 ||
+        append_u16(&request, 2U) != 0)
+        return 1;
+    for (size_t i = 0U; i < 2U; ++i)
+        if (lx_asset_record_encode(&records[i], encoded, sizeof(encoded), &length) != LXP_OK ||
+            append_u16(&request, (uint16_t)length) != 0 || append(&request, encoded, length) != 0)
+            return 1;
+    if (lxp_fee_params_encode(&schedule, encoded, sizeof(encoded), &length) != LXP_OK ||
+        length != LXP_FEE_PARAMS_V3_BYTES ||
+        append_u16(&request, (uint16_t)length) != 0 || append(&request, encoded, length) != 0 ||
+        snprintf(input, sizeof(input), "%s/request-%s.lxgb", base, name) < 0 ||
+        snprintf(output, sizeof(output), "%s/artifacts-%s", base, name) < 0 ||
+        write_file(input, request.bytes, request.length, 0600) != 0 ||
+        lxp_genesis_build_artifacts(input, key_path, output) != LXP_OK ||
+        snprintf(path, sizeof(path), "%s/genesis.manifest", output) < 0 ||
+        read_file(path, manifest_bytes, sizeof(manifest_bytes), &length) != 0 ||
+        lxp_genesis_parse(manifest_bytes, length, LXP_GENESIS_INPUT_MANIFEST, manifest) != LXP_OK)
+        return 1;
+    for (size_t i = 0U; i < 4U; ++i)
+        if (snprintf(path, sizeof(path), "%s/%s", output, names[i]) < 0 || unlink(path) != 0) return 1;
+    return rmdir(output) != 0 || unlink(input) != 0;
+}
+
+static int spot_genesis_open(const lxp_genesis_manifest *manifest)
+{
+    lxp_genesis_module_plan plan;
+    bool spot_planned = false;
+    (void)memset(&spot_genesis, 0, sizeof(spot_genesis));
+    if (lx_account_registry_init(&spot_genesis.accounts) != LXP_OK ||
+        lxp_state_store_init(&spot_genesis.state, 1U) != LXP_OK ||
+        lxp_state_store_bind_accounts(&spot_genesis.state, &spot_genesis.accounts) != LXP_OK ||
+        lxp_kernel_create(&spot_genesis.kernel, &spot_genesis.state, &spot_genesis.journal,
+                          manifest, 1U) != LXP_OK ||
+        lxp_genesis_module_plan_resolve(manifest, &plan) != LXP_OK)
+        return 1;
+    for (size_t i = 0U; i < plan.count; ++i)
+        if (plan.modules[i] == lx_spot_module_iface()) spot_planned = true;
+    return !spot_planned ||
+           lxp_genesis_module_plan_register(&plan, &spot_genesis.kernel) != LXP_OK ||
+           lxp_arena_init(&spot_genesis.arena, spot_genesis.arena_bytes,
+                          sizeof(spot_genesis.arena_bytes)) != LXP_OK ||
+           lxp_genesis_materialize(manifest, &spot_genesis.arena, &spot_genesis.kernel) != LXP_OK;
+}
+
+static int spot_genesis_close(void)
+{
+    lxp_result status = lxp_state_store_destroy(&spot_genesis.state);
+    lx_account_registry_release(&spot_genesis.accounts);
+    return status != LXP_OK;
+}
+
+static int spot_genesis_ctx_open(uint16_t module_id)
+{
+    if (lxp_arena_init(&spot_genesis.arena, spot_genesis.arena_bytes,
+                       sizeof(spot_genesis.arena_bytes)) != LXP_OK ||
+        lxp_module_ctx_init(&spot_genesis.ctx, &spot_genesis.kernel, module_id,
+                            UINT64_C(1700000001000), 1U, spot_genesis.state.next_sequence,
+                            1000000U, &spot_genesis.arena, true) != LXP_OK)
+        return 1;
+    spot_genesis.ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    return 0;
+}
+
+static lxp_result spot_genesis_market_validate(const lx_spot_market *market)
+{
+    const lxp_module_registration *registration = NULL;
+    uint8_t payload[LX_SPOT_MARKET_PAYLOAD_BYTES];
+    lxp_activity activity;
+    lxp_authority_resolved authority;
+    void *decoded = NULL;
+    lxp_result status;
+    if (lxp_kernel_module_for_activity(&spot_genesis.kernel, LX_SPOT_MARKET_CREATE, 1U,
+                                       &registration) != LXP_OK ||
+        registration->iface != lx_spot_module_iface() ||
+        lx_spot_market_encode(market, payload) != LXP_OK ||
+        spot_genesis_ctx_open(LXP_MODULE_SPOT) != 0)
+        return LXP_FATAL_INVARIANT;
+    (void)memset(&activity, 0, sizeof(activity));
+    activity.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity.network_id = 42U;
+    activity.activity_type = LX_SPOT_MARKET_CREATE;
+    activity.payload = (lxp_byte_span){payload, sizeof(payload)};
+    (void)memset(&authority, 0, sizeof(authority));
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.actor, market->administrator, 32U);
+    status = registration->iface->decode(&spot_genesis.ctx, 1U, payload, sizeof(payload), &decoded);
+    if (status == LXP_OK)
+        status = registration->iface->validate(&spot_genesis.ctx, &activity, &authority, decoded);
+    return spot_genesis.ctx.module_id == LXP_MODULE_SPOT && spot_genesis.ctx.staged_count == 0U ?
+               status : LXP_FATAL_INVARIANT;
+}
+
+static lxp_result spot_genesis_asset_put(const lx_asset_record *record)
+{
+    uint8_t key[38] = "asset:";
+    uint8_t bytes[LXP_MODULE_MAX_VALUE_BYTES];
+    size_t length = 0U;
+    lxp_result status = lx_asset_record_encode(record, bytes, sizeof(bytes), &length);
+    if (status != LXP_OK) return status;
+    if (spot_genesis_ctx_open(LXP_MODULE_ASSET) != 0) return LXP_FATAL_INVARIANT;
+    (void)memcpy(key + 6U, record->asset_id, 32U);
+    status = lxp_ctx_kv_put(&spot_genesis.ctx, key, sizeof(key), bytes, length);
+    if (status == LXP_OK) status = lxp_module_ctx_prepare_commit(&spot_genesis.ctx);
+    if (status == LXP_OK) status = lxp_module_ctx_commit(&spot_genesis.ctx);
+    if (status != LXP_OK) lxp_module_ctx_rollback(&spot_genesis.ctx);
+    return status;
+}
+
+static int genesis_spot_market_case(const char *base, const char *key_path,
+                                    const uint8_t asset_id[32])
+{
+    static lxp_genesis_manifest manifest;
+    static const uint8_t quote_id[32] = {0x0aU};
+    static const uint8_t absent_id[32] = {0x0bU};
+    lx_asset_record records[2];
+    lx_spot_market market;
+    size_t asset_values = 0U;
+    spot_asset_record(&records[0], asset_id, "BASE", 1U, false);
+    spot_asset_record(&records[1], quote_id, "QUOT", 2U, false);
+    (void)memset(&market, 0, sizeof(market));
+    market.market_id[0] = 1U;
+    (void)memcpy(market.base_asset, asset_id, 32U);
+    (void)memcpy(market.quote_asset, quote_id, 32U);
+    market.administrator[0] = 0x5aU;
+    market.tick_size = (lxp_u128){0U, 2U};
+    market.lot_size = (lxp_u128){0U, 1U};
+    if (spot_genesis_build(base, key_path, "spot", asset_id, records, &manifest) != 0 ||
+        manifest.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return 1;
+    for (size_t i = 0U; i < manifest.module_value_count; ++i) {
+        const lxp_genesis_module_value *value = &manifest.module_values[i];
+        lx_asset_record actual;
+        if (value->module_id != LXP_MODULE_ASSET) continue;
+        if (asset_values >= 2U ||
+            memcmp(value->key, records[asset_values].asset_id, 32U) != 0 ||
+            lx_asset_record_decode(value->value, value->value_length, &actual) != LXP_OK ||
+            memcmp(&actual, &records[asset_values], sizeof(actual)) != 0)
+            return 1;
+        ++asset_values;
+    }
+    if (asset_values != 2U || spot_genesis_open(&manifest) != 0 ||
+        spot_genesis_market_validate(&market) != LXP_OK)
+        return 1;
+    (void)memcpy(market.base_asset, absent_id, 32U);
+    if (spot_genesis_market_validate(&market) != LXP_ERR_ASSET_MISMATCH) return 1;
+    (void)memcpy(market.base_asset, asset_id, 32U);
+    records[0].paused = true;
+    if (spot_genesis_asset_put(&records[0]) != LXP_OK ||
+        spot_genesis_market_validate(&market) != LXP_ERR_ASSET_PAUSED)
+        return 1;
+    records[0].paused = false;
+    if (spot_genesis_asset_put(&records[0]) != LXP_OK ||
+        spot_genesis_market_validate(&market) != LXP_OK || spot_genesis_close() != 0)
+        return 1;
+    records[0].paused = true;
+    return spot_genesis_build(base, key_path, "spot-paused", asset_id, records, &manifest) != 0 ||
+           spot_genesis_open(&manifest) != 0 ||
+           spot_genesis_market_validate(&market) != LXP_ERR_ASSET_PAUSED ||
+           spot_genesis_close() != 0;
+}
+
 int main(void)
 {
     static uint8_t arena_bytes[4 * 1024 * 1024];
@@ -481,6 +702,7 @@ int main(void)
         }
         if (rmdir(v2_output) != 0 || unlink(v2_request) != 0) return 1;
     }
+    if (genesis_spot_market_case(base, key_path, asset_id) != 0) return 1;
     if (signed_snapshot_migration_fixture(base) != 0) return 1;
     if (unlink(deployment_descriptor_path) != 0 ||
         unlink(registration_request_path) != 0 || unlink(snapshot_path) != 0 ||

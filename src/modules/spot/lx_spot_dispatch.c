@@ -66,11 +66,14 @@ static lxp_result asset_state(lxp_module_ctx *ctx, const uint8_t asset_id[32],
     ctx->module_id = LXP_MODULE_ASSET;
     ctx->staged_count = 0U;
     status = lxp_ctx_kv_get(ctx, key, sizeof(key), &value, &value_length);
+    if (status == LXP_ERR_UNKNOWN_FIELD)
+        status = lxp_ctx_kv_get(ctx, asset_id, 32U, &value, &value_length);
     ctx->module_id = module_id;
     ctx->staged_count = staged_count;
     if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_ERR_ASSET_MISMATCH;
     if (status != LXP_OK) return status;
-    if (lx_asset_record_decode(value, value_length, &record) != LXP_OK)
+    if (lx_asset_record_decode(value, value_length, &record) != LXP_OK ||
+        memcmp(record.asset_id, asset_id, 32U) != 0)
         return LXP_ERR_ASSET_MISMATCH;
     return lx_asset_transfer_state(&record, state);
 }
