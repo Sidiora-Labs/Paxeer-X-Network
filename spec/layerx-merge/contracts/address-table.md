@@ -493,7 +493,7 @@ One named plan for the merge; per-method gates read its done height through IsUp
 
 | Item | Value | Source |
 |---|---|---|
-| Plan name | set at activation rehearsal; placeholder `MergeUpgrade = "<merge-plan>"` |  |
+| Plan name | `MergeUpgrade = "v7.0"`, provisional in the v6.9/v6.10/v6.11 pattern; the activation rehearsal may rename it and every gate reads the constant | node/upgrades.go:82-107 |
 | Constant home | node/upgrades.go beside `ActivationUpgrade` (:88), `V610Upgrade` (:97), `V611Upgrade` (:107); no entry in node/tags (pattern of v6.9-v6.11, node/upgrades.go:82-107) | node/upgrades.go:82-107 |
 | Handler registration | `app.UpgradeKeeper.SetUpgradeHandler(MergeUpgrade, app.runMergeUpgrade)` in RegisterUpgradeHandlers beside :187-193; appended to knownUpgradePlans (:416-418) | node/upgrades.go:117-194, 416-418 |
 | Store mounts | store upgrade adding layerxledger, layerxpay, layerxauth, layerxprograms, sequencer stores, applied through the store loader | node/app.go:1307-1325 (existing pattern) |

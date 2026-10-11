@@ -2649,7 +2649,7 @@ invariants = "Helpers never mutate kernel state (include/layerx/lxp_kernel.h:236
 
 [task.1.0.1]
 title = "Kernel idempotency entries record their commit sequence and prune past a retention window"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2679,7 +2679,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.2]
 title = "Exported C read helper for the 209-byte session summary"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2692,7 +2692,8 @@ do_4 = "Copy the 209 bytes unchanged: grant id at offset 5, grantor at 37, verif
 do_5 = "Add session_key_read and session_key_read_absent cases to tests/state/lxp_test_grants.c: grant a session through the sub-op 5 execute path, read it back through the helper and compare with the 0x7145 event payload (src/modules/governance/lxp_governance.c:446); read an unknown id and expect LXP_ERR_UNKNOWN_FIELD."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["lxp_governance_session_key_read"]
-touches = ["include/layerx/lxp_governance.h", "src/modules/governance/lxp_governance.c", "tests/state/lxp_test_grants.c"]
+do_7 = "Link the grants test like the lxp_test_owner_rotation_unit rule: build/tests/lxp_test_grants depends on $(PROGRAMS_RUNTIME_LIB) and programs-build and links $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm, because governance pulls the kernel and programs objects."
+touches = ["include/layerx/lxp_governance.h", "src/modules/governance/lxp_governance.c", "tests/state/lxp_test_grants.c", "Makefile"]
 build_cmd = "make build"
 verify_cmd = "make test-grants"
 gate_kind = "existing"
@@ -2707,7 +2708,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.3]
 title = "Exported C read helper for asset payer grants"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2735,7 +2736,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.4]
 title = "Focused C execute test for ACCOUNT_OPEN and GRANT_ISSUE"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2791,15 +2792,15 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.6]
 title = "tokenfactory MsgSetDenomPaused message and pause errors"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
 reqs = ["1008.1", "1008.4", "4.1", "8.7"]
 capabilities = ["1.3.1"]
-do_1 = "Add rpc SetDenomPaused(MsgSetDenomPaused) returns (MsgSetDenomPausedResponse) to the Msg service of api/tokenfactory/tx.proto:12-17."
+do_1 = "Do not add the rpc to the Msg service yet: adding rpc SetDenomPaused to api/tokenfactory/tx.proto:12-17 before the keeper handler exists breaks every package that asserts the keeper implements MsgServer, so the rpc line lands with its handler in task 1.2.1; this task adds only the message types, the response and the errors."
 do_2 = "Add message MsgSetDenomPaused { string sender = 1; string denom = 2; bool paused = 3; } and an empty response after MsgSetDenomMetadata (api/tokenfactory/tx.proto:83-93), with the sender gogoproto tags that message uses."
-do_3 = "Regenerate modules/tokenfactory/types/tx.pb.go with scripts/protoc.sh:26 so the Msg server interface gains SetDenomPaused."
+do_3 = "Regenerate modules/tokenfactory/types/tx.pb.go with scripts/protoc.sh:26 so the new message types are available to the keeper task while the Msg server interface stays unchanged."
 do_4 = "Register ErrDenomPaused with the text \"LXP_ASSET_PAUSED: denom is paused\" and ErrPauseUnchanged with \"LXP_PAUSED_SCOPE: denom pause state unchanged\" after ErrAllowListUndefined (modules/tokenfactory/types/errors.go:33), before the closing parenthesis at modules/tokenfactory/types/errors.go:34, codes following the last used code."
 do_5 = "Keep ErrUnauthorized (modules/tokenfactory/types/errors.go:14) as the refusal for a non-admin sender; no new code is added for that case."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
@@ -2819,7 +2820,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.7]
 title = "tokenfactory issuer DID on the denom authority metadata"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2847,7 +2848,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.8]
 title = "layerxledger proto messages and LXP error registry"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2875,7 +2876,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.9]
 title = "layerxauth proto messages and LXP error registry"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -3273,14 +3274,14 @@ wave = 2
 requires = ["1.1.7", "1.1.8"]
 reqs = ["1008.1", "1008.2", "1008.4", "1008.5", "4.1", "8.7"]
 capabilities = ["1.3.1"]
-do_1 = "Add SetDenomPaused to the msg server in modules/tokenfactory/keeper/msg_server.go beside SetDenomMetadata (modules/tokenfactory/keeper/msg_server.go:188): read GetAuthorityMetadata (modules/tokenfactory/keeper/admins.go:11-20) and refuse a sender other than the admin with ErrUnauthorized (modules/tokenfactory/types/errors.go:14), the check Mint performs at modules/tokenfactory/keeper/msg_server.go:107-109."
+do_1 = "Add rpc SetDenomPaused(MsgSetDenomPaused) returns (MsgSetDenomPausedResponse) to the Msg service of api/tokenfactory/tx.proto:12-17 and regenerate modules/tokenfactory/types/tx.pb.go with scripts/protoc.sh:26 in the same change; then add SetDenomPaused to the msg server in modules/tokenfactory/keeper/msg_server.go beside SetDenomMetadata (modules/tokenfactory/keeper/msg_server.go:188): read GetAuthorityMetadata (modules/tokenfactory/keeper/admins.go:11-20) and refuse a sender other than the admin with ErrUnauthorized (modules/tokenfactory/types/errors.go), refuse a repeated identical state with ErrPauseUnchanged."
 do_2 = "On success call setDenomPaused and emit a tokenfactory event set_denom_paused with denom and paused attributes."
 do_3 = "In mintTo (modules/tokenfactory/keeper/bankactions.go:11) and burnFrom (modules/tokenfactory/keeper/bankactions.go:35) return ErrDenomPaused (text LXP_ASSET_PAUSED) when IsDenomPaused is true, before any MintCoins or BurnCoins call (sdk/x/bank/keeper/keeper.go:601, sdk/x/bank/keeper/keeper.go:649)."
 do_4 = "Create modules/tokenfactory/keeper/denom_pause_test.go with TestDenomPauseAdminOnly, TestDenomPauseMintBurn and TestDenomPauseRepeatRefused using the keeper suite of modules/tokenfactory/keeper/keeper_test.go."
 do_5 = "Add TestDenomPauseFixtureParity replaying the pause, mint-while-paused and unpause outcomes of the kernel branch at src/modules/asset/lx_asset_execution.h:235-248 and src/modules/asset/lx_asset_execution.h:294 recorded in tests/fixtures/asset/supply-pause.receipt."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["msgServer.SetDenomPaused", "mintTo", "burnFrom", "TestDenomPauseAdminOnly", "TestDenomPauseMintBurn", "TestDenomPauseRepeatRefused", "TestDenomPauseFixtureParity"]
-touches = ["modules/tokenfactory/keeper/msg_server.go", "modules/tokenfactory/keeper/bankactions.go", "modules/tokenfactory/keeper/denom_pause_test.go"]
+touches = ["api/tokenfactory/tx.proto", "modules/tokenfactory/types/tx.pb.go", "modules/tokenfactory/keeper/msg_server.go", "modules/tokenfactory/keeper/bankactions.go", "modules/tokenfactory/keeper/denom_pause_test.go"]
 build_cmd = "go build ./modules/tokenfactory/..."
 verify_cmd = "go test -count=1 ./modules/tokenfactory/keeper/ -run TestDenomPause"
 gate_kind = "planned"
@@ -17744,7 +17745,7 @@ qualification = "UNRUN"
 [acceptance.5.12.1]
 feature = "5"
 req = "5012.1"
-scenario = "Given the fixture observation bytes of the adapter test, when DecodeObservation runs, then it returns origin 2, network id 1, the fixture program id, request id, kind, hashes, lengths, response and signatures, and re-encoding gives the same bytes."
+scenario = "Given the fixture observation bytes of the adapter test, when DecodeObservation runs, then it returns origin 2, the network id the adapter test encodes (ADAPTER_NETWORK), the fixture program id, request id, kind, hashes, lengths, response and signatures, and re-encoding gives the same bytes."
 contract = "contracts/web.md#section-a-methods"
 test = "modules/xweb/types/observation_test.go::TestDecodeObservationFixture"
 qualification = "UNRUN"
@@ -19229,10 +19230,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.9]
 title = "Take the PAX USD rate as a required input"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 6
+requires = ["7.5.2", "1.3.12"]
 reqs = ["5035.1", "5035.2", "5035.3", "5035.4"]
 capabilities = ["5.6.5"]
 do_1 = "Replace USD_PER_PAX (tools/bringup/xweb-config.sh:145) with a Fraction parsed from the required XWEB_PAX_USD_PRICE input, refusing absent, zero or malformed values."
@@ -19244,7 +19245,7 @@ do_6 = "This task carries the obligations of task 4.7 that fall on these files, 
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["xweb_prices", "USD_PER_PAX"]
 touches = ["tools/bringup/xweb-config.sh", "tools/bringup/tests/xweb_fee_price.test.sh"]
-build_cmd = "sh -n tools/bringup/xweb-config.sh tools/bringup/tests/xweb_fee_price.test.sh"
+build_cmd = "bash -n tools/bringup/xweb-config.sh tools/bringup/tests/xweb_fee_price.test.sh"
 verify_cmd = "sh tools/bringup/tests/xweb_fee_price.test.sh"
 gate_kind = "planned"
 planned_paths = ["tools/bringup/tests/xweb_fee_price.test.sh"]
@@ -29535,7 +29536,8 @@ do_4 = "Add one firing and one silent case per new alert to tools/ops/monitoring
 do_5 = "Keep KernelReadyzDown in place in this wave; it is replaced by the sequencer readiness alert at cutover and its scrape job leaves at retirement (tools/ops/monitoring/prometheus.yml:28)."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["SequencerNotReady", "StandbyNotReady", "ReceiptOrderDivergence", "SponsorBalanceBelowFloor", "RateAgeNearLimit"]
-touches = ["tools/ops/monitoring/rules.yml", "tools/ops/monitoring/rules_test.yml"]
+do_7 = "The alert expressions name the series the authority and gas station tasks export later (order_divergence_total, gas_station_sponsor_balance, gas_station_sponsor_floor, gas_station_rate_age_seconds, gas_station_max_rate_age_seconds); rules_test.yml exercises every new alert with synthetic input series, so no exporter is required by this task. Add the sequencer readiness scrape job for the primary and the hot standby to prometheus.yml beside the kernel readiness job and the matching inventory variables to hosts.env.example and render.sh; the kernel readiness alert and job stay in this wave."
+touches = ["tools/ops/monitoring/rules.yml", "tools/ops/monitoring/rules_test.yml", "tools/ops/monitoring/prometheus.yml", "tools/ops/monitoring/hosts.env.example", "tools/ops/monitoring/render.sh"]
 build_cmd = "bash tools/ops/monitoring/render.sh tools/ops/monitoring/hosts.env.example $(mktemp -d)/rendered"
 verify_cmd = "bash tools/ops/monitoring/test.sh"
 gate_kind = "existing"
@@ -29550,7 +29552,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.2]
 title = "Monitoring scrape: sequencer primary and standby readiness and receipt-authority metrics"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29604,7 +29606,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.4]
 title = "Rollout registry login before every box image pull"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29700,7 +29702,7 @@ do_4 = "Confirm the paymaster contract is unchanged: executeSponsored (contracts
 do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["GAS_STATION_ENDPOINTS", "GAS_STATION_PAYMASTER"]
 touches = ["interop/deploy/gas-station/railway.env.example"]
-build_cmd = "forge build --offline --root ."
+build_cmd = "bash contracts/bootstrap-libs.sh && forge build --offline --root ."
 verify_cmd = "forge test --offline --root . --match-contract BatchCallAndSponsorTest"
 gate_kind = "existing"
 planned_paths = []
@@ -39607,7 +39609,7 @@ invariants = "Block limits MaxGas 100M, MaxGasWanted 50M, MaxBytes 22020096 (con
 
 [task.0.2]
 title = "Sequencer executor: execute at receipt on the open speculative state"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39636,7 +39638,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.1]
 title = "Future-nonce queue per sender with same-nonce refusal"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39664,7 +39666,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.2]
 title = "Layered state and Seal in ProcessBlock order"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39720,7 +39722,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.3]
 title = "Wire-crate vectors and effect bound for sequencer receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40000,7 +40002,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.12]
 title = "Proposal from the sealed slice"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40028,7 +40030,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.13]
 title = "Leader pin from the activation height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40056,7 +40058,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.14]
 title = "Sequencer consensus config and timeouts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40084,10 +40086,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.15]
 title = "ProcessProposal order check"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 1
+requires = ["9.0.18", "9.0.19", "9.0.20", "9.0.13", "9.1.3"]
 reqs = ["3.3", "3.4", "3.5", "9006.1", "9006.2", "9006.3", "9006.4", "9006.5", "9033.1", "9033.2", "9033.3", "9033.4", "9033.5"]
 capabilities = ["9.5.2"]
 do_1 = "Add checkSequencerOrder in node/process_proposal_order.go, called from ProcessProposalHandler (node/app.go:1457) after decode (node/app.go:1461) and before the optimistic start (node/app.go:1486-1495)."
@@ -40112,7 +40114,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.16]
 title = "Framed sequencer WAL with group sync"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40168,7 +40170,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.18]
 title = "modules/sequencer message and keys"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40280,7 +40282,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.22]
 title = "Fee-token params: minimum bound and rate age"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40310,7 +40312,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 title = "Gas station: DID-keyed budgets and sequencer nonce"
 status = "pending"
 mode = "BUILD"
-wave = 0
+wave = 1
 requires = ["0.1", "0.3"]
 reqs = ["7.4", "7.5", "9010.1", "9010.2", "9010.3", "9010.4", "9010.5", "9011.1", "9011.2", "9011.3", "9011.4"]
 capabilities = ["9.7.3"]
@@ -48068,20 +48070,20 @@ vectors = "Receipt vectors V1-V9 run in every SDK (agent/crates/layerx-sdk/tests
 
 [task.0.1]
 title = "Precompile address table: 0x101A-0x101D and 0x0901-0x0908 entries in GetCustomPrecompiles, served from the merge plan height"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 2
+requires = ["10.0.1", "10.0.2"]
 reqs = ["6.1", "8.1", "8.3", "10001.1", "10001.2", "10001.3", "10001.4", "10002.1", "10002.2", "10002.3", "10003.1", "10003.2", "10003.3", "10004.1", "10004.2", "10004.3", "10004.4", "10005.1", "10005.2", "10005.3", "10005.4", "10006.1", "10006.2", "10006.3", "10007.1", "10007.2", "10007.3", "10008.1", "10008.2", "10008.3", "10009.1", "10009.2", "10009.3", "10010.1", "10010.2", "10010.3", "10011.1", "10011.2", "10011.3", "10012.1", "10012.2", "10012.3", "10015.1", "10015.2", "10015.3", "10016.1", "10016.2", "10016.3", "10016.4", "10016.5"]
 capabilities = ["10.1.1", "10.1.2", "10.1.3", "10.1.4", "10.1.5", "10.1.6", "10.1.7", "10.1.8", "10.1.9", "10.1.10", "10.1.11", "10.1.12", "10.2.3", "10.3.1"]
 do_1 = "Add the merge address table to GetCustomPrecompiles (precompiles/setup.go:63): beside the existing map built at precompiles/setup.go:67 (bank precompiles/setup.go:68 through launchpad precompiles/setup.go:86, feetoken precompiles/setup.go:88-92, xweb precompiles/setup.go:93-95) declare MergeAddressTable, the eight agent-function addresses 0x0000000000000000000000000000000000000901-0x0000000000000000000000000000000000000908 and the four construct addresses 0x000000000000000000000000000000000000101A-0x000000000000000000000000000000000000101D with their GetName values (layerxledger, layerxpay, layerxauth, layerxprograms, orob, clearing, oracle aggregator, pofq, scheduler, streams, tee attestor, eip712)."
-do_2 = "Register each merge entry through addPrecompileToVM (precompiles/setup.go:271-284) under the merge plan name (the constant added by task 10.0.1), following the tagged-entry pattern of FeeTokenUpgrade (precompiles/setup.go:43) and XWebUpgrade (precompiles/setup.go:37); the construct constructors land with their own features and are wired here by package path (precompiles/layerxledger, precompiles/layerxpay, precompiles/layerxauth, precompiles/layerxprograms, precompiles/layerxagent/*)."
+do_2 = "Register each merge entry through addPrecompileToVM (precompiles/setup.go:271-284) under the merge plan name (the constant added by task 10.0.1) through the keeper activation entry list of task 10.0.2, not a semver tag compare: add a package-level RegisterMergeConstructor(address, constructor) hook that the construct packages (precompiles/layerxledger, precompiles/layerxpay, precompiles/layerxauth, precompiles/layerxprograms, precompiles/layerxagent/*) call when their features land; an address in MergeAddressTable with no registered constructor is not served and GetCustomPrecompiles never installs a placeholder executor."
 do_3 = "Keep every existing address registered and unchanged: 0x1012 layerxVerify, 0x1013 layerxCustody and 0x1014 layerxAnchor stay in the map (precompiles/setup.go:81-83) so retired methods reach an executor that answers LXP_MODULE_DISABLED instead of an empty success; PrecompileLastUpgrade (precompiles/setup.go:286-288) reports the merge plan once the entries are present."
-do_4 = "Extend precompiles/setup_test.go beside TestFeeTokenRegistration (precompiles/setup_test.go:17) and TestXWebRegistration (precompiles/setup_test.go:92) with TestMergeAddressTable: below the plan height none of the twelve addresses is served; at the plan height each one is served with its GetName; the address and name pairs equal contracts/address-table.md section (a)."
+do_4 = "Extend precompiles/setup_test.go beside TestFeeTokenRegistration (precompiles/setup_test.go:17) and TestXWebRegistration (precompiles/setup_test.go:92) with TestMergeAddressTable: below the plan height none of the twelve addresses is served; at the plan height every address with a registered constructor is served with its GetName and every address without one is absent; the address and name pairs equal contracts/address-table.md section (a)."
 do_5 = "Assert that the route constants 0x0901-0x0908 of the wallet gateway (human/wallet/gateway/src/precompiles.ts:18-25) equal the registered addresses so a gateway call reaches an executor (head requirement 6.1)."
-do_6 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251), so the precompile set and revert bytes below H stay byte-identical to today."
+do_6 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251) and the (plan name, address set) activation entry that task 10.0.2 introduces, so the precompile set and revert bytes below H stay byte-identical to today."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-symbols = ["GetCustomPrecompiles", "MergeAddressTable", "PrecompileLastUpgrade", "addPrecompileToVM"]
+symbols = ["GetCustomPrecompiles", "MergeAddressTable", "RegisterMergeConstructor", "PrecompileLastUpgrade", "addPrecompileToVM"]
 touches = ["precompiles/setup.go", "precompiles/setup_test.go"]
 build_cmd = "go build ./precompiles/..."
 verify_cmd = "go test -count=1 ./precompiles/ -run 'TestFeeTokenRegistration|TestXWebRegistration|TestMergeAddressTable'"
@@ -48097,10 +48099,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.1]
 title = "Merge plan constant, knownUpgradePlans entry and the merge precompile activation entry"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 1
+requires = ["10.0.2"]
 reqs = ["8.1", "10001.1", "10001.2", "10001.3", "10001.4", "10002.1", "10002.2", "10002.3", "10003.1", "10003.2", "10003.3", "10004.1", "10004.2", "10004.3", "10004.4", "10005.1", "10005.2", "10005.3", "10005.4", "10006.1", "10006.2", "10006.3", "10007.1", "10007.2", "10007.3", "10008.1", "10008.2", "10008.3", "10009.1", "10009.2", "10009.3", "10010.1", "10010.2", "10010.3", "10011.1", "10011.2", "10011.3", "10012.1", "10012.2", "10012.3", "10016.1", "10016.2", "10016.3", "10016.4", "10016.5"]
 capabilities = ["10.1.1", "10.1.2", "10.1.3", "10.1.4", "10.1.5", "10.1.6", "10.1.7", "10.1.8", "10.1.9", "10.1.10", "10.1.11", "10.1.12", "10.3.1"]
 do_1 = "Add the merge plan constant MergeUpgrade beside ActivationUpgrade (node/upgrades.go:88), V610Upgrade (node/upgrades.go:97) and V611Upgrade (node/upgrades.go:107), with no entry in the embedded tag list (pattern documented at node/upgrades.go:82); the plan name is set at activation rehearsal and the plan height equals the sequencer activation height H_act."
@@ -48111,6 +48113,7 @@ do_5 = "Keep the handler body out of this task: RegisterUpgradeHandlers (node/up
 do_6 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251), so the precompile set and revert bytes below H stay byte-identical to today."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["MergeUpgrade", "knownUpgradePlans", "mergePrecompileGate", "activationPrecompileGate"]
+do_8 = "MergeUpgrade carries the provisional plan name "v7.0" following the v6.9, v6.10, v6.11 constants; the activation rehearsal may rename it, and every gate reads the constant rather than the literal."
 touches = ["node/upgrades.go", "node/upgrades_activation_test.go"]
 build_cmd = "go build ./node/..."
 verify_cmd = "go test -count=1 ./node/ -run 'TestActivationUpgradeIsRegisteredBesideTheTagList|TestMergePlanIsRegisteredBesideTheTagList'"
@@ -48155,10 +48158,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.3]
 title = "Opt-in LXP_ reason path in the dynamic-gas precompile base"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 2
+requires = ["10.0.1"]
 reqs = ["4.7", "10002.1", "10002.2", "10002.3", "10017.1", "10017.2", "10017.3", "10017.4", "10017.5", "10018.1", "10018.2", "10018.3", "10018.4", "10018.5", "10018.6", "10018.7", "10018.8"]
 capabilities = ["10.1.2", "10.4.1", "10.4.2"]
 do_1 = "Add a reasons flag to DynamicGasPrecompile (precompiles/common/precompiles.go:166-169) and a WithRevertReasons method on it mirroring Precompile.WithRevertReasons (precompiles/common/precompiles.go:53-56)."
@@ -48239,7 +48242,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.6]
 title = "Wallet gateway route map: agent functions and the three non-chain route keys point at registered addresses"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78454,10 +78457,10 @@ qualification = "UNRUN"
 
 [task.12.0.1]
 title = "Create the sequencer accept test for ordered execution"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12001.1", "12001.2", "12001.3", "12001.4", "12001.5", "12001.6", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Drive the accepted sequence through `ProcessTxsSynchronousV2` (node/app.go:1687) so execution stays strictly sequential and the per-transaction results come back in submission order"
@@ -78486,10 +78489,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.2]
 title = "Re-target occ_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12002.1", "12002.2", "12002.3", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestParallelTransactionsCombined` at occ_tests/occ_test.go:215 at the sequencer block path on the merged chain and keep its assertion `require.NoError(t, sErr, tt.name)` unchanged"
@@ -78514,10 +78517,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.3]
 title = "Re-target optimistic_processing_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12003.1", "12003.2", "12003.3", "12003.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestGetOptimisticProcessingInfo_ThreadSafety` at node/optimistic_processing_test.go:32 at the sequencer block path on the merged chain and keep its assertion `require := suite.Require()` unchanged"
@@ -78543,10 +78546,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.4]
 title = "Re-target receipt_test.go at the merged chain"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 0
-requires = []
+wave = 8
+requires = ["9.7.2"]
 reqs = ["12004.1", "12004.2", "12004.3", "12004.4", "3.1", "12.1"]
 capabilities = ["12.1.1", "12.1.2", "12.1.3", "12.1.4"]
 do_1 = "Point `TestSyntheticReceiptActionRejectsMalformedAddress` at node/receipt_test.go:39 at the sequencer block path on the merged chain and keep its assertion `require.ErrorIs(t, err, app.ErrSyntheticReceiptTranslation)` unchanged"

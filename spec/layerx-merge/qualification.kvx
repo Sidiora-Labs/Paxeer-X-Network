@@ -1,2 +1,37 @@
 # Qualification findings for layerx-merge: one [finding.<task>] per failure outside the task scope.
 # Keys: revision, command, exit_code, log_path, observed_and_assumption.
+
+[finding.5.0.8]
+revision = "488630ac9"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test search --test content"
+exit_code = 101
+log_path = "logs/5.0.8-verify-1.log"
+observed_and_assumption = "interop/Cargo.lock on main is stale, so every --locked interop gate refuses before compiling; taken as unrelated to the task and refreshed once offline on main so the interop gates can run."
+
+[finding.7.0.7]
+revision = "488630ac9"
+command = "forge build --offline --root ."
+exit_code = 1
+log_path = "logs/7.0.7-build-1.log"
+observed_and_assumption = "contracts/lib is empty until contracts/bootstrap-libs.sh fetches forge-std and openzeppelin-contracts; taken to mean the build_cmd must run the bootstrap first, amended in the task."
+
+[finding.7.0.8]
+revision = "488630ac9"
+command = "cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-internal --all-targets"
+exit_code = 101
+log_path = "logs/7.0.8-clippy-2.log"
+observed_and_assumption = "clippy diagnostics in platform/hosted/internal files the task does not own; taken as present before the task and left intact."
+
+[finding.12.0.2]
+revision = "488630ac9"
+command = "go test -count=1 -run TestParallelTransactionsWasmInstantiate ./occ_tests/"
+exit_code = 1
+log_path = "logs/12.0.2-verify-1.log"
+observed_and_assumption = "occ_tests/utils/utils.go:180 panics loading integration_test/contracts/mars.wasm because static validation needs the sei capability; taken as present before the task and unrelated to the sequencer re-target, which now waits for the wired sequencer."
+
+[finding.5.0.9]
+revision = "488630ac9"
+command = "sh -n tools/bringup/xweb-config.sh"
+exit_code = 2
+log_path = "logs/5.0.9-build-1.log"
+observed_and_assumption = "sh -n rejects the unchanged Bash array at tools/bringup/xweb-config.sh:94; taken to mean the declared build_cmd should be bash -n, amended in the task."
