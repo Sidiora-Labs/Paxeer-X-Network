@@ -477,7 +477,7 @@ fn daily_gas_budget_stops_publishing() -> TestResult {
 }
 
 #[test]
-fn cadence_must_stay_below_max_rate_age() {
+fn cadence_must_stay_below_max_rate_age() -> TestResult {
     for (name, value) in [
         ("rate_cadence_seconds", json!(300)),
         ("rate_cadence_seconds", json!(301)),
@@ -497,8 +497,25 @@ fn cadence_must_stay_below_max_rate_age() {
         );
     }
     let mut bounded = config_json();
+    bounded["rate_cadence_seconds"] = json!(239);
+    assert_eq!(
+        PublisherConfig::parse(&bounded.to_string())?.cadence_seconds,
+        239
+    );
+    bounded["rate_cadence_seconds"] = json!(240);
+    assert_eq!(
+        PublisherConfig::parse(&bounded.to_string()).err(),
+        Some(ConfigError {
+            field: "rate_confirmation_retry_seconds"
+        })
+    );
     bounded["rate_cadence_seconds"] = json!(299);
-    assert!(PublisherConfig::parse(&bounded.to_string()).is_ok());
+    assert_eq!(
+        PublisherConfig::parse(&bounded.to_string()).err(),
+        Some(ConfigError {
+            field: "rate_confirmation_retry_seconds"
+        })
+    );
     bounded["max_rate_age"] = json!(120);
     bounded["rate_cadence_seconds"] = json!(120);
     assert_eq!(
@@ -508,7 +525,7 @@ fn cadence_must_stay_below_max_rate_age() {
         })
     );
     let Value::Object(fields) = config_json() else {
-        panic!("object required")
+        return Err("object required".into());
     };
     for name in fields.keys() {
         let mut incomplete = fields.clone();
@@ -516,6 +533,7 @@ fn cadence_must_stay_below_max_rate_age() {
         let result = PublisherConfig::parse(&Value::Object(incomplete).to_string());
         assert_eq!(result.err().map(|e| e.field.to_owned()), Some(name.clone()));
     }
+    Ok(())
 }
 
 #[test]
@@ -671,6 +689,14 @@ fn cadence_equal_to_max_rate_age_is_refused_at_load() -> TestResult {
         })
     );
     value["max_rate_age"] = json!(300);
+    value["rate_cadence_seconds"] = json!(240);
+    std::fs::write(&path, value.to_string())?;
+    assert_eq!(
+        PublisherConfig::load(&path),
+        Err(ConfigError {
+            field: "rate_confirmation_retry_seconds"
+        })
+    );
     value["rate_cadence_seconds"] = json!(298);
     value["rate_confirmation_retry_seconds"] = json!(1);
     std::fs::write(&path, value.to_string())?;

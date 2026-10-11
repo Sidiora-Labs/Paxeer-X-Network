@@ -215,7 +215,9 @@ impl PublisherConfig {
 
     /// # Errors
     /// Names the first field that is inconsistent: a cadence not below
-    /// `max_rate_age`, a budget below one publication, a zero floor, a
+    /// `max_rate_age`, a budget below one publication, a zero confirmation
+    /// retry or one whose sum with the cadence is not strictly below
+    /// `max_rate_age` (itself at most 300 s), a zero floor, a
     /// paymaster in the precompile range (the fee token at 0x1018 and every
     /// other system address, whose rates move only by governance), a fee
     /// ceiling not above the priority fee or whose daily worst case overflows,
@@ -355,6 +357,47 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         ))
     }
 
+    /// The fee ceiling of the next publication: twice the base fee plus the
+    /// priority fee.
+    /// # Errors
+    /// Refuses an exhausted daily gas budget, a fee per gas above the
+    /// ceiling, and an owner balance that would fall below its floor once this
+    /// publication and every unsettled one pay their most.
+    fn spend_ceiling(
+        &self,
+        now: u64,
+        base_fee: u128,
+        signer: &Address,
+    ) -> Result<u128, RateRefusal> {
+        let spent = self.journal.state().publication_gas(now / DAY_SECONDS);
+        if spent
+            .checked_add(u128::from(RATE_GAS_LIMIT))
+            .is_none_or(|gas| gas > self.config.gas_budget_per_day)
+        {
+            return Err(RateRefusal::BudgetExhausted);
+        }
+        let max_fee_per_gas = base_fee
+            .checked_mul(2)
+            .and_then(|fee| fee.checked_add(self.config.max_priority_fee_per_gas))
+            .ok_or(TxError::Invalid)?;
+        if max_fee_per_gas > self.config.max_fee_per_gas {
+            return Err(RateRefusal::FeeAboveCeiling {
+                required: max_fee_per_gas,
+                ceiling: self.config.max_fee_per_gas,
+            });
+        }
+        let balance: String = read(&self.rpc, "eth_getBalance", json!([hex(signer), "pending"]))?;
+        let balance = quantity(&balance)?;
+        let required = max_fee_per_gas
+            .checked_mul(u128::from(RATE_GAS_LIMIT))
+            .and_then(|cost| cost.checked_add(self.journal.state().reserved_wei()))
+            .and_then(|cost| cost.checked_add(self.config.balance_floor));
+        if required.is_none_or(|required| balance < required) {
+            return Err(RateRefusal::BelowFloor);
+        }
+        Ok(max_fee_per_gas)
+    }
+
     /// Publishes the rate file's rate once to the sequencer, confirms it by
     /// its `pax_sequencerReceipt` and returns the journalled publication.
     /// # Errors
@@ -399,36 +442,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         if owner[..12] != [0; 12] || owner[12..] != signer {
             return Err(RateRefusal::NotOwner);
         }
-        let spent = self.journal.state().publication_gas(now / DAY_SECONDS);
-        if spent
-            .checked_add(u128::from(RATE_GAS_LIMIT))
-            .is_none_or(|gas| gas > self.config.gas_budget_per_day)
-        {
-            return Err(RateRefusal::BudgetExhausted);
-        }
-        let max_fee_per_gas = base_fee
-            .checked_mul(2)
-            .and_then(|fee| fee.checked_add(self.config.max_priority_fee_per_gas))
-            .ok_or(TxError::Invalid)?;
-        if max_fee_per_gas > self.config.max_fee_per_gas {
-            return Err(RateRefusal::FeeAboveCeiling {
-                required: max_fee_per_gas,
-                ceiling: self.config.max_fee_per_gas,
-            });
-        }
-        let balance: String = read(
-            &self.rpc,
-            "eth_getBalance",
-            json!([hex(&signer), "pending"]),
-        )?;
-        let balance = quantity(&balance)?;
-        let required = max_fee_per_gas
-            .checked_mul(u128::from(RATE_GAS_LIMIT))
-            .and_then(|cost| cost.checked_add(self.journal.state().reserved_wei()))
-            .and_then(|cost| cost.checked_add(self.config.balance_floor));
-        if required.is_none_or(|required| balance < required) {
-            return Err(RateRefusal::BelowFloor);
-        }
+        let max_fee_per_gas = self.spend_ceiling(now, base_fee, &signer)?;
         let count: String = read(
             &self.rpc,
             "eth_getTransactionCount",
@@ -445,7 +459,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             word(file.rate).as_slice(),
         ]
         .concat();
-        let signed = tx::sign_call(
+        let envelope = tx::sign_call(
             self.config.station.chain_id,
             nonce,
             fees,
@@ -456,7 +470,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
         let publication = Publication {
             owner: signer,
             nonce,
-            hash: signed.hash,
+            hash: envelope.hash,
             rate: word(file.rate),
             gas_limit: RATE_GAS_LIMIT,
             max_fee_per_gas,
@@ -468,7 +482,7 @@ impl<S: QuoteSigner, R: JsonRpc> RatePublisher<S, R> {
             chain_id: self.config.station.chain_id,
             paymaster: self.config.station.paymaster,
             max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
-            raw: signed.raw,
+            raw: envelope.raw,
             cancellation: false,
         };
         self.journal.append(&Entry::RatePrepared {
@@ -932,10 +946,19 @@ pub(crate) fn validate_publication_transaction(
         }
         signature[end - bytes.len()..end].copy_from_slice(bytes);
     }
-    let encoded_length = unsigned_end.to_be_bytes();
+    let unsigned = unsigned_envelope(&payload[..unsigned_end])?;
+    if tx::recover(keccak(&unsigned), &signature).map_err(|_| JournalError::Corrupt)? != p.owner {
+        return Err(JournalError::Corrupt);
+    }
+    Ok(())
+}
+
+/// The type-2 signing preimage: 0x02 and the RLP list of the unsigned fields.
+fn unsigned_envelope(fields: &[u8]) -> Result<Vec<u8>, JournalError> {
+    let encoded_length = fields.len().to_be_bytes();
     let mut unsigned = vec![2];
-    if unsigned_end < 56 {
-        unsigned.push(192 + u8::try_from(unsigned_end).map_err(|_| JournalError::Corrupt)?);
+    if fields.len() < 56 {
+        unsigned.push(192 + u8::try_from(fields.len()).map_err(|_| JournalError::Corrupt)?);
     } else {
         let skip = encoded_length.iter().take_while(|b| **b == 0).count();
         unsigned.push(
@@ -943,11 +966,8 @@ pub(crate) fn validate_publication_transaction(
         );
         unsigned.extend_from_slice(&encoded_length[skip..]);
     }
-    unsigned.extend_from_slice(&payload[..unsigned_end]);
-    if tx::recover(keccak(&unsigned), &signature).map_err(|_| JournalError::Corrupt)? != p.owner {
-        return Err(JournalError::Corrupt);
-    }
-    Ok(())
+    unsigned.extend_from_slice(fields);
+    Ok(unsigned)
 }
 
 #[cfg(test)]
