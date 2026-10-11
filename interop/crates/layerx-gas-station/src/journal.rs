@@ -17,10 +17,16 @@ pub enum JournalError {
     Corrupt,
     Conflict,
     Locked,
+    Version,
 }
 impl std::fmt::Display for JournalError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "journal refused: {self:?}")
+        match self {
+            Self::Version => f.write_str(
+                "journal refused: written by an earlier version that recorded same-nonce replacements",
+            ),
+            _ => write!(f, "journal refused: {self:?}"),
+        }
     }
 }
 impl std::error::Error for JournalError {}
@@ -94,14 +100,6 @@ pub struct Submission {
     pub hash: Word,
     pub raw: Vec<u8>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Replacement {
-    pub nonce: u64,
-    pub fees: Fees,
-    pub hash: Word,
-    pub raw: Vec<u8>,
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
@@ -129,6 +127,9 @@ pub enum LiabilityRelease {
         finalized: serde_json::Value,
     },
     Settled {
+        hash: Word,
+    },
+    Refused {
         hash: Word,
     },
     Consumed {
@@ -176,12 +177,6 @@ pub enum Entry {
         nonce: u64,
         digest: Word,
     },
-    ReplacementSigningIntent {
-        key: Key,
-        nonce: u64,
-        fees: Fees,
-        digest: Word,
-    },
     QuoteAdmitted {
         quote: Box<QuoteRecord>,
         admission: Admission,
@@ -202,18 +197,9 @@ pub enum Entry {
         account: Address,
         completion: Completion,
     },
-    Released {
-        key: Key,
-        nonce: u64,
-    },
-    Replaced {
-        key: Key,
-        replacement: Replacement,
-    },
-    Cancelled {
+    Refused {
         key: Key,
         hash: Word,
-        block_number: u64,
     },
     ReceiptObserved {
         key: Key,
@@ -291,7 +277,6 @@ pub struct Item {
     pub account: Address,
     pub quote: Option<QuoteRecord>,
     pub submission: Option<Submission>,
-    pub replacement: Option<Replacement>,
     pub completion: Option<Completion>,
 }
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -302,7 +287,6 @@ pub struct State {
     pub admissions: BTreeMap<Word, (Admission, Key)>,
     pub tracked_quotes: BTreeSet<Key>,
     pub signing_intents: BTreeMap<Key, u64>,
-    pub replacement_intents: BTreeMap<Key, Fees>,
     pub liability_releases: BTreeMap<Key, LiabilityRelease>,
     pub rate_transactions: BTreeMap<Word, PublicationTransaction>,
     pub rate_active: BTreeMap<(Address, u64), Word>,
@@ -373,17 +357,27 @@ impl State {
         }
         groups.values().copied().fold(0, u128::saturating_add)
     }
-    /// Whether a live submission or replacement of `sponsor` holds `nonce`.
+    /// Whether the sequencer refused the submission of `key`, or held no
+    /// record of it past its quote deadline: its sponsor nonce is free.
+    #[must_use]
+    pub fn refused(&self, key: &Key) -> bool {
+        matches!(
+            self.liability_releases.get(key),
+            Some(LiabilityRelease::Refused { .. })
+        )
+    }
+    /// Whether a signing intent or a submission of `sponsor` that the
+    /// sequencer did not refuse holds `nonce`.
     #[must_use]
     pub fn holds(&self, sponsor: Address, nonce: u64) -> bool {
         self.items.iter().any(|(key, item)| {
             key.sponsor == sponsor
+                && !self.refused(key)
                 && (self
                     .signing_intents
                     .get(key)
                     .is_some_and(|saved| *saved == nonce)
-                    || item.submission.as_ref().is_some_and(|s| s.nonce == nonce)
-                    || item.replacement.as_ref().is_some_and(|r| r.nonce == nonce))
+                    || item.submission.as_ref().is_some_and(|s| s.nonce == nonce))
         })
     }
     #[must_use]
@@ -406,6 +400,8 @@ impl State {
         Some(nonce)
     }
 
+    /// # Errors
+    /// Refuses a corrupt fee record.
     pub fn liability(&self, key: Key) -> Result<u128, JournalError> {
         if self.liability_releases.contains_key(&key) {
             return Ok(0);
@@ -414,24 +410,11 @@ impl State {
         let Some(quote) = &item.quote else {
             return Ok(0);
         };
-        let original = quote.fees.gas_cost().map_err(|_| JournalError::Corrupt)?;
-        let replacement = item
-            .replacement
-            .as_ref()
-            .map(|value| value.fees.gas_cost())
-            .transpose()
-            .map_err(|_| JournalError::Corrupt)?
-            .unwrap_or(0);
-        let intended = self
-            .replacement_intents
-            .get(&key)
-            .map(|fees| fees.gas_cost())
-            .transpose()
-            .map_err(|_| JournalError::Corrupt)?
-            .unwrap_or(0);
-        Ok(original.max(replacement).max(intended))
+        quote.fees.gas_cost().map_err(|_| JournalError::Corrupt)
     }
 
+    /// # Errors
+    /// Refuses a corrupt fee record or an overflowing total.
     pub fn active_pax(&self) -> Result<u128, JournalError> {
         self.items.keys().try_fold(0u128, |sum, key| {
             sum.checked_add(self.liability(*key)?)
@@ -439,12 +422,16 @@ impl State {
         })
     }
 
+    /// # Errors
+    /// Refuses a corrupt settlement record or an overflowing total.
     pub fn finalized_spend(&self) -> Result<u128, JournalError> {
         self.liability_releases
             .iter()
             .try_fold(0u128, |sum, (key, proof)| {
                 let spent = match proof {
-                    LiabilityRelease::Expired { .. } | LiabilityRelease::Consumed { .. } => 0,
+                    LiabilityRelease::Expired { .. }
+                    | LiabilityRelease::Refused { .. }
+                    | LiabilityRelease::Consumed { .. } => 0,
                     LiabilityRelease::Settled { hash } => self.settlement_cost(*key, *hash)?,
                 };
                 sum.checked_add(spent).ok_or(JournalError::Corrupt)
@@ -455,21 +442,10 @@ impl State {
         let item = self.items.get(&key).ok_or(JournalError::Conflict)?;
         let quote = item.quote.as_ref().ok_or(JournalError::Conflict)?;
         let receipt = self.receipts.get(&hash).ok_or(JournalError::Conflict)?;
-        let (fees, status, recipient) = match item.completion {
-            Some(Completion::Included { hash: saved, .. }) if saved == hash => {
-                (quote.fees, 1, quote.account)
-            }
-            Some(Completion::Reverted { hash: saved }) if saved == hash => {
-                (quote.fees, 0, quote.account)
-            }
-            Some(Completion::Cancelled { hash: saved, .. }) if saved == hash => (
-                item.replacement
-                    .as_ref()
-                    .ok_or(JournalError::Conflict)?
-                    .fees,
-                1,
-                key.sponsor,
-            ),
+        let fees = quote.fees;
+        let status = match item.completion {
+            Some(Completion::Included { hash: saved, .. }) if saved == hash => 1,
+            Some(Completion::Reverted { hash: saved }) if saved == hash => 0,
             _ => return Err(JournalError::Conflict),
         };
         let number = |name: &str| {
@@ -480,7 +456,7 @@ impl State {
         let price = number("effectiveGasPrice")?;
         if receipt["transactionHash"] != crate::rpc::hex(&hash)
             || receipt["from"] != crate::rpc::hex(&key.sponsor)
-            || receipt["to"] != crate::rpc::hex(&recipient)
+            || receipt["to"] != crate::rpc::hex(&quote.account)
             || number("status")? != status
             || gas == 0
             || gas > u128::from(fees.gas_limit)
@@ -519,10 +495,19 @@ impl State {
                 }
                 self.signing_intents.insert(*key, *nonce);
             }
-            Entry::ReplacementSigningIntent { .. }
-            | Entry::Replaced { .. }
-            | Entry::Cancelled { .. }
-            | Entry::Released { .. } => return Err(JournalError::Conflict),
+            Entry::Refused { key, hash } => {
+                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+                if item.quote.is_none()
+                    || item.completion.is_some()
+                    || item.submission.as_ref().is_none_or(|s| s.hash != *hash)
+                    || self.liability_releases.contains_key(key)
+                    || self.receipts.contains_key(hash)
+                {
+                    return Err(JournalError::Conflict);
+                }
+                self.liability_releases
+                    .insert(*key, LiabilityRelease::Refused { hash: *hash });
+            }
             Entry::QuoteAdmitted { quote, admission } => {
                 if admission.identity
                     != Admission::identity(quote.account, admission.batch_nonce, admission.interval)
@@ -548,6 +533,7 @@ impl State {
                     LiabilityRelease::Settled { hash } => {
                         self.settlement_cost(*key, *hash)?;
                     }
+                    LiabilityRelease::Refused { .. } => return Err(JournalError::Conflict),
                     LiabilityRelease::Consumed {
                         chain_id,
                         account,
@@ -561,9 +547,7 @@ impl State {
                     } => {
                         if !self.tracked_quotes.contains(key)
                             || self.signing_intents.contains_key(key)
-                            || self.replacement_intents.contains_key(key)
                             || item.submission.is_some()
-                            || item.replacement.is_some()
                             || item.completion != Some(Completion::Consumed)
                             || *chain_id != quote.chain_id
                             || *account != quote.account
@@ -592,9 +576,7 @@ impl State {
                         .map_err(|_| JournalError::Corrupt)?;
                         if !self.tracked_quotes.contains(key)
                             || self.signing_intents.contains_key(key)
-                            || self.replacement_intents.contains_key(key)
                             || item.submission.is_some()
-                            || item.replacement.is_some()
                             || hash.len() != 32
                             || hash.iter().all(|byte| *byte == 0)
                             || canonical["hash"] != finalized["hash"]
@@ -619,7 +601,6 @@ impl State {
                         account: quote.account,
                         quote: Some(*quote.clone()),
                         submission: None,
-                        replacement: None,
                         completion: None,
                     },
                 );
@@ -649,16 +630,13 @@ impl State {
                     || self.items.keys().any(|other| {
                         other != key
                             && other.sponsor == key.sponsor
+                            && !self.refused(other)
                             && (self
                                 .signing_intents
                                 .get(other)
                                 .is_some_and(|nonce| *nonce == submission.nonce)
                                 || self.items[other]
                                     .submission
-                                    .as_ref()
-                                    .is_some_and(|saved| saved.nonce == submission.nonce)
-                                || self.items[other]
-                                    .replacement
                                     .as_ref()
                                     .is_some_and(|saved| saved.nonce == submission.nonce))
                     })
@@ -680,10 +658,15 @@ impl State {
                     account: *account,
                     quote: None,
                     submission: None,
-                    replacement: None,
                     completion: None,
                 });
-                if item.account != *account || item.completion.is_some() {
+                if item.account != *account
+                    || item.completion.is_some()
+                    || matches!(
+                        self.liability_releases.get(key),
+                        Some(LiabilityRelease::Refused { .. })
+                    )
+                {
                     return Err(JournalError::Conflict);
                 }
                 match completion {
@@ -719,9 +702,7 @@ impl State {
                 finalized,
             } => {
                 let item = self.items.get(key).ok_or(JournalError::Conflict)?;
-                if item.submission.as_ref().is_none_or(|s| s.hash != *hash)
-                    && item.replacement.as_ref().is_none_or(|r| r.hash != *hash)
-                {
+                if item.submission.as_ref().is_none_or(|s| s.hash != *hash) || self.refused(key) {
                     return Err(JournalError::Conflict);
                 }
                 crate::station::validate_finalized_receipt(hash, receipt, canonical, finalized)
@@ -932,6 +913,28 @@ fn validate_consumed_proof(
     Ok(())
 }
 
+/// The record kinds of the retired same-nonce replacement path. A journal
+/// holding one was written by an earlier version and is refused on replay.
+const RETIRED_KINDS: [&str; 4] = [
+    "replacement_signing_intent",
+    "replaced",
+    "cancelled",
+    "released",
+];
+
+fn unreadable(line: &[u8]) -> JournalError {
+    match serde_json::from_slice::<serde_json::Value>(line) {
+        Ok(value)
+            if value["kind"]
+                .as_str()
+                .is_some_and(|kind| RETIRED_KINDS.contains(&kind)) =>
+        {
+            JournalError::Version
+        }
+        _ => JournalError::Corrupt,
+    }
+}
+
 pub struct Journal {
     file: File,
     state: State,
@@ -971,7 +974,7 @@ impl Journal {
             if line.last() != Some(&b'\n') || count > 4_194_304 {
                 return Err(JournalError::Corrupt);
             }
-            let entry = serde_json::from_slice(&line).map_err(|_| JournalError::Corrupt)?;
+            let entry = serde_json::from_slice(&line).map_err(|_| unreadable(&line))?;
             state.apply(&entry)?;
         }
         file.sync_all().map_err(|_| JournalError::Io)?;
@@ -1122,7 +1125,7 @@ mod tests {
         }
     }
     #[test]
-    fn release_replacement_and_cancellation_replay_and_refuse_conflicts(
+    fn refusal_frees_the_nonce_and_retired_replacement_records_refuse_replay(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let signer = crate::signer::tests::signer()?;
         let path = std::env::temp_dir().join(format!(
@@ -1137,123 +1140,79 @@ mod tests {
             quote_nonce: word(n),
         };
         let mut journal = Journal::open(&path)?;
-        for n in [1, 2, 3] {
+        for n in [1, 2] {
             journal.append(&quoted(&signer, n)?)?;
         }
         journal.append(&prepared(key(1), 5, 1))?;
+        let refused_hash = keccak(&[4, 1]);
         assert_eq!(
             journal.append(&prepared(key(2), 5, 2)),
             Err(JournalError::Conflict)
         );
-        for refused in [
-            Entry::Released {
+        assert!(journal.state().holds(signer.address(), 5));
+        assert_eq!(journal.state().next_nonce(signer.address(), 5), Some(6));
+        for conflicting in [
+            Entry::Refused {
                 key: key(1),
-                nonce: 6,
+                hash: word(9),
             },
-            Entry::Released {
+            Entry::Refused {
                 key: key(2),
-                nonce: 5,
+                hash: refused_hash,
             },
         ] {
-            assert_eq!(journal.append(&refused), Err(JournalError::Conflict));
+            assert_eq!(journal.append(&conflicting), Err(JournalError::Conflict));
         }
-        let release = Entry::Released {
+        let refusal = Entry::Refused {
             key: key(1),
-            nonce: 5,
+            hash: refused_hash,
         };
-        let retained = journal.state().items[&key(1)].submission.clone();
-        let durable = std::fs::read(&path)?;
-        assert_eq!(journal.append(&release), Err(JournalError::Conflict));
-        assert!(journal.state().holds(signer.address(), 5));
-        assert_eq!(journal.state().items[&key(1)].submission, retained);
-        assert!(journal.state().items[&key(1)].completion.is_none());
-        assert_eq!(std::fs::read(&path)?, durable);
-        assert_eq!(journal.append(&release), Err(JournalError::Conflict));
-        assert_eq!(
-            journal.append(&prepared(key(2), 5, 2)),
-            Err(JournalError::Conflict)
-        );
-        journal.append(&prepared(key(2), 6, 2))?;
-        let Entry::Quoted { quote } = quoted(&signer, 2)? else {
-            return Err("expected a quote".into());
-        };
-        let fees = quote.fees.replacement()?;
-        let cancellation = crate::tx::sign_cancellation(1325, 6, fees, &signer)?;
-        let replaced = |nonce: u64, fees: Fees| Entry::Replaced {
-            key: key(2),
-            replacement: Replacement {
-                nonce,
-                fees,
-                hash: cancellation.hash,
-                raw: cancellation.raw.clone(),
-            },
-        };
-        let mut underpriced = fees;
-        underpriced.max_fee_per_gas -= 1;
-        assert_eq!(
-            journal.append(&replaced(6, underpriced)),
-            Err(JournalError::Corrupt)
-        );
-        assert_eq!(
-            journal.append(&replaced(7, fees)),
-            Err(JournalError::Conflict)
-        );
-        journal.append(&replaced(6, fees))?;
-        assert_eq!(
-            journal.append(&replaced(6, fees)),
-            Err(JournalError::Conflict)
-        );
-        assert_eq!(
-            journal.append(&Entry::Released {
-                key: key(2),
-                nonce: 6
-            }),
-            Err(JournalError::Conflict)
-        );
-        assert_eq!(
-            journal.append(&prepared(key(3), 6, 3)),
-            Err(JournalError::Conflict)
-        );
-        let cancelled = Completion::Cancelled {
-            hash: cancellation.hash,
-            block_number: 17,
-        };
+        journal.append(&refusal)?;
+        assert!(journal.state().refused(&key(1)));
+        assert!(!journal.state().holds(signer.address(), 5));
+        assert_eq!(journal.state().next_nonce(signer.address(), 5), Some(5));
+        assert_eq!(journal.state().liability(key(1))?, 0);
+        assert_eq!(journal.append(&refusal), Err(JournalError::Conflict));
         assert_eq!(
             journal.append(&Entry::Completed {
-                key: key(2),
+                key: key(1),
                 account: [0x11; 20],
-                completion: cancelled,
+                completion: Completion::Reverted { hash: refused_hash },
             }),
             Err(JournalError::Conflict)
         );
-        assert_eq!(
-            journal.append(&Entry::Cancelled {
-                key: key(2),
-                hash: word(9),
-                block_number: 17,
-            }),
-            Err(JournalError::Conflict)
-        );
-        journal.append(&Entry::Cancelled {
-            key: key(2),
-            hash: cancellation.hash,
-            block_number: 17,
-        })?;
+        journal.append(&prepared(key(2), 5, 2))?;
+        assert!(journal.state().holds(signer.address(), 5));
         let state = journal.state().clone();
         drop(journal);
         let journal = Journal::open(&path)?;
         assert_eq!(journal.state(), &state);
-        assert_eq!(journal.state().items[&key(1)].submission, retained);
-        assert!(journal.state().holds(signer.address(), 5));
-        assert!(journal.state().items[&key(1)].completion.is_none());
-        assert_eq!(journal.state().items[&key(2)].completion, Some(cancelled));
+        assert!(journal.state().refused(&key(1)));
+        assert_eq!(
+            journal.state().items[&key(2)]
+                .submission
+                .as_ref()
+                .map(|s| s.nonce),
+            Some(5)
+        );
         drop(journal);
-        let mut legacy = OpenOptions::new().append(true).open(&path)?;
-        serde_json::to_writer(&mut legacy, &release)?;
-        legacy.write_all(b"\n")?;
-        legacy.sync_all()?;
-        drop(legacy);
-        assert!(matches!(Journal::open(&path), Err(JournalError::Conflict)));
+        let durable = std::fs::read(&path)?;
+        for retired in [
+            serde_json::json!({"kind": "released", "key": key(2), "nonce": 5}),
+            serde_json::json!({"kind": "replacement_signing_intent", "key": key(2), "nonce": 5}),
+            serde_json::json!({"kind": "replaced", "key": key(2)}),
+            serde_json::json!({"kind": "cancelled", "key": key(2), "block_number": 17}),
+        ] {
+            let mut legacy = durable.clone();
+            serde_json::to_writer(&mut legacy, &retired)?;
+            legacy.push(b'\n');
+            std::fs::write(&path, &legacy)?;
+            assert!(matches!(Journal::open(&path), Err(JournalError::Version)));
+        }
+        let mut unknown = durable;
+        unknown.extend_from_slice(b"{\"kind\":\"withdrawn\"}\n");
+        std::fs::write(&path, &unknown)?;
+        assert!(matches!(Journal::open(&path), Err(JournalError::Corrupt)));
         std::fs::remove_file(path)?;
         Ok(())
     }

@@ -102,6 +102,8 @@ impl<S: QuoteSigner> QuoteSigner for IntentSigner<'_, S> {
         self.signer.sign_digest(digest)
     }
 }
+/// # Errors
+/// Refuses conflicting journal state, an unknown signing outcome or a failing signer.
 pub fn prepare_submission(
     journal: &mut Journal,
     mut request: TransactionRequest<'_>,
@@ -137,6 +139,7 @@ pub fn prepare_submission(
         *other != key
             && value.account == request.account
             && value.completion.is_none()
+            && !state.refused(other)
             && state.signing_intents.contains_key(other)
             && value
                 .quote
@@ -211,11 +214,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         if quantity(&chain)? != u128::from(station.config.chain_id) {
             return Err(StationError::Invalid);
         }
-        if !journal.state().replacement_intents.is_empty()
-            || journal.state().items.values().any(|item| {
-                item.replacement.is_some()
-                    || item.submission.is_some() && item.completion == Some(Completion::Consumed)
-            })
+        if journal
+            .state()
+            .items
+            .values()
+            .any(|item| item.submission.is_some() && item.completion == Some(Completion::Consumed))
         {
             return Err(StationError::Conflict);
         }
@@ -271,6 +274,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     pub const fn journal(&self) -> &Journal {
         &self.journal
     }
+    /// # Errors
+    /// Refuses an unreachable node or a malformed block.
     pub fn chain_time(&self) -> Result<u64, StationError> {
         let block = self
             .rpc
@@ -308,11 +313,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             .items
             .get(&key)
             .and_then(|item| item.completion);
-        let Some(
-            Completion::Included { hash, .. }
-            | Completion::Reverted { hash }
-            | Completion::Cancelled { hash, .. },
-        ) = completion
+        let Some(Completion::Included { hash, .. } | Completion::Reverted { hash }) = completion
         else {
             return Ok(());
         };
@@ -333,15 +334,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         if state.liability_releases.contains_key(&key)
             || !state.tracked_quotes.contains(&key)
             || state.signing_intents.contains_key(&key)
-            || state.replacement_intents.contains_key(&key)
         {
             return Ok(());
         }
         let item = state.items.get(&key).ok_or(StationError::Missing)?;
-        if item.submission.is_some()
-            || item.replacement.is_some()
-            || item.completion != Some(Completion::Consumed)
-        {
+        if item.submission.is_some() || item.completion != Some(Completion::Consumed) {
             return Ok(());
         }
         let quote = item.quote.clone().ok_or(StationError::Missing)?;
@@ -464,6 +461,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         Ok(())
     }
 
+    /// # Errors
+    /// Refuses conflicting admissions or exhausted interval capacity.
     pub fn admission(
         &self,
         identity: Word,
@@ -578,6 +577,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         Ok((params, result))
     }
+    /// # Errors
+    /// Refuses unavailable replay state or an incompatible delegation.
     pub fn batch_nonce(&self, account: Address) -> Result<Word, StationError> {
         self.replay_word(account, &keccak(b"nonce()")[..4], &json!("pending"))
     }
@@ -594,14 +595,6 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             value if value == word(1) => Ok(true),
             _ => Err(StationError::ReplayStateUnavailable),
         }
-    }
-    fn transaction_count(&self, address: Address, block: &str) -> Result<u64, StationError> {
-        let count: String = read(
-            &self.rpc,
-            "eth_getTransactionCount",
-            json!([hex(&address), block]),
-        )?;
-        u64::try_from(quantity(&count)?).map_err(|_| StationError::Invalid)
     }
     fn receipt(&mut self, key: Key, hash: &Word) -> Result<Receipt, StationError> {
         let receipt = self
@@ -731,6 +724,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         Ok(())
     }
 
+    /// # Errors
+    /// Refuses invalid prices, policy, admissions, conflicting nonce reuse or an undurable quote.
     pub fn quote_admitted(
         &mut self,
         request: &QuoteRequest,
@@ -783,6 +778,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             *other != key
                 && item.account == request.account
                 && item.completion.is_none()
+                && !self.journal.state().refused(other)
                 && self.journal.state().signing_intents.contains_key(other)
                 && item
                     .quote
@@ -886,22 +882,18 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         let signed = quote.signed_quote()?;
         let batch_nonce = self.batch_nonce(request.account)?;
         self.account_code(request.account, &json!("pending"))?;
-        let account_nonce: String = read(
-            &self.rpc,
-            "eth_getTransactionCount",
-            json!([hex(&request.account), "pending"]),
-        )?;
+        let account_nonce = self.rpc.pending_nonce(&request.account)?;
         if request.authorizations.len() != 1
             || request.authorizations[0].chain_id != self.station.config.chain_id
             || request.authorizations[0].delegate != self.station.config.paymaster
-            || u128::from(request.authorizations[0].nonce) != quantity(&account_nonce)?
+            || request.authorizations[0].nonce != account_nonce
         {
             return Err(StationError::Invalid);
         }
         if batch_nonce != quote.batch_nonce || self.did(request.account)? != quote.did {
             return Err(StationError::Conflict);
         }
-        let nonce = self.transaction_count(request.key.sponsor, "pending")?;
+        let nonce = self.rpc.pending_nonce(&request.key.sponsor)?;
         self.sponsor_floor(0)?;
         prepare_submission(
             &mut self.journal,
@@ -920,20 +912,20 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             &quote.did,
             &self.station.signer,
         )?;
-        match self.broadcast(request.key) {
-            Err(StationError::Rpc(RpcFault::Rejected { .. })) => Ok(Progress::Pending),
-            result => result,
-        }
+        self.broadcast(request.key)
     }
 
-    fn broadcast(&self, key: Key) -> Result<Progress, StationError> {
+    /// Sends the durable bytes of `key`. A definitive refusal the sequencer
+    /// holds no record of closes the submission and frees its sponsor nonce;
+    /// an ambiguous send stays pending with the nonce held.
+    fn broadcast(&mut self, key: Key) -> Result<Progress, StationError> {
         self.sponsor_floor(0)?;
         let submission = self
             .journal
             .state()
             .items
             .get(&key)
-            .and_then(|i| i.submission.as_ref())
+            .and_then(|i| i.submission.clone())
             .ok_or(StationError::Missing)?;
         match self
             .rpc
@@ -946,16 +938,39 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 | RpcFault::Divergence
                 | RpcFault::Malformed,
             ) => Ok(Progress::Pending),
+            Err(RpcFault::Rejected { code }) => {
+                if self.sequencer_record(&submission)? {
+                    return Ok(Progress::Pending);
+                }
+                self.refuse(key, submission.hash)?;
+                Err(RpcFault::Rejected { code }.into())
+            }
             Err(error) => Err(error.into()),
         }
+    }
+    /// Whether the sequencer holds `submission` at its sponsor nonce.
+    fn sequencer_record(&self, submission: &Submission) -> Result<bool, StationError> {
+        match self.rpc.sequencer_receipt(&submission.hash)? {
+            Some(receipt) if receipt.nonce == submission.nonce => Ok(true),
+            Some(_) => Err(RpcFault::Divergence.into()),
+            None => Ok(false),
+        }
+    }
+    fn refuse(&mut self, key: Key, hash: Word) -> Result<(), StationError> {
+        self.journal.append(&Entry::Refused { key, hash })?;
+        self.reconcile_policy()
     }
     /// # Errors
     /// Refuses malformed receipts or RPC failures; every rebroadcast uses the
     /// durable bytes.
     pub fn resume(&mut self, key: Key, now: u64) -> Result<Progress, StationError> {
-        self.resume_inner(key, now)
+        self.advance(key, now)
     }
-    fn resume_inner(&mut self, key: Key, _now: u64) -> Result<Progress, StationError> {
+    /// Advances one submission from its finalized receipt, else from the
+    /// sequencer's record of its hash: held there, it stays pending; unknown
+    /// there after its quote deadline, it is closed and its nonce freed;
+    /// unknown before, its durable bytes are sent again.
+    fn advance(&mut self, key: Key, now: u64) -> Result<Progress, StationError> {
         let item = self
             .journal
             .state()
@@ -965,6 +980,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             .ok_or(StationError::Missing)?;
         if let Some(done) = item.completion {
             return Ok(Progress::Completed(done));
+        }
+        if self.journal.state().refused(&key) {
+            return Err(StationError::Invalid);
         }
         let Some(submission) = item.submission else {
             if self.journal.state().signing_intents.contains_key(&key) {
@@ -981,17 +999,17 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             Receipt::Unfinalized => return Ok(Progress::Pending),
             Receipt::Absent => (),
         }
-        if item.replacement.is_some() || self.journal.state().replacement_intents.contains_key(&key)
-        {
-            return Err(StationError::Conflict);
+        if self.sequencer_record(&submission)? {
+            return Ok(Progress::Pending);
         }
-        match self.broadcast(key) {
-            Err(StationError::Rpc(RpcFault::Rejected { .. })) => Ok(Progress::Pending),
-            result => result,
+        if quote.deadline < now {
+            self.refuse(key, submission.hash)?;
+            return Err(StationError::Invalid);
         }
+        self.broadcast(key)
     }
-    /// The submissions the journal holds without a completion: prepared,
-    /// broadcast or dropped, oldest sponsor nonce first.
+    /// The submissions the journal holds without a completion or a refusal:
+    /// prepared or broadcast, oldest sponsor nonce first.
     #[must_use]
     pub fn unresolved(&self) -> Vec<Key> {
         let mut keys: Vec<_> = self
@@ -1001,6 +1019,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             .iter()
             .filter(|(key, item)| {
                 item.completion.is_none()
+                    && !self.journal.state().refused(key)
                     && (item.submission.is_some()
                         || self.journal.state().signing_intents.contains_key(key))
             })
@@ -1024,9 +1043,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         keys.sort_unstable();
         keys.into_iter().map(|(_, key)| key).collect()
     }
-    /// One recovery pass over every unresolved submission, resuming each from
-    /// its durable bytes against finalized receipts, at most until `budget`
-    /// elapses. A key the nodes cannot answer for stays pending; a divergent
+    /// One recovery pass over every unresolved submission, at most until
+    /// `budget` elapses: a finalized receipt completes it, a sequencer record
+    /// of its hash keeps it pending, and a definitive refusal or an unknown
+    /// hash past its quote deadline frees its sponsor nonce without sending
+    /// it again. A key the nodes cannot answer for stays pending; a divergent
     /// or malformed observation, a conflicting record or a failing journal
     /// stops the pass without acting on it.
     /// # Errors
@@ -1077,11 +1098,16 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             }
             self.recovery_cursor = Some((nonce, key));
             self.rpc.set_deadline(Some(deadline))?;
-            let result = self.resume_inner(key, now);
+            let result = self.advance(key, now);
             self.rpc.set_deadline(None)?;
             match result {
                 Ok(Progress::Completed(_)) => recovery.completed += 1,
                 Ok(Progress::Pending) => recovery.pending += 1,
+                Err(StationError::Invalid | StationError::Rpc(RpcFault::Rejected { .. }))
+                    if self.journal.state().refused(&key) =>
+                {
+                    recovery.refused += 1;
+                }
                 Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited)) => {
                     recovery.unreachable += 1;
                 }
@@ -1130,10 +1156,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     ) -> Result<Status, StationError> {
         let item = self.authenticated(key, account, relayer_signature)?;
         if item.completion.is_none()
-            && ((item.submission.is_none()
-                && self.journal.state().signing_intents.contains_key(&key))
-                || (item.replacement.is_none()
-                    && self.journal.state().replacement_intents.contains_key(&key)))
+            && item.submission.is_none()
+            && self.journal.state().signing_intents.contains_key(&key)
         {
             return Err(StationError::SigningUnknown);
         }
@@ -1141,7 +1165,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         Ok(Status {
             deadline,
             submission: item.submission.as_ref().map(|s| (s.nonce, s.hash)),
-            replacement: item.replacement.as_ref().map(|r| (r.nonce, r.hash)),
+            refused: self.journal.state().refused(&key),
             completion: item.completion,
         })
     }
@@ -1171,29 +1195,31 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         self.rpc
             .set_deadline(Some(Instant::now() + Duration::from_secs(20)))?;
-        let result = self.resume_inner(key, now);
+        let result = self.advance(key, now);
         self.rpc.set_deadline(None)?;
         result
     }
 }
 /// The counts of one recovery pass: submissions completed, still pending,
-/// unanswered by the nodes and deferred to the next pass by its time budget.
+/// refused with their sponsor nonce freed, unanswered by the nodes and
+/// deferred to the next pass by its time budget.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Recovery {
     pub liability_unreachable: bool,
     pub completed: usize,
     pub pending: usize,
+    pub refused: usize,
     pub unreachable: usize,
     pub deferred: usize,
 }
 /// The durable state of one submission identity: its quote deadline, the
-/// sponsor nonce and hash of its prepared transaction and of the replacement
-/// filling that nonce, and its completion.
+/// sponsor nonce and hash of its prepared transaction, whether the sequencer
+/// refused it and freed that nonce, and its completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Status {
     pub deadline: u64,
     pub submission: Option<(u64, Word)>,
-    pub replacement: Option<(u64, Word)>,
+    pub refused: bool,
     pub completion: Option<Completion>,
 }
 
