@@ -844,6 +844,11 @@ impl Client {
         Ok(())
     }
 
+    /// Polls the bounded admission check, starting one worker when none is in
+    /// flight, and records the outcome on `health`.
+    ///
+    /// # Errors
+    /// Returns the admission refusal, a deadline overrun, or a worker failure.
     pub fn poll_admission(&self, health: &Health) -> Result<(), String> {
         health.require_admission();
         let result = (|| {
