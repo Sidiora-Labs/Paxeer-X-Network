@@ -55,6 +55,40 @@ pub trait JsonRpc {
     /// # Errors
     /// Refuses mismatched bytes or a deterministic rejection. Unknown outcomes retain the bytes.
     fn send_raw_transaction(&self, raw: &[u8], hash: &Word) -> Result<SendOutcome, RpcFault>;
+
+    /// The next nonce of `account` at the sequencer's pending state.
+    /// # Errors
+    /// Returns a sanitized fault, or refuses a count that is not a canonical
+    /// quantity within `u64`.
+    fn pending_nonce(&self, account: &Address) -> Result<u64, RpcFault> {
+        pending_quantity(&self.call("eth_getTransactionCount", json!([hex(account), "pending"]))?)
+    }
+
+    /// The gas `transaction` uses when executed at the sequencer's pending
+    /// state.
+    /// # Errors
+    /// Returns a sanitized fault, or refuses an estimate that is not a
+    /// canonical quantity within `u64`.
+    fn pending_gas_estimate(&self, transaction: &Value) -> Result<u64, RpcFault> {
+        pending_quantity(&self.call("eth_estimateGas", json!([transaction, "pending"]))?)
+    }
+
+    /// The sequencer receipt of `tx_hash` read from `pax_sequencerReceipt`,
+    /// or `None` when the sequencer holds no record of it.
+    /// # Errors
+    /// Returns a sanitized fault, or refuses a receipt naming another
+    /// transaction or one that cannot be decoded.
+    fn sequencer_receipt(&self, tx_hash: &Word) -> Result<Option<SequencerReceipt>, RpcFault> {
+        decode_sequencer_receipt(
+            tx_hash,
+            &self.call("pax_sequencerReceipt", json!([hex(tx_hash)]))?,
+        )
+    }
+}
+
+fn pending_quantity(value: &Value) -> Result<u64, RpcFault> {
+    u64::try_from(quantity(value.as_str().ok_or(RpcFault::Malformed)?)?)
+        .map_err(|_| RpcFault::Malformed)
 }
 
 /// # Errors
@@ -236,10 +270,7 @@ impl SequencerEndpoint {
     /// Returns a sanitized fault, or refuses a receipt naming another
     /// transaction or one that cannot be decoded.
     pub fn receipt(&self, hash: &Word) -> Result<Option<SequencerReceipt>, RpcFault> {
-        sequencer_receipt(
-            hash,
-            &self.rpc.call("pax_sequencerReceipt", json!([hex(hash)]))?,
-        )
+        self.rpc.sequencer_receipt(hash)
     }
 }
 impl JsonRpc for SequencerEndpoint {
@@ -263,7 +294,10 @@ impl JsonRpc for SequencerEndpoint {
     }
 }
 
-fn sequencer_receipt(hash: &Word, value: &Value) -> Result<Option<SequencerReceipt>, RpcFault> {
+fn decode_sequencer_receipt(
+    hash: &Word,
+    value: &Value,
+) -> Result<Option<SequencerReceipt>, RpcFault> {
     if value.is_null() {
         return Ok(None);
     }
@@ -597,6 +631,63 @@ mod tests {
             ConfiguredRpc::new(&config, HttpsExchange),
             Err(RpcFault::Configuration)
         ));
+        Ok(())
+    }
+    struct Expect {
+        method: &'static str,
+        params: Value,
+        reply: Value,
+    }
+    impl Exchange for Expect {
+        fn request(&self, _: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
+            if method == self.method && *params == self.params {
+                decode_response(&self.reply)
+            } else {
+                Err(RpcFault::Configuration)
+            }
+        }
+    }
+    #[test]
+    fn nonce_and_gas_estimate_are_read_at_the_pending_tag() -> Result<(), RpcFault> {
+        let config = crate::config::tests::config();
+        let account = [0x5a; 20];
+        let nonce = ConfiguredRpc::new(
+            &config,
+            Expect {
+                method: "eth_getTransactionCount",
+                params: json!([hex(&account), "pending"]),
+                reply: json!({"jsonrpc":"2.0","id":1,"result":"0xc"}),
+            },
+        )?;
+        assert_eq!(nonce.pending_nonce(&account), Ok(12));
+        let latest = ConfiguredRpc::new(
+            &config,
+            Expect {
+                method: "eth_getTransactionCount",
+                params: json!([hex(&account), "latest"]),
+                reply: json!({"jsonrpc":"2.0","id":1,"result":"0xc"}),
+            },
+        )?;
+        assert_eq!(latest.pending_nonce(&account), Err(RpcFault::Configuration));
+        let overflow = ConfiguredRpc::new(
+            &config,
+            Expect {
+                method: "eth_getTransactionCount",
+                params: json!([hex(&account), "pending"]),
+                reply: json!({"jsonrpc":"2.0","id":1,"result":"0x10000000000000000"}),
+            },
+        )?;
+        assert_eq!(overflow.pending_nonce(&account), Err(RpcFault::Malformed));
+        let transaction = json!({"from": hex(&account), "to": hex(&[0x55; 20]), "data": "0x"});
+        let estimate = ConfiguredRpc::new(
+            &config,
+            Expect {
+                method: "eth_estimateGas",
+                params: json!([transaction.clone(), "pending"]),
+                reply: json!({"jsonrpc":"2.0","id":1,"result":"0x5208"}),
+            },
+        )?;
+        assert_eq!(estimate.pending_gas_estimate(&transaction), Ok(21_000));
         Ok(())
     }
     #[test]

@@ -8,14 +8,17 @@ use std::time::Duration;
 
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
-use layerx_gas_station::config::{ServiceConfig, StationConfig};
+use layerx_gas_station::config::{
+    ConfigError, PaymasterRequired, RegisteredSender, ServiceConfig, StationConfig,
+};
 use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::quote::{
     address_word, keccak, quote_digest, word, Address, Quote, SIDIORA,
 };
 use layerx_gas_station::rpc::{
-    bytes, hex, ConfiguredRpc, Exchange, HttpsExchange, RpcFault, SequencerEndpoint,
+    bytes, hex, ConfiguredRpc, Exchange, HttpsExchange, JsonRpc, RpcFault, Rung, SequencerEndpoint,
+    SequencerReceipt,
 };
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
@@ -32,6 +35,25 @@ const CHAIN_ID: u64 = 1325;
 const PAYMASTER: Address = [0x44; 20];
 const AMOUNT: u128 = 3_145_140;
 const GAS_COST: &str = "1000000000000000000";
+const DID_PRECOMPILE: Address = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x04,
+];
+
+/// The ABI answer of `getLayerXDid(address)` for an account bound to the
+/// identity `key`: the key, then the string `did:layerx:<key>`.
+fn did_binding(key: &[u8; 32]) -> Result<Vec<u8>, std::num::TryFromIntError> {
+    let did = format!("did:layerx:{}", &hex(key)[2..]);
+    let mut padded = did.into_bytes();
+    let length = padded.len();
+    padded.resize(length.div_ceil(32) * 32, 0);
+    Ok([
+        key.as_slice(),
+        word(64).as_slice(),
+        word(u128::try_from(length)?).as_slice(),
+        &padded,
+    ]
+    .concat())
+}
 
 struct Recording {
     fixture: Value,
@@ -171,6 +193,8 @@ fn sequencer_endpoint_rules() -> Value {
             {"method": "eth_getCode", "params": ["$account", "pending"], "result": "$delegated_code"},
             {"method": "eth_call", "params": [{"to": "$account", "data": "$batch_nonce_call"}, latest],
                 "result": "$zero"},
+            {"method": "eth_call", "params": [{"to": "$did_precompile", "data": "$did_call"}, "pending"],
+                "result": "$did_binding"},
             {"method": "eth_call", "params": [{"to": "$account", "data": "$consumed_call"}, finalized],
                 "result": "$zero"},
         ],
@@ -268,6 +292,7 @@ fn spawn_service(
     listener: TcpListener,
     mut log: SharedLog,
 ) -> TestResult {
+    std::env::set_var("GAS_STATION_DID_GAS_LIMIT", "1000000");
     let (ready, started) = mpsc::channel();
     std::thread::spawn(move || {
         let built = (|| -> Result<_, Box<dyn std::error::Error>> {
@@ -321,8 +346,16 @@ fn start_with_rate_age(
     name: &str,
     max_rate_age: u64,
 ) -> Result<Harness, Box<dyn std::error::Error>> {
-    let mut station = station_config(name);
-    station.max_rate_age = max_rate_age;
+    start_configured(name, |config, _| config.station.max_rate_age = max_rate_age)
+}
+
+/// Starts the service with its configuration changed by `adjust`, which also
+/// receives the address of the account the harness quotes for.
+fn start_configured(
+    name: &str,
+    adjust: impl FnOnce(&mut ServiceConfig, Address),
+) -> Result<Harness, Box<dyn std::error::Error>> {
+    let station = station_config(name);
     let (signer, relayer_secret) = ephemeral_signer(&station)?;
     let (account, account_secret) = ephemeral_signer(&station)?;
     let sponsor = signer.address();
@@ -345,6 +378,16 @@ fn start_with_rate_age(
         ("$batch_nonce_call", hex(&keccak(b"nonce()")[..4])),
         ("$latest_block", hex(&[0x10; 32])),
         ("$finalized_block", hex(&[0x0f; 32])),
+        ("$did_precompile", hex(&DID_PRECOMPILE)),
+        (
+            "$did_call",
+            hex(&[
+                &keccak(b"getLayerXDid(address)")[..4],
+                address_word(account.address()).as_slice(),
+            ]
+            .concat()),
+        ),
+        ("$did_binding", hex(&did_binding(&[0xd1; 32])?)),
         (
             "$delegated_code",
             hex(&[[0xef, 0x01, 0x00].as_slice(), PAYMASTER.as_slice()].concat()),
@@ -364,12 +407,14 @@ fn start_with_rate_age(
     recorded.expect_quote_nonce(sponsor, 1);
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
-    let config = ServiceConfig {
+    let mut config = ServiceConfig {
         station,
         listen: address,
         gas_limit: 200_000,
         max_priority_fee_per_gas: 1_000_000_000,
+        registered_senders: Vec::new(),
     };
+    adjust(&mut config, account.address());
     let log = SharedLog(Arc::new(Mutex::new(Vec::new())));
     spawn_service(
         config,
@@ -822,5 +867,147 @@ fn a_receipt_naming_another_sponsor_is_refused_as_unavailable() -> TestResult {
     let (harness, _, answer) = sequencer_endpoint_submission("FOREIGN", "foreign_sponsor")?;
     assert_eq!(answer, (503, json!({"error": "unavailable"})));
     harness.assert_log_clean(&["/quote 200", "/submit 503"]);
+    harness.finish()
+}
+
+/// A served configuration matching `station_config`, with `registered` as its
+/// registered senders.
+fn service_json(registered: Value) -> Value {
+    json!({"listen": "127.0.0.1:8545", "gas_limit": 200_000,
+        "max_priority_fee_per_gas": 1_000_000_000, "chain_id": CHAIN_ID,
+        "endpoints": ["https://paxeer.app"], "paymaster": hex(&PAYMASTER), "token": hex(&SIDIORA),
+        "decimals": 6, "max_rate_age": 300, "spread_bps": 500, "margin_bps": 100,
+        "per_account_limit": 8_000_000, "per_interval_limit": 16_000_000,
+        "per_quote_limit": 4_000_000, "interval_seconds": 60, "balance_floor": 100,
+        "relayer_key_env": "PAXEER_SERVICE_PARSE_KEY", "registered_senders": registered})
+}
+
+#[test]
+fn registered_senders_parse_resolve_their_own_budget_and_are_quoted() -> TestResult {
+    let feeder = [0x0f; 20];
+    let config = ServiceConfig::parse(
+        &service_json(json!([{"address": hex(&feeder), "budget": 5_000_000}])).to_string(),
+    )?;
+    assert_eq!(
+        config.registered_senders,
+        vec![RegisteredSender {
+            address: feeder,
+            budget: 5_000_000
+        }]
+    );
+    assert_eq!(config.account_budget(&feeder), 5_000_000);
+    assert_eq!(config.account_budget(&[0x0e; 20]), 8_000_000);
+    let mut unregistered = service_json(json!([]));
+    assert!(ServiceConfig::parse(&unregistered.to_string())?
+        .registered_senders
+        .is_empty());
+    if let Some(fields) = unregistered.as_object_mut() {
+        fields.remove("registered_senders");
+    }
+    assert!(ServiceConfig::parse(&unregistered.to_string())?
+        .registered_senders
+        .is_empty());
+    assert_eq!(
+        ServiceConfig::parse(
+            &service_json(json!([{"address": hex(&feeder), "budget": 15_999_999}])).to_string()
+        )?
+        .account_budget(&feeder),
+        15_999_999
+    );
+    for refused in [
+        json!([{"address": hex(&feeder), "budget": 0}]),
+        json!([{"address": hex(&feeder), "budget": 16_000_000}]),
+        json!([{"address": hex(&feeder), "budget": -1}]),
+        json!([{"address": hex(&[0; 20]), "budget": 1}]),
+        json!([{"address": "0x0f", "budget": 1}]),
+        json!([{"address": hex(&feeder)}]),
+        json!([{"budget": 1}]),
+        json!([{"address": hex(&feeder), "budget": 1, "key": "sensitive-value"}]),
+        json!([{"address": hex(&feeder), "budget": 1}, {"address": hex(&feeder), "budget": 2}]),
+        json!({"address": hex(&feeder), "budget": 1}),
+        json!(null),
+    ] {
+        assert_eq!(
+            ServiceConfig::parse(&service_json(refused).to_string()).err(),
+            Some(ConfigError {
+                field: "registered_senders"
+            })
+        );
+    }
+
+    let harness = start_configured("REGISTERED", |config, account| {
+        config.registered_senders = vec![RegisteredSender {
+            address: account,
+            budget: 12_000_000,
+        }];
+    })?;
+    harness.recorded.phase("receipted");
+    let (status, quote) = harness.post("/quote", &harness.quote_body())?;
+    assert_eq!(status, 200);
+    assert_eq!(quote["quote"]["tokenAmount"], json!(AMOUNT.to_string()));
+    assert_eq!(quote["quote"]["quoteNonce"], json!("1"));
+    assert!(harness.recorded.sent().is_empty());
+    harness.assert_log_clean(&["/quote 200"]);
+    harness.finish()
+}
+
+#[test]
+fn an_empty_or_sidiora_paymaster_is_refused_at_start() -> TestResult {
+    for paymaster in [hex(&[0; 20]), hex(&SIDIORA)] {
+        let mut value = service_json(json!([]));
+        value["paymaster"] = json!(paymaster);
+        assert_eq!(
+            ServiceConfig::parse(&value.to_string()).err(),
+            Some(ConfigError { field: "paymaster" })
+        );
+    }
+    let required = ConfigError {
+        field: "GAS_STATION_PAYMASTER",
+    };
+    for raw in [
+        None,
+        Some(""),
+        Some("0x"),
+        Some("0x0000000000000000000000000000000000000000"),
+        Some("0x21f7b20a555199fa73A238B1a91FD0f549068fEe"),
+    ] {
+        assert_eq!(PaymasterRequired::try_from(raw), Err(required.clone()));
+    }
+    assert_eq!(
+        PaymasterRequired::try_from(Some(hex(&PAYMASTER).as_str())),
+        Ok(PaymasterRequired(PAYMASTER))
+    );
+    for (name, paymaster) in [("EMPTY_PAYMASTER", [0; 20]), ("SID_PAYMASTER", SIDIORA)] {
+        let refused = start_configured(name, |config, _| config.station.paymaster = paymaster);
+        assert!(refused.is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn sequencer_receipt_is_requested_by_transaction_hash() -> TestResult {
+    let (harness, _, answer) = sequencer_endpoint_submission("BY_HASH", "held")?;
+    let hash = keccak(&harness.recorded.sent()[0]);
+    assert_eq!(
+        answer,
+        (
+            200,
+            json!({"transactionHash": hex(&hash), "rung": "submitted"})
+        )
+    );
+    let rpc = ConfiguredRpc::new(
+        &station_config("BY_HASH"),
+        ReplayExchange(Arc::clone(&harness.recorded)),
+    )?;
+    assert_eq!(
+        rpc.sequencer_receipt(&hash)?,
+        Some(SequencerReceipt {
+            nonce: 5,
+            rung: Rung::Submitted
+        })
+    );
+    harness.recorded.phase("refused");
+    assert_eq!(rpc.sequencer_receipt(&hash)?, None);
+    harness.assert_log_clean(&["/quote 200", "/submit 200"]);
     harness.finish()
 }

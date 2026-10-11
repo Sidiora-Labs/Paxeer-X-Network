@@ -233,15 +233,49 @@ impl StationConfig {
     }
 }
 
+/// A sender sponsored under its own per-interval budget in place of the
+/// ordinary per-account limit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RegisteredSender {
+    pub address: Address,
+    pub budget: u128,
+}
+
 /// The station configuration plus the fields only the served binary reads:
-/// the socket address it listens on and the fee shape of the sponsored
-/// transactions it quotes for.
+/// the socket address it listens on, the fee shape of the sponsored
+/// transactions it quotes for and the senders sponsored under their own
+/// budgets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServiceConfig {
     pub station: StationConfig,
     pub listen: SocketAddr,
     pub gas_limit: u64,
     pub max_priority_fee_per_gas: u128,
+    pub registered_senders: Vec<RegisteredSender>,
+}
+
+fn registered_senders(raw: Option<Value>) -> Result<Vec<RegisteredSender>, ConfigError> {
+    let refused = || ConfigError {
+        field: "registered_senders",
+    };
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    let entries: Vec<Map<String, Value>> = serde_json::from_value(raw).map_err(|_| refused())?;
+    entries
+        .into_iter()
+        .map(|mut entry| {
+            let sender = RegisteredSender {
+                address: address(&mut entry, "address").map_err(|_| refused())?,
+                budget: field(&mut entry, "budget").map_err(|_| refused())?,
+            };
+            if entry.is_empty() {
+                Ok(sender)
+            } else {
+                Err(refused())
+            }
+        })
+        .collect()
 }
 
 impl ServiceConfig {
@@ -262,12 +296,47 @@ impl ServiceConfig {
             return Err(ConfigError { field: "gas_limit" });
         }
         let max_priority_fee_per_gas = field(&mut map, "max_priority_fee_per_gas")?;
-        Ok(Self {
+        let registered_senders = registered_senders(map.remove("registered_senders"))?;
+        let config = Self {
             station: StationConfig::from_map(map)?,
             listen,
             gas_limit,
             max_priority_fee_per_gas,
-        })
+            registered_senders,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// # Errors
+    /// Names the first station field that is invalid, or `registered_senders`
+    /// when a sender is the zero address, is listed twice, or has a budget
+    /// that is zero or not below the per-interval limit.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        self.station.validate()?;
+        let mut seen = std::collections::BTreeSet::new();
+        for sender in &self.registered_senders {
+            if sender.address == [0; 20]
+                || !seen.insert(sender.address)
+                || sender.budget == 0
+                || sender.budget >= self.station.per_interval_limit
+            {
+                return Err(ConfigError {
+                    field: "registered_senders",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The per-interval budget `account` is quoted under: its own budget when
+    /// it is a registered sender, the ordinary per-account limit otherwise.
+    #[must_use]
+    pub fn account_budget(&self, account: &Address) -> u128 {
+        self.registered_senders
+            .iter()
+            .find(|sender| sender.address == *account)
+            .map_or(self.station.per_account_limit, |sender| sender.budget)
     }
 
     /// # Errors
@@ -416,6 +485,7 @@ pub(crate) mod tests {
                 listen: SocketAddr::from(([127, 0, 0, 1], 8545)),
                 gas_limit: 200_000,
                 max_priority_fee_per_gas: 1_000_000_000,
+                registered_senders: Vec::new(),
             })
         );
         let Value::Object(fields) = value else {
