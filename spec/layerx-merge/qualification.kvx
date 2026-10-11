@@ -812,3 +812,10 @@ command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402
 exit_code = 101
 log_path = "logs/6.5.20-verify-1.log"
 observed_and_assumption = "fifteen cases fail because tests/seller.rs, the verify target itself, still carries layerx:beta offers and legacy settlement goldens that the new seller refuses; the task touches are widened to that test file and the worker re-runs; ExecutedPayment and GatewayCore still use AuthorizedBatch and X402Error has no transaction_form, which remain open."
+
+[finding.0.21]
+revision = "962c1d3fe"
+command = "go test -count=1 ./rpc/ -run TestResolutionPendingSubscription -v"
+exit_code = 0
+log_path = "logs/0.21-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; emit resets the lag counter and attaches the count to the next queued hash rather than the forwarder resetting it, so the marker never overtakes hashes already buffered; the overflow acceptance sentence is added to acceptance.13.3.2 by the leader because workers do not edit the spec."

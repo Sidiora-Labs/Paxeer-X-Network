@@ -40217,7 +40217,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.21]
 title = "Pending subscription overflow is observable at the RPC boundary and never silently stops delivery"
-status = "in_progress"
+status = "done"
 wave = 1
 requires = ["13.1.5"]
 reqs = ["13003.1", "13003.2", "13003.3"]
@@ -93606,7 +93606,7 @@ qualification = "UNRUN"
 [acceptance.13.3.2]
 feature = "13"
 req = "13003.2"
-scenario = "Given a subscriber on newPendingTransactions, when 3 txs are receipted, then 3 hashes are emitted in receipt order."
+scenario = "Given a subscriber on newPendingTransactions, when 3 txs are receipted, then 3 hashes are emitted in receipt order. Given the subscriber stalls past the listener buffer, when delivery resumes, then exactly one lag object carrying the dropped count precedes the next hash, the listener stays registered and every later hash arrives in order; the subscription is never silently stopped."
 contract = "contracts/sequencer.md#(b1) Methods"
 test = "rpc/resolution_pending_test.go::TestResolutionPendingSubscription"
 qualification = "UNRUN"
