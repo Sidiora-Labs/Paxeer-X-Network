@@ -15,6 +15,7 @@ import (
 	gigaconfig "github.com/Sidiora-Labs/Paxeer-X-Network/engine/executor/config"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer"
 	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
@@ -243,6 +244,10 @@ func newApp(
 		panic(err)
 	}
 
+	if _, err := sequencer.ReadConfig(appOpts); err != nil {
+		panic(err)
+	}
+
 	snapshotDirectory := cast.ToString(appOpts.Get(server.FlagStateSyncSnapshotDir))
 	if snapshotDirectory == "" {
 		snapshotDirectory = filepath.Join(cast.ToString(appOpts.Get(flags.FlagHome)), "data", "snapshots")
@@ -420,6 +425,7 @@ func initAppConfig() (string, interface{}) {
 		paxdbconfig.ReceiptStoreConfigTemplate +
 		evmrpcconfig.ConfigTemplate +
 		gigaconfig.ConfigTemplate +
+		sequencer.ConfigTemplate +
 		admin.ConfigTemplate +
 		serverconfig.AutoManagedConfigTemplate + `
 ###############################################################################
