@@ -743,6 +743,9 @@ fn check_frozen_worker(
     let identity = state.feature_sections[Section::IdentityRoster.index()];
     let live = WorkerTable::decode(split_identity_section(identity)?.0)?;
     let record = live.get(body.worker).ok_or(NON_CANONICAL)?;
+    if body.metadata != record.metadata {
+        return Err(WRONG_ROSTER);
+    }
     let target = WorkerRosterEntry {
         worker: body.worker,
         owner: record.owner,
@@ -898,17 +901,22 @@ fn cancel(call: &Call<'_>, buffers: Buffers<'_>) -> CodecResult<Outcome> {
                 subject: Digest32::new(task.bytes())?,
             })
         }
+        TaskStatus::Accepted if call.ctx.height >= record.deadline => {}
         TaskStatus::Accepted | TaskStatus::ResultCommitted => {
             return Err(F01_TASK_ALREADY_ACCEPTED)
         }
     }
     call.check_open_lifecycle()?;
-    if call.ctx.height >= record.deadline {
-        return Err(F01_TASK_EXPIRED);
+    if record.status == TaskStatus::Admitted {
+        if call.ctx.height >= record.deadline {
+            return Err(F01_TASK_EXPIRED);
+        }
+        call.check_work()?;
     }
-    call.check_work()?;
     let record = TaskBinding {
         status: TaskStatus::Cancelled,
+        acknowledgement: None,
+        result: None,
         ..record
     }
     .encode()?;
