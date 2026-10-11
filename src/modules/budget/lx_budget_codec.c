@@ -258,6 +258,58 @@ lxp_result lx_budget_spend_decode(const uint8_t *bytes, size_t length,
     return LXP_OK;
 }
 
+lxp_result lx_budget_delegate_spend_decode(
+    const uint8_t *bytes, size_t length,
+    lx_budget_delegate_spend_payload *payload)
+{
+    lx_budget_delegate_spend_payload value;
+    lxp_result status;
+    if (bytes == NULL || payload == NULL ||
+        length != (size_t)LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES ||
+        bytes[0] != 0U || bytes[1] != 1U)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&value, 0, sizeof(value));
+    value.encoding_version = bytes[1];
+    (void)memcpy(value.budget_id, bytes + 2U, 32U);
+    (void)memcpy(value.recipient, bytes + 34U, 32U);
+    status = lxp_u128_from_be(bytes + 66U, &value.amount);
+    if (status != LXP_OK) return status;
+    (void)memcpy(value.idempotency_key, bytes + 82U, 32U);
+    if (lxp_ct_is_zero(value.budget_id, 32U) ||
+        lxp_ct_is_zero(value.recipient, 32U) ||
+        lxp_ct_is_zero(value.idempotency_key, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    if (lxp_u128_is_zero(value.amount)) return LXP_ERR_INVALID_AMOUNT;
+    *payload = value;
+    return LXP_OK;
+}
+
+lxp_result lx_budget_pull_decode(const uint8_t *bytes, size_t length,
+                                 lx_budget_pull_payload *payload)
+{
+    lx_budget_pull_payload value;
+    lx_budget_delegate_spend_payload spend;
+    lxp_result status;
+    if (bytes == NULL || payload == NULL ||
+        length != (size_t)LX_BUDGET_PULL_PAYLOAD_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_budget_delegate_spend_decode(
+        bytes, (size_t)LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES, &spend);
+    if (status != LXP_OK) return status;
+    (void)memset(&value, 0, sizeof(value));
+    value.encoding_version = spend.encoding_version;
+    (void)memcpy(value.budget_id, spend.budget_id, 32U);
+    (void)memcpy(value.recipient, spend.recipient, 32U);
+    value.amount = spend.amount;
+    (void)memcpy(value.idempotency_key, spend.idempotency_key, 32U);
+    status = lxp_payer_grant_decode(
+        bytes + LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES,
+        length - (size_t)LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES, &value.grant);
+    if (status != LXP_OK) return status;
+    *payload = value;
+    return LXP_OK;
+}
+
 lxp_result lx_budget_close_decode(const uint8_t *bytes, size_t length,
                                   lx_budget_close_payload *payload)
 {

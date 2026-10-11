@@ -12,7 +12,8 @@
 static const uint32_t activity_types[] = {
     LX_BUDGET_CREATE, LX_BUDGET_FUND, LX_BUDGET_AMEND,
     LX_BUDGET_DELEGATE_ADD, LX_BUDGET_DELEGATE_REMOVE,
-    LX_BUDGET_SPEND, LX_BUDGET_CLOSE, LX_BUDGET_DEFUND, LX_BUDGET_REVOKE
+    LX_BUDGET_SPEND, LX_BUDGET_CLOSE, LX_BUDGET_DEFUND, LX_BUDGET_REVOKE,
+    LX_BUDGET_DELEGATE_SPEND, LX_BUDGET_PULL
 };
 
 typedef union budget_typed_payload {
@@ -21,6 +22,8 @@ typedef union budget_typed_payload {
     lx_budget_amend_payload amend;
     lx_budget_delegate_payload delegate;
     lx_budget_spend_payload spend;
+    lx_budget_delegate_spend_payload delegate_spend;
+    lx_budget_pull_payload pull;
     lx_budget_close_payload close;
     lx_budget_defund_payload defund;
     lx_budget_revoke_payload revoke;
@@ -647,7 +650,7 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
     budget_decoded *value;
     void *memory;
     lxp_result status;
-    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 9U ||
+    if (ctx == NULL || decoded == NULL || ordinal == 0U || ordinal > 11U ||
         payload == NULL || length == 0U) return LXP_ERR_UNKNOWN_ACTIVITY;
     status = lxp_ctx_arena_alloc(ctx, sizeof(*value), _Alignof(budget_decoded),
                                  &memory);
@@ -691,10 +694,19 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
         status = lx_budget_defund_decode(payload, length,
                                          &value->typed->defund);
         break;
-    default:
+    case 9U:
         status = lx_budget_revoke_decode(payload, length,
                                          &value->typed->revoke);
         break;
+    case 10U:
+        status = lx_budget_delegate_spend_decode(
+            payload, length, &value->typed->delegate_spend);
+        break;
+    case 11U:
+        status = lx_budget_pull_decode(payload, length, &value->typed->pull);
+        break;
+    default:
+        return LXP_ERR_UNKNOWN_ACTIVITY;
     }
     if (status != LXP_OK) return status;
     *decoded = value;
@@ -708,7 +720,7 @@ static lxp_result module_validate(lxp_module_ctx *ctx,
 {
     const budget_decoded *value = (const budget_decoded *)decoded;
     if (ctx == NULL || activity == NULL || authority == NULL || value == NULL ||
-        value->typed == NULL || value->ordinal == 0U || value->ordinal > 9U)
+        value->typed == NULL || value->ordinal == 0U || value->ordinal > 11U)
         return LXP_ERR_UNKNOWN_ACTIVITY;
     if (activity->activity_type !=
         (((uint32_t)LXP_MODULE_BUDGET << 16U) | value->ordinal))

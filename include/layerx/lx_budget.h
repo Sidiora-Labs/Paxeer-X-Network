@@ -21,7 +21,9 @@ enum {
     LX_BUDGET_SPEND = 0x00030006,
     LX_BUDGET_CLOSE = 0x00030007,
     LX_BUDGET_DEFUND = 0x00030008,
-    LX_BUDGET_REVOKE = 0x00030009
+    LX_BUDGET_REVOKE = 0x00030009,
+    LX_BUDGET_DELEGATE_SPEND = 0x0003000a,
+    LX_BUDGET_PULL = 0x0003000b
 };
 
 enum {
@@ -38,7 +40,10 @@ enum {
     LX_BUDGET_SPEND_PAYLOAD_BYTES = 82,
     LX_BUDGET_CLOSE_PAYLOAD_BYTES = 42,
     LX_BUDGET_DEFUND_PAYLOAD_BYTES = 50,
-    LX_BUDGET_REVOKE_PAYLOAD_BYTES = 42
+    LX_BUDGET_REVOKE_PAYLOAD_BYTES = 42,
+    LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES = 114,
+    LX_BUDGET_PULL_PAYLOAD_BYTES =
+        LX_BUDGET_DELEGATE_SPEND_PAYLOAD_BYTES + 346
 };
 
 typedef enum lx_budget_rollover_policy {
@@ -179,6 +184,23 @@ typedef struct lx_budget_spend_payload {
     lxp_u128 amount;
 } lx_budget_spend_payload;
 
+typedef struct lx_budget_delegate_spend_payload {
+    uint16_t encoding_version;
+    uint8_t budget_id[32];
+    uint8_t recipient[32];
+    lxp_u128 amount;
+    uint8_t idempotency_key[32];
+} lx_budget_delegate_spend_payload;
+
+typedef struct lx_budget_pull_payload {
+    uint16_t encoding_version;
+    uint8_t budget_id[32];
+    uint8_t recipient[32];
+    lxp_u128 amount;
+    uint8_t idempotency_key[32];
+    lxp_payer_grant grant;
+} lx_budget_pull_payload;
+
 typedef struct lx_budget_close_payload {
     uint8_t budget_id[32];
     uint64_t revocation_sequence;
@@ -216,6 +238,11 @@ lxp_result lx_budget_delegate_decode(const uint8_t *bytes, size_t length,
                                      lx_budget_delegate_payload *payload);
 lxp_result lx_budget_spend_decode(const uint8_t *bytes, size_t length,
                                   lx_budget_spend_payload *payload);
+lxp_result lx_budget_delegate_spend_decode(
+    const uint8_t *bytes, size_t length,
+    lx_budget_delegate_spend_payload *payload);
+lxp_result lx_budget_pull_decode(const uint8_t *bytes, size_t length,
+                                 lx_budget_pull_payload *payload);
 lxp_result lx_budget_close_decode(const uint8_t *bytes, size_t length,
                                   lx_budget_close_payload *payload);
 lxp_result lx_budget_defund_decode(const uint8_t *bytes, size_t length,
