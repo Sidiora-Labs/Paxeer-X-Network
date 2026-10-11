@@ -16,6 +16,11 @@ static const uint32_t activity_types[] = {
     LX_BUDGET_DELEGATE_SPEND, LX_BUDGET_PULL
 };
 
+enum {
+    BUDGET_CAPABILITY_KEY_BYTES = 80,
+    BUDGET_CAPABILITY_BYTES = 195
+};
+
 typedef union budget_typed_payload {
     lx_budget_create_payload create;
     lx_budget_amount_payload amount;
@@ -457,6 +462,43 @@ static lxp_result budget_execute_delegate(
     return lxp_ctx_emit_event(ctx, ordinal, event, sizeof(event));
 }
 
+static lxp_result budget_spend_apply(lxp_module_ctx *ctx,
+                                     const lxp_activity *activity,
+                                     lx_budget_record *record,
+                                     const uint8_t recipient_id[32],
+                                     lxp_u128 amount, lx_account *signer)
+{
+    lx_account *budget_account = NULL;
+    lx_account *recipient = NULL;
+    lxp_u128 balance;
+    uint8_t event[80];
+    lxp_result status =
+        lxp_ctx_account_find(ctx, record->budget_account, &budget_account);
+    if (status == LXP_OK)
+        status = lxp_ctx_account_find(ctx, recipient_id, &recipient);
+    if (status != LXP_OK) return status;
+    if (budget_account->kind != LX_ACCOUNT_AGENT_BUDGET ||
+        (recipient->kind != LX_ACCOUNT_AGENT_MAIN &&
+         !(record->native_source && recipient->kind == LX_ACCOUNT_AGENT_ASSET)))
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_state_balance_get(budget_account, record->asset_id, &balance);
+    if (status != LXP_OK) return status;
+    status = lx_budget_spend_prepare(record, lxp_ctx_batch_timestamp_ms(ctx),
+                                     balance, amount);
+    if (status == LXP_OK)
+        status = budget_transfer(ctx, activity, record->asset_id,
+                                 budget_account, recipient, signer,
+                                 amount, LXP_REASON_BUDGET_SPEND,
+                                 LXP_AUTH_BUDGET_ALLOWANCE);
+    if (status == LXP_OK) status = budget_save(ctx, record);
+    if (status != LXP_OK) return status;
+    (void)memcpy(event, record->budget_id, 32U);
+    (void)memcpy(event + 32U, recipient->id, 32U);
+    status = lxp_u128_to_be(amount, event + 64U);
+    return status == LXP_OK ?
+        lxp_ctx_emit_event(ctx, 6U, event, sizeof(event)) : status;
+}
+
 static lxp_result budget_execute_spend(lxp_module_ctx *ctx,
                                        const lxp_activity *activity,
                                        const lxp_authority_resolved *authority,
@@ -464,39 +506,126 @@ static lxp_result budget_execute_spend(lxp_module_ctx *ctx,
                                        lx_account *signer)
 {
     lx_budget_record record;
-    lx_account *budget_account = NULL;
-    lx_account *recipient = NULL;
-    lxp_u128 balance;
-    uint8_t event[80];
     lxp_result status = budget_load(ctx, payload->budget_id, &record);
     if (status != LXP_OK) return status;
     if (memcmp(record.owner, signer->id, 32U) != 0 &&
         !lx_budget_delegate_present(&record, authority->actor))
         return LXP_ERR_UNAUTHORIZED_DELEGATE;
-    status = lxp_ctx_account_find(ctx, record.budget_account, &budget_account);
-    if (status == LXP_OK)
-        status = lxp_ctx_account_find(ctx, payload->recipient, &recipient);
+    return budget_spend_apply(ctx, activity, &record, payload->recipient,
+                              payload->amount, signer);
+}
+
+static void budget_capability_key(const uint8_t budget_id[32],
+                                  const uint8_t holder[32],
+                                  uint8_t key[BUDGET_CAPABILITY_KEY_BYTES])
+{
+    (void)memcpy(key, "budget-delegate:", 16U);
+    (void)memcpy(key + 16U, budget_id, 32U);
+    (void)memcpy(key + 48U, holder, 32U);
+}
+
+static uint64_t budget_capability_u64(const uint8_t *bytes)
+{
+    uint64_t value = 0U;
+    size_t i;
+    for (i = 0U; i < 8U; ++i) value = (value << 8U) | bytes[i];
+    return value;
+}
+
+static lxp_result budget_capability_load(
+    lxp_module_ctx *ctx, const uint8_t budget_id[32],
+    const uint8_t holder[32], lx_budget_delegate_capability *capability)
+{
+    uint8_t key[BUDGET_CAPABILITY_KEY_BYTES];
+    const uint8_t *bytes;
+    size_t length;
+    lx_budget_delegate_capability value;
+    lxp_result status;
+    budget_capability_key(budget_id, holder, key);
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &bytes, &length);
+    if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_ERR_UNAUTHORIZED_DELEGATE;
     if (status != LXP_OK) return status;
-    if (budget_account->kind != LX_ACCOUNT_AGENT_BUDGET ||
-        (recipient->kind != LX_ACCOUNT_AGENT_MAIN &&
-         !(record.native_source && recipient->kind == LX_ACCOUNT_AGENT_ASSET)))
+    if (length != (size_t)BUDGET_CAPABILITY_BYTES || bytes[0] != 0U ||
+        bytes[1] != 1U || bytes[194] > 1U)
         return LXP_ERR_NON_CANONICAL;
-    status = lxp_state_balance_get(budget_account, record.asset_id, &balance);
-    if (status != LXP_OK) return status;
-    status = lx_budget_spend_prepare(&record, lxp_ctx_batch_timestamp_ms(ctx),
-                                     balance, payload->amount);
+    (void)memset(&value, 0, sizeof(value));
+    (void)memcpy(value.holder, bytes + 2U, 32U);
+    (void)memcpy(value.asset_id, bytes + 34U, 32U);
+    (void)memcpy(value.recipient, bytes + 66U, 32U);
+    (void)memcpy(value.purpose_hash, bytes + 98U, 32U);
+    status = lxp_u128_from_be(bytes + 130U, &value.maximum_per_spend);
     if (status == LXP_OK)
-        status = budget_transfer(ctx, activity, record.asset_id,
-                                 budget_account, recipient, signer,
-                                 payload->amount, LXP_REASON_BUDGET_SPEND,
-                                 LXP_AUTH_BUDGET_ALLOWANCE);
-    if (status == LXP_OK) status = budget_save(ctx, &record);
+        status = lxp_u128_from_be(bytes + 146U, &value.maximum_total);
+    if (status == LXP_OK)
+        status = lxp_u128_from_be(bytes + 162U, &value.consumed);
     if (status != LXP_OK) return status;
-    (void)memcpy(event, record.budget_id, 32U);
-    (void)memcpy(event + 32U, recipient->id, 32U);
-    status = lxp_u128_to_be(payload->amount, event + 64U);
-    return status == LXP_OK ?
-        lxp_ctx_emit_event(ctx, 6U, event, sizeof(event)) : status;
+    value.expiry = budget_capability_u64(bytes + 178U);
+    value.revocation_sequence = budget_capability_u64(bytes + 186U);
+    value.revoked = bytes[194] != 0U;
+    if (memcmp(value.holder, holder, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (lxp_u128_cmp(value.consumed, value.maximum_total) > 0)
+        return LXP_ERR_NON_CANONICAL;
+    *capability = value;
+    return LXP_OK;
+}
+
+static lxp_result budget_capability_save(
+    lxp_module_ctx *ctx, const uint8_t budget_id[32],
+    const lx_budget_delegate_capability *capability)
+{
+    uint8_t key[BUDGET_CAPABILITY_KEY_BYTES];
+    uint8_t bytes[BUDGET_CAPABILITY_BYTES];
+    lxp_result status;
+    budget_capability_key(budget_id, capability->holder, key);
+    bytes[0] = 0U;
+    bytes[1] = 1U;
+    (void)memcpy(bytes + 2U, capability->holder, 32U);
+    (void)memcpy(bytes + 34U, capability->asset_id, 32U);
+    (void)memcpy(bytes + 66U, capability->recipient, 32U);
+    (void)memcpy(bytes + 98U, capability->purpose_hash, 32U);
+    status = lxp_u128_to_be(capability->maximum_per_spend, bytes + 130U);
+    if (status == LXP_OK)
+        status = lxp_u128_to_be(capability->maximum_total, bytes + 146U);
+    if (status == LXP_OK)
+        status = lxp_u128_to_be(capability->consumed, bytes + 162U);
+    if (status != LXP_OK) return status;
+    budget_event_u64(bytes + 178U, capability->expiry);
+    budget_event_u64(bytes + 186U, capability->revocation_sequence);
+    bytes[194] = capability->revoked ? 1U : 0U;
+    return lxp_ctx_kv_put(ctx, key, sizeof(key), bytes, sizeof(bytes));
+}
+
+static lxp_result budget_execute_delegate_spend(
+    lxp_module_ctx *ctx, const lxp_activity *activity,
+    const lxp_authority_resolved *authority,
+    const lx_budget_delegate_spend_payload *payload, lx_account *signer)
+{
+    lx_budget_record record;
+    lx_budget_delegate_capability capability;
+    lxp_module_savepoint savepoint = {0};
+    lxp_result status = lxp_module_savepoint_begin(ctx, &savepoint);
+    if (status == LXP_OK) status = budget_load(ctx, payload->budget_id, &record);
+    if (status == LXP_OK)
+        status = budget_capability_load(ctx, record.budget_id,
+                                        authority->actor, &capability);
+    if (status == LXP_OK)
+        status = lx_budget_authorize_delegate(
+            &record, authority->actor, &capability, payload->recipient,
+            payload->amount, lxp_ctx_batch_timestamp_ms(ctx));
+    if (status == LXP_OK)
+        status = budget_spend_apply(ctx, activity, &record, payload->recipient,
+                                    payload->amount, signer);
+    if (status == LXP_OK)
+        status = budget_capability_save(ctx, record.budget_id, &capability);
+    if (status == LXP_OK) return lxp_module_savepoint_accept(ctx, &savepoint);
+    if (savepoint.active &&
+        ctx->transfer_snapshot_count == savepoint.transfer_snapshot_count &&
+        ctx->transfer_applied == savepoint.transfer_applied) {
+        lxp_result discarded = lxp_module_savepoint_discard(ctx, &savepoint);
+        if (discarded != LXP_OK) return discarded;
+    }
+    return status;
 }
 
 static lxp_result budget_execute_close(lxp_module_ctx *ctx,
@@ -766,6 +895,9 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
     case 9U:
         return budget_execute_revoke(ctx, activity, &value->typed->revoke,
                                      signer);
+    case 10U:
+        return budget_execute_delegate_spend(
+            ctx, activity, authority, &value->typed->delegate_spend, signer);
     default:
         break;
     }
