@@ -48571,7 +48571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.5]
 title = "Retire gate helper: a gated method returns LXP_MODULE_DISABLED from the merge plan height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["10.0.1", "10.0.4"]
@@ -94691,10 +94691,10 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.3]
 title = "Service dispute resolved by the escrow arbiter; zero first leg accepted"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
-wave = 3
-requires = ["13.2.2"]
+wave = 5
+requires = ["13.2.2", "2.2.3", "2.4.2"]
 reqs = ["13012.1", "13012.2", "13012.3", "13012.4", "13013.1", "13013.2", "13013.3", "13013.4"]
 do_1 = "Resolve a dispute through the linked escrow arbiter after the agreement lookup (src/modules/service/lx_service_dispute.c:85-90); either party gets LXP_ERR_UNAUTHORIZED_ARBITER."
 do_2 = "Pay both escrow legs in the same call through the journal (src/ledger/lxp_journal.c:222-227), a zero leg skipped."

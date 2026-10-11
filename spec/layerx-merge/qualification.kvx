@@ -448,3 +448,17 @@ command = "go test -count=1 ./precompiles/layerxbridge/ -run TestBridgeInRefusal
 exit_code = 0
 log_path = "logs/10.2.4-verify-1.log"
 observed_and_assumption = "the gate passes and the task is landed; LXP_BRIDGE_UNAUTHORIZED is reachable only through governance message paths so its mapping is checked through RevertCode on the registered error, and static-gas precompiles must gate the plan-height revert text themselves through the EVM keeper's UpgradeKeeper because precompiles/common renders RevertReason with no plan-height gate."
+
+[finding.13.3.3]
+revision = "28e203a54"
+command = "make test-service-dispute"
+exit_code = 0
+log_path = "logs/13.3.3-verify-1.log"
+observed_and_assumption = "no change was made: the task was admitted before its real prerequisites exist, since test_unauthorized_arbiter needs LXP_ERR_UNAUTHORIZED_ARBITER from task 2.2.3 and the arbiter rule needs the escrow link read that contract A.6 gives task 2.4.2, while paying escrow legs inside lx_service_dispute.c contradicts lx_service_effect_audit; the task is returned to pending behind 2.2.3 and 2.4.2."
+
+[finding.10.0.5]
+revision = "49ff77cff"
+command = "go test -count=1 ./precompiles/common/ -run TestRetiredAtMergePlan -v"
+exit_code = 0
+log_path = "logs/10.0.5-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; RetiredAt takes the upgrade reader as an explicit argument and answers false without one, the retired wire text is the LXPRevert form (LXP_MODULE_DISABLED: module disabled; <name> retired), latestCustomPrecompilesAtHeight in modules/evm/keeper is outside touches so do_5 is not wired, and call sites built WithRevertReasons must return an error whose text matches because Run replaces the returned bytes with RevertReason(err)."
