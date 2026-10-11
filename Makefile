@@ -2239,9 +2239,11 @@ test-allowance: $(BUILD_DIR)/tests/lxp_test_allowance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_allowance
 
 $(BUILD_DIR)/tests/lxp_test_revocation: tests/state/lxp_test_revocation.c \
-		$(LIBRARY)
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(EXTRA_LDFLAGS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
+		$(LIBRARY) $(EXTRA_LDFLAGS) \
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-revocation: $(BUILD_DIR)/tests/lxp_test_revocation
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_revocation
