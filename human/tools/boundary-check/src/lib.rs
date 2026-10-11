@@ -31,8 +31,11 @@ const PAYLOAD_AUTHORITY_CRATE: &str = "layerx-intents";
 
 const PAYLOAD_ENCODING_CRATE: &str = "layerx-wire";
 
-const PAYLOAD_ENCODING_INVOCATIONS: &[&str] =
-    &["layerx_wire::encode", "layerx_wire :: encode", "use layerx_wire::encode"];
+const PAYLOAD_ENCODING_INVOCATIONS: &[&str] = &[
+    "layerx_wire::encode",
+    "layerx_wire :: encode",
+    "use layerx_wire::encode",
+];
 
 const BUNDLE_PAYLOAD_MARKERS: &[&[u8]] = &[b"layerx_wire", b"layerx-wire"];
 
@@ -127,9 +130,9 @@ fn source_violation(body: &str) -> Option<&'static str> {
     {
         return Some("ambient-nondeterminism");
     }
-    if body.contains("lni::transport::Uds")
-        || body.contains("lni::transport::Tls")
-        || body.contains("lni::abi::Handle")
+    if body.contains("::transport::Uds")
+        || body.contains("::transport::Tls")
+        || body.contains("::abi::Handle")
     {
         return Some("direct-core-connection");
     }
