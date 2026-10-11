@@ -19496,7 +19496,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.1]
 title = "Validate and store the origin-2 params through MsgSetParams"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.3"]
