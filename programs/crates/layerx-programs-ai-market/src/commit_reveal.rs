@@ -60,8 +60,8 @@ pub const COMMIT_REGION_MAX_BYTES: usize =
 /// The commit result payload: `1 || evaluator32 || C32 || height || sequence`.
 pub const COMMIT_RESULT_BYTES: usize = 81;
 const COMMIT_RESULT_KIND: u8 = 1;
-const COMMIT_OPENS: u64 = 64;
-const COMMIT_CLOSES: u64 = 80;
+pub(crate) const COMMIT_OPENS: u64 = 64;
+pub(crate) const COMMIT_CLOSES: u64 = 80;
 const REVEAL_OPENS: u64 = 80;
 const REVEAL_CLOSES: u64 = 96;
 const POLICY_CAP: usize = Section::PolicyLifecycle.payload_cap();

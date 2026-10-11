@@ -22,6 +22,7 @@
 use crate::{
     admission::{AdmissionTable, Participant},
     codec::{self as wire, EventCommon, ReportBody, ValidatedEnvelope},
+    commit_reveal::{COMMIT_CLOSES, COMMIT_OPENS},
     dispatch,
     errors::{
         CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT, EVIDENCE_BINDING, EXPIRED,
@@ -1587,8 +1588,6 @@ const CONTROL_CAP: usize = Section::Control.payload_cap();
 /// Caller scratch for [`apply`]: the next F01 section, the next control feature bytes and the
 /// control encoding.
 pub const SEAL_SCRATCH_BYTES: usize = POLICY_CAP + 2 * CONTROL_CAP;
-const COMMIT_OPENS: u64 = 64;
-const COMMIT_CLOSES: u64 = 80;
 
 /// One evaluator's committed evidence claim for the opened epoch. A seal asserts an
 /// authorized claim, never verified AI quality or availability.

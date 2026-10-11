@@ -919,16 +919,28 @@ struct Market {
 /// epoch 6 terminalized, epoch 7 opened at 1024, its empty task set sealed and the evidence of
 /// every evaluator sealed at 1088 under evaluator sequence 1.
 fn market() -> CodecResult<Market> {
-    let mut world = World::create(ORIGIN)?;
-    let low = world.enroll(LOW, 130)?;
+    market_at(ORIGIN)
+}
+
+fn market_at(origin: u64) -> CodecResult<Market> {
+    let mut m = unsealed_market(origin)?;
+    m.seal(&[2, 3, 4, 5, 6, 7], m.start() + 64)?;
+    Ok(m)
+}
+
+fn unsealed_market(origin: u64) -> CodecResult<Market> {
+    let previous = HeightWindow::epoch(origin, 6, 0, 128)?;
+    HeightWindow::epoch(origin, 7, 64, 96)?;
+    let mut world = World::create(origin)?;
+    let low = world.enroll(LOW, origin + 2)?;
     for n in 2..=4 {
-        world.evaluator(n, 129 + u64::from(n))?;
+        world.evaluator(n, origin + 1 + u64::from(n))?;
     }
-    world.schedule(6, 134)?;
-    world.fund(500, 135)?;
-    let first = world.open(896)?;
+    world.schedule(6, origin + 6)?;
+    world.fund(500, origin + 7)?;
+    let first = world.open(previous.start)?;
     assert_eq!((first.epoch, first.workers, first.evaluators), (6, 1, 3));
-    world.advance(897)?;
+    world.advance(previous.start + 1)?;
     let header = world.parts()?.market()?;
     let mut m = Market {
         world,
@@ -936,20 +948,19 @@ fn market() -> CodecResult<Market> {
         header,
         workers: vec![low],
     };
-    let high = m.world.enroll(HIGH, 900)?;
+    let high = m.world.enroll(HIGH, previous.start + 4)?;
     for n in 5..=7 {
-        m.world.evaluator(n, 896 + u64::from(n))?;
+        m.world.evaluator(n, previous.start + u64::from(n))?;
     }
-    m.seal(&[], 960)?;
-    m.world.terminalize(&first, &[low], 1008)?;
-    m.frozen = m.world.open(1024)?;
+    m.seal(&[], previous.start + 64)?;
+    m.world.terminalize(&first, &[low], previous.start + 112)?;
+    m.frozen = m.world.open(previous.end)?;
     m.workers.push(high);
     m.workers.sort_by_key(|w| w.worker);
     assert_eq!(
         (m.frozen.epoch, m.frozen.workers, m.frozen.evaluators),
         (7, 2, 6)
     );
-    m.seal(&[2, 3, 4, 5, 6, 7], COMMIT_AT)?;
     Ok(m)
 }
 /// Epoch 6 (T = 896) of a market at both identity bounds: 32 frozen workers and evaluators
@@ -985,7 +996,7 @@ fn crowded() -> CodecResult<Market> {
 impl Market {
     /// T of the opened epoch.
     fn start(&self) -> u64 {
-        ORIGIN + 128 * self.frozen.epoch
+        self.header.origin_height + 128 * self.frozen.epoch
     }
     fn frozen_binding(&self) -> FrozenBinding {
         FrozenBinding {
@@ -1054,24 +1065,29 @@ impl Market {
             payload,
         );
         self.world.task(&call, at)?;
-        let sealed =
-            tasks::sealed_task_set(&decode_shared_state(&self.world.bytes)?, frozen.epoch)?;
         for &n in evaluators {
-            let mut claim = 1u16.to_be_bytes().to_vec();
-            claim.extend_from_slice(&[root(n); 32]);
-            claim.extend_from_slice(self.frozen.policy.as_bytes());
-            claim.extend_from_slice(sealed.as_bytes());
-            claim.extend_from_slice(rubric()?.as_bytes());
-            claim.push(1);
-            let call = Req {
-                sequence: 1,
-                request: tag(0xc5, n, 1),
-                expiry: ROLE_EXPIRY,
-                ..bound(dispatch::SealEvidence, principal(n)?, &frozen, claim)
-            };
+            let call = self.evidence_call(n)?;
             self.world.evidence(&call, at)?;
         }
         Ok(())
+    }
+
+    fn evidence_call(&self, n: u8) -> CodecResult<Req> {
+        let frozen = self.frozen_binding();
+        let sealed =
+            tasks::sealed_task_set(&decode_shared_state(&self.world.bytes)?, frozen.epoch)?;
+        let mut claim = 1u16.to_be_bytes().to_vec();
+        claim.extend_from_slice(&[root(n); 32]);
+        claim.extend_from_slice(self.frozen.policy.as_bytes());
+        claim.extend_from_slice(sealed.as_bytes());
+        claim.extend_from_slice(rubric()?.as_bytes());
+        claim.push(1);
+        Ok(Req {
+            sequence: 1,
+            request: tag(0xc5, n, 1),
+            expiry: ROLE_EXPIRY,
+            ..bound(dispatch::SealEvidence, principal(n)?, &frozen, claim)
+        })
     }
 }
 
@@ -1688,6 +1704,171 @@ fn a02_half_open_windows_and_a_single_reveal() -> TestResult {
     assert_eq!(m.slot(3, REVEAL_END)?.reveal, Some(last));
     assert_eq!(m.slot(4, REVEAL_END)?.status, Status::Expired);
     assert_eq!(m.admitted(4)?, None);
+    Ok(())
+}
+
+#[test]
+fn a02_commit_boundaries_use_sequenced_execution_height() -> TestResult {
+    let base = market_at(104)?;
+    assert_eq!((base.frozen.epoch, base.start()), (7, 1000));
+    let scores = base.both(250_000, 750_000);
+    let report = base.signed(2, &scores)?;
+    let commitment = commitment_of(&report.body, SALT)?;
+    let call = Market::commit_call(2, &report.body.binding, commitment, 2, ROLE_EXPIRY)?;
+    for (height, accepted) in [
+        (1063, false),
+        (1064, true),
+        (1070, true),
+        (1079, true),
+        (1080, false),
+        (1081, false),
+    ] {
+        let mut m = base.clone();
+        if accepted {
+            let F04::Committed {
+                record, revision, ..
+            } = m.call(&call, height)?
+            else {
+                return Err(NON_CANONICAL);
+            };
+            assert_eq!(
+                (record.height, record.sequence, record.commitment, revision),
+                (height, 2, commitment, base.world.revision()? + 1)
+            );
+            assert_eq!(
+                m.slot(2, height)?,
+                cr::Slot {
+                    status: Status::Committed,
+                    commit: Some(record),
+                    reveal: None
+                }
+            );
+        } else {
+            assert_eq!(m.refused(&call, height)?, WRONG_PHASE);
+            assert_eq!(
+                m.slot(2, height)?,
+                cr::Slot {
+                    status: Status::Absent,
+                    commit: None,
+                    reveal: None
+                }
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a02_reveal_boundaries_use_sequenced_execution_height() -> TestResult {
+    let mut base = market_at(104)?;
+    assert_eq!((base.frozen.epoch, base.start()), (7, 1000));
+    let scores = base.both(250_000, 750_000);
+    let report = base.signed(2, &scores)?;
+    let record = base.commit(2, &report, 1070)?;
+    let call = Market::reveal_call(2, &report, SALT, 3, ROLE_EXPIRY)?;
+    for (height, accepted) in [
+        (1079, false),
+        (1080, true),
+        (1085, true),
+        (1095, true),
+        (1096, false),
+        (1097, false),
+    ] {
+        let mut m = base.clone();
+        if accepted {
+            let F04::Revealed {
+                receipt, revision, ..
+            } = m.call(&call, height)?
+            else {
+                return Err(NON_CANONICAL);
+            };
+            assert_eq!(
+                (receipt.height, receipt.activity, revision),
+                (height, 3, base.world.revision()? + 1)
+            );
+            assert_eq!(
+                m.slot(2, height)?,
+                cr::Slot {
+                    status: Status::Revealed,
+                    commit: Some(record),
+                    reveal: Some(receipt)
+                }
+            );
+            assert_eq!(m.admitted(2)?, Some(receipt));
+        } else {
+            assert_eq!(m.refused(&call, height)?, WRONG_PHASE);
+            assert_eq!(m.slot(2, height)?.commit, Some(record));
+            assert_eq!(m.admitted(2)?, None);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a02_evidence_seal_uses_the_same_commit_boundaries() -> TestResult {
+    let mut base = unsealed_market(104)?;
+    assert_eq!((base.frozen.epoch, base.start()), (7, 1000));
+    base.seal(&[], 1064)?;
+    let call = base.evidence_call(2)?;
+    let encoded = call.encode()?;
+    let envelope = decode_envelope(&encoded)?;
+    let before = base.world.bytes.clone();
+    for (height, accepted) in [
+        (1063, false),
+        (1064, true),
+        (1070, true),
+        (1079, true),
+        (1080, false),
+        (1081, false),
+    ] {
+        let mut next = vec![0; MAX_STATE_BYTES];
+        let mut scratch = vec![0; SEAL_SCRATCH_BYTES];
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        let outcome = evidence::apply(
+            &call.context(height)?,
+            &envelope,
+            &base.world.bytes,
+            &mut next,
+            &mut scratch,
+            &mut event,
+        );
+        if accepted {
+            let Sealing::Applied {
+                seal,
+                revision,
+                result,
+                state_len,
+                event_len,
+            } = outcome?
+            else {
+                return Err(NON_CANONICAL);
+            };
+            assert_eq!(
+                (seal.height, seal.evaluator, revision),
+                (height, base.evaluator(2)?, base.world.revision()? + 1)
+            );
+            let after = decode_shared_state(&next[..state_len])?;
+            assert_eq!(after.revision, revision);
+            assert_eq!(
+                evidence::SealRegion::decode(after.control.feature_bytes)?
+                    .get(7, seal.evaluator)?,
+                Some(seal)
+            );
+            assert_eq!(result, codec::result_digest(&seal.encode()?)?);
+            let (operation, common, payload) =
+                codec::decode_event_frame(b"PAXAI/v1/SealEvidence", &event[..event_len])?;
+            assert_eq!(
+                (operation, common.revision, common.result),
+                (dispatch::SealEvidence, revision, result)
+            );
+            assert_eq!(payload, seal.encode()?.as_slice());
+        } else {
+            assert_eq!(outcome.map(|_| ()), Err(WRONG_PHASE));
+            assert!(next.iter().all(|byte| *byte == 0));
+            assert!(event.iter().all(|byte| *byte == 0));
+        }
+        assert_eq!(base.world.bytes, before);
+    }
     Ok(())
 }
 
