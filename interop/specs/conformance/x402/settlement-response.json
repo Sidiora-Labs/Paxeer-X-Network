@@ -4,15 +4,15 @@
     "valid": true,
     "document": {
       "success": true,
-      "payer": "0x1212121212121212121212121212121212121212121212121212121212121212",
-      "transaction": "lxp:abababababababababababababababababababababababababababababababab",
-      "network": "layerx:mainnet",
-      "amount": "1000",
+      "payer": "0xfe3b557e8fb62b89f4916b721be55ceb828dbd73",
+      "transaction": "0x9f6be3b6fda7dd664ddb83a901dad4458b78298b59e307151c217a2a1f13d2bb",
+      "network": "eip155:125",
+      "amount": "1000000",
       "extensions": {
         "layerx": {
-          "receipt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-          "receiptDigest": "abababababababababababababababababababababababababababababababab",
-          "verificationLevel": "sequencer-signed"
+          "receipt": "AAJSAQACAAAAIJ9r47b9p91mTduDqQHa1EWLeCmLWeMHFRwheiofE9K7AAAAAAAAAAMAAAAgSV9Uyb5MlTGg47Lj3DxZGcra1+3rSjXsm845+Y0TB/8AAAAg7hn+KLllgMiTU52hjLEBFiKZKhffl1FcJ85XvbgOEQsAAAAg47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFUAAAAAAAAAAgAMAAAAAAEAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcQAAAAAAAO+cAAAAAAAA75wAAAAAdzWUAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFUAAAAAAAAAAQR1aHB4AAwAAQAAAwAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC1AAAAAAAAAAAAAAAAAAAAAAAAEBoExNpdb3V8JRzXCUe3UpF+VnG2d1F+PZU/Niod9mSO9bEfsAgqpKpM4etnVop9j2d5jzsAjCVOCSnf5eq7HcDXaYTds+KvCV5fJPvoptPhYeueuuXSKShh8yh/FODbMXmFJv3j3tsUZiJov/W7OrZWBVCg3Dk4sMnV7XF5MsdbmDloVRaLtf39/DMHcpf3fevWb/17lBDU5lUGBsoGTmxn7QAAAAAAAAAAAABvk6nSMAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+kADAAAAAEAAAAAAgAAACAOI3WEMy/D4fFnLYChZ6jQJ1l6ZLNPS+GJUeYLq91PcwAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAA/jtVfo+2K4n0kWtyG+Vc64KNvXMAAAAAAAAABV3mLTP7OnAAAAAAAAAAAAVd5b2gUWhAAAAAAAAAAAACAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAga2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2sAAAGXdCb4EAEAAABAbKc6sC8nhGFyRkYM7vGGGy2nk7P4CGBWDy9XNAyJoSuNmQ+ZpLg6hy0iRzT7PqWptoexHgTSWSLrpaMgbXBaCA==",
+          "receiptDigest": "07ca8892f51d79da84854829f737777341e03fe8bb156ce1784c88a4cc92b4ab",
+          "verificationLevel": "receipted"
         }
       }
     }
@@ -23,8 +23,13 @@
     "document": {
       "success": false,
       "errorReason": "settlement_pending",
-      "transaction": "pending:ref-123",
-      "network": "layerx:beta"
+      "transaction": "0x9f6be3b6fda7dd664ddb83a901dad4458b78298b59e307151c217a2a1f13d2bb",
+      "network": "eip155:125",
+      "extensions": {
+        "layerx": {
+          "verificationLevel": "submitted"
+        }
+      }
     }
   },
   {
@@ -34,7 +39,7 @@
       "success": false,
       "errorReason": "insufficient_balance",
       "transaction": "",
-      "network": "layerx:beta"
+      "network": "eip155:125"
     }
   },
   {
@@ -43,8 +48,8 @@
     "document": {
       "success": true,
       "errorReason": "should-not-be-here",
-      "transaction": "lxp:abababababababababababababababababababababababababababababababab",
-      "network": "layerx:beta",
+      "transaction": "0x9f6be3b6fda7dd664ddb83a901dad4458b78298b59e307151c217a2a1f13d2bb",
+      "network": "eip155:125",
       "amount": "500"
     }
   },
@@ -54,7 +59,7 @@
     "document": {
       "success": false,
       "transaction": "",
-      "network": "layerx:beta"
+      "network": "eip155:125"
     }
   }
 ]

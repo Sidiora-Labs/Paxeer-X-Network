@@ -10,14 +10,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "LXP"
             }
@@ -46,7 +46,7 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:mainnet",
+          "network": "eip155:125",
           "amount": "5000",
           "asset": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
           "payTo": "0xf0d1260dee9e15c967b7be1d065f8de8a0868cc8d74412517d802534ae9fe1da",
@@ -54,7 +54,7 @@
           "extra": {
             "customField": "value",
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:premium-seller:main",
               "currency": "LXP"
             }
@@ -75,14 +75,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "100",
           "asset": "0x1111111111111111111111111111111111111111111111111111111111111111",
           "payTo": "0xcdcf5a81aab9172926df31939dd76ae8049e2a8c7acd2fc130f09f6c1a541c97",
           "maxTimeoutSeconds": 60,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:data-seller:main",
               "currency": "LXP"
             }
@@ -90,14 +90,14 @@
         },
         {
           "scheme": "402lxp",
-          "network": "layerx:mainnet",
+          "network": "eip155:125",
           "amount": "200",
           "asset": "0x3333333333333333333333333333333333333333333333333333333333333333",
           "payTo": "0xc1a1e11643adff5ccfde7040148ccb3bcfdcf3480a56cf58cb4f7e9fc3786502",
           "maxTimeoutSeconds": 90,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:data-treasury:main",
               "currency": "LXP"
             }
@@ -117,14 +117,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "LXP"
             }
@@ -155,14 +155,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "0",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "LXP"
             }
@@ -182,14 +182,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "-100",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "LXP"
             }
@@ -209,14 +209,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "LXP"
             }
@@ -236,7 +236,7 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
@@ -256,14 +256,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0x63cc8a55d2280c7709b7ba4b6925d9bd9419f50799a9c716411b7158e2c5bc3c",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:data-seller:main",
               "currency": "LXP"
             }
@@ -283,14 +283,14 @@
       "accepts": [
         {
           "scheme": "exact",
-          "network": "layerx:beta",
+          "network": "eip155:125",
           "amount": "1000",
           "asset": "0xabababababababababababababababababababababababababababababababab",
           "payTo": "0xb2e9cfee9af5130a2c7ab8d51afc378d894454b0bf69fe44bc7979d026617ab6",
           "maxTimeoutSeconds": 120,
           "extra": {
             "layerx": {
-              "commitment": "executed",
+              "commitment": "receipted",
               "account": "agent:did:layerx:api-seller:main",
               "currency": "lxp"
             }
