@@ -9,6 +9,7 @@ import (
 	custody "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	exchange "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	layerxledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
+	pay "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxpay/types"
 	web "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
@@ -21,6 +22,32 @@ import (
 )
 
 const ProposalTypeLayerX = "LayerX"
+
+var ErrPausedScope = sdkerrors.Register(ModuleName, 735, "LXP_PAUSED_SCOPE")
+
+var pauseExitPaths = map[string]map[string]bool{
+	pay.ModuleName: {
+		"escrowRelease": true, "escrowTimeout": true, "budgetClose": true, "budgetDefund": true, "budgetRevoke": true,
+		"streamPause": true, "streamClose": true, "serviceOfferWithdraw": true, "serviceCommitAbandon": true,
+	},
+	exchange.ModuleName:          {"cancelOrder": true, "cancelSpotOrder": true, "closePosition": true, "withdrawMargin": true},
+	layerxledgertypes.ModuleName: {},
+	layerxauthtypes.ModuleName:   {},
+}
+
+func CheckPauseScope(module string, paused bool, method string) error {
+	exits, ok := pauseExitPaths[module]
+	if !ok {
+		return sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "module %q has no governance pause scope", module)
+	}
+	if method == "" {
+		return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "empty method")
+	}
+	if !paused || exits[method] {
+		return nil
+	}
+	return sdkerrors.Wrapf(ErrPausedScope, "%s.%s", module, method)
+}
 
 var _ govtypes.Content = &LayerXProposal{}
 var _ cdctypes.UnpackInterfacesMessage = &LayerXProposal{}
