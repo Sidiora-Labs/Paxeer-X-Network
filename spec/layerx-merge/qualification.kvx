@@ -1121,3 +1121,23 @@ exit_code = 0
 log_path = "logs/0.91-verify-3.log"
 observed_and_assumption = "the declared build and verify gates pass and the task is landed; tests/agent/sdk/python/test_ai_market.py keeps eleven pre-existing failures (schema constants, fixture reproduction, approval and journal cases built on 32-byte ed25519 keys while Review.approve requires a 33-byte secp256k1 key), which the Python AI market task 10.5.24 owns"
 
+[finding.6.2.2]
+revision = "ad510818a"
+command = "go test -count=1 ./precompiles/layerxagent/orob/"
+exit_code = 0
+log_path = "logs/6.2.2-verify-2.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed"
+
+[finding.6.2.4]
+revision = "389f10698"
+command = "go test -count=1 ./precompiles/layerxagent/pofq/"
+exit_code = 0
+log_path = "logs/6.2.4-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed"
+
+[finding.6.2.7]
+revision = "4485872a3"
+command = "go test -count=1 ./precompiles/layerxagent/eip712/"
+exit_code = 0
+log_path = "logs/6.2.7-verify-1.log"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed"

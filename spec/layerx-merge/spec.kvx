@@ -14702,7 +14702,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.4]
 title = "AI market dispatch arms for closure and F05 to F08"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -14729,7 +14729,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.5]
 title = "AI admission envelope apply"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -24826,7 +24826,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.2]
 title = "Implement the orob resolver 0x0901 precompile"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -24853,7 +24853,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.3]
 title = "Implement the clearing 0x0902 precompile"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -24880,7 +24880,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.4]
 title = "Implement the pofq 0x0904 precompile"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -24961,7 +24961,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.7]
 title = "Implement the eip712 0x0908 precompile"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -25661,7 +25661,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.20]
 title = "x402 crate on txHash and rungs"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -36558,7 +36558,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.39]
 title = "Explorer unified account becomes the native address page"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -40416,7 +40416,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.90]
 title = "Spot market creation reads genesis asset records through the context store"
-status = "done"
+status = "in_progress"
 wave = 1
 requires = []
 reqs = ["1.2", "2.1", "4.1", "3033.3", "3040.1"]
@@ -40447,7 +40447,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.91]
 title = "SDK trading and AI write entry points refuse unbound and wrong-DID addresses before signing"
-status = "done"
+status = "in_progress"
 wave = 1
 requires = []
 reqs = ["6079.3"]
@@ -50515,7 +50515,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.17]
 title = "Python bind transport: bind_transaction_request submitted through eth_sendRawTransaction"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.5.16"]
@@ -54311,7 +54311,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.3]
 title = "Re-target payer.rs off the activity wire codec and its C differential"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54371,7 +54371,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.5]
 title = "Re-target agent_rpc.rs, agent_rpc_adapters.rs, agent_rpc_dispatch.rs off the checkpoint certificates and guarantor attestations in client evidence and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54399,7 +54399,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.6]
 title = "Re-target agent_rpc_wire.rs, native_effect.rs, native_program.rs off the checkpoint certificates and guarantor attestations in client evidence and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54455,7 +54455,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.8]
 title = "Re-target boot.rs, budget_proof.rs, create.rs off the LNI transport and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54483,7 +54483,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.9]
 title = "Re-target mutate.rs, program_lifecycle_settlement.rs, program_settlement.rs off the activity wire codec and its C differential"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54595,7 +54595,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.13]
 title = "Re-target finality.rs, human.rs, human_owner_mode.rs off the LNI transport and 2 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54623,7 +54623,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.14]
 title = "Re-target human_runtime.rs, native_receipt.rs, subject.rs off the LNI transport and 4 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54654,7 +54654,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.15]
 title = "Re-target main.rs, managed_agent.rs, managed_agent_rotation.rs off the finality authority, evidence register, receipt authority, authority replica and sequencer handover and 5 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54826,7 +54826,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.21]
 title = "Re-target sign_verify.rs, errors.rs off the checkpoint certificates and guarantor attestations in client evidence and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54854,7 +54854,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.22]
 title = "Re-target go_verifier_vectors.rs, module_state.rs, native_handover_history.rs off the layerxVerify 0x1012 retired executor and 4 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54913,7 +54913,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.24]
 title = "Re-target availability.rs, batch.rs, caps.rs off the LNI transport and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -54976,7 +54976,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.26]
 title = "Re-target caps.rs, execution_prestate.rs, module_state.rs off the client handover finality and sequencer trust history and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55060,7 +55060,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.29]
 title = "Re-target module.rs, receipt.rs, resolver.rs off the LNI transport and 2 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55088,7 +55088,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.30]
 title = "Re-target stream.rs, submit.rs, withdrawal.rs off the LNI transport and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55346,7 +55346,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.39]
 title = "Re-target rpc_history.rs, rpc_sign.rs, rpc_verification.rs off the client handover finality and sequencer trust history and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55486,7 +55486,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.44]
 title = "Re-target envelope_decode.rs, lni_frame.rs, roundtrip.rs off the LNI transport and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55570,7 +55570,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.47]
 title = "Re-target v1.kvx off the LNI transport and 1 more"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55598,7 +55598,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.48]
 title = "Re-target offline_receipt_verification.py off the human-authority authorized-batch facts"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55851,7 +55851,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.57]
 title = "Re-target stable-abi-allowlist.toml, agent/unsafe-allowlist.toml off the LNI transport"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -55879,7 +55879,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.58]
 title = "Re-target main.rs off the LNI transport"
-status = "in_progress"
+status = "pending"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
