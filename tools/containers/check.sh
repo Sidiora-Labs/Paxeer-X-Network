@@ -51,7 +51,6 @@ platform-registry-builder|docker/platform-registry-builder/Dockerfile|platform/h
 platform-testnet|docker/platform-testnet/Dockerfile|platform/hosted/testnet/Dockerfile|.
 platform-webhooks|docker/platform-webhooks/Dockerfile|platform/hosted/webhooks/Dockerfile|.
 ramps|docker/ramps/Dockerfile|platform/ramps/Dockerfile|.
-relay-archive|docker/relay-archive/Dockerfile|platform/relay_archive/Dockerfile|.
 hpx-registry|docker/hpx-registry/Dockerfile|hpx/registry/Dockerfile|.
 flyci-controller|docker/flyci-controller/Dockerfile|tools/flyci/controller/Dockerfile|.
 flyci-runner|docker/flyci-runner/Dockerfile|tools/flyci/runner/Dockerfile|.
