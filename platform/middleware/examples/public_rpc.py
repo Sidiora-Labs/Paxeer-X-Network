@@ -2,6 +2,8 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import urllib.error
 import urllib.request
 import urllib.parse
 from pathlib import Path
@@ -9,12 +11,75 @@ from pathlib import Path
 from layerx_sdk.x402_http import decode_header, validate_required
 from layerx_sdk.x402_rpc import (
     PaymentRpc,
+    PaymentRpcError,
     rpc_batch_evidence,
     rpc_hex,
     verify_rpc_payment,
     _NoRedirect,
 )
+from layerx_sdk.px import decode_px_resolved_identities
 from layerx_sdk.verifier import AuthorizedReceiptBatch, SequencerAuthorization
+
+
+class PublicRpc(PaymentRpc):
+    def call(self, method, params):
+        self._id += 1
+        request_id = self._id
+        request = urllib.request.Request(
+            self.endpoint,
+            method="POST",
+            headers={**self.headers, "Content-Type": "application/json"},
+            data=json.dumps(
+                {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+            ).encode(),
+        )
+        try:
+            response = self._opener.open(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            raw = response.read(8388609)
+            status = response.status
+        if len(raw) > 8388608:
+            raise ValueError("rpc-body-too-large")
+        try:
+            body = json.loads(raw)
+        except (ValueError, UnicodeError) as error:
+            if not 200 <= status < 300:
+                raise ValueError(f"rpc-http-{status}") from error
+            raise
+        if (
+            not isinstance(body, dict)
+            or body.get("jsonrpc") != "2.0"
+            or type(body.get("id")) is not int
+            or body["id"] != request_id
+            or ("error" in body) == ("result" in body)
+        ):
+            raise ValueError("invalid-rpc-envelope")
+        if "error" in body:
+            failure = body["error"]
+            if (
+                not isinstance(failure, dict)
+                or type(failure.get("code")) is not int
+                or not isinstance(failure.get("message"), str)
+            ):
+                raise ValueError("invalid-rpc-error")
+            error = PaymentRpcError(failure["code"], failure.get("data"))
+            error.args = (f"{method}: JSON-RPC error {failure['code']}",)
+            raise error
+        if not 200 <= status < 300:
+            raise ValueError(f"rpc-http-{status}")
+        result = body["result"]
+        if method == "eth_getTransactionCount":
+            if (
+                not isinstance(result, str)
+                or re.fullmatch(r"0x(?:0|[1-9a-f][0-9a-f]{0,15})", result) is None
+            ):
+                raise ValueError("invalid-rpc-nonce")
+            return result
+        if not isinstance(result, dict):
+            raise ValueError("invalid-rpc-result")
+        return result
 
 
 def main():
@@ -38,7 +103,7 @@ def main():
     ):
         raise ValueError("persistent-host-chain-forbidden")
     token = os.environ.get("LAYERX_RPC_TOKEN")
-    rpc = PaymentRpc(args.rpc, {"Authorization": f"Bearer {token}"} if token else {})
+    rpc = PublicRpc(args.rpc, {"Authorization": f"Bearer {token}"} if token else {})
     if args.faucet:
         url = urllib.parse.urlsplit(args.faucet)
         if (
@@ -74,7 +139,22 @@ def main():
             print(
                 f"Faucet HTTP status: {response.status}; confirm the account balance before spending."
             )
-    print(json.dumps({"sequence": rpc.call("lx_getSequence", [args.did])}))
+    account = decode_px_resolved_identities(rpc.call("px_resolveAccount", [args.did]))
+    if (
+        not account.bound
+        or account.layerx_did != args.did
+        or account.evm_address is None
+    ):
+        raise ValueError("did-evm-binding-required")
+    print(
+        json.dumps(
+            {
+                "sequence": rpc.call(
+                    "eth_getTransactionCount", [account.evm_address, "pending"]
+                )
+            }
+        )
+    )
     if args.activity:
         if not args.offer or not args.authority or not args.payer:
             raise ValueError("offer-authority-and-payer-required")
