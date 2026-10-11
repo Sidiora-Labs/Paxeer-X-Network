@@ -8,6 +8,7 @@ out=${2:?usage: render.sh <hosts.env> <out-dir>}
 here=$(cd "$(dirname "$0")" && pwd)
 
 HOSTS="" COMET_METRICS_PORT=26660 NODE_EXPORTER_PORT=9100 KERNEL_READYZ_URLS="" EDGE_CERT_URLS=""
+SEQUENCER_READYZ_URLS="" AUTHORITY_METRICS_URLS=""
 ALERT_WEBHOOK_URL="" ALERT_EMAIL_TO="" ALERT_EMAIL_FROM="" ALERT_SMTP_SMARTHOST="" ALERT_SMTP_USERNAME="" ALERT_SMTP_PASSWORD=""
 # shellcheck disable=SC1090
 . "$env_file"
@@ -56,6 +57,8 @@ url_targets() { # list strip-scheme
 host_targets "$COMET_METRICS_PORT" >"$out/targets/cometbft.json"
 host_targets "$NODE_EXPORTER_PORT" >"$out/targets/node.json"
 url_targets "$KERNEL_READYZ_URLS" keep >"$out/targets/readyz.json"
+url_targets "$SEQUENCER_READYZ_URLS" keep >"$out/targets/sequencer-readyz.json"
+url_targets "$AUTHORITY_METRICS_URLS" keep >"$out/targets/authority-metrics.json"
 url_targets "$EDGE_CERT_URLS" strip >"$out/targets/certs.json"
 
 receivers=""

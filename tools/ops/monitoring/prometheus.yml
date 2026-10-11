@@ -39,6 +39,39 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox:9115
 
+  - job_name: sequencer-readyz
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/sequencer-readyz.json]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: receipt-authority
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/authority-metrics.json]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '(https?)://.*'
+        target_label: __scheme__
+        replacement: '$1'
+      - source_labels: [__address__]
+        regex: 'https?://[^/]+(/.*)'
+        target_label: __metrics_path__
+        replacement: '$1'
+      - source_labels: [__address__]
+        regex: 'https?://([^/]+)(/.*)?'
+        target_label: __address__
+        replacement: '$1'
+
   - job_name: edge-cert
     metrics_path: /probe
     params:
