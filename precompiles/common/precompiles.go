@@ -12,6 +12,7 @@ import (
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils/metrics"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,6 +21,11 @@ import (
 )
 
 const UnknownMethodCallGas uint64 = 3000
+
+// MergeUpgrade is the plan from whose height a dynamic-gas precompile built
+// WithRevertReasons reverts with its reason. It names the same plan as the
+// application's merge upgrade constant.
+const MergeUpgrade = "v7.0"
 
 type Contexter interface {
 	Ctx() sdk.Context
@@ -166,6 +172,7 @@ type DynamicGasPrecompileExecutor interface {
 type DynamicGasPrecompile struct {
 	*Precompile
 	executor DynamicGasPrecompileExecutor
+	reasons  bool
 }
 
 var _ vm.DynamicGasPrecompiledContract = &DynamicGasPrecompile{}
@@ -174,12 +181,40 @@ func NewDynamicGasPrecompile(a abi.ABI, executor DynamicGasPrecompileExecutor, a
 	return &DynamicGasPrecompile{Precompile: NewPrecompile(a, nil, address, name), executor: executor}
 }
 
+// WithRevertReasons makes every failed call from the merge plan's height on
+// return the ABI encoding of Error(string) carrying the error text. Below that
+// height a failed call keeps the revert data it returned before the plan.
+func (d *DynamicGasPrecompile) WithRevertReasons() *DynamicGasPrecompile {
+	d.reasons = true
+	return d
+}
+
+// mergePlanActive reports whether the merge plan is active at the height of
+// the call's block. It reads the plan without charging the call.
+func (d DynamicGasPrecompile) mergePlanActive(evm *vm.EVM) bool {
+	sdb := state.GetDBImpl(evm.StateDB)
+	if sdb == nil {
+		return false
+	}
+	getter, ok := d.executor.EVMKeeper().(interface {
+		UpgradeKeeper() *upgradekeeper.Keeper
+	})
+	if !ok {
+		return false
+	}
+	ctx := sdb.Ctx()
+	return getter.UpgradeKeeper().IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), MergeUpgrade, ctx.BlockHeight())
+}
+
 func (d DynamicGasPrecompile) RunAndCalculateGas(evm *vm.EVM, caller common.Address, callingContract common.Address, input []byte, suppliedGas uint64, value *big.Int, hooks *tracing.Hooks, readOnly bool, isFromDelegateCall bool) (ret []byte, remainingGas uint64, err error) {
 	operation := fmt.Sprintf("%s_unknown", d.name)
 	defer func() {
 		HandlePrecompileError(err, evm, operation)
 		if err != nil {
 			fmt.Printf("precompile %s encountered error: %v\n", d.name, err)
+			if d.reasons && d.mergePlanActive(evm) {
+				ret = RevertReason(err)
+			}
 			err = vm.ErrExecutionReverted
 		}
 	}()

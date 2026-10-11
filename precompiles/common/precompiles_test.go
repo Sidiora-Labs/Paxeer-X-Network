@@ -132,3 +132,69 @@ func TestDynamicGasPrecompileRun(t *testing.T) {
 	// should not emit any event
 	require.Empty(t, stateDB.Ctx().EventManager().Events())
 }
+
+type revertReasonsDynamicGasExecutor struct {
+	evmKeeper utils.EVMKeeper
+}
+
+func (e *revertReasonsDynamicGasExecutor) Execute(ctx sdk.Context, method *abi.Method, caller ethcommon.Address, callingContract ethcommon.Address, args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, suppliedGas uint64, _ *tracing.Hooks) (ret []byte, remainingGas uint64, err error) {
+	return []byte("partial"), 7, errors.New("insufficient funds")
+}
+
+func (e *revertReasonsDynamicGasExecutor) EVMKeeper() utils.EVMKeeper {
+	return e.evmKeeper
+}
+
+func TestDynamicGasRevertReasons(t *testing.T) {
+	k := &testkeeper.EVMTestApp.EvmKeeper
+	const planHeight = int64(100)
+	ctx, _ := testkeeper.EVMTestApp.GetContextForDeliverTx(nil).CacheContext()
+	abiBz, err := os.ReadFile("erc20_abi.json")
+	require.Nil(t, err)
+	newAbi, err := abi.JSON(bytes.NewReader(abiBz))
+	require.Nil(t, err)
+	input, err := newAbi.Pack("decimals")
+	require.Nil(t, err)
+
+	// Error(string) of "insufficient funds": selector, offset 0x20, length 18,
+	// then the text padded to 32 bytes.
+	want := ethcommon.FromHex("0x08c379a0" +
+		"0000000000000000000000000000000000000000000000000000000000000020" +
+		"0000000000000000000000000000000000000000000000000000000000000012" +
+		"696e73756666696369656e742066756e64730000000000000000000000000000")
+	require.Equal(t, want, common.RevertReason(errors.New("insufficient funds")))
+	// Error(string) of "input too short to extract method ID" (36 bytes).
+	wantShort := ethcommon.FromHex("0x08c379a0" +
+		"0000000000000000000000000000000000000000000000000000000000000020" +
+		"0000000000000000000000000000000000000000000000000000000000000024" +
+		"696e70757420746f6f2073686f727420746f2065787472616374206d6574686f" +
+		"6420494400000000000000000000000000000000000000000000000000000000")
+
+	run := func(t *testing.T, height int64, reasons bool, in []byte) []byte {
+		precompile := common.NewDynamicGasPrecompile(newAbi, &revertReasonsDynamicGasExecutor{evmKeeper: k}, ethcommon.Address{}, "test")
+		if reasons {
+			precompile = precompile.WithRevertReasons()
+		}
+		stateDB := state.NewDBImpl(ctx.WithBlockHeight(height), k, false)
+		res, _, err := precompile.RunAndCalculateGas(&vm.EVM{StateDB: stateDB}, ethcommon.Address{}, ethcommon.Address{}, in, 0, big.NewInt(0), nil, false, false)
+		require.Equal(t, vm.ErrExecutionReverted, err)
+		return res
+	}
+
+	// Before the plan is applied, the flag leaves today's bytes.
+	require.Equal(t, []byte("partial"), run(t, planHeight, true, input))
+	require.Nil(t, run(t, planHeight, true, []byte{0x01}))
+
+	k.UpgradeKeeper().SetDone(ctx.WithBlockHeight(planHeight), common.MergeUpgrade)
+
+	// Below the plan height the flag leaves today's bytes.
+	require.Equal(t, []byte("partial"), run(t, planHeight-1, true, input))
+	require.Nil(t, run(t, planHeight-1, true, []byte{0x01}))
+	// Without the flag the bytes equal today's at and above the plan height.
+	require.Equal(t, []byte("partial"), run(t, planHeight, false, input))
+	require.Nil(t, run(t, planHeight+1, false, []byte{0x01}))
+	// With the flag at and above the plan height every refusal is Error(string).
+	require.Equal(t, want, run(t, planHeight, true, input))
+	require.Equal(t, want, run(t, planHeight+1, true, input))
+	require.Equal(t, wantShort, run(t, planHeight, true, []byte{0x01}))
+}
