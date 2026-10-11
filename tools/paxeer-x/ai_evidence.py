@@ -708,13 +708,31 @@ def validate_future(selector, admission):
     facts = {name: evidence_item(value, directory, admission, selector, name)
              for name, value in record['evidence'].items()}
     if selector == 'storage-prerequisite-evidence':
-        commands = {'ai.T-S01': 'python3 tests/relay-archive/state_archive_lifecycle.py --native-node build/bin/layerxd',
-                    'ai.T-S02': 'make test-paxai-blob-lifecycle',
-                    'ai.T-S03': 'make test-paxai-blob-admission'}
+        commands = {
+            'ai.T-S01': (
+                'ROLLOUT_MANIFEST=deploy/rollout.kvx ROLLOUT_DRY_RUN=0 '
+                'bash tools/rollout/rollout.sh apply --sha '
+                + record['base_revision']
+                + ' --only archive'
+            ),
+            'ai.T-S02': 'make test-paxai-blob-lifecycle',
+            'ai.T-S03': 'make test-paxai-blob-admission',
+        }
         profiles = set()
         for task, value in facts.items():
-            keys(value, ('task_id', 'revision', 'command', 'exit_code', 'profile_sha256',
-                         'native_caps', 'producer_rerun'), 'prerequisite facts')
+            keys(
+                value,
+                (
+                    'task_id',
+                    'revision',
+                    'command',
+                    'exit_code',
+                    'profile_sha256',
+                    'native_caps',
+                    'producer_rerun',
+                ),
+                'prerequisite facts',
+            )
             same(value['task_id'], task, 'prerequisite task')
             same(value['revision'], record['base_revision'], 'prerequisite revision')
             same(value['command'], commands[task], 'prerequisite command')
