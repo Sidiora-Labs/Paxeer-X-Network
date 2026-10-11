@@ -3296,7 +3296,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.2]
 title = "Bank send refusal for paused tokenfactory denoms"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.1.8"]
@@ -3520,7 +3520,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.3.1]
 title = "layerxgov routes layerxledger and layerxauth pause params"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["1.2.4", "1.2.5"]
@@ -6903,7 +6903,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.7]
 title = "Budget payload encoders including the two new types"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.1"]
@@ -30105,7 +30105,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.4.4]
 title = "Rollout unit for the perps keeper"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["7.1.3"]
@@ -94354,7 +94354,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.1.5]
 title = "Pending tag, pending subscription and pax_sequencerReceipt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -94408,7 +94408,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.2.1]
 title = "Idempotency retention window by global sequence"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["13.1.1"]
