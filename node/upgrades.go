@@ -12,9 +12,11 @@ import (
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	layerxanchortypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
+	layerxauthtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxauth/types"
 	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	layerxcustodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	layerxexchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
+	layerxledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb"
 	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
@@ -106,6 +108,12 @@ const V610Upgrade = "v6.10"
 // embedded tag list.
 const V611Upgrade = layerxcustodytypes.GovernanceActivationUpgrade
 
+// MergeUpgrade is the plan that merges the LayerX kernel into the chain at the
+// sequencer activation height: from its height on the chain serves the ledger,
+// pay, auth and programs precompiles and the eight agent-function precompiles.
+// Like the activation plan it carries no entry in the embedded tag list. Every
+// gate reads this constant, so the activation rehearsal can rename the plan in
+// one place.
 const MergeUpgrade = "v7.0"
 
 // The governance voting periods the v6.10 plan writes. Every other governance
@@ -413,13 +421,18 @@ func activationPrecompileGate() evmkeeper.CustomPrecompileActivation {
 	}
 }
 
+// mergePrecompileGate declares the custom precompiles the merge plan brings
+// online and, for each, the module whose state it serves: the pure agent
+// helpers serve no module state, the agent oracle serves the exchange oracle
+// store, the agent streams serve the pay stream keeper, and the scheduler and
+// the attestor roots serve the agent module.
 func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
 	return evmkeeper.CustomPrecompileActivation{
 		Upgrade: MergeUpgrade,
 		Modules: map[common.Address][]string{
-			common.HexToAddress("0x000000000000000000000000000000000000101A"): {"layerxledger"},
+			common.HexToAddress("0x000000000000000000000000000000000000101A"): {layerxledgertypes.ModuleName},
 			common.HexToAddress("0x000000000000000000000000000000000000101B"): {"layerxpay"},
-			common.HexToAddress("0x000000000000000000000000000000000000101C"): {"layerxauth"},
+			common.HexToAddress("0x000000000000000000000000000000000000101C"): {layerxauthtypes.ModuleName},
 			common.HexToAddress("0x000000000000000000000000000000000000101D"): {"layerxprograms"},
 			common.HexToAddress("0x0000000000000000000000000000000000000901"): {},
 			common.HexToAddress("0x0000000000000000000000000000000000000902"): {},
@@ -427,7 +440,7 @@ func mergePrecompileGate() evmkeeper.CustomPrecompileActivation {
 			common.HexToAddress("0x0000000000000000000000000000000000000904"): {},
 			common.HexToAddress("0x0000000000000000000000000000000000000905"): {"layerxagent"},
 			common.HexToAddress("0x0000000000000000000000000000000000000906"): {"layerxpay"},
-			common.HexToAddress("0x0000000000000000000000000000000000000907"): {xwebtypes.ModuleName},
+			common.HexToAddress("0x0000000000000000000000000000000000000907"): {"layerxagent"},
 			common.HexToAddress("0x0000000000000000000000000000000000000908"): {},
 		},
 	}
