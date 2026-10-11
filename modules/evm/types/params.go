@@ -48,8 +48,12 @@ var DefaultPriorityNormalizer = sdk.NewDec(1)
 // DefaultBaseFeePerGas determines how much uhpx per gas spent is
 // burnt rather than go to validators (similar to base fee on
 // Ethereum).
-var DefaultBaseFeePerGas = sdk.NewDec(0)         // used for static base fee, deprecated in favor of dynamic base fee
-var DefaultMinFeePerGas = sdk.NewDec(1000000000) // 1gwei
+var DefaultBaseFeePerGas = sdk.NewDec(0)       // used for static base fee, deprecated in favor of dynamic base fee
+var DefaultMinFeePerGas = sdk.NewDec(67000000) // 0.067gwei
+
+// MaxMinFeePerGas bounds the governed minimum fee per gas at 0.067 gwei.
+var MaxMinFeePerGas = sdk.NewDec(67000000)
+
 var DefaultDeliverTxHookWasmGasLimit = uint64(300000)
 
 var DefaultWhitelistedCwCodeHashesForDelegateCall = generateDefaultWhitelistedCwCodeHashesForDelegateCall()
@@ -277,6 +281,9 @@ func validateMinFeePerGas(i interface{}) error {
 
 	if v.IsNegative() {
 		return fmt.Errorf("negative min fee per gas: %d", v)
+	}
+	if v.GT(MaxMinFeePerGas) {
+		return fmt.Errorf("min fee per gas %s exceeds maximum %s", v, MaxMinFeePerGas)
 	}
 
 	return nil

@@ -1,15 +1,18 @@
 package keeper_test
 
 import (
+	"math/big"
 	"testing"
 	"time"
 
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm"
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store"
 	paramtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 	dbm "github.com/tendermint/tm-db"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
@@ -227,6 +230,88 @@ func TestFeeTokenParamsRateFreshness(t *testing.T) {
 	rate, err := k.GetFeeTokenRate(ctx.WithBlockHeight(1<<63-1), "usid")
 	require.NoError(t, err)
 	require.Equal(t, params.AllowedFeeDenoms[0].Rate, rate)
+
+	const updated, raised = int64(500), int64(100_000)
+	appKeeper, appCtx := feeTokenGovernedContext(t)
+	appParams := appKeeper.GetParams(appCtx)
+	appParams.AllowedFeeDenoms = []types.AllowedFeeDenom{{Denom: "usid", Rate: sdk.NewDec(types.InitialSidioraBaseUnitsPerPax), RateUpdateHeight: updated}}
+	appKeeper.SetParams(appCtx, appParams)
+	require.Equal(t, types.DefaultMaxFeeTokenRateAge, appKeeper.GetMaxFeeTokenRateAge(appCtx))
+	_, err = appKeeper.GetFeeTokenRate(appCtx.WithBlockHeight(updated+types.DefaultMaxFeeTokenRateAge+1), "usid")
+	require.ErrorIs(t, err, evmkeeper.ErrFeeTokenRateStale)
+
+	handler := evm.NewParamChangeProposalHandler(appKeeper, testkeeper.EVMTestApp.ParamsKeeper)
+	for _, refused := range []int64{0, -1} {
+		require.ErrorContains(t, handler(appCtx, feeTokenParamChange(t, types.KeyMaxFeeTokenRateAge, refused)), "must be positive")
+		require.Equal(t, types.DefaultMaxFeeTokenRateAge, appKeeper.GetMaxFeeTokenRateAge(appCtx))
+	}
+	require.NoError(t, handler(appCtx, feeTokenParamChange(t, types.KeyMaxFeeTokenRateAge, raised)))
+	require.Equal(t, raised, appKeeper.GetMaxFeeTokenRateAge(appCtx))
+	require.Equal(t, raised, appKeeper.GetParams(appCtx).MaxFeeTokenRateAge)
+	require.Equal(t, appParams.AllowedFeeDenoms, appKeeper.GetAllowedFeeDenoms(appCtx))
+	for _, height := range []int64{updated, updated + types.DefaultMaxFeeTokenRateAge + 1, updated + raised} {
+		rate, err = appKeeper.GetFeeTokenRate(appCtx.WithBlockHeight(height), "usid")
+		require.NoError(t, err, height)
+		require.Equal(t, sdk.NewDec(3_114_000), rate, height)
+	}
+	rate, err = appKeeper.GetFeeTokenRate(appCtx.WithBlockHeight(updated+raised+1), "usid")
+	require.ErrorIs(t, err, evmkeeper.ErrFeeTokenRateStale)
+	require.ErrorContains(t, err, "max_fee_token_rate_age 100000")
+	require.True(t, rate.IsNil())
+}
+
+func TestFeeTokenParamsMinimumFeeBound(t *testing.T) {
+	require.Equal(t, sdk.NewDec(67_000_000), types.MaxMinFeePerGas)
+	require.True(t, types.DefaultMinFeePerGas.LTE(types.MaxMinFeePerGas))
+	require.True(t, types.DefaultParams().MinimumFeePerGas.LTE(sdk.NewDec(67_000_000)))
+	require.NoError(t, types.DefaultParams().Validate())
+
+	bounded := types.DefaultParams()
+	bounded.MinimumFeePerGas = sdk.NewDec(67_000_000)
+	require.NoError(t, bounded.Validate())
+	bounded.MinimumFeePerGas = sdk.NewDec(67_000_001)
+	require.EqualError(t, bounded.Validate(), "min fee per gas 67000001.000000000000000000 exceeds maximum 67000000.000000000000000000")
+	bounded.MinimumFeePerGas = sdk.NewDec(1_000_000_000)
+	require.EqualError(t, bounded.Validate(), "min fee per gas 1000000000.000000000000000000 exceeds maximum 67000000.000000000000000000")
+
+	k, ctx := feeTokenGovernedContext(t)
+	require.Equal(t, types.DefaultMinFeePerGas, k.GetMinimumFeePerGas(ctx))
+	handler := evm.NewParamChangeProposalHandler(k, testkeeper.EVMTestApp.ParamsKeeper)
+	for _, refused := range []struct {
+		value  sdk.Dec
+		reason string
+	}{
+		{sdk.NewDec(67_000_001), "min fee per gas 67000001.000000000000000000 exceeds maximum 67000000.000000000000000000"},
+		{sdk.NewDec(1_000_000_000), "min fee per gas 1000000000.000000000000000000 exceeds maximum 67000000.000000000000000000"},
+		{sdk.NewDec(-1), "negative min fee per gas"},
+	} {
+		require.ErrorContains(t, handler(ctx, feeTokenParamChange(t, types.KeyMinFeePerGas, refused.value)), refused.reason)
+		require.Equal(t, types.DefaultMinFeePerGas, k.GetMinimumFeePerGas(ctx))
+	}
+	governed := sdk.NewDec(50_000_000)
+	require.NoError(t, handler(ctx, feeTokenParamChange(t, types.KeyMinFeePerGas, governed)))
+	require.Equal(t, governed, k.GetMinimumFeePerGas(ctx))
+	require.NoError(t, k.GetParams(ctx).Validate())
+	minimum := k.GetMinimumFeePerGas(ctx).TruncateInt().BigInt()
+	require.Equal(t, 0, big.NewInt(50_000_000).Cmp(minimum))
+	require.Equal(t, -1, big.NewInt(49_999_999).Cmp(minimum))
+}
+
+// feeTokenGovernedContext returns the application keeper and a cached deliver
+// context whose param changes stay local to the test.
+func feeTokenGovernedContext(t *testing.T) (*evmkeeper.Keeper, sdk.Context) {
+	t.Helper()
+	ctx, _ := testkeeper.EVMTestApp.GetContextForDeliverTx(nil).CacheContext()
+	return &testkeeper.EVMTestApp.EvmKeeper, ctx
+}
+
+func feeTokenParamChange(t *testing.T, key []byte, value interface{}) *proposal.ParameterChangeProposal {
+	t.Helper()
+	bz, err := testkeeper.EVMTestApp.LegacyAmino().MarshalAsJSON(value)
+	require.NoError(t, err)
+	return proposal.NewParameterChangeProposal("fee params", "fee params", []proposal.ParamChange{
+		proposal.NewParamChange(types.ModuleName, string(key), string(bz)),
+	}, false)
 }
 
 func TestFeeTokenParamsRateUnset(t *testing.T) {
