@@ -10,6 +10,8 @@ import (
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/rpc/coretypes"
+	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
@@ -18,6 +20,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
+	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -348,4 +351,153 @@ func TestPendingFilterPendingTransactions(t *testing.T) {
 	require.True(t, errors.As(err, &coded))
 	require.Equal(t, -32000, coded.ErrorCode())
 	require.Equal(t, "eth_newPendingTransactionFilter is not supported on Pax EVM RPC", coded.Error())
+}
+
+// pendingFilterContinue builds a sequencer App committed to height-1 with the
+// block at height open on an executor whose seq chain continues from prev, so
+// a receipt lands at height with the next seq.
+func pendingFilterContinue(t *testing.T, height int64, prev *sequencer.Accepted, sender utils.TestAcct) (*app.App, sequencer.Executor) {
+	t.Helper()
+	s := newPendingSequencer(t, height-1, sender)
+	empty, err := s.exec.Seal(height)
+	require.NoError(t, err)
+	require.Empty(t, empty.Txs)
+	exec, err := sequencer.NewExecutor(s.app, sequencer.Options{
+		ChainID:         pendingChainID,
+		ProposerAddress: empty.Ctx.BlockHeader().ProposerAddress,
+		LastSeq:         prev.Seq,
+		LastSeqHash:     prev.SeqHash,
+	})
+	require.NoError(t, err)
+	require.NoError(t, exec.Open(height, empty.TimestampMs))
+	return s.app, exec
+}
+
+// pendingFilterBlockClient serves the committed block at height with the
+// transactions the sequencer sealed into it.
+type pendingFilterBlockClient struct {
+	*MockClient
+	height int64
+	txs    [][]byte
+}
+
+func (c *pendingFilterBlockClient) Block(ctx context.Context, h *int64) (*coretypes.ResultBlock, error) {
+	if h == nil || *h != c.height {
+		return c.MockClient.Block(ctx, h)
+	}
+	txs := make([]tmtypes.Tx, len(c.txs))
+	for i, tx := range c.txs {
+		txs[i] = tx
+	}
+	return &coretypes.ResultBlock{
+		BlockID: MockBlockID,
+		Block: &tmtypes.Block{
+			Header:     mockBlockHeader(c.height),
+			Data:       tmtypes.Data{Txs: txs},
+			LastCommit: &tmtypes.Commit{Height: c.height - 1},
+		},
+	}, nil
+}
+
+func TestPendingFilterExplicitLatestSurvivesCommit(t *testing.T) {
+	const committed = int64(300)
+	ctx := context.Background()
+
+	// H: one deployment sealed and committed, its receipt flushed to the
+	// committed receipt store.
+	sender0 := utils.NewSigner()
+	s0 := newPendingSequencer(t, committed-1, sender0)
+	tx0, hash0 := pendingFilterDeploy(t, sender0, 0)
+	acc0, err := s0.exec.Accept(tx0)
+	require.NoError(t, err)
+	require.Equal(t, abci.CodeTypeOK, acc0.Result.Code, acc0.Result.Log)
+	sealed, err := s0.exec.Seal(committed)
+	require.NoError(t, err)
+	require.Len(t, sealed.Txs, 1)
+	require.NoError(t, s0.app.EvmKeeper.FlushTransientReceipts(sealed.Ctx))
+	require.Eventually(t, func() bool {
+		_, err := s0.app.EvmKeeper.GetReceipt(s0.ctxProvider(committed), hash0)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	tm := &pendingFilterBlockClient{MockClient: &MockClient{latestOverride: committed}, height: committed, txs: sealed.Txs}
+	feed := evmrpc.NewReceiptLogFeed(committed)
+	// The node's committed context follows the committed tip as heights commit.
+	committedCtx := func(height int64) sdk.Context {
+		return s0.ctxProvider(height).WithBlockHeight(tm.latestOverride)
+	}
+	api := evmrpc.NewFilterAPI(
+		tm,
+		&s0.app.EvmKeeper,
+		committedCtx,
+		func(int64) client.TxConfig { return TxConfig },
+		evmrpc.NewFilterConfig(time.Minute, 0, 0),
+		evmrpc.ConnectionTypeHTTP,
+		"eth",
+		make(chan struct{}, evmrpc.MaxDBReadConcurrency),
+		evmrpc.NewBlockCache(16),
+		&sync.Mutex{},
+		evmrpc.NewLogSlicePool(),
+		evmrpc.NewWatermarkManager(tm, committedCtx, nil, nil),
+	)
+	api.SetReceiptLogFeed(feed)
+	t.Cleanup(api.Cleanup)
+
+	crit := pendingFilterCrit()
+	crit.FromBlock = big.NewInt(rpc.LatestBlockNumber.Int64())
+	id, err := api.NewFilter(ctx, crit)
+	require.NoError(t, err)
+	changes := func() []*evmrpc.FilterLog {
+		t.Helper()
+		res, err := api.GetFilterChanges(ctx, id)
+		require.NoError(t, err)
+		logs, ok := res.([]*evmrpc.FilterLog)
+		require.True(t, ok, "changes of a pending logs filter are %T", res)
+		return logs
+	}
+
+	// receiptAndCommit receipts one deployment at height into the feed, then
+	// seals and commits that height.
+	receiptAndCommit := func(height int64, prev *sequencer.Accepted) (*sequencer.Accepted, common.Hash, common.Address) {
+		t.Helper()
+		sender := utils.NewSigner()
+		a, exec := pendingFilterContinue(t, height, prev, sender)
+		bz, hash := pendingFilterDeploy(t, sender, 0)
+		acc := pendingFilterReceipt(t, a, exec, feed, bz, hash)
+		require.Equal(t, prev.Seq+1, acc.Seq)
+		require.Equal(t, height, acc.Height)
+		batch, err := exec.Seal(height)
+		require.NoError(t, err)
+		require.Len(t, batch.Txs, 1)
+		require.NoError(t, feed.Committed(height))
+		tm.latestOverride = height
+		return acc, hash, crypto.CreateAddress(sender.EvmAddress, 0)
+	}
+
+	// H+1 and H+2 are receipted and committed before the first poll.
+	acc1, hash1, addr1 := receiptAndCommit(committed+1, acc0)
+	acc2, hash2, addr2 := receiptAndCommit(committed+2, acc1)
+
+	got := changes()
+	require.Len(t, got, 3)
+	require.Nil(t, got[0].Seq)
+	require.Equal(t, uint64(committed), got[0].BlockNumber)
+	require.Equal(t, common.BytesToHash(MockBlockID.Hash), got[0].BlockHash)
+	require.Equal(t, hash0, got[0].TxHash)
+	require.Equal(t, uint(0), got[0].TxIndex)
+	require.Equal(t, uint(0), got[0].Index)
+	require.Equal(t, crypto.CreateAddress(sender0.EvmAddress, 0), got[0].Address)
+	require.Equal(t, []common.Hash{pendingFilterTopic}, got[0].Topics)
+	require.Empty(t, got[0].Data)
+	require.False(t, got[0].Removed)
+	requirePendingFilterLog(t, got[1], acc1.Seq, committed+1, acc1.TxIndex, 0, hash1, addr1)
+	requirePendingFilterLog(t, got[2], acc2.Seq, committed+2, acc2.TxIndex, 0, hash2, addr2)
+
+	// A further commit: the committed range stays drained at H, so nothing
+	// committed repeats and the new log arrives only through its receipt.
+	acc3, hash3, addr3 := receiptAndCommit(committed+3, acc2)
+	got = changes()
+	require.Len(t, got, 1)
+	requirePendingFilterLog(t, got[0], acc3.Seq, committed+3, acc3.TxIndex, 0, hash3, addr3)
+	require.Empty(t, changes())
 }

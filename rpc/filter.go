@@ -688,6 +688,14 @@ func (a *FilterAPI) NewFilter(
 		feed := a.receiptLogs
 		sub, base := feed.subscribe(true)
 		f.pending, f.pendingBase = sub, base
+		// A latest, safe or finalized fromBlock is the committed tip at
+		// install, so the committed range never begins above its frozen end.
+		if b := crit.FromBlock; b != nil && b.IsInt64() {
+			switch b.Int64() {
+			case ethrpc.LatestBlockNumber.Int64(), ethrpc.SafeBlockNumber.Int64(), ethrpc.FinalizedBlockNumber.Int64():
+				f.fc.FromBlock = big.NewInt(base)
+			}
+		}
 		f.cancelFunc = func() {
 			cancel()
 			feed.unsubscribe(sub)
