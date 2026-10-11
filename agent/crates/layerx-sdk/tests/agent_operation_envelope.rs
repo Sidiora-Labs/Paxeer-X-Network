@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use layerx_agent_api::error::{
-    ApiSuccess, ErrorClass, Key, Level, RequestId, Retriability, VerificationStatus,
-};
+use layerx_agent_api::error::{ErrorClass, RequestId, Retriability};
+use layerx_agent_api::idempotency::Key;
+use layerx_agent_api::verify::{ApiSuccess, Level, VerificationStatus};
 use layerx_sdk::agent_envelope::{
     canonical_u64, decode_response, decode_native_preparation, decode_native_approval, decode_native_approval_list,
     decode_proof_bundle_request, decode_proof_bundle_response, encode_proof_bundle_request,
@@ -546,7 +546,7 @@ impl Probe {
         match (&received, &outcome) {
             (Some((_, body)), Err(error @ EnvelopeError::Decode { operation: decoded }))
                 if body.is_object()
-                    && *decoded == operation
+                    && decoded == &operation
                     && error.client_retriability() == ClientRetriability::Never =>
             {
                 Ok(())
@@ -575,7 +575,7 @@ impl Probe {
         match (&received, &outcome) {
             (Some((_, body)), Err(error @ EnvelopeError::Unknown { operation: unknown }))
                 if body.is_object()
-                    && *unknown == operation
+                    && unknown == &operation
                     && error.client_retriability() == ClientRetriability::Never =>
             {
                 Ok(())
