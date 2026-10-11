@@ -7,7 +7,7 @@
 //! `Idempotency-Key` and purpose so a retried registration reuses the key it
 //! already created.
 
-use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -22,18 +22,72 @@ use crate::secret::{random_hex, sha256_hex, unix_seconds, valid_hex, valid_token
 
 /// The domain label under which the seal keys are derived.
 pub const SEAL_LABEL: &[u8] = b"layerx-kms-ed25519-seed";
+pub const SECP256K1_SEAL_LABEL: &[u8] = b"layerx-kms-secp256k1-scalar";
 /// Prefix of every key identifier the webhooks scheme accepts.
 pub const KEY_ID_PREFIX: &str = "whk_";
 /// Prefix of every handle this boundary issues.
 pub const HANDLE_PREFIX: &str = "kms-ed25519-";
+pub const SECP256K1_HANDLE_PREFIX: &str = "kms-secp256k1-";
 /// Largest message the boundary signs.
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 const MAX_KEYS: usize = 100_000;
 const MAX_PURPOSE_BYTES: usize = 64;
 
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Algorithm {
+    #[default]
+    Ed25519,
+    Secp256k1,
+}
+
+impl Algorithm {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "ed25519" => Some(Self::Ed25519),
+            "secp256k1" => Some(Self::Secp256k1),
+            _ => None,
+        }
+    }
+
+    fn handle_prefix(self) -> &'static str {
+        match self {
+            Self::Ed25519 => HANDLE_PREFIX,
+            Self::Secp256k1 => SECP256K1_HANDLE_PREFIX,
+        }
+    }
+
+    fn public_bytes(self) -> usize {
+        match self {
+            Self::Ed25519 => 32,
+            Self::Secp256k1 => 33,
+        }
+    }
+}
+
+enum OpenedKey {
+    Ed25519(SigningKey),
+    Secp256k1(k256::ecdsa::SigningKey),
+}
+
+impl OpenedKey {
+    fn public_key(&self) -> Vec<u8> {
+        match self {
+            Self::Ed25519(key) => key.verifying_key().to_bytes().to_vec(),
+            Self::Secp256k1(key) => key
+                .verifying_key()
+                .to_encoded_point(true)
+                .as_bytes()
+                .to_vec(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct KeyRecord {
+    #[serde(default)]
+    algorithm: Algorithm,
     key_id: String,
     handle: String,
     purpose: String,
@@ -69,6 +123,8 @@ struct KeyResponse<'a> {
 #[derive(Serialize)]
 struct SignatureResponse {
     signature: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery_id: Option<u8>,
 }
 
 #[derive(Serialize)]
@@ -87,21 +143,21 @@ pub struct KeyStore {
 }
 
 /// Outcome of a create request.
-pub enum Created {
+pub enum Created<P = [u8; 32]> {
     /// A key was generated for a new scope.
-    Fresh(KeyView),
+    Fresh(KeyView<P>),
     /// The scope had already created this key with the same request.
-    Existing(KeyView),
+    Existing(KeyView<P>),
     /// The scope already created a key with a different request body.
     Conflict,
 }
 
 /// The public view of a key.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyView {
+pub struct KeyView<P = [u8; 32]> {
     pub key_id: String,
     pub handle: String,
-    pub public_key: [u8; 32],
+    pub public_key: P,
 }
 
 impl KeyStore {
@@ -129,7 +185,7 @@ impl KeyStore {
                 return Err("duplicate key identity in journal".to_owned());
             }
             let signing = store.open_key(&record)?;
-            if signing.verifying_key().to_bytes() != decode_public(&record.public_key)? {
+            if signing.public_key() != decode_public(&record.public_key, record.algorithm)? {
                 return Err(format!(
                     "journaled key {} does not match its sealed seed",
                     record.key_id
@@ -168,14 +224,32 @@ impl KeyStore {
         self.by_handle.insert(record.handle.clone(), record);
     }
 
-    fn open_key(&self, record: &KeyRecord) -> Result<SigningKey, String> {
-        let seed = self.seal.open(&record.sealed_seed)?;
-        let seed: [u8; 32] = seed
-            .as_slice()
-            .try_into()
-            .map_err(|_| "sealed seed has an invalid length".to_owned())?;
-        let seed = Zeroizing::new(seed);
-        Ok(SigningKey::from_bytes(&seed))
+    fn open_key(&self, record: &KeyRecord) -> Result<OpenedKey, String> {
+        if !record.handle.starts_with(record.algorithm.handle_prefix()) {
+            return Err("sealed key algorithm does not match handle".to_owned());
+        }
+        let opened = self.seal.open(&record.sealed_seed)?;
+        match record.algorithm {
+            Algorithm::Ed25519 => {
+                let mut seed = Zeroizing::new([0_u8; 32]);
+                if opened.len() != seed.len() {
+                    return Err("sealed seed has an invalid length".to_owned());
+                }
+                seed.copy_from_slice(&opened);
+                Ok(OpenedKey::Ed25519(SigningKey::from_bytes(&seed)))
+            }
+            Algorithm::Secp256k1 => {
+                let scalar = opened
+                    .strip_prefix(SECP256K1_SEAL_LABEL)
+                    .filter(|value| value.len() == 32)
+                    .ok_or_else(|| "sealed scalar has an invalid domain or length".to_owned())?;
+                let mut secret = Zeroizing::new([0_u8; 32]);
+                secret.copy_from_slice(scalar);
+                k256::ecdsa::SigningKey::from_slice(secret.as_ref())
+                    .map(OpenedKey::Secp256k1)
+                    .map_err(|_| "sealed scalar is invalid".to_owned())
+            }
+        }
     }
 
     /// Creates, or returns the already created, Ed25519 key for `scope`.
@@ -188,12 +262,38 @@ impl KeyStore {
         purpose: &str,
         request_digest: &str,
     ) -> Result<Created, String> {
+        match self.create_key(scope, purpose, request_digest, Algorithm::Ed25519)? {
+            Created::Fresh(key) => Ok(Created::Fresh(ed25519_view(key)?)),
+            Created::Existing(key) => Ok(Created::Existing(ed25519_view(key)?)),
+            Created::Conflict => Ok(Created::Conflict),
+        }
+    }
+
+    pub(crate) fn create_with_algorithm(
+        &mut self,
+        scope: &str,
+        purpose: &str,
+        request_digest: &str,
+        algorithm: &str,
+    ) -> Result<Created<Vec<u8>>, String> {
+        let algorithm =
+            Algorithm::parse(algorithm).ok_or_else(|| "unsupported algorithm".to_owned())?;
+        self.create_key(scope, purpose, request_digest, algorithm)
+    }
+
+    fn create_key(
+        &mut self,
+        scope: &str,
+        purpose: &str,
+        request_digest: &str,
+        algorithm: Algorithm,
+    ) -> Result<Created<Vec<u8>>, String> {
         if let Some(handle) = self.by_scope.get(scope) {
             let record = self
                 .by_handle
                 .get(handle)
                 .ok_or_else(|| "scope index is inconsistent".to_owned())?;
-            if record.request_digest == request_digest {
+            if record.request_digest == request_digest && record.algorithm == algorithm {
                 return Ok(Created::Existing(view(record)?));
             }
             return Ok(Created::Conflict);
@@ -203,15 +303,32 @@ impl KeyStore {
         }
         let mut seed = Zeroizing::new([0_u8; 32]);
         getrandom::fill(seed.as_mut()).map_err(|_| "entropy is unavailable".to_owned())?;
-        let signing = SigningKey::from_bytes(&seed);
+        let signing = match algorithm {
+            Algorithm::Ed25519 => OpenedKey::Ed25519(SigningKey::from_bytes(&seed)),
+            Algorithm::Secp256k1 => OpenedKey::Secp256k1(
+                k256::ecdsa::SigningKey::from_slice(seed.as_ref())
+                    .map_err(|_| "generated scalar is invalid".to_owned())?,
+            ),
+        };
+        let sealed_seed = match algorithm {
+            Algorithm::Ed25519 => self.seal.seal(seed.as_slice())?,
+            Algorithm::Secp256k1 => {
+                let mut material =
+                    Zeroizing::new(Vec::with_capacity(SECP256K1_SEAL_LABEL.len() + seed.len()));
+                material.extend_from_slice(SECP256K1_SEAL_LABEL);
+                material.extend_from_slice(seed.as_slice());
+                self.seal.seal(&material)?
+            }
+        };
         let record = KeyRecord {
+            algorithm,
             key_id: format!("{KEY_ID_PREFIX}{}", random_hex(12)?.as_str()),
-            handle: format!("{HANDLE_PREFIX}{}", random_hex(16)?.as_str()),
+            handle: format!("{}{}", algorithm.handle_prefix(), random_hex(16)?.as_str()),
             purpose: purpose.to_owned(),
             scope: scope.to_owned(),
             request_digest: request_digest.to_owned(),
-            public_key: crate::secret::hex(&signing.verifying_key().to_bytes()),
-            sealed_seed: self.seal.seal(seed.as_slice())?,
+            public_key: crate::secret::hex(&signing.public_key()),
+            sealed_seed,
             created_at: unix_seconds()?,
         };
         if self.by_key_id.contains_key(&record.key_id)
@@ -232,6 +349,7 @@ impl KeyStore {
         self.by_handle
             .get(handle)
             .and_then(|record| view(record).ok())
+            .and_then(|key| ed25519_view(key).ok())
     }
 
     /// Signs `message` under the key behind `handle`.
@@ -243,35 +361,95 @@ impl KeyStore {
         let Some(record) = self.by_handle.get(handle) else {
             return Ok(None);
         };
+        if record.algorithm != Algorithm::Ed25519 {
+            return Err("key algorithm mismatch".to_owned());
+        }
+        self.sign_record(record, message)
+            .map(|signed| Some(signed.0))
+    }
+
+    fn sign_record(
+        &self,
+        record: &KeyRecord,
+        message: &[u8],
+    ) -> Result<([u8; 64], Option<u8>), String> {
         let signing = self.open_key(record)?;
-        let public = VerifyingKey::from_bytes(&decode_public(&record.public_key)?)
-            .map_err(|error| error.to_string())?;
-        if signing.verifying_key() != public {
+        if signing.public_key() != decode_public(&record.public_key, record.algorithm)? {
             return Err("sealed key does not match its public key".to_owned());
         }
-        let signature = signing.sign(message);
-        public
-            .verify(message, &signature)
-            .map_err(|error| format!("signature self-check failed: {error}"))?;
-        Ok(Some(signature.to_bytes()))
+        match signing {
+            OpenedKey::Ed25519(signing) => {
+                let public = signing.verifying_key();
+                let signature = signing.sign(message);
+                public
+                    .verify(message, &signature)
+                    .map_err(|_| "signature self-check failed".to_owned())?;
+                Ok((signature.to_bytes(), None))
+            }
+            OpenedKey::Secp256k1(signing) => {
+                if message.len() != 32 {
+                    return Err("prehash has an invalid length".to_owned());
+                }
+                let (signature, recovery) = signing
+                    .sign_prehash_recoverable(message)
+                    .map_err(|_| "signature failed".to_owned())?;
+                let (signature, recovery) =
+                    signature
+                        .normalize_s()
+                        .map_or((signature, recovery), |low| {
+                            (
+                                low,
+                                k256::ecdsa::RecoveryId::new(
+                                    !recovery.is_y_odd(),
+                                    recovery.is_x_reduced(),
+                                ),
+                            )
+                        });
+                if recovery.is_x_reduced() {
+                    return Err("signature is not EVM recoverable".to_owned());
+                }
+                let public =
+                    k256::ecdsa::VerifyingKey::recover_from_prehash(message, &signature, recovery)
+                        .map_err(|_| "signature self-check failed".to_owned())?;
+                if public != *signing.verifying_key() {
+                    return Err("signature self-check failed".to_owned());
+                }
+                Ok((signature.to_bytes().into(), Some(recovery.to_byte())))
+            }
+        }
     }
 }
 
-fn view(record: &KeyRecord) -> Result<KeyView, String> {
+fn view(record: &KeyRecord) -> Result<KeyView<Vec<u8>>, String> {
     Ok(KeyView {
         key_id: record.key_id.clone(),
         handle: record.handle.clone(),
-        public_key: decode_public(&record.public_key)?,
+        public_key: decode_public(&record.public_key, record.algorithm)?,
     })
 }
 
-fn decode_public(value: &str) -> Result<[u8; 32], String> {
-    if !valid_hex(value, 32) {
-        return Err("journaled public key is not 32 hex bytes".to_owned());
+fn ed25519_view(key: KeyView<Vec<u8>>) -> Result<KeyView, String> {
+    Ok(KeyView {
+        key_id: key.key_id,
+        handle: key.handle,
+        public_key: key
+            .public_key
+            .try_into()
+            .map_err(|_| "key algorithm mismatch".to_owned())?,
+    })
+}
+
+fn decode_public(value: &str, algorithm: Algorithm) -> Result<Vec<u8>, String> {
+    if !valid_hex(value, algorithm.public_bytes()) {
+        return Err("journaled public key has an invalid length or encoding".to_owned());
     }
-    crate::secret::unhex(value)
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or_else(|| "journaled public key is malformed".to_owned())
+    let bytes = crate::secret::unhex(value)
+        .ok_or_else(|| "journaled public key is malformed".to_owned())?;
+    if algorithm == Algorithm::Secp256k1 {
+        k256::ecdsa::VerifyingKey::from_sec1_bytes(&bytes)
+            .map_err(|_| "journaled public key is malformed".to_owned())?;
+    }
+    Ok(bytes)
 }
 
 /// The service state a listener shares across connections.
@@ -333,7 +511,7 @@ impl Service {
         let Ok(body) = serde_json::from_slice::<CreateKeyRequest>(&request.body) else {
             return refusal(400, "invalid_request", None);
         };
-        if body.algorithm != "ed25519" {
+        if Algorithm::parse(&body.algorithm).is_none() {
             return refusal(422, "unsupported_algorithm", None);
         }
         if !valid_token(&body.purpose, MAX_PURPOSE_BYTES) {
@@ -344,7 +522,7 @@ impl Service {
         let Ok(mut store) = self.store.lock() else {
             return refusal(503, "dependency_unavailable", Some(5));
         };
-        match store.create(&scope, &body.purpose, &digest) {
+        match store.create_with_algorithm(&scope, &body.purpose, &digest, &body.algorithm) {
             Ok(Created::Fresh(key)) => json(201, &key_response(&key)),
             Ok(Created::Existing(key)) => json(200, &key_response(&key)),
             Ok(Created::Conflict) => refusal(409, "idempotency_conflict", None),
@@ -365,10 +543,15 @@ impl Service {
         let Ok(store) = self.store.lock() else {
             return refusal(503, "dependency_unavailable", Some(5));
         };
-        store.lookup(key_id).map_or_else(
-            || refusal(404, "unknown_key", None),
-            |key| json(200, &key_response(&key)),
-        )
+        store
+            .by_key_id
+            .get(key_id)
+            .and_then(|handle| store.by_handle.get(handle))
+            .and_then(|record| view(record).ok())
+            .map_or_else(
+                || refusal(404, "unknown_key", None),
+                |key| json(200, &key_response(&key)),
+            )
     }
 
     fn sign(&self, request: &Request) -> Response {
@@ -381,7 +564,7 @@ impl Service {
         let Ok(body) = serde_json::from_slice::<SignRequest>(&request.body) else {
             return refusal(400, "invalid_request", None);
         };
-        if body.algorithm != "ed25519" {
+        if Algorithm::parse(&body.algorithm).is_none() {
             return refusal(422, "unsupported_algorithm", None);
         }
         if !valid_token(&body.key_handle, 512) {
@@ -396,12 +579,21 @@ impl Service {
         let Ok(store) = self.store.lock() else {
             return refusal(503, "dependency_unavailable", Some(5));
         };
-        match store.sign(&body.key_handle, &message) {
-            Ok(Some(signature)) => ok(serde_json::json!(SignatureResponse {
+        let Some(record) = store.by_handle.get(&body.key_handle) else {
+            return refusal(404, "unknown_key", None);
+        };
+        if Algorithm::parse(&body.algorithm) != Some(record.algorithm) {
+            return refusal(422, "algorithm_mismatch", None);
+        }
+        if record.algorithm == Algorithm::Secp256k1 && message.len() != 32 {
+            return refusal(400, "invalid_message", None);
+        }
+        match store.sign_record(record, &message) {
+            Ok((signature, recovery_id)) => ok(serde_json::json!(SignatureResponse {
                 signature: base64::encode(&signature),
+                recovery_id,
             })
             .to_string()),
-            Ok(None) => refusal(404, "unknown_key", None),
             Err(error) => {
                 eprintln!("layerx-kms sign failed: {error}");
                 refusal(503, "dependency_unavailable", Some(5))
@@ -429,17 +621,18 @@ impl Service {
     }
 }
 
-fn key_response(key: &KeyView) -> KeyResponse<'_> {
+fn key_response<P: AsRef<[u8]>>(key: &KeyView<P>) -> KeyResponse<'_> {
     KeyResponse {
         key_id: &key.key_id,
         handle: &key.handle,
-        public_key: base64::encode(&key.public_key),
+        public_key: base64::encode(key.public_key.as_ref()),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::VerifyingKey;
     use std::fs;
     use std::path::PathBuf;
 

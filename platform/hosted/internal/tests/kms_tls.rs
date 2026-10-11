@@ -8,6 +8,9 @@ use std::thread;
 use std::time::Duration;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use k256::ecdsa::{RecoveryId, Signature as EvmSignature, VerifyingKey as EvmVerifyingKey};
+use layerx_crypto::evm_transaction::Eip1559Call;
+use layerx_crypto::secp256k1::evm_address;
 use layerx_platform_internal::base64;
 use native_tls::{Certificate, Identity, TlsConnector};
 use serde_json::{json, Value};
@@ -259,11 +262,12 @@ impl Fixture {
         let mut tls = connector
             .connect("localhost", tcp)
             .unwrap_or_else(|error| panic!("TLS connect: {error}"));
-        let method = if matches!(path, "/readyz" | "/livez") {
-            "GET"
-        } else {
-            "POST"
-        };
+        let method =
+            if matches!(path, "/readyz" | "/livez") || path.starts_with("/v1/signing-keys/") {
+                "GET"
+            } else {
+                "POST"
+            };
         let body = body.to_string();
         write!(tls, "{method} {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\nIdempotency-Key: registration-one\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap_or_else(|error| panic!("request: {error}"));
         tls.flush().unwrap_or_else(|error| panic!("flush: {error}"));
@@ -372,4 +376,237 @@ fn kms_serves_plain_healthz_beside_its_tls_listener() {
     );
     assert_eq!(fixture.health("POST", "/healthz").0, 405);
     assert_eq!(fixture.health("GET", "/readyz").0, 404);
+}
+
+type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+fn decode_base64<const N: usize>(value: &Value) -> TestResult<[u8; N]> {
+    let bytes =
+        base64::decode(value.as_str().ok_or("base64 string required")?).ok_or("invalid base64")?;
+    bytes
+        .try_into()
+        .map_err(|_| "unexpected byte length".into())
+}
+
+fn rlp_length(input: &[u8], count: usize) -> TestResult<usize> {
+    let bytes = input.get(..count).ok_or("truncated RLP length")?;
+    if bytes.first() == Some(&0) {
+        return Err("noncanonical RLP length".into());
+    }
+    let length = bytes
+        .iter()
+        .try_fold(0_usize, |value, byte| {
+            value.checked_mul(256)?.checked_add(usize::from(*byte))
+        })
+        .ok_or("RLP length overflow")?;
+    if length < 56 {
+        return Err("noncanonical long RLP length".into());
+    }
+    Ok(length)
+}
+
+fn take_rlp<'a>(input: &mut &'a [u8]) -> TestResult<(bool, &'a [u8])> {
+    let prefix = *input.first().ok_or("missing RLP item")?;
+    let (list, offset, length) = match prefix {
+        0..=0x7f => (false, 0, 1),
+        0x80..=0xb7 => (false, 1, usize::from(prefix - 0x80)),
+        0xb8..=0xbf => {
+            let count = usize::from(prefix - 0xb7);
+            (false, count + 1, rlp_length(&input[1..], count)?)
+        }
+        0xc0..=0xf7 => (true, 1, usize::from(prefix - 0xc0)),
+        _ => {
+            let count = usize::from(prefix - 0xf7);
+            (true, count + 1, rlp_length(&input[1..], count)?)
+        }
+    };
+    let end = offset.checked_add(length).ok_or("RLP length overflow")?;
+    let bytes = input.get(offset..end).ok_or("truncated RLP item")?;
+    if !list && offset == 1 && length == 1 && bytes[0] < 0x80 {
+        return Err("noncanonical RLP string".into());
+    }
+    *input = &input[end..];
+    Ok((list, bytes))
+}
+
+fn rlp_integer(bytes: &[u8]) -> TestResult<u128> {
+    if bytes.len() > 16 || bytes.first() == Some(&0) {
+        return Err("invalid RLP integer".into());
+    }
+    Ok(bytes
+        .iter()
+        .fold(0_u128, |value, byte| value * 256 + u128::from(*byte)))
+}
+
+fn rlp_scalar(bytes: &[u8]) -> TestResult<[u8; 32]> {
+    if bytes.is_empty() || bytes.len() > 32 || bytes.first() == Some(&0) {
+        return Err("invalid RLP signature scalar".into());
+    }
+    let mut scalar = [0; 32];
+    scalar[32 - bytes.len()..].copy_from_slice(bytes);
+    Ok(scalar)
+}
+
+fn transaction_sender(raw: &[u8], expected_call: &Eip1559Call) -> TestResult<[u8; 20]> {
+    assert_eq!(raw.first(), Some(&2));
+    let mut encoded = raw.get(1..).ok_or("missing transaction body")?;
+    let (list, mut payload) = take_rlp(&mut encoded)?;
+    assert!(list);
+    assert!(encoded.is_empty());
+    let mut fields = Vec::new();
+    while !payload.is_empty() {
+        let (list, bytes) = take_rlp(&mut payload)?;
+        assert_eq!(list, fields.len() == 8);
+        fields.push(bytes);
+    }
+    assert_eq!(fields.len(), 12);
+    assert!(fields[6].is_empty());
+    assert!(fields[8].is_empty());
+    let decoded = Eip1559Call {
+        chain_id: u64::try_from(rlp_integer(fields[0])?)?,
+        nonce: u64::try_from(rlp_integer(fields[1])?)?,
+        max_priority_fee_per_gas: rlp_integer(fields[2])?,
+        max_fee_per_gas: rlp_integer(fields[3])?,
+        gas_limit: u64::try_from(rlp_integer(fields[4])?)?,
+        to: fields[5].try_into()?,
+        data: fields[7].to_vec(),
+    };
+    assert_eq!(&decoded, expected_call);
+    let parity = u8::try_from(rlp_integer(fields[9])?)?;
+    assert!(parity <= 1);
+    let signature = EvmSignature::from_scalars(rlp_scalar(fields[10])?, rlp_scalar(fields[11])?)?;
+    assert!(signature.normalize_s().is_none());
+    let public = EvmVerifyingKey::recover_from_prehash(
+        &decoded.signing_hash(),
+        &signature,
+        RecoveryId::try_from(parity)?,
+    )?;
+    evm_address(public.to_encoded_point(false).as_bytes())
+        .map_err(|_| "invalid recovered public key".into())
+}
+
+fn assert_secp256k1_refusals(fixture: &Fixture, handle: &Value, digest: &[u8; 32]) {
+    for message in [&digest[..31], &[0_u8; 33][..]] {
+        assert_eq!(
+            fixture.request(
+                "/v1/signatures",
+                "kms-integration-token",
+                true,
+                &json!({"algorithm":"secp256k1", "key_handle":handle,
+                    "message":base64::encode(message)})
+            ),
+            (
+                400,
+                json!({"error":{"code":"invalid_message","retry":"never"}})
+            ),
+        );
+    }
+    assert_eq!(
+        fixture.request(
+            "/v1/signatures",
+            "kms-integration-token",
+            true,
+            &json!({"algorithm":"ed25519", "key_handle":handle,
+                "message":base64::encode(digest)})
+        ),
+        (
+            422,
+            json!({"error":{"code":"algorithm_mismatch","retry":"never"}})
+        ),
+    );
+}
+
+fn secp256k1_identity(fixture: &Fixture, create: &Value) -> TestResult<(Value, String, [u8; 20])> {
+    let (status, key) = fixture.request("/v1/signing-keys", "kms-integration-token", true, create);
+    assert_eq!(status, 201);
+    assert_eq!(key.as_object().ok_or("key object required")?.len(), 3);
+    assert!(key["key_id"]
+        .as_str()
+        .ok_or("key id required")?
+        .starts_with("whk_"));
+    assert!(key["handle"]
+        .as_str()
+        .ok_or("handle required")?
+        .starts_with("kms-secp256k1-"));
+    assert_eq!(
+        fixture.request("/v1/signing-keys", "kms-integration-token", true, create),
+        (200, key.clone())
+    );
+    let path = format!(
+        "/v1/signing-keys/{}",
+        key["key_id"].as_str().ok_or("key id required")?
+    );
+    assert_eq!(
+        fixture.request(&path, "kms-integration-token", true, &json!({})),
+        (200, key.clone())
+    );
+    let public = decode_base64::<33>(&key["public_key"])?;
+    assert!(matches!(public[0], 2 | 3));
+    let address = evm_address(&public).map_err(|_| "invalid KMS public key")?;
+    Ok((key, path, address))
+}
+
+fn secp256k1_signature(fixture: &Fixture, request: &Value) -> TestResult<(Value, [u8; 64], u8)> {
+    let (status, signed) =
+        fixture.request("/v1/signatures", "kms-integration-token", true, request);
+    assert_eq!(status, 200);
+    assert_eq!(
+        signed.as_object().ok_or("signature object required")?.len(),
+        2
+    );
+    let signature = decode_base64::<64>(&signed["signature"])?;
+    let recovery = u8::try_from(
+        signed["recovery_id"]
+            .as_u64()
+            .ok_or("recovery id required")?,
+    )?;
+    assert!(recovery <= 1);
+    assert!(EvmSignature::from_slice(&signature)?
+        .normalize_s()
+        .is_none());
+    assert_eq!(
+        fixture.request("/v1/signatures", "kms-integration-token", true, request),
+        (200, signed.clone())
+    );
+    Ok((signed, signature, recovery))
+}
+
+#[test]
+fn secp256k1_handle_signs_transaction_recoverable_to_its_address() -> TestResult<()> {
+    let mut fixture = Fixture::start();
+    let create = json!({"algorithm":"secp256k1", "purpose":"evm-sender-v1"});
+    let (key, path, address) = secp256k1_identity(&fixture, &create)?;
+    let call = Eip1559Call {
+        chain_id: 125,
+        nonce: 7,
+        max_priority_fee_per_gas: 1,
+        max_fee_per_gas: 2,
+        gas_limit: 75_000,
+        to: [0x11; 20],
+        data: vec![0xab; 64],
+    };
+    let digest = call.signing_hash();
+    let request = json!({"algorithm":"secp256k1", "key_handle":key["handle"],
+        "message":base64::encode(&digest)});
+    let (signed, signature, recovery) = secp256k1_signature(&fixture, &request)?;
+    let raw = call.assemble(&signature, recovery, &address)?;
+    assert_eq!(transaction_sender(&raw, &call)?, address);
+    assert_secp256k1_refusals(&fixture, &key["handle"], &digest);
+    fixture.child.kill()?;
+    fixture.child.wait()?;
+    fixture.child = spawn(&fixture.directory, fixture.port, fixture.health_port);
+    fixture.wait();
+    assert_eq!(
+        fixture.request(&path, "kms-integration-token", true, &json!({})),
+        (200, key.clone())
+    );
+    assert_eq!(
+        fixture.request("/v1/signing-keys", "kms-integration-token", true, &create),
+        (200, key)
+    );
+    assert_eq!(
+        fixture.request("/v1/signatures", "kms-integration-token", true, &request),
+        (200, signed)
+    );
+    Ok(())
 }
