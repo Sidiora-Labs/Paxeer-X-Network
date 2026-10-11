@@ -31,6 +31,8 @@ import (
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
+	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -77,31 +79,110 @@ type BridgeKeeper interface {
 	IsNullified(ctx sdk.Context, nullifier types.Nullifier) bool
 }
 
+// upgradeKeeperGetter is the EVM keeper surface that reaches the upgrade
+// keeper holding the merge plan's height.
+type upgradeKeeperGetter interface {
+	UpgradeKeeper() *upgradekeeper.Keeper
+}
+
 type PrecompileExecutor struct {
-	abi     abi.ABI
-	address common.Address
-	keeper  BridgeKeeper
+	abi      abi.ABI
+	address  common.Address
+	keeper   BridgeKeeper
+	upgrades upgradeKeeperGetter
+}
+
+// revertCodes maps each registered bridge refusal to its error code registry
+// entry.
+var revertCodes = []struct {
+	err  *sdkerrors.Error
+	code string
+}{
+	{types.ErrUnauthorized, "LXP_BRIDGE_UNAUTHORIZED"},
+	{types.ErrUnknownChain, "LXP_BRIDGE_UNKNOWN_CHAIN"},
+	{types.ErrChainDisabled, "LXP_BRIDGE_CHAIN_DISABLED"},
+	{types.ErrUnknownAsset, "LXP_BRIDGE_UNKNOWN_ASSET"},
+	{types.ErrPaused, "LXP_BRIDGE_PAUSED"},
+	{types.ErrNullified, "LXP_BRIDGE_NULLIFIED"},
+	{types.ErrCapExceeded, "LXP_BRIDGE_CAP_EXCEEDED"},
+	{types.ErrBadSignature, "LXP_BRIDGE_BAD_SIGNATURE"},
+	{types.ErrBelowThreshold, "LXP_BRIDGE_BELOW_THRESHOLD"},
+	{types.ErrVaultMismatch, "LXP_BRIDGE_VAULT_MISMATCH"},
+	{types.ErrInvalidRequest, "LXP_BRIDGE_INVALID_REQUEST"},
+}
+
+// RevertCode returns the registry code of a bridge module refusal, wrapped or
+// not, and the empty string for any other error.
+func RevertCode(err error) string {
+	code, _ := revertEntry(err)
+	return code
+}
+
+// revertEntry returns the registry code and the registered error of a bridge
+// module refusal, or nothing for any other error.
+func revertEntry(err error) (string, *sdkerrors.Error) {
+	for _, entry := range revertCodes {
+		if errors.Is(err, entry.err) {
+			return entry.code, entry.err
+		}
+	}
+	return "", nil
 }
 
 // NewPrecompile builds the precompile from the application's precompile
-// keepers, which must also provide LayerXBridgeK.
+// keepers, which must also provide LayerXBridgeK. From the merge plan's height
+// a bridge module refusal reverts with its registry code.
 func NewPrecompile(keepers utils.Keepers) (*pcommon.Precompile, error) {
 	bridge := keepers.LayerXBridgeK()
 	if bridge == nil {
 		return nil, errors.New("layerxbridge: the precompile keepers provide no LayerXBridgeK")
 	}
-	return NewPrecompileWithKeeper(bridge), nil
+	upgrades, _ := keepers.EVMK().(upgradeKeeperGetter)
+	return newPrecompile(bridge, upgrades), nil
 }
 
 // NewPrecompileWithKeeper builds the precompile over an explicit bridge keeper.
+// Without an upgrade keeper it never sees the merge plan, so its refusals keep
+// the text they carry below the plan's height.
 func NewPrecompileWithKeeper(bridge BridgeKeeper) *pcommon.Precompile {
+	return newPrecompile(bridge, nil)
+}
+
+func newPrecompile(bridge BridgeKeeper, upgrades upgradeKeeperGetter) *pcommon.Precompile {
 	newAbi := pcommon.MustGetABI(f, "abi.json")
 	p := &PrecompileExecutor{
-		abi:     newAbi,
-		address: common.HexToAddress(BridgeAddress),
-		keeper:  bridge,
+		abi:      newAbi,
+		address:  common.HexToAddress(BridgeAddress),
+		keeper:   bridge,
+		upgrades: upgrades,
 	}
 	return pcommon.NewPrecompile(newAbi, p, p.address, PrecompileName).WithRevertReasons()
+}
+
+// mergePlanActive reports whether the merge plan is active at the height of
+// the call's block. It reads the plan without charging the call.
+func (p PrecompileExecutor) mergePlanActive(ctx sdk.Context) bool {
+	if p.upgrades == nil {
+		return false
+	}
+	upgrades := p.upgrades.UpgradeKeeper()
+	if upgrades == nil {
+		return false
+	}
+	return upgrades.IsUpgradeActiveAtHeight(ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1)), pcommon.MergeUpgrade,
+		ctx.BlockHeight())
+}
+
+// revertError is the refusal a call returns: from the merge plan's height a
+// bridge module refusal becomes "<code>: <registered message>", which the
+// precompile renders as Error(string); any other refusal, and every refusal
+// below that height, is returned as it is.
+func (p PrecompileExecutor) revertError(ctx sdk.Context, err error) error {
+	code, registered := revertEntry(err)
+	if registered == nil || !p.mergePlanActive(ctx) {
+		return err
+	}
+	return fmt.Errorf("%s: %s", code, registered.Error())
 }
 
 // Writes returns the fixed state-slot bound of a method.
@@ -134,7 +215,16 @@ func (p PrecompileExecutor) RequiredGas(input []byte, method *abi.Method) uint64
 }
 
 func (p PrecompileExecutor) Execute(ctx sdk.Context, method *abi.Method, caller common.Address, _ common.Address,
-	args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, _ *tracing.Hooks) (ret []byte, err error) {
+	args []interface{}, value *big.Int, readOnly bool, evm *vm.EVM, _ *tracing.Hooks) ([]byte, error) {
+	ret, err := p.execute(ctx, method, caller, args, value, readOnly, evm)
+	if err != nil {
+		return ret, p.revertError(ctx, err)
+	}
+	return ret, nil
+}
+
+func (p PrecompileExecutor) execute(ctx sdk.Context, method *abi.Method, caller common.Address, args []interface{},
+	value *big.Int, readOnly bool, evm *vm.EVM) (ret []byte, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			ret = nil

@@ -1,6 +1,7 @@
 package layerxbridge_test
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -238,6 +239,121 @@ func TestBridgeInRefusalsThroughThePrecompile(t *testing.T) {
 	_, err = h.run(layerxbridge.IsPausedMethod, nil, true, true)
 	require.Error(t, err, "delegatecall of a view")
 	require.Equal(t, sdk.NewInt(100), h.balance())
+}
+
+// revert runs a call that must fail and returns its revert data.
+func (h *harness) revert(name string, delegate bool, args ...interface{}) []byte {
+	h.t.Helper()
+	res, err := h.precompile.Run(h.evm, h.caller, h.caller, h.input(name, args...), nil, false, delegate, nil)
+	require.ErrorIs(h.t, err, vm.ErrExecutionReverted)
+	return res
+}
+
+func revertText(t *testing.T, data []byte) string {
+	t.Helper()
+	text, err := abi.UnpackRevert(data)
+	require.NoError(t, err)
+	return text
+}
+
+func TestBridgeRevertCodes(t *testing.T) {
+	h := newHarness(t)
+	h.activate()
+	require.NoError(t, h.keeper.RegisterChain(h.ctx, types.MsgRegisterChain{Authority: authority,
+		Chain: types.Chain{ChainID: 2, Vault: types.Address20(vault), FinalityDepth: 64, Enabled: false}}))
+	_, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(1, 100, h.attestors[0], h.attestors[1])...)
+	require.NoError(t, err)
+
+	planHeight := h.ctx.BlockHeight() + 1
+	testkeeper.EVMTestApp.EvmKeeper.UpgradeKeeper().SetDone(h.ctx.WithBlockHeight(planHeight), pcommon.MergeUpgrade)
+
+	// Below the plan height a refusal keeps today's revert bytes.
+	belowThreshold := h.bridgeInArgs(2, 100, h.attestors[2])
+	res := h.revert(layerxbridge.BridgeInMethod, false, belowThreshold...)
+	require.Equal(t, pcommon.RevertReason(errors.New("1 of 2: attestor signatures below threshold")), res)
+	require.Equal(t, "1 of 2: attestor signatures below threshold", revertText(t, res))
+
+	h.at(h.ctx.WithBlockHeight(planHeight))
+
+	unknownChain := h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])
+	unknownChain[0] = uint64(9)
+	vaultMismatch := h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])
+	vaultMismatch[1] = remote
+	unknownAsset := h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])
+	unknownAsset[5] = remote
+	cases := []struct {
+		code    string
+		message string
+		method  string
+		args    []interface{}
+	}{
+		{"LXP_BRIDGE_UNKNOWN_CHAIN", "chain not registered", layerxbridge.BridgeInMethod, unknownChain},
+		{"LXP_BRIDGE_CHAIN_DISABLED", "chain disabled", layerxbridge.BridgeOutMethod,
+			[]interface{}{uint64(2), asset, big.NewInt(1), remote}},
+		{"LXP_BRIDGE_VAULT_MISMATCH", "vault is not the registered vault", layerxbridge.BridgeInMethod, vaultMismatch},
+		{"LXP_BRIDGE_INVALID_REQUEST", "invalid bridge request", layerxbridge.BridgeInMethod,
+			h.bridgeInArgs(2, 0, h.attestors[0], h.attestors[1])},
+		{"LXP_BRIDGE_INVALID_REQUEST", "invalid bridge request", layerxbridge.BridgeOutMethod,
+			[]interface{}{chainID, asset, big.NewInt(101), remote}},
+		{"LXP_BRIDGE_UNKNOWN_ASSET", "asset not registered", layerxbridge.BridgeInMethod, unknownAsset},
+		{"LXP_BRIDGE_UNKNOWN_ASSET", "asset not registered", layerxbridge.BridgeOutMethod,
+			[]interface{}{chainID, remote, big.NewInt(1), remote}},
+		{"LXP_BRIDGE_NULLIFIED", "remote event already bridged", layerxbridge.BridgeInMethod,
+			h.bridgeInArgs(1, 100, h.attestors[1], h.attestors[2])},
+		{"LXP_BRIDGE_CAP_EXCEEDED", "amount exceeds the asset cap", layerxbridge.BridgeInMethod,
+			h.bridgeInArgs(2, 1001, h.attestors[0], h.attestors[1])},
+		{"LXP_BRIDGE_BAD_SIGNATURE", "invalid attestor signature", layerxbridge.BridgeInMethod,
+			h.bridgeInArgs(2, 100, h.attestors[1], h.attestors[0])},
+		{"LXP_BRIDGE_BELOW_THRESHOLD", "attestor signatures below threshold", layerxbridge.BridgeInMethod,
+			belowThreshold},
+	}
+	for _, c := range cases {
+		res := h.revert(c.method, false, c.args...)
+		require.Equal(t, pcommon.LXPRevert(c.code, ""), res, c.code)
+		require.Equal(t, c.code+": "+c.message, revertText(t, res), c.code)
+	}
+
+	require.NoError(t, h.keeper.Pause(h.ctx, types.MsgPause{Authority: authority}))
+	res = h.revert(layerxbridge.BridgeOutMethod, false, chainID, asset, big.NewInt(1), remote)
+	require.Equal(t, pcommon.LXPRevert("LXP_BRIDGE_PAUSED", ""), res)
+	require.Equal(t, "LXP_BRIDGE_PAUSED: bridge paused", revertText(t, res))
+	res = h.revert(layerxbridge.BridgeInMethod, false, h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])...)
+	require.Equal(t, "LXP_BRIDGE_PAUSED: bridge paused", revertText(t, res))
+	require.NoError(t, h.keeper.Unpause(h.ctx, types.MsgUnpause{Authority: authority}))
+
+	// A refusal that is not a bridge module error keeps its text at the plan height.
+	res = h.revert(layerxbridge.IsPausedMethod, true)
+	require.Equal(t, "cannot delegatecall layerxBridge", revertText(t, res))
+
+	// The methods stay live and unchanged at the plan height.
+	out, err := h.call(layerxbridge.BridgeInMethod, h.bridgeInArgs(2, 100, h.attestors[0], h.attestors[1])...)
+	require.NoError(t, err)
+	require.Equal(t, h.denom, out[0])
+	out, err = h.call(layerxbridge.BridgeOutMethod, chainID, asset, big.NewInt(50), remote)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), out[0])
+	require.Equal(t, sdk.NewInt(150), h.balance())
+
+	// Every registered bridge refusal maps to its code by registered name.
+	for err, code := range map[error]string{
+		types.ErrUnauthorized:   "LXP_BRIDGE_UNAUTHORIZED",
+		types.ErrUnknownChain:   "LXP_BRIDGE_UNKNOWN_CHAIN",
+		types.ErrChainDisabled:  "LXP_BRIDGE_CHAIN_DISABLED",
+		types.ErrUnknownAsset:   "LXP_BRIDGE_UNKNOWN_ASSET",
+		types.ErrPaused:         "LXP_BRIDGE_PAUSED",
+		types.ErrNullified:      "LXP_BRIDGE_NULLIFIED",
+		types.ErrCapExceeded:    "LXP_BRIDGE_CAP_EXCEEDED",
+		types.ErrBadSignature:   "LXP_BRIDGE_BAD_SIGNATURE",
+		types.ErrBelowThreshold: "LXP_BRIDGE_BELOW_THRESHOLD",
+		types.ErrVaultMismatch:  "LXP_BRIDGE_VAULT_MISMATCH",
+		types.ErrInvalidRequest: "LXP_BRIDGE_INVALID_REQUEST",
+	} {
+		require.Equal(t, code, layerxbridge.RevertCode(err), code)
+		require.Equal(t, pcommon.RevertReason(errors.New(code+": "+err.Error())), pcommon.LXPRevert(code, ""), code)
+	}
+	require.Equal(t, "LXP_BRIDGE_UNAUTHORIZED", layerxbridge.RevertCode(types.ErrUnauthorized.Wrap("not the bridge authority")))
+	require.Equal(t, "", layerxbridge.RevertCode(types.ErrInvalidParams))
+	require.Equal(t, "", layerxbridge.RevertCode(errors.New("cannot delegatecall layerxBridge")))
 }
 
 func TestBridgeOutBurnsAndEmitsThroughThePrecompile(t *testing.T) {
