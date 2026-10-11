@@ -3177,7 +3177,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.1.6]
 title = "bank 0x1001 context-hash send overload and reason opt-in"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.1"]
@@ -19614,7 +19614,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.5]
 title = "Read wallet web caps from chain views"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.2"]
@@ -25002,7 +25002,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.6]
 title = "Implement the teeattestor 0x0907 precompile on the PXVE v1 envelope"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]
@@ -59292,7 +59292,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.158]
 title = "Re-target generation_client.py, reset_state.py off the guarantor runtime and 1 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -59379,7 +59379,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.161]
 title = "Re-target deployment.yaml off the guarantor runtime"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]

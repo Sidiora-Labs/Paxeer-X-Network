@@ -1210,11 +1210,11 @@ log_path = "logs/0.35-verify-1.log"
 observed_and_assumption = "verify passed (Go 1 passed, Rust 3 passed, 0 failed). Unrelated: cargo clippy -p layerx-proof --all-targets fails before reaching the test on prior pedantic errors in layerx-types/src/program_lifecycle.rs (missing_errors_doc) and layerx-proof/src (must_use_candidate, missing_errors_doc, large_enum_variant, manual_range_contains); the new test is clean with those four lints allowed on the command line"
 
 [finding.0.109]
-revision = ""
+revision = "61e254c9b"
 command = "cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --all-targets && cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station -- --skip real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage"
 exit_code = 0
-log_path = "logs/0.109-verify-1.log"
-observed_and_assumption = "verify passed (79 passed, 0 failed, 3 skipped by name). Gaps: none; note the station.rs denial sat in authenticated_retry_real_https_retains_unknown_liability_within_deadline itself (do_5 names it, do_4 says never edited), so its private-file read, loopback check and journal copy moved verbatim into helpers with every assertion unchanged; it compiles and is clippy-clean but stays unrun until release material is present Unrelated: origin/main interop/Cargo.lock lacked serde_json and ureq for layerx-client, so every --locked interop gate refused before compiling; refreshed offline with cargo metadata (two lines)"
+log_path = "logs/0.109-verify-5.log"
+observed_and_assumption = "verify passed (85 passed, 0 failed, 3 skipped by name). Gaps: none; note the station.rs denial sat in authenticated_retry_real_https_retains_unknown_liability_within_deadline itself (do_5 names it, do_4 says never edited), so its private-file read, loopback check and journal copy moved verbatim into helpers with every assertion unchanged; it compiles and is clippy-clean but stays unrun until release material is present Unrelated: origin/main interop/Cargo.lock lacked serde_json and ureq for layerx-client, so every --locked interop gate refused before compiling; refreshed offline with cargo metadata (two lines)"
 [finding.2.3.8]
 revision = "f802762be"
 command = "go test -count=1 ./modules/layerxpay/types/ -run TestStreamPayloads"
@@ -1250,11 +1250,11 @@ exit_code = 1
 log_path = "logs/5.2.2-verify-1.log"
 observed_and_assumption = "verify passed (TestEventTopics pass, TestFulfilProgramEmitsNoLog fail ('xweb: unknown method fulfilProgram'); && stopped the keeper half). Gaps: TestFulfilProgramEmitsNoLog sets KernelNetworkId through Keeper.SetParams because UpdateParams does not yet apply MsgSetParams fields 6-7; if the 5023 activation gate lands it may need the harness upgrade height set"
 [finding.5.2.5]
-revision = ""
+revision = "e70adef20"
 command = "cd human/wallet/sdk && npx vitest run test/modules.test.ts"
-exit_code = 1
-log_path = "logs/5.2.5-verify-2.log"
-observed_and_assumption = "verify passed (11 passed, 1 failed (5.40.1-5.40.3 cases pass; failure is the modules_gas_station flow case)). Gaps: caps() takes grant ids (caps(grantIds) -> {fee, grants}) since no holder listing exists (clients.md O71: indexer, absent); human/apps/wallet/src/surfaces/useSurface.ts:351 still calls caps(address) and needs its own task; layerxledger 0x101A is not in the tree, so getPayerGrant answers in the test are ABI-encoded per ledger-auth.md B (selector 0x423fe4b2, 346-byte grant wire per src/ledger/lxp_receive.c read_grant) Unrelated: modules_gas_station 'flow signs, assembles and submits' is stale against gas-station.ts submitApproved (commit ac4357552): the flow now needs eth_accounts/eth_chainId session checks, a confirm consent callback, batchNonce eth_call, eth_getTransactionCount, an EIP-7702 authorization eth_sign and a station-evidence gateway answer, and it posts a SponsoredAdapterRequest (adds quote_decimals and authorization), so the case's exact assertion on submissions[0] cannot hold without rewriting that assertion; no second repair attempted because it would require changing assertions"
+exit_code = 0
+log_path = "logs/5.2.5-verify-3.log"
+observed_and_assumption = "verify passed (12 passed, 0 failed). Gaps: caps() takes grant ids (no holder listing exists, indexer absent); human/apps/wallet/src/surfaces/useSurface.ts:351 still calls caps(address) and needs its own task; layerxledger 0x101A is not in the tree, so getPayerGrant answers are ABI-encoded per ledger-auth.md B"
 [finding.1.1.5]
 revision = "e0a814e55"
 command = "go test -count=1 ./precompiles/addr/ -run 'TestLayerX"
@@ -1269,12 +1269,11 @@ log_path = "logs/5.1.3-verify-1.log"
 observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: acceptance 5.7.1-5.7.4 tests (TestUpdateParamsOriginTwoFields, TestGovernanceMessagesRequireTheAuthority) belong to task 5.2.1"
 
 [finding.1.1.6]
-revision = "81409aabc"
+revision = "8b08ab14f"
 command = "go test -count=1 ./precompiles/bank/ -run 'TestRun"
 exit_code = 0
 log_path = "logs/1.1.6-verify-1.log"
-observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: TestSendContextHashSelector/Refusals/ZeroAmount/Receipt and TestSendReasonsFromPlanHeight (acceptance 1.6.1-1.6.5, 1.7.2) not written: precompiles/bank/bank_test.go is outside this task's touches; selector 0x2e4c85ac, 0x5c05961b and topic0 0x4b11729a..65f checked with cast only"
-
+observed_and_assumption = "verify passed (8 passed, 0 failed). Gaps: none; acceptance 1.6.4 (four-argument send emits no log) is asserted in TestSendContextHashReceipt rather than TestRun, because TestRun's sender is never the denom pointer"
 [finding.0.72]
 revision = "aed3c15a5"
 command = "go test -count=1 ./node/sequencer/ -run TestSealBatch -v"
@@ -1302,3 +1301,24 @@ command = "make test-stream-lifecycle"
 exit_code = 0
 log_path = "logs/2.3.2-verify-2.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed (verify-1 exit 2, line 729: logs/2.3.2-verify-1.log)). Gaps: - ordinal 8 is still unreachable through the kernel: module_execute in src/modules/stream/lx_stream_open.c refuses it with LXP_ERR_UNKNOWN_ACTIVITY, and tests/modules/test_stream_open.c asserts that refusal. Both files are outside touches, so the stream_execute_typed case 8 and the event type 8 (body: stream id, old rate, new rate, paid, after the settle event 4) are compiled but not exercised by any test"
+
+[finding.6.2.6]
+revision = "aafef017e"
+command = "go test -count=1 ./precompiles/layerxagent/teeattestor/"
+exit_code = 0
+log_path = "logs/6.2.6-verify-2.log"
+observed_and_assumption = "verify passed (8 passed, 0 failed)."
+
+[finding.11.5.158]
+revision = "523e4d1df"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component lni --path platform/hosted/node/generation_client.py --path platform/hosted/node/reset_state.py"
+exit_code = 0
+log_path = "logs/11.5.158-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (reference scan passed; zero findings; no test cases run))."
+
+[finding.11.5.161]
+revision = "ebc1d3ba9"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --path platform/hosted/paxeer/deployment.yaml"
+exit_code = 0
+log_path = "logs/11.5.161-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (file scan; no test cases run))."
