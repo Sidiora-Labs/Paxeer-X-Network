@@ -322,3 +322,10 @@ command = "python3 tooling/fleet-status.py eligible --no-git"
 exit_code = 0
 log_path = "logs/land-batch-12.log"
 observed_and_assumption = "every pending domain-12 task with an empty requires list (waves 2 to 7) creates tests for behaviour that its subject tasks have not landed, the same shape as the wave-0 domain-12 batch that returned blocked, so they are moved to wave 8 behind 9.7.2 like that batch and will be dispatched once the subject tasks are done."
+
+[finding.7.4.3]
+revision = "e95bc7020"
+command = "cargo test --locked --manifest-path platform/hosted/ai-artifacts/Cargo.toml"
+exit_code = 0
+log_path = "logs/7.4.3-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; the service does not call 0x101D getStateHead itself because the crate has no node client or LXPS1 decoder dependency and Cargo.toml is outside touches, so commit readers submit the head plus the block commit and CommitFinality derives finality from that commit; a dependency task is needed before 7042.2 can be claimed in full."
