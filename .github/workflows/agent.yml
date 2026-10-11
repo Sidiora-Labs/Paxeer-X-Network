@@ -48,6 +48,8 @@ jobs:
       - name: Download declared settlement modules
         working-directory: .
         run: go mod download
+      - name: Check SDK result codes against the error code registry
+        run: python3 scripts/ci/result-codes-gen.py --check
       - name: Build, lint, and enforce boundaries
         run: CARGO_TARGET_DIR="$PWD/.lane-target" CARGO_BUILD_JOBS=4 make agent-build agent-lint agent-check
       - name: Test with the confined native daemon

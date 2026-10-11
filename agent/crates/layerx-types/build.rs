@@ -9,6 +9,11 @@ struct Code {
     value: i32,
 }
 
+struct HeaderCode {
+    code: Code,
+    c_name: String,
+}
+
 fn read_file(path: &Path) -> String {
     fs::read_to_string(path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
@@ -40,7 +45,7 @@ fn rust_name(c_name: &str) -> Result<String, String> {
     Ok(mapped)
 }
 
-fn header_codes(source: &str) -> Result<Vec<Code>, String> {
+fn header_codes(source: &str) -> Result<Vec<HeaderCode>, String> {
     let mut codes = Vec::new();
     let mut inside = false;
     for raw in source.lines() {
@@ -67,9 +72,13 @@ fn header_codes(source: &str) -> Result<Vec<Code>, String> {
             .trim()
             .parse::<i32>()
             .map_err(|error| format!("invalid number in {line}: {error}"))?;
-        codes.push(Code {
-            name: rust_name(name.trim())?,
-            value,
+        let c_name = name.trim();
+        codes.push(HeaderCode {
+            code: Code {
+                name: rust_name(c_name)?,
+                value,
+            },
+            c_name: c_name.to_owned(),
         });
         if !raw.trim_end().ends_with('\\') {
             inside = false;
@@ -116,6 +125,95 @@ fn mirror_codes(source: &str) -> Result<Vec<Code>, String> {
         });
     }
     Ok(codes)
+}
+
+fn registry_retryable(source: &str) -> Result<Vec<(String, String)>, String> {
+    let section = source
+        .split_once("\n## (b) ")
+        .ok_or_else(|| "section (b) Error code registry is missing".to_owned())?
+        .1;
+    let section = section
+        .split_once("\n## ")
+        .map_or(section, |(body, _)| body);
+    let mut rows = Vec::new();
+    for line in section.lines() {
+        if !line.starts_with("| LXP_") {
+            continue;
+        }
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        let ["", code, _message, _construct, _origin, retryable, ""] = cells.as_slice() else {
+            return Err(format!(
+                "registry row does not have the five columns Code, Message, Emitting construct, origin and Retryable: {line}"
+            ));
+        };
+        rows.push(((*code).to_owned(), (*retryable).to_owned()));
+    }
+    if rows.is_empty() {
+        return Err("section (b) holds no LXP_ registry row".to_owned());
+    }
+    Ok(rows)
+}
+
+fn registry_code_name(c_name: &str) -> String {
+    c_name
+        .strip_prefix("LXP_ERR_")
+        .map_or_else(|| c_name.to_owned(), |rest| format!("LXP_{rest}"))
+}
+
+fn retriability(
+    header: &HeaderCode,
+    registry: &[(String, String)],
+) -> Result<&'static str, String> {
+    if header.c_name == "LXP_OK" {
+        return Ok("Terminal");
+    }
+    let code = registry_code_name(&header.c_name);
+    let mut rows = registry.iter().filter(|(name, _)| *name == code);
+    let Some((_, cell)) = rows.next() else {
+        return Err(format!(
+            "{} has no registry row {code} in section (b)",
+            header.c_name
+        ));
+    };
+    if rows.next().is_some() {
+        return Err(format!(
+            "{code} has more than one registry row in section (b)"
+        ));
+    }
+    let class = match cell.as_str() {
+        "yes" => "Retriable",
+        "no" => "Terminal",
+        other => {
+            return Err(format!(
+                "{code} has the Retryable cell {other:?}, which is neither yes nor no"
+            ));
+        }
+    };
+    if header.code.value <= -1000 {
+        return Ok("Terminal");
+    }
+    Ok(class)
+}
+
+fn result_codes_body(
+    header: &[HeaderCode],
+    registry: &[(String, String)],
+) -> Result<String, String> {
+    let mut entries = String::new();
+    for code in header {
+        let class = retriability(code, registry)?;
+        writeln!(
+            entries,
+            "    {} = {}, {class};",
+            code.code.name, code.code.value
+        )
+        .map_err(|error| format!("failed to format the result-code table: {error}"))?;
+    }
+    Ok(format!(
+        "// Generated from include/layerx/lxp_result.h and the Retryable column of\n\
+// spec/layerx-merge/contracts/address-table.md section (b) by build.rs. Do not edit.\n\n\
+protocol_result_codes! {{\n{entries}}}\n"
+    ))
 }
 
 fn guest_abi_maximum(source: &str) -> Result<u16, String> {
@@ -366,13 +464,13 @@ fn parity(header: &[Code], mirror: &[Code]) -> Result<(), String> {
             Some(actual) if actual == expected => {}
             Some(actual) => {
                 return Err(format!(
-                    "result code {index} drifted: header declares {} = {}, src/result.rs declares {} = {}",
+                    "result code {index} drifted: header declares {} = {}, the generated result_codes.rs declares {} = {}",
                     expected.name, expected.value, actual.name, actual.value
                 ));
             }
             None => {
                 return Err(format!(
-                    "src/result.rs is missing {} = {}",
+                    "the generated result_codes.rs is missing {} = {}",
                     expected.name, expected.value
                 ));
             }
@@ -381,7 +479,7 @@ fn parity(header: &[Code], mirror: &[Code]) -> Result<(), String> {
     if mirror.len() > header.len() {
         let extra = &mirror[header.len()];
         return Err(format!(
-            "src/result.rs declares {} = {} which the header does not",
+            "the generated result_codes.rs declares {} = {} which the header does not",
             extra.name, extra.value
         ));
     }
@@ -394,23 +492,32 @@ fn main() {
             .unwrap_or_else(|| panic!("CARGO_MANIFEST_DIR is unavailable")),
     );
     let header = crate_dir.join("../../../include/layerx/lxp_result.h");
-    let mirror = crate_dir.join("src/result.rs");
+    let registry = crate_dir.join("../../../spec/layerx-merge/contracts/address-table.md");
     println!("cargo:rerun-if-changed={}", header.display());
-    println!("cargo:rerun-if-changed={}", mirror.display());
+    println!("cargo:rerun-if-changed={}", registry.display());
     let declared = header_codes(&read_file(&header))
         .unwrap_or_else(|error| panic!("invalid {}: {error}", header.display()));
-    let mirrored = mirror_codes(&read_file(&mirror))
-        .unwrap_or_else(|error| panic!("invalid {}: {error}", mirror.display()));
-    parity(&declared, &mirrored).unwrap_or_else(|error| {
+    let rows = registry_retryable(&read_file(&registry))
+        .unwrap_or_else(|error| panic!("invalid {}: {error}", registry.display()));
+    let table = result_codes_body(&declared, &rows).unwrap_or_else(|error| {
+        panic!("protocol result-code registry failure: {error}");
+    });
+    let generated_codes = mirror_codes(&table)
+        .unwrap_or_else(|error| panic!("invalid generated result-code table: {error}"));
+    let header_list: Vec<Code> = declared.into_iter().map(|code| code.code).collect();
+    parity(&header_list, &generated_codes).unwrap_or_else(|error| {
         panic!("protocol result-code parity failure: {error}");
     });
+    let out_dir =
+        PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")));
+    let generated = out_dir.join("result_codes.rs");
+    fs::write(&generated, table)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", generated.display()));
     let programs = crate_dir.join("../../../include/layerx/programs.h");
     println!("cargo:rerun-if-changed={}", programs.display());
     let programs_header = read_file(&programs);
     let maximum = guest_abi_maximum(&programs_header)
         .unwrap_or_else(|error| panic!("invalid {}: {error}", programs.display()));
-    let out_dir =
-        PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| panic!("OUT_DIR is unavailable")));
     let generated = out_dir.join("guest_abi.rs");
     let body = format!(
         "// Generated from include/layerx/programs.h by build.rs. Do not edit.\n\n\
