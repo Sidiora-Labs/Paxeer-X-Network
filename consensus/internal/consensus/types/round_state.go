@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -195,6 +196,12 @@ func (s *SafeRoundState) Leader() crypto.PubKey {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	return s.internal.Leader()
+}
+
+func (s *SafeRoundState) SetLeaderPin(p LeaderPin) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.internal.LeaderPin = p
 }
 
 func (s *SafeRoundState) SetValidators(v *types.ValidatorSet) {
@@ -403,6 +410,49 @@ type RoundState struct {
 	LastCommit                *types.VoteSet // Last precommits at Height-1
 	LastValidators            *types.ValidatorSet
 	TriggeredTimeoutPrecommit bool
+
+	// LeaderPin pins the proposer list from its activation height; the zero value pins nothing.
+	LeaderPin LeaderPin
+}
+
+// LeaderPin is the pinned proposer list L = [primary, standby, ...] and the
+// height H_act from which Leader(h, r) = L[r mod len(L)] replaces the
+// power-weighted choice. L is read from the sequencer module state, so every
+// node derives the same leader for (h, r) whatever order it was restarted in.
+type LeaderPin struct {
+	activationHeight int64
+	leaders          []crypto.PubKey
+}
+
+// NewLeaderPin returns the pin of leaders from activationHeight. It refuses a
+// non-positive activation height, an empty list, a zero key and a duplicate key.
+func NewLeaderPin(activationHeight int64, leaders []crypto.PubKey) (LeaderPin, error) {
+	if activationHeight < 1 {
+		return LeaderPin{}, fmt.Errorf("leader pin: activation height %d must be at least 1", activationHeight)
+	}
+	if len(leaders) == 0 {
+		return LeaderPin{}, errors.New("leader pin: leader list is empty")
+	}
+	seen := make(map[crypto.PubKey]struct{}, len(leaders))
+	for i, key := range leaders {
+		if key == (crypto.PubKey{}) {
+			return LeaderPin{}, fmt.Errorf("leader pin: leader %d is the zero key", i)
+		}
+		if _, ok := seen[key]; ok {
+			return LeaderPin{}, fmt.Errorf("leader pin: duplicate leader %v at index %d", key, i)
+		}
+		seen[key] = struct{}{}
+	}
+	return LeaderPin{activationHeight: activationHeight, leaders: slices.Clone(leaders)}, nil
+}
+
+// Leader returns L[r mod len(L)] and true when height is at or above the
+// activation height, and false when the pin does not apply.
+func (p LeaderPin) Leader(height int64, round int32) (crypto.PubKey, bool) {
+	if len(p.leaders) == 0 || height < p.activationHeight {
+		return crypto.PubKey{}, false
+	}
+	return p.leaders[uint64(uint32(round))%uint64(len(p.leaders))], true //nolint:gosec
 }
 
 // 32 bytes crypto hash seed, generated via random.org.
@@ -411,8 +461,9 @@ var leaderElectionSeed = [32]byte(utils.OrPanic1(hex.DecodeString(
 	"3793f16d412703e5805755e5282f681c70e771f151c8864c656c6c259243f85f",
 )))
 
-// Leader for each round is drawn at random from the validator set with
-// probabilities proportional to the voting powers.
+// Leader for each round is LeaderPin.Leader(height, round) at heights at or
+// above the pin's activation height. Below it the leader is drawn at random
+// from the validator set with probabilities proportional to the voting powers.
 //
 // The following pseudorandom function is used to select the leader:
 // pos(height,round) := hash(height ++ round)
@@ -420,6 +471,9 @@ var leaderElectionSeed = [32]byte(utils.OrPanic1(hex.DecodeString(
 // equal to their voting poser.
 // Validator i is the leader of (height,round) <=> pos(height,round)%TotalVotingPower \in validator_interval[i]
 func (rs *RoundState) Leader() crypto.PubKey {
+	if key, ok := rs.LeaderPin.Leader(rs.Height, rs.Round); ok {
+		return key
+	}
 	// sha256 does not support seed natively, so we add it by hand.
 	d := slices.Clone(leaderElectionSeed[:])
 	d = binary.BigEndian.AppendUint64(d, uint64(rs.Height)) //nolint:gosec
