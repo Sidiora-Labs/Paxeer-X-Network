@@ -2901,8 +2901,8 @@ var ErrPendingServedBySequencer = errors.New("pending served by sequencer")
 
 // OpenBlock is the read surface of the sequencer executor over its open block L_open.
 type OpenBlock interface {
-	// OpenContext returns a branch of L_open taken under the executor lock.
-	OpenContext() (sdk.Context, error)
+	// Snapshot returns a read-only point-in-time view of L_open taken under the executor lock.
+	Snapshot() (sdk.Context, error)
 }
 
 // SetOpenBlock switches the app to sequencer mode reading L_open from ob. It is called once
@@ -2915,7 +2915,7 @@ func (app *App) SetOpenBlock(ob OpenBlock) {
 // is open, so reads see every receipted transaction; otherwise it is the check context.
 func (app *App) LatestCtx() sdk.Context {
 	if app.openBlock != nil {
-		if ctx, err := app.openBlock.OpenContext(); err == nil {
+		if ctx, err := app.openBlock.Snapshot(); err == nil {
 			return isolatedRead(ctx)
 		}
 	}
@@ -2929,7 +2929,7 @@ func (app *App) PendingSnapshot() (sdk.Context, error) {
 	if app.openBlock == nil {
 		return sdk.Context{}, ErrPendingServedBySequencer
 	}
-	ctx, err := app.openBlock.OpenContext()
+	ctx, err := app.openBlock.Snapshot()
 	if err != nil {
 		return sdk.Context{}, err
 	}

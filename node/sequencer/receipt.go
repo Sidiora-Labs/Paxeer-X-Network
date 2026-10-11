@@ -325,7 +325,7 @@ func NewReceipter(exec Executor, host Host, evm *evmkeeper.Keeper, key *ReceiptK
 func (r *Receipter) Accept(txBytes []byte) (*Accepted, []byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	pre, err := r.exec.OpenContext()
+	pre, err := r.exec.Snapshot()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -422,7 +422,7 @@ func beforeCosmos(tx sdk.Tx, in *ReceiptInput) error {
 }
 
 func (r *Receipter) after(etx *ethtypes.Transaction, in *ReceiptInput) error {
-	ctx, err := r.exec.OpenContext()
+	ctx, err := r.exec.Snapshot()
 	if err != nil {
 		return err
 	}
