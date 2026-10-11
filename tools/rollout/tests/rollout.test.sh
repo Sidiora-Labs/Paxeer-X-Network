@@ -17,9 +17,14 @@ fail() {
 	exit 1
 }
 
+plan_precedes() {
+	awk -v a="$1" -v b="$2" 'NR > 1 && $2 == a {x = $1} NR > 1 && $2 == b {y = $1}
+		END {exit !(x != "" && y != "" && x + 0 < y + 0)}' "$3"
+}
+
 "$rollout" plan --sha "$sha" >"$tmp/plan"
 mapfile -t want < <(sed -n 's/^\[service\.\(.*\)\]$/\1/p' "$manifest")
-[ "${#want[@]}" -eq 27 ] || fail "manifest has ${#want[@]} services, want 27"
+[ "${#want[@]}" -eq 29 ] || fail "manifest has ${#want[@]} services, want 29"
 mapfile -t got < <(awk 'NR > 1 {print $2}' "$tmp/plan")
 [ "${#got[@]}" -eq "${#want[@]}" ] || fail "plan lists ${#got[@]} of ${#want[@]} services"
 for s in "${want[@]}"; do
@@ -33,7 +38,7 @@ for s in identity router redis-router redis-internal internal-kms internal-journ
 	intent-ingester; do
 	grep -qE "^ *[0-9]+ $s +railway +$s " "$tmp/plan" || fail "$s is not a railway target"
 done
-for s in kernel program-registry oracle-feeder explorer-index; do
+for s in kernel program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby; do
 	grep -qE "^ *[0-9]+ $s +box +$s ghcr\.io/sidiora-labs/[a-z0-9-]+:${sha:0:12} unit=[a-z0-9-]+\.service host=\\\$[A-Z_]+_HOST " "$tmp/plan" ||
 		fail "$s is not a box target"
 done
@@ -41,6 +46,22 @@ grep -qE " router +railway +router commit=$sha " "$tmp/plan" || fail "railway ro
 grep -qE " redis-router +railway +redis-router skip stock-image=redis$" "$tmp/plan" || fail "stock redis is not skipped"
 awk 'NR > 1 && $2 == "kernel" {k = $1} NR > 1 && $2 == "router" {r = $1} END {exit !(k < r)}' "$tmp/plan" ||
 	fail "kernel does not precede router"
+plan_precedes sequencer-primary router "$tmp/plan" || fail "sequencer-primary does not precede router"
+plan_precedes sequencer-primary sequencer-standby "$tmp/plan" ||
+	fail "sequencer-standby does not follow sequencer-primary"
+grep -qE " sequencer-primary +box +sequencer-primary .* unit=paxeer-sequencer-primary\.service host=\\\$SEQUENCER_PRIMARY_HOST " "$tmp/plan" ||
+	fail "sequencer-primary does not own its host and unit"
+grep -qE " sequencer-standby +box +sequencer-standby .* unit=paxeer-sequencer-standby\.service host=\\\$SEQUENCER_STANDBY_HOST " "$tmp/plan" ||
+	fail "sequencer-standby does not own its host and unit"
+for k in receipt-key wal; do
+	[ "$(grep -oE "/[a-z/]+sequencer-(primary|standby)[-/]$k[a-z0-9.]*" "$manifest" | sort -u | wc -l)" -eq 2 ] ||
+		fail "sequencer primary and standby do not name their own $k"
+done
+sed -e '/^\[service\.router\]$/,/^order/s/^order = 5$/order = 1/' "$manifest" >"$tmp/router-first.kvx"
+ROLLOUT_MANIFEST="$tmp/router-first.kvx" "$rollout" plan --sha "$sha" >"$tmp/router-first.plan"
+if plan_precedes sequencer-primary router "$tmp/router-first.plan"; then
+	fail "ordering check accepted a plan listing the router before the sequencer"
+fi
 
 "$rollout" apply --sha "$sha" --only kernel,router >"$tmp/apply"
 [ "$(awk 'NR > 1' "$tmp/apply" | wc -l)" -eq 2 ] || fail "--only did not narrow the plan"

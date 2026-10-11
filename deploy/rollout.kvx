@@ -54,6 +54,28 @@ box_unit = "layerx-registry.service"
 health = "tcp:9420"
 order = 4
 
+# Sequencer primary: receipt key file /etc/layerx/sequencer-primary/receipt-key.ed25519
+# (sequencer.receipt-key-file), write-ahead log volume /var/lib/layerx/sequencer-primary-wal
+# (sequencer.wal-dir); neither is shared with the standby.
+[service.sequencer-primary]
+target = "box"
+image = "paxd"
+box_role = "sequencer-primary"
+box_unit = "paxeer-sequencer-primary.service"
+health = "tcp:8545"
+order = 3
+
+# Sequencer hot standby: receipt key file /etc/layerx/sequencer-standby/receipt-key.ed25519
+# (sequencer.receipt-key-file), write-ahead log volume /var/lib/layerx/sequencer-standby-wal
+# (sequencer.wal-dir); neither is shared with the primary. Its wave follows the primary's.
+[service.sequencer-standby]
+target = "box"
+image = "paxd"
+box_role = "sequencer-standby"
+box_unit = "paxeer-sequencer-standby.service"
+health = "tcp:8545"
+order = 4
+
 [service.router]
 target = "railway"
 image = "layerx-gateway"
