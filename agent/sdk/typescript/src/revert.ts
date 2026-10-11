@@ -1,0 +1,114 @@
+import { PlatformSdkError, type RetryClass } from "./production.js";
+
+/** Codes whose Retryable column is yes in the LXP_ error code registry; every other code, known or not, is terminal. */
+export const LXP_RETRYABLE: ReadonlySet<string> = new Set([
+  "LXP_IDENTITY_FROZEN",
+  "LXP_AUTH_NOT_MATURE",
+  "LXP_NOT_YET_VALID",
+  "LXP_INSUFFICIENT_BALANCE",
+  "LXP_ASSET_PAUSED",
+  "LXP_ACCOUNT_FROZEN",
+  "LXP_GAS_EXHAUSTED",
+  "LXP_FEE_UNPAYABLE",
+  "LXP_BUDGET_PERIOD_CAP",
+  "LXP_MARKET_HALTED",
+  "LXP_ORACLE_STALE",
+  "LXP_MARGIN_INSUFFICIENT",
+  "LXP_INSUFFICIENT_BUDGET_FUNDS",
+  "LXP_PAUSED_SCOPE",
+  "LXP_PROJECTION_STALE",
+  "LXP_IO",
+  "LXP_XWEB_PAUSED",
+  "LXP_XWEB_NOT_EXPIRED",
+  "LXP_BANK_INSUFFICIENT_FUNDS",
+  "LXP_BRIDGE_CHAIN_DISABLED",
+  "LXP_BRIDGE_PAUSED",
+  "LXP_BRIDGE_CAP_EXCEEDED",
+  "LXP_LAUNCHPAD_INSUFFICIENT_LIQUIDITY",
+  "LXP_LAUNCHPAD_SLIPPAGE_EXCEEDED",
+  "LXP_LAUNCHPAD_PAUSED",
+  "LXP_LAUNCHPAD_NOT_PAUSED",
+  "LXP_LAUNCHPAD_NO_FEES_ACCUMULATED",
+  "LXP_LAUNCHPAD_AIRDROP_NOT_TRIGGERED",
+  "LXP_LAUNCHPAD_INVALID_AIRDROP_EPOCH",
+  "LXP_ADDR_EVM_NOT_ASSOCIATED",
+  "LXP_ADDR_PAX_NOT_ASSOCIATED",
+  "LXP_ADDR_EVM_NOT_BOUND",
+  "LXP_ADDR_DID_NOT_BOUND",
+  "LXP_ADDR_LAYERX_NOT_BOUND",
+  "LXP_FEETOKEN_SWITCH_OFF",
+  "LXP_AGENT_SCHEDULER_MAX_JOBS",
+  "LXP_AGENT_TEE_NO_ROOTS",
+]);
+
+const SELECTOR = [0x08, 0xc3, 0x79, 0xa0] as const;
+const WORD = 32;
+const HEAD = SELECTOR.length + 2 * WORD;
+const MAX_REASON_BYTES = 64 * 1024;
+const CODE = /^LXP_[A-Z0-9]+(?:_[A-Z0-9]+)*$/u;
+const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/** A decoded `LXP_<code>: <message>[; <detail>]` revert of a precompile call or a status-0 receipt. */
+export class RevertReasonError extends Error {
+  public readonly code: string;
+  public readonly detail: string | undefined;
+  public readonly retryable: boolean;
+  public readonly retry: RetryClass;
+
+  public constructor(code: string, message: string, detail: string | undefined) {
+    super(message);
+    this.name = "RevertReasonError";
+    this.code = code;
+    this.detail = detail;
+    this.retryable = LXP_RETRYABLE.has(code);
+    this.retry = this.retryable ? "safe" : "never";
+  }
+}
+
+/**
+ * Decodes revert return data carrying ABI `Error(string)` with an `LXP_` reason.
+ * Any other payload is refused with a terminal decode-failure.
+ */
+export function decodeRevertReason(returnData: string | Uint8Array): RevertReasonError {
+  const data = typeof returnData === "string" ? hexBytes(returnData) : returnData;
+  if (data.length < HEAD || SELECTOR.some((byte, index) => data[index] !== byte)) refuse();
+  if (word(data, SELECTOR.length) !== WORD) refuse();
+  const length = word(data, SELECTOR.length + WORD);
+  if (length > MAX_REASON_BYTES || data.length !== HEAD + Math.ceil(length / WORD) * WORD) refuse();
+  if (data.subarray(HEAD + length).some((byte) => byte !== 0)) refuse();
+  let reason: string;
+  try {
+    reason = UTF8.decode(data.subarray(HEAD, HEAD + length));
+  } catch {
+    return refuse();
+  }
+  const colon = reason.indexOf(": ");
+  if (colon < 0) refuse();
+  const code = reason.slice(0, colon);
+  const rest = reason.slice(colon + 2);
+  const semicolon = rest.indexOf("; ");
+  const message = semicolon < 0 ? rest : rest.slice(0, semicolon);
+  const detail = semicolon < 0 ? undefined : rest.slice(semicolon + 2);
+  if (!CODE.test(code) || message.length === 0 || detail?.length === 0) refuse();
+  return new RevertReasonError(code, message, detail);
+}
+
+function word(data: Uint8Array, offset: number): number {
+  let value = 0;
+  for (let index = offset; index < offset + WORD; index += 1) {
+    const byte = data[index] ?? refuse();
+    if (index < offset + WORD - 6 && byte !== 0) refuse();
+    value = value * 256 + byte;
+  }
+  return value;
+}
+
+function hexBytes(value: string): Uint8Array {
+  const digits = value.startsWith("0x") ? value.slice(2) : refuse();
+  if (digits.length % 2 !== 0 || !/^[0-9a-fA-F]*$/u.test(digits)) refuse();
+  return Uint8Array.from(digits.match(/../gu) ?? [], (pair) => Number.parseInt(pair, 16));
+}
+
+function refuse(): never {
+  throw new PlatformSdkError({ code: "decode-failure", retry: "never" });
+}
