@@ -1,28 +1,39 @@
 //! F08 bounded admission: approvals, quotas, cooldowns, heartbeat presence and exits.
 //! Membership is permission to participate only; it never carries quality or rewards.
 use crate::{
-    codec::{self, Reader, Writer},
+    codec::{self, EventCommon, Reader, ValidatedEnvelope, Writer},
+    dispatch,
     errors::{
         CodecResult, ARITHMETIC, BAD_VERSION, CAPACITY, CONFLICT,
         F08_ADMINISTRATOR_APPROVAL_REQUIRED, F08_ADMISSION_WINDOW_FULL, F08_BAD_CONSENT,
         F08_CANDIDATE_CHANGED, F08_CAPACITY_EXCEEDED, F08_DELEGATE_REVOKED, F08_DUPLICATE_IDENTITY,
-        F08_IDEMPOTENCY_CONFLICT, F08_MARKET_PAUSED, F08_OWNER_CAPACITY_EXCEEDED,
-        F08_OWNER_REQUIRED, F08_PERMIT_CONSUMED, F08_PERMIT_EXPIRED, F08_RATE_LIMITED,
-        F08_STALE_STATE, F08_WRONG_GENERATION, NON_CANONICAL, NOT_FOUND, ROLE_CONFLICT,
-        WRONG_CONFIG, WRONG_DOMAIN, WRONG_EPOCH, WRONG_PHASE,
+        F08_IDEMPOTENCY_CONFLICT, F08_MARKET_PAUSED, F08_NO_PRUNABLE_MEMBER,
+        F08_OWNER_CAPACITY_EXCEEDED, F08_OWNER_REQUIRED, F08_PERMIT_CONSUMED, F08_PERMIT_EXPIRED,
+        F08_RATE_LIMITED, F08_STALE_STATE, F08_WRONG_GENERATION, NON_CANONICAL, NOT_FOUND,
+        REPLAY_CONFLICT, ROLE_CONFLICT, UNAUTHORIZED, UNKNOWN_OPERATION, WRONG_CONFIG,
+        WRONG_DOMAIN, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE, WRONG_ROSTER,
     },
     evaluators::{
-        codec::verify_digest,
+        authority::{evaluator_region, split_identity_section},
+        codec::{encode_grant, verify_digest},
         model::{
-            EvaluatorGrant, GrantStatus, VerificationError, CONSENT_BYTES, SIGNED_CONSENT_BYTES,
+            EvaluatorGrant, GrantStatus, VerificationError, CONSENT_BYTES, GRANT_BYTES,
+            SIGNED_CONSENT_BYTES,
         },
     },
     registry::{market_clock, MarketHeader},
-    state::HeightWindow,
-    types::{
-        ChainDomain, Digest32, EvaluatorId, MarketId, PrincipalId, ProgramId, PublicKey32,
-        RequestId, RubricDigest, Signature64, WorkerId,
+    registry_ops::{CallContext, PolicySection},
+    reputation_transition::split_joint,
+    state::{
+        self, ActorSlot, HeightWindow, ReplayDecision, ReplayRequest, RetainedResult, Section,
+        SharedState,
     },
+    types::{
+        Authentication, ChainDomain, Digest32, EvaluatorId, MarketId, Presence, PrincipalId,
+        ProgramId, PublicKey32, RequestId, ResultDigest, RubricDigest, Signature64, Version,
+        WorkerId,
+    },
+    workers::{WorkerState, WorkerTable},
     MAX_EVALUATORS, MAX_WORKERS,
 };
 
@@ -47,6 +58,10 @@ pub const META_MAX_BYTES: usize = if ADMITTED_META_MAX_BYTES > APPROVAL_META_BYT
 };
 pub const TABLE_HEADER_MAX_BYTES: usize = 2 + 9 + 1 + 1;
 pub const TABLE_MAX_BYTES: usize = TABLE_HEADER_MAX_BYTES + MAX_MEMBERS * META_MAX_BYTES;
+pub const LIVENESS_BOUND_HEIGHTS: u64 = 64;
+pub const ADMISSION_SCRATCH_BYTES: usize = Section::PolicyLifecycle.payload_cap()
+    + Section::ReputationAdmission.payload_cap()
+    + Section::Control.payload_cap();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdmissionPolicyV1 {
@@ -1002,6 +1017,50 @@ impl AdmissionTable {
         self.replace(pruned)?;
         Ok(pruned)
     }
+
+    fn prune_inactive_at_height(
+        &mut self,
+        ctx: &AdmissionContext<'_>,
+        expected_candidate: Participant,
+        expected_revision: u64,
+        state_revision: u64,
+    ) -> CodecResult<AdmissionMeta> {
+        if expected_revision != state_revision {
+            return Err(F08_STALE_STATE);
+        }
+        let epoch = self.opened_epoch()?;
+        if ctx.clock_epoch()? != epoch {
+            return Err(WRONG_EPOCH);
+        }
+        let mut candidate: Option<(u64, AdmissionMeta)> = None;
+        for meta in self.iter().filter(|meta| {
+            meta.participant.role() == expected_candidate.role()
+                && meta.admitted()
+                && !meta.draining()
+                && !meta.revoked()
+                && meta.pending_exit.is_none()
+                && meta.admitted_epoch.is_some()
+                && epoch > meta.immunity_until_epoch
+        }) {
+            let last = meta
+                .last_heartbeat_height
+                .or(meta.admission_height)
+                .ok_or(NON_CANONICAL)?;
+            if ctx.height.checked_sub(last).ok_or(ARITHMETIC)? <= LIVENESS_BOUND_HEIGHTS {
+                continue;
+            }
+            let key = (last, meta.admitted_epoch, meta.participant);
+            if candidate.is_none_or(|(last, old)| key < (last, old.admitted_epoch, old.participant))
+            {
+                candidate = Some((last, *meta));
+            }
+        }
+        let (_, candidate) = candidate.ok_or(F08_NO_PRUNABLE_MEMBER)?;
+        if candidate.participant != expected_candidate {
+            return Err(F08_CANDIDATE_CHANGED);
+        }
+        self.remove(candidate.participant)
+    }
 }
 
 /// `EvaluatorAdmissionConsentV1`: exactly 362 canonical bytes.
@@ -1164,4 +1223,502 @@ pub fn admit_evaluator(
             approval_digest: consent.approval_digest,
         },
     )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdmissionOutcome {
+    Applied {
+        revision: u64,
+        result: ResultDigest,
+        state_len: usize,
+        event_len: usize,
+    },
+    Retained(RetainedResult),
+    Refused(crate::ApplicationError),
+}
+
+enum AdmissionCall<'a> {
+    Approve(ApprovalTerms),
+    Revoke(Participant),
+    Worker(Admission),
+    Evaluator(EvaluatorConsent, &'a [u8]),
+    Heartbeat(Participant, u64, u64, u64),
+    Exit(Participant, u64, u64, ExitReason),
+    Cancel(Participant, u64),
+    Prune(Participant, u64),
+    Remove(Participant, u64, RemovalReason),
+}
+impl AdmissionCall<'_> {
+    fn participant(&self) -> Participant {
+        match self {
+            Self::Approve(terms) => terms.participant,
+            Self::Worker(request) => request.participant,
+            Self::Evaluator(consent, _) => Participant::Evaluator(consent.evaluator),
+            Self::Revoke(participant)
+            | Self::Heartbeat(participant, _, _, _)
+            | Self::Exit(participant, _, _, _)
+            | Self::Cancel(participant, _)
+            | Self::Prune(participant, _)
+            | Self::Remove(participant, _, _) => *participant,
+        }
+    }
+}
+
+fn admission_call<'a>(envelope: &ValidatedEnvelope<'a>) -> CodecResult<AdmissionCall<'a>> {
+    let e = &envelope.envelope;
+    let mut r = Reader::new(e.payload);
+    let call = match e.operation {
+        dispatch::ApproveAdmission => AdmissionCall::Approve(ApprovalTerms {
+            participant: Participant::read(&mut r)?,
+            owner: PrincipalId::new(r.fixed()?)?,
+            enrollment_nonce_commitment: Digest32::new(r.fixed()?)?,
+            delegate: PublicKey32(r.fixed()?),
+            delegate_generation: r.u64()?,
+            identity_commitment: Digest32::new(r.fixed()?)?,
+            effective_epoch: r.u64()?,
+            config_version: r.u64()?,
+            request: e.request,
+            expiry_height: r.u64()?,
+        }),
+        dispatch::RevokeAdmissionApproval => AdmissionCall::Revoke(Participant::read(&mut r)?),
+        dispatch::AdmitWorker => AdmissionCall::Worker(Admission {
+            participant: Participant::Worker(WorkerId::new(r.fixed()?)?),
+            delegate_generation: r.u64()?,
+            effective_epoch: r.u64()?,
+            config_version: r.u64()?,
+            approval_digest: Digest32::new(r.fixed()?)?,
+        }),
+        dispatch::AdmitEvaluator => {
+            if e.payload.len() != SIGNED_CONSENT_BYTES {
+                return Err(NON_CANONICAL);
+            }
+            let consent = EvaluatorConsent::decode(r.take(CONSENT_BYTES)?)?;
+            r.take(SIGNED_CONSENT_BYTES - CONSENT_BYTES)?;
+            AdmissionCall::Evaluator(consent, e.payload)
+        }
+        dispatch::Heartbeat => {
+            AdmissionCall::Heartbeat(Participant::read(&mut r)?, r.u64()?, r.u64()?, r.u64()?)
+        }
+        dispatch::RequestExit => AdmissionCall::Exit(
+            Participant::read(&mut r)?,
+            r.u64()?,
+            r.u64()?,
+            ExitReason::decode(r.u8()?)?,
+        ),
+        dispatch::CancelExit => AdmissionCall::Cancel(Participant::read(&mut r)?, r.u64()?),
+        dispatch::PruneInactive => AdmissionCall::Prune(Participant::read(&mut r)?, r.u64()?),
+        dispatch::AdministrativeRemove => AdmissionCall::Remove(
+            Participant::read(&mut r)?,
+            r.u64()?,
+            RemovalReason::decode(r.u8()?)?,
+        ),
+        _ => return Err(UNKNOWN_OPERATION),
+    };
+    r.finish()?;
+    Ok(call)
+}
+
+fn participant_identity(
+    state: &SharedState<'_>,
+    participant: Participant,
+) -> CodecResult<(PrincipalId, PublicKey32, u64)> {
+    let identity = state.feature_sections[Section::IdentityRoster.index()];
+    match participant {
+        Participant::Worker(worker) => {
+            let workers = WorkerTable::decode(split_identity_section(identity)?.0)?;
+            let record = workers.get(worker).ok_or(NOT_FOUND)?;
+            Ok((record.owner, record.delegate, record.key_version))
+        }
+        Participant::Evaluator(evaluator) => {
+            let grant = evaluator_region(identity)?.stored_grant(evaluator)?;
+            Ok((grant.principal, grant.signing_key, grant.key_version.get()))
+        }
+    }
+}
+
+fn check_approval_identity(
+    state: &SharedState<'_>,
+    ctx: &AdmissionContext<'_>,
+    terms: &ApprovalTerms,
+) -> CodecResult<()> {
+    let (owner, delegate, generation) = participant_identity(state, terms.participant)?;
+    if terms.owner != owner || terms.delegate != delegate {
+        return Err(F08_BAD_CONSENT);
+    }
+    if terms.delegate_generation != generation {
+        return Err(F08_WRONG_GENERATION);
+    }
+    let identity = state.feature_sections[Section::IdentityRoster.index()];
+    let commitment = match terms.participant {
+        Participant::Worker(worker) => {
+            let workers = WorkerTable::decode(split_identity_section(identity)?.0)?;
+            let record = workers.get(worker).ok_or(NOT_FOUND)?;
+            if !matches!(record.state, WorkerState::Enrolled | WorkerState::Available) {
+                return Err(WRONG_PHASE);
+            }
+            if ctx.height < record.valid_from || ctx.height >= record.expiry {
+                return Err(F08_PERMIT_EXPIRED);
+            }
+            record.proposal_digest(ctx.market)?
+        }
+        Participant::Evaluator(evaluator) => {
+            let grant = evaluator_region(identity)?.stored_grant(evaluator)?;
+            if grant.status != GrantStatus::Pending {
+                return Err(WRONG_PHASE);
+            }
+            if grant.effective_epoch != terms.effective_epoch {
+                return Err(WRONG_EPOCH);
+            }
+            let mut bytes = [0; GRANT_BYTES];
+            let len = encode_grant(&grant, &mut bytes)?;
+            codec::domain_hash("PAXAI/evaluator-grant/v1", &bytes[..len])?
+        }
+    };
+    if commitment != terms.identity_commitment {
+        return Err(F08_BAD_CONSENT);
+    }
+    Ok(())
+}
+
+fn check_heartbeat_identity(
+    state: &SharedState<'_>,
+    participant: Participant,
+    height: u64,
+) -> CodecResult<()> {
+    let identity = state.feature_sections[Section::IdentityRoster.index()];
+    match participant {
+        Participant::Worker(worker) => {
+            let workers = WorkerTable::decode(split_identity_section(identity)?.0)?;
+            let record = workers.get(worker).ok_or(NOT_FOUND)?;
+            if record.state == WorkerState::Revoked {
+                return Err(F08_DELEGATE_REVOKED);
+            }
+            if !matches!(
+                record.state,
+                WorkerState::Enrolled | WorkerState::Available | WorkerState::Draining
+            ) {
+                return Err(WRONG_PHASE);
+            }
+            if height < record.valid_from || height >= record.expiry {
+                return Err(F08_PERMIT_EXPIRED);
+            }
+        }
+        Participant::Evaluator(evaluator) => {
+            let grant = evaluator_region(identity)?.stored_grant(evaluator)?;
+            if grant.status == GrantStatus::Revoked {
+                return Err(F08_DELEGATE_REVOKED);
+            }
+            if grant.status != GrantStatus::Active {
+                return Err(WRONG_PHASE);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn authenticate_admission(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    state: &SharedState<'_>,
+    call: &AdmissionCall<'_>,
+) -> CodecResult<()> {
+    let e = &envelope.envelope;
+    if let Authentication::Delegate { key, signature } = e.authentication {
+        if e.operation != dispatch::Heartbeat {
+            return Err(UNAUTHORIZED);
+        }
+        let (owner, registered, _) = participant_identity(state, call.participant())?;
+        if e.actor != owner {
+            return Err(F08_OWNER_REQUIRED);
+        }
+        check_heartbeat_identity(state, call.participant(), ctx.height)?;
+        if key != registered {
+            return Err(F08_BAD_CONSENT);
+        }
+        verify_digest(key, signature, envelope.request_digest()?.bytes()).map_err(|error| {
+            match error {
+                VerificationError::Application(_) => F08_BAD_CONSENT,
+                #[cfg(target_arch = "wasm32")]
+                VerificationError::Host(_) => crate::errors::HOST_CAPABILITY,
+            }
+        })
+    } else {
+        codec::compare_native_principal(e, ctx.principal)
+    }
+}
+
+fn admission_replay(
+    state: &mut SharedState<'_>,
+    envelope: &ValidatedEnvelope<'_>,
+    header: &MarketHeader,
+    call: &AdmissionCall<'_>,
+    height: u64,
+) -> CodecResult<Option<Result<ReplayRequest, RetainedResult>>> {
+    if matches!(call, AdmissionCall::Prune(_, _)) {
+        return Ok(None);
+    }
+    let e = &envelope.envelope;
+    let slot = if matches!(
+        call,
+        AdmissionCall::Approve(_) | AdmissionCall::Revoke(_) | AdmissionCall::Remove(_, _, _)
+    ) {
+        if e.actor != header.owner_principal {
+            return Err(F08_ADMINISTRATOR_APPROVAL_REQUIRED);
+        }
+        ActorSlot::OWNER
+    } else {
+        let identity = state.feature_sections[Section::IdentityRoster.index()];
+        let (owner, _, _) = participant_identity(state, call.participant())?;
+        if owner != e.actor {
+            return Err(F08_OWNER_REQUIRED);
+        }
+        match call.participant() {
+            Participant::Worker(worker) => {
+                let workers = WorkerTable::decode(split_identity_section(identity)?.0)?;
+                ActorSlot::worker(usize::from(workers.get(worker).ok_or(NOT_FOUND)?.slot))?
+            }
+            Participant::Evaluator(_) => {
+                let mut bound = None;
+                let mut free = None;
+                for index in 0..MAX_EVALUATORS {
+                    let slot = ActorSlot::evaluator(index)?;
+                    match state.control.replay.actor(slot) {
+                        Some(actor) if actor.principal == owner => {
+                            bound = Some(slot);
+                            break;
+                        }
+                        None if free.is_none() => free = Some(slot),
+                        _ => {}
+                    }
+                }
+                match bound {
+                    Some(slot) => slot,
+                    None if matches!(call, AdmissionCall::Evaluator(_, _)) => {
+                        let slot = free.ok_or(F08_CAPACITY_EXCEEDED)?;
+                        state.control.replay.bind(slot, owner, Version::new(1)?)?;
+                        slot
+                    }
+                    None => return Err(NOT_FOUND),
+                }
+            }
+        }
+    };
+    let actor = state.control.replay.actor(slot).ok_or(NOT_FOUND)?;
+    let request = ReplayRequest::from_envelope(slot, actor.authority_version, envelope)?;
+    match state.control.replay.check(&request, height) {
+        Ok(ReplayDecision::Apply) => Ok(Some(Ok(request))),
+        Ok(ReplayDecision::AlreadyApplied(retained)) => Ok(Some(Err(retained))),
+        Err(REPLAY_CONFLICT) => Err(F08_IDEMPOTENCY_CONFLICT),
+        Err(error) => Err(error),
+    }
+}
+
+fn transition_admission(
+    table: &mut AdmissionTable,
+    state: &SharedState<'_>,
+    ctx: &AdmissionContext<'_>,
+    call: &AdmissionCall<'_>,
+    suffix: &mut [u8],
+) -> CodecResult<usize> {
+    let meta = match call {
+        AdmissionCall::Approve(terms) => {
+            check_approval_identity(state, ctx, terms)?;
+            table.approve(ctx, terms)?;
+            table.get(terms.participant).ok_or(NOT_FOUND)?
+        }
+        AdmissionCall::Revoke(participant) => {
+            let meta = table.get(*participant).ok_or(NOT_FOUND)?;
+            table.revoke_approval(ctx, *participant)?;
+            meta
+        }
+        AdmissionCall::Worker(request) => {
+            let (owner, _, generation) = participant_identity(state, request.participant)?;
+            if table
+                .get(request.participant)
+                .is_some_and(|meta| meta.owner != owner)
+            {
+                return Err(F08_BAD_CONSENT);
+            }
+            if generation != request.delegate_generation {
+                return Err(F08_WRONG_GENERATION);
+            }
+            check_heartbeat_identity(state, request.participant, ctx.height)?;
+            table.admit(ctx, request)?
+        }
+        AdmissionCall::Evaluator(consent, payload) => {
+            let grant = evaluator_region(state.feature_sections[Section::IdentityRoster.index()])?
+                .stored_grant(consent.evaluator)?;
+            admit_evaluator(table, ctx, &grant, consent.request, payload)?
+        }
+        AdmissionCall::Heartbeat(participant, membership, delegate, epoch) => {
+            let (_, _, generation) = participant_identity(state, *participant)?;
+            if generation != *delegate {
+                return Err(F08_WRONG_GENERATION);
+            }
+            check_heartbeat_identity(state, *participant, ctx.height)?;
+            table.heartbeat(ctx, *participant, *membership, *delegate, *epoch)?
+        }
+        AdmissionCall::Exit(participant, generation, epoch, reason) => {
+            table.request_exit(ctx, *participant, *generation, *epoch, *reason)?
+        }
+        AdmissionCall::Cancel(participant, generation) => {
+            table.cancel_exit(ctx, *participant, *generation)?
+        }
+        AdmissionCall::Prune(participant, revision) => {
+            table.prune_inactive_at_height(ctx, *participant, *revision, state.revision)?
+        }
+        AdmissionCall::Remove(participant, generation, reason) => {
+            table.administrative_remove(ctx, *participant, *generation, *reason)?
+        }
+    };
+    meta.encode(suffix)
+}
+
+pub fn apply_admission(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> AdmissionOutcome {
+    match apply_admission_inner(ctx, envelope, current, next, scratch, event) {
+        Ok(outcome) => outcome,
+        Err(error) => AdmissionOutcome::Refused(error),
+    }
+}
+
+fn apply_admission_inner(
+    ctx: &CallContext,
+    envelope: &ValidatedEnvelope<'_>,
+    current: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+    event: &mut [u8],
+) -> CodecResult<AdmissionOutcome> {
+    if scratch.len() < ADMISSION_SCRATCH_BYTES {
+        return Err(CAPACITY);
+    }
+    let e = &envelope.envelope;
+    let call = admission_call(envelope)?;
+    let mut state = state::decode_shared_state(current)?;
+    let section = PolicySection::decode(state.feature_sections[Section::PolicyLifecycle.index()])?;
+    if section.header.state_revision != state.revision {
+        return Err(NON_CANONICAL);
+    }
+    let market = codec::derive_market(ctx.chain, ctx.program)?;
+    e.check_domain(ctx.chain, ctx.program, market)?;
+    e.check_expiry(ctx.height)?;
+    if section.header.market_id != market
+        || section.header.deployment_chain_domain != ctx.chain
+        || section.header.program_id != ctx.program
+    {
+        return Err(WRONG_MARKET);
+    }
+    if e.config != section.header.active_config_version {
+        return Err(WRONG_CONFIG);
+    }
+    let joint = state.feature_sections[Section::ReputationAdmission.index()];
+    let (_, bytes) = split_joint(joint)?;
+    let mut table = AdmissionTable::decode(bytes)?;
+    match table.current_epoch() {
+        Some(epoch) => {
+            if e.epoch != epoch {
+                return Err(WRONG_EPOCH);
+            }
+            if e.roster
+                != Presence::Present(state::settlement_rewards(&state, None)?.row(epoch)?.roster)
+            {
+                return Err(WRONG_ROSTER);
+            }
+        }
+        None if e.epoch == 0 && e.roster == Presence::Absent => {}
+        None => return Err(WRONG_EPOCH),
+    }
+    if let AdmissionCall::Evaluator(consent, _) = &call {
+        if consent.request != e.request {
+            return Err(F08_BAD_CONSENT);
+        }
+    }
+    authenticate_admission(ctx, envelope, &state, &call)?;
+    let replay = match admission_replay(&mut state, envelope, &section.header, &call, ctx.height)? {
+        Some(Err(retained)) => return Ok(AdmissionOutcome::Retained(retained)),
+        Some(Ok(request)) => Some(request),
+        None => None,
+    };
+    let actor = AdmissionContext {
+        market: &section.header,
+        invoking_principal: e.actor,
+        height: ctx.height,
+    };
+    let mut suffix = [0; META_MAX_BYTES];
+    let suffix_len = transition_admission(&mut table, &state, &actor, &call, &mut suffix)?;
+    let result = codec::result_digest(&suffix[..suffix_len])?;
+    let revision = state.revision.checked_add(1).ok_or(ARITHMETIC)?;
+    if let Some(request) = replay {
+        if state.record_success(&request, ctx.height, result)? != ReplayDecision::Apply {
+            return Err(NON_CANONICAL);
+        }
+    } else {
+        state.revision = revision;
+    }
+    if state.revision != revision {
+        return Err(NON_CANONICAL);
+    }
+    let prefix_len = joint.len().checked_sub(bytes.len()).ok_or(ARITHMETIC)?;
+    let prefix = joint.get(..prefix_len).ok_or(NON_CANONICAL)?;
+    let state_len = encode_admission_state(state, section, &table, prefix, next, scratch)?;
+    let event_len = codec::encode_event_frame(
+        e.operation,
+        &EventCommon {
+            market,
+            epoch: e.epoch,
+            config: Version::new(e.config)?,
+            revision,
+            request: envelope.request_digest()?,
+            result,
+        },
+        &suffix[..suffix_len],
+        event,
+    )?;
+    Ok(AdmissionOutcome::Applied {
+        revision,
+        result,
+        state_len,
+        event_len,
+    })
+}
+
+fn encode_admission_state(
+    state: SharedState<'_>,
+    mut section: PolicySection<'_>,
+    table: &AdmissionTable,
+    prefix: &[u8],
+    next: &mut [u8],
+    scratch: &mut [u8],
+) -> CodecResult<usize> {
+    let (policy_out, rest) = scratch
+        .split_at_mut_checked(Section::PolicyLifecycle.payload_cap())
+        .ok_or(CAPACITY)?;
+    let (joint_out, control_out) = rest
+        .split_at_mut_checked(Section::ReputationAdmission.payload_cap())
+        .ok_or(CAPACITY)?;
+    let prefix_len = prefix.len();
+    joint_out
+        .get_mut(..prefix_len)
+        .ok_or(CAPACITY)?
+        .copy_from_slice(prefix);
+    let table_len = table.encode(joint_out.get_mut(prefix_len..).ok_or(CAPACITY)?)?;
+    let joint_len = prefix_len.checked_add(table_len).ok_or(ARITHMETIC)?;
+    section.header.state_revision = state.revision;
+    let policy_len = section.encode(policy_out)?;
+    let mut features = state.feature_sections;
+    features[Section::PolicyLifecycle.index()] = policy_out.get(..policy_len).ok_or(CAPACITY)?;
+    features[Section::ReputationAdmission.index()] = joint_out.get(..joint_len).ok_or(CAPACITY)?;
+    let candidate = SharedState {
+        revision: state.revision,
+        feature_sections: features,
+        control: state.control,
+    };
+    state::encode_shared_state(&candidate, next, control_out)
 }

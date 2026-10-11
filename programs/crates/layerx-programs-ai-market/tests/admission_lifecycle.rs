@@ -1,30 +1,44 @@
 use ed25519_dalek::{Signer, SigningKey};
 use layerx_programs_ai_market::{
     admission::{
-        admit_evaluator, Admission, AdmissionContext, AdmissionMeta, AdmissionTable, Approval,
-        ApprovalTerms, EvaluatorConsent, ExitCause, ExitReason, Participant, PendingExit,
-        RemovalReason, Role, ADMITTED_META_MAX_BYTES, APPROVAL_META_BYTES, FLAG_ADMITTED,
+        admit_evaluator, apply_admission, Admission, AdmissionContext, AdmissionMeta,
+        AdmissionOutcome, AdmissionTable, Approval, ApprovalTerms, EvaluatorConsent, ExitCause,
+        ExitReason, Participant, PendingExit, RemovalReason, Role, ADMISSION_SCRATCH_BYTES,
+        ADMITTED_META_MAX_BYTES, APPROVAL_META_BYTES, FLAG_ADMITTED, LIVENESS_BOUND_HEIGHTS,
         TABLE_HEADER_MAX_BYTES, TABLE_MAX_BYTES,
     },
-    codec::{derive_evaluator, derive_market},
+    codec::{self, derive_evaluator, derive_market, Envelope, Writer},
+    dispatch,
     errors::{
-        CodecResult, ARITHMETIC, CONFLICT, F08_ADMINISTRATOR_APPROVAL_REQUIRED,
+        CodecResult, ARITHMETIC, CAPACITY, CONFLICT, EXPIRED, F08_ADMINISTRATOR_APPROVAL_REQUIRED,
         F08_ADMISSION_WINDOW_FULL, F08_BAD_CONSENT, F08_CANDIDATE_CHANGED, F08_CAPACITY_EXCEEDED,
         F08_DELEGATE_REVOKED, F08_DUPLICATE_IDENTITY, F08_IDEMPOTENCY_CONFLICT, F08_MARKET_PAUSED,
         F08_NO_PRUNABLE_MEMBER, F08_OWNER_CAPACITY_EXCEEDED, F08_OWNER_REQUIRED,
         F08_PERMIT_CONSUMED, F08_PERMIT_EXPIRED, F08_QUORUM_UNAVAILABLE, F08_RATE_LIMITED,
         F08_RETENTION_BLOCKED, F08_STALE_STATE, F08_WRONG_GENERATION, NON_CANONICAL, NOT_FOUND,
-        ROLE_CONFLICT, WRONG_DOMAIN, WRONG_EPOCH, WRONG_PHASE,
+        ROLE_CONFLICT, UNAUTHORIZED, UNKNOWN_OPERATION, WRONG_CONFIG, WRONG_DOMAIN, WRONG_EPOCH,
+        WRONG_MARKET, WRONG_PHASE, WRONG_PROGRAM, WRONG_ROSTER,
     },
-    evaluators::model::{EvaluatorGrant, GrantStatus, GrantTerms},
+    evaluators::{
+        authority::{split_identity_section, EvaluatorRecord, EvaluatorRegion, LastRequest},
+        codec::encode_grant,
+        model::{EvaluatorGrant, GrantStatus, GrantTerms, GRANT_BYTES},
+    },
+    policy::{PolicyCommitments, TaskPolicyV1, TASK_POLICY_BYTES},
     registry::{derive_rewards_account, MarketHeader},
+    registry_ops::{self, CallContext, PolicySection},
+    reputation::ReputationState,
+    reputation_transition::{encode_joint, split_joint, Region},
+    rewards::{decode_reward_state, RewardLedger, RewardState, REWARD_STATE_BYTES},
     roster,
     state::{self, ActorSlot, Control, ReplayTable, Section, SharedState},
     types::{
-        AccountId, AssetId, ChainDomain, Digest32, EvaluatorId, MetadataDigest, Presence,
-        PrincipalId, ProgramId, PublicKey32, RequestId, RubricDigest, Version, WorkerId,
+        AccountId, AssetId, Authentication, ChainDomain, Digest32, EvaluatorId, MetadataDigest,
+        Presence, PrincipalId, ProgramId, PublicKey32, RequestDigest, RequestId, ResultDigest,
+        RosterDigest, RubricDigest, Signature64, Version, WorkerId, WorkerRosterEntry,
     },
-    MAX_STATE_BYTES,
+    workers::{WorkerCurrent, WorkerState, WorkerTable, WORKER_TABLE_MAX_BYTES},
+    MAX_EVENT_BYTES, MAX_STATE_BYTES,
 };
 
 type TestResult = CodecResult<()>;
@@ -994,5 +1008,817 @@ fn a21_paused_market_expiry_and_origin_bounds() -> TestResult {
     market.lifecycle = 2;
     let m = table.admit(&ctx(&market, p(41)?, 1020), &admission(w, 1, d))?;
     assert_eq!(m.admission_height, Some(1020));
+    Ok(())
+}
+
+struct NativeAdmission {
+    bytes: Vec<u8>,
+    record: WorkerCurrent,
+    key: SigningKey,
+    event: Vec<u8>,
+}
+
+fn encode_native(state: &SharedState<'_>) -> CodecResult<Vec<u8>> {
+    let mut bytes = vec![0; MAX_STATE_BYTES];
+    let mut scratch = vec![0; Section::Control.payload_cap()];
+    let len = state::encode_shared_state(state, &mut bytes, &mut scratch)?;
+    bytes.truncate(len);
+    Ok(bytes)
+}
+
+fn create_native() -> CodecResult<Vec<u8>> {
+    let market = header(0)?;
+    let commitments = PolicyCommitments {
+        model_artifact: Digest32::new([1; 32])?,
+        dataset_artifact: [2; 32],
+        benchmark_suite: Digest32::new([3; 32])?,
+        rubric: RubricDigest::new([4; 32])?,
+        task_schema: Digest32::new([5; 32])?,
+        result_schema: Digest32::new([6; 32])?,
+        service_terms: Digest32::new([7; 32])?,
+    };
+    let policy = TaskPolicyV1::bounded_default(1, 1, commitments, 100, 1)?;
+    let mut policy_bytes = [0; TASK_POLICY_BYTES];
+    policy.encode(&mut policy_bytes)?;
+    let mut payload = market.owner_principal.bytes().to_vec();
+    payload.extend_from_slice(market.funding_asset.as_bytes());
+    payload.extend_from_slice(market.rewards_account.as_bytes());
+    payload.extend_from_slice(market.refund_recipient_account.as_bytes());
+    payload.push(0);
+    payload.extend_from_slice(&policy_bytes);
+    payload.extend_from_slice(market.metadata_digest.as_bytes());
+    let envelope = Envelope {
+        operation: dispatch::CREATE,
+        chain: market.deployment_chain_domain,
+        program: market.program_id,
+        market: market.market_id,
+        actor: market.owner_principal,
+        epoch: 0,
+        config: 1,
+        roster: Presence::Absent,
+        sequence: 1,
+        expiry: 1000,
+        request: RequestId::new([1; 32])?,
+        payload: &payload,
+        authentication: Authentication::Native,
+    };
+    let mut encoded = vec![0; 16_384];
+    let len = codec::encode_envelope(&envelope, &mut encoded)?;
+    let context = CallContext {
+        chain: market.deployment_chain_domain,
+        program: market.program_id,
+        principal: market.owner_principal,
+        height: 0,
+    };
+    let mut section = vec![0; Section::PolicyLifecycle.payload_cap()];
+    let mut event = vec![0; MAX_EVENT_BYTES];
+    let validated = codec::decode_envelope(&encoded[..len])?;
+    let registry_ops::Outcome::Applied { state, .. } =
+        registry_ops::apply(&context, None, &validated, &mut section, &mut event)?
+    else {
+        return Err(NON_CANONICAL);
+    };
+    encode_native(&state)
+}
+
+fn participant_payload(participant: Participant) -> Vec<u8> {
+    let mut bytes = vec![participant.role() as u8];
+    bytes.extend_from_slice(&participant.bytes());
+    bytes
+}
+
+fn approval_payload(terms: &ApprovalTerms) -> CodecResult<Vec<u8>> {
+    let mut bytes = vec![0; 193];
+    let mut writer = Writer::new(&mut bytes);
+    writer.put(&participant_payload(terms.participant))?;
+    writer.put(terms.owner.as_bytes())?;
+    writer.put(terms.enrollment_nonce_commitment.as_bytes())?;
+    writer.put(&terms.delegate.0)?;
+    writer.u64(terms.delegate_generation)?;
+    writer.put(terms.identity_commitment.as_bytes())?;
+    writer.u64(terms.effective_epoch)?;
+    writer.u64(terms.config_version)?;
+    writer.u64(terms.expiry_height)?;
+    assert_eq!(writer.len(), 193);
+    Ok(bytes)
+}
+
+fn worker_admission_payload(request: &Admission) -> CodecResult<Vec<u8>> {
+    let mut bytes = vec![0; 88];
+    let mut writer = Writer::new(&mut bytes);
+    writer.put(&request.participant.bytes())?;
+    writer.u64(request.delegate_generation)?;
+    writer.u64(request.effective_epoch)?;
+    writer.u64(request.config_version)?;
+    writer.put(request.approval_digest.as_bytes())?;
+    assert_eq!(writer.len(), 88);
+    Ok(bytes)
+}
+
+impl NativeAdmission {
+    fn new() -> CodecResult<Self> {
+        let source = create_native()?;
+        let mut state = state::decode_shared_state(&source)?;
+        let key = SigningKey::from_bytes(&[31; 32]);
+        let owner = p(41)?;
+        let worker = codec::derive_worker(header(0)?.market_id, owner, [21; 32])?;
+        let record = WorkerCurrent {
+            worker,
+            owner,
+            delegate: PublicKey32(key.verifying_key().to_bytes()),
+            metadata: MetadataDigest::new([22; 32])?,
+            generation: 1,
+            key_version: 1,
+            metadata_revision: 1,
+            valid_from: 0,
+            expiry: 1000,
+            revocation_sequence: 0,
+            effective_epoch: 0,
+            last_sequence: 0,
+            last_request_id: [0; 32],
+            last_request_digest: [0; 32],
+            last_result_digest: [0; 32],
+            state: WorkerState::Enrolled,
+            slot: 0,
+            last_metadata_height: 0,
+        };
+        let mut workers = WorkerTable::new();
+        workers.insert(&record)?;
+        let mut identity = vec![0; WORKER_TABLE_MAX_BYTES];
+        let len = workers.encode(&mut identity)?;
+        state.feature_sections[Section::IdentityRoster.index()] = &identity[..len];
+        state
+            .control
+            .replay
+            .bind(ActorSlot::worker(0)?, owner, Version::new(1)?)?;
+        Ok(Self {
+            bytes: encode_native(&state)?,
+            record,
+            key,
+            event: Vec::new(),
+        })
+    }
+
+    fn table(&self) -> CodecResult<AdmissionTable> {
+        let state = state::decode_shared_state(&self.bytes)?;
+        AdmissionTable::decode(
+            split_joint(state.feature_sections[Section::ReputationAdmission.index()])?.1,
+        )
+    }
+
+    fn envelope(
+        &self,
+        selector: u16,
+        actor: PrincipalId,
+        sequence: u64,
+        payload: &[u8],
+    ) -> CodecResult<Vec<u8>> {
+        let state = state::decode_shared_state(&self.bytes)?;
+        let section =
+            PolicySection::decode(state.feature_sections[Section::PolicyLifecycle.index()])?;
+        let epoch = self.table()?.current_epoch();
+        let roster = match epoch {
+            Some(epoch) => {
+                Presence::Present(state::settlement_rewards(&state, None)?.row(epoch)?.roster)
+            }
+            None => Presence::Absent,
+        };
+        let mut request = [42; 32];
+        request[..2].copy_from_slice(&selector.to_be_bytes());
+        request[2..10].copy_from_slice(&sequence.to_be_bytes());
+        let envelope = Envelope {
+            operation: dispatch::Operation::decode(selector)?,
+            chain: section.header.deployment_chain_domain,
+            program: section.header.program_id,
+            market: section.header.market_id,
+            actor,
+            epoch: epoch.unwrap_or(0),
+            config: section.header.active_config_version,
+            roster,
+            sequence,
+            expiry: 1000,
+            request: RequestId::new(request)?,
+            payload,
+            authentication: Authentication::Native,
+        };
+        let mut bytes = vec![0; 16_384];
+        let len = codec::encode_envelope(&envelope, &mut bytes)?;
+        bytes.truncate(len);
+        Ok(bytes)
+    }
+
+    fn run(
+        &mut self,
+        bytes: &[u8],
+        caller: PrincipalId,
+        height: u64,
+    ) -> CodecResult<AdmissionOutcome> {
+        let header = header(0)?;
+        let context = CallContext {
+            chain: header.deployment_chain_domain,
+            program: header.program_id,
+            principal: caller,
+            height,
+        };
+        let mut next = vec![0x5a; MAX_STATE_BYTES];
+        let mut scratch = vec![0; ADMISSION_SCRATCH_BYTES];
+        let mut event = vec![0x5a; MAX_EVENT_BYTES];
+        let envelope = codec::decode_envelope(bytes)?;
+        let outcome = apply_admission(
+            &context,
+            &envelope,
+            &self.bytes,
+            &mut next,
+            &mut scratch,
+            &mut event,
+        );
+        if let AdmissionOutcome::Applied {
+            revision,
+            result,
+            state_len,
+            event_len,
+        } = outcome
+        {
+            let next_state = state::decode_shared_state(&next[..state_len])?;
+            assert_eq!(next_state.revision, revision);
+            assert_eq!(
+                PolicySection::decode(
+                    next_state.feature_sections[Section::PolicyLifecycle.index()]
+                )?
+                .header
+                .state_revision,
+                revision
+            );
+            assert_eq!(
+                codec::result_digest(&event[codec::EVENT_COMMON_BYTES..event_len])?,
+                result
+            );
+            self.bytes = next[..state_len].to_vec();
+            self.event = event[..event_len].to_vec();
+        }
+        Ok(outcome)
+    }
+
+    fn apply(
+        &mut self,
+        selector: u16,
+        actor: PrincipalId,
+        sequence: u64,
+        height: u64,
+        payload: &[u8],
+    ) -> CodecResult<AdmissionOutcome> {
+        let envelope = self.envelope(selector, actor, sequence, payload)?;
+        self.run(&envelope, actor, height)
+    }
+
+    fn admit_worker(&mut self) -> CodecResult<()> {
+        let mut terms = terms(
+            Participant::Worker(self.record.worker),
+            self.record.owner,
+            0,
+            60,
+        )?;
+        terms.delegate = self.record.delegate;
+        terms.identity_commitment = self.record.proposal_digest(&header(0)?)?;
+        let before = state::decode_shared_state(&self.bytes)?.revision;
+        let outcome = self.apply(0x0801, p(OWNER[0])?, 2, 1, &approval_payload(&terms)?)?;
+        assert!(
+            matches!(outcome, AdmissionOutcome::Applied { revision, .. } if revision == before + 1)
+        );
+        let meta = self.table()?.get(terms.participant).ok_or(NOT_FOUND)?;
+        let digest = meta.approval.ok_or(NOT_FOUND)?.digest;
+        let payload = worker_admission_payload(&admission(terms.participant, 0, digest))?;
+        assert!(matches!(
+            self.apply(0x0803, self.record.owner, 1, 2, &payload)?,
+            AdmissionOutcome::Applied { .. }
+        ));
+        let source = self.bytes.clone();
+        assert!(
+            matches!(self.apply(0x0803, self.record.owner, 1, 3, &payload)?, AdmissionOutcome::Retained(last) if last.applied_revision == before + 2)
+        );
+        assert_eq!(self.bytes, source);
+        Ok(())
+    }
+
+    fn open(&mut self, epoch: u64) -> CodecResult<()> {
+        let mut table = self.table()?;
+        if table.current_epoch().is_none() {
+            roster::open_epoch(&mut table, 0, no_retention)?;
+        }
+        if epoch > 0 {
+            roster::open_epoch(&mut table, epoch, no_retention)?;
+        }
+        let mut table_bytes = vec![0; TABLE_MAX_BYTES];
+        let len = table.encode(&mut table_bytes)?;
+        let source = self.bytes.clone();
+        let mut state = state::decode_shared_state(&source)?;
+        state.feature_sections[Section::ReputationAdmission.index()] = &table_bytes[..len];
+        let header =
+            PolicySection::decode(state.feature_sections[Section::PolicyLifecycle.index()])?.header;
+        let ledger = RewardLedger::new(
+            header.funding_asset,
+            header.rewards_account,
+            header.refund_recipient_account,
+        )?;
+        let mut initial = vec![0; REWARD_STATE_BYTES];
+        RewardState::init(&ledger, &mut initial)?;
+        let entry = WorkerRosterEntry {
+            worker: self.record.worker,
+            owner: self.record.owner,
+            public_key: self.record.delegate,
+            metadata: self.record.metadata,
+            generation: Version::new(1)?,
+            key_version: Version::new(1)?,
+            recipient: AccountId::new([71; 32])?,
+        };
+        let digest = RosterDigest::new(roster::roster_digest(&table, epoch)?.bytes())?;
+        let mut rewards = vec![0; REWARD_STATE_BYTES];
+        decode_reward_state(&initial)?.reserve_epoch(
+            epoch,
+            0,
+            digest,
+            &[entry],
+            epoch * 128,
+            &mut rewards,
+        )?;
+        state.feature_sections[Section::SettlementClaims.index()] = &rewards;
+        self.bytes = encode_native(&state)?;
+        Ok(())
+    }
+
+    fn heartbeat_payload(&self) -> Vec<u8> {
+        let mut payload = participant_payload(Participant::Worker(self.record.worker));
+        for value in [1u64, 1, 3] {
+            payload.extend_from_slice(&value.to_be_bytes());
+        }
+        payload
+    }
+
+    fn signed_heartbeat(&self, sequence: u64) -> CodecResult<Vec<u8>> {
+        let payload = self.heartbeat_payload();
+        let bytes = self.envelope(0x0805, self.record.owner, sequence, &payload)?;
+        let decoded = codec::decode_envelope(&bytes)?;
+        let signature = Signature64(
+            self.key
+                .sign(decoded.request_digest()?.as_bytes())
+                .to_bytes(),
+        );
+        let envelope = Envelope {
+            authentication: Authentication::Delegate {
+                key: self.record.delegate,
+                signature,
+            },
+            ..decoded.envelope
+        };
+        let mut bytes = vec![0; 16_384];
+        let len = codec::encode_envelope(&envelope, &mut bytes)?;
+        bytes.truncate(len);
+        Ok(bytes)
+    }
+
+    fn short_scratch_refuses(&self, bytes: &[u8]) -> TestResult {
+        let env = codec::decode_envelope(bytes)?;
+        let mut next = vec![0; MAX_STATE_BYTES];
+        let mut scratch = vec![0; ADMISSION_SCRATCH_BYTES - 1];
+        let mut event = vec![0; MAX_EVENT_BYTES];
+        let market = header(0)?;
+        let ctx = CallContext {
+            chain: market.deployment_chain_domain,
+            program: market.program_id,
+            principal: p(90)?,
+            height: 400,
+        };
+        assert_eq!(
+            apply_admission(&ctx, &env, &self.bytes, &mut next, &mut scratch, &mut event),
+            AdmissionOutcome::Refused(CAPACITY)
+        );
+        Ok(())
+    }
+}
+
+#[test]
+fn a22_envelope_heartbeat_height_and_strict_liveness_bound() -> TestResult {
+    let mut native = NativeAdmission::new()?;
+    native.admit_worker()?;
+    native.open(3)?;
+    let heartbeat = native.signed_heartbeat(2)?;
+    assert!(matches!(
+        native.run(&heartbeat, p(90)?, 400)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    let meta = native
+        .table()?
+        .get(Participant::Worker(native.record.worker))
+        .ok_or(NOT_FOUND)?;
+    assert_eq!(meta.membership_flags, FLAG_ADMITTED);
+    assert_eq!(meta.last_heartbeat_height, Some(400));
+    assert_eq!(meta.last_heartbeat_epoch, Some(3));
+    assert_eq!(LIVENESS_BOUND_HEIGHTS, 64);
+    let before = native.bytes.clone();
+    assert!(matches!(
+        native.run(&heartbeat, p(90)?, 401)?,
+        AdmissionOutcome::Retained(_)
+    ));
+    assert_eq!(native.bytes, before);
+    let mut prune = participant_payload(meta.participant);
+    let revision = state::decode_shared_state(&before)?.revision;
+    prune.extend_from_slice(&revision.to_be_bytes());
+    assert_eq!(
+        native.apply(0x0808, p(99)?, 0, 464, &prune)?,
+        AdmissionOutcome::Refused(F08_NO_PRUNABLE_MEMBER)
+    );
+    assert_eq!(native.bytes, before);
+    assert!(
+        matches!(native.apply(0x0808, p(99)?, 0, 465, &prune)?, AdmissionOutcome::Applied { revision: next, .. } if next == revision + 1)
+    );
+    assert_eq!(native.table()?.get(meta.participant), None);
+    let after = state::decode_shared_state(&native.bytes)?;
+    let prior = state::decode_shared_state(&before)?;
+    for section in [
+        Section::IdentityRoster,
+        Section::CurrentReports,
+        Section::SettlementClaims,
+    ] {
+        assert_eq!(after.section(section)?, prior.section(section)?);
+    }
+    assert_eq!(after.control, prior.control);
+    assert_eq!(
+        native.apply(0x0808, p(99)?, 0, 466, &prune)?,
+        AdmissionOutcome::Refused(F08_STALE_STATE)
+    );
+    Ok(())
+}
+
+#[test]
+fn a23_envelope_revoke_exit_cancel_and_administrative_removal() -> TestResult {
+    let mut native = NativeAdmission::new()?;
+    native.admit_worker()?;
+    native.open(3)?;
+    let participant = Participant::Worker(native.record.worker);
+    let mut exit = participant_payload(participant);
+    exit.extend_from_slice(&1u64.to_be_bytes());
+    exit.extend_from_slice(&4u64.to_be_bytes());
+    exit.push(ExitReason::Voluntary as u8);
+    assert!(matches!(
+        native.apply(0x0806, native.record.owner, 2, 400, &exit)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    assert_eq!(
+        native
+            .table()?
+            .get(participant)
+            .ok_or(NOT_FOUND)?
+            .pending_exit,
+        Some(PendingExit {
+            epoch: 4,
+            cause: ExitCause::Voluntary
+        })
+    );
+    let mut cancel = participant_payload(participant);
+    cancel.extend_from_slice(&1u64.to_be_bytes());
+    assert!(matches!(
+        native.apply(0x0807, native.record.owner, 3, 401, &cancel)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    assert_eq!(
+        native
+            .table()?
+            .get(participant)
+            .ok_or(NOT_FOUND)?
+            .pending_exit,
+        None
+    );
+    let mut removal = cancel.clone();
+    removal.push(RemovalReason::Security as u8);
+    assert!(matches!(
+        native.apply(0x0809, p(OWNER[0])?, 3, 402, &removal)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    let removed = native.table()?.get(participant).ok_or(NOT_FOUND)?;
+    assert!(removed.revoked());
+    assert_eq!(
+        removed.pending_exit,
+        Some(PendingExit {
+            epoch: 4,
+            cause: ExitCause::Security
+        })
+    );
+    let heartbeat = native.signed_heartbeat(4)?;
+    assert_eq!(
+        native.run(&heartbeat, p(90)?, 420)?,
+        AdmissionOutcome::Refused(F08_DELEGATE_REVOKED)
+    );
+    let mut approved = NativeAdmission::new()?;
+    let mut terms = terms(participant, approved.record.owner, 0, 60)?;
+    terms.delegate = approved.record.delegate;
+    terms.identity_commitment = approved.record.proposal_digest(&header(0)?)?;
+    assert!(matches!(
+        approved.apply(0x0801, p(OWNER[0])?, 2, 1, &approval_payload(&terms)?)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    assert!(matches!(
+        approved.apply(
+            0x0802,
+            p(OWNER[0])?,
+            3,
+            2,
+            &participant_payload(participant)
+        )?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    assert!(approved.table()?.is_empty());
+    Ok(())
+}
+
+fn evaluator_native() -> CodecResult<(NativeAdmission, EvaluatorConsent, SigningKey)> {
+    let mut native = NativeAdmission::new()?;
+    let market = header(0)?;
+    let key = SigningKey::from_bytes(&[51; 32]);
+    let (grant, _, mut consent) = pending_evaluator(&market, p(77)?, &key)?;
+    let record = EvaluatorRecord {
+        grant,
+        last: LastRequest {
+            sequence: 1,
+            request: RequestId::new([55; 32])?,
+            digest: RequestDigest::new([56; 32])?,
+            result: ResultDigest::new([57; 32])?,
+        },
+        rekey: None,
+        revocation: None,
+    };
+    let mut region = EvaluatorRegion::new();
+    region.insert(&record)?;
+    let source = native.bytes.clone();
+    let mut state = state::decode_shared_state(&source)?;
+    let workers = split_identity_section(state.section(Section::IdentityRoster)?)?.0;
+    let mut identity = vec![0; Section::IdentityRoster.payload_cap()];
+    identity[..workers.len()].copy_from_slice(workers);
+    let len = region.encode(&mut identity[workers.len()..])? + workers.len();
+    state.feature_sections[Section::IdentityRoster.index()] = &identity[..len];
+    native.bytes = encode_native(&state)?;
+    let mut terms = terms(
+        Participant::Evaluator(grant.evaluator),
+        grant.principal,
+        0,
+        60,
+    )?;
+    terms.delegate = grant.signing_key;
+    let mut bytes = [0; GRANT_BYTES];
+    let len = encode_grant(&grant, &mut bytes)?;
+    terms.identity_commitment = codec::domain_hash("PAXAI/evaluator-grant/v1", &bytes[..len])?;
+    assert!(matches!(
+        native.apply(
+            0x0801,
+            market.owner_principal,
+            2,
+            5,
+            &approval_payload(&terms)?
+        )?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    consent.approval_digest = native
+        .table()?
+        .get(terms.participant)
+        .ok_or(NOT_FOUND)?
+        .approval
+        .ok_or(NOT_FOUND)?
+        .digest;
+    let payload = sign(&consent, &key)?;
+    consent.request =
+        codec::decode_envelope(&native.envelope(0x0804, grant.principal, 1, &payload)?)?
+            .envelope
+            .request;
+    Ok((native, consent, key))
+}
+
+#[test]
+fn a24_envelope_evaluator_real_consent_and_retained_owner_slot() -> TestResult {
+    let (mut native, consent, key) = evaluator_native()?;
+    let before = native.bytes.clone();
+    let mut bad = sign(&consent, &key)?;
+    bad[425] ^= 1;
+    assert_eq!(
+        native.apply(0x0804, consent.owner, 1, 6, &bad)?,
+        AdmissionOutcome::Refused(F08_BAD_CONSENT)
+    );
+    assert_eq!(native.bytes, before);
+    let payload = sign(&consent, &key)?;
+    assert!(matches!(
+        native.apply(0x0804, consent.owner, 1, 6, &payload)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    let meta = native
+        .table()?
+        .get(Participant::Evaluator(consent.evaluator))
+        .ok_or(NOT_FOUND)?;
+    assert_eq!(meta.membership_flags, FLAG_ADMITTED);
+    assert_eq!(meta.approval, None);
+    let source = native.bytes.clone();
+    assert!(matches!(
+        native.apply(0x0804, consent.owner, 1, 7, &payload)?,
+        AdmissionOutcome::Retained(_)
+    ));
+    assert_eq!(native.bytes, source);
+    let state = state::decode_shared_state(&native.bytes)?;
+    assert_eq!(
+        state
+            .control
+            .replay
+            .actor(ActorSlot::evaluator(0)?)
+            .ok_or(NOT_FOUND)?
+            .principal,
+        consent.owner
+    );
+    assert_eq!(
+        state.section(Section::IdentityRoster)?,
+        state::decode_shared_state(&before)?.section(Section::IdentityRoster)?
+    );
+    Ok(())
+}
+
+#[test]
+fn a25_envelope_canonical_lengths_and_unknown_operation_refuse() -> TestResult {
+    let mut native = NativeAdmission::new()?;
+    let mut terms = terms(
+        Participant::Worker(native.record.worker),
+        native.record.owner,
+        0,
+        60,
+    )?;
+    terms.delegate = native.record.delegate;
+    terms.identity_commitment = native.record.proposal_digest(&header(0)?)?;
+    let mut payloads = vec![
+        (0x0801, approval_payload(&terms)?),
+        (0x0802, participant_payload(terms.participant)),
+    ];
+    payloads.push((
+        0x0803,
+        worker_admission_payload(&admission(terms.participant, 0, Digest32::new([7; 32])?))?,
+    ));
+    let (_, consent, key) = evaluator_native()?;
+    payloads.push((0x0804, sign(&consent, &key)?));
+    payloads.push((0x0805, native.heartbeat_payload()));
+    for (selector, tail) in [(0x0806, 17usize), (0x0807, 8), (0x0808, 8), (0x0809, 9)] {
+        let mut payload = participant_payload(terms.participant);
+        payload.extend_from_slice(&vec![0; tail]);
+        if selector == 0x0806 || selector == 0x0809 {
+            let last = payload.len() - 1;
+            payload[last] = 1;
+        }
+        payloads.push((selector, payload));
+    }
+    native.admit_worker()?;
+    native.open(3)?;
+    let before = native.bytes.clone();
+    for (selector, payload) in payloads {
+        let sequence = u64::from(selector != 0x0808);
+        let mut trailing = payload.clone();
+        trailing.push(0);
+        for malformed in [&payload[..payload.len() - 1], trailing.as_slice()] {
+            assert_eq!(
+                native.apply(selector, native.record.owner, sequence, 400, malformed)?,
+                AdmissionOutcome::Refused(NON_CANONICAL)
+            );
+            assert_eq!(native.bytes, before);
+        }
+    }
+    assert_eq!(
+        native.apply(0x0102, native.record.owner, 1, 400, &[])?,
+        AdmissionOutcome::Refused(UNKNOWN_OPERATION)
+    );
+    Ok(())
+}
+
+#[test]
+fn a26_envelope_authority_domain_replay_and_capacity_refusals() -> TestResult {
+    let mut native = NativeAdmission::new()?;
+    native.admit_worker()?;
+    native.open(3)?;
+    let heartbeat = native.signed_heartbeat(2)?;
+    let decoded = codec::decode_envelope(&heartbeat)?;
+    let base = decoded.envelope;
+    let before = native.bytes.clone();
+    let cases = [
+        (
+            Envelope {
+                chain: ChainDomain::new([99; 32])?,
+                ..base
+            },
+            WRONG_DOMAIN,
+        ),
+        (
+            Envelope {
+                program: ProgramId::new([99; 32])?,
+                ..base
+            },
+            WRONG_PROGRAM,
+        ),
+        (
+            Envelope {
+                market: layerx_programs_ai_market::types::MarketId::new([99; 32])?,
+                ..base
+            },
+            WRONG_MARKET,
+        ),
+        (Envelope { config: 2, ..base }, WRONG_CONFIG),
+        (Envelope { epoch: 4, ..base }, WRONG_EPOCH),
+        (
+            Envelope {
+                roster: Presence::Present(RosterDigest::new([99; 32])?),
+                ..base
+            },
+            WRONG_ROSTER,
+        ),
+        (
+            Envelope {
+                expiry: 400,
+                ..base
+            },
+            EXPIRED,
+        ),
+        (
+            Envelope {
+                actor: p(99)?,
+                ..base
+            },
+            F08_OWNER_REQUIRED,
+        ),
+        (
+            Envelope {
+                authentication: Authentication::Delegate {
+                    key: PublicKey32([99; 32]),
+                    signature: Signature64([1; 64]),
+                },
+                ..base
+            },
+            F08_BAD_CONSENT,
+        ),
+    ];
+    for (envelope, error) in cases {
+        let mut bytes = vec![0; 16_384];
+        let len = codec::encode_envelope(&envelope, &mut bytes)?;
+        assert_eq!(
+            native.run(&bytes[..len], p(90)?, 400)?,
+            AdmissionOutcome::Refused(error)
+        );
+        assert_eq!(native.bytes, before);
+    }
+    let payload = native.heartbeat_payload();
+    let unsigned = native.envelope(0x0805, native.record.owner, 2, &payload)?;
+    assert_eq!(
+        native.run(&unsigned, p(90)?, 400)?,
+        AdmissionOutcome::Refused(UNAUTHORIZED)
+    );
+    native.short_scratch_refuses(&heartbeat)?;
+    assert_eq!(native.bytes, before);
+    assert!(matches!(
+        native.run(&heartbeat, p(90)?, 400)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    let mut conflict = native.heartbeat_payload();
+    conflict[40] ^= 1;
+    let conflicting = native.envelope(0x0805, native.record.owner, 2, &conflict)?;
+    assert_eq!(
+        native.run(&conflicting, native.record.owner, 416)?,
+        AdmissionOutcome::Refused(F08_IDEMPOTENCY_CONFLICT)
+    );
+    Ok(())
+}
+
+#[test]
+fn a27_envelope_joint_history_is_carried_byte_for_byte() -> TestResult {
+    let mut native = NativeAdmission::new()?;
+    native.admit_worker()?;
+    native.open(3)?;
+    let source = native.bytes.clone();
+    let mut state = state::decode_shared_state(&source)?;
+    let table = state.section(Section::ReputationAdmission)?;
+    let region = Region {
+        state: ReputationState::new(header(0)?.market_id),
+        seal: Presence::Absent,
+    };
+    let mut joint = vec![0; Section::ReputationAdmission.payload_cap()];
+    let len = encode_joint(&region, table, &mut joint)?;
+    let prefix_len = len - table.len();
+    state.feature_sections[Section::ReputationAdmission.index()] = &joint[..len];
+    native.bytes = encode_native(&state)?;
+    let heartbeat = native.signed_heartbeat(2)?;
+    assert!(matches!(
+        native.run(&heartbeat, p(90)?, 400)?,
+        AdmissionOutcome::Applied { .. }
+    ));
+    let after = state::decode_shared_state(&native.bytes)?;
+    assert_eq!(
+        &after.section(Section::ReputationAdmission)?[..prefix_len],
+        &joint[..prefix_len]
+    );
+    assert_eq!(
+        native
+            .table()?
+            .get(Participant::Worker(native.record.worker))
+            .ok_or(NOT_FOUND)?
+            .last_heartbeat_height,
+        Some(400)
+    );
     Ok(())
 }
