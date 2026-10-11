@@ -19413,7 +19413,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.3]
 title = "Params gain kernelNetworkId and programFeeDenoms; MsgSetParams fields 6 and 7"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.4"]

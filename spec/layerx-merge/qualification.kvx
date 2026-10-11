@@ -1265,3 +1265,10 @@ command = "go test -count=1 ./precompiles/addr/ -run 'TestLayerX"
 exit_code = 0
 log_path = "logs/1.1.5-verify-1.log"
 observed_and_assumption = "verify passed (5 passed, 0 failed (baseline tree; TestLayerXReasonsFromPlanHeight not written)). Gaps: do_3 (wrap ErrLayerXNotBound in getLayerXDid) also changes the below-plan refusal identity asserted by TestAddrRevertReasons 'evm address not bound' EqualError text; same ruling."
+
+[finding.5.1.3]
+revision = "c2deb67e7"
+command = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run 'TestMsgValidateBasic"
+exit_code = 0
+log_path = "logs/5.1.3-verify-1.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: acceptance 5.7.1-5.7.4 tests (TestUpdateParamsOriginTwoFields, TestGovernanceMessagesRequireTheAuthority) belong to task 5.2.1"
