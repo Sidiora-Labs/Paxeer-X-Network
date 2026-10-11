@@ -14,7 +14,9 @@ use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::quote::{
     address_word, keccak, quote_digest, word, Address, Quote, SIDIORA,
 };
-use layerx_gas_station::rpc::{bytes, hex, ConfiguredRpc, Exchange, HttpsExchange, RpcFault};
+use layerx_gas_station::rpc::{
+    bytes, hex, ConfiguredRpc, Exchange, HttpsExchange, RpcFault, SequencerEndpoint,
+};
 use layerx_gas_station::service::{serve, Limits, Service};
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner};
 use layerx_gas_station::station::GasStation;
@@ -134,6 +136,70 @@ impl Exchange for ReplayExchange {
     }
 }
 
+/// Recorded exchanges the sequencer endpoint adds to tests/fixtures/cycle.json:
+/// the anchored block reads the station makes, the delegated account code, and
+/// per phase the send and the `pax_sequencerReceipt` answer. Each phase's rules
+/// are matched before the fixture's own.
+fn sequencer_endpoint_rules() -> Value {
+    let latest = json!({"blockHash": "$latest_block", "requireCanonical": true});
+    let finalized = json!({"blockHash": "$finalized_block", "requireCanonical": true});
+    let executed = |rung: &str, status: &str, sponsor: Value| {
+        json!({"rung": rung, "txHash": "$hash", "seq": "0x2a", "height": "0x11", "index": "0x0",
+            "timestamp": "0x3e8", "status": status, "returnData": "0x", "logs": [],
+            "gasUsed": "0x186a0", "cumulativeGasUsed": "0x186a0",
+            "effectiveGasPrice": "0x48c27395000", "feeDenom": "ahpx", "feeAmount": "0x0",
+            "sponsor": sponsor, "from": "$sponsor", "to": "$account", "contractAddress": null,
+            "nonce": "0x5", "vmError": "", "keyId": "0x1", "receipt": "0x"})
+    };
+    let sent = json!({"method": "eth_sendRawTransaction", "params": ["$raw"], "result": "$hash"});
+    let receipt = |result: Value| json!({"method": "pax_sequencerReceipt", "params": ["$hash"], "result": result});
+    let rate = |updated: &str| {
+        json!([{"method": "eth_call",
+            "params": [{"to": "$paymaster", "data": "$rate_updated_call"}, "latest"],
+            "result": updated}])
+    };
+    json!({
+        "*": [
+            {"method": "eth_getBlockByNumber", "params": ["latest", false],
+                "result": {"number": "0x10", "hash": "$latest_block", "timestamp": "0x3e8"}},
+            {"method": "eth_getBlockByNumber", "params": ["finalized", false],
+                "result": {"number": "0xf", "hash": "$finalized_block", "timestamp": "0x3e0"}},
+            {"method": "eth_getBlockByNumber", "params": ["0xf", false],
+                "result": {"number": "0xf", "hash": "$finalized_block", "timestamp": "0x3e0"}},
+            {"method": "eth_getCode", "params": ["$account", latest], "result": "$delegated_code"},
+            {"method": "eth_getCode", "params": ["$account", finalized], "result": "$delegated_code"},
+            {"method": "eth_getCode", "params": ["$account", "pending"], "result": "$delegated_code"},
+            {"method": "eth_call", "params": [{"to": "$account", "data": "$batch_nonce_call"}, latest],
+                "result": "$zero"},
+            {"method": "eth_call", "params": [{"to": "$account", "data": "$consumed_call"}, finalized],
+                "result": "$zero"},
+        ],
+        "receipted": [sent.clone(), receipt(executed("receipted", "0x1", json!("$sponsor")))],
+        "reverted": [sent.clone(), receipt(executed("receipted", "0x0", Value::Null))],
+        "foreign_sponsor": [sent.clone(), receipt(executed("receipted", "0x1", json!("$paymaster")))],
+        "held": [sent, receipt(json!({"rung": "submitted", "txHash": "$hash", "nonce": "0x5"}))],
+        "refused": [receipt(Value::Null)],
+        "rate_age_150": rate("0x0000000000000000000000000000000000000000000000000000000000000352"),
+        "rate_age_120": rate("0x0000000000000000000000000000000000000000000000000000000000000370"),
+    })
+}
+
+fn with_sequencer_endpoint_rules(mut fixture: Value) -> Result<Value, Box<dyn std::error::Error>> {
+    let phases = fixture["phases"]
+        .as_object_mut()
+        .ok_or("fixture without phases")?;
+    if let Value::Object(added) = sequencer_endpoint_rules() {
+        for (phase, rules) in added {
+            let mut merged = rules.as_array().cloned().ok_or("phase rules not a list")?;
+            if let Some(existing) = phases.get(&phase).and_then(Value::as_array) {
+                merged.extend(existing.iter().cloned());
+            }
+            phases.insert(phase, Value::Array(merged));
+        }
+    }
+    Ok(fixture)
+}
+
 #[derive(Clone)]
 struct SharedLog(Arc<Mutex<Vec<u8>>>);
 impl std::io::Write for SharedLog {
@@ -207,9 +273,13 @@ fn spawn_service(
         let built = (|| -> Result<_, Box<dyn std::error::Error>> {
             let rpc = ConfiguredRpc::new(&config.station, ReplayExchange(Arc::clone(&recorded)))?;
             let rates = PaymasterRateSource::new(
-                ConfiguredRpc::new(&config.station, ReplayExchange(recorded))?,
+                ConfiguredRpc::new(&config.station, ReplayExchange(Arc::clone(&recorded)))?,
                 config.station.paymaster,
             );
+            let sequencer = SequencerEndpoint::new(ConfiguredRpc::new(
+                &config.station,
+                ReplayExchange(recorded),
+            )?);
             let station = GasStation::new(
                 config.station.clone(),
                 signer,
@@ -225,7 +295,8 @@ fn spawn_service(
                     max_body: 65_536,
                     read_time: Duration::from_millis(500),
                 },
-            ))
+            )
+            .with_sequencer(sequencer))
         })();
         match built {
             Ok(mut service) => {
@@ -243,7 +314,15 @@ fn spawn_service(
 }
 
 fn start(name: &str) -> Result<Harness, Box<dyn std::error::Error>> {
-    let station = station_config(name);
+    start_with_rate_age(name, 300)
+}
+
+fn start_with_rate_age(
+    name: &str,
+    max_rate_age: u64,
+) -> Result<Harness, Box<dyn std::error::Error>> {
+    let mut station = station_config(name);
+    station.max_rate_age = max_rate_age;
     let (signer, relayer_secret) = ephemeral_signer(&station)?;
     let (account, account_secret) = ephemeral_signer(&station)?;
     let sponsor = signer.address();
@@ -264,12 +343,20 @@ fn start(name: &str) -> Result<Harness, Box<dyn std::error::Error>> {
         ("$zero", hex(&word(0))),
         ("$one", hex(&word(1))),
         ("$batch_nonce_call", hex(&keccak(b"nonce()")[..4])),
+        ("$latest_block", hex(&[0x10; 32])),
+        ("$finalized_block", hex(&[0x0f; 32])),
+        (
+            "$delegated_code",
+            hex(&[[0xef, 0x01, 0x00].as_slice(), PAYMASTER.as_slice()].concat()),
+        ),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), json!(v)))
     .collect();
     let recorded = Arc::new(Recording {
-        fixture: serde_json::from_str(include_str!("fixtures/cycle.json"))?,
+        fixture: with_sequencer_endpoint_rules(serde_json::from_str(include_str!(
+            "fixtures/cycle.json"
+        ))?)?,
         phase: Mutex::new("submit".into()),
         bindings: Mutex::new(bindings),
         sent: Mutex::new(vec![]),
@@ -434,6 +521,16 @@ impl Harness {
         }))
     }
 
+    /// The body a client polls `/status` with for the quote it holds.
+    fn status_body(&self, quote_response: &Value) -> Value {
+        json!({
+            "sponsor": quote_response["quote"]["sponsor"],
+            "quoteNonce": quote_response["quote"]["quoteNonce"],
+            "account": hex(&self.account.address()),
+            "relayerSignature": quote_response["relayerSignature"],
+        })
+    }
+
     fn log(&self) -> String {
         self.log
             .0
@@ -442,7 +539,15 @@ impl Harness {
             .unwrap_or_default()
     }
 
+    /// The service writes a request's log line after it delivered the
+    /// response, so the log is read once it holds `lines` lines or after a
+    /// bounded wait.
     fn assert_log_clean(&self, lines: &[&str]) {
+        let waited = std::time::Instant::now();
+        while self.log().lines().count() < lines.len() && waited.elapsed() < Duration::from_secs(5)
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let log = self.log();
         assert_eq!(log.lines().collect::<Vec<_>>(), lines);
         for secret in &self.secrets {
@@ -466,6 +571,7 @@ impl Harness {
 #[test]
 fn quote_and_sponsored_submission_over_a_socket() -> TestResult {
     let harness = start("CYCLE")?;
+    harness.recorded.phase("receipted");
     let (status, quote) = harness.post("/quote", &harness.quote_body())?;
     assert_eq!(status, 200);
     let expected = json!({
@@ -488,9 +594,10 @@ fn quote_and_sponsored_submission_over_a_socket() -> TestResult {
     let sent = harness.recorded.sent();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0][0], 4);
+    let hash = hex(&keccak(&sent[0]));
     assert_eq!(
         submitted,
-        json!({"transactionHash": hex(&keccak(&sent[0]))})
+        json!({"transactionHash": hash, "rung": "receipted", "seq": "42"})
     );
     let submitted = submitted.to_string();
     assert!(!submitted.contains(hex(&sent[0]).trim_start_matches("0x")));
@@ -498,7 +605,21 @@ fn quote_and_sponsored_submission_over_a_socket() -> TestResult {
         assert!(!submitted.contains(secret.trim_start_matches("0x")));
         assert!(!quote.to_string().contains(secret.trim_start_matches("0x")));
     }
-    harness.assert_log_clean(&["/quote 200", "/submit 200"]);
+    assert_eq!(
+        harness.post("/status", &harness.status_body(&quote))?,
+        (
+            200,
+            json!({
+                "state": "completed",
+                "deadline": "1019",
+                "submission": {"sponsorNonce": "5", "transactionHash": hash},
+                "completion": {"outcome": "receipted", "rung": "receipted",
+                    "transactionHash": hash, "seq": "42"},
+            })
+        )
+    );
+    assert_eq!(harness.recorded.sent().len(), 1);
+    harness.assert_log_clean(&["/quote 200", "/submit 200", "/status 200"]);
     harness.finish()
 }
 
@@ -571,7 +692,7 @@ fn quote_refusals_are_4xx_and_unavailability_is_5xx() -> TestResult {
     harness.recorded.phase("stale_rate");
     assert_eq!(
         harness.post("/quote", &harness.quote_body())?,
-        (503, json!({"error": "unavailable"}))
+        (503, json!({"error": "stale_rate"}))
     );
     lines.push("/quote 503");
     harness.recorded.phase("unreachable");
@@ -619,5 +740,87 @@ fn submission_refusals_are_4xx_and_an_unreachable_node_is_5xx() -> TestResult {
     lines.push("/submit 503");
     assert_eq!(harness.recorded.sent().len(), 1);
     harness.assert_log_clean(&lines);
+    harness.finish()
+}
+
+#[test]
+fn quote_refused_when_the_rate_is_older_than_max_rate_age() -> TestResult {
+    let harness = start_with_rate_age("STALE", 120)?;
+    harness.recorded.phase("rate_age_150");
+    assert_eq!(
+        harness.post("/quote", &harness.quote_body())?,
+        (503, json!({"error": "stale_rate"}))
+    );
+    assert!(harness.journal_is_empty()?);
+    harness.recorded.phase("rate_age_120");
+    let (status, quote) = harness.post("/quote", &harness.quote_body())?;
+    assert_eq!(status, 200);
+    assert_eq!(quote["quote"]["tokenAmount"], json!(AMOUNT.to_string()));
+    assert_eq!(quote["quote"]["quoteNonce"], json!("1"));
+    assert!(harness.recorded.sent().is_empty());
+    harness.assert_log_clean(&["/quote 503", "/quote 200"]);
+    harness.finish()
+}
+
+/// The harness, the quote and the submit answer of one sponsored batch.
+type SequencerEndpointSubmission = (Harness, Value, (u16, Value));
+
+/// Quotes and submits one sponsored batch with the sequencer answering as
+/// `phase` records, returning the harness, the quote and the submit answer.
+fn sequencer_endpoint_submission(
+    name: &str,
+    phase: &str,
+) -> Result<SequencerEndpointSubmission, Box<dyn std::error::Error>> {
+    let harness = start(name)?;
+    harness.recorded.phase(phase);
+    let (status, quote) = harness.post("/quote", &harness.quote_body())?;
+    assert_eq!(status, 200);
+    let answer = harness.post("/submit", &harness.submission_body(&quote)?)?;
+    assert_eq!(harness.recorded.sent().len(), 1);
+    Ok((harness, quote, answer))
+}
+
+#[test]
+fn a_held_future_nonce_send_answers_at_rung_submitted_and_stays_pending() -> TestResult {
+    let (harness, quote, answer) = sequencer_endpoint_submission("HELD", "held")?;
+    let hash = hex(&keccak(&harness.recorded.sent()[0]));
+    assert_eq!(
+        answer,
+        (200, json!({"transactionHash": hash, "rung": "submitted"}))
+    );
+    assert_eq!(
+        harness.post("/status", &harness.status_body(&quote))?,
+        (
+            200,
+            json!({
+                "state": "pending",
+                "deadline": "1019",
+                "submission": {"sponsorNonce": "5", "transactionHash": hash},
+                "completion": null,
+            })
+        )
+    );
+    harness.assert_log_clean(&["/quote 200", "/submit 200", "/status 200"]);
+    harness.finish()
+}
+
+#[test]
+fn a_reverted_receipt_is_refused_and_reported_reverted() -> TestResult {
+    let (harness, quote, answer) = sequencer_endpoint_submission("REVERTED", "reverted")?;
+    let hash = hex(&keccak(&harness.recorded.sent()[0]));
+    assert_eq!(answer, (422, json!({"error": "refused"})));
+    assert_eq!(
+        harness.post("/status", &harness.status_body(&quote))?.1["completion"],
+        json!({"outcome": "reverted", "rung": "receipted", "transactionHash": hash})
+    );
+    harness.assert_log_clean(&["/quote 200", "/submit 422", "/status 200"]);
+    harness.finish()
+}
+
+#[test]
+fn a_receipt_naming_another_sponsor_is_refused_as_unavailable() -> TestResult {
+    let (harness, _, answer) = sequencer_endpoint_submission("FOREIGN", "foreign_sponsor")?;
+    assert_eq!(answer, (503, json!({"error": "unavailable"})));
+    harness.assert_log_clean(&["/quote 200", "/submit 503"]);
     harness.finish()
 }

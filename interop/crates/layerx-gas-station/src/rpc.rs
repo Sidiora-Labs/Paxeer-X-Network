@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use crate::config::StationConfig;
-use crate::quote::{keccak, Word};
+use crate::quote::{keccak, Address, Word};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RpcFault {
@@ -36,12 +36,17 @@ impl std::error::Error for RpcFault {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SendOutcome {
     Accepted,
+    Receipted,
     Unknown,
 }
 
 pub trait JsonRpc {
     fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), RpcFault> {
-        if deadline.is_some() { Err(RpcFault::Configuration) } else { Ok(()) }
+        if deadline.is_some() {
+            Err(RpcFault::Configuration)
+        } else {
+            Ok(())
+        }
     }
 
     /// # Errors
@@ -101,7 +106,13 @@ pub fn quantity(text: &str) -> Result<u128, RpcFault> {
 }
 
 pub trait Exchange {
-    fn request_until(&self, endpoint: &str, method: &str, params: &Value, deadline: Instant) -> Result<Value, RpcFault> {
+    fn request_until(
+        &self,
+        endpoint: &str,
+        method: &str,
+        params: &Value,
+        deadline: Instant,
+    ) -> Result<Value, RpcFault> {
         let _ = (endpoint, method, params, deadline);
         Err(RpcFault::Configuration)
     }
@@ -145,7 +156,9 @@ impl<E: Exchange> JsonRpc for ConfiguredRpc<E> {
         for endpoint in &self.endpoints {
             let result = match self.deadline.get() {
                 Some(deadline) if Instant::now() >= deadline => Err(RpcFault::Unavailable),
-                Some(deadline) => self.exchange.request_until(endpoint, method, &params, deadline),
+                Some(deadline) => self
+                    .exchange
+                    .request_until(endpoint, method, &params, deadline),
                 None => self.exchange.request(endpoint, method, &params),
             };
             match result {
@@ -178,6 +191,133 @@ impl<E: Exchange> JsonRpc for ConfiguredRpc<E> {
             _ => Ok(SendOutcome::Unknown),
         }
     }
+}
+
+/// How far the sequencer has carried one transaction, as `pax_sequencerReceipt`
+/// names it: held at `submitted`, executed at `receipted`, in a block at `committed`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Rung {
+    Submitted,
+    Receipted(Execution),
+    Committed(Execution),
+}
+
+/// The executed part of a sequencer receipt: its sequence number, whether the
+/// transaction succeeded, and the sponsor its summary effect carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Execution {
+    pub seq: u64,
+    pub succeeded: bool,
+    pub sponsor: Option<Address>,
+}
+
+/// One transaction's sequencer receipt: the sender nonce and the rung reached.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SequencerReceipt {
+    pub nonce: u64,
+    pub rung: Rung,
+}
+
+/// The chain client on the sequencer: sends go through `eth_sendRawTransaction`
+/// and pending reads through the same endpoints, which the router forwards to
+/// the sequencer, and a sent transaction's rung is read from `pax_sequencerReceipt`.
+pub struct SequencerEndpoint {
+    rpc: Box<dyn JsonRpc>,
+}
+impl SequencerEndpoint {
+    #[must_use]
+    pub fn new(rpc: impl JsonRpc + 'static) -> Self {
+        Self { rpc: Box::new(rpc) }
+    }
+
+    /// The sequencer receipt of `hash`, or `None` when the sequencer holds no
+    /// record of it.
+    /// # Errors
+    /// Returns a sanitized fault, or refuses a receipt naming another
+    /// transaction or one that cannot be decoded.
+    pub fn receipt(&self, hash: &Word) -> Result<Option<SequencerReceipt>, RpcFault> {
+        sequencer_receipt(
+            hash,
+            &self.rpc.call("pax_sequencerReceipt", json!([hex(hash)]))?,
+        )
+    }
+}
+impl JsonRpc for SequencerEndpoint {
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), RpcFault> {
+        self.rpc.set_deadline(deadline)
+    }
+    fn call(&self, method: &str, params: Value) -> Result<Value, RpcFault> {
+        self.rpc.call(method, params)
+    }
+    fn send_raw_transaction(&self, raw: &[u8], hash: &Word) -> Result<SendOutcome, RpcFault> {
+        match self.rpc.send_raw_transaction(raw, hash)? {
+            SendOutcome::Accepted => match self.receipt(hash) {
+                Ok(Some(SequencerReceipt {
+                    rung: Rung::Receipted(_) | Rung::Committed(_),
+                    ..
+                })) => Ok(SendOutcome::Receipted),
+                _ => Ok(SendOutcome::Accepted),
+            },
+            outcome => Ok(outcome),
+        }
+    }
+}
+
+fn sequencer_receipt(hash: &Word, value: &Value) -> Result<Option<SequencerReceipt>, RpcFault> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let fields = value.as_object().ok_or(RpcFault::Malformed)?;
+    let text = |name: &str| {
+        fields
+            .get(name)
+            .and_then(Value::as_str)
+            .ok_or(RpcFault::Malformed)
+    };
+    let number =
+        |name: &str| u64::try_from(quantity(text(name)?)?).map_err(|_| RpcFault::Malformed);
+    if bytes(text("txHash")?)? != hash {
+        return Err(RpcFault::Malformed);
+    }
+    let nonce = number("nonce")?;
+    let receipted = match text("rung")? {
+        "submitted" if fields.len() == 3 => {
+            return Ok(Some(SequencerReceipt {
+                nonce,
+                rung: Rung::Submitted,
+            }))
+        }
+        "receipted" => true,
+        "committed" => false,
+        _ => return Err(RpcFault::Malformed),
+    };
+    let succeeded = match number("status")? {
+        0 => false,
+        1 => true,
+        _ => return Err(RpcFault::Malformed),
+    };
+    let sponsor = match fields.get("sponsor") {
+        Some(Value::Null) => None,
+        Some(Value::String(sponsor)) => Some(
+            bytes(sponsor)?
+                .try_into()
+                .map_err(|_| RpcFault::Malformed)?,
+        ),
+        _ => return Err(RpcFault::Malformed),
+    };
+    let execution = Execution {
+        seq: number("seq")?,
+        succeeded,
+        sponsor,
+    };
+    Ok(Some(SequencerReceipt {
+        nonce,
+        rung: if receipted {
+            Rung::Receipted(execution)
+        } else {
+            Rung::Committed(execution)
+        },
+    }))
 }
 
 pub struct HttpsExchange;
@@ -219,49 +359,100 @@ impl HttpsExchange {
 }
 fn remaining(deadline: Instant) -> Result<Duration, RpcFault> {
     let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() { Err(RpcFault::Unavailable) } else { Ok(remaining) }
+    if remaining.is_zero() {
+        Err(RpcFault::Unavailable)
+    } else {
+        Ok(remaining)
+    }
 }
 
-type Resolution = (String, u16, std::sync::mpsc::Sender<Result<std::net::SocketAddr, RpcFault>>);
-fn resolve_until(host: &str, port: u16, deadline: Instant) -> Result<std::net::SocketAddr, RpcFault> {
-    static RESOLVER: std::sync::OnceLock<Result<std::sync::mpsc::SyncSender<Resolution>, RpcFault>> = std::sync::OnceLock::new();
-    let resolver = RESOLVER.get_or_init(|| {
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<Resolution>(8);
-        std::thread::Builder::new().name("station-dns".into()).spawn(move || {
-            while let Ok((host, port, reply)) = receiver.recv() {
-                let result = (host.as_str(), port).to_socket_addrs()
-                    .map_err(|_| RpcFault::Unavailable)
-                    .and_then(|mut addresses| addresses.next().ok_or(RpcFault::Unavailable));
-                let _ = reply.send(result);
-            }
-        }).map_err(|_| RpcFault::Unavailable)?;
-        Ok(sender)
-    }).as_ref().map_err(|fault| *fault)?;
+type Resolution = (
+    String,
+    u16,
+    std::sync::mpsc::Sender<Result<std::net::SocketAddr, RpcFault>>,
+);
+fn resolve_until(
+    host: &str,
+    port: u16,
+    deadline: Instant,
+) -> Result<std::net::SocketAddr, RpcFault> {
+    static RESOLVER: std::sync::OnceLock<
+        Result<std::sync::mpsc::SyncSender<Resolution>, RpcFault>,
+    > = std::sync::OnceLock::new();
+    let resolver = RESOLVER
+        .get_or_init(|| {
+            let (sender, receiver) = std::sync::mpsc::sync_channel::<Resolution>(8);
+            std::thread::Builder::new()
+                .name("station-dns".into())
+                .spawn(move || {
+                    while let Ok((host, port, reply)) = receiver.recv() {
+                        let result = (host.as_str(), port)
+                            .to_socket_addrs()
+                            .map_err(|_| RpcFault::Unavailable)
+                            .and_then(|mut addresses| {
+                                addresses.next().ok_or(RpcFault::Unavailable)
+                            });
+                        let _ = reply.send(result);
+                    }
+                })
+                .map_err(|_| RpcFault::Unavailable)?;
+            Ok(sender)
+        })
+        .as_ref()
+        .map_err(|fault| *fault)?;
     remaining(deadline)?;
     let (sender, receiver) = std::sync::mpsc::channel();
-    resolver.try_send((host.to_owned(), port, sender)).map_err(|_| RpcFault::Unavailable)?;
-    receiver.recv_timeout(remaining(deadline)?).map_err(|_| RpcFault::Unavailable)?
+    resolver
+        .try_send((host.to_owned(), port, sender))
+        .map_err(|_| RpcFault::Unavailable)?;
+    receiver
+        .recv_timeout(remaining(deadline)?)
+        .map_err(|_| RpcFault::Unavailable)?
 }
 
 impl Exchange for HttpsExchange {
     fn request(&self, endpoint: &str, method: &str, params: &Value) -> Result<Value, RpcFault> {
-        self.request_until(endpoint, method, params, Instant::now() + Duration::from_secs(30))
+        self.request_until(
+            endpoint,
+            method,
+            params,
+            Instant::now() + Duration::from_secs(30),
+        )
     }
-    fn request_until(&self, endpoint: &str, method: &str, params: &Value, deadline: Instant) -> Result<Value, RpcFault> {
+    fn request_until(
+        &self,
+        endpoint: &str,
+        method: &str,
+        params: &Value,
+        deadline: Instant,
+    ) -> Result<Value, RpcFault> {
         let deadline = deadline.min(Instant::now() + Duration::from_secs(30));
-        let tail = endpoint.strip_prefix("https://").ok_or(RpcFault::Configuration)?;
-        let (authority, path) = tail.split_once('/').map_or((tail, "/".to_owned()), |(a, p)| (a, format!("/{p}")));
-        if authority.is_empty() || endpoint.chars().any(char::is_whitespace)
-            || endpoint.contains(['@', '#', '?', '\r', '\n']) {
+        let tail = endpoint
+            .strip_prefix("https://")
+            .ok_or(RpcFault::Configuration)?;
+        let (authority, path) = tail
+            .split_once('/')
+            .map_or((tail, "/".to_owned()), |(a, p)| (a, format!("/{p}")));
+        if authority.is_empty()
+            || endpoint.chars().any(char::is_whitespace)
+            || endpoint.contains(['@', '#', '?', '\r', '\n'])
+        {
             return Err(RpcFault::Configuration);
         }
-        let (host, port) = authority.rsplit_once(':').map_or(Ok((authority, 443)), |(h, p)| {
-            p.parse::<u16>().map(|port| (h, port)).map_err(|_| RpcFault::Configuration)
-        })?;
+        let (host, port) = authority
+            .rsplit_once(':')
+            .map_or(Ok((authority, 443)), |(h, p)| {
+                p.parse::<u16>()
+                    .map(|port| (h, port))
+                    .map_err(|_| RpcFault::Configuration)
+            })?;
         let socket = resolve_until(host, port, deadline)?;
-        let stream = TcpStream::connect_timeout(&socket, remaining(deadline)?.min(Duration::from_secs(10)))
+        let stream =
+            TcpStream::connect_timeout(&socket, remaining(deadline)?.min(Duration::from_secs(10)))
+                .map_err(|_| RpcFault::Unavailable)?;
+        stream
+            .set_nonblocking(true)
             .map_err(|_| RpcFault::Unavailable)?;
-        stream.set_nonblocking(true).map_err(|_| RpcFault::Unavailable)?;
         let connector = native_tls::TlsConnector::new().map_err(|_| RpcFault::Configuration)?;
         let mut handshake = connector.connect(host, stream);
         let mut stream = loop {
@@ -276,7 +467,9 @@ impl Exchange for HttpsExchange {
             }
         };
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string();
-        if body.len() > 1_048_576 { return Err(RpcFault::Configuration); }
+        if body.len() > 1_048_576 {
+            return Err(RpcFault::Configuration);
+        }
         let request = format!("POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len());
         let mut pending = request.as_bytes();
         while !pending.is_empty() {

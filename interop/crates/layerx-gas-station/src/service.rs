@@ -10,7 +10,10 @@ use crate::journal::{Admission, Completion, JournalError, Key};
 use crate::policy::PolicyRefusal;
 use crate::price::{PriceError, PriceSource};
 use crate::quote::{keccak, word, Address, Word};
-use crate::rpc::{bytes, hex, JsonRpc, RpcFault};
+use crate::rpc::{
+    bytes, hex, ConfiguredRpc, Execution, HttpsExchange, JsonRpc, RpcFault, Rung,
+    SequencerEndpoint, SequencerReceipt,
+};
 use crate::signer::QuoteSigner;
 use crate::station::{GasStation, Progress, QuoteOutcome, Recovery, StationError, SubmitRequest};
 use crate::tx::{self, Authorization, Call, Fees, TxError};
@@ -95,6 +98,7 @@ pub enum ServiceError {
     IncompatibleDelegation,
     ReplayStateUnavailable,
     BalanceFloor,
+    StaleRate,
     SigningUnknown,
     Internal,
     Unavailable,
@@ -116,7 +120,7 @@ impl ServiceError {
             | Self::IncompatibleDelegation
             | Self::ReplayStateUnavailable => 422,
             Self::Accept | Self::Internal => 500,
-            Self::Unavailable | Self::BalanceFloor | Self::SigningUnknown => 503,
+            Self::Unavailable | Self::BalanceFloor | Self::StaleRate | Self::SigningUnknown => 503,
         }
     }
 
@@ -137,6 +141,7 @@ impl ServiceError {
             Self::Accept | Self::Internal => "internal",
             Self::Unavailable => "unavailable",
             Self::BalanceFloor => "balance_floor",
+            Self::StaleRate => "stale_rate",
             Self::SigningUnknown => "signing_outcome_unknown",
         }
     }
@@ -152,6 +157,8 @@ impl From<&StationError> for ServiceError {
     fn from(error: &StationError) -> Self {
         match error {
             StationError::SigningUnknown => Self::SigningUnknown,
+            StationError::Price(PriceError::StaleRate)
+            | StationError::Quote(QuoteError::Price(PriceError::StaleRate)) => Self::StaleRate,
             StationError::Quote(QuoteError::Policy(PolicyRefusal::BalanceFloor)) => {
                 Self::BalanceFloor
             }
@@ -221,6 +228,7 @@ pub struct Service<S, R, P, C> {
     clock: C,
     limits: Limits,
     browser_origins: Option<Vec<String>>,
+    sequencer: Result<SequencerEndpoint, RpcFault>,
 }
 
 impl<S, R, P, C> Service<S, R, P, C>
@@ -252,7 +260,17 @@ where
             browser_origins: std::env::var("GAS_STATION_BROWSER_ORIGINS")
                 .ok()
                 .and_then(|value| browser_origins(&value)),
+            sequencer: ConfiguredRpc::new(&config.station, HttpsExchange)
+                .map(SequencerEndpoint::new),
         }
+    }
+
+    /// Reads sequencer receipts through `sequencer` in place of a client over
+    /// the configured endpoints.
+    #[must_use]
+    pub fn with_sequencer(mut self, sequencer: SequencerEndpoint) -> Self {
+        self.sequencer = Ok(sequencer);
+        self
     }
 
     #[must_use]
@@ -294,6 +312,28 @@ where
             Ok(cost) if cost == gas_cost => Ok(fees),
             _ => Err(ServiceError::Refused),
         }
+    }
+
+    /// The sequencer receipt of the submission `hash` at sponsor nonce
+    /// `nonce`; a receipt naming another nonce, or a sponsor other than the
+    /// one a successful sponsored write carries, is refused as malformed.
+    fn sequencer_receipt(
+        &self,
+        sponsor: Address,
+        nonce: u64,
+        hash: &Word,
+    ) -> Result<Option<SequencerReceipt>, ServiceError> {
+        let fault = |fault| ServiceError::from(&StationError::Rpc(fault));
+        let sequencer = self.sequencer.as_ref().map_err(|error| fault(*error))?;
+        let receipt = sequencer.receipt(hash).map_err(fault)?;
+        if receipt.is_some_and(|receipt| {
+            receipt.nonce != nonce
+                || executed(Some(receipt))
+                    .is_some_and(|(_, run)| run.sponsor != run.succeeded.then_some(sponsor))
+        }) {
+            return Err(fault(RpcFault::Malformed));
+        }
+        Ok(receipt)
     }
 
     fn next_quote_nonce(&self) -> Result<Word, ServiceError> {
@@ -498,23 +538,42 @@ where
                 now,
             )
             .map_err(|error| ServiceError::from(&error))?;
-        let submitted = self
+        self.submission_rung(key, progress)
+    }
+
+    /// Answers a submission at the rung the sequencer holds it: receipted or
+    /// committed with its sequence number, held at submitted, or refused when
+    /// the sequencer holds no record of it or its execution reverted.
+    fn submission_rung(&self, key: Key, progress: Progress) -> Result<Value, ServiceError> {
+        let missing = match progress {
+            Progress::Pending | Progress::Completed(Completion::Included { .. }) => {
+                ServiceError::Internal
+            }
+            Progress::Completed(Completion::Consumed) => ServiceError::Conflict,
+            Progress::Completed(Completion::Reverted { .. } | Completion::Cancelled { .. }) => {
+                return Err(ServiceError::Refused)
+            }
+        };
+        let (nonce, hash) = self
             .station
             .journal()
             .state()
             .items
             .get(&key)
             .and_then(|item| item.submission.as_ref())
-            .map(|submission| submission.hash);
-        let hash = match progress {
-            Progress::Completed(Completion::Included { hash, .. }) => hash,
-            Progress::Pending => submitted.ok_or(ServiceError::Internal)?,
-            Progress::Completed(Completion::Consumed) => submitted.ok_or(ServiceError::Conflict)?,
-            Progress::Completed(Completion::Reverted { .. } | Completion::Cancelled { .. }) => {
-                return Err(ServiceError::Refused)
-            }
-        };
-        Ok(json!({ "transactionHash": hex(&hash) }))
+            .map(|submission| (submission.nonce, submission.hash))
+            .ok_or(missing)?;
+        let receipt = self.sequencer_receipt(key.sponsor, nonce, &hash)?;
+        match (receipt, executed(receipt)) {
+            (None, _) => Err(ServiceError::Refused),
+            (Some(_), None) => Ok(json!({ "transactionHash": hex(&hash), "rung": "submitted" })),
+            (Some(_), Some((_, run))) if !run.succeeded => Err(ServiceError::Refused),
+            (Some(_), Some((rung, run))) => Ok(json!({
+                "transactionHash": hex(&hash),
+                "rung": rung,
+                "seq": run.seq.to_string(),
+            })),
+        }
     }
 
     /// Runs one bounded recovery pass of the station at the service clock.
@@ -556,9 +615,24 @@ where
             })
         };
         let (state, outcome) = match status.completion {
-            None if status.replacement.is_some() => ("replacing", Value::Null),
-            None if status.submission.is_some() => ("pending", Value::Null),
-            None => ("quoted", Value::Null),
+            None => match status.submission {
+                None => ("quoted", Value::Null),
+                Some((nonce, hash)) => {
+                    match executed(self.sequencer_receipt(key.sponsor, nonce, &hash)?) {
+                        None => ("pending", Value::Null),
+                        Some((rung, run)) if run.succeeded => (
+                            "completed",
+                            json!({"outcome": "receipted", "rung": rung,
+                                "transactionHash": hex(&hash), "seq": run.seq.to_string()}),
+                        ),
+                        Some((rung, _)) => (
+                            "completed",
+                            json!({"outcome": "reverted", "rung": rung,
+                                "transactionHash": hex(&hash)}),
+                        ),
+                    }
+                }
+            },
             Some(Completion::Consumed) => ("completed", json!({"outcome": "consumed"})),
             Some(Completion::Included {
                 hash,
@@ -585,7 +659,6 @@ where
             "state": state,
             "deadline": status.deadline.to_string(),
             "submission": transaction(status.submission),
-            "replacement": transaction(status.replacement),
             "completion": outcome,
         }))
     }
@@ -1251,6 +1324,15 @@ fn decimal(value: &Word) -> String {
         }
     }
     digits.iter().rev().collect()
+}
+
+/// The rung name and execution of a receipt the sequencer has executed.
+fn executed(receipt: Option<SequencerReceipt>) -> Option<(&'static str, Execution)> {
+    match receipt?.rung {
+        Rung::Submitted => None,
+        Rung::Receipted(run) => Some(("receipted", run)),
+        Rung::Committed(run) => Some(("committed", run)),
+    }
 }
 
 fn increment(value: Word) -> Option<Word> {
