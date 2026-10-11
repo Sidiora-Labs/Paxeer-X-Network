@@ -26280,7 +26280,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.45]
 title = "layerxctl as an operator EVM client per decision.20"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26307,7 +26307,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.46]
 title = "Gateway lx_sendActivity switched off"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26334,7 +26334,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.47]
 title = "Gateway register and history switch-off"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26361,7 +26361,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.48]
 title = "Gateway subscriptions on eth_subscribe and the ingress switch-off point"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26388,7 +26388,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.49]
 title = "Client and agentd subscriptions on eth_subscribe"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -26469,7 +26469,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.52]
 title = "Kept bind path checked by the V6 vector"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -30467,7 +30467,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.11]
 title = "Core boundary withdrawal caps from configuration and treasury balance from bank"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -30523,7 +30523,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.13]
 title = "Program registry read cache over layerxprograms"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -30607,7 +30607,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.16]
 title = "Bridge relayer on sequencer receipts without the checkpoint verifier"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -30663,7 +30663,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.18]
 title = "Protocol adapter layerx-ap2 verifies settlement on sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2"]
@@ -30691,7 +30691,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.19]
 title = "Protocol adapter layerx-ucp verifies settlement on sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2"]
@@ -30719,7 +30719,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.20]
 title = "Protocol adapter layerx-visa-tap verifies settlement on sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2"]
@@ -30747,7 +30747,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.21]
 title = "Protocol adapter layerx-fiat verifies settlement on sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2"]
@@ -35415,7 +35415,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.1]
 title = "Gateway writes go to the sequencer and return the signed receipt"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35473,7 +35473,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.3]
 title = "Gateway provisioning binds through addr 0x1004"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35501,7 +35501,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.4]
 title = "Gateway sponsorship enforces per-identity budgets and retires the sponsor key"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4"]
@@ -35531,7 +35531,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.5]
 title = "Agent routes return the signed receipt; operator routes stay"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35671,7 +35671,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.10]
 title = "SDK ladder becomes submitted, receipted and committed"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35698,7 +35698,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.11]
 title = "SDK kernel reads move to px_getAccount and pax_sequencerReceipt"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35726,7 +35726,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.12]
 title = "SDK balances and assets read bank and pointer state"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -35942,7 +35942,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.20]
 title = "Web SID fee preference and sponsored sends through the paymaster"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4"]
@@ -35998,7 +35998,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.22]
 title = "Web bridge page keeps 0x1016 reads and bridgeOut"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36025,7 +36025,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.23]
 title = "Web explorer pages link to native explorer pages"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36052,7 +36052,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.24]
 title = "Web history reads move to px_getHistory"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36079,7 +36079,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.25]
 title = "Human service balances read bank state"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.3"]
@@ -36133,7 +36133,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.27]
 title = "Human service native send preview and producer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4"]
@@ -36160,7 +36160,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.28]
 title = "Onboarding sponsorship goes through the gas station"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4"]
@@ -40152,6 +40152,32 @@ do_3 = "Finish the entire scoped implementation first; then format touched files
 touches = ["interop/deploy/gas-station/railway.env.example", "docker/gas-station/init.sh", "interop/crates/layerx-gas-station/tests/service.rs"]
 build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station"
 verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test service documented_deploy_inputs_start_service"
+symbols = []
+planned_paths = []
+mode = "BUILD"
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+[task.0.19]
+title = "Gas station sibling tests, report and docs follow the no-replacement refusal rule"
+status = "in_progress"
+wave = 1
+requires = []
+reqs = ["7.5", "9011.1", "9011.2"]
+capabilities = []
+do_1 = "This task continues the 7.1.1 branch (its worktree starts from that branch, not from main): the journal no longer has Replacement, ReplacementSigningIntent or Replaced, a definitive refusal closes the journal item and frees its nonce, and a resubmission of refused bytes is a 422 refusal. Rewrite interop/crates/layerx-gas-station/tests/resolution_policy.rs to the no-replacement rule so the target compiles and every case asserts the real refusal, nonce-release and replay behaviour; no case is deleted without an equivalent assertion under the new rule."
+do_2 = "tests/service.rs submission_refusals_are_4xx_and_an_unreachable_node_is_5xx expects 503 when a refused submission is resubmitted; under the new rule that resubmission is a 422 refusal. Update the expectation to the new rule and keep the unreachable-node 5xx assertion."
+do_3 = "src/service.rs report() reads Status.refused so a refused item is reported as refused, not pending; src/lib.rs docs describe the refusal rule instead of replacement; src/tx.rs sign_cancellation and Fees::replacement are removed when nothing references them, otherwise left as they are with the reason in the report."
+do_4 = "The three environment-dependent cases (authenticated_retry_real_https_retains_unknown_liability_within_deadline, first_use_replay_state_real_https_preserves_retained_storage, recovery_deadline_bounds_real_stalled_tls) need private material and a live TLS peer; they are excluded from verify_cmd by name and must not be edited, weakened or deleted."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+touches = ["interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/src/station.rs", "interop/crates/layerx-gas-station/src/service.rs", "interop/crates/layerx-gas-station/src/lib.rs", "interop/crates/layerx-gas-station/src/tx.rs", "interop/crates/layerx-gas-station/tests/station.rs", "interop/crates/layerx-gas-station/tests/resolution_policy.rs", "interop/crates/layerx-gas-station/tests/service.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --tests"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test station --test resolution_policy --test service -- --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage --skip recovery_deadline_bounds_real_stalled_tls"
 symbols = []
 planned_paths = []
 mode = "BUILD"
@@ -48545,7 +48571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.5]
 title = "Retire gate helper: a gated method returns LXP_MODULE_DISABLED from the merge plan height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["10.0.1", "10.0.4"]
@@ -48602,7 +48628,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.1]
 title = "Rust client error table: revert reason text maps to the protocol result code and its retriability"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
@@ -48630,7 +48656,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.2]
 title = "TypeScript client error table: decode Error(string) LXP_ reverts into code, message and retriability"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
@@ -48658,7 +48684,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1.3]
 title = "Python client error table: decode Error(string) LXP_ reverts into code, message and retriability"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["10.0.4"]
@@ -48686,7 +48712,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.1]
 title = "addr 0x1004 opts into the LXP_ reason path with the LXP_ADDR_ codes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.3", "10.0.4"]
@@ -48714,7 +48740,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.2]
 title = "bank 0x1001 opts into the LXP_ reason path"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.3", "10.0.4"]
@@ -48742,7 +48768,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.3]
 title = "feeToken 0x1018 revert text carries the LXP_FEETOKEN_ codes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.4"]
@@ -48770,7 +48796,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2.4]
 title = "layerxBridge 0x1016 revert text carries the LXP_BRIDGE_ codes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.4"]
@@ -94611,7 +94637,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.1]
 title = "Budget pull and delegate spend activities"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -94665,7 +94691,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.3]
 title = "Service dispute resolved by the escrow arbiter; zero first leg accepted"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -94692,7 +94718,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.4]
 title = "Shared revert reasons, wei remainder and fixed gas tables"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -94963,7 +94989,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.14]
 title = "Per-module pause replaces kernel halt"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2"]
@@ -95099,7 +95125,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.4.5]
 title = "Stage the program retirement profile"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["13.2.2"]
