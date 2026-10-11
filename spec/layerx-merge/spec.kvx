@@ -2649,7 +2649,7 @@ invariants = "Helpers never mutate kernel state (include/layerx/lxp_kernel.h:236
 
 [task.1.0.1]
 title = "Kernel idempotency entries record their commit sequence and prune past a retention window"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2679,7 +2679,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.2]
 title = "Exported C read helper for the 209-byte session summary"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2707,7 +2707,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.3]
 title = "Exported C read helper for asset payer grants"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2735,7 +2735,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.4]
 title = "Focused C execute test for ACCOUNT_OPEN and GRANT_ISSUE"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2763,7 +2763,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.5]
 title = "cgo C-module host shim with the global_sequence source"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2791,7 +2791,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.6]
 title = "tokenfactory MsgSetDenomPaused message and pause errors"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2819,7 +2819,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.7]
 title = "tokenfactory issuer DID on the denom authority metadata"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2847,7 +2847,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.8]
 title = "layerxledger proto messages and LXP error registry"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -2875,7 +2875,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.9]
 title = "layerxauth proto messages and LXP error registry"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -18995,7 +18995,7 @@ submit = "The sidecar submits fulfilProgram in place of lx_sendActivity (interop
 
 [task.5.0.1]
 title = "Keep the origin-1 request path and give its refusals stable LXP_XWEB codes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19024,7 +19024,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.2]
 title = "Keep origin-1 fulfil and move its refusals to LXP_XWEB codes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19053,7 +19053,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.3]
 title = "Keep refund for origin 1 and prove origin-2 ids never reach it"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19081,7 +19081,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.4]
 title = "One capped attestor set, strict-majority threshold and the retired kernel set activity"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19115,7 +19115,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.5]
 title = "Port lx_web_observation_decode to Go byte for byte"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19144,7 +19144,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.6]
 title = "Keep the preimage vectors as the single cross-language check"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19172,7 +19172,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.7]
 title = "Map every xweb error to its LXP name"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19201,7 +19201,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.8]
 title = "Keep the sidecar engine"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -19229,7 +19229,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.9]
 title = "Take the PAX USD rate as a required input"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29522,7 +29522,7 @@ qualification = "UNRUN"
 
 [task.7.0.1]
 title = "Monitoring rules: sequencer readiness, receipt-order divergence, sponsor floor and rate age"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29550,7 +29550,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.2]
 title = "Monitoring scrape: sequencer primary and standby readiness and receipt-authority metrics"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29604,7 +29604,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.4]
 title = "Rollout registry login before every box image pull"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29687,7 +29687,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.7]
 title = "Gas station deployment template on the sequencer and paymaster contract check"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -29714,7 +29714,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.8]
 title = "Shared keystore-or-KMS EVM sender loader in the platform internal crate"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39607,7 +39607,7 @@ invariants = "Block limits MaxGas 100M, MaxGasWanted 50M, MaxBytes 22020096 (con
 
 [task.0.2]
 title = "Sequencer executor: execute at receipt on the open speculative state"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39636,7 +39636,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.1]
 title = "Future-nonce queue per sender with same-nonce refusal"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39664,7 +39664,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.2]
 title = "Layered state and Seal in ProcessBlock order"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -39720,7 +39720,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.3]
 title = "Wire-crate vectors and effect bound for sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40000,7 +40000,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.12]
 title = "Proposal from the sealed slice"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40028,7 +40028,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.13]
 title = "Leader pin from the activation height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40056,7 +40056,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.14]
 title = "Sequencer consensus config and timeouts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40084,7 +40084,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.15]
 title = "ProcessProposal order check"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40112,7 +40112,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.16]
 title = "Framed sequencer WAL with group sync"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40168,7 +40168,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.18]
 title = "modules/sequencer message and keys"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40280,7 +40280,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.0.22]
 title = "Fee-token params: minimum bound and rate age"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -48068,7 +48068,7 @@ vectors = "Receipt vectors V1-V9 run in every SDK (agent/crates/layerx-sdk/tests
 
 [task.0.1]
 title = "Precompile address table: 0x101A-0x101D and 0x0901-0x0908 entries in GetCustomPrecompiles, served from the merge plan height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -48097,7 +48097,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.1]
 title = "Merge plan constant, knownUpgradePlans entry and the merge precompile activation entry"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -48155,7 +48155,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.3]
 title = "Opt-in LXP_ reason path in the dynamic-gas precompile base"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -48239,7 +48239,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.0.6]
 title = "Wallet gateway route map: agent functions and the three non-chain route keys point at registered addresses"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78454,7 +78454,7 @@ qualification = "UNRUN"
 
 [task.12.0.1]
 title = "Create the sequencer accept test for ordered execution"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78486,7 +78486,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.2]
 title = "Re-target occ_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78514,7 +78514,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.3]
 title = "Re-target optimistic_processing_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78543,7 +78543,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.4]
 title = "Re-target receipt_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78572,7 +78572,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.5]
 title = "Re-target receipt_translation_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78600,7 +78600,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.6]
 title = "Re-target check_total_block_gas_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78629,7 +78629,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.7]
 title = "Re-target app_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78658,7 +78658,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.8]
 title = "Re-target ante_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78687,7 +78687,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.9]
 title = "Re-target app_feetoken_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78716,7 +78716,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.10]
 title = "Re-target state_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78745,7 +78745,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.11]
 title = "Re-target tx_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78774,7 +78774,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.12]
 title = "Re-target simulate_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78803,7 +78803,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.13]
 title = "Re-target subscribe_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78832,7 +78832,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.14]
 title = "Re-target wal_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -78860,7 +78860,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.15]
 title = "Re-target the consensus/test/e2e suite at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79229,7 +79229,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.27]
 title = "Re-target gas-station.test.ts at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79258,7 +79258,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.28]
 title = "Re-target station.rs at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79288,7 +79288,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.29]
 title = "Re-target service.rs at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79317,7 +79317,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.30]
 title = "Re-target rate.rs at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79347,7 +79347,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.31]
 title = "Re-target BatchCallAndSponsorTest.t.sol at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79376,7 +79376,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.32]
 title = "Re-target gas-station.test.ts at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79405,7 +79405,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.33]
 title = "Re-target feetoken_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79434,7 +79434,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.34]
 title = "Re-target feetoken_test.go at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79463,7 +79463,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.35]
 title = "Create the gas-station DID budget test"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -79522,7 +79522,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.0.37]
 title = "Re-target rollout.test.sh at the merged chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
