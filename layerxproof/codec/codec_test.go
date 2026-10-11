@@ -3,6 +3,7 @@ package codec_test
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -143,6 +144,76 @@ func TestReceiptDecodeRefusals(t *testing.T) {
 			t.Fatalf("byte after an unsigned receipt: got %v", err)
 		}
 	}
+
+	if codec.MaxSequencerEffects != 21_845 {
+		t.Fatalf("MaxSequencerEffects = %d, want layerx-wire MAX_SEQUENCER_EFFECTS 21845", codec.MaxSequencerEffects)
+	}
+	base := load(t, "receipts")[0]
+	if base.Name != "valid-0" {
+		t.Fatalf("first receipt vector is %s, want valid-0", base.Name)
+	}
+	raw := field(t, base, "receipt")
+	sequencer := effectBoundLayoutReceipt(t, raw, codec.OccupancyProtocolVersion, 12, 1, 513)
+	decoded, err := codec.DecodeReceipt(sequencer)
+	if err != nil {
+		t.Fatalf("sequencer layout with 513 effects: %v", err)
+	}
+	if len(decoded.Effects) != 513 || decoded.ModuleID != 12 || decoded.ModuleVersion != 1 {
+		t.Fatalf("sequencer layout decoded %d effects, module %d version %d", len(decoded.Effects), decoded.ModuleID, decoded.ModuleVersion)
+	}
+	overBound := append([]byte(nil), sequencer...)
+	binary.BigEndian.PutUint32(overBound[162:166], codec.MaxSequencerEffects+1)
+	atBound := effectBoundLayoutReceipt(t, raw, codec.OccupancyProtocolVersion, 11, 1, codec.MaxEffects)
+	if decoded, err := codec.DecodeReceipt(atBound); err != nil || len(decoded.Effects) != codec.MaxEffects {
+		t.Fatalf("legacy layout at MaxEffects: %v", err)
+	}
+	for name, receipt := range map[string][]byte{
+		"sequencer layout above MaxSequencerEffects": overBound,
+		"kernel module id with 513 effects":          effectBoundLayoutReceipt(t, raw, codec.OccupancyProtocolVersion, 11, 1, 513),
+		"module version 2 with 513 effects":          effectBoundLayoutReceipt(t, raw, codec.OccupancyProtocolVersion, 12, 2, 513),
+		"state-commitment protocol with 513 effects": effectBoundLayoutReceipt(t, raw, codec.StateCommitmentProtocolVersion, 12, 1, 513),
+	} {
+		if _, err := codec.DecodeReceipt(receipt); !errors.Is(err, codec.ErrLengthLimit) {
+			t.Fatalf("%s: got %v, want %v", name, err, codec.ErrLengthLimit)
+		}
+	}
+}
+
+// effectBoundLayoutReceipt rewrites a supply-free receipt vector with the
+// given protocol version, module id, module version and count of minimal
+// event effects in strictly increasing ordinal order.
+func effectBoundLayoutReceipt(t *testing.T, raw []byte, protocol, moduleID uint16, moduleVersion uint32, count int) []byte {
+	t.Helper()
+	const effectsOffset = 166
+	receipt, err := codec.DecodeReceipt(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Supply != nil || receipt.ProgramOutcome != nil {
+		t.Fatal("base receipt vector carries a supply or program outcome")
+	}
+	effectsEnd := effectsOffset
+	for _, effect := range receipt.Effects {
+		effectsEnd += 48 + len(effect.Body)
+	}
+	out := append([]byte(nil), raw[:effectsOffset-4]...)
+	binary.BigEndian.PutUint16(out[0:2], protocol)
+	binary.BigEndian.PutUint16(out[4:6], protocol)
+	out = binary.BigEndian.AppendUint32(out, uint32(count)) //nolint:gosec
+	for ordinal := 0; ordinal < count; ordinal++ {
+		out = binary.BigEndian.AppendUint16(out, moduleID)
+		out = binary.BigEndian.AppendUint16(out, uint16(ordinal)) //nolint:gosec
+		out = binary.BigEndian.AppendUint16(out, 0)
+		out = append(out, 3, 0)
+		out = binary.BigEndian.AppendUint32(out, 32)
+		out = append(out, make([]byte, 32)...)
+		out = binary.BigEndian.AppendUint32(out, 0)
+	}
+	tail := append([]byte(nil), raw[effectsEnd:]...)
+	// fee_charged (16) and the bounded batch id (4 + 32) precede the module fields.
+	binary.BigEndian.PutUint16(tail[52:54], moduleID)
+	binary.BigEndian.PutUint32(tail[54:58], moduleVersion)
+	return append(out, tail...)
 }
 
 func TestStateWitnessAgainstRustFixture(t *testing.T) {

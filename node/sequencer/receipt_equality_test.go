@@ -654,14 +654,45 @@ func TestReceiptLogEffects(t *testing.T) {
 	require.ErrorIs(t, err, sequencer.ErrReceiptInput)
 
 	// A transaction with more than 511 logs is encoded in full.
+	unsigned, err := sequencer.BuildReceipt(largeFixtureLogsInput(600, contract), testKeyID)
+	require.NoError(t, err)
+	require.Equal(t, uint32(601), binary.BigEndian.Uint32(unsigned[162:166]))
+}
+
+// largeFixtureLogsInput is the shared receipt vector carrying n logs of contract.
+func largeFixtureLogsInput(n int, contract common.Address) *sequencer.ReceiptInput {
 	in := vectorInput()
-	in.EVM.Logs = make([]*evmtypes.Log, 600)
+	in.EVM.Logs = make([]*evmtypes.Log, n)
 	for i := range in.EVM.Logs {
 		in.EVM.Logs[i] = &evmtypes.Log{Address: contract.Hex(), Data: []byte{byte(i)}}
 	}
-	unsigned, err := sequencer.BuildReceipt(in, testKeyID)
-	require.NoError(t, err)
-	require.Equal(t, uint32(601), binary.BigEndian.Uint32(unsigned[162:166]))
+	return in
+}
+
+func TestReceiptLargeFixtureVerifies(t *testing.T) {
+	key := vectorKey(t)
+	pub := key.PublicKey()
+	contract := common.BytesToAddress(repeat(0x44, 20))
+	// 600 logs exceed MaxEffects; 512 logs give 513 effects, the first count
+	// MaxEffects refuses.
+	for _, logs := range []int{600, 512} {
+		signed, err := key.SignReceipt(largeFixtureLogsInput(logs, contract))
+		require.NoError(t, err)
+		require.Equal(t, uint32(logs+1), binary.BigEndian.Uint32(signed[162:166]))
+		verified, err := verify.ReceiptSignature(signed, pub)
+		require.NoError(t, err, "%d logs", logs)
+		require.Len(t, verified.Receipt.Effects, logs+1)
+		require.Equal(t, receiptModuleID, verified.Receipt.ModuleID)
+		require.Equal(t, sequencer.ReceiptLayoutVersion, verified.Receipt.ModuleVersion)
+		for i, e := range verified.Receipt.Effects {
+			require.Equal(t, uint16(i), e.Ordinal)
+			require.Equal(t, receiptModuleID, e.ModuleID)
+		}
+		tampered := append([]byte(nil), signed...)
+		tampered[len(tampered)-1] ^= 1
+		_, err = verify.ReceiptSignature(tampered, pub)
+		require.ErrorIs(t, err, verify.ErrSequencerSignature)
+	}
 }
 
 func TestReceiptEffectsNonMonetary(t *testing.T) {

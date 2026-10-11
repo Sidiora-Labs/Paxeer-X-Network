@@ -3,8 +3,22 @@ package codec
 const (
 	receiptTag       uint16 = 0x5201
 	supplyReceiptTag uint16 = 0x5202
-	// MaxEffects bounds the effect sequence of one receipt.
+	// MaxEffects bounds the effect sequence of every receipt layout except the
+	// sequencer layout.
 	MaxEffects = 512
+	// minReceiptEffectBytes is the smallest canonical effect: module id,
+	// ordinal and event type, kind, monetary flag, a bounded 32-byte
+	// transfer-set root and an empty bounded body.
+	minReceiptEffectBytes = 2 + 2 + 2 + 1 + 1 + (4 + 32) + 4
+	// MaxSequencerEffects bounds the effect sequence of the sequencer receipt
+	// layout: every effect count that fits in one canonical message
+	// (layerx-wire MAX_SEQUENCER_EFFECTS).
+	MaxSequencerEffects = MaxMessageBytes / minReceiptEffectBytes
+	// kernelModuleCount is the number of kernel modules; the sequencer layout
+	// carries a module id above them.
+	kernelModuleCount uint16 = 11
+	// sequencerLayoutVersion is the module version of the sequencer layout.
+	sequencerLayoutVersion uint32 = 1
 	// MaxEffectBody bounds one effect body.
 	MaxEffectBody = 256
 	// signatureBlockBytes is the trailing presence byte, length prefix and signature.
@@ -331,6 +345,18 @@ func decodeSupply(r *reader, receipt *Receipt) (*Supply, error) {
 	return &Supply{Before: before, After: after}, nil
 }
 
+// effectBound is the effect-count bound of one receipt layout: the sequencer
+// layout (occupancy protocol, no supply, a module id after the kernel modules
+// and module version 1) carries every log of its transaction; every other
+// layout keeps MaxEffects (layerx-wire receipt effect_bound).
+func effectBound(supplyPresent bool, protocolVersion, moduleID uint16, moduleVersion uint32) int {
+	if !supplyPresent && protocolVersion == OccupancyProtocolVersion &&
+		moduleID > kernelModuleCount && moduleVersion == sequencerLayoutVersion {
+		return MaxSequencerEffects
+	}
+	return MaxEffects
+}
+
 // DecodeReceipt strictly decodes one full canonical core receipt. It applies
 // every refusal of layerx-wire receipt::decode together with the structural
 // refusals of lxp_receipt_decode (zero sequence, module, module version,
@@ -377,12 +403,19 @@ func DecodeReceipt(bytes []byte) (*Receipt, error) {
 	if receipt.ResultCode, err = r.i32(); err != nil {
 		return nil, err
 	}
-	count, err := r.sequenceLength(MaxEffects)
+	// The module fields follow the effects: the fields read so far narrow the
+	// bound here, and effectBound settles it once module_version is read.
+	countBound := MaxEffects
+	if !supplyPresent && receipt.ProtocolVersion == OccupancyProtocolVersion {
+		countBound = MaxSequencerEffects
+	}
+	count, err := r.sequenceLength(countBound)
 	if err != nil {
 		return nil, err
 	}
-	// Each effect occupies at least 48 bytes, so the count is bounded by input.
-	if count > r.remaining()/48 {
+	// Each effect occupies at least minReceiptEffectBytes, so the count is
+	// bounded by input.
+	if count > r.remaining()/minReceiptEffectBytes {
 		return nil, ErrTruncated
 	}
 	receipt.Effects = make([]Effect, 0, count)
@@ -411,6 +444,9 @@ func DecodeReceipt(bytes []byte) (*Receipt, error) {
 	}
 	if receipt.ModuleVersion, err = r.u32(); err != nil {
 		return nil, err
+	}
+	if count > effectBound(supplyPresent, receipt.ProtocolVersion, receipt.ModuleID, receipt.ModuleVersion) {
+		return nil, ErrLengthLimit
 	}
 	if receipt.ParameterVersion, err = r.u32(); err != nil {
 		return nil, err
