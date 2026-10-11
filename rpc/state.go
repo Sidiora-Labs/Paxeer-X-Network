@@ -126,7 +126,7 @@ func (a *StateAPI) GetProof(ctx context.Context, address common.Address, storage
 	defer func() {
 		recordMetricsWithError(ctx, "eth_getProof", a.connectionType, startTime, returnErr, recover())
 	}()
-	if isPendingTag(blockNrOrHash) {
+	if isPendingBlockNrOrHash(blockNrOrHash) {
 		return nil, ErrPendingProofRefused
 	}
 	var block *coretypes.ResultBlock

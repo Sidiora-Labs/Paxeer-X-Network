@@ -321,7 +321,7 @@ func (b *Backend) defaultEstimateTag() rpc.BlockNumberOrHash {
 	return rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 }
 
-func isPendingTag(blockNrOrHash rpc.BlockNumberOrHash) bool {
+func isPendingBlockNrOrHash(blockNrOrHash rpc.BlockNumberOrHash) bool {
 	return blockNrOrHash.BlockHash == nil && blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber
 }
 
@@ -376,7 +376,7 @@ func (b *Backend) pendingStateAndHeader(ctx context.Context, blockNrOrHash rpc.B
 }
 
 func (b *Backend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (vm.StateDB, *ethtypes.Header, error) {
-	if isPendingTag(blockNrOrHash) {
+	if isPendingBlockNrOrHash(blockNrOrHash) {
 		return b.pendingStateAndHeader(ctx, blockNrOrHash)
 	}
 	tmBlock, isLatestBlock, err := b.getBlockByNumberOrHash(ctx, blockNrOrHash)
