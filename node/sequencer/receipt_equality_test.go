@@ -91,7 +91,7 @@ func addr32(a common.Address) [32]byte {
 	return w
 }
 
-func word(b ...byte) [32]byte {
+func receiptWord(b ...byte) [32]byte {
 	var w [32]byte
 	copy(w[32-len(b):], b)
 	return w
@@ -160,7 +160,7 @@ func bigInt(s string) *big.Int {
 func vectorInput() *sequencer.ReceiptInput {
 	prev := [32]byte(label("paxeer receipt vector previous sequence"))
 	activity := [32]byte(label("paxeer receipt vector transaction"))
-	transfer := word(label("Transfer(address,address,uint256)")...)
+	transfer := receiptWord(label("Transfer(address,address,uint256)")...)
 	from := common.BytesToAddress(repeat(0xaa, 20))
 	to := common.BytesToAddress(repeat(0xbb, 20))
 	holder := addr32(from)
@@ -287,7 +287,7 @@ func evmTx(t *testing.T, from utils.TestAcct, data ethtypes.TxData) (*ethtypes.T
 	return signed, bz
 }
 
-func legacyTx(nonce uint64, to *common.Address, value *big.Int, gas uint64, data []byte) *ethtypes.LegacyTx {
+func receiptLegacyTx(nonce uint64, to *common.Address, value *big.Int, gas uint64, data []byte) *ethtypes.LegacyTx {
 	return &ethtypes.LegacyTx{Nonce: nonce, GasPrice: big.NewInt(gasPriceWei), Gas: gas, To: to, Value: value, Data: data}
 }
 
@@ -396,18 +396,18 @@ func TestReceiptSeqHashChain(t *testing.T) {
 func TestReceiptResultAndActivityRoot(t *testing.T) {
 	a := utils.NewSigner()
 	rh := newReceiptHarness(t, 0, nil, a)
-	_, bz := evmTx(t, a, legacyTx(0, nil, big.NewInt(0), createGas, logInit))
+	_, bz := evmTx(t, a, receiptLegacyTx(0, nil, big.NewInt(0), createGas, logInit))
 	_, rec, _ := rh.accept(t, bz)
 	require.Equal(t, int32(0), rec.ResultCode)
 	require.Equal(t, sha256.Sum256(logRuntime), rec.ActivityRoot)
 
 	contract := crypto.CreateAddress(a.EvmAddress, 0)
-	_, bz = evmTx(t, a, legacyTx(1, &contract, big.NewInt(0), callGas, nil))
+	_, bz = evmTx(t, a, receiptLegacyTx(1, &contract, big.NewInt(0), callGas, nil))
 	_, rec, _ = rh.accept(t, bz)
 	require.Equal(t, int32(0), rec.ResultCode)
 	require.Equal(t, sha256.Sum256(nil), rec.ActivityRoot)
 
-	etx, bz := evmTx(t, a, legacyTx(2, nil, big.NewInt(0), createGas, revertInit))
+	etx, bz := evmTx(t, a, receiptLegacyTx(2, nil, big.NewInt(0), createGas, revertInit))
 	acc, rec, _ := rh.accept(t, bz)
 	require.Equal(t, int32(1), rec.ResultCode)
 	require.Equal(t, sha256.Sum256(errorX), rec.ActivityRoot)
@@ -451,7 +451,7 @@ func TestReceiptFeeFields(t *testing.T) {
 	require.Equal(t, denom, rh.app.EvmKeeper.GetAccountFeeDenom(open, sid.EvmAddress))
 	sidBefore := rh.app.BankKeeper.GetBalance(open, sid.AccountAddress, denom).Amount
 	require.Equal(t, sdk.NewInt(sidFunding), sidBefore)
-	_, bz = evmTx(t, sid, legacyTx(0, &b.EvmAddress, big.NewInt(0), sidFeeGas, nil))
+	_, bz = evmTx(t, sid, receiptLegacyTx(0, &b.EvmAddress, big.NewInt(0), sidFeeGas, nil))
 	_, rec, _ = rh.accept(t, bz)
 	sidAfter := rh.app.BankKeeper.GetBalance(rh.openCtx(), sid.AccountAddress, denom).Amount
 	require.Equal(t, sdk.NewInt(sidConverted), sidBefore.Sub(sidAfter))
@@ -485,7 +485,7 @@ func TestReceiptBatchAndModuleFields(t *testing.T) {
 		op uint8
 	}
 	var txs []opTx
-	_, bz := evmTx(t, a, legacyTx(0, nil, big.NewInt(0), createGas, logInit))
+	_, bz := evmTx(t, a, receiptLegacyTx(0, nil, big.NewInt(0), createGas, logInit))
 	txs = append(txs, opTx{bz, ethtypes.LegacyTxType})
 	_, bz = evmTx(t, a, dynamicTx(1, &b.EvmAddress, big.NewInt(1), transferGas, nil))
 	txs = append(txs, opTx{bz, ethtypes.DynamicFeeTxType})
@@ -545,7 +545,7 @@ func TestReceiptAccountFields(t *testing.T) {
 	require.Equal(t, [32]byte{}, rec.AuthorizationHash)
 	require.Equal(t, [32]byte{}, rec.TransferSetRoot)
 
-	_, bz = evmTx(t, a, legacyTx(1, nil, big.NewInt(0), createGas, logInit))
+	_, bz = evmTx(t, a, receiptLegacyTx(1, nil, big.NewInt(0), createGas, logInit))
 	_, rec, _ = rh.accept(t, bz)
 	contract := crypto.CreateAddress(a.EvmAddress, 1)
 	require.Equal(t, addr32(contract), rec.To)
@@ -584,9 +584,9 @@ func TestReceiptSummaryEffect(t *testing.T) {
 		retLen   uint32
 		logs     uint32
 	}{
-		{legacyTx(0, nil, big.NewInt(0), createGas, logInit), contract, common.Address{}, uint32(len(logRuntime)), 0},
-		{legacyTx(1, &contract, big.NewInt(0), callGas, nil), common.Address{}, common.Address{}, 0, 3},
-		{legacyTx(2, nil, big.NewInt(0), createGas, sponsoredInit), crypto.CreateAddress(a.EvmAddress, 2), sponsorAddr, 0, 1},
+		{receiptLegacyTx(0, nil, big.NewInt(0), createGas, logInit), contract, common.Address{}, uint32(len(logRuntime)), 0},
+		{receiptLegacyTx(1, &contract, big.NewInt(0), callGas, nil), common.Address{}, common.Address{}, 0, 3},
+		{receiptLegacyTx(2, nil, big.NewInt(0), createGas, sponsoredInit), crypto.CreateAddress(a.EvmAddress, 2), sponsorAddr, 0, 1},
 	}
 	for i, c := range cases {
 		etx, bz := evmTx(t, a, c.data)
@@ -617,15 +617,15 @@ func TestReceiptSummaryEffect(t *testing.T) {
 func TestReceiptLogEffects(t *testing.T) {
 	a := utils.NewSigner()
 	rh := newReceiptHarness(t, 0, nil, a)
-	_, bz := evmTx(t, a, legacyTx(0, nil, big.NewInt(0), createGas, logInit))
+	_, bz := evmTx(t, a, receiptLegacyTx(0, nil, big.NewInt(0), createGas, logInit))
 	rh.accept(t, bz)
 	contract := crypto.CreateAddress(a.EvmAddress, 0)
-	etx, bz := evmTx(t, a, legacyTx(1, &contract, big.NewInt(0), callGas, nil))
+	etx, bz := evmTx(t, a, receiptLegacyTx(1, &contract, big.NewInt(0), callGas, nil))
 	acc, rec, _ := rh.accept(t, bz)
-	wantData := word(0x2a)
+	wantData := receiptWord(0x2a)
 	want := [][]byte{
-		logBody(contract, wantData[:], word(1), word(2)),
-		logBody(contract, []byte{0x2a, 0, 0, 0, 0}, word(3), word(4), word(5), word(6)),
+		logBody(contract, wantData[:], receiptWord(1), receiptWord(2)),
+		logBody(contract, []byte{0x2a, 0, 0, 0, 0}, receiptWord(3), receiptWord(4), receiptWord(5), receiptWord(6)),
 		logBody(contract, nil),
 	}
 	require.Len(t, rec.Effects, 4)
@@ -644,7 +644,7 @@ func TestReceiptLogEffects(t *testing.T) {
 
 	five := &evmtypes.Log{Address: contract.Hex(), Topics: make([]string, 5)}
 	for i := range five.Topics {
-		five.Topics[i] = common.Hash(word(byte(i))).Hex()
+		five.Topics[i] = common.Hash(receiptWord(byte(i))).Hex()
 	}
 	_, err := sequencer.LogEffect(five)
 	require.ErrorIs(t, err, sequencer.ErrReceiptInput)
@@ -668,9 +668,9 @@ func TestReceiptEffectsNonMonetary(t *testing.T) {
 	a, b := utils.NewSigner(), utils.NewSigner()
 	rh := newReceiptHarness(t, 0, nil, a, b)
 	contract := crypto.CreateAddress(a.EvmAddress, 0)
-	_, create := evmTx(t, a, legacyTx(0, nil, big.NewInt(0), createGas, logInit))
-	_, call := evmTx(t, a, legacyTx(1, &contract, big.NewInt(0), callGas, nil))
-	_, revert := evmTx(t, a, legacyTx(2, nil, big.NewInt(0), createGas, revertInit))
+	_, create := evmTx(t, a, receiptLegacyTx(0, nil, big.NewInt(0), createGas, logInit))
+	_, call := evmTx(t, a, receiptLegacyTx(1, &contract, big.NewInt(0), callGas, nil))
+	_, revert := evmTx(t, a, receiptLegacyTx(2, nil, big.NewInt(0), createGas, revertInit))
 	_, send := transfer(t, b, 0, a.EvmAddress, big.NewInt(1))
 	for _, bz := range [][]byte{create, call, revert, send} {
 		_, rec, _ := rh.accept(t, bz)
@@ -837,15 +837,15 @@ func mixedTxs(t *testing.T, senders []utils.TestAcct) ([][]byte, []*ethtypes.Tra
 			var data ethtypes.TxData
 			switch {
 			case n == 0:
-				data = legacyTx(n, nil, big.NewInt(0), createGas, logInit)
+				data = receiptLegacyTx(n, nil, big.NewInt(0), createGas, logInit)
 			case n%5 == 1:
-				data = legacyTx(n, &contract, big.NewInt(0), callGas, nil)
+				data = receiptLegacyTx(n, &contract, big.NewInt(0), callGas, nil)
 			case n%5 == 2:
 				data = dynamicTx(n, &peer, big.NewInt(int64(n)), transferGas, nil)
 			case n%5 == 3:
 				data = dynamicTx(n, nil, big.NewInt(0), createGas, revertInit)
 			case n%5 == 4:
-				data = legacyTx(n, &peer, big.NewInt(int64(s+1)), transferGas, nil)
+				data = receiptLegacyTx(n, &peer, big.NewInt(int64(s+1)), transferGas, nil)
 			default:
 				data = dynamicTx(n, &contract, big.NewInt(0), callGas, nil)
 			}
