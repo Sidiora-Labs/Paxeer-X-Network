@@ -1,30 +1,11 @@
-defmodule Explorer.Chain.PaxeerX.StatusTest.AnchorLive do
-  @moduledoc false
-
-  @behaviour Explorer.Chain.PaxeerX.Finality.CapabilitySource
-
-  @impl Explorer.Chain.PaxeerX.Finality.CapabilitySource
-  def live?(:anchor), do: true
-  def live?(_capability), do: false
-end
-
-defmodule Explorer.Chain.PaxeerX.StatusTest.AnchorOff do
-  @moduledoc false
-
-  @behaviour Explorer.Chain.PaxeerX.Finality.CapabilitySource
-
-  @impl Explorer.Chain.PaxeerX.Finality.CapabilitySource
-  def live?(_capability), do: false
-end
-
 defmodule Explorer.Chain.PaxeerX.StatusTest do
   use Explorer.DataCase, async: false
 
+  alias Explorer.Chain.Block
   alias Explorer.Chain.PaxeerX.Anchor, as: AnchorRow
   alias Explorer.Chain.PaxeerX.Finality
-  alias Explorer.Chain.PaxeerX.Finality.{Anchor, Heights}
+  alias Explorer.Chain.PaxeerX.Finality.Heights
   alias Explorer.Chain.PaxeerX.Status
-  alias Explorer.Chain.PaxeerX.StatusTest.{AnchorLive, AnchorOff}
 
   setup do
     original = Application.get_env(:explorer, Finality)
@@ -40,244 +21,208 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
     :ok
   end
 
-  defp heights(fields) do
-    struct!(Heights, fields)
-  end
+  describe "of/2 submitted rung" do
+    test "an item no block holds is submitted" do
+      status = Status.of(nil, %Heights{committed_height: 1_000})
 
-  defp anchor(fields) do
-    struct!(Anchor, Keyword.put_new(fields, :source, :anchor_table))
-  end
-
-  describe "of/2 pending rung" do
-    test "an item no block holds is pending" do
-      status = Status.of(nil, heights(instant_height: 1_000, sealed_height: 900, final_height: 800))
-
-      assert %Status{rung: :pending, reason: :no_block, block_number: nil} = status
+      assert status == %Status{
+               rung: :submitted,
+               reason: :no_block,
+               block_number: nil,
+               committed_height: 1_000
+             }
     end
 
-    test "a block number above the head is pending" do
-      status = Status.of(1_001, heights(instant_height: 1_000))
+    test "a block number above the committed head is submitted" do
+      status = Status.of(1_001, %Heights{committed_height: 1_000})
 
-      assert %Status{rung: :pending, reason: :above_head, instant_height: 1_000} = status
-    end
-  end
-
-  describe "of/2 instant rung" do
-    test "a block number the head covers is instant" do
-      status = Status.of(1_000, heights(instant_height: 1_000))
-
-      assert %Status{rung: :instant, reason: :in_consensus_block} = status
+      assert status == %Status{
+               rung: :submitted,
+               reason: :above_head,
+               block_number: 1_001,
+               committed_height: 1_000
+             }
     end
 
-    test "a block number with no head to compare against is instant" do
-      status = Status.of(7, heights(instant_height: nil))
-
-      assert %Status{rung: :instant, reason: :head_unknown} = status
+    test "a block number with no committed head stays submitted" do
+      assert Status.of(7, %Heights{}) == %Status{
+               rung: :submitted,
+               reason: :head_unknown,
+               block_number: 7,
+               committed_height: nil
+             }
     end
 
-    test "an unreported sealed height leaves the sealed rung out of reach rather than standing in a zero" do
-      status = Status.of(0, heights(instant_height: 1_000, sealed_height: nil, sealed_source: :no_anchor))
-
-      assert %Status{rung: :instant, reason: :in_consensus_block, sealed_source: :no_anchor} = status
+    test "an absent committed height is not substituted with zero" do
+      assert Status.of(0, %Heights{}) == %Status{
+               rung: :submitted,
+               reason: :head_unknown,
+               block_number: 0,
+               committed_height: nil
+             }
     end
 
-    test "a failed anchor read is carried in the status rather than promoting the rung" do
-      status =
-        Status.of(10, heights(instant_height: 1_000, sealed_source: {:error, :timeout}))
-
-      assert %Status{rung: :instant, sealed_source: {:error, :timeout}} = status
-    end
-  end
-
-  describe "of/2 sealed rung" do
-    test "a block number the latest anchor seals is sealed" do
-      anchor = anchor(checkpoint_height: 900, sealed_height: 900, block_number: 901)
-
-      status =
-        Status.of(
-          900,
-          heights(instant_height: 1_000, sealed_height: 900, sealed_source: :anchor_table, anchor: anchor)
-        )
-
-      assert %Status{rung: :sealed, reason: :sealed_by_anchor, sealed_height: 900, anchor: ^anchor} = status
+    test "an item without a block stays submitted when the committed head is unknown" do
+      assert Status.of(nil, %Heights{}) == %Status{rung: :submitted, reason: :no_block}
     end
 
-    test "a block number above the sealed height is only instant" do
-      status = Status.of(901, heights(instant_height: 1_000, sealed_height: 900, sealed_source: :anchor_call))
-
-      assert %Status{rung: :instant, reason: :in_consensus_block} = status
+    test "a negative block number is refused" do
+      assert_raise FunctionClauseError, fn -> Status.of(-1, %Heights{committed_height: 100}) end
     end
   end
 
-  describe "of/2 final rung" do
-    test "a block number at or below the anchor's finality height is final" do
-      status =
-        Status.of(
-          800,
-          heights(
-            instant_height: 1_000,
-            sealed_height: 900,
-            sealed_source: :anchor_call,
-            final_height: 800,
-            final_source: :anchor
-          )
-        )
-
-      assert %Status{rung: :final, reason: :final_by_anchor, final_height: 800} = status
+  describe "of/2 committed rung" do
+    test "a block number the committed head covers is committed" do
+      assert Status.of(100, %Heights{committed_height: 100}) == %Status{
+               rung: :committed,
+               reason: :in_committed_block,
+               block_number: 100,
+               committed_height: 100
+             }
     end
 
-    test "the highest rung that holds wins" do
-      status =
-        Status.of(
-          10,
-          heights(
-            instant_height: 1_000,
-            sealed_height: 900,
-            sealed_source: :anchor_call,
-            final_height: 800,
-            final_source: :anchor
-          )
-        )
-
-      assert %Status{rung: :final} = status
+    test "a block below the committed head is committed" do
+      assert Status.of(99, %Heights{committed_height: 100}) == %Status{
+               rung: :committed,
+               reason: :in_committed_block,
+               block_number: 99,
+               committed_height: 100
+             }
     end
 
-    test "the confirmation fallback names itself as the source" do
-      status =
-        Status.of(
-          900,
-          heights(instant_height: 1_000, final_height: 900, final_source: :confirmations)
-        )
-
-      assert %Status{rung: :final, reason: :final_by_confirmations, final_source: :confirmations} = status
+    test "a reported committed genesis height covers block zero" do
+      assert Status.of(0, %Heights{committed_height: 0}) == %Status{
+               rung: :committed,
+               reason: :in_committed_block,
+               block_number: 0,
+               committed_height: 0
+             }
     end
 
-    test "an unreported finality height leaves the final rung out of reach" do
-      status =
-        Status.of(
-          0,
-          heights(instant_height: 1_000, sealed_height: 900, sealed_source: :anchor_table, final_source: :none)
-        )
+    test "the committed rung has no anchor observation" do
+      assert Status.of(100, %Heights{committed_height: 100}).anchor == nil
+    end
 
-      assert %Status{rung: :sealed} = status
+    test "a negative committed height is refused" do
+      assert_raise FunctionClauseError, fn -> Status.of(0, %Heights{committed_height: -1}) end
+    end
+
+    test "a non-integer committed height is refused" do
+      assert_raise FunctionClauseError, fn -> Status.of(100, %Heights{committed_height: "100"}) end
     end
   end
 
   describe "rung/2" do
-    test "answers the rung alone" do
-      assert Status.rung(nil, heights([])) == :pending
-      assert Status.rung(5, heights(instant_height: 10)) == :instant
+    test "answers only the supported rung for the supplied block evidence" do
+      assert Status.rung(nil, %Heights{committed_height: 100}) == :submitted
+      assert Status.rung(101, %Heights{committed_height: 100}) == :submitted
+      assert Status.rung(100, %Heights{committed_height: 100}) == :committed
+      assert Status.rung(99, %Heights{committed_height: 100}) == :committed
+      assert Status.rung(0, %Heights{}) == :submitted
     end
   end
 
-  describe "latest_anchor/0" do
-    test "answers :no_anchor while no consensus block carries a checkpoint" do
-      assert Finality.latest_anchor() == :no_anchor
+  describe "retired anchor reads" do
+    test "no anchor reader is exported" do
+      assert Code.ensure_loaded?(Finality)
+      refute function_exported?(Finality, :read_anchor, 0)
+      refute function_exported?(Finality, :read_anchor, 1)
     end
 
-    test "seals from the highest checkpoint and finalizes from the highest finalized one" do
-      insert_anchor(18, :final, 4_250)
-      sealing = insert_anchor(19, :submitted, 4_300)
-
-      assert {:ok, anchor} = Finality.latest_anchor()
-
-      assert %Anchor{
-               source: :anchor_table,
-               batch_number: 19,
-               checkpoint_height: 4_300,
-               sealed_height: 4_300,
-               finalized_batch_number: 18,
-               finalized_height: 4_250
-             } = anchor
-
-      assert anchor.checkpoint_id == to_string(sealing.checkpoint_id)
-      assert anchor.block_number == sealing.block_number
+    test "no latest anchor query is exported" do
+      assert Code.ensure_loaded?(Finality)
+      refute function_exported?(Finality, :latest_anchor, 0)
+      refute function_exported?(Finality, :latest_sealing_query, 0)
     end
 
-    test "an unknown checkpoint seals nothing" do
-      insert_anchor(20, :unknown, 4_400)
-
-      assert Finality.latest_anchor() == :no_anchor
+    test "no live precompile reader is exported" do
+      assert Code.ensure_loaded?(Finality)
+      refute function_exported?(Finality, :live_anchor, 0)
+      refute function_exported?(Finality, :live_anchor, 1)
+      refute function_exported?(Finality, :anchor_capability_live?, 0)
     end
 
-    test "leaves out the checkpoints a reorged block carried" do
-      anchor = insert_anchor(21, :final, 4_500)
-
-      Explorer.Chain.Block
-      |> Repo.get_by!(hash: anchor.block_hash)
-      |> Ecto.Changeset.change(consensus: false)
-      |> Repo.update!()
-
-      assert Finality.latest_anchor() == :no_anchor
+    test "no confirmation fallback is exported" do
+      assert Code.ensure_loaded?(Finality)
+      refute function_exported?(Finality, :instant_height, 0)
+      refute function_exported?(Finality, :final_confirmations, 0)
     end
   end
 
   describe "heights/1" do
-    test "falls back to the lx_anchors source while the anchor capability is not live" do
-      Application.put_env(:explorer, Finality, capability_source: AnchorOff)
-
-      assert %Heights{sealed_height: nil, sealed_source: :no_anchor, anchor: nil, final_source: :none} =
-               Finality.heights(instant_height: 1_000)
+    test "an empty block index leaves the committed height absent" do
+      assert Finality.heights() == %Heights{committed_height: nil}
+      assert Status.rung(0, Finality.heights()) == :submitted
     end
 
-    test "an anchor read supplies both the sealed and the final height" do
-      anchor =
-        anchor(
-          source: :anchor_call,
-          batch_number: 19,
-          checkpoint_height: 900,
-          sealed_height: 900,
-          finalized_height: 800
-        )
+    test "collects the highest indexed consensus block" do
+      insert(:block, number: 99)
+      block = insert(:block, number: 100)
+      transaction = :transaction |> insert() |> with_block(block)
+      insert(:block, number: 101, consensus: false)
 
-      heights = Finality.heights(instant_height: 1_000, anchor: {:ok, anchor})
+      heights = Finality.heights()
 
-      assert %Heights{sealed_height: 900, sealed_source: :anchor_call, final_height: 800, final_source: :anchor} =
-               heights
-
-      assert Status.of(850, heights).rung == :sealed
-      assert Status.of(800, heights).rung == :final
+      assert heights == %Heights{committed_height: 100}
+      assert Status.rung(transaction.block_number, heights) == :committed
+      assert Status.rung(101, heights) == :submitted
     end
 
-    test "the confirmation depth is used only when the anchor reports no finalized checkpoint" do
-      Application.put_env(:explorer, Finality, capability_source: AnchorOff, final_confirmations: 12)
+    test "a non-consensus block cannot supply a committed height" do
+      insert(:block, number: 100, consensus: false)
 
-      assert %Heights{final_height: 988, final_source: :confirmations} = Finality.heights(instant_height: 1_000)
-
-      anchor = anchor(source: :anchor_call, sealed_height: 900, finalized_height: 800)
-
-      assert %Heights{final_height: 800, final_source: :anchor} =
-               Finality.heights(instant_height: 1_000, anchor: {:ok, anchor})
+      assert Finality.heights() == %Heights{committed_height: nil}
+      assert Status.rung(100, Finality.heights()) == :submitted
     end
 
-    test "the default confirmation depth leaves the final rung to the anchor alone" do
-      Application.put_env(:explorer, Finality, capability_source: AnchorOff)
+    test "a block losing consensus is no longer the committed head" do
+      insert(:block, number: 99)
+      block = insert(:block, number: 100)
+      assert Finality.heights() == %Heights{committed_height: 100}
 
-      assert Finality.final_confirmations() == 0
-      assert %Heights{final_height: nil, final_source: :none} = Finality.heights(instant_height: 1_000)
-    end
-  end
+      block |> Ecto.Changeset.change(consensus: false) |> Repo.update!()
 
-  describe "anchor_capability_live?/0" do
-    test "is false while the capability module is not loaded" do
-      Application.put_env(:explorer, Finality, capability_source: Explorer.Chain.PaxeerX.StatusTest.NotLoaded)
-
-      refute Code.ensure_loaded?(Finality.capability_source())
-      refute Finality.anchor_capability_live?()
+      assert Finality.heights() == %Heights{committed_height: 99}
+      assert Status.rung(100, Finality.heights()) == :submitted
     end
 
-    test "defaults to the capability module the capabilities surface owns" do
-      Application.delete_env(:explorer, Finality)
+    test "an already collected committed height is reused" do
+      insert(:block, number: 100)
 
-      assert Finality.capability_source() == Explorer.Chain.PaxeerX.Capabilities
+      assert Finality.heights(committed_height: 99) == %Heights{committed_height: 99}
+      assert Finality.heights(committed_height: nil) == %Heights{committed_height: nil}
+      assert Finality.heights(committed_height: 0) == %Heights{committed_height: 0}
     end
 
-    test "asks the configured capability source" do
-      Application.put_env(:explorer, Finality, capability_source: AnchorLive)
-      assert Finality.anchor_capability_live?()
+    test "invalid committed height overrides are refused" do
+      for height <- [-1, "100", 100.0, false] do
+        assert_raise ArgumentError, "invalid committed height", fn ->
+          Finality.heights(committed_height: height)
+        end
+      end
+    end
 
-      Application.put_env(:explorer, Finality, capability_source: AnchorOff)
-      refute Finality.anchor_capability_live?()
+    test "legacy anchor configuration and observations cannot promote a rung" do
+      Application.put_env(:explorer, Finality,
+        capability_source: Explorer.Chain.PaxeerX.Capabilities,
+        final_confirmations: 12
+      )
+
+      anchor = insert_anchor(18, :final, 4_250)
+
+      assert Finality.heights() == %Heights{committed_height: anchor.block_number}
+      assert Status.rung(nil, Finality.heights()) == :submitted
+      assert Status.of(anchor.block_number, Finality.heights()).anchor == nil
+      assert Status.rung(anchor.block_number, Finality.heights()) == :committed
+    end
+
+    test "anchor checkpoints cannot replace a missing consensus head" do
+      anchor = insert_anchor(19, :submitted, 4_300)
+      block = Repo.get_by!(Block, hash: anchor.block_hash)
+      block |> Ecto.Changeset.change(consensus: false) |> Repo.update!()
+
+      assert Finality.heights() == %Heights{committed_height: nil}
+      assert Status.rung(0, Finality.heights()) == :submitted
     end
   end
 
