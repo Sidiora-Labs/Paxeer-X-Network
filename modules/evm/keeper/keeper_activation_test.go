@@ -53,19 +53,43 @@ func forkModuleNames() []string {
 func TestSetCustomPrecompileActivationRejectsAnIncompleteRecord(t *testing.T) {
 	k, _ := keeper.MockEVMKeeper(t)
 	address := common.HexToAddress(layerxverify.LayerXVerifyAddress)
-	for name, activation := range map[string]evmkeeper.CustomPrecompileActivation{
-		"no upgrade": {Modules: map[common.Address][]string{address: {xwebtypes.ModuleName}}},
-		"no address": {Upgrade: app.ActivationUpgrade},
-		"no module": {Upgrade: app.ActivationUpgrade, Modules: map[common.Address][]string{
+	other := common.HexToAddress(xweb.XWebAddress)
+	complete := evmkeeper.CustomPrecompileActivation{Upgrade: app.ActivationUpgrade, Modules: map[common.Address][]string{
+		other: {xwebtypes.ModuleName},
+	}}
+	for name, activations := range map[string][]evmkeeper.CustomPrecompileActivation{
+		"no entry":   nil,
+		"no upgrade": {{Modules: map[common.Address][]string{address: {xwebtypes.ModuleName}}}},
+		"no address": {{Upgrade: app.ActivationUpgrade}},
+		"no module": {{Upgrade: app.ActivationUpgrade, Modules: map[common.Address][]string{
 			address: {},
-		}},
-		"empty module": {Upgrade: app.ActivationUpgrade, Modules: map[common.Address][]string{
+		}}},
+		"empty module": {{Upgrade: app.ActivationUpgrade, Modules: map[common.Address][]string{
 			address: {""},
-		}},
+		}}},
+		"incomplete second entry": {complete, {Upgrade: app.MergeUpgrade, Modules: map[common.Address][]string{
+			address: {},
+		}}},
+		"same address twice": {complete, {Upgrade: app.MergeUpgrade, Modules: map[common.Address][]string{
+			address: {layerxanchortypes.ModuleName},
+			other:   {xwebtypes.ModuleName},
+		}}},
 	} {
-		record := activation
-		require.Panics(t, func() { k.SetCustomPrecompileActivation(record) }, name)
+		records := activations
+		require.Panics(t, func() { k.SetCustomPrecompileActivation(records) }, name)
 	}
+	require.PanicsWithValue(t,
+		"custom precompile activations "+app.ActivationUpgrade+" and "+app.MergeUpgrade+" both name "+other.Hex(),
+		func() {
+			k.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{complete, {
+				Upgrade: app.MergeUpgrade, Modules: map[common.Address][]string{other: {xwebtypes.ModuleName}},
+			}})
+		})
+	require.NotPanics(t, func() {
+		k.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{complete, {
+			Upgrade: app.MergeUpgrade, Modules: map[common.Address][]string{address: {layerxanchortypes.ModuleName}},
+		}})
+	})
 }
 
 func TestCustomPrecompilesWithheldUntilTheActivationPlanIsApplied(t *testing.T) {
@@ -125,6 +149,87 @@ func TestCustomPrecompilesWithheldUntilTheActivationPlanIsApplied(t *testing.T) 
 		for _, addr := range fork {
 			require.Contains(t, at, addr, height)
 			require.Same(t, full[addr], at[addr], height)
+		}
+	}
+}
+
+func TestCustomPrecompilesWithheldUntilEachEntryPlanIsApplied(t *testing.T) {
+	testApp := app.Setup(t, false, true, false)
+	ctx := testApp.GetContextForDeliverTx([]byte{}).WithBlockHeight(8).WithBlockTime(time.Now())
+	k := &testApp.EvmKeeper
+	fork := forkPrecompileAddresses()
+	modules := [][]string{
+		{layerxanchortypes.ModuleName}, {layerxcustodytypes.ModuleName},
+		{layerxanchortypes.ModuleName}, {layerxexchangetypes.ModuleName},
+		{layerxbridgetypes.ModuleName}, {launchpadtypes.ModuleName},
+		{layerxbridgetypes.ModuleName}, {xwebtypes.ModuleName},
+	}
+	first, second := fork[:4], fork[4:]
+	firstModules := make(map[common.Address][]string, len(first))
+	for i, addr := range first {
+		firstModules[addr] = modules[i]
+	}
+	secondModules := make(map[common.Address][]string, len(second))
+	for i, addr := range second {
+		secondModules[addr] = modules[len(first)+i]
+	}
+	k.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{
+		{Upgrade: app.ActivationUpgrade, Modules: firstModules},
+		{Upgrade: app.MergeUpgrade, Modules: secondModules},
+	})
+
+	// While both module sets are known, both entries serve their addresses.
+	full := k.CustomPrecompiles(ctx)
+	for _, addr := range fork {
+		require.Contains(t, full, addr)
+	}
+
+	// Rewind to a chain that predates both plans.
+	upgradeStore := ctx.KVStore(testApp.GetKey(upgradetypes.StoreKey))
+	for _, name := range forkModuleNames() {
+		upgradeStore.Delete(append([]byte{upgradetypes.VersionMapByte}, name...))
+	}
+	require.Zero(t, testApp.UpgradeKeeper.GetDoneHeight(ctx, app.ActivationUpgrade))
+	require.Zero(t, testApp.UpgradeKeeper.GetDoneHeight(ctx, app.MergeUpgrade))
+	below := k.CustomPrecompiles(ctx)
+	require.Len(t, below, len(full)-len(fork))
+	for addr := range full {
+		if contains(fork, addr) {
+			require.NotContains(t, below, addr)
+			continue
+		}
+		require.Same(t, full[addr], below[addr])
+	}
+
+	// Each address set is withheld until its own plan is applied and served
+	// from its own done height, whichever plan is applied first.
+	const firstHeight, secondHeight = int64(20), int64(12)
+	k.UpgradeKeeper().SetDone(ctx.WithBlockHeight(firstHeight), app.ActivationUpgrade)
+	k.UpgradeKeeper().SetDone(ctx.WithBlockHeight(secondHeight), app.MergeUpgrade)
+	for _, tc := range []struct {
+		height   int64
+		served   []common.Address
+		withheld []common.Address
+	}{
+		{height: 1, withheld: fork},
+		{height: secondHeight - 1, withheld: fork},
+		{height: secondHeight, served: second, withheld: first},
+		{height: firstHeight - 1, served: second, withheld: first},
+		{height: firstHeight, served: fork},
+		{height: firstHeight + 1, served: fork},
+	} {
+		at := k.CustomPrecompiles(ctx.WithBlockHeight(tc.height))
+		require.Len(t, at, len(below)+len(tc.served), tc.height)
+		for _, addr := range tc.served {
+			require.Same(t, full[addr], at[addr], tc.height)
+		}
+		for _, addr := range tc.withheld {
+			require.NotContains(t, at, addr, tc.height)
+		}
+		versions := k.GetCustomPrecompilesVersions(ctx.WithBlockHeight(tc.height))
+		require.Len(t, versions, len(at), tc.height)
+		for addr := range at {
+			require.Contains(t, versions, addr, tc.height)
 		}
 	}
 }

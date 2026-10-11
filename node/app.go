@@ -940,7 +940,7 @@ func New(
 
 	if enableCustomEVMPrecompiles {
 		app.customPrecompiles = precompiles.GetCustomPrecompiles(LatestUpgrade, app.GetPrecompileKeepers())
-		app.EvmKeeper.SetCustomPrecompileActivation(activationPrecompileGate())
+		app.EvmKeeper.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{activationPrecompileGate()})
 		app.setXWebPrecompile(false)
 	}
 

@@ -95,9 +95,11 @@ type Keeper struct {
 	// precompile carries a version for.
 	customPrecompileUpgrades map[common.Address][]string
 	latestUpgrade            string
-	// customPrecompileActivation, when set, gates the custom precompiles one
-	// upgrade plan brings online on that plan or on the modules they serve.
-	customPrecompileActivation *CustomPrecompileActivation
+	// customPrecompileActivations, when set, gate the custom precompiles each
+	// upgrade plan brings online on that plan or on the modules they serve;
+	// customPrecompileActivationIndex maps every gated address to its entry.
+	customPrecompileActivations     []CustomPrecompileActivation
+	customPrecompileActivationIndex map[common.Address]int
 
 	// traceDB, when non-nil, serves cached debug_trace results and
 	// forwards EndBlock heights to the registered baker. nil-safe.
@@ -197,30 +199,45 @@ type CustomPrecompileActivation struct {
 	Modules map[common.Address][]string
 }
 
-// SetCustomPrecompileActivation records the activation that gates custom
-// precompile addresses. An activation without a plan name, without an address,
-// or with an address that names no module would serve or withhold its addresses
-// unconditionally, so it is rejected.
-func (k *Keeper) SetCustomPrecompileActivation(activation CustomPrecompileActivation) {
-	if activation.Upgrade == "" {
-		panic("custom precompile activation without an upgrade name")
+// SetCustomPrecompileActivation records the activations that gate custom
+// precompile addresses, one entry per upgrade plan. An entry without a plan
+// name, without an address, or with an address that names no module would
+// serve or withhold its addresses unconditionally, and two entries naming the
+// same address would leave its activation ambiguous, so both are rejected.
+func (k *Keeper) SetCustomPrecompileActivation(activations []CustomPrecompileActivation) {
+	if len(activations) == 0 {
+		panic("custom precompile activation without an entry")
 	}
-	if len(activation.Modules) == 0 {
-		panic("custom precompile activation without an address")
-	}
-	modules := make(map[common.Address][]string, len(activation.Modules))
-	for addr, names := range activation.Modules {
-		if len(names) == 0 {
-			panic(fmt.Sprintf("custom precompile activation names no module for %s", addr.Hex()))
+	entries := make([]CustomPrecompileActivation, 0, len(activations))
+	index := make(map[common.Address]int)
+	for i, activation := range activations {
+		if activation.Upgrade == "" {
+			panic("custom precompile activation without an upgrade name")
 		}
-		for _, name := range names {
-			if name == "" {
-				panic(fmt.Sprintf("custom precompile activation names an empty module for %s", addr.Hex()))
+		if len(activation.Modules) == 0 {
+			panic("custom precompile activation without an address")
+		}
+		modules := make(map[common.Address][]string, len(activation.Modules))
+		for addr, names := range activation.Modules {
+			if len(names) == 0 {
+				panic(fmt.Sprintf("custom precompile activation names no module for %s", addr.Hex()))
 			}
+			for _, name := range names {
+				if name == "" {
+					panic(fmt.Sprintf("custom precompile activation names an empty module for %s", addr.Hex()))
+				}
+			}
+			if previous, named := index[addr]; named {
+				panic(fmt.Sprintf("custom precompile activations %s and %s both name %s",
+					activations[previous].Upgrade, activation.Upgrade, addr.Hex()))
+			}
+			index[addr] = i
+			modules[addr] = append([]string(nil), names...)
 		}
-		modules[addr] = append([]string(nil), names...)
+		entries = append(entries, CustomPrecompileActivation{Upgrade: activation.Upgrade, Modules: modules})
 	}
-	k.customPrecompileActivation = &CustomPrecompileActivation{Upgrade: activation.Upgrade, Modules: modules}
+	k.customPrecompileActivations = entries
+	k.customPrecompileActivationIndex = index
 }
 
 // CustomPrecompiles returns the custom precompile set for the block of ctx.
@@ -246,7 +263,7 @@ func (k *Keeper) CustomPrecompiles(ctx sdk.Context) map[common.Address]vm.Precom
 
 // latestCustomPrecompilesAtHeight returns the latest custom precompile set
 // without the precompiles the block's height has not reached. It reads the
-// upgrade heights, the activation's plan and the module version map without
+// upgrade heights, each activation entry's plan and the module version map without
 // charging the caller.
 func (k *Keeper) latestCustomPrecompilesAtHeight(ctx sdk.Context) map[common.Address]vm.PrecompiledContract {
 	readCtx := ctx.WithGasMeter(sdk.NewInfiniteGasMeter(1, 1))
@@ -268,31 +285,39 @@ func (k *Keeper) latestCustomPrecompilesAtHeight(ctx sdk.Context) map[common.Add
 }
 
 // customPrecompileActivationLookup returns the predicate that reports whether
-// the state of ctx has reached the activation of an address. The plan's height
-// is read once and the module version map only when the plan has not been
-// applied; an address no activation names is always reached.
+// the state of ctx has reached the activation of an address. An address is
+// reached once the plan of the entry naming it is active at the block's height,
+// or, while that plan has never been applied, once the module version map
+// carries every module the entry names for it. Each plan's height is read once
+// and the module version map only when a plan has not been applied; an address
+// no entry names is always reached.
 func (k *Keeper) customPrecompileActivationLookup(ctx sdk.Context) func(common.Address) bool {
-	activation := k.customPrecompileActivation
-	if activation == nil {
+	entries := k.customPrecompileActivations
+	if len(entries) == 0 {
 		return func(common.Address) bool { return true }
 	}
-	doneHeight := k.upgradeKeeper.GetDoneHeight(ctx, activation.Upgrade)
-	applied := doneHeight != 0 && ctx.BlockHeight() >= doneHeight
+	height := ctx.BlockHeight()
+	active := make([]bool, len(entries))
+	appliedAbove := make([]bool, len(entries))
+	for i, entry := range entries {
+		active[i] = k.upgradeKeeper.IsUpgradeActiveAtHeight(ctx, entry.Upgrade, height)
+		appliedAbove[i] = !active[i] && k.upgradeKeeper.GetDoneHeight(ctx, entry.Upgrade) != 0
+	}
 	var versions map[string]uint64
 	loaded := false
 	return func(addr common.Address) bool {
-		names, gated := activation.Modules[addr]
-		if !gated || applied {
+		i, gated := k.customPrecompileActivationIndex[addr]
+		if !gated || active[i] {
 			return true
 		}
-		if doneHeight != 0 {
+		if appliedAbove[i] {
 			// The plan is applied above the block's height.
 			return false
 		}
 		if !loaded {
 			versions, loaded = k.upgradeKeeper.GetModuleVersionMap(ctx), true
 		}
-		for _, name := range names {
+		for _, name := range entries[i].Modules[addr] {
 			if _, known := versions[name]; !known {
 				return false
 			}
