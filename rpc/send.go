@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"sync"
 	"time"
 
@@ -41,6 +42,18 @@ type SendAPI struct {
 type SendConfig struct {
 	slow           bool
 	keyringEnabled bool
+	// Sequencer, set only on the sequencer, receives every raw transaction in place of the mempool.
+	Sequencer SequencerAccepter
+	// SequencerURL, set on every other node, is the EVM RPC endpoint raw transactions are forwarded to.
+	SequencerURL *url.URL
+}
+
+// SequencerAccepter executes transactions at receipt on the sequencer's open block.
+type SequencerAccepter interface {
+	// Accept executes the encoded transaction on the open block and returns its signed receipt once
+	// the receipt is written to the WAL and acknowledged by the standby. On error the transaction
+	// is not receipted.
+	Accept(txBytes []byte) (receipt []byte, err error)
 }
 
 func NewSendAPI(
@@ -89,27 +102,19 @@ func (s *SendAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (
 		return
 	}
 	hash = tx.Hash()
+	if s.sendConfig.Sequencer != nil {
+		return hash, s.acceptOnSequencer(tx)
+	}
+	if s.sendConfig.SequencerURL != nil {
+		return s.forwardToSequencer(ctx, hash, input)
+	}
 	// getSender fails for AccessListTx, in which case we are not able to proxy or simulate,
 	// but we still need to handle it.
 	sender, senderErr := getSender(tx, s.keeper.ChainID(s.ctxProvider(LatestCtxHeight)))
 	if senderErr == nil {
 		if url, ok := s.tmClient.EvmProxy(sender); ok {
 			recordRedirectedRequest(ctx, "eth_sendRawTransaction", string(s.connectionType))
-			// HTTP transport pooling already happens globally underneath net/http, so
-			// creating a fresh RPC client per proxied request is fine here. If we
-			// start proxying over WebSocket, we'll need explicit custom pooling since
-			// the underlying TCP connection lifecycle is strictly bound to Dial -> Close calls.
-			client, err := rpc.DialContext(ctx, url.String())
-			if err != nil {
-				return hash, fmt.Errorf("rpc.DialContext(%q): %w", url.String(), err)
-			}
-			defer client.Close()
-
-			if err := client.CallContext(ctx, &hash, "eth_sendRawTransaction", input); err != nil {
-				// No error wrapping, because evm server is too dumb to handle wrapped error.
-				return hash, err
-			}
-			return hash, nil
+			return forwardRawTransaction(ctx, url, hash, input)
 		}
 	}
 
@@ -157,6 +162,67 @@ func (s *SendAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (
 		}
 	}
 	return
+}
+
+// forwardRawTransaction relays input unchanged to the eth_sendRawTransaction of target and returns
+// the hash target answers with.
+func forwardRawTransaction(ctx context.Context, target *url.URL, hash common.Hash, input hexutil.Bytes) (common.Hash, error) {
+	// HTTP transport pooling already happens globally underneath net/http, so
+	// creating a fresh RPC client per proxied request is fine here. If we
+	// start proxying over WebSocket, we'll need explicit custom pooling since
+	// the underlying TCP connection lifecycle is strictly bound to Dial -> Close calls.
+	client, err := rpc.DialContext(ctx, target.String())
+	if err != nil {
+		return hash, fmt.Errorf("rpc.DialContext(%q): %w", target.String(), err)
+	}
+	defer client.Close()
+
+	if err := client.CallContext(ctx, &hash, "eth_sendRawTransaction", input); err != nil {
+		// No error wrapping, because evm server is too dumb to handle wrapped error.
+		return hash, err
+	}
+	return hash, nil
+}
+
+// forwardToSequencer relays the raw transaction to the sequencer; it never enters the local mempool.
+func (s *SendAPI) forwardToSequencer(ctx context.Context, hash common.Hash, input hexutil.Bytes) (common.Hash, error) {
+	recordRedirectedRequest(ctx, "eth_sendRawTransaction", string(s.connectionType))
+	return forwardRawTransaction(ctx, s.sendConfig.SequencerURL, hash, input)
+}
+
+// acceptOnSequencer hands tx to the sequencer's Accept and returns once its signed receipt is
+// released. The transaction is not simulated against the latest block and carries no gas
+// estimate: the gas used comes from its execution at receipt.
+func (s *SendAPI) acceptOnSequencer(tx *ethtypes.Transaction) error {
+	txData, err := ethtx.NewTxDataFromTx(tx)
+	if err != nil {
+		return err
+	}
+	msg, err := types.NewMsgEVMTransaction(txData)
+	if err != nil {
+		return err
+	}
+	txConfig := s.txConfigProvider(LatestCtxHeight)
+	txBuilder := txConfig.NewTxBuilder()
+	if err := txBuilder.SetMsgs(msg); err != nil {
+		return err
+	}
+	txbz, err := txConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return err
+	}
+	receipt, err := s.sendConfig.Sequencer.Accept(txbz)
+	if err != nil {
+		var coded *sdkerrors.Error
+		if errors.As(err, &coded) {
+			return sdkerrors.ABCIError(coded.Codespace(), coded.ABCICode(), "")
+		}
+		return err
+	}
+	if len(receipt) == 0 {
+		return errors.New("missing sequencer receipt")
+	}
+	return nil
 }
 
 func getSender(tx *ethtypes.Transaction, chainID *big.Int) (common.Address, error) {
