@@ -1201,8 +1201,7 @@ revision = "f925f1321"
 command = "make build && make test-asset-registry && go test -count=1 ./modules/lxphost/ -run 'TestHost'"
 exit_code = 0
 log_path = "logs/0.70-verify-1.log"
-observed_and_assumption = "verify passed (test_asset_registry ok, lxphost TestHost* 8 passed, 0 failed). Gaps: lx_asset.h, lxp_ledger.h, lx_asset_execution.h, lx_asset_registry.c, lxp_send.c, lxp_receive.c, test_asset_registry.c unchanged for the same reason"
-
+observed_and_assumption = "verify passed (8 passed, 0 failed). Gaps: nothing was written for do_8-do_11; worktree clean apart from untracked node_modules"
 [finding.0.35]
 revision = "eb6b4c657"
 command = "go test -count=1 ./rpc/ -run TestSequencerReceiptVectors && cargo test --manifest-path agent/Cargo.toml -p layerx-proof --test sequencer_receipt_vectors"
@@ -1278,3 +1277,10 @@ command = "go test -count=1 ./precompiles/bank/ -run 'TestRun"
 exit_code = 0
 log_path = "logs/1.1.6-verify-1.log"
 observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: TestSendContextHashSelector/Refusals/ZeroAmount/Receipt and TestSendReasonsFromPlanHeight (acceptance 1.6.1-1.6.5, 1.7.2) not written: precompiles/bank/bank_test.go is outside this task's touches; selector 0x2e4c85ac, 0x5c05961b and topic0 0x4b11729a..65f checked with cast only"
+
+[finding.0.72]
+revision = "aed3c15a5"
+command = "go test -count=1 ./node/sequencer/ -run TestSealBatch -v"
+exit_code = 0
+log_path = "logs/0.72-verify-1.log"
+observed_and_assumption = "verify passed (3 passed (6 subtests), 0 failed). Gaps: none (L_N equality with ProcessBlock is asserted as equal results, events, end-block response and every mounted module store; a cache branch exposes no app hash)"

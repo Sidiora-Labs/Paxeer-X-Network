@@ -3188,11 +3188,13 @@ do_2 = "In NewPrecompile record the go-ethereum overload name send0 and its id 0
 do_3 = "sendWithContext reuses the checks of send (precompiles/bank/bank.go:134-185): readOnly (precompiles/bank/bank.go:135-137), payable (precompiles/bank/bank.go:138-140), empty denom (precompiles/bank/bank.go:145-148), pointer caller (precompiles/bank/bank.go:149-152) and the zero-amount short-circuit (precompiles/bank/bank.go:154-158)."
 do_4 = "A nonzero amount moves coins through the same MsgSend path (precompiles/bank/bank.go:168-181) and then emits LayerXReceipt with topic0 0x4b11729a809ec729868d9ba54f3192aa4179fe63668e9f742aa9b25de21de65f through pcommon.EmitEVMLog (precompiles/common/evm_events.go:16)."
 do_5 = "Opt bank into the reason path of task 0.1 at the NewDynamicGasPrecompile call (precompiles/bank/bank.go:98), gated on the merge plan; refusals map to LXP_NON_CANONICAL for staticcall and payable misuse and to LXP_ASSET_PAUSED for a paused denom."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "send0 refuses calls below the merge plan height with the unknown-method text, served from the merge plan height per ledger-auth."
+do_7 = "Write TestSendContextHashSelector, TestSendContextHashRefusals, TestSendContextHashZeroAmount, TestSendContextHashReceipt and TestSendReasonsFromPlanHeight in precompiles/bank/bank_test.go (acceptance 1.6.1-1.6.5, 1.7.2), each driving real EVM calls through the bank precompile, including the below-plan-height refusal."
+do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["send0", "sendWithContext", "LayerXReceipt"]
-touches = ["precompiles/bank/bank.go", "precompiles/bank/abi.json", "precompiles/bank/Bank.sol"]
+touches = ["precompiles/bank/bank.go", "precompiles/bank/abi.json", "precompiles/bank/Bank.sol", "precompiles/bank/bank_test.go"]
 build_cmd = "go build ./precompiles/bank/"
-verify_cmd = "go test -count=1 ./precompiles/bank/ -run 'TestRun|TestMetadata|TestAddress'"
+verify_cmd = "go test -count=1 ./precompiles/bank/ -run 'TestRun|TestMetadata|TestAddress|TestSendContextHash|TestSendReasonsFromPlanHeight'"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -19623,7 +19625,8 @@ do_2 = "Drop the import (human/wallet/sdk/src/modules/web-data.ts:1)."
 do_3 = "Keep requestCall (human/wallet/sdk/src/modules/web-data.ts:96-108) and webData (human/wallet/sdk/src/modules/web-data.ts:110)."
 do_4 = "Keep refund and fee (human/wallet/sdk/src/modules/web-data.ts:123-124)."
 do_5 = "Write the tests human/wallet/sdk/test/modules.test.ts with one case per acceptance of this task that they name (of 5.40.1, 5.40.2, 5.40.3), each using the real keeper, precompile or binary path whose behaviour starts at human/wallet/sdk/src/modules/web-data.ts:116; no test double replaces the path under test."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "Rewrite the modules.test.ts case \"flow signs, assembles and submits\", left stale by the task that landed the gas-station.ts submitApproved flow, to that landed flow with full assertions on every step: the eth_accounts and eth_chainId session checks, the confirm callback invoked once, the batchNonce eth_call and eth_getTransactionCount nonce reads, the EIP-7702 authorization eth_sign fields, the station-evidence gateway answer, the SponsoredAdapterRequest shape including quote_decimals and authorization, and submissions[0] asserted field by field; no assertion is dropped."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["webData", "caps"]
 touches = ["human/wallet/sdk/src/modules/web-data.ts", "human/wallet/sdk/test/modules.test.ts"]
 build_cmd = "cd human/wallet/sdk && npx tsc --noEmit -p tsconfig.json"
@@ -40872,7 +40875,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.72]
 title = "Seal the executor batch into L_N with tx 0 applied"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.2", "9.0.2", "0.71"]
@@ -41717,7 +41720,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.111]
 title = "newHeads and the simulation header carry the same-block results root"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.51"]
@@ -41743,7 +41746,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.112]
 title = "Autobahn block results carry the transaction results so receiptsRoot is the same-block root"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.51"]
@@ -41769,7 +41772,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.113]
 title = "layerx-types and layerx-proof crates pass their clippy deny level in every target"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []

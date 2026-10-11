@@ -7266,3 +7266,8 @@ fix = "use uhpx in new fixtures"
 area = "cargo clippy"
 symptom = "cargo clippy --all-targets stops at the first denied target, so a lint task scoped to lib files cannot pass while bin and tests targets still carry pedantic denials"
 fix = "scope lint tasks to the whole crate"
+
+[gotcha.1539]
+area = "1.1.6"
+symptom = "two verify runs: a worker reran verify_cmd with -v only for per-test counts"
+fix = "run verify_cmd once with -v from the start when per-test counts are wanted"
