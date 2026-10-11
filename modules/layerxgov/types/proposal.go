@@ -4,9 +4,11 @@ import (
 	"fmt"
 	launchpad "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	anchor "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
+	layerxauthtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxauth/types"
 	bridge "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	custody "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	exchange "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
+	layerxledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
 	web "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
@@ -29,6 +31,8 @@ func init() {
 	govtypes.RegisterProposalTypeCodec(&anchor.MsgUpdateParams{}, "layerxanchor/MsgUpdateParams")
 	govtypes.RegisterProposalTypeCodec(&exchange.MsgUpdateParams{}, "layerxexchange/MsgUpdateParams")
 	govtypes.RegisterProposalTypeCodec(&exchange.MsgSetMarket{}, "layerxexchange/MsgSetMarket")
+	govtypes.RegisterProposalTypeCodec(&layerxledgertypes.MsgUpdateParams{}, "layerxledger/MsgUpdateParams")
+	govtypes.RegisterProposalTypeCodec(&layerxauthtypes.MsgUpdateParams{}, "layerxauth/MsgUpdateParams")
 	govtypes.RegisterProposalTypeCodec(&launchpad.MsgUpdateParams{}, "launchpad/MsgUpdateParams")
 	govtypes.RegisterProposalTypeCodec(&web.MsgRegisterAttestor{}, "xweb/MsgRegisterAttestor")
 	govtypes.RegisterProposalTypeCodec(&web.MsgRemoveAttestor{}, "xweb/MsgRemoveAttestor")
@@ -155,6 +159,10 @@ func governanceMessage(msg sdk.Msg) (string, error) {
 	case *exchange.MsgUpdateParams:
 		return m.Authority, nil
 	case *exchange.MsgSetMarket:
+		return m.Authority, nil
+	case *layerxledgertypes.MsgUpdateParams:
+		return m.Authority, nil
+	case *layerxauthtypes.MsgUpdateParams:
 		return m.Authority, nil
 	case *bridge.MsgRegisterChain:
 		return m.Authority, nil
