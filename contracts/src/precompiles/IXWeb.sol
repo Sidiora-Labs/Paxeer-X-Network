@@ -100,6 +100,8 @@ interface IXWeb {
         bytes[] calldata signatures
     ) external returns (uint8 callback, uint64 callbackGasUsed);
 
+    function fulfilProgram(bytes calldata observation) external;
+
     function refund(uint64 requestId) external;
 
     function getRequest(uint64 requestId) external view returns (Request memory);
@@ -113,6 +115,13 @@ interface IXWeb {
     function fee() external view returns (uint256);
 
     function getParams() external view returns (Params memory);
+
+    function getProgramResult(bytes32 programId, uint64 requestId)
+        external
+        view
+        returns (bytes32 contentDigest, uint32 fullLength, uint32 responseLength, bytes memory response);
+
+    function getKernelNetworkId() external view returns (uint32 kernelNetworkId);
 }
 
 /// The callback a requester implements. The precompile calls it from

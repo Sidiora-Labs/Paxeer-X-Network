@@ -84,6 +84,7 @@ contract XWebConsumerTest is Test {
     function test_InterfaceMatchesThePrecompileABI() public pure {
         assertEq(IXWeb.request.selector, bytes4(keccak256("request(uint8,bytes,uint64)")));
         assertEq(IXWeb.fulfil.selector, bytes4(keccak256("fulfil(uint64,bytes,bytes32,uint32,bytes[])")));
+        assertEq(IXWeb.fulfilProgram.selector, bytes4(keccak256("fulfilProgram(bytes)")));
         assertEq(IXWeb.refund.selector, bytes4(keccak256("refund(uint64)")));
         assertEq(IXWeb.getRequest.selector, bytes4(keccak256("getRequest(uint64)")));
         assertEq(IXWeb.getResult.selector, bytes4(keccak256("getResult(uint64)")));
@@ -91,6 +92,8 @@ contract XWebConsumerTest is Test {
         assertEq(IXWeb.threshold.selector, bytes4(keccak256("threshold()")));
         assertEq(IXWeb.fee.selector, bytes4(keccak256("fee()")));
         assertEq(IXWeb.getParams.selector, bytes4(keccak256("getParams()")));
+        assertEq(IXWeb.getProgramResult.selector, bytes4(keccak256("getProgramResult(bytes32,uint64)")));
+        assertEq(IXWeb.getKernelNetworkId.selector, bytes4(keccak256("getKernelNetworkId()")));
         assertEq(
             IXWebConsumer.onXWebResponse.selector, bytes4(keccak256("onXWebResponse(uint64,bytes32,uint32,bytes)"))
         );
@@ -155,16 +158,23 @@ contract XWebApiTest is Test {
     }
 
     function test_EncodesTheMajorityVectorWithSelectorsAndEnvelopes() public pure {
-        bytes memory payload = XWebApi.get(PRICE_URL).header("Accept", "application/json").select("/data/price")
-            .select("/data/asset").withCredential(ENVELOPE_ATTESTOR_1_API_KEY)
-            .withCredential(ENVELOPE_ATTESTOR_2_API_KEY).encode();
+        bytes memory payload = XWebApi.get(PRICE_URL)
+            .header("Accept", "application/json")
+            .select("/data/price")
+            .select("/data/asset")
+            .withCredential(ENVELOPE_ATTESTOR_1_API_KEY)
+            .withCredential(ENVELOPE_ATTESTOR_2_API_KEY)
+            .encode();
         assertEq(payload, GET_MAJORITY_SELECT);
     }
 
     function test_EncodesTheSingleLevelPostVector() public pure {
         bytes memory payload = XWebApi.post("https://paxeer.app/api/v1/quote", bytes('{"asset":"SID","amount":"1"}'))
-            .header("Content-Type", "application/json").select("/quote/amount")
-            .withCredential(ENVELOPE_ATTESTOR_1_TWO_HEADERS).single(ATTESTOR_1).encode();
+            .header("Content-Type", "application/json")
+            .select("/quote/amount")
+            .withCredential(ENVELOPE_ATTESTOR_1_TWO_HEADERS)
+            .single(ATTESTOR_1)
+            .encode();
         assertEq(payload, POST_SINGLE_CREDENTIAL);
     }
 
@@ -173,8 +183,11 @@ contract XWebApiTest is Test {
     }
 
     function test_EncodesTheExampleConsumerVector() public pure {
-        bytes memory payload = XWebApi.get(PRICE_URL).select("/data/price").withCredential(ENVELOPE_ATTESTOR_1_API_KEY)
-            .single(ATTESTOR_1).encode();
+        bytes memory payload = XWebApi.get(PRICE_URL)
+            .select("/data/price")
+            .withCredential(ENVELOPE_ATTESTOR_1_API_KEY)
+            .single(ATTESTOR_1)
+            .encode();
         assertEq(payload, EXAMPLE_CONSUMER);
     }
 
