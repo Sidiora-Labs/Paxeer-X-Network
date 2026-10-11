@@ -9,6 +9,10 @@ license.workspace = true
 name = "layerx-agentd"
 path = "../layerx-agentd/src/main.rs"
 
+[[test]]
+name = "runtime_mode"
+path = "../layerx-agentd/host-tests/runtime_mode.rs"
+
 [dependencies]
 layerx-agentd = { path = "../layerx-agentd" }
 layerx-mcp = { path = "../layerx-mcp" }

@@ -4,8 +4,8 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Wake};
-use std::task::{Context, Poll, Waker};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Wake, Waker};
 
 use layerx_agent_api::budget::{
     AuthorityDescription, AuthorityResponse, BudgetAuthorization, BudgetEnforcement, BudgetId,
@@ -488,6 +488,7 @@ impl Harness {
                     extensions: Vec::new(),
                     current_sequence: OBSERVED_HEAD_SEQUENCE,
                     core_time_ms: CORE_TIME_MS,
+                    planner: None,
                 },
             )
             .is_ok()

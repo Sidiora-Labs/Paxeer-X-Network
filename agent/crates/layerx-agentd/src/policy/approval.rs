@@ -1597,7 +1597,7 @@ mod released_replay_tests {
                 .unwrap_or_else(|error| panic!("preparation: {error:?}")),
             disclosure: Disclosure {
                 canonical_digest: canonical_digest(&bytes),
-                activity_type: ActivityType(activity_type().value()),
+                activity_type: ActivityType(activity_type().ordinal()),
                 actor: AgentDid::new(ACTOR).unwrap_or_else(|error| panic!("actor: {error:?}")),
                 authority: AuthorityRef::new("session-key")
                     .unwrap_or_else(|error| panic!("authority: {error:?}")),

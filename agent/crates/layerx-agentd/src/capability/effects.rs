@@ -706,6 +706,7 @@ mod tests {
             balance,
             state_digest: [15; 32],
             observed_head_sequence: 7,
+            purpose_hash: [10; 32],
         }
     }
 

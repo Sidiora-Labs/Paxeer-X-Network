@@ -19737,8 +19737,10 @@ mod enrolment_expiry_boundary_tests {
         must(cert.set_subject_name(&name));
         must(cert.set_issuer_name(&name));
         must(cert.set_pubkey(&key));
-        must(cert.set_not_before(&must(Asn1Time::days_from_now(0))));
-        must(cert.set_not_after(&must(Asn1Time::days_from_now(1))));
+        let not_before = must(Asn1Time::days_from_now(0));
+        let not_after = must(Asn1Time::days_from_now(1));
+        must(cert.set_not_before(&not_before));
+        must(cert.set_not_after(&not_after));
         must(cert.sign(&key, MessageDigest::sha256()));
         must(cert.build().to_der())
     }

@@ -31,6 +31,7 @@ zeroize = "=1.9.0"
 getrandom = "=0.3.4"
 
 [dev-dependencies]
+hex = "=0.4.3"
 layerx-sdk = { path = "../layerx-sdk" }
 native-tls = "=0.2.18"
 openssl = "=0.10.81"
