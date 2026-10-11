@@ -23,6 +23,13 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "agent/sdk/python"))
 
+from layerx_sdk.account_derivation import (  # noqa: E402
+    ADDR_PRECOMPILE_ADDRESS,
+    bind_nonce_call,
+    bound_did_call,
+    keccak256,
+    layerx_did_call,
+)
 from layerx_sdk.agent_http import AgentHttpTransport, LayerXKeyCredential  # noqa: E402
 from layerx_sdk.ai_market import (  # noqa: E402
     AUTHORITY_FRESHNESS_HEIGHTS,
@@ -348,6 +355,30 @@ def checkpoint_for(directory: Path):
     return verify_checkpoint(CheckpointVerificationInput(
         CheckpointCertificate(canonical, b"", (attestation,), 1), (GuarantorKey(attestation.guarantor_id, public, True),),
         checkpoint, 125, attestation.settlement_contract, None, True), VERIFIER, protocol_version=3)
+
+
+OWNER_DID = "5a" * 32
+
+
+def owner_binding(key: bytes, did: str = OWNER_DID):
+    """An addr precompile reader answering that the EVM address of ``key`` is bound to ``did``."""
+
+    def request(method: str, params: list[object]) -> object:
+        point = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), key).public_bytes(
+            Encoding.X962, PublicFormat.UncompressedPoint)
+        address = "0x" + keccak256(point[1:])[12:].hex()
+        text = f"did:layerx:{did}".encode()
+        answers = {
+            bound_did_call(address): "0x" + "00" * 64 + did + "00" * 32,
+            bind_nonce_call(address): "0x" + (1).to_bytes(32, "big").hex(),
+            layerx_did_call(address): "0x" + did + (64).to_bytes(32, "big").hex()
+            + len(text).to_bytes(32, "big").hex() + text.ljust(96, b"\0").hex(),
+        }
+        call = params[0]
+        assert method == "eth_call" and isinstance(call, dict) and call["to"] == ADDR_PRECOMPILE_ADDRESS
+        return answers[call["data"]]
+
+    return request
 
 
 class Ed25519KeySigner:
@@ -827,7 +858,8 @@ class ApprovalTests(ViewTestCase):
             with self.subTest(field=field):
                 self.assertRefused("ReviewMismatch", field, review.approve, altered, self.signer.public_key())
         self.assertRefused("UnauthorizedKey", None, review.approve, terms, Ed25519KeySigner().public_key())
-        record = review.approve(terms, self.signer.public_key()).sign(self.signer, VERIFIER, 1200)
+        record = review.approve(terms, self.signer.public_key()).sign(
+            self.signer, VERIFIER, 1200, owner_binding(self.signer.public_key()), OWNER_DID)
         activity = _signed_call_envelope(record.signed_bytes)
         call = decode_native_program_call(activity.payload)
         self.assertEqual((call.guest_abi, call.entrypoint, call.program_id, decode_envelope(call.calldata).selector),
@@ -887,13 +919,15 @@ class ApprovalGateTests(ViewTestCase):
                            replace(self.approved, effect=replace(self.effect, amount=11)), self.signer.public_key())
         self.assertRefused("UnauthorizedKey", None, review.approve, self.approved, Ed25519KeySigner().public_key())
         approval = review.approve(self.approved, self.signer.public_key())
-        self.assertRefused("UnauthorizedKey", None, approval.sign, Ed25519KeySigner(), VERIFIER, 1200)
-        self.assertRefused("StaleAuthority", 9, approval.sign, self.signer, VERIFIER, 1209)
+        binding = owner_binding(self.signer.public_key())
+        self.assertRefused("UnauthorizedKey", None, approval.sign, Ed25519KeySigner(), VERIFIER, 1200, binding,
+                           OWNER_DID)
+        self.assertRefused("StaleAuthority", 9, approval.sign, self.signer, VERIFIER, 1209, binding, OWNER_DID)
         zero = ZeroSigner()
         zero_review = Review(self.prepared, replace(self.approved, authority=zero.public_key()))
         self.assertRefused("Signature", None, zero_review.approve(zero_review.terms, zero.public_key()).sign, zero,
-                           VERIFIER, 1200)
-        record = approval.sign(self.signer, VERIFIER, 1200)
+                           VERIFIER, 1200, owner_binding(zero.public_key()), OWNER_DID)
+        record = approval.sign(self.signer, VERIFIER, 1200, binding, OWNER_DID)
         signature = record.signed_bytes[-64:]
         self.assertEqual(record.signed_bytes, self.canonical[:4] + b"\x0c" + self.canonical[5:] + b"\x0c"
                          + struct.pack(">I", 64) + signature)

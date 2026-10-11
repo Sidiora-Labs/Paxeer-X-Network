@@ -496,7 +496,7 @@ export async function readLayerXBindState(wallet: Eip1193Requester, address: str
   return { boundDidPublicKey, nonce };
 }
 
-export function requireLayerXBinding(derived: DerivedAccount, state: LayerXBindState): void {
+export function requireLayerXBinding(derived: Pick<DerivedAccount, "layerxPublicKey">, state: LayerXBindState): void {
   if (state.boundDidPublicKey === null) {
     throw new AccountDerivationError("address_unbound");
   }

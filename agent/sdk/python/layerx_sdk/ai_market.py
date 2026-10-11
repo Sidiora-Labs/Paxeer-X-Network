@@ -9,7 +9,8 @@ from enum import IntEnum
 from hashlib import sha256
 from http.client import HTTPException
 from pathlib import Path
-from typing import Protocol
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener
 
@@ -25,9 +26,12 @@ from .agent_http import (
 from .account_derivation import (
     AccountDerivationError,
     _P,
+    _evm_address,
     _recover,
     keccak256,
     normalize_wallet_signature,
+    read_layerx_bind_state,
+    require_layerx_binding,
 )
 from .native_program_call import (
     NativeProgramCall,
@@ -40,6 +44,9 @@ from .verifier import (
     CheckpointVerification,
     LocalSignatureVerifier,
 )
+
+if TYPE_CHECKING:
+    from .exchange import WalletRequest
 
 FINALIZED_RANK = 4
 SETTLEMENT_RANK = 5
@@ -879,6 +886,14 @@ def _public_key(key: bytes) -> bytes:
     return key
 
 
+def _key_address(key: bytes) -> str:
+    x = int.from_bytes(_public_key(key)[1:], "big")
+    y = pow((pow(x, 3, _P) + 7) % _P, (_P + 1) // 4, _P)
+    if y & 1 != key[0] & 1:
+        y = _P - y
+    return _evm_address(x.to_bytes(32, "big") + y.to_bytes(32, "big"))
+
+
 def _rlp(value: bytes | tuple) -> bytes:
     body = b"".join(_rlp(item) for item in value) if isinstance(value, tuple) else value
     if not isinstance(value, tuple) and len(body) == 1 and body[0] < 128:
@@ -1282,7 +1297,14 @@ class Approval:
         signer: Secp256k1Signer,
         signatures: LocalSignatureVerifier,
         authority_height: int,
+        request: WalletRequest,
+        layerx_public_key: str,
     ) -> OperationRecord:
+        """Signs the approved commitment once the approving key's address is bound to ``layerx_public_key``.
+
+        The bind state is read through ``request`` from the ``addr`` precompile; an unbound or
+        foreign-bound address is refused before the signer is invoked.
+        """
         prepared = self.review.prepared
         _require_current(prepared.binding.execution_height, authority_height)
         field = first_difference(prepared.review().terms, self.review.terms)
@@ -1294,6 +1316,10 @@ class Approval:
             or sha256(self.key).digest() != self.review.terms.authority
         ):
             raise AiMarketError("UnauthorizedKey")
+        require_layerx_binding(
+            SimpleNamespace(layerx_public_key=layerx_public_key),
+            read_layerx_bind_state(request, _key_address(self.key)),
+        )
         digest = self.review.terms.commitment
         signature = signer.sign(digest)
         if _signature_public_key(signature, digest) != self.key:

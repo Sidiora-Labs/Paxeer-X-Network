@@ -52,6 +52,12 @@ import {
   type ParticipantPage,
   type SnapshotBinding,
 } from "../src/ai_market.js";
+import {
+  bindNonceCall,
+  boundDidCall,
+  layerXDidCall,
+  type Eip1193Requester,
+} from "../src/account-derivation.js";
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -338,6 +344,32 @@ function signEvm(preimage: Uint8Array, secret: Uint8Array): Uint8Array {
 const owner = {
   publicKey: ownerKey,
   sign: (preimage: Uint8Array) => signEvm(preimage, ownerSecret),
+};
+const ownerDid = id(0x5a);
+const ownerAddress = `0x${hex(keccak_256(secp256k1.getPublicKey(ownerSecret, false).subarray(1)).subarray(12))}`;
+const ownerBinding: Eip1193Requester = {
+  request: async ({ method, params }) => {
+    const call = params?.[0] as { to?: string; data?: string } | undefined;
+    assert(
+      method === "eth_call" &&
+        call?.to === "0x0000000000000000000000000000000000001004",
+      `unexpected binding request ${method}`,
+    );
+    const did = Buffer.from(`did:layerx:${ownerDid}`, "ascii");
+    const answers: Record<string, string> = {
+      [boundDidCall(ownerAddress)]:
+        `${"00".repeat(64)}${ownerDid}${"00".repeat(32)}`,
+      [bindNonceCall(ownerAddress)]: hex(be(1n, 32)),
+      [layerXDidCall(ownerAddress)]:
+        ownerDid +
+        hex(be(64n, 32)) +
+        hex(be(BigInt(did.length), 32)) +
+        hex(Buffer.concat([did, Buffer.alloc(96 - did.length)])),
+    };
+    const answer = answers[call.data ?? ""];
+    assert(answer !== undefined, `unexpected addr read ${String(call.data)}`);
+    return `0x${answer}`;
+  },
 };
 const fixture = JSON.parse(
   await readFile(
@@ -1655,7 +1687,9 @@ try {
           t.commitment === prepared.preparationId,
         "native terms wrong",
       );
-      const record = await review.approve({ ...t }, ownerKey).sign(owner, 505n);
+      const record = await review
+        .approve({ ...t }, ownerKey)
+        .sign(owner, 505n, ownerBinding, ownerDid);
       assert(
         record.state === "signed" &&
           record.attempt === 0 &&
@@ -1749,6 +1783,8 @@ try {
         .sign(
           { publicKey: workerKey, sign: (p) => signEvm(p, workerSecret) },
           500n,
+          ownerBinding,
+          ownerDid,
         ),
     );
     await refuses("Signature", () =>
@@ -1757,10 +1793,12 @@ try {
         .sign(
           { publicKey: ownerKey, sign: (p) => signEvm(p, workerSecret) },
           500n,
+          ownerBinding,
+          ownerDid,
         ),
     );
     await refuses("StaleAuthority", () =>
-      review.approve(t, ownerKey).sign(owner, 509n),
+      review.approve(t, ownerKey).sign(owner, 509n, ownerBinding, ownerDid),
     );
     const altered = prepared.canonicalBytes();
     altered[altered.length - 1] = (altered.at(-1) ?? 0) ^ 1;
@@ -1788,7 +1826,7 @@ try {
   );
   const freshRecord = await recordReview
     .approve(recordReview.terms, ownerKey)
-    .sign(owner, 500n);
+    .sign(owner, 500n, ownerBinding, ownerDid);
   const recordSigned = freshRecord.signedBytes;
   const recordIntent = recordPrepared.intent;
 
@@ -2199,6 +2237,7 @@ try {
         canonical: hex(recordPrepared.canonicalBytes()),
         binding: bindingJson(binding()),
         asset: id(0xa1),
+        did: ownerDid,
       };
       const program = `
 import json, sys
@@ -2206,7 +2245,7 @@ from dataclasses import replace
 from hashlib import sha256
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives import hashes
-from layerx_sdk.account_derivation import keccak256, normalize_wallet_signature
+from layerx_sdk.account_derivation import bind_nonce_call, bound_did_call, keccak256, layerx_did_call, normalize_wallet_signature
 from layerx_sdk.ai_market import NativeTerms, PreparedOperation, SnapshotBinding, OperationRecord, AiMarketError, _unsigned_activity, _effect_of, _signature_public_key
 from layerx_sdk.native_program_call import decode_native_program_call
 from layerx_sdk.ai_market import decode_envelope
@@ -2232,8 +2271,19 @@ class Signer:
                 return signature
         raise ValueError('signature recovery failed')
 signer = Signer()
+point = ec.derive_private_key(int(v['secret'], 16), ec.SECP256K1()).public_key().public_numbers()
+owner_address = '0x' + keccak256(point.x.to_bytes(32, 'big') + point.y.to_bytes(32, 'big'))[12:].hex()
+did_text = ('did:layerx:' + v['did']).encode()
+answers = {
+    bound_did_call(owner_address): '0x' + '00' * 64 + v['did'] + '00' * 32,
+    bind_nonce_call(owner_address): '0x' + (1).to_bytes(32, 'big').hex(),
+    layerx_did_call(owner_address): '0x' + v['did'] + (64).to_bytes(32, 'big').hex() + len(did_text).to_bytes(32, 'big').hex() + (did_text + bytes(96 - len(did_text))).hex(),
+}
+def binding_request(method, params):
+    assert method == 'eth_call' and params[0]['to'] == '0x0000000000000000000000000000000000001004'
+    return answers[params[0]['data']]
 review = prepared.review()
-record = review.approve(review.terms, public).sign(signer, None, 500)
+record = review.approve(review.terms, public).sign(signer, None, 500, binding_request, v['did'])
 assert OperationRecord.decode(record.encode(), None) == record
 try:
     review.approve(replace(review.terms, gas_limit=999999), public)

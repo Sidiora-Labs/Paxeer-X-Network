@@ -18,7 +18,12 @@ import {
   type NativeProgramCallV1,
 } from "./native-program-call.js";
 import { PlatformSdkError } from "./production.js";
-import type { BindFees, Eip1193Requester } from "./account-derivation.js";
+import {
+  readLayerXBindState,
+  requireLayerXBinding,
+  type BindFees,
+  type Eip1193Requester,
+} from "./account-derivation.js";
 import { abiSelector } from "./exchange.js";
 import type {
   ProtocolReceipt,
@@ -2521,13 +2526,25 @@ export class Approval {
     this.#plan = plan;
     this.#key = key;
   }
-  /** Signs exactly the approved canonical bytes, verifies the signature and returns the durable Signed record. */
+  /**
+   * Signs exactly the approved canonical bytes, verifies the signature and returns the durable Signed record.
+   * The approving key's EVM address must be bound to `layerxPublicKey` on the `addr` precompile read through
+   * `binding`; an unbound or foreign-bound address is refused before the signer is invoked.
+   */
   public async sign(
     signer: OperationSigner,
     authorityHeight: bigint,
+    binding: Eip1193Requester,
+    layerxPublicKey: string,
   ): Promise<OperationRecord> {
     requireCurrent(this.#plan.binding, authorityHeight);
     if (!equal(signer.publicKey, this.#key)) refuse("UnauthorizedKey");
+    const uncompressed = secp256k1.Point.fromBytes(this.#key).toBytes(false);
+    const address = `0x${hex(keccak_256(uncompressed.subarray(1)).subarray(12))}`;
+    requireLayerXBinding(
+      { layerxPublicKey },
+      await readLayerXBindState(binding, address),
+    );
     const preimage = signingPreimage(this.#plan.canonical);
     const signature = new Uint8Array(await signer.sign(preimage.slice()));
     if (!equal(recoveredKey(signature, preimage), this.#key))

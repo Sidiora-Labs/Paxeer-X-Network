@@ -17,7 +17,7 @@ import hmac
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     from .exchange import PrecompileCall, WalletRequest
@@ -576,7 +576,14 @@ def read_layerx_bind_state(request: WalletRequest, address: str) -> LayerXBindSt
     return LayerXBindState(bound, nonce)
 
 
-def require_layerx_binding(derived: DerivedAccount, state: LayerXBindState) -> None:
+class LayerXKeyHolder(Protocol):
+    """Anything naming the LayerX public key an address must be bound to."""
+
+    @property
+    def layerx_public_key(self) -> str: ...
+
+
+def require_layerx_binding(derived: LayerXKeyHolder, state: LayerXBindState) -> None:
     if state.bound_did_public_key is None:
         raise AccountDerivationError("address_unbound")
     if state.bound_did_public_key.lower() != derived.layerx_public_key.lower():

@@ -13,6 +13,8 @@ import {
   type DerivedAccount,
   type Eip1193Requester,
   type WalletRequest,
+  readLayerXBindState,
+  requireLayerXBinding,
 } from "./account-derivation.js";
 import {
   LAYERX_EXCHANGE_PRECOMPILE,
@@ -295,6 +297,13 @@ export class TradingWriter {
     return Uint8Array.from(this.parts);
   }
 
+  /**
+   * Signs an exchange precompile call offline. Precondition: the caller has
+   * established that `derived.evmAddress` is bound to `derived.layerxPublicKey`
+   * through `readLayerXBindState` and `requireLayerXBinding`; this primitive
+   * reads no chain state. `TradingWriter.send` performs that check itself
+   * before it calls this method.
+   */
   static transactionRequest(
     derived: DerivedAccount,
     chainId: number | bigint,
@@ -381,6 +390,10 @@ export class TradingWriter {
     call: PrecompileCall,
     fees: BindFees,
   ): Promise<string> {
+    requireLayerXBinding(
+      derived,
+      await readLayerXBindState(transport, derived.evmAddress),
+    );
     const request = TradingWriter.transactionRequest(
       derived,
       chainId,
