@@ -2,6 +2,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 exec python3 - "$root" "$@" <<'PY'
+import collections
 import fcntl
 import hashlib
 import json
@@ -9,284 +10,403 @@ import os
 from pathlib import Path
 import re
 import stat
-import shutil
 import subprocess
 import sys
 
-ROOT = Path(sys.argv[1])
-TASK = '103.6.3'
-SCHEMA = 'layerx.authority-task-build.v1'
-GATE = 'tools/paxeer-x/gates/103.6.3.sh'
-DRIVERS = ('tools/qualification/paxeer-x/authority-lni-readiness.py',
-           'tools/qualification/paxeer-x/router-authority-schema.py',
-           'tests/daemon/paxeer_x_runtime_fixture.py', 'tools/runtime/run-with-clock.sh')
-FIXTURE_TESTS = {
-    ('real_node', 'router_authority_readiness_schema_restart_contract'): 'serializer',
-    ('real_node', 'authority_lni_readiness_case'): 'readiness',
-    ('layerx-receipt-authority', 'lni_readiness_tests::actual_node_info_refuses_incompatible_receipt_admission'): 'readiness',
+ROOT = Path(sys.argv[1]).resolve()
+TASK = "103.6.3"
+SCHEMA = "layerx.chain-proof-task-build.v2"
+GATE = "tools/paxeer-x/gates/103.6.3.sh"
+EVIDENCE_VARIABLE = "PAXEER_X_AUTHORITY_EVIDENCE"
+SUITES = {
+    "commit_header": (
+        "custodyproof",
+        (
+            "TestRealStateCreditAndClockBounds",
+            "TestRealStateCreditRefusesMissingAuthority",
+            "TestJSONRequestRefusesAmbiguousFields",
+        ),
+    ),
+    "receipt_keys": (
+        "modules/sequencer/keeper",
+        (
+            "TestReceiptKeysRangeValidation",
+            "TestReceiptKeysGovernanceOnly",
+            "TestReceiptKeysRotationBoundary",
+        ),
+    ),
+    "leaders": (
+        "consensus/internal/consensus/types",
+        (
+            "TestLeaderPinRoundRobinFromActivation",
+            "TestLeaderPinRoundRobin",
+            "TestLeaderPinRefusesInvalidList",
+            "TestLeaderPinSafeRoundStateAgrees",
+            "TestLeaderPinIndependentOfRestartOrder",
+        ),
+    ),
+    "standby": (
+        "node/sequencer",
+        (
+            "TestStandbyNoAckNoReceipt",
+            "TestStandbyReplayMatchesPrimary",
+            "TestStandbyAckBeforeRelease",
+            "TestResolutionStandbyReplay",
+        ),
+    ),
+    "rpc": (
+        "rpc",
+        (
+            "TestResolutionSendReturnsHash",
+            "TestResolutionSequencerReceiptRoute",
+            "TestPendingSimulateAccessListOnOpenBlock",
+            "TestPendingSimulateRefusedOffSequencer",
+        ),
+    ),
 }
-MANDATORY = {
-    ('real_node', 'real_node_authority_serves_verified_facts_and_reflects_replica_loss'),
-    ('real_node', 'real_replica_readiness_relay_and_refusals_without_sequencer'),
-    ('real_node', 'evidence_read_token_reads_only_receipt_authority'),
-    ('budget_proof_exports', 'real_budget_exports_bind_each_selector_finality_and_tamper_refusals'),
-} | set(FIXTURE_TESTS)
+
+RELEASE_REQUIRED = ["merged wave qualification", "activation and failover rehearsal"]
 
 
-def require(condition, reason):
-    if not condition:
-        raise RuntimeError(reason)
+def require(value, message):
+    if not value:
+        raise RuntimeError(message)
 
 
 def digest(path):
-    with Path(path).open('rb') as source:
-        return hashlib.file_digest(source, 'sha256').hexdigest()
-
-
-def git(*arguments):
-    return subprocess.check_output(['git', *arguments], cwd=ROOT, text=True).strip()
+    with Path(path).open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def private(path, directory=False):
     info = path.lstat()
-    require((stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
-            and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
-            'private caller-owned regular evidence required: ' + str(path))
+    require(
+        (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+        and not path.is_symlink()
+        and info.st_uid == os.geteuid()
+        and not info.st_mode & 0o077,
+        "private caller-owned evidence required",
+    )
 
 
-def evidence_directory():
-    path = Path(os.environ.get('PAXEER_X_AUTHORITY_EVIDENCE',
-        '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10363'))
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+def evidence():
+    base = Path.home() / ".local/state/paxeer-x/qualification"
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private(base, True)
+    path = Path(os.environ.get(EVIDENCE_VARIABLE, str(base / TASK)))
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
     private(path, True)
     path = path.resolve(strict=True)
-    require(ROOT != path and ROOT not in path.parents, 'evidence must be outside checkout')
-    return path
+    require(
+        path != ROOT and ROOT not in path.parents,
+        "evidence must remain outside checkout",
+    )
+    return path, base / "rpc-contract.lock"
 
 
 def save(path, value):
     if path.exists() or path.is_symlink():
         private(path)
-    with path.open('w') as output:
+    with path.open("w") as output:
         json.dump(value, output, indent=2, sort_keys=True)
-        output.write('\n')
+        output.write("\n")
     path.chmod(0o600)
 
 
-def artifact(path, revision):
-    path = Path(path).resolve(strict=True)
-    require(path.is_file() and os.access(path, os.X_OK), 'actual executable required')
-    return {'path': str(path), 'sha256': digest(path), 'source_revision': revision}
+def load(path):
+    private(path)
+    return json.loads(path.read_text())
 
 
-def checked(row):
-    path = Path(row['path'])
-    require(path.is_absolute() and path.is_file() and not path.is_symlink()
-            and os.access(path, os.X_OK) and digest(path) == row['sha256'],
-            'prebuilt executable changed or missing')
-    return path
+def git(*arguments):
+    return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
 
 
 def source_snapshot():
-    inventory = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).split(b'\0')
-    paths = {os.fsdecode(path) for path in inventory if path} | {GATE} | set(DRIVERS)
-    return {path: digest(ROOT / path) for path in sorted(paths)
-            if Path(path).suffix in {'.rs', '.toml', '.lock', '.py', '.sh', '.json'}
-            and (ROOT / path).is_file()}
+    inventory = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).split(
+        b"\0"
+    )
+    paths = {os.fsdecode(path) for path in inventory if path} | {GATE}
+    suffixes = {
+        ".go",
+        ".mod",
+        ".sum",
+        ".c",
+        ".h",
+        ".s",
+        ".S",
+        ".syso",
+        ".json",
+        ".bin",
+        ".wasm",
+        ".profile",
+        ".credit",
+        ".sh",
+    }
+    return {
+        path: digest(ROOT / path)
+        for path in sorted(paths)
+        if not any(part.startswith(".env") for part in Path(path).parts)
+        and Path(path).suffix in suffixes
+        and (ROOT / path).is_file()
+    }
+
+
+def checked(row, revision):
+    path = Path(row["path"])
+    require(
+        path.is_absolute() and row["source_revision"] == revision,
+        "compiled executable revision binding required",
+    )
+    private(path)
+    require(
+        os.access(path, os.X_OK) and digest(path) == row["sha256"],
+        "compiled executable changed or missing",
+    )
+    return path
+
+
+def command(argv, log, cwd, environment):
+    if log.exists() or log.is_symlink():
+        private(log)
+    with log.open("w") as output:
+        result = subprocess.run(
+            [str(value) for value in argv],
+            cwd=cwd,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=1800,
+        )
+    private(log)
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, argv)
+    return log.read_text()
 
 
 def build(directory):
-    (directory / 'build-manifest.json').unlink(missing_ok=True)
-    initial = source_snapshot()
-    revision, tree = git('rev-parse', 'HEAD'), git('rev-parse', 'HEAD^{tree}')
-    cargo = os.environ.get('CARGO', '/root/.cargo/bin/cargo')
-    environment = dict(os.environ, CARGO_BUILD_JOBS='4',
-        CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR', '/root/lx-target/authority-contract'),
-        PATH='/root/.cargo/bin:' + os.environ.get('PATH', ''))
-    commands = [
-        [cargo, 'build', '--locked', '--manifest-path', 'platform/Cargo.toml',
-         '-p', 'layerx-runtime-clock', '--bin', 'layerx-runtime-clock', '--message-format=json'],
-        [cargo, 'test', '--locked', '--manifest-path', 'platform/Cargo.toml',
-         '-p', 'layerx-platform-authority', '-p', 'layerx-platform-gateway',
-         '--all-targets', '--no-run', '--message-format=json'],
-    ]
-    records = []
-    lock_path = Path('/root/lx-cargo/authority-contract.lock')
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        for index, command in enumerate(commands):
-            log = directory / ('build-' + str(index) + '.log')
-            with log.open('w') as output:
-                result = subprocess.run(command, cwd=ROOT, env=environment,
-                    stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=1100)
-            if result.returncode:
-                raise subprocess.CalledProcessError(result.returncode, command)
-            for line in log.read_text().splitlines():
-                if line.startswith('{'):
-                    value = json.loads(line)
-                    if value.get('reason') == 'compiler-artifact':
-                        records.append(value)
-    prefixes = set()
-    artifacts, tests = {}, {}
-    staged = directory / 'compiled-artifacts'
-    staged.mkdir(mode=0o700, exist_ok=True)
-    private(staged, True)
-
-    def captured(executable):
-        original = Path(executable).resolve(strict=True)
-        target = staged / original.name
-        original_digest = digest(original)
-        shutil.copyfile(original, target)
-        target.chmod(0o700)
-        require(digest(target) == original_digest, 'compiled executable copy changed')
-        return artifact(target, revision)
-
-    for row in records:
-        manifest = Path(row['manifest_path'])
-        if ROOT in manifest.parents:
-            prefixes.add(str(manifest.parent.relative_to(ROOT)) + '/')
-        executable = row.get('executable')
-        if not executable:
-            continue
-        target = row['target']['name']
-        is_test = row['profile']['test']
-        crate = manifest.parent
-        if crate == ROOT / 'platform/hosted/authority':
-            if is_test:
-                require(target not in tests, 'duplicate declared authority test artifact')
-                tests[target] = captured(executable)
-            elif target == 'layerx-receipt-authority':
-                artifacts['authority'] = captured(executable)
-        elif crate == ROOT / 'platform/hosted/gateway' and is_test and target == 'layerx-gateway':
-            artifacts['gateway_tests'] = captured(executable)
-        elif target == 'layerx-runtime-clock' and not is_test:
-            artifacts['runtime_clock'] = captured(executable)
-    require({'authority', 'gateway_tests', 'runtime_clock'} <= set(artifacts),
-            'actual service, gateway contract and runtime clock executables required')
-    require({'real_node', 'layerx-receipt-authority', 'budget_proof_exports',
-             'human_tls', 'maintenance_identity'} <= set(tests), 'complete authority test targets required')
-    artifacts.update(authority_tests=tests['real_node'], authority_unit=tests['layerx-receipt-authority'])
-    fixed = {GATE, *DRIVERS, 'platform/Cargo.toml', 'platform/Cargo.lock',
-             'agent/Cargo.toml', 'agent/Cargo.lock', 'programs/Cargo.toml', 'programs/Cargo.lock'}
-    selected = {path: value for path, value in initial.items()
-                if path in fixed or path.startswith(tuple(prefixes)) or path.startswith('.cargo/')}
-    require(all(digest(ROOT / path) == value for path, value in selected.items()),
-            'actual build dependency source changed')
-    save(directory / 'build-manifest.json', {
-        'schema': SCHEMA, 'task': TASK, 'source_revision': revision, 'source_tree': tree,
-        'build_exit': 0, 'commands': commands, 'artifacts': artifacts,
-        'authority_test_artifacts': tests, 'source_hashes': selected,
-        'release_required': ['native aggregate coverage', 'strict all-target Clippy', 'release matrices'],
-        'release_qualification': 'UNRUN',
-    })
-    print('ARTIFACTS ' + str(directory / 'build-manifest.json'), flush=True)
-
-
-def logged(command, path, environment, group=None):
-    with path.open('w') as output:
-        options = {} if group is None else {'group': group, 'extra_groups': []}
-        result = subprocess.run([str(part) for part in command], cwd=ROOT, env=environment,
-            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=840, **options)
-    text = path.read_text()
-    print(text, end='', flush=True)
-    if result.returncode:
-        raise subprocess.CalledProcessError(result.returncode, command)
-    return text
+    record = directory / "build-manifest.json"
+    if record.exists() or record.is_symlink():
+        private(record)
+        record.unlink()
+    before = source_snapshot()
+    revision, tree = git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    go = os.environ.get("GO", "go")
+    environment = dict(os.environ)
+    artifacts, commands = {}, []
+    for name, (package, _) in SUITES.items():
+        executable = directory / (name + ".test")
+        if executable.exists() or executable.is_symlink():
+            private(executable)
+            executable.unlink()
+        argv = [
+            go,
+            "test",
+            "-mod=readonly",
+            "-p",
+            "4",
+            "-c",
+            "-o",
+            str(executable),
+            "./" + package,
+        ]
+        command(argv, directory / (name + "-build.log"), ROOT, environment)
+        executable.chmod(0o700)
+        artifacts[name] = {
+            "path": str(executable),
+            "sha256": digest(executable),
+            "source_revision": revision,
+        }
+        checked(artifacts[name], revision)
+        commands.append(argv)
+    require(source_snapshot() == before, "actual compiler dependency source changed")
+    require(
+        revision == git("rev-parse", "HEAD")
+        and tree == git("rev-parse", "HEAD^{tree}"),
+        "revision changed during compilation",
+    )
+    save(
+        record,
+        {
+            "schema": SCHEMA,
+            "task": TASK,
+            "source_revision": revision,
+            "source_tree": tree,
+            "source_hashes": before,
+            "artifacts": artifacts,
+            "commands": commands,
+            "build_exit_code": 0,
+            "release_required": RELEASE_REQUIRED,
+            "release_qualification": "UNRUN",
+        },
+    )
+    print("ARTIFACTS " + str(record), flush=True)
 
 
 def qualify(directory):
-    require(os.geteuid() == 0, 'actual isolated native qualification requires root')
-    manifest_path = directory / 'build-manifest.json'
-    private(manifest_path)
-    built = json.loads(manifest_path.read_text())
-    require(built.get('schema') == SCHEMA and built.get('task') == TASK and built.get('build_exit') == 0,
-            'successful actual scoped build manifest required')
-    require(built['source_revision'] == git('rev-parse', 'HEAD')
-            and built['source_tree'] == git('rev-parse', 'HEAD^{tree}'), 'build revision changed')
-    require(all(digest(ROOT / path) == value for path, value in built['source_hashes'].items()),
-            'actual build dependency source changed')
-    for row in [*built['artifacts'].values(), *built['authority_test_artifacts'].values()]:
-        checked(row)
-    for name in ('PAXEER_X_FOUNDATION_ARTIFACT_MANIFEST', 'PAXEER_X_RUNTIME_CLIENT_MANIFEST',
-                 'PAXEER_X_BUDGET_PROOF_CORPUS'):
-        require(os.environ.get(name), 'genuine required input missing: ' + name)
-        private(Path(os.environ[name]))
-    foundation = Path(os.environ['PAXEER_X_FOUNDATION_ARTIFACT_MANIFEST'])
-    source_bound_native = json.loads(foundation.read_text())
-    require(source_bound_native.get('version') == 1 and source_bound_native['build']['exit_code'] == 0,
-            'successful genuine native artifact manifest required')
-    native = Path(source_bound_native['artifacts']['layerxd']['path']).parent
-    require(Path(source_bound_native['artifacts']['layerx-genesis-build']['path']).parent == native,
-            'real native executables must share their bundle')
-    environment = dict(os.environ, PAXEER_X_AUTHORITY_BUILD_MANIFEST=str(manifest_path),
-        PAXEER_X_AUTHORITY_EVIDENCE=str(directory),
-        PAXEER_X_RUNTIME_ARTIFACTS=str(foundation), LAYERX_TEST_NATIVE_BIN_DIR=str(native),
-        PAXEER_X_AUTHORITY_BIN=built['artifacts']['authority']['path'],
-        PAXEER_X_GATEWAY_TEST_BIN=built['artifacts']['gateway_tests']['path'],
-        LAYERX_RUNTIME_CLOCK_BIN=built['artifacts']['runtime_clock']['path'],
-        PATH='/root/.cargo/bin:' + os.environ.get('PATH', ''))
-    clock = checked(built['artifacts']['runtime_clock'])
-    inventory = {}
-    for target, row in sorted(built['authority_test_artifacts'].items()):
-        binary = checked(row)
-        result = subprocess.run([str(binary), '--list', '--format', 'terse'], cwd=ROOT,
-            env=environment, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            check=True, timeout=30)
-        names = re.findall(r'^(.+): test$', result.stdout, re.M)
-        require(len(names) == len(set(names)), 'duplicate test names')
-        inventory[target] = names
-    declared = {(target, name) for target, names in inventory.items() for name in names}
-    require(MANDATORY <= declared, 'mandatory non-skipped authority case missing')
-    save(directory / 'test-inventory.json', {'tests': inventory, 'fixture_owned': sorted(FIXTURE_TESTS)})
-    executed = set()
-    for target, name in sorted(declared - set(FIXTURE_TESTS)):
-        binary = checked(built['authority_test_artifacts'][target])
-        label = hashlib.sha256((target + ':' + name).encode()).hexdigest()[:16]
-        text = logged([clock, '--runtime-dir', '/tmp', '--', binary, name, '--exact',
-                       '--nocapture', '--test-threads=1'], directory / ('test-' + label + '.log'),
-                      environment)
-        require('test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured;' in text,
-                'required test did not execute exactly once: ' + target + ':' + name)
-        executed.add((target, name))
-    fixture_cases = 0
-    for mode, script in (('readiness', DRIVERS[0]), ('serializer', DRIVERS[1])):
-        fixture_directory = directory / mode
-        fixture_directory.mkdir(mode=0o700, exist_ok=True)
-        private(fixture_directory, True)
-        fixture_environment = dict(environment, PAXEER_X_AUTHORITY_EVIDENCE=str(fixture_directory))
-        text = logged([clock, '--runtime-dir', '/tmp', '--', sys.executable, ROOT / script],
-                      directory / (mode + '.log'), fixture_environment, group=4020)
-        counts = re.findall(r'^PAXEER_X_GATE tests=(\d+) skipped=0$', text, re.M)
-        require(len(counts) == 1 and int(counts[0]) > 0, 'complete genuine fixture case accounting required')
-        fixture_cases += int(counts[0])
-        executed.update(test for test, owner in FIXTURE_TESTS.items() if owner == mode)
-    require(executed == declared, 'declared authority test partition incomplete')
-    require(all(digest(ROOT / path) == value for path, value in built['source_hashes'].items()),
-            'source changed during qualification')
-    for row in [*built['artifacts'].values(), *built['authority_test_artifacts'].values()]:
-        checked(row)
-    save(directory / 'result.json', {'task': TASK, 'revision': built['source_revision'],
-        'command': 'timeout 30m tools/paxeer-x/verify-task.sh 103.6.3', 'exit': 0,
-        'declared_tests': sorted(declared), 'executed_tests': sorted(executed),
-        'fixture_cases': fixture_cases, 'release_qualification': 'UNRUN',
-        'release_required': built['release_required']})
-    print(f'PAXEER_X_GATE tests={len(declared - set(FIXTURE_TESTS)) + fixture_cases} skipped=0', flush=True)
+    built = load(directory / "build-manifest.json")
+    require(
+        built.get("schema") == SCHEMA
+        and built.get("task") == TASK
+        and built.get("build_exit_code") == 0,
+        "successful scoped chain build required",
+    )
+    revision = git("rev-parse", "HEAD")
+    require(
+        built["source_revision"] == revision
+        and built["source_tree"] == git("rev-parse", "HEAD^{tree}"),
+        "build revision changed",
+    )
+    require(
+        source_snapshot() == built["source_hashes"],
+        "compiled dependency source changed",
+    )
+    require(
+        set(built["artifacts"]) == set(SUITES), "complete compiled test suites required"
+    )
+    environment = dict(os.environ)
+    go = os.environ.get("GO", "go")
+    executed = {}
+    for name, (package, cases) in SUITES.items():
+        binary = checked(built["artifacts"][name], revision)
+        pattern = "^(" + "|".join(re.escape(case) for case in cases) + ")$"
+        inventory = command(
+            [binary, "-test.list", pattern],
+            directory / (name + "-inventory.log"),
+            ROOT / package,
+            environment,
+        )
+        declared = [
+            line for line in inventory.splitlines() if re.fullmatch(pattern, line)
+        ]
+        require(
+            collections.Counter(declared) == collections.Counter(cases),
+            "each mandatory chain test must be declared exactly once: " + name,
+        )
+        save(
+            directory / (name + "-inventory.json"),
+            {
+                "task_cases": sorted(cases),
+                "release_required": RELEASE_REQUIRED,
+                "release_qualification": "UNRUN",
+            },
+        )
+        argv = [
+            go,
+            "tool",
+            "test2json",
+            "-p",
+            name,
+            binary,
+            "-test.v=test2json",
+            "-test.count=1",
+            "-test.run",
+            pattern,
+            "-test.timeout=30m",
+        ]
+        log = directory / (name + "-contract.log")
+        text = command(argv, log, ROOT / package, environment)
+        events = [json.loads(line) for line in text.splitlines() if line]
+        require(
+            all(
+                isinstance(event, dict) and event.get("Package") == name
+                for event in events
+            ),
+            "chain test event identity required",
+        )
+        passed = [
+            event["Test"]
+            for event in events
+            if event.get("Action") == "pass" and event.get("Test") in cases
+        ]
+        started = [
+            event["Test"]
+            for event in events
+            if event.get("Action") == "run" and "/" not in event.get("Test", "")
+        ]
+        require(
+            collections.Counter(started) == collections.Counter(cases)
+            and collections.Counter(passed) == collections.Counter(cases),
+            "each mandatory chain test must run and pass exactly once: " + name,
+        )
+        require(
+            not any(event.get("Action") in {"fail", "skip"} for event in events)
+            and len(
+                [
+                    event
+                    for event in events
+                    if event.get("Action") == "pass" and "Test" not in event
+                ]
+            )
+            == 1,
+            "complete non-skipped chain test result required",
+        )
+        for event in events:
+            if event.get("Action") == "output":
+                print(event.get("Output", ""), end="", flush=True)
+        executed[name] = sorted(cases)
+    require(
+        source_snapshot() == built["source_hashes"],
+        "source changed during qualification",
+    )
+    require(
+        revision == git("rev-parse", "HEAD")
+        and built["source_tree"] == git("rev-parse", "HEAD^{tree}"),
+        "revision changed during qualification",
+    )
+    for row in built["artifacts"].values():
+        checked(row, revision)
+    save(
+        directory / "result.json",
+        {
+            "task": TASK,
+            "revision": revision,
+            "command": "tools/paxeer-x/verify-task.sh " + TASK,
+            "exit_code": 0,
+            "log_path": str(directory),
+            "executed_tests": executed,
+            "skipped": 0,
+            "release_required": RELEASE_REQUIRED,
+            "release_qualification": "UNRUN",
+        },
+    )
+    print(
+        f"PAXEER_X_GATE tests={sum(map(len, executed.values()))} skipped=0", flush=True
+    )
 
 
 def main():
     os.umask(0o077)
-    require(sys.argv[2:] in ([], ['--build']), '103.6.3 accepts only --build or no arguments')
-    directory = evidence_directory()
-    if sys.argv[2:]:
-        build(directory)
-    else:
-        qualify(directory)
+    args = sys.argv[2:]
+    require(args in ([], ["--build"]), TASK + " accepts only --build or no arguments")
+    directory, lock_path = evidence()
+    descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as lock:
+        private(lock_path)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        result = directory / "result.json"
+        if result.exists() or result.is_symlink():
+            private(result)
+            result.unlink()
+        if args:
+            build(directory)
+        else:
+            qualify(directory)
 
 
 try:
     main()
-except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
-    print('103.6.3: refused: ' + str(error), file=sys.stderr)
-    sys.exit(error.returncode if isinstance(error, subprocess.CalledProcessError) else 1)
+except subprocess.CalledProcessError as error:
+    print(TASK + " command exit=" + str(error.returncode), file=sys.stderr)
+    sys.exit(error.returncode if error.returncode > 0 else 1)
+except subprocess.TimeoutExpired:
+    print(TASK + " bounded chain command timeout", file=sys.stderr)
+    sys.exit(124)
+except (RuntimeError, OSError, KeyError, ValueError, TypeError) as error:
+    print(
+        TASK + " prerequisite or artifact binding refused: " + str(error),
+        file=sys.stderr,
+    )
+    sys.exit(78)
 PY
