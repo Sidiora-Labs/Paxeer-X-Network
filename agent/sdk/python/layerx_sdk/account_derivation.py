@@ -652,12 +652,11 @@ def plan_layerx_bind(
 
 def bind_transaction_request(derived: DerivedAccount, call: BindCall) -> dict[str, str]:
     """The transaction fields a signer or wallet sends for a bind call."""
-    return {
-        "from": derived.evm_address,
-        "to": call.to,
-        "data": call.data,
-        "value": "0x0",
-    }
+    from .exchange import PrecompileCall, precompile_transaction_request
+
+    return precompile_transaction_request(
+        derived.evm_address, PrecompileCall(call.to, call.data)
+    )
 
 
 @dataclass(frozen=True)
@@ -717,6 +716,8 @@ def sign_bind_transaction(
 ) -> str:
     if derived.evm_private_key is None:
         raise AccountDerivationError("evm_key_unavailable")
+    if not isinstance(fees, BindFees):
+        raise AccountDerivationError("invalid_bind_fees")
     limits = (
         (fees.evm_nonce, 64),
         (fees.max_priority_fee_per_gas, 128),
@@ -777,6 +778,40 @@ def sign_bind_transaction(
     raise AccountDerivationError("invalid_evm_key")
 
 
+def _bind_quantity(answer: object, bits: int) -> int:
+    if (
+        not isinstance(answer, str)
+        or len(answer) > 2 + (bits + 3) // 4
+        or re.fullmatch(r"0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)", answer) is None
+    ):
+        raise AccountDerivationError("malformed_precompile_answer")
+    value = int(answer[2:], 16)
+    if value >= 1 << bits:
+        raise AccountDerivationError("malformed_precompile_answer")
+    return value
+
+
+def _bind_rpc(request: WalletRequest, method: str, params: list[object]) -> object:
+    from urllib.error import URLError
+
+    from .production import PlatformSdkError, SdkErrorCode
+    from .x402_rpc import PaymentRpcError, _submission_error
+
+    try:
+        return request(method, params)
+    except PaymentRpcError as error:
+        _submission_error(error)
+        if error.code == 3:
+            raise PlatformSdkError(SdkErrorCode.DECODE_FAILURE, "never") from error
+        raise
+    except (URLError, TimeoutError, OSError) as error:
+        if method == "eth_sendRawTransaction":
+            raise PlatformSdkError(
+                SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome"
+            ) from error
+        raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from error
+
+
 def send_bind_transaction(
     request: WalletRequest,
     derived: DerivedAccount,
@@ -784,14 +819,33 @@ def send_bind_transaction(
     call: BindCall,
     fees: BindFees | None = None,
 ) -> str:
+    if _check_chain_id(chain_id) != 125:
+        raise AccountDerivationError("invalid_chain_id")
+    if derived.evm_private_key is None:
+        raise AccountDerivationError("evm_key_unavailable")
     _validate_bind_call(derived, chain_id, call)
+    if _bind_quantity(_bind_rpc(request, "eth_chainId", []), 53) != chain_id:
+        raise AccountDerivationError("invalid_chain_id")
     if fees is None:
-        return _transaction_hash(
-            request("eth_sendTransaction", [bind_transaction_request(derived, call)])
+        evm_nonce = _bind_quantity(
+            _bind_rpc(
+                request, "eth_getTransactionCount", [derived.evm_address, "pending"]
+            ),
+            64,
         )
+        gas_price = _bind_quantity(_bind_rpc(request, "eth_gasPrice", []), 128)
+        gas_limit = _bind_quantity(
+            _bind_rpc(
+                request,
+                "eth_estimateGas",
+                [bind_transaction_request(derived, call), "pending"],
+            ),
+            64,
+        )
+        fees = BindFees(evm_nonce, gas_price, gas_price * 2, gas_limit)
     raw = sign_bind_transaction(derived, chain_id, call, fees)
     expected_hash = "0x" + keccak256(bytes.fromhex(raw[2:])).hex()
-    sent_hash = _transaction_hash(request("eth_sendRawTransaction", [raw]))
+    sent_hash = _transaction_hash(_bind_rpc(request, "eth_sendRawTransaction", [raw]))
     if sent_hash.lower() != expected_hash:
         raise AccountDerivationError("malformed_precompile_answer")
     return sent_hash
