@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -574,37 +575,111 @@ func TestRefundAfterTheTimeout(t *testing.T) {
 }
 
 func TestViews(t *testing.T) {
-	h := newHarness(t)
-	require.Zero(t, weiOf(fee).Cmp(h.view(xweb.FeeMethod)[0].(*big.Int)))
-	require.Equal(t, uint32(2), h.view(xweb.ThresholdMethod)[0].(uint32))
+	t.Run("acceptance_5_4_1", func(t *testing.T) {
+		h := newHarness(t)
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: request 99: request not found",
+			h.viewReverts(xweb.GetRequestMethod, uint64(99)))
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: no result for request 99: request not found",
+			h.viewReverts(xweb.GetResultMethod, uint64(99)))
+		for id := uint64(1); id <= 7; id++ {
+			require.Equal(t, id, h.request(recorder, callbackGas))
+		}
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: no result for request 7: request not found",
+			h.viewReverts(xweb.GetResultMethod, uint64(7)))
 
-	out := h.view(xweb.GetAttestorsMethod)
-	var attestors []xweb.AttestorView
-	attestors = *abi.ConvertType(out[0], &attestors).(*[]xweb.AttestorView)
-	require.Len(t, attestors, 3)
-	for i, attestor := range h.attestors {
-		require.Equal(t, common.Address(attestor.Signer), attestors[i].Signer)
-		require.Equal(t, attestor.Payout.String(), attestors[i].Payout)
-		require.Empty(t, attestors[i].PublicKey)
-	}
-	require.Equal(t, uint32(2), out[1].(uint32))
+		resp := bytes.Repeat([]byte{0x5a}, 1024)
+		contentDigest := [32]byte(types.Keccak(resp))
+		length := uint32(1024)
+		signatures := h.signatures(7, resp, contentDigest, length)
+		out, left, reason := h.call(stranger, xweb.FulfilMethod, nil, supplied,
+			uint64(7), resp, contentDigest, length, signatures)
+		require.Empty(t, reason)
+		require.Equal(t, uint8(types.CallbackDelivered), out[0].(uint8))
+		used := out[1].(uint64)
+		require.Positive(t, used)
+		require.Equal(t, supplied-cost(h.input(xweb.FulfilMethod, uint64(7), resp, contentDigest, length, signatures),
+			xweb.WriteBaseGas, 2)-used-xweb.CallbackRecordGas, left)
 
-	params := *abi.ConvertType(h.view(xweb.GetParamsMethod)[0], new(xweb.ParamsView)).(*xweb.ParamsView)
-	require.Zero(t, weiOf(fee).Cmp(params.Fee))
-	require.Equal(t, payloadCap, params.MaxPayloadBytes)
-	require.Equal(t, callbackCap, params.MaxCallbackGas)
-	require.Equal(t, timeout, params.TimeoutBlocks)
-	require.False(t, params.Paused)
+		request := xweb.RequestView{Id: 7, Requester: recorder, Kind: types.KindFetch,
+			PayloadHash: [32]byte(types.Keccak(payload)), CallbackGas: callbackGas, Fee: weiOf(fee),
+			Height: uint64(startHeight), TimeoutHeight: uint64(startHeight) + timeout,
+			Status: uint8(types.StatusFulfilled), Level: types.LevelMajority, Attestor: common.Address{}}
+		result := xweb.ResultView{RequestId: 7, Response: resp, ContentDigest: contentDigest, FullLength: length,
+			Signers: []common.Address{common.Address(h.attestors[0].Signer), common.Address(h.attestors[1].Signer)},
+			Height:  uint64(startHeight), Callback: uint8(types.CallbackDelivered), CallbackGasUsed: used,
+			Level: types.LevelMajority}
+		require.Equal(t, request, h.requestView(7))
+		require.Equal(t, result, h.result(7))
+		storedRequest, found := h.keeper.GetRequest(h.ctx(), 7)
+		require.True(t, found)
+		require.Equal(t, types.StatusFulfilled, storedRequest.Status)
+		require.Equal(t, types.Hash32(request.PayloadHash), storedRequest.PayloadHash)
+		storedResult, found := h.keeper.GetResult(h.ctx(), 7)
+		require.True(t, found)
+		require.Equal(t, resp, storedResult.Response)
+		require.Equal(t, types.Hash32(contentDigest), storedResult.ContentDigest)
+		require.Equal(t, []types.Address20{h.attestors[0].Signer, h.attestors[1].Signer}, storedResult.Signers)
 
-	require.Contains(t, h.viewReverts(xweb.GetRequestMethod, uint64(7)), "not found")
-	id := h.request(recorder, callbackGas)
-	require.Contains(t, h.viewReverts(xweb.GetResultMethod, id), "no result")
+		require.NoError(t, h.keeper.Pause(h.ctx(), types.MsgPause{Authority: authority}))
+		require.Equal(t, request, h.requestView(7))
+		require.Equal(t, result, h.result(7))
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: request 99: request not found",
+			h.viewReverts(xweb.GetRequestMethod, uint64(99)))
+		require.Equal(t, "LXP_XWEB_UNKNOWN_REQUEST: no result for request 99: request not found",
+			h.viewReverts(xweb.GetResultMethod, uint64(99)))
+	})
+	t.Run("acceptance_5_4_2", func(t *testing.T) {
+		h := newHarness(t)
+		for _, attestor := range h.attestors {
+			require.NoError(t, h.keeper.RemoveAttestor(h.ctx(), types.MsgRemoveAttestor{
+				Authority: authority, Signer: attestor.Signer}))
+		}
+		h.attestors = xwebtestutil.Attestors(4)
+		want := make([]xweb.AttestorView, len(h.attestors))
+		for i, attestor := range h.attestors {
+			registration := attestor.Registration()
+			registration.PublicKey = []byte{}
+			if i%2 == 0 {
+				registration.PublicKey = crypto.CompressPubkey(&attestor.Key.PublicKey)
+			}
+			require.NoError(t, h.keeper.RegisterAttestor(h.ctx(), types.MsgRegisterAttestor{
+				Authority: authority, Attestor: registration}))
+			want[i] = xweb.AttestorView{Signer: common.Address(attestor.Signer), Payout: registration.Payout,
+				PublicKey: registration.PublicKey}
+		}
+		require.NoError(t, h.keeper.SetThreshold(h.ctx(), types.MsgSetThreshold{Authority: authority, Threshold: 3}))
+		require.NoError(t, h.keeper.UpdateParams(h.ctx(), types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(75),
+			MaxPayloadBytes: 8192, MaxCallbackGas: 500000, TimeoutBlocks: 3600}))
+		require.Equal(t, uint32(3), h.keeper.GetAttestorSet(h.ctx()).Threshold)
+		require.Equal(t, uint32(3), h.keeper.Threshold(h.ctx()))
+		requireAmount(t, sdk.NewInt(75), h.keeper.Fee(h.ctx()))
 
-	require.NoError(t, h.keeper.Pause(h.ctx(), types.MsgPause{Authority: authority}))
-	params = *abi.ConvertType(h.view(xweb.GetParamsMethod)[0], new(xweb.ParamsView)).(*xweb.ParamsView)
-	require.True(t, params.Paused)
-	_, _, reason := h.call(recorder, xweb.RequestMethod, weiOf(fee), supplied, types.KindFetch, payload, callbackGas)
-	require.Contains(t, reason, "paused")
+		out := h.view(xweb.GetAttestorsMethod)
+		var attestors []xweb.AttestorView
+		attestors = *abi.ConvertType(out[0], &attestors).(*[]xweb.AttestorView)
+		require.Equal(t, want, attestors)
+		require.Equal(t, uint32(3), out[1].(uint32))
+		require.Equal(t, uint32(3), h.view(xweb.ThresholdMethod)[0].(uint32))
+		wantFee := big.NewInt(75_000_000_000_000)
+		require.Equal(t, wantFee, h.view(xweb.FeeMethod)[0].(*big.Int))
+		wantParams := xweb.ParamsView{Fee: wantFee, MaxPayloadBytes: 8192, MaxCallbackGas: 500000,
+			TimeoutBlocks: 3600, Paused: false}
+		params := *abi.ConvertType(h.view(xweb.GetParamsMethod)[0], new(xweb.ParamsView)).(*xweb.ParamsView)
+		require.Equal(t, wantParams, params)
+
+		require.NoError(t, h.keeper.Pause(h.ctx(), types.MsgPause{Authority: authority}))
+		wantParams.Paused = true
+		params = *abi.ConvertType(h.view(xweb.GetParamsMethod)[0], new(xweb.ParamsView)).(*xweb.ParamsView)
+		require.Equal(t, wantParams, params)
+		out = h.view(xweb.GetAttestorsMethod)
+		attestors = *abi.ConvertType(out[0], &attestors).(*[]xweb.AttestorView)
+		require.Equal(t, want, attestors)
+		require.Equal(t, uint32(3), out[1].(uint32))
+		require.Equal(t, uint32(3), h.view(xweb.ThresholdMethod)[0].(uint32))
+		require.Equal(t, wantFee, h.view(xweb.FeeMethod)[0].(*big.Int))
+		_, _, reason := h.call(recorder, xweb.RequestMethod, wantFee, supplied, types.KindFetch, payload, callbackGas)
+		require.Equal(t, "LXP_XWEB_PAUSED: xweb paused", reason)
+	})
 }
 
 func TestRefusesDelegateCallAndAnUnwiredKeeper(t *testing.T) {
@@ -659,25 +734,128 @@ func TestABIMatchesTheSolidityInterface(t *testing.T) {
 	suite, err := os.ReadFile("../../contracts/test/XWebConsumer.t.sol")
 	require.NoError(t, err)
 	parsed := h.precompile.GetABI()
-	require.Len(t, parsed.Methods, 9)
+	require.Len(t, parsed.Methods, 12)
 	require.Len(t, parsed.Events, 3)
-	for _, method := range parsed.Methods {
-		require.True(t, strings.Contains(string(suite), `"`+method.Sig+`"`), method.Sig)
-	}
-	for _, event := range parsed.Events {
-		require.True(t, strings.Contains(string(suite), `"`+event.Sig+`"`), event.Sig)
-	}
-	require.True(t, strings.Contains(string(suite), `"`+xweb.CallbackSignature+`"`))
-	require.Equal(t, crypto.Keccak256([]byte(xweb.CallbackSignature))[:4],
-		abi.NewMethod(xweb.CallbackMethod, xweb.CallbackMethod, abi.Function, "nonpayable", false, false,
-			abi.Arguments{{Type: mustType(t, "uint64")}, {Type: mustType(t, "bytes32")}, {Type: mustType(t, "uint32")},
-				{Type: mustType(t, "bytes")}}, nil).ID)
-
 	local, err := os.ReadFile("XWeb.sol")
 	require.NoError(t, err)
-	imported, err := os.ReadFile("../../contracts/src/precompiles/IXWeb.sol")
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(local, imported))
+	t.Run("acceptance_5_4_3", func(t *testing.T) {
+		source := regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*`).ReplaceAllString(string(local), "")
+		source, _, found := strings.Cut(source, "interface IXWebConsumer")
+		require.True(t, found)
+		structs := make(map[string][]abi.ArgumentMarshaling)
+		for _, declaration := range regexp.MustCompile(`(?s)\bstruct\s+(\w+)\s*\{([^}]*)\}`).FindAllStringSubmatch(source, -1) {
+			for _, field := range strings.Split(declaration[2], ";") {
+				if strings.TrimSpace(field) == "" {
+					continue
+				}
+				parts := strings.Fields(field)
+				require.Len(t, parts, 2)
+				structs[declaration[1]] = append(structs[declaration[1]], abi.ArgumentMarshaling{
+					Name: parts[1], Type: parts[0], InternalType: parts[0]})
+			}
+		}
+		require.Len(t, structs, 4)
+		declarations := regexp.MustCompile(`(?s)\bfunction\s+(\w+)\s*\(([^)]*)\)\s+external(?:\s+(view|pure|payable))?(?:\s+returns\s*\(([^)]*)\))?\s*;`).FindAllStringSubmatch(source, -1)
+		require.Len(t, declarations, 12)
+		require.Equal(t, strings.Count(source, "function "), len(declarations))
+		seen := make(map[string]bool)
+		for _, declaration := range declarations {
+			name := declaration[1]
+			require.False(t, seen[name], name)
+			seen[name] = true
+			t.Run(name, func(t *testing.T) {
+				mutability := declaration[3]
+				if mutability == "" {
+					mutability = "nonpayable"
+				}
+				inputs := solidityArguments(t, declaration[2], structs)
+				outputs := solidityArguments(t, declaration[4], structs)
+				want := abi.NewMethod(name, name, abi.Function, mutability, false, false, inputs, outputs)
+				got, exists := parsed.Methods[name]
+				require.True(t, exists, name)
+				require.Equal(t, want.Sig, got.Sig)
+				require.Equal(t, want.ID, got.ID)
+				require.Equal(t, want.StateMutability, got.StateMutability)
+				require.Equal(t, want.Inputs, got.Inputs)
+				require.Equal(t, want.Outputs, got.Outputs)
+				resolved, err := parsed.MethodById(want.ID)
+				require.NoError(t, err)
+				require.Equal(t, name, resolved.Name)
+			})
+		}
+		require.Len(t, seen, len(parsed.Methods))
+		for name, selector := range map[string]string{
+			xweb.GetRequestMethod: "cbbf67ec", xweb.GetResultMethod: "edff42d6",
+			xweb.GetAttestorsMethod: "1a15922d", xweb.ThresholdMethod: "42cde4e8",
+			xweb.FeeMethod: "ddca3f43", xweb.GetParamsMethod: "5e615a6b",
+			"fulfilProgram": "2d4bf7ad", "getProgramResult": "2b2e13fc", "getKernelNetworkId": "fc0d26f4",
+		} {
+			t.Run(name+"_selector", func(t *testing.T) {
+				require.Equal(t, common.FromHex(selector), parsed.Methods[name].ID)
+			})
+		}
+		params := parsed.Methods[xweb.GetParamsMethod].Outputs
+		require.Len(t, params, 1)
+		require.Equal(t, "(uint256,uint32,uint64,uint64,bool)", params[0].Type.String())
+		require.Equal(t, []string{"fee", "maxPayloadBytes", "maxCallbackGas", "timeoutBlocks", "paused"},
+			params[0].Type.TupleRawNames)
+	})
+	t.Run("consumer_selectors", func(t *testing.T) {
+		for _, method := range parsed.Methods {
+			t.Run(method.Name, func(t *testing.T) {
+				require.True(t, strings.Contains(string(suite), `"`+method.Sig+`"`), method.Sig)
+			})
+		}
+		for _, event := range parsed.Events {
+			require.True(t, strings.Contains(string(suite), `"`+event.Sig+`"`), event.Sig)
+		}
+		require.True(t, strings.Contains(string(suite), `"`+xweb.CallbackSignature+`"`))
+		require.Equal(t, crypto.Keccak256([]byte(xweb.CallbackSignature))[:4],
+			abi.NewMethod(xweb.CallbackMethod, xweb.CallbackMethod, abi.Function, "nonpayable", false, false,
+				abi.Arguments{{Type: mustType(t, "uint64")}, {Type: mustType(t, "bytes32")}, {Type: mustType(t, "uint32")},
+					{Type: mustType(t, "bytes")}}, nil).ID)
+	})
+	t.Run("consumer_interface", func(t *testing.T) {
+		imported, err := os.ReadFile("../../contracts/src/precompiles/IXWeb.sol")
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(local, imported))
+	})
+}
+
+func solidityArguments(t *testing.T, declaration string, structs map[string][]abi.ArgumentMarshaling) abi.Arguments {
+	t.Helper()
+	args := make(abi.Arguments, 0)
+	if strings.TrimSpace(declaration) == "" {
+		return args
+	}
+	for _, parameter := range strings.Split(declaration, ",") {
+		parts := strings.Fields(parameter)
+		require.NotEmpty(t, parts)
+		typeName := parts[0]
+		name := ""
+		for _, part := range parts[1:] {
+			switch part {
+			case "calldata", "memory", "storage":
+			default:
+				require.Empty(t, name, parameter)
+				name = part
+			}
+		}
+		internalType := typeName
+		components, tuple := structs[strings.TrimSuffix(typeName, "[]")]
+		if tuple {
+			internalType = "struct IXWeb." + typeName
+			if strings.HasSuffix(typeName, "[]") {
+				typeName = "tuple[]"
+			} else {
+				typeName = "tuple"
+			}
+		}
+		typ, err := abi.NewType(typeName, internalType, components)
+		require.NoError(t, err)
+		args = append(args, abi.Argument{Name: name, Type: typ})
+	}
+	return args
 }
 
 // TestApiRequestAtTheSingleLevel registers an attestor with its public key,
