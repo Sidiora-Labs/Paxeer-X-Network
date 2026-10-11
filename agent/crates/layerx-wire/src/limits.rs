@@ -6,6 +6,13 @@ use crate::WireError;
 
 /// Maximum canonical activity or receipt allocation.
 pub const MAX_MESSAGE_BYTES: usize = 1_048_576;
+/// Smallest canonical receipt effect: module id, ordinal and event type, kind,
+/// monetary flag, a bounded 32-byte transfer-set root and an empty bounded body.
+const MIN_RECEIPT_EFFECT_BYTES: usize = 2 + 2 + 2 + 1 + 1 + (4 + 32) + 4;
+/// Effect-count bound of the sequencer receipt layout (module version 1): every
+/// effect count that fits in one canonical message, so the count never refuses
+/// a receipt the message bound admits.
+pub const MAX_SEQUENCER_EFFECTS: usize = MAX_MESSAGE_BYTES / MIN_RECEIPT_EFFECT_BYTES;
 /// Legacy protocol version retained for explicit decode compatibility.
 pub const LEGACY_PROTOCOL_VERSION: u16 = 1;
 /// Default protocol version when a caller does not explicitly opt in.

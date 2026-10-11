@@ -9,6 +9,7 @@ license.workspace = true
 layerx-types = { path = "../layerx-types" }
 
 [dev-dependencies]
+layerx-crypto = { path = "../layerx-crypto", default-features = false }
 sha2 = "=0.10.9"
 
 [lints]

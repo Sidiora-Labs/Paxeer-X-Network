@@ -4,7 +4,10 @@ use layerx_types::result::KnownResult;
 
 use crate::decode::Decoder;
 use crate::encode::Encoder;
-use crate::limits::{protocol_version_uses_occupancy, MAX_MESSAGE_BYTES};
+use crate::limits::{
+    enforce, protocol_version_uses_occupancy, MAX_MESSAGE_BYTES, MAX_SEQUENCER_EFFECTS,
+    PROTOCOL_VERSION,
+};
 use crate::WireError;
 
 const RECEIPT_TAG: u16 = 0x5201;
@@ -14,6 +17,8 @@ const BATCH_FIELDS: u8 = 15;
 const PROOF_TAG: u16 = 0x4d50;
 const MAX_EFFECTS: usize = 512;
 const MAX_EFFECT_BODY: usize = 256;
+const KERNEL_MODULE_COUNT: u16 = 11;
+const SEQUENCER_LAYOUT_VERSION: u32 = 1;
 const MAX_PROOF_DEPTH: usize = 32;
 const BATCH_ENCODED_BYTES: usize = 354;
 const REPLAY_RECEIPT_BYTES: usize = 106;
@@ -476,6 +481,27 @@ fn bounded_array<const N: usize>(decoder: &mut Decoder<'_>) -> Result<[u8; N], W
         .map_err(|_| WireError::known(KnownResult::NonCanonical, offset))
 }
 
+/// Effect-count bound of one receipt layout: the sequencer layout (protocol
+/// version 2, no supply, a module id after the kernel modules and module
+/// version 1) carries every log of its transaction; every other layout keeps
+/// `MAX_EFFECTS`.
+const fn effect_bound(
+    supply_present: bool,
+    protocol_version: u16,
+    module_id: u16,
+    module_version: u32,
+) -> usize {
+    if !supply_present
+        && protocol_version == PROTOCOL_VERSION
+        && module_id > KERNEL_MODULE_COUNT
+        && module_version == SEQUENCER_LAYOUT_VERSION
+    {
+        MAX_SEQUENCER_EFFECTS
+    } else {
+        MAX_EFFECTS
+    }
+}
+
 fn decode_effect(decoder: &mut Decoder<'_>) -> Result<Effect, WireError> {
     let module_id = decoder.u16()?;
     let ordinal = decoder.u16()?;
@@ -511,6 +537,16 @@ fn decode_effect(decoder: &mut Decoder<'_>) -> Result<Effect, WireError> {
         transfer_set_root,
         body,
     })
+}
+
+fn decode_effects(decoder: &mut Decoder<'_>) -> Result<(usize, Vec<Effect>), WireError> {
+    let offset = decoder.offset();
+    let count = decoder.sequence_length(MAX_SEQUENCER_EFFECTS)?;
+    let mut effects = Vec::with_capacity(count.min(MAX_EFFECTS));
+    for _ in 0..count {
+        effects.push(decode_effect(decoder)?);
+    }
+    Ok((offset, effects))
 }
 
 fn validate_program_outcome(
@@ -744,15 +780,16 @@ fn decode_protocol(bytes: &[u8]) -> Result<Receipt, WireError> {
     let resulting_state_root = bounded_array(&mut decoder)?;
     let activity_root = bounded_array(&mut decoder)?;
     let result_code = decoder.i32()?;
-    let effect_count = decoder.sequence_length(MAX_EFFECTS)?;
-    let mut effects = Vec::with_capacity(effect_count);
-    for _ in 0..effect_count {
-        effects.push(decode_effect(&mut decoder)?);
-    }
+    let (effect_count_offset, effects) = decode_effects(&mut decoder)?;
     let fee_charged = decoder.u128()?;
     let batch_id = bounded_array(&mut decoder)?;
     let module_id = decoder.u16()?;
     let module_version = decoder.u32()?;
+    enforce(
+        effects.len(),
+        effect_bound(supply_present, protocol_version, module_id, module_version),
+        effect_count_offset,
+    )?;
     let parameter_version = decoder.u32()?;
     let operation = decoder.u8()?;
     let asset = bounded_array(&mut decoder)?;
@@ -942,7 +979,15 @@ fn encode_protocol(receipt: &ProtocolReceipt) -> Result<Vec<u8>, WireError> {
     encoder.bytes(&receipt.resulting_state_root, 32)?;
     encoder.bytes(&receipt.activity_root, 32)?;
     encoder.i32(receipt.result_code)?;
-    encoder.sequence_length(receipt.effects.len(), MAX_EFFECTS)?;
+    encoder.sequence_length(
+        receipt.effects.len(),
+        effect_bound(
+            receipt.supply.is_some(),
+            receipt.protocol_version,
+            receipt.module_id,
+            receipt.module_version,
+        ),
+    )?;
     for effect in &receipt.effects {
         encode_effect(&mut encoder, effect)?;
     }
@@ -1108,6 +1153,258 @@ mod program_outcome_vectors {
         let mut decoder = Decoder::new(&bytes, MAX_MESSAGE_BYTES);
         assert_eq!(decode_program_outcome(&mut decoder, 1)?, outcome);
         decoder.finish()
+    }
+}
+
+#[cfg(test)]
+mod sequencer_receipt_vectors {
+    use layerx_crypto::ed25519::verify_digest;
+
+    use super::*;
+    use crate::hash::receipt_digest;
+
+    const GO_SIGNED_RECEIPT: &str = "00025201000200000020ac8f6df82bcdd7e943c22919ef7ea197ddde7535c4f86401c93aa61767c75cd9000000000000000700000020045f87e188f119eabae72c4f53360d7e91afa21410cb3daa5618357677dae43000000020481adf11d61da1651a3abebb62f2a9b2133f00859411db265ce1c67b58d0dc7f00000020ec4916dd28fc4c10d78e287ca5d9cc51ee1ae73cbfde08c6b37324cbfaac8bc50000000000000003000c00000000010000000020000000000000000000000000000000000000000000000000000000000000000000000071000000000000c8220000000000011ef0000000003b9aca000000000200000000000000000000000000000000000000005a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5ae3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85500000020000000020475706178000c000100000300000000200000000000000000000000000000000000000000000000000000000000000000000000751111111111111111111111111111111111111111022fb30cfca4728c7f62d6787ef949fc7943d813f5093ebc6c343c6cc6f3ec1a56000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0a28e9ffef0073f9a6a674cf57ee77307f38f0f1bebb087888d9011ed0eeefdf000c00020000030000000020000000000000000000000000000000000000000000000000000000000000000000000035222222222222222222222222222222222222222200e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855000000000000000000002e98d85ed40000000020000000000000000000000000000000000000000000000000000000000192d500000c0000000100000000020000002002cef2c10e756312b83aa7e7051954161146e03371cb3c4f091303c95e0ee8c900000000000000000de0b6b3a764000000000020000000000000000000000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000004563918244f4000000000000000000003782ac35c5312c00000000000000002900000020000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb00000000000000001bc16d674ec80000000000000000000029a2241af62c0000000000200000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000203333333333333333333333333333333333333333333333333333333333333333000001977420dcfa010000004014f68e5b8cc09cf34f9f7c0d117acfdfddd9f89c82da31d85daeb7d01a9b8f15641d731ad69326173e9e24a46e126c5a182a71c4ec8e612bb15d8ca4cac74709";
+    const GO_RECEIPT_DIGEST: &str =
+        "f11a97f67fbd217053e2d8c3ec6ac270a0e6e523c59d5d091d5061eeca69c4e6";
+    const PINNED_RECEIPT_KEY: &str =
+        "6e5f1e382d76f394e259ea44c89bb6103098217234d2e7e99d6efb715a1046a9";
+    const EFFECT_COUNT_OFFSET: usize = 4 + 2 + 36 + 8 + 3 * 36 + 4;
+    const SIGNATURE_TAIL: usize = 1 + 4 + 64;
+    const UNSIGNED_TAIL_AFTER_MODULE_VERSION: usize =
+        4 + 1 + 36 + 16 + 36 + 16 + 16 + 8 + 36 + 16 + 16 + 3 * 36 + 8 + 1;
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum Refusal {
+        Decode,
+        CanonicalEncoding,
+        MissingSignature,
+        Signature,
+    }
+
+    fn unhex(text: &str) -> Result<Vec<u8>, WireError> {
+        let digits = text.as_bytes();
+        if !digits.len().is_multiple_of(2) {
+            return Err(WireError::known(KnownResult::NonCanonical, digits.len()));
+        }
+        digits
+            .chunks_exact(2)
+            .enumerate()
+            .map(|(index, pair)| {
+                std::str::from_utf8(pair)
+                    .ok()
+                    .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                    .ok_or_else(|| WireError::known(KnownResult::NonCanonical, index * 2))
+            })
+            .collect()
+    }
+
+    fn unhex32(text: &str) -> Result<[u8; 32], WireError> {
+        unhex(text)?
+            .try_into()
+            .map_err(|_| WireError::known(KnownResult::NonCanonical, 0))
+    }
+
+    fn sha256_of(parts: &[&[u8]]) -> Result<[u8; 32], WireError> {
+        crate::hash::sha256(&parts.concat())
+    }
+
+    fn protocol_receipt(receipt: &Receipt) -> Result<&ProtocolReceipt, WireError> {
+        receipt
+            .protocol()
+            .ok_or_else(|| WireError::known(KnownResult::NonCanonical, 0))
+    }
+
+    fn verify(bytes: &[u8], public_key: &[u8; 32]) -> Result<[u8; 32], Refusal> {
+        let receipt = decode(bytes).map_err(|_| Refusal::Decode)?;
+        if encode(&receipt).map_err(|_| Refusal::CanonicalEncoding)? != bytes {
+            return Err(Refusal::CanonicalEncoding);
+        }
+        let signature = receipt
+            .protocol()
+            .and_then(ProtocolReceipt::sequencer_signature)
+            .ok_or(Refusal::MissingSignature)?;
+        let unsigned = encode_unsigned(&receipt).map_err(|_| Refusal::CanonicalEncoding)?;
+        let digest = receipt_digest(&unsigned).map_err(|_| Refusal::CanonicalEncoding)?;
+        verify_digest(public_key, &signature, &digest).map_err(|_| Refusal::Signature)?;
+        Ok(digest)
+    }
+
+    fn sequencer_receipt_with_logs(logs: u16) -> Result<ProtocolReceipt, WireError> {
+        let receipt = decode(&unhex(GO_SIGNED_RECEIPT)?)?;
+        let mut receipt = protocol_receipt(&receipt)?.clone();
+        let mut summary = receipt.effects[0].clone();
+        summary.body[104..108].copy_from_slice(&u32::from(logs).to_be_bytes());
+        let log = receipt.effects[1].clone();
+        receipt.effects = std::iter::once(summary)
+            .chain((1..=logs).map(|ordinal| Effect {
+                ordinal,
+                ..log.clone()
+            }))
+            .collect();
+        receipt.sequencer_signature = None;
+        Ok(receipt)
+    }
+
+    #[test]
+    fn sequencer_receipt_vector_round_trips() -> Result<(), WireError> {
+        let signed = unhex(GO_SIGNED_RECEIPT)?;
+        let receipt = decode(&signed)?;
+        assert_eq!(encode(&receipt)?, signed);
+        let protocol = protocol_receipt(&receipt)?;
+        assert_eq!(protocol.protocol_version(), PROTOCOL_VERSION);
+        assert_eq!(protocol.global_sequence(), 7);
+        assert_eq!(protocol.result_code(), 0);
+        assert_eq!(protocol.module_id(), 12);
+        assert_eq!(protocol.module_version(), SEQUENCER_LAYOUT_VERSION);
+        assert_eq!(protocol.parameter_version(), 0);
+        assert_eq!(protocol.operation(), 2);
+        assert_eq!(protocol.fee_charged(), 51_234_000_000_000);
+        assert_eq!(protocol.amount(), 1_000_000_000_000_000_000);
+        assert_eq!(protocol.debit_sequence(), 41);
+        assert_eq!(protocol.timestamp(), 1_750_000_000_250);
+        assert_eq!(protocol.asset(), sha256_of(&[b"upax".as_slice()])?);
+        assert_eq!(protocol.context_hash(), [0x33; 32]);
+        assert_eq!(protocol.transfer_set_root(), [0; 32]);
+        assert_eq!(protocol.batch_id()[24..], 26_400_000_u64.to_be_bytes());
+        assert_eq!(protocol.total_units(), None);
+        assert_eq!(protocol.program_outcome(), None);
+        assert_eq!(
+            protocol.resulting_state_root(),
+            sha256_of(&[
+                b"PAXEER/v1/sequence\0",
+                &protocol.previous_state_root(),
+                &protocol.global_sequence().to_be_bytes(),
+                &protocol.activity_id(),
+            ])?
+        );
+        let mut return_data = [0_u8; 32];
+        return_data[31] = 1;
+        assert_eq!(protocol.activity_root(), sha256_of(&[&return_data])?);
+        let shape: Vec<_> = protocol
+            .effects()
+            .iter()
+            .map(|effect| {
+                (
+                    effect.module_id(),
+                    effect.ordinal(),
+                    effect.event_type(),
+                    effect.kind(),
+                    effect.monetary(),
+                    effect.transfer_set_root(),
+                    effect.body().len(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (12, 0, 0, 1, false, [0; 32], 113),
+                (12, 1, 0, 3, false, [0; 32], 117),
+                (12, 2, 0, 3, false, [0; 32], 53),
+            ]
+        );
+        let tail = signed.len() - SIGNATURE_TAIL;
+        assert_eq!(signed[tail], 1);
+        assert_eq!(signed[tail + 1..tail + 5], 64_u32.to_be_bytes());
+        assert_eq!(
+            protocol
+                .sequencer_signature()
+                .map(|signature| signature.to_vec()),
+            Some(signed[tail + 5..].to_vec())
+        );
+        let unsigned = encode_unsigned(&receipt)?;
+        assert_eq!(unsigned, [&signed[..tail], &[0]].concat());
+        assert_eq!(encode(&decode(&unsigned)?)?, unsigned);
+        Ok(())
+    }
+
+    #[test]
+    fn go_signed_receipt_vector_verifies() -> Result<(), WireError> {
+        let signed = unhex(GO_SIGNED_RECEIPT)?;
+        let public_key = unhex32(PINNED_RECEIPT_KEY)?;
+        assert_eq!(
+            verify(&signed, &public_key),
+            Ok(unhex32(GO_RECEIPT_DIGEST)?)
+        );
+        let last = signed.len() - 1;
+        let mut forged_signature = signed.clone();
+        forged_signature[last] ^= 0x01;
+        assert_eq!(
+            verify(&forged_signature, &public_key),
+            Err(Refusal::Signature)
+        );
+        let mut forged_timestamp = signed.clone();
+        forged_timestamp[signed.len() - SIGNATURE_TAIL - 1] ^= 0x01;
+        assert_eq!(
+            verify(&forged_timestamp, &public_key),
+            Err(Refusal::Signature)
+        );
+        let mut unsigned_flag = signed.clone();
+        unsigned_flag[signed.len() - SIGNATURE_TAIL] = 0;
+        assert_eq!(verify(&unsigned_flag, &public_key), Err(Refusal::Decode));
+        let unsigned = encode_unsigned(&decode(&signed)?)?;
+        assert_eq!(
+            verify(&unsigned, &public_key),
+            Err(Refusal::MissingSignature)
+        );
+        assert_eq!(
+            verify(&signed, &unhex32(GO_RECEIPT_DIGEST)?),
+            Err(Refusal::Signature)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sequencer_layout_encodes_more_than_512_effects() -> Result<(), WireError> {
+        assert_eq!(MAX_SEQUENCER_EFFECTS, 21_845);
+        let receipt = Receipt::Protocol(Box::new(sequencer_receipt_with_logs(600)?));
+        let bytes = encode(&receipt)?;
+        assert_eq!(
+            bytes[EFFECT_COUNT_OFFSET..EFFECT_COUNT_OFFSET + 4],
+            601_u32.to_be_bytes()
+        );
+        let decoded = decode(&bytes)?;
+        assert_eq!(decoded, receipt);
+        assert_eq!(protocol_receipt(&decoded)?.effects().len(), 601);
+        assert!(protocol_receipt(&decoded)?
+            .effects()
+            .iter()
+            .enumerate()
+            .all(|(index, effect)| usize::from(effect.ordinal()) == index && !effect.monetary()));
+        assert_eq!(encode(&decoded)?, bytes);
+
+        let refused = WireError::known(KnownResult::LengthLimit, EFFECT_COUNT_OFFSET);
+        let module_version = bytes.len() - UNSIGNED_TAIL_AFTER_MODULE_VERSION - 4;
+        let mut kernel_version = bytes.clone();
+        kernel_version[module_version..module_version + 4].copy_from_slice(&2_u32.to_be_bytes());
+        assert_eq!(decode(&kernel_version), Err(refused));
+        let mut kernel_module = bytes.clone();
+        kernel_module[module_version - 2..module_version]
+            .copy_from_slice(&KERNEL_MODULE_COUNT.to_be_bytes());
+        assert_eq!(decode(&kernel_module), Err(refused));
+        let mut over_bound = bytes.clone();
+        over_bound[EFFECT_COUNT_OFFSET..EFFECT_COUNT_OFFSET + 4].copy_from_slice(
+            &u32::try_from(MAX_SEQUENCER_EFFECTS + 1)
+                .map_err(|_| refused)?
+                .to_be_bytes(),
+        );
+        assert_eq!(decode(&over_bound), Err(refused));
+
+        let mut other_layout = sequencer_receipt_with_logs(600)?;
+        other_layout.module_version = 2;
+        assert_eq!(
+            encode(&Receipt::Protocol(Box::new(other_layout.clone()))),
+            Err(refused)
+        );
+        other_layout.effects.truncate(MAX_EFFECTS);
+        let at_bound = Receipt::Protocol(Box::new(other_layout.clone()));
+        assert_eq!(decode(&encode(&at_bound)?)?, at_bound);
+        other_layout.effects.push(other_layout.effects[1].clone());
+        assert_eq!(
+            encode(&Receipt::Protocol(Box::new(other_layout))),
+            Err(refused)
+        );
+        Ok(())
     }
 }
 
