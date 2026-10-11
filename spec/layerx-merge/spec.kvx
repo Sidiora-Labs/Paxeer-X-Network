@@ -40477,7 +40477,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.45]
 title = "Explorer verifies a Comet commit with more than two thirds of the voting power"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40619,7 +40619,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.51]
 title = "Block receiptsRoot commits the results of the same block"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40733,7 +40733,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.70]
 title = "Host hosts the asset ledger: asset module, persisted accounts and EVM binding authority"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -40767,7 +40767,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.71]
 title = "modules/sequencer in the App and MsgSequenceBatch delivered at tx 0 of the block"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["9.0.19", "9.0.20", "13.1.1"]
@@ -40820,7 +40820,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.25]
 title = "Sequencer receipt log verifier in layerx-proof"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40873,7 +40873,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.27]
 title = "Indexer pages history by block position and lists budget and grant records by holder"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40954,7 +40954,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.56]
 title = "Sequencer JSON-RPC endpoint module in layerx-client"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -40982,7 +40982,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.57]
 title = "Rung type in layerx-types"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -41061,7 +41061,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.35]
 title = "Golden sequencer receipt vectors from the node signer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -41254,7 +41254,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.92]
 title = "Retired-caller check separates reviewed specification text from executable, build and deployment references"
-status = "pending"
+status = "in_progress"
 wave = 1
 requires = []
 reqs = ["11050.2", "11050.4", "11052.4"]
@@ -41283,7 +41283,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.93]
 title = "Agent API schema declares mcp.invoke so canonical SDK regeneration reproduces Operation::McpInvoke and the pipeline lock agrees"
-status = "pending"
+status = "in_progress"
 wave = 2
 requires = ["0.22"]
 reqs = ["6061.2"]
@@ -49553,7 +49553,7 @@ vectors = "Receipt vectors V1-V9 run in every SDK (agent/crates/layerx-sdk/tests
 
 [task.0.1]
 title = "Precompile address table: 0x101A-0x101D and 0x0901-0x0908 entries in GetCustomPrecompiles, served from the merge plan height"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["10.0.1", "10.0.2"]
