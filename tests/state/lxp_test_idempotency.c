@@ -353,6 +353,220 @@ static int journal_single_entry(void)
     return 0;
 }
 
+static const uint8_t retention_actor[] = "did:lxp:retention";
+static const uint8_t retention_receipt[] = { 7U, 8U, 9U };
+
+enum { RETENTION_WINDOW = 1000, RETENTION_KEY_MARKER = 0xB0 };
+
+static int retention_commit(lxp_state_journal *journal, lxp_state_store *store,
+                            uint32_t key_index, lxp_result expected)
+{
+    uint8_t key[32];
+    raw_key(key_index, RETENTION_KEY_MARKER, key);
+    REQUIRE(lxp_state_journal_open(store, store->next_sequence, journal) == LXP_OK);
+    REQUIRE(lxp_idempotency_record(journal, retention_actor, sizeof(retention_actor) - 1U,
+                                   key, retention_receipt, sizeof(retention_receipt)) == LXP_OK);
+    REQUIRE(lxp_state_journal_commit(journal) == expected);
+    if (expected != LXP_OK) REQUIRE(lxp_state_journal_rollback(journal) == LXP_OK);
+    return 0;
+}
+
+static int retention_lookup(lxp_state_store *store, uint32_t key_index, lxp_result expected)
+{
+    uint8_t key[32];
+    const uint8_t *bytes = NULL;
+    size_t length = 0U;
+    raw_key(key_index, RETENTION_KEY_MARKER, key);
+    REQUIRE(lxp_idempotency_lookup(store, retention_actor, sizeof(retention_actor) - 1U,
+                                   key, &bytes, &length) == expected);
+    if (expected == LXP_ERR_IDEMPOTENT_REPLAY)
+        REQUIRE(length == sizeof(retention_receipt) &&
+                memcmp(bytes, retention_receipt, length) == 0);
+    else
+        REQUIRE(bytes == NULL && length == 0U);
+    return 0;
+}
+
+static int retention_advance(lxp_state_journal *journal, lxp_state_store *store,
+                             uint64_t target)
+{
+    while (store->next_sequence < target) {
+        REQUIRE(lxp_state_journal_open(store, store->next_sequence, journal) == LXP_OK);
+        REQUIRE(lxp_state_journal_commit(journal) == LXP_OK);
+    }
+    REQUIRE(store->next_sequence == target);
+    return 0;
+}
+
+static int retention_fill(lxp_state_store *store, uint64_t first_recorded, uint64_t stride)
+{
+    size_t i;
+    REQUIRE(store->idempotency_count == 0U);
+    REQUIRE(lxp_idempotency_reserve(store) == LXP_OK);
+    for (i = 0U; i < LXP_STATE_MAX_IDEMPOTENCY; ++i) {
+        lxp_idempotency_key_state *entry = &store->idempotency[i];
+        (void)memset(entry->key_hash, 0, 32U);
+        entry->key_hash[0] = (uint8_t)(i >> 8);
+        entry->key_hash[1] = (uint8_t)i;
+        entry->key_hash[31] = 0xA5U;
+        entry->receipt_length = 1U;
+        entry->receipt[0] = 0x5AU;
+        entry->canonical_length = 0U;
+        entry->recorded_sequence = first_recorded + (uint64_t)i * stride;
+    }
+    store->idempotency_count = LXP_STATE_MAX_IDEMPOTENCY;
+    return 0;
+}
+
+static int retention_records_sequence(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    REQUIRE(lxp_state_store_init(&store, 900U) == LXP_OK);
+    store.idempotency_retention = RETENTION_WINDOW;
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(store.next_sequence == 901U && store.idempotency_count == 1U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 900U);
+    REQUIRE(retention_commit(&journal, &store, 2U, LXP_OK) == 0);
+    REQUIRE(store.next_sequence == 902U && store.idempotency_count == 2U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 900U);
+    REQUIRE(store.idempotency[1].recorded_sequence == 901U);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("retention_records_sequence");
+    return 0;
+}
+
+static int retention_admits_after_window(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    REQUIRE(lxp_state_store_init(&store, 9000U) == LXP_OK);
+    store.idempotency_retention = RETENTION_WINDOW;
+    REQUIRE(retention_fill(&store, 1U, 1U) == 0);
+    REQUIRE(lxp_idempotency_live_count(&store, 9000U) == 192U);
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == 193U && store.next_sequence == 9001U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 8001U);
+    REQUIRE(store.idempotency[191].recorded_sequence == 8192U);
+    REQUIRE(store.idempotency[192].recorded_sequence == 9000U);
+    REQUIRE(retention_advance(&journal, &store, 9200U) == 0);
+    REQUIRE(retention_commit(&journal, &store, 2U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == 2U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 9000U);
+    REQUIRE(store.idempotency[1].recorded_sequence == 9200U);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_lookup(&store, 2U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("retention_admits_after_window");
+    return 0;
+}
+
+static int retention_replay_inside_window(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    REQUIRE(lxp_state_store_init(&store, 900U) == LXP_OK);
+    store.idempotency_retention = RETENTION_WINDOW;
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(retention_advance(&journal, &store, 1800U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_FATAL_INVARIANT) == 0);
+    REQUIRE(store.next_sequence == 1800U && store.idempotency_count == 1U);
+    REQUIRE(retention_advance(&journal, &store, 1899U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_advance(&journal, &store, 1900U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_OK) == 0);
+    REQUIRE(retention_advance(&journal, &store, 1901U) == 0);
+    REQUIRE(retention_lookup(&store, 1U, LXP_OK) == 0);
+    REQUIRE(retention_commit(&journal, &store, 1U, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == 1U);
+    REQUIRE(store.idempotency[0].recorded_sequence == 1901U);
+    REQUIRE(retention_lookup(&store, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("retention_replay_inside_window");
+    return 0;
+}
+
+static int retention_zero_window(void)
+{
+    lxp_state_store store;
+    lxp_state_journal journal;
+    uint32_t i;
+    REQUIRE(lxp_state_store_init(&store, 0U) == LXP_OK);
+    REQUIRE(store.idempotency_retention == 0U);
+    for (i = 0U; i < LXP_STATE_MAX_IDEMPOTENCY; ++i)
+        REQUIRE(retention_commit(&journal, &store, i, LXP_OK) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(retention_advance(&journal, &store,
+                              LXP_STATE_MAX_IDEMPOTENCY + 2U * RETENTION_WINDOW) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(lxp_idempotency_live_count(&store, store.next_sequence) ==
+            LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.idempotency[0].recorded_sequence == 0U);
+    REQUIRE(retention_lookup(&store, 0U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    REQUIRE(retention_commit(&journal, &store, LXP_STATE_MAX_IDEMPOTENCY,
+                             LXP_ERR_ARENA_EXHAUSTED) == 0);
+    REQUIRE(store.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(store.next_sequence == LXP_STATE_MAX_IDEMPOTENCY + 2U * RETENTION_WINDOW);
+    REQUIRE(retention_lookup(&store, LXP_STATE_MAX_IDEMPOTENCY, LXP_OK) == 0);
+    REQUIRE(lxp_state_store_destroy(&store) == LXP_OK);
+    case_ok("retention_zero_window");
+    return 0;
+}
+
+static int retention_preview(fixture *f, lxp_module_ctx *ctx, uint32_t key_index,
+                             lxp_result expected)
+{
+    uint8_t key[32];
+    uint8_t preview[32];
+    uint8_t committed[32];
+    uint64_t sequence = f->state.next_sequence;
+    raw_key(key_index, RETENTION_KEY_MARKER, key);
+    REQUIRE(lxp_state_journal_open(&f->state, sequence, &f->journal) == LXP_OK);
+    REQUIRE(lxp_idempotency_record(&f->journal, retention_actor, sizeof(retention_actor) - 1U,
+                                   key, retention_receipt, sizeof(retention_receipt)) == LXP_OK);
+    REQUIRE(lxp_module_ctx_init(ctx, &f->kernel, LXP_MODULE_ASSET, 10U, f->kernel.epoch,
+                                sequence, 100U, &f->arena, true) == LXP_OK);
+    REQUIRE(lxp_module_ctx_prepare_commit(ctx) == LXP_OK);
+    REQUIRE(lxp_module_ctx_preview_state_root(ctx, &f->journal, preview) == expected);
+    if (expected != LXP_OK) {
+        lxp_module_ctx_rollback(ctx);
+        REQUIRE(lxp_state_journal_rollback(&f->journal) == LXP_OK);
+        return 0;
+    }
+    REQUIRE(lxp_state_journal_commit(&f->journal) == LXP_OK);
+    REQUIRE(lxp_module_ctx_commit(ctx) == LXP_OK);
+    REQUIRE(lxp_state_root(&f->kernel, committed) == LXP_OK);
+    REQUIRE(memcmp(preview, committed, 32U) == 0);
+    return 0;
+}
+
+static int retention_preview_bound(void)
+{
+    fixture *f = (fixture *)malloc(sizeof(*f));
+    lxp_module_ctx *ctx = (lxp_module_ctx *)malloc(sizeof(*ctx));
+    REQUIRE(f != NULL && ctx != NULL);
+    REQUIRE(fixture_init(f) == 0);
+    f->state.idempotency_retention = RETENTION_WINDOW;
+    REQUIRE(retention_advance(&f->journal, &f->state, 1500U) == 0);
+    REQUIRE(retention_fill(&f->state, 1000U, 0U) == 0);
+    REQUIRE(lxp_idempotency_live_count(&f->state, 1500U) == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(retention_preview(f, ctx, 1U, LXP_ERR_ARENA_EXHAUSTED) == 0);
+    REQUIRE(f->state.idempotency_count == LXP_STATE_MAX_IDEMPOTENCY);
+    REQUIRE(f->state.next_sequence == 1500U);
+    REQUIRE(retention_advance(&f->journal, &f->state, 2000U) == 0);
+    REQUIRE(lxp_idempotency_live_count(&f->state, 2000U) == 0U);
+    REQUIRE(retention_preview(f, ctx, 1U, LXP_OK) == 0);
+    REQUIRE(f->state.idempotency_count == 1U && f->state.next_sequence == 2001U);
+    REQUIRE(f->state.idempotency[0].recorded_sequence == 2000U);
+    REQUIRE(retention_lookup(&f->state, 1U, LXP_ERR_IDEMPOTENT_REPLAY) == 0);
+    free(ctx);
+    fixture_destroy(f);
+    case_ok("retention_preview_bound");
+    return 0;
+}
+
 /* Every committed alice key replays its recorded first receipt bytes, and a
  * snapshot of the store loads into an independent kernel with an equal
  * canonical root, an equal count and the same retrievable receipts. */
@@ -389,6 +603,32 @@ static int checkpoint_case(fixture *f, size_t entries, size_t alice_keys,
     REQUIRE(memcmp(restored->kernel.current_state_root, f->kernel.current_state_root, 32U) == 0);
     REQUIRE(restored->state.idempotency_count == entries);
     REQUIRE(restored->state.next_sequence == f->state.next_sequence);
+    for (i = 0U; i < entries; ++i) {
+        const lxp_idempotency_key_state *original = &f->state.idempotency[i];
+        size_t j = 0U;
+        while (j < entries &&
+               memcmp(restored->state.idempotency[j].key_hash, original->key_hash, 32U) != 0)
+            ++j;
+        REQUIRE(j < entries && original->recorded_sequence != 0U);
+        REQUIRE(restored->state.idempotency[j].recorded_sequence == original->recorded_sequence);
+    }
+    {
+        static uint8_t encoded[LXP_STATE_MAX_REPLAY_ENTRY_BYTES];
+        static lxp_idempotency_key_state decoded;
+        const lxp_idempotency_key_state *original = &f->state.idempotency[0];
+        size_t encoded_length;
+        REQUIRE(lxp_idempotency_snapshot_encode(original, encoded, sizeof(encoded),
+                                                &encoded_length) == LXP_OK);
+        REQUIRE(encoded_length == 21U + original->receipt_length + original->canonical_length);
+        REQUIRE(memcmp(encoded, "LXRF2", 5U) == 0);
+        REQUIRE(lxp_idempotency_snapshot_decode(&decoded, encoded, encoded_length) == LXP_OK);
+        REQUIRE(decoded.recorded_sequence == original->recorded_sequence);
+        REQUIRE(decoded.receipt_length == original->receipt_length &&
+                memcmp(decoded.receipt, original->receipt, original->receipt_length) == 0);
+        REQUIRE(decoded.canonical_length == original->canonical_length &&
+                memcmp(decoded.canonical_receipt, original->canonical_receipt,
+                       original->canonical_length) == 0);
+    }
     for (i = 0U; i < alice_keys; ++i) {
         REQUIRE(lookup(restored, alice_did, sizeof(alice_did) - 1U, (uint32_t)i, 0U, &bytes, &length) == 0);
         REQUIRE(length == saved_length[i] && memcmp(bytes, saved[i], length) == 0);
@@ -426,8 +666,10 @@ static int legacy_snapshot_case(fixture *source)
     REQUIRE(lxp_snapshot_manifest_build(snapshot.bytes, snapshot.length,
         source->state.next_sequence-1U, root, source->kernel.current_state_root, &manifest) == LXP_OK);
     REQUIRE(lxp_snapshot_load(snapshot.bytes, snapshot.length, &manifest, &legacy->kernel) == LXP_OK);
-    for (size_t i = 0U; i < legacy->state.idempotency_count; ++i)
+    for (size_t i = 0U; i < legacy->state.idempotency_count; ++i) {
         legacy->state.idempotency[i].canonical_length = 0U;
+        legacy->state.idempotency[i].recorded_sequence = 0U;
+    }
     REQUIRE(lxp_state_root(&legacy->kernel, loaded) == LXP_OK);
     REQUIRE(memcmp(root, loaded, 32U) == 0);
     REQUIRE(lxp_snapshot_write(&legacy->kernel, legacy->state.next_sequence-1U,
@@ -437,6 +679,8 @@ static int legacy_snapshot_case(fixture *source)
     REQUIRE(lxp_snapshot_load(snapshot.bytes, snapshot.length, &manifest, &restored->kernel) == LXP_OK);
     REQUIRE(lxp_state_root(&restored->kernel, loaded) == LXP_OK);
     REQUIRE(memcmp(root, loaded, 32U) == 0 && restored->state.idempotency_count == 511U);
+    for (size_t i = 0U; i < restored->state.idempotency_count; ++i)
+        REQUIRE(restored->state.idempotency[i].recorded_sequence == 0U);
     raw_key(0U, 0U, key);
     REQUIRE(lxp_idempotency_lookup(&restored->state, alice_did, sizeof(alice_did)-1U,
         key, &bytes, &length) == LXP_ERR_IDEMPOTENT_REPLAY);
@@ -897,6 +1141,11 @@ static int restart(const char *directory)
 int main(int argc, char **argv)
 {
     REQUIRE(journal_single_entry() == 0);
+    REQUIRE(retention_records_sequence() == 0);
+    REQUIRE(retention_admits_after_window() == 0);
+    REQUIRE(retention_replay_inside_window() == 0);
+    REQUIRE(retention_zero_window() == 0);
+    REQUIRE(retention_preview_bound() == 0);
     if (argc == 3 && strcmp(argv[1], "--checkpoint") == 0) {
         REQUIRE(lifecycle(argv[2]) == 0);
     } else if (argc == 3 && strcmp(argv[1], "--restart") == 0) {

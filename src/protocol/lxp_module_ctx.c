@@ -1398,12 +1398,13 @@ static lxp_result preview_apply_journal(const lxp_state_journal *journal,
 {
     size_t i;
     lxp_result status;
-    if (journal->count > LXP_MAX_TRANSFER_SET_LEGS ||
-        journal->store->count > LXP_STATE_MAX_CELLS ||
-        journal->store->idempotency_count > LXP_STATE_MAX_IDEMPOTENCY)
-        return LXP_FATAL_INVARIANT;
     status = lxp_idempotency_can_commit(journal);
     if (status != LXP_OK) return status;
+    if (journal->count > LXP_MAX_TRANSFER_SET_LEGS ||
+        journal->store->count > LXP_STATE_MAX_CELLS ||
+        lxp_idempotency_live_count(journal->store, journal->global_sequence) >
+            LXP_STATE_MAX_IDEMPOTENCY)
+        return LXP_FATAL_INVARIANT;
     for (i = 0U; i < journal->count; ++i) {
         size_t location = preview_state_cell_find(
             preview, journal->staged[i].key);
@@ -1417,14 +1418,9 @@ static lxp_result preview_apply_journal(const lxp_state_journal *journal,
         preview->cells[location].value = journal->staged[i].value;
     }
     if (journal->has_idempotency) {
-        if (journal->staged_idempotency.receipt_length >
-            LXP_STATE_MAX_RECEIPT_BYTES || journal->staged_idempotency.canonical_length >
-            LXP_STATE_MAX_RECEIPT_BYTES)
-            return LXP_FATAL_INVARIANT;
-        status = lxp_idempotency_reserve(preview);
+        status = lxp_idempotency_append(preview, &journal->staged_idempotency,
+                                        journal->global_sequence);
         if (status != LXP_OK) return status;
-        preview->idempotency[preview->idempotency_count++] =
-            journal->staged_idempotency;
     }
     preview->next_sequence = journal->global_sequence + 1U;
     return LXP_OK;
@@ -1465,6 +1461,8 @@ lxp_result lxp_module_ctx_preview_state_root(
         return status;
     }
     preview_state->count = journal->store->count;
+    preview_state->idempotency_retention =
+        journal->store->idempotency_retention;
     (void)memcpy(preview_state->cells, journal->store->cells,
                  sizeof(preview_state->cells));
     if (journal->store->idempotency_count != 0U) {
