@@ -158,8 +158,8 @@ func (k Keeper) Leaders(ctx sdk.Context) ([][32]byte, error) {
 	return leaders, nil
 }
 
-// InitGenesis writes the activation genesis: L, the receipt keys, lastSeq 0
-// and the zero lastSeqHash.
+// InitGenesis writes the genesis: L, the receipt keys, lastSeq and
+// lastSeqHash.
 func (k Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) error {
 	if err := gs.Validate(); err != nil {
 		return err
@@ -168,22 +168,34 @@ func (k Keeper) InitGenesis(ctx sdk.Context, gs types.GenesisState) error {
 	for _, leader := range gs.Leaders {
 		leaders = append(leaders, leader[:]...)
 	}
-	keys := make([]byte, 0, len(gs.ReceiptKeys)*receiptKeyLength)
-	for _, key := range gs.ReceiptKeys {
-		keys = append(keys, key.KeyId[:]...)
-		keys = append(keys, key.PublicKey[:]...)
-		keys = binary.BigEndian.AppendUint64(keys, key.FirstHeight)
-		keys = binary.BigEndian.AppendUint64(keys, key.LastHeight)
-	}
 	store := k.store(ctx)
 	store.Set(types.LeaderListKey, leaders)
-	store.Set(types.ReceiptKeysKey, keys)
+	store.Set(types.ReceiptKeysKey, encodeReceiptKeys(gs.ReceiptKeys))
 	store.Set(types.LastSeqKey, binary.BigEndian.AppendUint64(nil, gs.LastSeq))
-	store.Set(types.LastSeqHashKey, make([]byte, types.HashLength))
+	store.Set(types.LastSeqHashKey, bytes.Clone(gs.LastSeqHash[:]))
 	return nil
 }
 
-// ExportGenesis returns the leader list, the receipt keys and lastSeq.
+// SetReceiptKeys replaces the pinned receipt keys with the governed list, so
+// the batch signature check reads the key set the ReceiptKeys param holds
+// after a rotation.
+func (k Keeper) SetReceiptKeys(ctx sdk.Context, keys ReceiptKeys) error {
+	if err := keys.Validate(); err != nil {
+		return err
+	}
+	pinned := make([]types.ReceiptKey, len(keys))
+	for i, entry := range keys {
+		copy(pinned[i].KeyId[:], entry.KeyId)
+		copy(pinned[i].PublicKey[:], entry.PublicKey)
+		pinned[i].FirstHeight = entry.FirstHeight
+		pinned[i].LastHeight = entry.LastHeight
+	}
+	k.store(ctx).Set(types.ReceiptKeysKey, encodeReceiptKeys(pinned))
+	return nil
+}
+
+// ExportGenesis returns the leader list, the receipt keys, lastSeq and
+// lastSeqHash.
 func (k Keeper) ExportGenesis(ctx sdk.Context) (types.GenesisState, error) {
 	leaders, err := k.Leaders(ctx)
 	if err != nil {
@@ -197,7 +209,22 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (types.GenesisState, error) {
 	if err != nil {
 		return types.GenesisState{}, err
 	}
-	return types.GenesisState{Leaders: leaders, ReceiptKeys: keys, LastSeq: lastSeq}, nil
+	lastSeqHash, err := k.LastSeqHash(ctx)
+	if err != nil {
+		return types.GenesisState{}, err
+	}
+	return types.GenesisState{Leaders: leaders, ReceiptKeys: keys, LastSeq: lastSeq, LastSeqHash: lastSeqHash}, nil
+}
+
+func encodeReceiptKeys(keys []types.ReceiptKey) []byte {
+	bz := make([]byte, 0, len(keys)*receiptKeyLength)
+	for _, key := range keys {
+		bz = append(bz, key.KeyId[:]...)
+		bz = append(bz, key.PublicKey[:]...)
+		bz = binary.BigEndian.AppendUint64(bz, key.FirstHeight)
+		bz = binary.BigEndian.AppendUint64(bz, key.LastHeight)
+	}
+	return bz
 }
 
 func (k Keeper) receiptKeyAt(ctx sdk.Context, keyID []byte, height uint64) (types.ReceiptKey, error) {

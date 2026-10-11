@@ -929,7 +929,8 @@ func New(
 	// register the proposal types
 	govRouter := govtypes.NewRouter()
 	govRouter.AddRoute(govtypes.RouterKey, govtypes.ProposalHandler).
-		AddRoute(paramproposal.RouterKey, evm.NewParamChangeProposalHandler(&app.EvmKeeper, app.ParamsKeeper)).
+		AddRoute(paramproposal.RouterKey, sequencermodule.NewParamChangeProposalHandler(app.SequencerKeeper, app.GetSubspace(seqtypes.ModuleName),
+			evm.NewParamChangeProposalHandler(&app.EvmKeeper, app.ParamsKeeper))).
 		AddRoute(distrtypes.RouterKey, distr.NewCommunityPoolSpendProposalHandler(app.DistrKeeper)).
 		AddRoute(upgradetypes.RouterKey, upgrade.NewSoftwareUpgradeProposalHandler(app.UpgradeKeeper)).
 		AddRoute(ibcclienttypes.RouterKey, ibcclient.NewClientProposalHandler(app.IBCKeeper.ClientKeeper)).
@@ -1413,6 +1414,8 @@ func layerxStoreUpgrades(name string) (storetypes.StoreUpgrades, bool) {
 		return v68StoreUpgrades(), true
 	case ActivationUpgrade:
 		return activationStoreUpgrades(), true
+	case MergeUpgrade:
+		return mergeStoreUpgrades(), true
 	}
 	return storetypes.StoreUpgrades{}, false
 }

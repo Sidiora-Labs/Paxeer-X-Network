@@ -75,6 +75,7 @@ var MemIAVLStoreKeys = []string{
 	LayerXBridgeStoreKey,
 	LaunchpadStoreKey,
 	XWebStoreKey,
+	SequencerStoreKey,
 }
 
 // memIAVLStoreKeySet is MemIAVLStoreKeys materialized as a set for O(1)

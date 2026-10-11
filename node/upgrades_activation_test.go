@@ -168,7 +168,13 @@ func TestActivationStoreUpgradesMountEveryForkStore(t *testing.T) {
 	}
 	require.Len(t, upgrades.Added, len(forkModules))
 	require.Len(t, activationModules(), len(forkModules))
-	require.Len(t, kvStoreKeyNames, preForkStoreCount+len(forkModules))
+	merge, ok := layerxStoreUpgrades(MergeUpgrade)
+	require.True(t, ok)
+	require.Equal(t, mergeStoreUpgrades(), merge)
+	require.Equal(t, []string{keys.SequencerStoreKey}, merge.Added)
+	require.Empty(t, merge.Deleted)
+	require.Empty(t, merge.Renamed)
+	require.Len(t, kvStoreKeyNames, preForkStoreCount+len(forkModules)+len(mergeStoreUpgrades().Added))
 
 	a := NewTestWrapper(t, time.Now().UTC(), secp256k1.GenPrivKey().PubKey(), false).App
 	for i, fork := range forkModules {
@@ -179,6 +185,12 @@ func TestActivationStoreUpgradesMountEveryForkStore(t *testing.T) {
 		require.NotNil(t, a.GetKey(fork.store))
 		require.Contains(t, a.mm.Modules, fork.module)
 		require.NotZero(t, a.mm.Modules[fork.module].ConsensusVersion())
+	}
+	for _, store := range merge.Added {
+		require.NotContains(t, upgrades.Added, store)
+		require.Contains(t, kvStoreKeyNames, store)
+		require.Contains(t, keys.MemIAVLStoreKeys, store)
+		require.NotNil(t, a.GetKey(store))
 	}
 }
 

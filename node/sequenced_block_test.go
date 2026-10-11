@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
+	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
@@ -23,6 +25,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/crypto/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	paramproposal "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/params/types/proposal"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
@@ -119,8 +122,14 @@ func txRootOf(hashes ...common.Hash) []byte {
 // signedBatch encodes tx 0 for height 1 signed by the test receipt key.
 func signedBatch(t *testing.T, fromSeq, toSeq uint64, prev, last, txRoot, keyID []byte) []byte {
 	t.Helper()
+	return signedBatchAt(t, 1, sequencerKeySeed, fromSeq, toSeq, prev, last, txRoot, keyID)
+}
+
+// signedBatchAt encodes tx 0 for height signed by the ed25519 key of seed.
+func signedBatchAt(t *testing.T, height uint64, seed []byte, fromSeq, toSeq uint64, prev, last, txRoot, keyID []byte) []byte {
+	t.Helper()
 	m := seqtypes.MsgSequenceBatch{
-		Height:      1,
+		Height:      height,
 		FromSeq:     fromSeq,
 		ToSeq:       toSeq,
 		PrevSeqHash: prev,
@@ -130,7 +139,7 @@ func signedBatch(t *testing.T, fromSeq, toSeq uint64, prev, last, txRoot, keyID 
 	}
 	digest, err := m.SignBytes(sequencedChainID)
 	require.NoError(t, err)
-	m.Sig = ed25519.Sign(ed25519.NewKeyFromSeed(sequencerKeySeed), digest[:])
+	m.Sig = ed25519.Sign(ed25519.NewKeyFromSeed(seed), digest[:])
 	bz, err := app.EncodeSequenceBatch(m)
 	require.NoError(t, err)
 	return bz
@@ -383,4 +392,168 @@ func TestSequencedBlockGenesisOneKeySet(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []*abci.ExecTxResult{{}}, results)
 	requireSequencerState(t, w, 0, zeroSeqHash)
+}
+
+// requireOneKeySet asserts that the keeper store and the ReceiptKeys param pin want.
+func requireOneKeySet(t *testing.T, w *app.TestWrapper, want seqkeeper.ReceiptKeys) {
+	t.Helper()
+	require.Equal(t, want, seqkeeper.GetReceiptKeys(w.Ctx, w.App.GetSubspace(seqtypes.ModuleName)))
+	stored, err := w.App.SequencerKeeper.ReceiptKeys(w.Ctx)
+	require.NoError(t, err)
+	require.Len(t, stored, len(want))
+	for i, entry := range want {
+		require.Equal(t, entry.KeyId, stored[i].KeyId[:], "key %d", i)
+		require.Equal(t, entry.PublicKey, stored[i].PublicKey[:], "key %d", i)
+		require.Equal(t, entry.FirstHeight, stored[i].FirstHeight, "key %d", i)
+		require.Equal(t, entry.LastHeight, stored[i].LastHeight, "key %d", i)
+	}
+}
+
+func TestSequencedBlockReceiptKeyRotation(t *testing.T) {
+	tm := time.Now().UTC()
+	valPub := secp256k1.GenPrivKey().PubKey()
+	alice := utils.NewSigner()
+	to := utils.NewSigner().EvmAddress
+	last := bytes.Repeat([]byte{0x77}, seqtypes.HashLength)
+	const h2 = 2
+	k1 := seqkeeper.ReceiptKeyEntry{KeyId: sequencerKeyID, PublicKey: sequencerPublicKey(), FirstHeight: 1, LastHeight: math.MaxUint64}
+	k2Seed := bytes.Repeat([]byte{0x22}, ed25519.SeedSize)
+	k2KeyID := bytes.Repeat([]byte{0x45}, seqtypes.KeyIDLength)
+	k2 := seqkeeper.ReceiptKeyEntry{KeyId: k2KeyID, PublicKey: ed25519.NewKeyFromSeed(k2Seed).Public().(ed25519.PublicKey), FirstHeight: h2, LastHeight: math.MaxUint64}
+	closedK1 := k1
+	closedK1.LastHeight = h2 - 1
+	rotated := seqkeeper.ReceiptKeys{closedK1, k2}
+
+	passParamChange := func(t *testing.T, w *app.TestWrapper, keys seqkeeper.ReceiptKeys) error {
+		t.Helper()
+		value, err := w.App.LegacyAmino().MarshalAsJSON(keys)
+		require.NoError(t, err)
+		change := paramproposal.NewParameterChangeProposal("receipt keys", "rotate the sequencer receipt key", []paramproposal.ParamChange{
+			paramproposal.NewParamChange(seqtypes.ModuleName, string(seqkeeper.KeyReceiptKeys), string(value)),
+		}, false)
+		return w.App.GovKeeper.Router().GetRoute(paramproposal.RouterKey)(w.Ctx, change)
+	}
+
+	// rotate commits block h2-1 with a passed param change through the App params proposal
+	// route that closes K1 at h2-1 and pins K2 from h2, and returns a funded transfer for h2.
+	rotate := func(t *testing.T) (*app.TestWrapper, []byte, common.Hash) {
+		t.Helper()
+		w := newSequencerWrapper(t, tm, valPub, false)
+		initSequencerGenesis(t, w, activationGenesis(t))
+		require.NoError(t, w.App.SetActivationHeight(h2))
+		tx, hash := evmTransfer(t, w, alice, to)
+		_, err := w.App.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+			Header: &tmproto.Header{ChainID: sequencedChainID, Height: h2 - 1, Time: tm},
+		})
+		require.NoError(t, err)
+		w.Ctx = w.App.GetContextForDeliverTx(nil)
+		require.Equal(t, int64(h2-1), w.Ctx.BlockHeight())
+		require.NoError(t, passParamChange(t, w, rotated))
+		requireOneKeySet(t, w, rotated)
+		w.App.SetDeliverStateToCommit()
+		_, err = w.App.Commit(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, int64(h2-1), w.App.LastBlockHeight())
+		require.True(t, w.App.Sequenced(h2))
+		return w, tx, hash
+	}
+
+	finalize := func(w *app.TestWrapper, txs [][]byte) (*abci.ResponseFinalizeBlock, error) {
+		resp, err := w.App.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+			Txs:    txs,
+			Header: &tmproto.Header{ChainID: sequencedChainID, Height: h2, Time: tm.Add(2 * time.Second)},
+		})
+		w.Ctx = w.App.GetContextForDeliverTx(nil)
+		return resp, err
+	}
+
+	t.Run("refused rotation leaves one key set", func(t *testing.T) {
+		w := newSequencerWrapper(t, tm, valPub, false)
+		activate(t, w)
+		pastK2 := k2
+		pastK2.FirstHeight = 1
+		require.ErrorIs(t, passParamChange(t, w, seqkeeper.ReceiptKeys{pastK2}), seqkeeper.ErrReceiptKeyRotation)
+		requireOneKeySet(t, w, seqkeeper.ReceiptKeys{k1})
+	})
+
+	t.Run("K2 at h2 delivers", func(t *testing.T) {
+		w, tx, hash := rotate(t)
+		batch := signedBatchAt(t, h2, k2Seed, 1, 1, zeroSeqHash, last, txRootOf(hash), k2KeyID)
+
+		resp, err := finalize(w, [][]byte{batch, tx})
+		require.NoError(t, err)
+		require.Len(t, resp.TxResults, 2)
+		require.Equal(t, abci.ExecTxResult{}, *resp.TxResults[0])
+		require.Equal(t, uint32(0), resp.TxResults[1].Code, resp.TxResults[1].Log)
+		requireReceiptIndex(t, w, hash, 1)
+		requireSequencerState(t, w, 1, last)
+		requireOneKeySet(t, w, rotated)
+	})
+
+	t.Run("K1 at h2 fails the block", func(t *testing.T) {
+		w, tx, hash := rotate(t)
+		batch := signedBatchAt(t, h2, sequencerKeySeed, 1, 1, zeroSeqHash, last, txRootOf(hash), sequencerKeyID)
+
+		resp, err := finalize(w, [][]byte{batch, tx})
+		require.ErrorIs(t, err, seqkeeper.ErrUnknownReceiptKey)
+		require.Nil(t, resp)
+		requireSequencerState(t, w, 0, zeroSeqHash)
+	})
+}
+
+func TestSequencedBlockGenesisRoundTrip(t *testing.T) {
+	tm := time.Now().UTC()
+	valPub := secp256k1.GenPrivKey().PubKey()
+	cdc := app.MakeEncodingConfig().Marshaler
+	alice, bob := utils.NewSigner(), utils.NewSigner()
+	toAlice, toBob := utils.NewSigner().EvmAddress, utils.NewSigner().EvmAddress
+	last := bytes.Repeat([]byte{0x77}, seqtypes.HashLength)
+
+	w := newSequencerWrapper(t, tm, valPub, false)
+	activate(t, w)
+	tx1, hash1 := evmTransfer(t, w, alice, toAlice)
+	tx2, hash2 := evmTransfer(t, w, bob, toBob)
+	_, err := processBlock(w, [][]byte{signedBatch(t, 1, 2, zeroSeqHash, last, txRootOf(hash1, hash2), sequencerKeyID), tx1, tx2})
+	require.NoError(t, err)
+	requireSequencerState(t, w, 2, last)
+
+	exported := sequencermodule.NewAppModule(w.App.SequencerKeeper, w.App.GetSubspace(seqtypes.ModuleName)).ExportGenesis(w.Ctx, cdc)
+	require.NoError(t, sequencermodule.AppModuleBasic{}.ValidateGenesis(cdc, nil, exported))
+	var decoded struct {
+		LastSeq     uint64 `json:"last_seq"`
+		LastSeqHash []byte `json:"last_seq_hash"`
+	}
+	require.NoError(t, json.Unmarshal(exported, &decoded))
+	require.Equal(t, uint64(2), decoded.LastSeq)
+	require.Equal(t, last, decoded.LastSeqHash)
+
+	fresh := newSequencerWrapper(t, tm, valPub, false)
+	initSequencerGenesis(t, fresh, exported)
+	requireSequencerState(t, fresh, 2, last)
+	wantKeys, err := w.App.SequencerKeeper.ReceiptKeys(w.Ctx)
+	require.NoError(t, err)
+	gotKeys, err := fresh.App.SequencerKeeper.ReceiptKeys(fresh.Ctx)
+	require.NoError(t, err)
+	require.Equal(t, wantKeys, gotKeys)
+	subspace := w.App.GetSubspace(seqtypes.ModuleName)
+	requireOneKeySet(t, fresh, seqkeeper.GetReceiptKeys(w.Ctx, subspace))
+	wantLeaders, err := w.App.SequencerKeeper.Leaders(w.Ctx)
+	require.NoError(t, err)
+	gotLeaders, err := fresh.App.SequencerKeeper.Leaders(fresh.Ctx)
+	require.NoError(t, err)
+	require.Equal(t, wantLeaders, gotLeaders)
+	require.JSONEq(t, string(exported), string(sequencermodule.NewAppModule(fresh.App.SequencerKeeper, fresh.App.GetSubspace(seqtypes.ModuleName)).ExportGenesis(fresh.Ctx, cdc)))
+
+	// A non-zero lastSeq without its hash, or a zero lastSeq with a hash, does not import.
+	for name, state := range map[string]map[string]any{
+		"lastSeq without hash": {"last_seq": 2},
+		"hash without lastSeq": {"last_seq_hash": last},
+		"short hash":           {"last_seq": 2, "last_seq_hash": last[:31]},
+	} {
+		state["leaders"] = [][]byte{sequencerLeader}
+		state["receipt_keys"] = seqkeeper.GetReceiptKeys(w.Ctx, subspace)
+		bz, err := json.Marshal(state)
+		require.NoError(t, err)
+		require.ErrorIs(t, sequencermodule.AppModuleBasic{}.ValidateGenesis(cdc, nil, bz), seqtypes.ErrInvalidGenesis, name)
+	}
 }

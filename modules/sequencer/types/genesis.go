@@ -21,20 +21,23 @@ func (k ReceiptKey) Covers(height uint64) bool {
 	return k.FirstHeight <= height && height <= k.LastHeight
 }
 
-// GenesisState is the sequencer module state written at the activation
-// height: the pinned leader list L (validator consensus public keys, primary
-// first), the pinned receipt keys and lastSeq 0. lastSeqHash starts as 32 zero
-// bytes.
+// GenesisState is the sequencer module state: the pinned leader list L
+// (validator consensus public keys, primary first), the pinned receipt keys,
+// lastSeq and the seqHash of lastSeq. The activation genesis carries lastSeq 0
+// and the zero lastSeqHash; an exported genesis carries the stored pair.
 type GenesisState struct {
 	Leaders     [][32]byte
 	ReceiptKeys []ReceiptKey
 	LastSeq     uint64
+	LastSeqHash [HashLength]byte
 }
 
 // Validate checks the activation genesis: a non-empty leader list with no zero
 // or repeated key, a non-empty receipt key list whose keyIds are non-zero and
 // distinct, whose public keys are canonical ed25519 encodings and whose
-// ranges start at height 1 or later and are not inverted, and lastSeq 0.
+// ranges start at height 1 or later and are not inverted, and a lastSeq that
+// agrees with lastSeqHash: lastSeq 0 with the zero hash, a non-zero lastSeq
+// with a non-zero hash.
 func (gs GenesisState) Validate() error {
 	if len(gs.Leaders) == 0 {
 		return ErrInvalidGenesis.Wrap("leader list is empty")
@@ -71,8 +74,12 @@ func (gs GenesisState) Validate() error {
 			return ErrInvalidGenesis.Wrapf("receipt key %d firstHeight %d above lastHeight %d", i, key.FirstHeight, key.LastHeight)
 		}
 	}
-	if gs.LastSeq != 0 {
-		return ErrInvalidGenesis.Wrapf("lastSeq is %d, want 0 at activation", gs.LastSeq)
+	zeroHash := gs.LastSeqHash == [HashLength]byte{}
+	if gs.LastSeq == 0 && !zeroHash {
+		return ErrInvalidGenesis.Wrap("lastSeq is 0 with a non-zero lastSeqHash")
+	}
+	if gs.LastSeq != 0 && zeroHash {
+		return ErrInvalidGenesis.Wrapf("lastSeq is %d with the zero lastSeqHash", gs.LastSeq)
 	}
 	return nil
 }

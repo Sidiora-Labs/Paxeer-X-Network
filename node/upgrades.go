@@ -29,6 +29,7 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
+	storekeys "github.com/Sidiora-Labs/Paxeer-X-Network/storage/common/keys"
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/mod/semver"
 )
@@ -387,6 +388,14 @@ func (app *App) registerXWebAttestors(ctx sdk.Context) error {
 func activationStoreUpgrades() storetypes.StoreUpgrades {
 	return storetypes.StoreUpgrades{
 		Added: append(v66StoreUpgrades().Added, v68StoreUpgrades().Added...),
+	}
+}
+
+// mergeStoreUpgrades mounts the store of every module the merge plan adds to
+// a chain that applied the activation plan: the sequencer store.
+func mergeStoreUpgrades() storetypes.StoreUpgrades {
+	return storetypes.StoreUpgrades{
+		Added: []string{storekeys.SequencerStoreKey},
 	}
 }
 

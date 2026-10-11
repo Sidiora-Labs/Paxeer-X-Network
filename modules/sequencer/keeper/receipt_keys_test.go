@@ -48,12 +48,13 @@ func newReceiptKeysEnv(t *testing.T, height int64) receiptKeysEnv {
 	amino := sdkcodec.NewLegacyAmino()
 	paramsKeeper := paramskeeper.NewKeeper(sdkcodec.NewProtoCodec(codectypes.NewInterfaceRegistry()), amino, key, tkey)
 	paramSpace := paramsKeeper.Subspace(types.ModuleName)
+	k := keeper.NewKeeper(key)
 	return receiptKeysEnv{
 		ctx:        sdk.NewContext(ms, tmproto.Header{Height: height}, false),
 		amino:      amino,
 		paramSpace: paramSpace,
-		module:     sequencer.NewAppModule(paramSpace),
-		handler:    sequencer.NewParamChangeProposalHandler(paramSpace, params.NewParamChangeProposalHandler(paramsKeeper)),
+		module:     sequencer.NewAppModule(k, paramSpace),
+		handler:    sequencer.NewParamChangeProposalHandler(k, paramSpace, params.NewParamChangeProposalHandler(paramsKeeper)),
 	}
 }
 
