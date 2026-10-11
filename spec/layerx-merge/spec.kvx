@@ -15085,7 +15085,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3.3]
 title = "AI evidence seal keeps artifact bytes off chain"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["4.2.6"]

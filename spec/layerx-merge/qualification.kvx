@@ -791,3 +791,10 @@ command = "make test-budget-delegate"
 exit_code = 0
 log_path = "logs/2.4.1-verify-2.log"
 observed_and_assumption = "the gate passes and the task is landed; the budget module context writes only budget-scoped kv and no interface stages the asset module grant record, so pulls read the shared grant state plus pull draws kept under budget kv while the 0x101A receive path does not see pull draws, and a cross-module grant-state stage in lxp_module_ctx.c is needed to close 2010.5 and 2021.3."
+
+[finding.4.3.3]
+revision = "64c6296b1"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_binding"
+exit_code = 0
+log_path = "logs/4.3.3-verify-1.log"
+observed_and_assumption = "the gate passes and the task is landed; evidence.rs already stored only the seal record so only the test file changed, the 4037.2 and 4037.3 tests live in artifact_contract.rs and the ai-artifacts retention test outside touches, and cargo clippy on any programs crate stops at 17 pre-existing lint errors in the layerx-program-sdk build script."
