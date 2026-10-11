@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
-major = 1
-minor = 11
+major = 2
+minor = 0
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -56,10 +56,10 @@ fields = ["request_id:Sequence","supported:ContractVersion"]
 fields = ["request_id:Sequence","contract:ContractVersion","node_interface_major:u16"]
 
 [golden.request.version]
-encoded_hex = "00010000000000000000000700000000010000"
+encoded_hex = "00020000000000000000000700000000020000"
 
 [golden.response.version]
-encoded_hex = "0001000000000000000000070000000000000100000001"
+encoded_hex = "0002000000000000000000070000000000000200000001"
 
 [golden.request.version_1_1]
 encoded_hex = "00010001000000000000000700000000010001"
@@ -69,7 +69,7 @@ encoded_hex = "0001000100000000000000070000000000000100010001"
 
 [compatibility.matrix]
 sdk = "0.1.x"
-contract = "1.x"
+contract = "2.x"
 node_interface = "1.x"
 daemon = "0.1.x"
 
