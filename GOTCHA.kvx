@@ -6371,3 +6371,643 @@ fix = "Recorded from the task report, which states no separate fix.."
 area = "node/sequencer"
 symptom = "Executor reserves transaction index 0 for MsgSequenceBatch, while the available FinalizeBlock path receives only the user transaction list."
 fix = "Recorded from the task report, which states no separate fix.."
+
+[gotcha.1360]
+area = "modules/sequencer/keeper"
+symptom = "keys.go has no per-block marker key; the keeper keeps the last delivered batch height under unexported key 0x06 in keeper.go to refuse a second batch in one block, so keys.go should adopt 0x06 if it grows. Sequencer error codes: types 2-4, keeper 5-10"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1361]
+area = "modules/sequencer/keeper"
+symptom = "params ParamSetPair keys must be alphanumeric, so the param key is \"ReceiptKeys\" and types.ReceiptKeysKey (0x03) is not used for the governed list"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1362]
+area = "modules/sequencer/keeper"
+symptom = "the Go layerxproof codec has no receipt encoder; tests build signed receipts by patching batch_id and context_hash in the valid-0 fixture and re-signing digest(body || 0), keeping the 5-byte signature block header"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1363]
+area = "node"
+symptom = "the rpc package at rpc/ is named evmrpc, so importing it needs an alias; the evm ante EVMSigVerifyDecorator ignores the LatestCtxGetter argument (modules/evm/ante/sig.go NewEVMSigVerifyDecorator takes `_ func() sdk.Context`), so the getter only affects code that calls it directly"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1364]
+area = "modules/tokenfactory/types"
+symptom = "GetTokenDenom takes (creator, subdenom), so validating a full denom means DeconstructDenom first, then GetTokenDenom on the parts; DeconstructDenom returns a plain sdk.ValidateDenom error, not ErrInvalidDenom, when the denom string itself is malformed"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1365]
+area = "modules/layerxledger/types"
+symptom = "module BE16"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1366]
+area = "modules/layerxledger/types"
+symptom = "key)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1367]
+area = "agent/crates/layerx-proof/src"
+symptom = "layerx-wire::hash::sha256 is crate-private; external tests use the existing sha2 dependency"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1368]
+area = "modules/lxphost"
+symptom = "lxp_bridge_credit.c registry_asset hashes \"layerx-asset:125\" + symbol without the second colon, diverging from every Go and genesis asset id"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1369]
+area = "node"
+symptom = "go test ./node/ links node/sequencer, so any sequencer compile break blocks every node-package test gate"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1370]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "src/rpc.rs on main was not rustfmt-clean, so formatting it as a touched file reflows unrelated lines"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1371]
+area = "node/sequencer"
+symptom = "rpc cannot import node/sequencer, so the PendingTx struct lives in rpc/utils.go and sequencer.PendingTx is a type alias of it; node/sequencer already depends on rpc through node, so adding the import creates no cycle"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1372]
+area = "modules/tokenfactory/keeper"
+symptom = "the task prompt file tasks/1.2.3.md was absent; the block was taken from spec.kvx and the fm id (px26-fm114) from fm.tsv"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1373]
+area = "modules/launchpad/keeper"
+symptom = "sdk.Int{} JSON-marshals as zero, so persisted market fixtures cannot preserve nil snapshot values"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1374]
+area = "precompiles/layerxagent/common"
+symptom = "merge plan constant lives in node; the common constructor receives the real upgrade keeper and plan name"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1375]
+area = "node"
+symptom = "Accept uses dedicated deliver ante functions; the test covers those and the registered NewAnteHandler chain"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1376]
+area = "programs/crates/layerx-programs-sandbox/src"
+symptom = "SandboxActivity is absent from the checkout; the existing submission type is SandboxSubmission. Proof removal requires production and fixture consumers omitted from the task touches"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1377]
+area = "consensus/node"
+symptom = "in makeNode the dbCloser is closers[1], so shutdownOps closes the block and state DBs itself; any closer that must run before the stores close has to be prepended, not appended"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1378]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "EvidenceSealed is the prose label; the actual event topic is PAXAI/v1/SealEvidence"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1379]
+area = "programs/crates/layerx-programs-ai-market/src/evaluators"
+symptom = "SDK binding-generator build-script lint errors can prevent Clippy reaching this crate; --no-deps reaches package-owned targets"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1380]
+area = "deploy"
+symptom = "gas-station service.rs:270-274 cited by the spec is stale; registered senders live in interop/crates/layerx-gas-station/src/config.rs (RegisteredSender, registered_senders field)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1381]
+area = "agent/crates/layerx-client/src"
+symptom = "layerx-client cannot import the transitive sha3 dependency, and layerx-crypto exposes signing without a reusable raw-transaction hash/decoder"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1382]
+area = "rpc"
+symptom = "rpc getBlockNumber still maps the pending tag to latest on purpose (the contract keeps eth_getBlockByNumber(\"pending\") on other nodes resolving to latest), so the -32000 refusal belongs in ResolveHeight/GetBlockNumberByNrOrHash, not in that switch; one pre-implementation exploratory go build ./rpc/ also ran (exit 0, no log) before the gated build"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1383]
+area = "modules/layerxgov/types"
+symptom = "modules/layerxgov/types/proposal.go was not gofmt-clean before this task (import grouping); gofmt -w rewrote it as part of the format step"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1384]
+area = "include/layerx"
+symptom = "The existing open gate reserves ordinal 8; admitting rate-change decoding fails its unchanged refusal assertion"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1385]
+area = "include/layerx"
+symptom = "The daemon link requires an in-tree release sandbox archive even when the shared target and debug runtime archive are selected"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1386]
+area = "include/layerx"
+symptom = "A single test-stream-open invocation can invoke the Programs workspace build twice and wait for the shared lock twice"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1387]
+area = "modules/layerxpay/types"
+symptom = "The budget kernel decoders refuse wrong length and wrong version header alike with LXP_ERR_NON_CANONICAL (not TRUNCATED/TRAILING_BYTES/VERSION_UNSUPPORTED as the service decoders do), so budget refusal tests must expect -3 for every length and header fault"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1388]
+area = "sdk/x/bank/keeper"
+symptom = "GigaBankKeeper (node/app.go) is a separate bank keeper with its own checker lists; the send-enabled checker is registered only on app.BankKeeper, so giga-path sends of paused denoms are not refused"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1389]
+area = "node/sequencer"
+symptom = "Cache merge iterator Error reports normal exhaustion as invalid; check errors only while Valid"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1390]
+area = "node/sequencer"
+symptom = "Deeply branched cache merge iteration timed out during full open-state comparison"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1391]
+area = "node/sequencer"
+symptom = "Cache GetAllKeyStrsInRange with a nil upper bound omits cache-local keys; exhaustive finite ranges are required"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1392]
+area = "node/sequencer"
+symptom = "Application fixtures starting above height one require InitChain InitialHeight rather than the default wrapper"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1393]
+area = "src/state"
+symptom = "the retention window prune and the live-count cap check already existed before this task; lxp_idempotency_prune_window is a file-static helper because lxp_state.h is not in the touches list, and the public lxp_idempotency_prune keeps its header contract"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1394]
+area = "consensus/internal/state"
+symptom = "BlockStore.PruneBlocks refuses a retain height above the stored head with a real error, which gives a prune-failure path without any injected test double"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1395]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "cycle.json does not answer the reads the station now makes (finalized anchor, eth_getCode, replay eth_call with code overrides, getLayerXDid at 0x1004, pax_sequencerReceipt), so tests/station.rs adds these rules in code"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1396]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "ConfiguredRpc with a deadline calls Exchange::request_until, which defaults to Configuration, so a replay exchange used by recover() or retry() must implement it"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1397]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "serde json! takes a reference to an expression argument, so a Value can be reused across several json! literals without cloning"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1398]
+area = "precompiles/common"
+symptom = "launchpad registered error messages are the code names themselves (LaunchpadCode(\"OVERFLOW\") gives \"LXP_LAUNCHPAD_OVERFLOW\"), not the registry messages, so the table takes its messages from the registry and not from err.Error()"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1399]
+area = "precompiles/common"
+symptom = "precompiles/common cannot import modules/evm/keeper (that package already depends on precompiles/common)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1400]
+area = "src/modules/spot"
+symptom = "Spot runtime fixture records need name/name_length, issuer_kind and issuer_did32 populated before lx_asset_record_encode accepts them"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1401]
+area = "modules/lxphost"
+symptom = "lxphost refused any kernel blob (blob_count != 0 -> FATAL_INVARIANT), so Programs deploy could not commit until blobs were persisted"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1402]
+area = "modules/lxphost"
+symptom = "activity windows wider than host TimestampWindowMs return LXP_ERR_MALFORMED_ENVELOPE as a Go error, not a receipt code"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1403]
+area = "modules/lxphost"
+symptom = "Programs deploy needs progmet/active/v1 and progmet/history/v1 metering records in module 9 KV"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1404]
+area = "modules/lxphost"
+symptom = "content-addressed program blobs are shared across programs with identical wasm"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1405]
+area = "src/modules/budget"
+symptom = "the delegate capability kv key family must not start with \"budget:\", because lx_budget_batch_maintenance iterates the \"budget:\" prefix and refuses any key that is not 39 bytes; this task uses \"budget-delegate:\"+budget_id+holder (80 bytes, 195-byte value)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1406]
+area = "src/modules/budget"
+symptom = "lxp_module_savepoint_discard returns LXP_FATAL_INVARIANT once a transfer set has added snapshots, so only discard when transfer_snapshot_count and transfer_applied still match the savepoint"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1407]
+area = "src/modules/budget"
+symptom = "tests/ledger/lxp_check_sole_writer.sh needs a real rg binary on PATH under /bin/sh; a shell-function rg is invisible to it, so the gate fails with \"rg: not found\" after the test binary passes"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1408]
+area = "src/modules/budget"
+symptom = "main moved during qualification; committed with the helper first, then rebased cleanly (no conflicts in the touched files)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1409]
+area = "tests/programs"
+symptom = "Fund and Activate lifecycle staging require the host reservation initialized only by Execute admission"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1410]
+area = "tests/programs"
+symptom = "The native expiry sweep limit is 6 while the acceptance criterion requires 128"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1411]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "Required interface stop reached before implementation or qualification; no gate executed and no completion claimed"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1412]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "A blocked checkout without changes cannot be committed by the fleet helper; no commit attempted"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1413]
+area = "agent/crates/layerx-agentd/src"
+symptom = "The completed signed-receipt prerequisite does not supply rung-aware receipt persistence or Rust Comet verification interfaces required by finality"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1414]
+area = "agent/crates/layerx-agentd/src"
+symptom = "getLayerXDid refuses absent bindings by reverting, contrary to the empty-result assumption in the tenant-unbound acceptance scenario"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1415]
+area = "agent/sdk/typescript/src"
+symptom = "The task requires receipt-returning bridge/launchpad APIs and Python parity but excludes their owning files from touches"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1416]
+area = "agent/sdk/typescript/src"
+symptom = "Agent API schema dispositions label program adapters absent although the actual dispatcher routes to real program adapters"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1417]
+area = "platform/sdk/dotnet"
+symptom = "The RPC receiptsRoot is the previous ABCI results root, not an EVM receipt-trie root; it cannot authenticate the contracted inclusion proof"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1418]
+area = "agent/sdk/typescript/src"
+symptom = "The shared TS decodeJsonRpcResponse accepts only object results; the ReceiptKeys array requires adaptation while retaining its envelope and error validation"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1419]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "A focused test compilation can reference AI market/SDK metadata from a sibling worktree after the same-checkout build passes"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1420]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "Worker and evaluator admissions consume the same successful-enrollment window quota"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1421]
+area = "agent/sdk/typescript/src"
+symptom = "Node assert.equal narrows discriminated unions; a subsequent failure-branch access is typed never"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1422]
+area = "agent/sdk/typescript/src"
+symptom = "This task's history and Python do_* steps name files excluded from its touches list"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1423]
+area = "agent/sdk/typescript/src"
+symptom = "px_listAssets accepts no pagination parameters and returns joined_limit rather than authenticated snapshot or cursor fields"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1424]
+area = "agent/sdk/typescript/src"
+symptom = "getLayerXDid reverts for unbound addresses; inspect getUnifiedAccount before querying the DID"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1425]
+area = "agent/sdk/typescript/src"
+symptom = "the Rust fixture's other-chain refusal case contains the chain-125 nonce-0 signature required by V6"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1426]
+area = "agent/sdk/typescript/src"
+symptom = "The SDK build includes all source files, examples and tests, so the verifier API migration requires coordinated caller changes outside this task's touches"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1427]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "Existing epoch-based prune_inactive stages a later exit; envelope pruning uses the strict 64-height bound and removes admission membership while preserving identity, replay and rewards"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1428]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "Dispatch wiring belongs to task 4.2.4; apply_admission returns AdmissionOutcome directly with Applied, Retained and Refused variants"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1429]
+area = "agent/schema/agent-api"
+symptom = "The declared write gate still tests major-one runtime states and contains neither named major-two write acceptance test"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1430]
+area = "interop/crates/layerx-portable/src"
+symptom = "capability 6.12.1 do_5 requires changing python_portable_verifier.py, which task 6.5.19 excludes from touches"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1431]
+area = "interop/crates/layerx-portable/src"
+symptom = "the existing Rust inclusion interface verifies kernel BatchHeader/Merkle proofs, not the contracted CometBFT/EVM receipt-trie proofs"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1432]
+area = "platform/hosted/ai-artifacts/src"
+symptom = "Ledger::recover takes no clock, so restore_payloads reads wall-clock seconds for the Quarantined->Available transition; a quarantined root refused at authorize (after restart) has no \"status\" field in the error body, while the chunk-read quarantine path adds status INTEGRITY_FAILED, so assert only HTTP code and error name across both paths"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1433]
+area = "agent/sdk/typescript/src"
+symptom = "Shared ABI encoder lacks bytes, bytes32[] and tuple types; dynamic trading calldata requires explicit ABI offsets"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1434]
+area = "agent/sdk/typescript/src"
+symptom = "The position-open golden has distinct position and margin IDs; the ABI fixes position ID to the margin account"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1435]
+area = "interop/deploy/gas-station"
+symptom = "railway.env.example lists GAS_STATION_ENDPOINTS=SEQUENCER_RPC_URL (a reference, not an https URL), so anything consuming the template literally must substitute it before ServiceConfig validation"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1436]
+area = "interop/crates/layerx-gas-station/src"
+symptom = "the service /submit handler reads chain time from the node before the station checks the journal, so even a refused key answers 503 when the node is unreachable; /status reads no node for a refused item"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1437]
+area = "agent/sdk/typescript/src"
+symptom = "Quote service validates an exact eight-field request; the new did field requires a coordinated service parser change"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1438]
+area = "agent/sdk/typescript/src"
+symptom = "Local EVM deployment receipts can lag transaction submission; explicitly mine before receipt reads"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1439]
+area = "agent/sdk/typescript/src"
+symptom = "Nonce gate requires ANVIL_BIN or anvil on PATH and the compiled contract fixture in node/sequencer/fee_test.go"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1440]
+area = "agent/sdk/typescript/src"
+symptom = "SDK has no local Prettier/ESLint configuration; full-file Prettier formatting reflows existing code"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1441]
+area = "rpc"
+symptom = "pendingBlockAPI in rpc/pending_block_test.go uses the sequencer ctxProvider without consensus params, so eth_getBlockByNumber on a committed height fails with \"consensus block parameters are unavailable\"; use the provider wrapped in pendingSimulateAPIs"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1442]
+area = "platform/hosted/gateway/src"
+symptom = "running rustfmt on platform/hosted/gateway/src/main.rs also reformats its submodules (explorer_target.rs, history.rs, paxeer.rs), so revert those files or pass --config skip_children=true"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1443]
+area = "node/sequencer"
+symptom = "ModeMicroBatch is Mode(1), so any test that uses Mode(1) as an \"unknown mode\" breaks once MicroBatch is selectable; use a mode value outside the declared set"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1444]
+area = "agent/crates/layerx-types/src"
+symptom = "the Retryable column of the contracts error registry and the Rust result mirror disagree on 17 kernel codes, so any test that checks one against the other fails until an owner rules which side is authoritative"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1445]
+area = "agent/crates/layerx-types/src"
+symptom = "LXP_OK has no registry row, and the generic name matcher would accept LXP_OK and LXP_FATAL_* by name, so from_revert_reason excludes the Success and Fatal domains explicitly"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1446]
+area = "modules/layerxgov/types"
+symptom = "go-amino RegisterConcrete panics on a duplicate name, so a MsgUpdateParams already registered by its own module's proposal.go init must not be registered again in layerxgov"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1447]
+area = "modules/layerxgov/types"
+symptom = "govtypes.ModuleCdc.LegacyAmino.Amino.PrintTypes lists every amino-registered proposal type, which is a usable registration check without new exports"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1448]
+area = "platform/hosted/core/src"
+symptom = "This task declares requires = [] although its configuration and pre-signing integration require interfaces owned by the shared EVM sender and treasury migration tasks"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1449]
+area = "platform/hosted/core/src"
+symptom = "The task touches exclude the service Config, its initializer and the actual treasury balance/signing call sites in src/main.rs"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1450]
+area = "agent/crates/layerx-agent-api/src"
+symptom = "The task touches exclude the explicit public Level re-export in agent/crates/layerx-agent-api/src/lib.rs:130, preventing a complete public Rung migration within the permitted files"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1451]
+area = "agent/sdk/typescript/src"
+symptom = "agent/sdk/typescript has no node_modules in a fresh worktree; run npm ci in it before build_cmd"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1452]
+area = "agent/sdk/typescript/src"
+symptom = "some registry messages contain \": \" (for example LXP_FEETOKEN_SWITCH_OFF, LXP_ADDR_LAYERX_NOT_BOUND), so split the revert text on the first \": \" only after the code"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1453]
+area = "precompiles/bank"
+symptom = "A wrong argument count cannot reach a precompile through RunAndCalculateGas because Prepare unpacks by the method ABI, so the ARG_COUNT refusal is only testable by calling Execute directly; the receipt VmError carries the precompile error text, so error text changes must be gated on the merge plan as well as the revert bytes"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1454]
+area = "precompiles/feetoken"
+symptom = "modules/evm/keeper SetAccountFeeDenom returns formatted errors, not the ErrFeeTokenDenomNotAllowed sentinel, so callers can only code its refusals by exact text"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1455]
+area = "precompiles/addr"
+symptom = "The common reason path packs err.Error(), and that same error text is appended to the receipt VmError, so a precompile can show LXP_ text only by checking the merge plan itself before it changes the error text; otherwise receipts below the plan height would change"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1456]
+area = "agent/sdk/python/layerx_sdk"
+symptom = "layerx_sdk is not on sys.path by default, so a pytest file under tests/agent/sdk/python must add agent/sdk/python itself"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1457]
+area = "precompiles/layerxbridge"
+symptom = "precompiles/common Precompile (non-dynamic) renders RevertReason unconditionally with no plan gate, so a static-gas precompile must gate plan-height revert text itself via the EVM keeper's UpgradeKeeper; NewPrecompileWithKeeper has no upgrade keeper and therefore never emits the coded text"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1458]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "Custom policy parameters must enter through CREATE so activated policy history remains consistent"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1459]
+area = "programs/crates/layerx-programs-ai-market/src"
+symptom = "The shared Cargo target can reference sibling-worktree artifacts with incompatible SDK type identities"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1460]
+area = "precompiles/common"
+symptom = "a shell wait loop of the form `pgrep -f \"<cmd>\"` matches its own command line and never ends; use a pid or a sentinel file instead"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1461]
+area = "src/modules/service"
+symptom = "no rg binary on the default PATH; the make test gates call tests/ledger/lxp_check_sole_writer.sh, which needs rg, so put a real rg on PATH before running them"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1462]
+area = "src/modules/service"
+symptom = "task 13.3.3 duplicates the scope of task 2.4.2 (same touches) but requires only 13.2.2, so it is admitted before the result codes from 2.2.3 exist"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1463]
+area = "src/modules/programs"
+symptom = "the kernel make gates need rg on PATH under /bin/sh and none is installed system-wide; a symlink in a private PATH dir works"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1464]
+area = "src/modules/programs"
+symptom = "make build/tests/lxp_test_blob_lifecycle rebuilds the full library and program runtime in a fresh worktree (about 15 minutes) and writes programs/target inside the worktree"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1465]
+area = "src/modules/programs"
+symptom = "test_blob_lifecycle request encoding reads fx->root_c as the archive root, and only absent_profile sets it before seeding, so a fresh fixture must run absent_profile first"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1466]
+area = "src/modules/budget"
+symptom = "no rg binary on PATH; lxp_check_sole_writer.sh in make test-budget-* needs rg, so symlink a ripgrep binary into a scratch bin dir on PATH"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1467]
+area = "src/modules/budget"
+symptom = "the repository has no .clang-format and no clang-format binary, so C files are hand-formatted to the existing style"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1468]
+area = "precompiles/common"
+symptom = "the existing WithRevertReasons opt-in (Precompile and DynamicGasPrecompile) is pinned by TestDynamicGasRevertReasons to bare Error(string) text, so LXP_ registry reasons come through a separate WithLXPReasons opt-in rather than by changing WithRevertReasons; framework refusal texts must stay byte-identical for replay parity, so the registry code rides on a wrapper error whose Error() is unchanged"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1469]
+area = "interop/crates/layerx-fiat/src"
+symptom = "GatewayCore has no settlement transition for a receipt verified against ReceiptKeys; its sole completion gate requires legacy batch evidence"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1470]
+area = "interop/crates/layerx-fiat/src"
+symptom = "PaymentDrawn log evidence alone cannot authenticate its idempotency key; the signed draw transaction is required"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1471]
+area = "human/apps/web/src/api"
+symptom = "GasStationModule.resume can POST a retained submission when status is quoted; read-only recovery must use status"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1472]
+area = "human/apps/web/src/api"
+symptom = "the task cites sendSponsoredBatch in gas-station.ts but omits that file from its touches list"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1473]
+area = "human/wallet/gateway/src/routes"
+symptom = "The existing wallet status validator requires replacement and rejects receipted completion, while the current station omits replacement and emits receipted; the conflicting checks were retained"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1474]
+area = "human/wallet/gateway/src/routes"
+symptom = "The gateway authentication fixture lacks custody-authority inventory and replication configuration required by the current auth route"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1475]
+area = "human/wallet/sdk/src"
+symptom = "Vitest can pass while the wallet SDK build fails because the existing CurveFn.Point use is transpiled without the build's type check"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1476]
+area = "human/apps/web/src/explorer"
+symptom = "Fresh web checkouts lack the TypeScript executable and ESLint dependencies; formatting can use cached Prettier but typecheck and lint remain unavailable"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1477]
+area = "human/crates/layerx-human-service/src/journeys"
+symptom = "Human workspace manifests can disagree with Cargo.lock in a clean checkout, blocking every --locked gate before compilation"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1478]
+area = "human/crates/layerx-human-service/src/activity"
+symptom = "the current PortableReceiptV2 format supports only receipted signature/key verification and inclusionHeight, without the committed proof fields required by contracts/clients.md section (c)"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1479]
+area = "human/wallet/sdk/src"
+symptom = "repository formatter configuration uses deprecated jsxBracketSameLine; formatting completed successfully"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1480]
+area = "precompiles/bank"
+symptom = "A 32-byte kernel module address (address.Module(\"layerx\", id)) is reachable through the bank precompile only after an EVM address is bound to it; an unbound EVM address is cast to its own 20-byte account"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1481]
+area = "precompiles/bank"
+symptom = "ABI-unpacked zero *big.Int is not DeepEqual to big.NewInt(0) (nil vs empty nat); compare String() or Cmp"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1482]
+area = "human/crates/layerx-human-service/src/server"
+symptom = "The Human workspace lockfile can require reconciliation before its declared locked gates can compile onboarding code"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1483]
+area = "human/apps/web/src/api"
+symptom = "npm ci --ignore-scripts leaves the linked wallet and UI packages without their dist declarations"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1484]
+area = "human/crates/layerx-human-service/src/server"
+symptom = "NativeSendPreviewV1 is directly constructed by unowned AgentRuntime; its kernel fields cannot be replaced within the two-file touches list"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1485]
+area = "explorer/frontend/types/api"
+symptom = "Frontend Vitest discovers only .spec.ts and .spec.tsx, so a planned .test.ts file is excluded even when supplied as the positional filter"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1486]
+area = "human/wallet/gateway/src/rpc"
+symptom = "Returning a receipt bundle breaks gateway send callers that still consume a hash string; those callers must be included in touches"
+fix = "Recorded from the task report, which states no separate fix."
+
+[gotcha.1487]
+area = "human/wallet/gateway/src/rpc"
+symptom = "The gateway environment schema strips unknown keys; adding a sequencer URL only to rpcPoolFromConfig does not configure shared writes"
+fix = "Recorded from the task report, which states no separate fix."

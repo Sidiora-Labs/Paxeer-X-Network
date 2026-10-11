@@ -11887,7 +11887,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.6.18]
 title = "Daemon reference clients stop calling the oracle adapter"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -15085,7 +15085,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3.3]
 title = "AI evidence seal keeps artifact bytes off chain"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["4.2.6"]
@@ -26577,7 +26577,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.3]
 title = "History reads with the block-position cursor"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -26631,7 +26631,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.5]
 title = "Availability by block retrieval in agentd and the explorer index"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -26660,7 +26660,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.6]
 title = "Module state reads through the router"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -26768,7 +26768,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.6.10]
 title = "Program reads as views and resultByIdempotency"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = []
@@ -40191,7 +40191,7 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 [task.0.20]
 title = "Gateway maintained receipt reads keep hash-identified batches under receipt key selection"
-status = "pending"
+status = "in_progress"
 wave = 1
 requires = ["0.15"]
 reqs = ["9024.1", "9024.2", "9026.1"]
@@ -40217,7 +40217,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.21]
 title = "Pending subscription overflow is observable at the RPC boundary and never silently stops delivery"
-status = "pending"
+status = "in_progress"
 wave = 1
 requires = ["13.1.5"]
 reqs = ["13003.1", "13003.2", "13003.3"]
@@ -40243,7 +40243,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.22]
 title = "Agent operation catalogue restores mcp.invoke so the agent daemon and SDK compile"
-status = "pending"
+status = "in_progress"
 wave = 1
 requires = []
 reqs = ["6.15", "6.39", "6.51"]
@@ -50050,7 +50050,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.36]
 title = "Examples move from lx_getSequence to eth_getTransactionCount"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -50078,7 +50078,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.37]
 title = "Seller middleware payment RPC moves to EVM receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -53200,7 +53200,7 @@ activation = "Deletions land in the same release as the merge plan; the rehearsa
 
 [task.11.5.1]
 title = "Retired-caller check and its catalogue"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = []
@@ -95364,7 +95364,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.5.4]
 title = "Authority trusts receipts by pinned keys; portable v2"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["13.1.4"]
