@@ -984,3 +984,79 @@ func requireAmount(t *testing.T, want, got sdk.Int) {
 	t.Helper()
 	require.True(t, want.Equal(got), "want %s, got %s", want, got)
 }
+
+func TestEventTopics(t *testing.T) {
+	t.Run("acceptance_5_22_1", func(t *testing.T) {
+		want := []struct {
+			name    string
+			sig     string
+			topic   common.Hash
+			indexed []bool
+		}{
+			{types.EventRequested, "XWebRequested(uint64,address,uint8,bytes,uint64,uint256,uint64)",
+				common.HexToHash("0x3761cb12023af30e23da5dd47f1bf8cae4951138f813d82effc788e317254293"),
+				[]bool{true, true, false, false, false, false, false}},
+			{types.EventFulfilled, "XWebFulfilled(uint64,address,bytes32,uint32,uint8,uint8,uint64)",
+				common.HexToHash("0xc7eff87d7909e306e0e43af3c9ad333ddc311b8a3c1f90fa68044c11d62ecd1a"),
+				[]bool{true, true, false, false, false, false, false}},
+			{types.EventRefunded, "XWebRefunded(uint64,address,uint256)",
+				common.HexToHash("0xc7eaafa8d3b0edacffbf86e1d4f404b61a8cb32dca0e8e57998422538045072d"),
+				[]bool{true, true, false}},
+		}
+		h := newHarness(t)
+		parsed := h.precompile.GetABI()
+		require.Len(t, parsed.Events, len(want))
+
+		local, err := os.ReadFile("XWeb.sol")
+		require.NoError(t, err)
+		source := regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*`).ReplaceAllString(string(local), "")
+		declared := make(map[string]string)
+		for _, declaration := range regexp.MustCompile(`(?s)\bevent\s+(\w+)\s*\(([^)]*)\)\s*;`).FindAllStringSubmatch(source, -1) {
+			var params []string
+			for _, field := range strings.Split(declaration[2], ",") {
+				params = append(params, strings.Fields(field)[0])
+			}
+			declared[declaration[1]] = declaration[1] + "(" + strings.Join(params, ",") + ")"
+		}
+		require.Len(t, declared, len(want))
+		require.Equal(t, len(want), strings.Count(source, "event "))
+
+		for _, event := range want {
+			t.Run(event.name, func(t *testing.T) {
+				require.Equal(t, event.topic, crypto.Keccak256Hash([]byte(event.sig)))
+				require.Equal(t, event.sig, declared[event.name])
+				got, exists := parsed.Events[event.name]
+				require.True(t, exists)
+				require.Equal(t, event.sig, got.Sig)
+				require.Equal(t, event.topic, got.ID)
+				require.False(t, got.Anonymous)
+				indexed := make([]bool, len(got.Inputs))
+				for i, input := range got.Inputs {
+					indexed[i] = input.Indexed
+				}
+				require.Equal(t, event.indexed, indexed)
+			})
+		}
+
+		requested := h.request(recorder, callbackGas)
+		outcome, _, _ := h.fulfil(requested, supplied)
+		require.Equal(t, types.CallbackDelivered, outcome)
+		expired := h.request(reverter, callbackGas)
+		h.stateDB.WithCtx(h.ctx().WithBlockHeight(startHeight + int64(timeout)))
+		_, _, reason := h.call(stranger, xweb.RefundMethod, nil, supplied, expired)
+		require.Empty(t, reason)
+
+		var emitted [][]common.Hash
+		for _, log := range h.stateDB.GetAllLogs() {
+			if log.Address == precompile {
+				emitted = append(emitted, log.Topics)
+			}
+		}
+		require.Equal(t, [][]common.Hash{
+			{want[0].topic, topicOf(requested), common.BytesToHash(recorder.Bytes())},
+			{want[1].topic, topicOf(requested), common.BytesToHash(recorder.Bytes())},
+			{want[0].topic, topicOf(expired), common.BytesToHash(reverter.Bytes())},
+			{want[2].topic, topicOf(expired), common.BytesToHash(reverter.Bytes())},
+		}, emitted)
+	})
+}
