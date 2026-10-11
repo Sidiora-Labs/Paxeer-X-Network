@@ -1,6 +1,7 @@
 package precompiles
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/addr"
@@ -41,6 +42,102 @@ const XWebUpgrade = "v6.8"
 // feetoken.FeeTokenAddress, and the entry carries a version at this upgrade so
 // that execution below its height leaves the precompile out.
 const FeeTokenUpgrade = "v6.7"
+
+// MergeUpgrade is the plan that merges the LayerX kernel into the chain and
+// brings the MergeAddressTable precompiles online. It equals the plan name the
+// node registers, and the merge entries carry a version at this plan so that
+// the keeper's activation entry for the plan withholds them below its height.
+const MergeUpgrade = "v7.0"
+
+// MergeAddress is one precompile address the merge plan brings online and the
+// name its precompile reports through GetName.
+type MergeAddress struct {
+	Address ecommon.Address
+	Name    string
+}
+
+// MergeAddressTable lists the precompiles the merge plan brings online: the
+// four construct addresses and the eight agent-function addresses.
+var MergeAddressTable = []MergeAddress{
+	{ecommon.HexToAddress("0x000000000000000000000000000000000000101A"), "layerxledger"},
+	{ecommon.HexToAddress("0x000000000000000000000000000000000000101B"), "layerxpay"},
+	{ecommon.HexToAddress("0x000000000000000000000000000000000000101C"), "layerxauth"},
+	{ecommon.HexToAddress("0x000000000000000000000000000000000000101D"), "layerxprograms"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000901"), "orob"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000902"), "clearing"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000903"), "oracle aggregator"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000904"), "pofq"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000905"), "scheduler"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000906"), "streams"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000907"), "tee attestor"},
+	{ecommon.HexToAddress("0x0000000000000000000000000000000000000908"), "eip712"},
+}
+
+// MergeConstructor builds the precompile served at one MergeAddressTable
+// address from the precompile keepers and the merge plan name.
+type MergeConstructor func(keepers utils.Keepers, planName string) (IPrecompile, error)
+
+var (
+	mergeConstructorsMtx sync.RWMutex
+	mergeConstructors    = map[ecommon.Address]MergeConstructor{}
+)
+
+// RegisterMergeConstructor records the constructor of the precompile served at
+// a MergeAddressTable address. An address with no registered constructor is
+// not served. It refuses an address outside the table, a nil constructor and
+// a second constructor for the same address.
+func RegisterMergeConstructor(address ecommon.Address, constructor MergeConstructor) error {
+	if _, ok := mergeAddressName(address); !ok {
+		return fmt.Errorf("merge constructor for %s outside the merge address table", address.Hex())
+	}
+	if constructor == nil {
+		return fmt.Errorf("nil merge constructor for %s", address.Hex())
+	}
+	mergeConstructorsMtx.Lock()
+	defer mergeConstructorsMtx.Unlock()
+	if _, registered := mergeConstructors[address]; registered {
+		return fmt.Errorf("merge constructor for %s already registered", address.Hex())
+	}
+	mergeConstructors[address] = constructor
+	return nil
+}
+
+func mergeAddressName(address ecommon.Address) (string, bool) {
+	for _, entry := range MergeAddressTable {
+		if entry.Address == address {
+			return entry.Name, true
+		}
+	}
+	return "", false
+}
+
+// newMergePrecompiles builds, in MergeAddressTable order, the precompile of
+// every address with a registered constructor, and refuses a precompile whose
+// address or name differs from its table entry.
+func newMergePrecompiles(keepers utils.Keepers) ([]IPrecompile, error) {
+	mergeConstructorsMtx.RLock()
+	defer mergeConstructorsMtx.RUnlock()
+	built := make([]IPrecompile, 0, len(mergeConstructors))
+	for _, entry := range MergeAddressTable {
+		constructor, registered := mergeConstructors[entry.Address]
+		if !registered {
+			continue
+		}
+		p, err := constructor(keepers, MergeUpgrade)
+		if err != nil {
+			return nil, fmt.Errorf("merge precompile %s at %s: %w", entry.Name, entry.Address.Hex(), err)
+		}
+		if p == nil {
+			return nil, fmt.Errorf("merge precompile %s at %s: constructor returned no precompile", entry.Name, entry.Address.Hex())
+		}
+		if p.Address() != entry.Address || p.GetName() != entry.Name {
+			return nil, fmt.Errorf("merge precompile %s at %s: constructor built %s at %s",
+				entry.Name, entry.Address.Hex(), p.GetName(), p.Address().Hex())
+		}
+		built = append(built, p)
+	}
+	return built, nil
+}
 
 var SetupMtx = &sync.Mutex{}
 var Initialized = false
@@ -92,6 +189,13 @@ func GetCustomPrecompiles(
 	}
 	if semver.Compare(latestUpgrade, XWebUpgrade) >= 0 {
 		custom[ecommon.HexToAddress(xweb.XWebAddress)] = xweb.GetVersioned(latestUpgrade, keepers)
+	}
+	merge, err := newMergePrecompiles(keepers)
+	if err != nil {
+		panic(err)
+	}
+	for _, p := range merge {
+		custom[p.Address()] = utils.VersionedPrecompiles{latestUpgrade: p, MergeUpgrade: p}
 	}
 	return custom
 }
@@ -229,6 +333,14 @@ func InitializePrecompiles(
 	PrecompileNamesToInfo[launchpadp.GetName()] = PrecompileInfo{ABI: launchpadp.GetABI(), Address: launchpadp.Address()}
 	PrecompileNamesToInfo[xwebp.GetName()] = PrecompileInfo{ABI: xwebp.GetABI(), Address: xwebp.Address()}
 
+	merge, err := newMergePrecompiles(keepers)
+	if err != nil {
+		return err
+	}
+	for _, p := range merge {
+		PrecompileNamesToInfo[p.GetName()] = PrecompileInfo{ABI: p.GetABI(), Address: p.Address()}
+	}
+
 	if !dryRun {
 		addPrecompileToVM(feetokenp)
 		addPrecompileToVM(bankp)
@@ -250,6 +362,9 @@ func InitializePrecompiles(
 		addPrecompileToVM(layerxbridgep)
 		addPrecompileToVM(launchpadp)
 		addPrecompileToVM(xwebp)
+		for _, p := range merge {
+			addPrecompileToVM(p)
+		}
 		Initialized = true
 	}
 	return nil
