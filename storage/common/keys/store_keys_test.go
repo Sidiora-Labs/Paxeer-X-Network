@@ -95,3 +95,34 @@ func TestXWebStoreKeyIsTheLastMemIAVLStoreKey(t *testing.T) {
 	require.NotContains(t, got, XWebStoreKey)
 	require.Len(t, got, len(MemIAVLStoreKeys)-1)
 }
+
+func TestMergeStoreKeyConstants(t *testing.T) {
+	merge := []struct {
+		got  string
+		want string
+	}{
+		{LayerXLedgerStoreKey, "layerxledger"},
+		{LayerXAuthStoreKey, "layerxauth"},
+		{LayerXPayStoreKey, "layerxpay"},
+		{LayerXProgramsStoreKey, "layerxprograms"},
+		{SequencerStoreKey, "sequencer"},
+	}
+
+	seen := make(map[string]struct{}, len(merge))
+	for _, m := range merge {
+		require.Equal(t, m.want, m.got)
+
+		_, dup := seen[m.got]
+		require.False(t, dup, "merge store key %q is declared twice", m.got)
+		seen[m.got] = struct{}{}
+
+		mounted := 0
+		for _, k := range MemIAVLStoreKeys {
+			if k == m.got {
+				mounted++
+			}
+		}
+		require.LessOrEqual(t, mounted, 1, "merge store key %q shares its name with another mounted store", m.got)
+	}
+	require.Len(t, seen, 5)
+}

@@ -37,6 +37,11 @@ const (
 	LayerXBridgeStoreKey   = "layerxbridge"   // modules/layerxbridge/types.StoreKey
 	LaunchpadStoreKey      = "launchpad"      // modules/launchpad/types.StoreKey
 	XWebStoreKey           = "xweb"           // modules/xweb/types.StoreKey
+	LayerXLedgerStoreKey   = "layerxledger"   // modules/layerxledger/types.StoreKey
+	LayerXAuthStoreKey     = "layerxauth"     // modules/layerxauth/types.StoreKey
+	LayerXPayStoreKey      = "layerxpay"      // modules/layerxpay/types.StoreKey
+	LayerXProgramsStoreKey = "layerxprograms" // modules/layerxprograms/types.StoreKey
+	SequencerStoreKey      = "sequencer"      // modules/sequencer/types.StoreKey
 )
 
 // MemIAVLStoreKeys is the canonical list of module KV store keys that are
