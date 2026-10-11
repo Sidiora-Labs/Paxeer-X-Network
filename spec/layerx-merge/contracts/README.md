@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.1 |
+| Version | 1.0.2 |
 | Change control | changes only by amendment; each amendment raises the version of the amended contract and of this index |
 | Source revision | 52b672ac4 |
 | Binding decisions | ADR D1-D20 |

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Precompile | layerxprograms, address 0x000000000000000000000000000000000000101D (the address table row 0x101D) |
-| Version | 1.0.1 |
+| Version | 1.0.2 |
 | Change control | Changes only by amendment to this contract, recorded with a new version number. |
 | Source revision | 52b672ac4 |
 | Binding decisions | decision D1 (kernel C modules and Rust program runtime inside paxd), decision D3 (authz LayerX-scope grants for kernel and program delegation), decision D6 (Error(string) with LXP_ prefix), decision D9 (program fee kept on top of near-zero gas), decision D13 (MsgDeploy of the reference guests at activation), decision D2 (principal derivation), decision D11 (origin-2 web fee); MsgRetireStorage is kept; EVM gas is a fixed per-method gas table (section D2) |
@@ -165,6 +165,7 @@ Fees, pause, epoch hooks and protocol-origin activities; none is a user selector
 | Reference guest: interpreter (decision D13) | programs/crates/layerx-programs-interpreter (cdylib; layerx-program.json abi_version 2, capabilities storage_read, storage_write, transfer_402) | deploy() at activation; host needs storage_read, storage_write, transfer_402 |
 | Reference guest: compute-lease market (decision D13) | programs/crates/layerx-programs-market (cdylib; adjudicate_market_step in src/dispute.rs, src/lib.rs) | deploy() at activation; host needs storage_*_scoped (shared), context_read, hash, market_step_adjudicate |
 | Reference guest: AI market (decision D13) | programs/crates/layerx-programs-ai-market (cdylib; host_adapter.rs capabilities SharedStorageRead, SharedStorageWrite, EmitEvent) | deploy() at activation; host needs storage_*_scoped (shared), context_read, event_emit, fund_program_402, transfer_program_402 |
+| Module blob store (host shim) | modules/lxphost/host.go:475 (blobPrefix 0x05), :756-777 (loadBlobs), :819 (blobKey); modules/lxphost/ctx.go:14-17 (prefixes 0x01-0x04) | Rows live under key prefix 0x05: key = 0x05 ‖ u16be module id ‖ 32-byte blob key, value = blob bytes. The host loads every row of the module before each kernel call, writes changed rows back in sorted key order and deletes rows the kernel drops. Program code blobs are content-addressed, so programs with identical wasm share one row. Prefixes 0x01 module KV, 0x02 last sequence, 0x03 identity sequence and 0x04 idempotency stay as they are. |
 
 ## H. Host interface
 One row per guest host function linked into the runtime (host/mod.rs:1149-1217); authority is always the executing program origin narrowed by the call's capability grants.
