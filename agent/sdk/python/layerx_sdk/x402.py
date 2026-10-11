@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Literal, NoReturn
 
 from .generated.receipt import ReceiptFailureCode
 from .production import PlatformSdkError, SdkErrorCode
+from .revert import decode_revert_reason
 from .verifier import (
     AuthorizedReceiptBatch,
     CheckpointVerificationInput,
@@ -16,7 +18,7 @@ from .verifier import (
     SequencerAuthorization,
     verify_batch_inclusion,
     verify_checkpoint,
-    verify_receipt,
+    verify_receipt_outcome,
 )
 
 PaymentCommitment = Literal["executed", "batched", "finalised"]
@@ -167,6 +169,7 @@ def verify_payment_receipt(
     payer: str | None = None,
     commitment: PaymentCommitment = "executed",
     evidence: PaymentCommitmentEvidence | None = None,
+    return_data: bytes | None = None,
 ) -> ReceiptVerification:
     if (
         not isinstance(amount, str)
@@ -185,12 +188,21 @@ def verify_payment_receipt(
             _failure()
     if payer == "0" * 64:
         _failure()
-    verified = verify_receipt(
+    verified = verify_receipt_outcome(
         canonical_receipt,
         authorized,
         signatures,
         protocol_version=receipt_protocol_version(canonical_receipt),
     )
+    if return_data is not None and (
+        not isinstance(return_data, bytes)
+        or sha256(return_data).digest() != verified.receipt.activity_root
+    ):
+        _failure()
+    if verified.receipt.result_code != 0:
+        if verified.receipt.result_code == 1 and return_data is not None:
+            raise decode_revert_reason(return_data)
+        raise ReceiptVerificationError(ReceiptFailureCode.RESULT_CODE)
     if (
         verified.receipt.amount != int(amount)
         or verified.receipt.asset.hex() != asset

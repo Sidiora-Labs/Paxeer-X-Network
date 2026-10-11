@@ -5,8 +5,11 @@ import re
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from urllib.error import URLError
 
-from .production import PlatformSdkError
+from .account_derivation import keccak256
+from .production import PlatformSdkError, SdkErrorCode
+from .revert import decode_revert_reason, raise_for_receipt_status
 from .x402 import verify_payment_receipt
 
 
@@ -27,6 +30,104 @@ class PaymentRpcError(Exception):
         super().__init__(f"JSON-RPC error {code}")
         self.code = code
         self.data = data
+
+
+def _transaction_bytes(value: object, size: int | None = None) -> bytes:
+    if not isinstance(value, str) or not value.startswith("0x"):
+        raise ValueError("invalid-rpc-hex")
+    return rpc_hex(value[2:].lower(), size)
+
+
+def _return_data(value: object) -> bytes:
+    return b"" if value == "0x" else _transaction_bytes(value)
+
+
+def _decode_rpc_response(body: object, request_id: int) -> dict | str | None:
+    if (
+        not isinstance(body, dict)
+        or body.get("jsonrpc") != "2.0"
+        or type(body.get("id")) is not int
+        or body["id"] != request_id
+        or ("error" in body) == ("result" in body)
+    ):
+        raise ValueError("invalid-rpc-envelope")
+    if "error" in body:
+        error = body["error"]
+        if (
+            not isinstance(error, dict)
+            or type(error.get("code")) is not int
+            or not isinstance(error.get("message"), str)
+        ):
+            raise ValueError("invalid-rpc-error")
+        raise PaymentRpcError(error["code"], error.get("data"))
+    result = body["result"]
+    if result is None or isinstance(result, (dict, str)):
+        return result
+    raise ValueError("invalid-rpc-result")
+
+
+def _send_result(result: object, raw_transaction: bytes) -> str:
+    transaction_hash = _transaction_bytes(result, 32)
+    if transaction_hash != keccak256(raw_transaction):
+        raise ValueError("transaction-hash-mismatch")
+    return "0x" + transaction_hash.hex()
+
+
+def _sequencer_result(result: object, transaction_hash: bytes) -> dict | None:
+    if result is None:
+        return None
+    if (
+        not isinstance(result, dict)
+        or _transaction_bytes(result.get("txHash"), 32) != transaction_hash
+        or result.get("rung") not in ("submitted", "receipted", "committed")
+    ):
+        raise ValueError("invalid-sequencer-receipt")
+    if result["rung"] == "submitted":
+        if set(result) != {"txHash", "nonce", "rung"}:
+            raise ValueError("invalid-sequencer-receipt")
+        nonce = result["nonce"]
+        if (
+            not isinstance(nonce, str)
+            or re.fullmatch(r"0x(?:0|[1-9a-f][0-9a-f]*)", nonce) is None
+            or len(nonce) > 18
+        ):
+            raise ValueError("invalid-sequencer-receipt")
+        return result
+    if result.get("status") not in ("0x0", "0x1"):
+        raise ValueError("invalid-sequencer-receipt")
+    _transaction_bytes(result.get("receipt"))
+    _transaction_bytes(result.get("keyId"), 32)
+    if result["rung"] == "committed":
+        _transaction_bytes(result.get("blockHash"), 32)
+    elif "blockHash" in result:
+        raise ValueError("invalid-sequencer-receipt")
+    raise_for_receipt_status(result)
+    return result
+
+
+def _committed_result(result: object, transaction_hash: bytes) -> dict | None:
+    if result is None:
+        return None
+    if (
+        not isinstance(result, dict)
+        or _transaction_bytes(result.get("transactionHash"), 32) != transaction_hash
+        or result.get("status") not in ("0x0", "0x1")
+    ):
+        raise ValueError("invalid-transaction-receipt")
+    _transaction_bytes(result.get("blockHash"), 32)
+    return result
+
+
+def _submission_error(error: PaymentRpcError) -> None:
+    data = error.data
+    if isinstance(data, Mapping):
+        data = data.get("data")
+    if isinstance(data, str) and (error.code == 3 or data[:10].lower() == "0x08c379a0"):
+        try:
+            return_data = _return_data(data)
+        except ValueError as malformed:
+            raise PlatformSdkError(SdkErrorCode.DECODE_FAILURE, "never") from malformed
+        raise decode_revert_reason(return_data) from error
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -56,7 +157,7 @@ class PaymentRpc:
         self._id = 0
         self._opener = urllib.request.build_opener(_NoRedirect())
 
-    def call(self, method: str, params: list) -> dict:
+    def call(self, method: str, params: list) -> dict | str | None:
         self._id += 1
         request_id = self._id
         request = urllib.request.Request(
@@ -71,46 +172,40 @@ class PaymentRpc:
             raw = response.read(8388609)
         if len(raw) > 8388608:
             raise ValueError("rpc-body-too-large")
-        body = json.loads(raw)
-        if (
-            not isinstance(body, dict)
-            or body.get("jsonrpc") != "2.0"
-            or type(body.get("id")) is not int
-            or body["id"] != request_id
-            or ("error" in body) == ("result" in body)
-        ):
-            raise ValueError("invalid-rpc-envelope")
-        if "error" in body:
-            error = body["error"]
-            if (
-                not isinstance(error, dict)
-                or type(error.get("code")) is not int
-                or not isinstance(error.get("message"), str)
-            ):
-                raise ValueError("invalid-rpc-error")
-            raise PaymentRpcError(error["code"], error.get("data"))
-        result = body["result"]
-        if isinstance(result, dict):
-            return result
-        raise ValueError("invalid-rpc-result")
+        return _decode_rpc_response(json.loads(raw), request_id)
 
-    def send(self, canonical_hex: str, commitment: str) -> dict:
-        rpc_hex(canonical_hex)
-        if len(canonical_hex) > 1048576 or commitment not in (
-            "executed",
-            "batched",
-            "finalised",
-        ):
+    def send(self, raw_transaction: str) -> str:
+        canonical = _transaction_bytes(raw_transaction)
+        if len(canonical) > 524288:
             raise ValueError("invalid-rpc-submit")
-        return self.call("lx_sendActivity", [canonical_hex, commitment])
+        try:
+            result = self.call("eth_sendRawTransaction", [raw_transaction])
+        except PaymentRpcError as error:
+            _submission_error(error)
+            raise
+        except (URLError, TimeoutError, OSError) as error:
+            raise PlatformSdkError(
+                SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome"
+            ) from error
+        return _send_result(result, canonical)
 
-    def receipt(self, activity_id: str) -> dict:
-        rpc_hex(activity_id, 32)
-        return self.call("lx_getReceipt", [activity_id])
+    def receipt(self, transaction_hash: str) -> dict | None:
+        expected = _transaction_bytes(transaction_hash, 32)
+        return _sequencer_result(
+            self.call("pax_sequencerReceipt", [transaction_hash]), expected
+        )
 
-    def status(self, activity_id: str) -> dict:
-        rpc_hex(activity_id, 32)
-        return self.call("lx_getActivityStatus", [activity_id])
+    def status(self, transaction_hash: str) -> dict | None:
+        expected = _transaction_bytes(transaction_hash, 32)
+        result = _committed_result(
+            self.call("eth_getTransactionReceipt", [transaction_hash]), expected
+        )
+        if result is not None and result["status"] == "0x0":
+            sequencer = self.receipt(transaction_hash)
+            if sequencer is None:
+                raise ValueError("revert-receipt-unavailable")
+            raise ValueError("revert-receipt-mismatch")
+        return result
 
 
 def verify_rpc_payment(
@@ -147,6 +242,9 @@ def verify_rpc_payment(
             payer=expected_payer,
             commitment=commitment,
             evidence=evidence,
+            return_data=(
+                _return_data(result["returnData"]) if "returnData" in result else None
+            ),
         )
     except PlatformSdkError as error:
         raise ValueError("payment-binding-mismatch") from error
