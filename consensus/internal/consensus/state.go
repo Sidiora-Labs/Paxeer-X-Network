@@ -282,6 +282,14 @@ func (cs *State) SetPrivValidator(ctx context.Context, priv utils.Option[types.P
 	}
 }
 
+// SetLeaderPin installs the proposer list pinned in the sequencer module state,
+// so that Leader(h, r) = L[r mod len(L)] at heights at or above its activation.
+func (cs *State) SetLeaderPin(pin cstypes.LeaderPin) {
+	cs.mtx.Lock()
+	defer cs.mtx.Unlock()
+	cs.roundState.SetLeaderPin(pin)
+}
+
 // SetTimeoutTicker sets the local timer. It may be useful to overwrite for
 // testing.
 func (cs *State) SetTimeoutTicker(timeoutTicker TimeoutTicker) {
@@ -1098,7 +1106,7 @@ func (cs *State) enterPropose(ctx context.Context, height int64, round int32, en
 
 	// If this validator is the proposer of this round, and the previous block time is later than
 	// our local clock time, wait to propose until our local clock time has passed the block time.
-	if key, ok := cs.privValidatorPubKey.Get(); ok && cs.roundState.Leader() == key {
+	if key, ok := cs.privValidatorPubKey.Get(); ok && cs.isProposer(key) {
 		proposerWaitTime := proposerWaitTime(tmtime.DefaultSource{}, cs.state.LastBlockTime)
 		if proposerWaitTime > 0 {
 			cs.scheduleTimeout(proposerWaitTime, height, round, cstypes.RoundStepNewRound)
@@ -1151,8 +1159,7 @@ func (cs *State) enterPropose(ctx context.Context, height int64, round int32, en
 		return
 	}
 
-	leader := cs.roundState.Leader()
-	if leader == privValidatorPubKey {
+	if cs.isProposer(privValidatorPubKey) {
 		logger.Debug(
 			"propose step; our turn to propose",
 			"proposer", addr,
@@ -1162,9 +1169,15 @@ func (cs *State) enterPropose(ctx context.Context, height int64, round int32, en
 	} else {
 		logger.Debug(
 			"propose step; not our turn to propose",
-			"proposer", leader.Address(),
+			"proposer", cs.roundState.Leader().Address(),
 		)
 	}
+}
+
+// isProposer reports whether key is Leader(h, r) for the current height and
+// round, which is the pinned leader at heights at or above the pin's activation.
+func (cs *State) isProposer(key crypto.PubKey) bool {
+	return cs.roundState.Leader() == key
 }
 
 func (cs *State) decideProposal(ctx context.Context, height int64, round int32, privValidator types.PrivValidator, privValidatorPubKey crypto.PubKey) {
@@ -2229,7 +2242,7 @@ func (cs *State) tryCreateProposalBlock(ctx context.Context) bool {
 		return false
 	}
 	// For some reason we only attempt that on non-proposing validators.
-	if key, ok := cs.privValidatorPubKey.Get(); !ok || cs.roundState.Leader() == key {
+	if key, ok := cs.privValidatorPubKey.Get(); !ok || cs.isProposer(key) {
 		return false
 	}
 	proposal := cs.roundState.Proposal()
