@@ -909,43 +909,98 @@ fn native_context_binds_chain_program_and_height() -> Checked {
 }
 
 #[test]
-fn native_selectors_without_a_landed_transition_refuse_unknown_operation() -> Checked {
+fn native_selectors_preserve_exact_routed_refusals() -> Checked {
     let mut n = Native::start()?;
     applied_at(&n.create(&[0], &policy_bytes(&policy(1)?)?)?)?;
     let roster = Presence::Present(RosterDigest::new([9; 32])?);
-    let mut chunk = vec![0; 46];
-    chunk[45] = 1;
-    for selector in [
-        0x010A, 0x010B, 0x0501, 0x0502, 0x0503, 0x0601, 0x0602, 0x0603, 0x0604, 0x0605, 0x0701,
-        0x0702, 0x0703, 0x0801, 0x0802, 0x0803, 0x0804, 0x0805, 0x0806, 0x0807, 0x0808, 0x0809,
-        0x0A01, 0x0A02,
+    for (selector, error, revision) in [
+        (0x010A, UNAUTHORIZED, 0),
+        (0x010B, F01_STALE_REVISION, 1),
+        (0x0501, WRONG_EPOCH, 1),
+        (0x0502, WRONG_EPOCH, 1),
+        (0x0503, WRONG_EPOCH, 1),
+        (0x0601, UNAUTHORIZED, 0),
+        (0x0602, NOT_FOUND, 1),
+        (0x0603, NOT_FOUND, 1),
+        (0x0604, WRONG_PHASE, 1),
+        (0x0605, NOT_FOUND, 1),
+        (0x0701, F07_UNKNOWN_WORKER, 1),
+        (0x0702, F07_UNKNOWN_WORKER, 1),
+        (0x0703, F07_UNKNOWN_WORKER, 1),
+        (0x0801, UNKNOWN_OPERATION, 1),
+        (0x0802, UNKNOWN_OPERATION, 1),
+        (0x0803, UNKNOWN_OPERATION, 1),
+        (0x0804, UNKNOWN_OPERATION, 1),
+        (0x0805, UNKNOWN_OPERATION, 1),
+        (0x0806, UNKNOWN_OPERATION, 1),
+        (0x0807, UNKNOWN_OPERATION, 1),
+        (0x0808, UNKNOWN_OPERATION, 1),
+        (0x0809, UNKNOWN_OPERATION, 1),
     ] {
         let operation = Operation::decode(selector)?;
         let m = operation.metadata();
         let sequence = u64::from(m.sequence == dispatch::SequencePolicy::Role);
-        let payload = if selector == 0x0A02 {
-            chunk.clone()
-        } else {
-            vec![1; m.payload_min]
-        };
-        let read = m.boundary == dispatch::CallBoundary::ProgramRead;
-        let mut e = n.base(operation, OUTSIDER, sequence, &payload, u64::from(!read))?;
-        if !read
-            && !matches!(
-                selector,
-                0x010A | 0x010B | 0x0601 | 0x0604 | 0x0801..=0x0804
-            )
-        {
+        let payload = vec![1; m.payload_min];
+        let mut e = n.base(operation, OUTSIDER, sequence, &payload, 1)?;
+        if !matches!(
+            selector,
+            0x010A | 0x010B | 0x0601 | 0x0604 | 0x0801..=0x0804
+        ) {
             e.epoch = 1;
             e.roster = roster;
         }
         let frame = n.submit(OUTSIDER, 1001, &encode(&e)?)?;
         assert_eq!(
             status(&frame)?,
-            (ResultStatus::Error, Some(UNKNOWN_OPERATION), 1),
+            (ResultStatus::Error, Some(error), revision),
             "selector {selector:#06x}"
         );
     }
+    assert_eq!(n.revision()?, 1);
+    n.finish()
+}
+
+#[test]
+fn native_read_selectors_return_exact_snapshot_without_writes() -> Checked {
+    let mut n = Native::start()?;
+    applied_at(&n.create(&[0], &policy_bytes(&policy(1)?)?)?)?;
+    let snapshot = n
+        .state
+        .clone()
+        .ok_or_else(|| harness("no committed state"))?;
+    let digest = codec::state_digest(&snapshot)?;
+    let total_bytes = u32::try_from(snapshot.len())?;
+    let header = n.send(dispatch::READ_HEADER, OUTSIDER, 0, &[], 0, 1001)?;
+    assert_eq!(status(&header)?, (ResultStatus::Ok, None, 1));
+    assert_eq!(
+        codec::decode_read_header(codec::decode_result(&header)?.payload)?,
+        codec::ReadHeader {
+            revision: 1,
+            digest,
+            total_bytes,
+            chain: n.chain,
+            program: n.program,
+            market: n.market()?,
+            epoch: Presence::Absent,
+            config: Version::new(1)?,
+            roster: Presence::Absent,
+        }
+    );
+    let mut request = [0; 46];
+    request[45] = 1;
+    let chunk = n.send(dispatch::READ_STATE_CHUNK, OUTSIDER, 0, &request, 0, 1001)?;
+    assert_eq!(status(&chunk)?, (ResultStatus::Ok, None, 1));
+    assert_eq!(
+        codec::decode_chunk_response(codec::decode_result(&chunk)?.payload)?,
+        codec::ChunkResponse {
+            revision: 1,
+            digest,
+            total_bytes,
+            offset: 0,
+            bytes: &snapshot[..1],
+        }
+    );
+    assert_eq!(n.state, Some(snapshot));
     assert_eq!(n.revision()?, 1);
     n.finish()
 }
