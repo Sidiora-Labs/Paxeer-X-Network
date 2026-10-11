@@ -15,6 +15,7 @@ import {
   bridgeInCall,
   bridgeOutCall,
   buildXWebApiRequest,
+  eip7702AuthorizationDigest,
   encodeAbiCall,
   exchangeCancelOrderCall,
   exchangeDepositMarginCall,
@@ -31,12 +32,14 @@ import {
   launchpadTokenCall,
   sponsoredBatchCall,
   sponsoredBatchDigest,
+  sponsoredConsent,
   xwebApiRequestCall,
   type GasQuote,
   type GasResult,
   type LaunchpadTokenWrite,
   type PrecompileCall,
   type SponsoredBatch,
+  type SponsoredConsent,
 } from '@sidiora/layerx-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -60,8 +63,9 @@ import {
   toWireConstruction,
   webData,
   type ModuleProvider,
+  type SponsoredAdapterRequest,
   type SponsoredBatchConstruction,
-  type SponsoredSubmitRequest,
+  type SponsoredSubmissionEvidence,
   type WebPayerGrant,
 } from '../src/index.js';
 
@@ -312,16 +316,50 @@ function batchFromConstruction(construction: SponsoredBatchConstruction): Sponso
   };
 }
 
+const BATCH_NONCE = 4n;
+const PENDING_NONCE = 7n;
+const NONCE_SELECTOR = abiSelector('nonce()');
+const SPONSOR_NONCE = '3';
+
 const signed: Array<{ method: string; params: readonly unknown[] }> = [];
 
-const signer: ModuleProvider = {
+const signer: ModuleProvider & { readonly isPaxeer: true } = {
+  isPaxeer: true,
   async request(argument) {
     const params = argument.params ?? [];
     signed.push({ method: argument.method, params });
     if (argument.method === 'eth_gasPrice') return '0x3b9aca00';
+    if (argument.method === 'eth_accounts') return [account];
+    if (argument.method === 'eth_chainId') return `0x${chainId.toString(16)}`;
+    if (argument.method === 'eth_getCode') {
+      const [target, block] = params as [string, string];
+      if (target !== account || block !== 'pending') throw new Error('refused eth_getCode');
+      return `0xef0100${paymaster.slice(2)}`;
+    }
+    if (argument.method === 'eth_call') {
+      const [call, block] = params as [{ to: string; data: string }, string];
+      if (params.length !== 2 || call.to !== account || call.data !== NONCE_SELECTOR || block !== 'pending') throw new Error('refused eth_call');
+      return `0x${word('uint64', BATCH_NONCE.toString())}`;
+    }
+    if (argument.method === 'eth_getTransactionCount') {
+      const [target, block] = params as [string, string];
+      if (target !== account || block !== 'pending') throw new Error('refused eth_getTransactionCount');
+      return `0x${PENDING_NONCE.toString(16)}`;
+    }
     if (argument.method === 'eth_sign') {
-      const [from, digest, construction] = params as [string, string, SponsoredBatchConstruction];
-      if (from.toLowerCase() !== account || construction.kind !== 'sponsored_batch') throw new Error('refused construction');
+      const [from, digest, fields] = params as [string, string, { kind: string }];
+      if (from.toLowerCase() !== account) throw new Error('refused account');
+      if (fields.kind === 'eip7702_authorization') {
+        const authorization = fields as { kind: string; chainId: string; address: string; nonce: string };
+        if (Object.keys(authorization).length !== 4) throw new Error('refused authorization');
+        const recomputed = value(
+          eip7702AuthorizationDigest({ chainId: BigInt(authorization.chainId), address: authorization.address, nonce: BigInt(authorization.nonce) }),
+        );
+        if (digest !== recomputed) throw new Error('refused digest');
+        return signDigest(recomputed, accountKey);
+      }
+      const construction = fields as SponsoredBatchConstruction;
+      if (construction.kind !== 'sponsored_batch') throw new Error('refused construction');
       const recomputed = value(sponsoredBatchDigest(batchFromConstruction(construction)));
       if (digest !== recomputed) throw new Error('refused digest');
       return signDigest(recomputed, accountKey);
@@ -330,7 +368,8 @@ const signer: ModuleProvider = {
   },
 };
 
-const submissions: SponsoredSubmitRequest[] = [];
+const submissions: SponsoredAdapterRequest[] = [];
+const answers: SponsoredSubmissionEvidence[] = [];
 let server: Server;
 let gatewayUrl: string;
 
@@ -343,10 +382,23 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
       res.end(JSON.stringify({ error: 'not_found' }));
       return;
     }
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as SponsoredSubmitRequest;
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as SponsoredAdapterRequest;
     submissions.push(body);
+    const transactionHash = hex(keccak_256(unhex(body.data))) as `0x${string}`;
+    const answer: SponsoredSubmissionEvidence = {
+      tx_hash: transactionHash,
+      status: 'pending',
+      station: {
+        state: 'pending',
+        deadline: body.construction.quote.deadline,
+        submission: { sponsorNonce: SPONSOR_NONCE, transactionHash },
+        replacement: null,
+        completion: null,
+      },
+    };
+    answers.push(answer);
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ tx_hash: hex(keccak_256(unhex(body.data))) }));
+    res.end(JSON.stringify(answer));
   });
 }
 
@@ -608,23 +660,15 @@ describe('modules', () => {
   });
 
   it('modules_gas_station digest equals the agent SDK and the flow signs, assembles and submits', async () => {
-    const station = gasStation(signer, {
-      chainId,
-      sponsor: relayer,
-      paymaster,
-      quoteUrl: `${gatewayUrl}/quote`,
-      gatewayUrl,
-      accessToken: () => 'session-token',
-      submissionStore: (() => {
-        const entries = new Map<string, string>();
-        return {
-          getItem: (key: string) => entries.get(key) ?? null,
-          setItem: (key: string, item: string) => {
-            entries.set(key, item);
-          },
-        };
-      })(),
+    const retainedStore = (entries: Map<string, string>) => ({
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, item: string) => {
+        entries.set(key, item);
+      },
     });
+    const retained = new Map<string, string>();
+    const stationOptions = { chainId, sponsor: relayer, paymaster, quoteUrl: `${gatewayUrl}/quote`, gatewayUrl, accessToken: () => 'session-token' };
+    const station = gasStation(signer, { ...stationOptions, submissionStore: retainedStore(retained) });
     const budget = await station.quote({ gasLimit: 250_000n, rate: '3114000' });
     const gasCost = 250_000n * 1_000_000_000n;
     expect(budget).toEqual({
@@ -679,25 +723,121 @@ describe('modules', () => {
 
     const relayerSignature = signDigest(value(gasQuoteDigest(chainId, account, quote)), relayerKey);
     const now = quote.deadline - 60n;
-    const hash = await station.submit(batch, relayerSignature, { now });
+    const config = { quoteUrl: `${gatewayUrl}/quote`, chainId, sponsor: relayer, token: SIDIORA_TOKEN, decimals: SIDIORA_DECIMALS, paymaster };
+    const expectedConsent = value(sponsoredConsent(config, batch, now));
+    expect(expectedConsent.batchDigest).toBe(station.digest(batch));
+    const session = [
+      { method: 'eth_accounts', params: [] },
+      { method: 'eth_chainId', params: [] },
+    ];
+
+    const declinedStore = new Map<string, string>();
+    const declined = gasStation(signer, { ...stationOptions, submissionStore: retainedStore(declinedStore) });
+    const declinedConsents: SponsoredConsent[] = [];
+    signed.length = 0;
+    await expect(
+      declined.submit(batch, relayerSignature, {
+        now,
+        confirm: (consent) => {
+          declinedConsents.push(consent);
+          return false;
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'GasStationError', refusal: { code: 'refused', field: 'consent' } });
+    expect(declinedConsents).toEqual([expectedConsent]);
+    expect(signed).toEqual(session);
+    expect(declinedStore.size).toBe(0);
+    expect(submissions).toHaveLength(0);
+
+    const consents: SponsoredConsent[] = [];
+    signed.length = 0;
+    const hash = await station.submit(batch, relayerSignature, {
+      now,
+      confirm: (consent) => {
+        consents.push(consent);
+        return true;
+      },
+    });
+    expect(consents).toHaveLength(1);
+    expect(consents[0]).toEqual(expectedConsent);
+
     const signRequest = signed.find((entry) => entry.method === 'eth_sign');
     expect(signRequest?.params).toEqual([account, station.digest(batch), construction]);
     const accountSignature = signDigest(station.digest(batch), accountKey);
-    const config = { quoteUrl: `${gatewayUrl}/quote`, chainId, sponsor: relayer, token: SIDIORA_TOKEN, decimals: SIDIORA_DECIMALS, paymaster };
+    const authorizationFields = { kind: 'eip7702_authorization', chainId: '125', address: paymaster, nonce: PENDING_NONCE.toString() };
+    const authorizationDigest = value(eip7702AuthorizationDigest({ chainId, address: paymaster, nonce: PENDING_NONCE }));
+    const authorizationSignature = signDigest(authorizationDigest, accountKey);
+    const authorization = {
+      chainId: '125',
+      address: paymaster,
+      nonce: '7',
+      yParity: Number.parseInt(authorizationSignature.slice(130), 16) - 27,
+      r: `0x${authorizationSignature.slice(2, 66)}`,
+      s: `0x${authorizationSignature.slice(66, 130)}`,
+    };
+    expect([0, 1]).toContain(authorization.yParity);
+    expect(signed).toEqual([
+      ...session,
+      ...session,
+      { method: 'eth_chainId', params: [] },
+      { method: 'eth_getCode', params: [account, 'pending'] },
+      { method: 'eth_call', params: [{ to: account, data: NONCE_SELECTOR }, 'pending'] },
+      { method: 'eth_getTransactionCount', params: [account, 'pending'] },
+      ...session,
+      { method: 'eth_sign', params: [account, station.digest(batch), construction] },
+      ...session,
+      { method: 'eth_sign', params: [account, authorizationDigest, authorizationFields] },
+      ...session,
+      ...session,
+      ...session,
+      { method: 'eth_accounts', params: [] },
+    ]);
+    expect(await station.batchNonce(account)).toBe(BATCH_NONCE);
+
     const reference = value(sponsoredBatchCall(config, batch, accountSignature, relayerSignature, now));
     expect(station.executeCall(batch, accountSignature, relayerSignature, now)).toEqual(reference);
+    expect(reference.to).toBe(account);
+    expect(reference.value).toBe(0n);
     expect(submissions).toHaveLength(1);
-    expect(submissions[0]).toEqual({
-      chain_id: '125',
-      account,
-      to: account,
-      data: reference.data,
-      value: '0',
-      construction,
-      account_signature: accountSignature,
-      relayer_signature: relayerSignature,
-    });
-    expect(hash).toBe(hex(keccak_256(unhex(reference.data))));
+    const submitted = submissions[0];
+    expect(Object.keys(submitted ?? {}).sort()).toEqual(
+      ['account', 'account_signature', 'authorization', 'chain_id', 'construction', 'data', 'quote_decimals', 'relayer_signature', 'to', 'value'],
+    );
+    expect(submitted?.chain_id).toBe('125');
+    expect(submitted?.account).toBe(account);
+    expect(submitted?.to).toBe(account);
+    expect(submitted?.data).toBe(reference.data);
+    expect(submitted?.value).toBe('0');
+    expect(submitted?.construction).toEqual(construction);
+    expect(submitted?.account_signature).toBe(accountSignature);
+    expect(submitted?.relayer_signature).toBe(relayerSignature);
+    expect(submitted?.quote_decimals).toBe(6);
+    expect(submitted?.authorization).toEqual(authorization);
+    expect(submitted).toEqual(station.adapterRequest(batch, accountSignature, relayerSignature, submitted!.authorization, now));
+
+    const transactionHash = hex(keccak_256(unhex(reference.data)));
+    expect(answers).toEqual([
+      {
+        tx_hash: transactionHash,
+        status: 'pending',
+        station: {
+          state: 'pending',
+          deadline: quote.deadline.toString(),
+          submission: { sponsorNonce: SPONSOR_NONCE, transactionHash },
+          replacement: null,
+          completion: null,
+        },
+      },
+    ]);
+    expect(hash).toBe(transactionHash);
+
+    const identity = `paxeer:sponsored:v1:125:${account}:${relayer}:${quote.quoteNonce}`;
+    expect([...retained.keys()].sort()).toEqual([`paxeer:sponsored:pending:v1:125:${account}`, identity].sort());
+    expect(retained.get(`paxeer:sponsored:pending:v1:125:${account}`)).toBe(identity);
+    expect(JSON.parse(retained.get(identity) ?? 'null')).toEqual(submitted);
+    const resumable = await station.pending(account);
+    expect(resumable?.relayerSignature).toBe(relayerSignature);
+    expect(resumable === null ? null : station.digest(resumable.batch)).toBe(station.digest(batch));
 
     expect(() => station.digest({ ...batch, calls: [] })).toThrow(ModuleError);
     expect(() => station.digest({ ...batch, chainId: 1n })).toThrow(GasStationError);
@@ -705,6 +845,7 @@ describe('modules', () => {
     expect(() => station.executeCall(batch, relayerSignature, relayerSignature, now)).toThrow(GasStationError);
     const offline = gasStation(signer, { chainId, sponsor: relayer, paymaster, quoteUrl: `${gatewayUrl}/quote` });
     await expect(offline.submit(batch, relayerSignature, { now })).rejects.toThrow(ModuleError);
+    await expect(offline.submit(batch, relayerSignature, { now })).rejects.toMatchObject({ code: 'unavailable', field: 'submissionStore' });
   });
 
   it('modules_gas_station digest is the provider routine and equals the agent SDK for identical fields', () => {
