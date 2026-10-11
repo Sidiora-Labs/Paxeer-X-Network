@@ -18,19 +18,29 @@ import threading
 import time
 import http.client
 
-
 MAX_RECORDS = 1024
 MAX_BINDINGS = 8192
 MAX_RECORD = 16384
 MAX_STATE = MAX_RECORDS * MAX_RECORD + 4096
-PHASES = {'admitted', 'stopping', 'bootstrapping', 'prepared', 'activating',
-          'completed', 'ambiguous'}
-NEXT = {'admitted': 'stopping', 'stopping': 'bootstrapping',
-        'bootstrapping': 'prepared', 'prepared': 'activating',
-        'activating': 'completed'}
-IDENTITY = re.compile(r'[0-9a-f]{32}\Z')
-DIGEST = re.compile(r'[0-9a-f]{64}\Z')
-TEMPORARY = re.compile(r'\.state\.[0-9a-f]{32}\.tmp\Z')
+PHASES = {
+    "admitted",
+    "stopping",
+    "bootstrapping",
+    "prepared",
+    "activating",
+    "completed",
+    "ambiguous",
+}
+NEXT = {
+    "admitted": "stopping",
+    "stopping": "bootstrapping",
+    "bootstrapping": "prepared",
+    "prepared": "activating",
+    "activating": "completed",
+}
+IDENTITY = re.compile(r"[0-9a-f]{32}\Z")
+DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+TEMPORARY = re.compile(r"\.state\.[0-9a-f]{32}\.tmp\Z")
 
 
 class StoreError(Exception):
@@ -40,63 +50,86 @@ class StoreError(Exception):
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(',', ':'),
-                      allow_nan=False).encode('utf-8')
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
 
 
 def unique_object(pairs):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise StoreError('invalid_json')
+            raise StoreError("invalid_json")
         result[key] = value
     return result
 
 
 def decode(raw):
     try:
-        return json.loads(raw, object_pairs_hook=unique_object,
-                          parse_constant=lambda _: (_ for _ in ()).throw(
-                              StoreError('invalid_json')))
+        return json.loads(
+            raw,
+            object_pairs_hook=unique_object,
+            parse_constant=lambda _: (_ for _ in ()).throw(StoreError("invalid_json")),
+        )
     except (ValueError, UnicodeError, RecursionError):
-        raise StoreError('invalid_json') from None
+        raise StoreError("invalid_json") from None
 
 
 def request_digest(request):
-    return hashlib.sha256(canonical({
-        'version': 1, 'operation': 'reset', 'reset_id': request['reset_id'],
-        'network': request['network']})).hexdigest()
+    return hashlib.sha256(
+        canonical(
+            {
+                "version": 1,
+                "operation": "reset",
+                "reset_id": request["reset_id"],
+                "network": request["network"],
+            }
+        )
+    ).hexdigest()
 
 
 def validate_request(request, network, operation):
     if not isinstance(request, dict) or set(request) != {
-            'version', 'operation', 'reset_id', 'network', 'request_digest'}:
-        raise StoreError('invalid_request')
-    if type(request['version']) is not int or request['version'] != 1:
-        raise StoreError('unsupported_version')
-    if request['operation'] != operation:
-        raise StoreError('invalid_operation')
-    if not isinstance(request['reset_id'], str) or not IDENTITY.fullmatch(request['reset_id']):
-        raise StoreError('invalid_reset_id')
-    if type(request['network']) is not int or request['network'] != network:
-        raise StoreError('wrong_network')
-    if not isinstance(request['request_digest'], str) or not DIGEST.fullmatch(request['request_digest']):
-        raise StoreError('invalid_digest')
-    if request_digest(request) != request['request_digest']:
-        raise StoreError('digest_mismatch')
+        "version",
+        "operation",
+        "reset_id",
+        "network",
+        "request_digest",
+    }:
+        raise StoreError("invalid_request")
+    if type(request["version"]) is not int or request["version"] != 1:
+        raise StoreError("unsupported_version")
+    if request["operation"] != operation:
+        raise StoreError("invalid_operation")
+    if not isinstance(request["reset_id"], str) or not IDENTITY.fullmatch(
+        request["reset_id"]
+    ):
+        raise StoreError("invalid_reset_id")
+    if type(request["network"]) is not int or request["network"] != network:
+        raise StoreError("wrong_network")
+    if not isinstance(request["request_digest"], str) or not DIGEST.fullmatch(
+        request["request_digest"]
+    ):
+        raise StoreError("invalid_digest")
+    if request_digest(request) != request["request_digest"]:
+        raise StoreError("digest_mismatch")
 
 
 def private_file(metadata):
-    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
-            or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_nlink != 1):
-        raise StoreError('unsafe_state_file')
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+    ):
+        raise StoreError("unsafe_state_file")
 
 
 def open_directory(path, create=False):
     absolute = os.path.abspath(path)
-    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    descriptor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
     try:
-        parts = absolute.split('/')[1:]
+        parts = absolute.split("/")[1:]
         for index, part in enumerate(parts):
             if create and index == len(parts) - 1:
                 try:
@@ -104,13 +137,14 @@ def open_directory(path, create=False):
                     os.fsync(descriptor)
                 except FileExistsError:
                     pass
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                            dir_fd=descriptor)
+            child = os.open(
+                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor
+            )
             os.close(descriptor)
             descriptor = child
         metadata = os.fstat(descriptor)
         if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
-            raise StoreError('unsafe_state_directory')
+            raise StoreError("unsafe_state_directory")
         return descriptor
     except BaseException:
         os.close(descriptor)
@@ -118,145 +152,228 @@ def open_directory(path, create=False):
 
 
 class Store:
-    def __init__(self, state_dir, data_dir, run_dir, network, bindings, allowed_gid=None,
-                 initial_generation=1):
+    def __init__(
+        self,
+        state_dir,
+        data_dir,
+        run_dir,
+        network,
+        bindings,
+        allowed_gid=None,
+        initial_generation=1,
+    ):
         self.state_dir = os.path.abspath(state_dir)
         self.data_dir = os.path.abspath(data_dir)
         self.run_dir = os.path.abspath(run_dir)
-        if self.state_dir == '/':
-            raise StoreError('unsafe_state_directory')
+        if self.state_dir == "/":
+            raise StoreError("unsafe_state_directory")
         for other in (self.data_dir, self.run_dir):
             common = os.path.commonpath((self.state_dir, other))
             if common in (self.state_dir, other):
-                raise StoreError('state_directory_overlap')
-        if type(network) is not int or not 0 <= network <= 0xffffffff:
-            raise StoreError('wrong_network')
+                raise StoreError("state_directory_overlap")
+        if type(network) is not int or not 0 <= network <= 0xFFFFFFFF:
+            raise StoreError("wrong_network")
         if not isinstance(bindings, dict):
-            raise StoreError('invalid_bindings')
+            raise StoreError("invalid_bindings")
         try:
             encoded = canonical(bindings)
         except (ValueError, TypeError, RecursionError):
-            raise StoreError('invalid_bindings') from None
+            raise StoreError("invalid_bindings") from None
         if len(encoded) > MAX_BINDINGS:
-            raise StoreError('bindings_too_large')
+            raise StoreError("bindings_too_large")
         self.network = network
         self.bindings = decode(encoded)
         self.allowed_gid = os.getegid() if allowed_gid is None else allowed_gid
-        if type(self.allowed_gid) is not int or not 0 <= self.allowed_gid <= 0xffffffff:
-            raise StoreError('invalid_allowed_gid')
-        if type(initial_generation) is not int or not 1 <= initial_generation <= 0x7fffffffffffffff:
-            raise StoreError('invalid_initial_generation')
+        if type(self.allowed_gid) is not int or not 0 <= self.allowed_gid <= 0xFFFFFFFF:
+            raise StoreError("invalid_allowed_gid")
+        if (
+            type(initial_generation) is not int
+            or not 1 <= initial_generation <= 0x7FFFFFFFFFFFFFFF
+        ):
+            raise StoreError("invalid_initial_generation")
         self.initial_generation = initial_generation
-        self.staged = os.environ.get('LAYERX_NODE_RESET_STAGED_GENERATIONS', '0') == '1'
+        self.staged = os.environ.get("LAYERX_NODE_RESET_STAGED_GENERATIONS", "0") == "1"
 
     def _authorize(self, peer):
-        if (not isinstance(peer, (tuple, list)) or len(peer) != 2
-                or any(type(value) is not int or not 0 <= value <= 0xffffffff for value in peer)
-                or (peer[0] != os.geteuid() and peer[1] != self.allowed_gid)):
-            raise StoreError('unauthorized_peer')
+        if (
+            not isinstance(peer, (tuple, list))
+            or len(peer) != 2
+            or any(
+                type(value) is not int or not 0 <= value <= 0xFFFFFFFF for value in peer
+            )
+            or (peer[0] != os.geteuid() and peer[1] != self.allowed_gid)
+        ):
+            raise StoreError("unauthorized_peer")
 
     def _record(self, record, reset_id):
-        keys = {'reset_id', 'request_digest', 'network', 'peer_uid', 'peer_gid',
-                'generation', 'genesis_timestamp_ms', 'bindings', 'phase', 'response'}
+        keys = {
+            "reset_id",
+            "request_digest",
+            "network",
+            "peer_uid",
+            "peer_gid",
+            "generation",
+            "genesis_timestamp_ms",
+            "bindings",
+            "phase",
+            "response",
+        }
         if not isinstance(record, dict) or set(record) not in (
-                keys, keys | {'genesis'}, keys | {'genesis', 'activation_response'}):
-            raise StoreError('corrupt_state')
-        if record['reset_id'] != reset_id or not IDENTITY.fullmatch(reset_id):
-            raise StoreError('corrupt_state')
-        request = {'version': 1, 'operation': 'reset', 'reset_id': reset_id,
-                   'network': record['network'], 'request_digest': record['request_digest']}
+            keys,
+            keys | {"genesis"},
+            keys | {"genesis", "activation_response"},
+        ):
+            raise StoreError("corrupt_state")
+        if record["reset_id"] != reset_id or not IDENTITY.fullmatch(reset_id):
+            raise StoreError("corrupt_state")
+        request = {
+            "version": 1,
+            "operation": "reset",
+            "reset_id": reset_id,
+            "network": record["network"],
+            "request_digest": record["request_digest"],
+        }
         try:
-            validate_request(request, self.network, 'reset')
+            validate_request(request, self.network, "reset")
         except StoreError:
-            raise StoreError('corrupt_state') from None
-        for key in ('peer_uid', 'peer_gid', 'generation', 'genesis_timestamp_ms'):
-            if type(record[key]) is not int or record[key] < (1 if key in ('generation', 'genesis_timestamp_ms') else 0):
-                raise StoreError('corrupt_state')
-        if record['generation'] > 0x7fffffffffffffff or record['genesis_timestamp_ms'] > 0x7fffffffffffffff:
-            raise StoreError('corrupt_state')
-        if record['peer_uid'] > 0xffffffff or record['peer_gid'] > 0xffffffff:
-            raise StoreError('corrupt_state')
-        if not isinstance(record['phase'], str) or record['phase'] not in PHASES:
-            raise StoreError('corrupt_state')
-        if not isinstance(record['bindings'], dict) or len(canonical(record['bindings'])) > MAX_BINDINGS:
-            raise StoreError('corrupt_state')
-        if 'genesis' in record:
-            self._genesis(record['genesis'])
-        if 'activation_response' in record and (record['phase'] not in ('activating', 'completed')
-                or record['activation_response'] != {'state': 'reset', 'reset_id': reset_id,
-                                                     'generation': record['generation']}):
-            raise StoreError('corrupt_state')
-        if record['phase'] in ('prepared', 'activating', 'completed') and 'genesis' not in record:
-            raise StoreError('corrupt_state')
-        expected = {'state': 'reset', 'reset_id': reset_id, 'generation': record['generation']}
-        if record['response'] != (expected if record['phase'] == 'completed' else None):
-            raise StoreError('corrupt_state')
+            raise StoreError("corrupt_state") from None
+        for key in ("peer_uid", "peer_gid", "generation", "genesis_timestamp_ms"):
+            if type(record[key]) is not int or record[key] < (
+                1 if key in ("generation", "genesis_timestamp_ms") else 0
+            ):
+                raise StoreError("corrupt_state")
+        if (
+            record["generation"] > 0x7FFFFFFFFFFFFFFF
+            or record["genesis_timestamp_ms"] > 0x7FFFFFFFFFFFFFFF
+        ):
+            raise StoreError("corrupt_state")
+        if record["peer_uid"] > 0xFFFFFFFF or record["peer_gid"] > 0xFFFFFFFF:
+            raise StoreError("corrupt_state")
+        if not isinstance(record["phase"], str) or record["phase"] not in PHASES:
+            raise StoreError("corrupt_state")
+        if (
+            not isinstance(record["bindings"], dict)
+            or len(canonical(record["bindings"])) > MAX_BINDINGS
+        ):
+            raise StoreError("corrupt_state")
+        if "genesis" in record:
+            self._genesis(record["genesis"])
+        if "activation_response" in record and (
+            record["phase"] not in ("activating", "completed")
+            or record["activation_response"]
+            != {
+                "state": "reset",
+                "reset_id": reset_id,
+                "generation": record["generation"],
+            }
+        ):
+            raise StoreError("corrupt_state")
+        if (
+            record["phase"] in ("prepared", "activating", "completed")
+            and "genesis" not in record
+        ):
+            raise StoreError("corrupt_state")
+        expected = {
+            "state": "reset",
+            "reset_id": reset_id,
+            "generation": record["generation"],
+        }
+        if record["response"] != (expected if record["phase"] == "completed" else None):
+            raise StoreError("corrupt_state")
         if len(canonical(record)) > MAX_RECORD:
-            raise StoreError('corrupt_state')
+            raise StoreError("corrupt_state")
 
     @staticmethod
     def _genesis(value):
         if not isinstance(value, dict) or not 1 <= len(value) <= 32:
-            raise StoreError('invalid_genesis')
+            raise StoreError("invalid_genesis")
         for name, digest in value.items():
-            if (not isinstance(name, str) or not name or len(name) > 256
-                    or name.startswith('/') or any(part in ('', '.', '..') for part in name.split('/'))
-                    or any(ord(character) < 32 or ord(character) == 127 for character in name)
-                    or not isinstance(digest, str) or not DIGEST.fullmatch(digest)):
-                raise StoreError('invalid_genesis')
+            if (
+                not isinstance(name, str)
+                or not name
+                or len(name) > 256
+                or name.startswith("/")
+                or any(part in ("", ".", "..") for part in name.split("/"))
+                or any(
+                    ord(character) < 32 or ord(character) == 127 for character in name
+                )
+                or not isinstance(digest, str)
+                or not DIGEST.fullmatch(digest)
+            ):
+                raise StoreError("invalid_genesis")
         if len(canonical(value)) > 4096:
-            raise StoreError('invalid_genesis')
+            raise StoreError("invalid_genesis")
 
     def _validate(self, state):
-        if (not isinstance(state, dict) or set(state) != {
-                'version', 'network', 'baseline_generation', 'generation', 'active', 'records'}
-                or type(state['version']) is not int or state['version'] != 1
-                or type(state['network']) is not int or not 0 <= state['network'] <= 0xffffffff
-                or state['network'] != self.network
-                or type(state['baseline_generation']) is not int
-                or not 1 <= state['baseline_generation'] <= 0x7fffffffffffffff
-                or type(state['generation']) is not int or not 1 <= state['generation'] <= 0x7fffffffffffffff
-                or not isinstance(state['records'], dict) or len(state['records']) > MAX_RECORDS):
-            raise StoreError('corrupt_state')
-        if state['active'] is not None and (not isinstance(state['active'], str)
-                                           or not IDENTITY.fullmatch(state['active'])):
-            raise StoreError('corrupt_state')
+        if (
+            not isinstance(state, dict)
+            or set(state)
+            != {
+                "version",
+                "network",
+                "baseline_generation",
+                "generation",
+                "active",
+                "records",
+            }
+            or type(state["version"]) is not int
+            or state["version"] != 1
+            or type(state["network"]) is not int
+            or not 0 <= state["network"] <= 0xFFFFFFFF
+            or state["network"] != self.network
+            or type(state["baseline_generation"]) is not int
+            or not 1 <= state["baseline_generation"] <= 0x7FFFFFFFFFFFFFFF
+            or type(state["generation"]) is not int
+            or not 1 <= state["generation"] <= 0x7FFFFFFFFFFFFFFF
+            or not isinstance(state["records"], dict)
+            or len(state["records"]) > MAX_RECORDS
+        ):
+            raise StoreError("corrupt_state")
+        if state["active"] is not None and (
+            not isinstance(state["active"], str)
+            or not IDENTITY.fullmatch(state["active"])
+        ):
+            raise StoreError("corrupt_state")
         incomplete = []
         generations = set()
-        for reset_id, record in state['records'].items():
+        for reset_id, record in state["records"].items():
             self._record(record, reset_id)
-            if record['generation'] in generations:
-                raise StoreError('corrupt_state')
-            generations.add(record['generation'])
-            if record['phase'] == 'completed':
-                if record['generation'] > state['generation']:
-                    raise StoreError('corrupt_state')
+            if record["generation"] in generations:
+                raise StoreError("corrupt_state")
+            generations.add(record["generation"])
+            if record["phase"] == "completed":
+                if record["generation"] > state["generation"]:
+                    raise StoreError("corrupt_state")
             else:
                 incomplete.append(reset_id)
-                if record['generation'] != state['generation'] + 1:
-                    raise StoreError('corrupt_state')
-        if incomplete != ([] if state['active'] is None else [state['active']]):
-            raise StoreError('corrupt_state')
-        baseline = state['baseline_generation']
-        if (generations != set(range(baseline + 1, baseline + len(generations) + 1))
-                or state['generation'] != baseline + len(generations) - len(incomplete)):
-            raise StoreError('corrupt_state')
+                if record["generation"] != state["generation"] + 1:
+                    raise StoreError("corrupt_state")
+        if incomplete != ([] if state["active"] is None else [state["active"]]):
+            raise StoreError("corrupt_state")
+        baseline = state["baseline_generation"]
+        if generations != set(
+            range(baseline + 1, baseline + len(generations) + 1)
+        ) or state["generation"] != baseline + len(generations) - len(incomplete):
+            raise StoreError("corrupt_state")
 
     def _load(self, descriptor):
         try:
-            file = os.open('state.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                           dir_fd=descriptor)
+            file = os.open(
+                "state.json",
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=descriptor,
+            )
         except FileNotFoundError:
-            raise StoreError('state_uninitialized') from None
+            raise StoreError("state_uninitialized") from None
         try:
             metadata = os.fstat(file)
             private_file(metadata)
             if metadata.st_size > MAX_STATE:
-                raise StoreError('state_too_large')
-            with os.fdopen(file, 'rb', closefd=False) as stream:
+                raise StoreError("state_too_large")
+            with os.fdopen(file, "rb", closefd=False) as stream:
                 raw = stream.read(MAX_STATE + 1)
             if len(raw) > MAX_STATE:
-                raise StoreError('state_too_large')
+                raise StoreError("state_too_large")
             state = decode(raw)
             self._validate(state)
             state = self._materialized(state)
@@ -266,18 +383,22 @@ class Store:
 
     def _save(self, descriptor, state):
         self._validate(state)
-        raw = canonical(state) + b'\n'
+        raw = canonical(state) + b"\n"
         if len(raw) > MAX_STATE:
-            raise StoreError('state_too_large')
-        name = '.state.' + secrets.token_hex(16) + '.tmp'
-        file = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                       0o600, dir_fd=descriptor)
+            raise StoreError("state_too_large")
+        name = ".state." + secrets.token_hex(16) + ".tmp"
+        file = os.open(
+            name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+            dir_fd=descriptor,
+        )
         try:
-            with os.fdopen(file, 'wb', closefd=False) as stream:
+            with os.fdopen(file, "wb", closefd=False) as stream:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(file)
-            os.replace(name, 'state.json', src_dir_fd=descriptor, dst_dir_fd=descriptor)
+            os.replace(name, "state.json", src_dir_fd=descriptor, dst_dir_fd=descriptor)
             os.fsync(descriptor)
         finally:
             os.close(file)
@@ -291,26 +412,32 @@ class Store:
         descriptor = lock = None
         try:
             descriptor = open_directory(self.state_dir, create)
-            parent = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+            parent = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
             try:
-                for part in os.path.dirname(self.data_dir).split('/')[1:]:
+                for part in os.path.dirname(self.data_dir).split("/")[1:]:
                     if not part:
                         continue
-                    child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                    dir_fd=parent)
+                    child = os.open(
+                        part,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=parent,
+                    )
                     os.close(parent)
                     parent = child
                 if os.fstat(parent).st_dev != os.fstat(descriptor).st_dev:
-                    raise StoreError('state_volume_mismatch')
+                    raise StoreError("state_volume_mismatch")
             finally:
                 os.close(parent)
             for path in (self.data_dir, self.run_dir):
-                ancestor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+                ancestor = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
                 try:
-                    for part in path.split('/')[1:]:
+                    for part in path.split("/")[1:]:
                         try:
-                            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                                            dir_fd=ancestor)
+                            child = os.open(
+                                part,
+                                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                dir_fd=ancestor,
+                            )
                         except FileNotFoundError:
                             break
                         os.close(ancestor)
@@ -321,15 +448,19 @@ class Store:
             new_lock = False
             if create:
                 try:
-                    lock = os.open('state.lock', flags | os.O_CREAT | os.O_EXCL,
-                                   0o600, dir_fd=descriptor)
+                    lock = os.open(
+                        "state.lock",
+                        flags | os.O_CREAT | os.O_EXCL,
+                        0o600,
+                        dir_fd=descriptor,
+                    )
                     new_lock = True
                     os.fsync(lock)
                     os.fsync(descriptor)
                 except FileExistsError:
-                    lock = os.open('state.lock', flags, dir_fd=descriptor)
+                    lock = os.open("state.lock", flags, dir_fd=descriptor)
             else:
-                lock = os.open('state.lock', flags, dir_fd=descriptor)
+                lock = os.open("state.lock", flags, dir_fd=descriptor)
             private_file(os.fstat(lock))
             lock_deadline = time.monotonic() + 10
             if deadline is not None:
@@ -340,11 +471,11 @@ class Store:
                     break
                 except BlockingIOError:
                     if time.monotonic() >= lock_deadline:
-                        raise StoreError('state_busy') from None
+                        raise StoreError("state_busy") from None
                     time.sleep(0.01)
             yield (descriptor, new_lock) if create else descriptor
         except OSError:
-            raise StoreError('state_unavailable') from None
+            raise StoreError("state_unavailable") from None
         finally:
             if lock is not None:
                 os.close(lock)
@@ -357,75 +488,95 @@ class Store:
             with os.scandir(descriptor) as entries:
                 for index, entry in enumerate(entries):
                     if index >= MAX_RECORDS + 2:
-                        raise StoreError('state_directory_capacity')
+                        raise StoreError("state_directory_capacity")
                     if TEMPORARY.fullmatch(entry.name):
                         private_file(entry.stat(follow_symlinks=False))
                         temporary.append(entry.name)
             try:
                 state = self._load(descriptor)
             except StoreError as error:
-                if error.code != 'state_uninitialized' or not new_lock:
+                if error.code != "state_uninitialized" or not new_lock:
                     raise
-                state = {'version': 1, 'network': self.network,
-                         'baseline_generation': self.initial_generation,
-                         'generation': self.initial_generation,
-                         'active': None, 'records': {}}
+                state = {
+                    "version": 1,
+                    "network": self.network,
+                    "baseline_generation": self.initial_generation,
+                    "generation": self.initial_generation,
+                    "active": None,
+                    "records": {},
+                }
                 self._save(descriptor, state)
-            if state['active']:
-                record = state['records'][state['active']]
+            if state["active"]:
+                record = state["records"][state["active"]]
                 self._bindings(record)
-                if record['phase'] in ('bootstrapping', 'activating') and not self.staged:
-                    record['phase'] = 'ambiguous'
+                if (
+                    record["phase"] in ("bootstrapping", "activating")
+                    and not self.staged
+                ):
+                    record["phase"] = "ambiguous"
                     self._save(descriptor, state)
             for name in temporary:
                 os.unlink(name, dir_fd=descriptor)
             if temporary:
                 os.fsync(descriptor)
-            return copy.deepcopy(state['records'].get(state['active']))
+            return copy.deepcopy(state["records"].get(state["active"]))
 
     def _bindings(self, record):
-        if record['phase'] != 'completed' and record['bindings'] != self.bindings:
-            raise StoreError('bindings_mismatch')
+        if record["phase"] != "completed" and record["bindings"] != self.bindings:
+            raise StoreError("bindings_mismatch")
 
     def _materialized(self, state):
-        active = state['active']
+        active = state["active"]
         if active is None:
             return state
-        record = state['records'][active]
-        if record['phase'] != 'activating' or 'activation_response' not in record:
+        record = state["records"][active]
+        if record["phase"] != "activating" or "activation_response" not in record:
             return state
         if not self._activated_ready(record):
             return state
-        record['phase'] = 'completed'
-        record['response'] = copy.deepcopy(record['activation_response'])
-        state['generation'] = record['generation']
-        state['active'] = None
+        record["phase"] = "completed"
+        record["response"] = copy.deepcopy(record["activation_response"])
+        state["generation"] = record["generation"]
+        state["active"] = None
         self._validate(state)
         return state
 
     def _activated_ready(self, record):
         try:
-            marker = self._data_file('.reset-generation.json', 8192)
-            expected = {'version': 1, 'reset_id': record['reset_id'], 'generation': record['generation'],
-                        'data_dir': self.data_dir, 'genesis': record['genesis']}
+            marker = self._data_file(".reset-generation.json", 8192)
+            expected = {
+                "version": 1,
+                "reset_id": record["reset_id"],
+                "generation": record["generation"],
+                "data_dir": self.data_dir,
+                "genesis": record["genesis"],
+            }
             if decode(marker) != expected:
                 return False
-            for name, digest in record['genesis'].items():
-                if hashlib.sha256(self._data_file(name, 64 * 1024 * 1024)).hexdigest() != digest:
+            for name, digest in record["genesis"].items():
+                if (
+                    hashlib.sha256(self._data_file(name, 64 * 1024 * 1024)).hexdigest()
+                    != digest
+                ):
                     return False
-            sequencer = self._runtime_environment('sequencer.env')
-            replica = self._runtime_environment('replica.env')
-            lni = os.lstat(sequencer['LAYERX_NODE_LNI_SOCKET'])
-            if not stat.S_ISSOCK(lni.st_mode) or lni.st_uid != os.geteuid():
+            sequencer = self._runtime_environment("sequencer.env")
+            replica = self._runtime_environment("replica.env")
+            if not self._probe(
+                sequencer["LAYERX_NODE_PROGRAM_ADDRESS"],
+                sequencer["LAYERX_NODE_PROGRAM_PORT"],
+                sequencer["LAYERX_NODE_PROGRAM_BEARER_TOKEN"],
+                "/v1/programs/account-state/changes?after_sequence=0",
+                200,
+            ):
                 return False
-            if not self._probe(sequencer['LAYERX_NODE_PROGRAM_ADDRESS'], sequencer['LAYERX_NODE_PROGRAM_PORT'],
-                               sequencer['LAYERX_NODE_PROGRAM_BEARER_TOKEN'],
-                               '/v1/programs/account-state/changes?after_sequence=0', 200):
-                return False
-            zero = '0' * 64
-            return self._probe(replica['LAYERX_AUTHORITY_ADDRESS'], replica['LAYERX_AUTHORITY_PORT'],
-                               replica['LAYERX_AUTHORITY_BEARER_TOKEN'],
-                               '/v1/batches/' + zero + '/receipt-authority?receipt_digest=' + zero, 404)
+            zero = "0" * 64
+            return self._probe(
+                replica["LAYERX_AUTHORITY_ADDRESS"],
+                replica["LAYERX_AUTHORITY_PORT"],
+                replica["LAYERX_AUTHORITY_BEARER_TOKEN"],
+                "/v1/batches/" + zero + "/receipt-authority?receipt_digest=" + zero,
+                404,
+            )
         except (OSError, StoreError, KeyError, ValueError, http.client.HTTPException):
             return False
 
@@ -433,21 +584,34 @@ class Store:
         descriptor = open_directory(self.data_dir)
         file = None
         try:
-            parts = name.split('/')
-            if any(part in ('', '.', '..') for part in parts):
-                raise StoreError('invalid_genesis')
+            parts = name.split("/")
+            if any(part in ("", ".", "..") for part in parts):
+                raise StoreError("invalid_genesis")
             for part in parts[:-1]:
-                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+                child = os.open(
+                    part,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=descriptor,
+                )
                 os.close(descriptor)
                 descriptor = child
-            file = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+            file = os.open(
+                parts[-1],
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=descriptor,
+            )
             metadata = os.fstat(file)
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_nlink != 1 or metadata.st_size > maximum:
-                raise StoreError('unsafe_generation_file')
-            with os.fdopen(file, 'rb', closefd=False) as handle:
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_nlink != 1
+                or metadata.st_size > maximum
+            ):
+                raise StoreError("unsafe_generation_file")
+            with os.fdopen(file, "rb", closefd=False) as handle:
                 raw = handle.read(maximum + 1)
             if len(raw) > maximum:
-                raise StoreError('generation_too_large')
+                raise StoreError("generation_too_large")
             return raw
         finally:
             if file is not None:
@@ -456,197 +620,265 @@ class Store:
 
     def _runtime_environment(self, name):
         result = {}
-        for line in self._data_file(name, 64 * 1024).decode('utf-8').splitlines():
+        for line in self._data_file(name, 64 * 1024).decode("utf-8").splitlines():
             if not line:
                 continue
-            key, separator, value = line.partition('=')
-            if not separator or not re.fullmatch(r'LAYERX_[A-Z0-9_]+', key) or key in result or any(ord(c) < 32 or ord(c) == 127 for c in value):
-                raise StoreError('unsafe_runtime_environment')
+            key, separator, value = line.partition("=")
+            if (
+                not separator
+                or not re.fullmatch(r"LAYERX_[A-Z0-9_]+", key)
+                or key in result
+                or any(ord(c) < 32 or ord(c) == 127 for c in value)
+            ):
+                raise StoreError("unsafe_runtime_environment")
             result[key] = value
         return result
 
     @staticmethod
     def _probe(address, port, token, path, expected):
-        if address != '127.0.0.1' or not port.isdecimal() or not 1 <= int(port) <= 65535 or not token or len(token) > 4096 or any(ord(c) <= 32 or ord(c) >= 127 for c in token):
+        if (
+            address != "127.0.0.1"
+            or not port.isdecimal()
+            or not 1 <= int(port) <= 65535
+            or not token
+            or len(token) > 4096
+            or any(ord(c) <= 32 or ord(c) >= 127 for c in token)
+        ):
             return False
         connection = http.client.HTTPConnection(address, int(port), timeout=0.5)
         try:
-            connection.request('GET', path, headers={'Authorization': 'Bearer ' + token, 'Connection': 'close'})
+            connection.request(
+                "GET",
+                path,
+                headers={"Authorization": "Bearer " + token, "Connection": "close"},
+            )
             response = connection.getresponse()
             raw = response.read(128 * 1024 + 1)
             if response.status != expected or len(raw) > 128 * 1024:
                 return False
             if expected == 200:
                 page = decode(raw)
-                return isinstance(page, dict) and set(page) == {'records', 'complete_through', 'scanned_through_sequence', 'caught_up'} and isinstance(page['records'], list) and type(page['caught_up']) is bool
+                return (
+                    isinstance(page, dict)
+                    and set(page)
+                    == {
+                        "records",
+                        "complete_through",
+                        "scanned_through_sequence",
+                        "caught_up",
+                    }
+                    and isinstance(page["records"], list)
+                    and type(page["caught_up"]) is bool
+                )
             return True
         finally:
             connection.close()
 
     def _lookup(self, state, request, peer):
-        record = state['records'].get(request['reset_id'])
+        record = state["records"].get(request["reset_id"])
         if record is not None:
-            if (record['request_digest'] != request['request_digest']
-                    or record['network'] != request['network']
-                    or (record['peer_uid'], record['peer_gid']) != tuple(peer)):
-                raise StoreError('identity_conflict')
+            if (
+                record["request_digest"] != request["request_digest"]
+                or record["network"] != request["network"]
+                or (record["peer_uid"], record["peer_gid"]) != tuple(peer)
+            ):
+                raise StoreError("identity_conflict")
         return record
 
     def admit(self, request, peer):
         self._authorize(peer)
-        validate_request(request, self.network, 'reset')
+        validate_request(request, self.network, "reset")
         with self._locked() as descriptor:
             state = self._load(descriptor)
             record = self._lookup(state, request, peer)
             if record is not None:
                 self._bindings(record)
                 return copy.deepcopy(record)
-            if state['active'] is not None:
-                raise StoreError('reset_in_progress')
-            if len(state['records']) >= MAX_RECORDS:
-                raise StoreError('state_capacity')
-            if state['generation'] == 0x7fffffffffffffff:
-                raise StoreError('generation_exhausted')
-            record = {'reset_id': request['reset_id'], 'request_digest': request['request_digest'],
-                      'network': self.network, 'peer_uid': peer[0], 'peer_gid': peer[1],
-                      'generation': state['generation'] + 1,
-                      'genesis_timestamp_ms': time.time_ns() // 1000000,
-                      'bindings': copy.deepcopy(self.bindings), 'phase': 'admitted', 'response': None}
-            state['records'][request['reset_id']] = record
-            state['active'] = request['reset_id']
+            if state["active"] is not None:
+                raise StoreError("reset_in_progress")
+            if len(state["records"]) >= MAX_RECORDS:
+                raise StoreError("state_capacity")
+            if state["generation"] == 0x7FFFFFFFFFFFFFFF:
+                raise StoreError("generation_exhausted")
+            record = {
+                "reset_id": request["reset_id"],
+                "request_digest": request["request_digest"],
+                "network": self.network,
+                "peer_uid": peer[0],
+                "peer_gid": peer[1],
+                "generation": state["generation"] + 1,
+                "genesis_timestamp_ms": time.time_ns() // 1000000,
+                "bindings": copy.deepcopy(self.bindings),
+                "phase": "admitted",
+                "response": None,
+            }
+            state["records"][request["reset_id"]] = record
+            state["active"] = request["reset_id"]
             self._save(descriptor, state)
             return copy.deepcopy(record)
 
     def status(self, request, peer, deadline=None):
         self._authorize(peer)
-        validate_request(request, self.network, 'status')
+        validate_request(request, self.network, "status")
         with self._locked(deadline=deadline) as descriptor:
             record = self._lookup(self._load(descriptor), request, peer)
             if record is None:
-                raise StoreError('unknown_reset')
+                raise StoreError("unknown_reset")
             return copy.deepcopy(record)
 
     def active(self):
         with self._locked() as descriptor:
             state = self._load(descriptor)
-            return copy.deepcopy(state['records'].get(state['active']))
+            return copy.deepcopy(state["records"].get(state["active"]))
 
     def transition(self, reset_id, expected_phase, new_phase, extra=None):
         if expected_phase not in NEXT or NEXT[expected_phase] != new_phase:
-            raise StoreError('invalid_transition')
+            raise StoreError("invalid_transition")
         if extra is not None:
-            if new_phase != 'prepared' or not isinstance(extra, dict) or set(extra) != {'genesis'}:
-                raise StoreError('invalid_transition_extra')
-            self._genesis(extra['genesis'])
-        if new_phase == 'prepared' and extra is None:
-            raise StoreError('missing_genesis')
+            if (
+                new_phase != "prepared"
+                or not isinstance(extra, dict)
+                or set(extra) != {"genesis"}
+            ):
+                raise StoreError("invalid_transition_extra")
+            self._genesis(extra["genesis"])
+        if new_phase == "prepared" and extra is None:
+            raise StoreError("missing_genesis")
         with self._locked() as descriptor:
             state = self._load(descriptor)
-            record = state['records'].get(reset_id)
-            if record is None or record['phase'] != expected_phase or state['active'] != reset_id:
-                raise StoreError('phase_conflict')
+            record = state["records"].get(reset_id)
+            if (
+                record is None
+                or record["phase"] != expected_phase
+                or state["active"] != reset_id
+            ):
+                raise StoreError("phase_conflict")
             self._bindings(record)
-            if self.staged and new_phase == 'completed':
-                raise StoreError('activation_not_ready')
-            record['phase'] = new_phase
+            if self.staged and new_phase == "completed":
+                raise StoreError("activation_not_ready")
+            record["phase"] = new_phase
             if extra:
                 record.update(copy.deepcopy(extra))
-            if self.staged and new_phase == 'activating':
-                record['activation_response'] = {'state': 'reset', 'reset_id': reset_id,
-                                                 'generation': record['generation']}
-            if new_phase == 'completed':
-                record['response'] = {'state': 'reset', 'reset_id': reset_id,
-                                      'generation': record['generation']}
-                state['generation'] = record['generation']
-                state['active'] = None
+            if self.staged and new_phase == "activating":
+                record["activation_response"] = {
+                    "state": "reset",
+                    "reset_id": reset_id,
+                    "generation": record["generation"],
+                }
+            if new_phase == "completed":
+                record["response"] = {
+                    "state": "reset",
+                    "reset_id": reset_id,
+                    "generation": record["generation"],
+                }
+                state["generation"] = record["generation"]
+                state["active"] = None
             self._save(descriptor, state)
             return copy.deepcopy(record)
 
     def generation(self):
         with self._locked() as descriptor:
-            return self._load(descriptor)['generation']
+            return self._load(descriptor)["generation"]
 
     def completed(self):
         with self._locked() as descriptor:
             state = self._load(descriptor)
-            for record in state['records'].values():
-                if record['phase'] == 'completed' and record['generation'] == state['generation']:
+            for record in state["records"].values():
+                if (
+                    record["phase"] == "completed"
+                    and record["generation"] == state["generation"]
+                ):
                     return copy.deepcopy(record)
             return None
 
 
 def error_response(code):
-    return {'error': {'code': code, 'retry': 'never', 'retry_after_seconds': 0}}
+    return {"error": {"code": code, "retry": "never", "retry_after_seconds": 0}}
 
 
 def read_request(connection):
     deadline = time.monotonic() + 10
     raw = bytearray()
-    while b'\n' not in raw:
+    while b"\n" not in raw:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise StoreError('request_timeout')
+            raise StoreError("request_timeout")
         connection.settimeout(remaining)
         chunk = connection.recv(4097 - len(raw))
         if not chunk:
-            raise StoreError('incomplete_request')
+            raise StoreError("incomplete_request")
         raw.extend(chunk)
         if len(raw) > 4096:
-            raise StoreError('request_too_large')
-    if raw.count(b'\n') != 1 or not raw.endswith(b'\n'):
-        raise StoreError('invalid_request')
-    return bytes(raw[:-1]).removesuffix(b'\r')
+            raise StoreError("request_too_large")
+    if raw.count(b"\n") != 1 or not raw.endswith(b"\n"):
+        raise StoreError("invalid_request")
+    return bytes(raw[:-1]).removesuffix(b"\r")
 
 
 def handle_connection(connection, store, wait_seconds=300):
     legacy = False
     try:
-        _, uid, gid = struct.unpack('iII', connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        _, uid, gid = struct.unpack(
+            "iII", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+        )
         peer = (uid, gid)
         store._authorize(peer)
         raw = read_request(connection)
-        legacy = raw in (b'reset', b'status')
-        legacy_reset = raw == b'reset'
-        if raw == b'status':
-            response = {'state': 'running', 'generation': store.generation()}
+        legacy = raw in (b"reset", b"status")
+        legacy_reset = raw == b"reset"
+        if raw == b"status":
+            response = {"state": "running", "generation": store.generation()}
         else:
-            if raw == b'reset':
-                request = {'version': 1, 'operation': 'reset',
-                           'reset_id': secrets.token_hex(16), 'network': store.network}
-                request['request_digest'] = request_digest(request)
+            if raw == b"reset":
+                request = {
+                    "version": 1,
+                    "operation": "reset",
+                    "reset_id": secrets.token_hex(16),
+                    "network": store.network,
+                }
+                request["request_digest"] = request_digest(request)
             else:
                 request = decode(raw)
             if not isinstance(request, dict):
-                raise StoreError('invalid_request')
-            operation = request.get('operation')
-            if operation == 'status':
+                raise StoreError("invalid_request")
+            operation = request.get("operation")
+            if operation == "status":
                 record = store.status(request, peer)
-            elif operation == 'reset':
+            elif operation == "reset":
                 record = store.admit(request, peer)
                 deadline = time.monotonic() + min(max(wait_seconds, 0), 300)
-                status_request = dict(request, operation='status')
-                while record['phase'] not in ('completed', 'ambiguous'):
+                status_request = dict(request, operation="status")
+                while record["phase"] not in ("completed", "ambiguous"):
                     if time.monotonic() >= deadline:
-                        raise StoreError('reset_timeout')
+                        raise StoreError("reset_timeout")
                     time.sleep(min(0.1, max(0, deadline - time.monotonic())))
                     record = store.status(status_request, peer, deadline=deadline)
             else:
-                raise StoreError('invalid_operation')
-            if record['phase'] == 'ambiguous':
-                raise StoreError('reset_ambiguous')
-            response = record['response'] or {'state': record['phase'],
-                        'reset_id': record['reset_id'], 'generation': record['generation']}
+                raise StoreError("invalid_operation")
+            if record["phase"] == "ambiguous":
+                raise StoreError("reset_ambiguous")
+            response = record["response"] or {
+                "state": record["phase"],
+                "reset_id": record["reset_id"],
+                "generation": record["generation"],
+            }
             if legacy_reset:
-                response = {'state': response['state'], 'reset_id': response['reset_id']}
+                response = {
+                    "state": response["state"],
+                    "reset_id": response["reset_id"],
+                }
     except StoreError as error:
         response = error_response(error.code)
     except (OSError, ValueError, TypeError, RecursionError):
-        response = error_response('request_unavailable')
+        response = error_response("request_unavailable")
     try:
         connection.settimeout(10)
-        encoded = (json.dumps(response, separators=(',', ':'), allow_nan=False).encode()
-                   if legacy else canonical(response))
-        connection.sendall(encoded + b'\n')
+        encoded = (
+            json.dumps(response, separators=(",", ":"), allow_nan=False).encode()
+            if legacy
+            else canonical(response)
+        )
+        connection.sendall(encoded + b"\n")
     except OSError:
         pass
     finally:
@@ -656,11 +888,14 @@ def handle_connection(connection, store, wait_seconds=300):
 def serve(store, socket_path):
     path = os.path.abspath(socket_path)
     if os.path.dirname(path) != store.run_dir:
-        raise StoreError('unsafe_socket_path')
+        raise StoreError("unsafe_socket_path")
     metadata = os.lstat(store.run_dir)
-    if (not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid()
-            or metadata.st_mode & 0o002):
-        raise StoreError('unsafe_run_directory')
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & 0o002
+    ):
+        raise StoreError("unsafe_run_directory")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(path)
         os.chown(path, os.geteuid(), store.allowed_gid)
@@ -672,11 +907,13 @@ def serve(store, socket_path):
             if not slots.acquire(blocking=False):
                 connection.close()
                 continue
+
             def worker(client):
                 try:
                     handle_connection(client, store)
                 finally:
                     slots.release()
+
             threading.Thread(target=worker, args=(connection,), daemon=True).start()
 
 
@@ -685,28 +922,32 @@ def supervisor_lock(state_dir, inherited=False):
     descriptor = None
     try:
         if inherited:
-            raw = os.environ.get('LAYERX_RESET_OWNER_FD', '')
+            raw = os.environ.get("LAYERX_RESET_OWNER_FD", "")
             if not raw.isdecimal():
-                raise StoreError('invalid_supervisor_owner')
+                raise StoreError("invalid_supervisor_owner")
             descriptor = int(raw)
         else:
             flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
             try:
-                descriptor = os.open('supervisor.lock', flags | os.O_CREAT | os.O_EXCL,
-                                     0o600, dir_fd=directory)
+                descriptor = os.open(
+                    "supervisor.lock",
+                    flags | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=directory,
+                )
                 os.fsync(descriptor)
                 os.fsync(directory)
             except FileExistsError:
-                descriptor = os.open('supervisor.lock', flags, dir_fd=directory)
+                descriptor = os.open("supervisor.lock", flags, dir_fd=directory)
         metadata = os.fstat(descriptor)
         private_file(metadata)
-        identity = os.stat('supervisor.lock', dir_fd=directory, follow_symlinks=False)
+        identity = os.stat("supervisor.lock", dir_fd=directory, follow_symlinks=False)
         if (identity.st_dev, identity.st_ino) != (metadata.st_dev, metadata.st_ino):
-            raise StoreError('invalid_supervisor_owner')
+            raise StoreError("invalid_supervisor_owner")
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise StoreError('supervisor_already_owned') from None
+            raise StoreError("supervisor_already_owned") from None
         os.set_inheritable(descriptor, True)
         return descriptor
     except BaseException:
@@ -718,58 +959,67 @@ def supervisor_lock(state_dir, inherited=False):
 
 
 def close_supervisor_lock():
-    raw = os.environ.pop('LAYERX_RESET_OWNER_FD', None)
+    raw = os.environ.pop("LAYERX_RESET_OWNER_FD", None)
     if raw is not None:
         if not raw.isdecimal():
-            raise StoreError('invalid_supervisor_owner')
+            raise StoreError("invalid_supervisor_owner")
         os.close(int(raw))
 
 
 def parent_death_signal():
     parent = os.getppid()
     if parent == 1:
-        raise StoreError('supervisor_unavailable')
+        raise StoreError("supervisor_unavailable")
     libc = ctypes.CDLL(None, use_errno=True)
-    libc.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
-                          ctypes.c_ulong, ctypes.c_ulong]
+    libc.prctl.argtypes = [
+        ctypes.c_int,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+    ]
     libc.prctl.restype = ctypes.c_int
     if libc.prctl(1, signal.SIGTERM, 0, 0, 0) != 0 or os.getppid() != parent:
-        raise StoreError('supervisor_unavailable')
+        raise StoreError("supervisor_unavailable")
 
 
 def replica_generation(state_dir, generation):
     descriptor = open_directory(state_dir)
     lock = None
     try:
-        lock = os.open('state.lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                       dir_fd=descriptor)
+        lock = os.open(
+            "state.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor
+        )
         private_file(os.fstat(lock))
         fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
-        file = os.open('state.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                       dir_fd=descriptor)
+        file = os.open(
+            "state.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor
+        )
         try:
             private_file(os.fstat(file))
             if os.fstat(file).st_size > MAX_STATE:
-                raise StoreError('state_too_large')
-            with os.fdopen(file, 'rb', closefd=False) as stream:
+                raise StoreError("state_too_large")
+            with os.fdopen(file, "rb", closefd=False) as stream:
                 raw = stream.read(MAX_STATE + 1)
         finally:
             os.close(file)
         if len(raw) > MAX_STATE:
-            raise StoreError('state_too_large')
+            raise StoreError("state_too_large")
         state = decode(raw)
         if not isinstance(state, dict):
-            raise StoreError('corrupt_state')
+            raise StoreError("corrupt_state")
         reader = Store.__new__(Store)
-        reader.network = state.get('network')
+        reader.network = state.get("network")
         reader._validate(state)
-        if state['active'] is None:
-            allowed = state['generation'] == generation
+        if state["active"] is None:
+            allowed = state["generation"] == generation
         else:
-            record = state['records'][state['active']]
-            allowed = record['phase'] == 'activating' and record['generation'] == generation
+            record = state["records"][state["active"]]
+            allowed = (
+                record["phase"] == "activating" and record["generation"] == generation
+            )
         if not allowed:
-            raise StoreError('generation_not_admitted')
+            raise StoreError("generation_not_admitted")
     finally:
         if lock is not None:
             os.close(lock)
@@ -777,97 +1027,123 @@ def replica_generation(state_dir, generation):
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ('own-supervisor', 'assert-owner'):
+    if len(sys.argv) > 1 and sys.argv[1] in ("own-supervisor", "assert-owner"):
         parser = argparse.ArgumentParser()
-        parser.add_argument('action')
-        parser.add_argument('--state-dir', required=True)
-        parser.add_argument('--data-dir', required=True)
-        parser.add_argument('--run-dir', required=True)
-        separator = sys.argv.index('--') if '--' in sys.argv else len(sys.argv)
+        parser.add_argument("action")
+        parser.add_argument("--state-dir", required=True)
+        parser.add_argument("--data-dir", required=True)
+        parser.add_argument("--run-dir", required=True)
+        separator = sys.argv.index("--") if "--" in sys.argv else len(sys.argv)
         arguments = parser.parse_args(sys.argv[1:separator])
-        command = sys.argv[separator + 1:]
+        command = sys.argv[separator + 1 :]
         try:
             Store(arguments.state_dir, arguments.data_dir, arguments.run_dir, 1, {})
-            inherited = arguments.action == 'assert-owner'
+            inherited = arguments.action == "assert-owner"
             descriptor = supervisor_lock(arguments.state_dir, inherited)
             if inherited:
                 if command:
-                    raise StoreError('invalid_command')
+                    raise StoreError("invalid_command")
                 return 0
             if not command:
-                raise StoreError('invalid_command')
-            os.environ['LAYERX_RESET_OWNER_FD'] = str(descriptor)
+                raise StoreError("invalid_command")
+            os.environ["LAYERX_RESET_OWNER_FD"] = str(descriptor)
             os.execvp(command[0], command)
         except StoreError as error:
             print(canonical(error_response(error.code)).decode())
         except (OSError, ValueError, TypeError, RecursionError):
-            print(canonical(error_response('state_unavailable')).decode())
+            print(canonical(error_response("state_unavailable")).decode())
         return 1
-    if len(sys.argv) > 1 and sys.argv[1] in ('exec-daemon', 'replica-generation'):
+    if len(sys.argv) > 1 and sys.argv[1] in ("exec-daemon", "replica-generation"):
         try:
-            if sys.argv[1] == 'exec-daemon':
-                if len(sys.argv) < 4 or sys.argv[2] != '--':
-                    raise StoreError('invalid_command')
+            if sys.argv[1] == "exec-daemon":
+                if len(sys.argv) < 4 or sys.argv[2] != "--":
+                    raise StoreError("invalid_command")
                 parent_death_signal()
                 close_supervisor_lock()
                 os.execvp(sys.argv[3], sys.argv[3:])
             parser = argparse.ArgumentParser()
-            parser.add_argument('action')
-            parser.add_argument('--state-dir', required=True)
-            parser.add_argument('--generation', required=True, type=int)
+            parser.add_argument("action")
+            parser.add_argument("--state-dir", required=True)
+            parser.add_argument("--generation", required=True, type=int)
             arguments = parser.parse_args()
             replica_generation(arguments.state_dir, arguments.generation)
             return 0
         except StoreError as error:
             print(canonical(error_response(error.code)).decode())
         except (OSError, ValueError, TypeError, RecursionError):
-            print(canonical(error_response('state_unavailable')).decode())
+            print(canonical(error_response("state_unavailable")).decode())
         return 1
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=('initialize', 'active', 'phase', 'complete', 'generation', 'completed', 'serve'))
-    for name in ('state-dir', 'data-dir', 'run-dir', 'bindings'):
-        parser.add_argument('--' + name, required=True)
-    parser.add_argument('--network', type=int, required=True)
-    parser.add_argument('--allowed-gid', type=int, default=os.getegid())
-    parser.add_argument('--initial-generation', type=int, default=1)
-    parser.add_argument('--reset-id')
-    parser.add_argument('--expected-phase')
-    parser.add_argument('--new-phase')
-    parser.add_argument('--extra', '--extra-json', dest='extra')
-    parser.add_argument('--socket')
+    parser.add_argument(
+        "action",
+        choices=(
+            "initialize",
+            "active",
+            "phase",
+            "complete",
+            "generation",
+            "completed",
+            "serve",
+        ),
+    )
+    for name in ("state-dir", "data-dir", "run-dir", "bindings"):
+        parser.add_argument("--" + name, required=True)
+    parser.add_argument("--network", type=int, required=True)
+    parser.add_argument("--allowed-gid", type=int, default=os.getegid())
+    parser.add_argument("--initial-generation", type=int, default=1)
+    parser.add_argument("--reset-id")
+    parser.add_argument("--expected-phase")
+    parser.add_argument("--new-phase")
+    parser.add_argument("--extra", "--extra-json", dest="extra")
+    parser.add_argument("--socket")
     arguments = parser.parse_args()
     try:
-        if arguments.action == 'serve':
+        if arguments.action == "serve":
             parent_death_signal()
             close_supervisor_lock()
-        descriptor = os.open(arguments.bindings, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(
+            arguments.bindings, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        )
         try:
             metadata = os.fstat(descriptor)
-            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
-                    or metadata.st_mode & 0o022 or metadata.st_size > MAX_BINDINGS):
-                raise StoreError('unsafe_bindings_file')
-            with os.fdopen(descriptor, 'rb', closefd=False) as stream:
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or metadata.st_mode & 0o022
+                or metadata.st_size > MAX_BINDINGS
+            ):
+                raise StoreError("unsafe_bindings_file")
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
                 bindings = decode(stream.read(MAX_BINDINGS + 1))
         finally:
             os.close(descriptor)
-        store = Store(arguments.state_dir, arguments.data_dir, arguments.run_dir,
-                      arguments.network, bindings, arguments.allowed_gid,
-                      arguments.initial_generation)
-        if arguments.action == 'initialize':
+        store = Store(
+            arguments.state_dir,
+            arguments.data_dir,
+            arguments.run_dir,
+            arguments.network,
+            bindings,
+            arguments.allowed_gid,
+            arguments.initial_generation,
+        )
+        if arguments.action == "initialize":
             result = store.initialize()
-        elif arguments.action == 'active':
+        elif arguments.action == "active":
             result = store.active()
-        elif arguments.action == 'generation':
+        elif arguments.action == "generation":
             result = store.generation()
-        elif arguments.action == 'completed':
+        elif arguments.action == "completed":
             result = store.completed()
-        elif arguments.action in ('phase', 'complete'):
-            result = store.transition(arguments.reset_id, arguments.expected_phase,
-                                      'completed' if arguments.action == 'complete' else arguments.new_phase,
-                                      decode(arguments.extra) if arguments.extra else None)
+        elif arguments.action in ("phase", "complete"):
+            result = store.transition(
+                arguments.reset_id,
+                arguments.expected_phase,
+                "completed" if arguments.action == "complete" else arguments.new_phase,
+                decode(arguments.extra) if arguments.extra else None,
+            )
         else:
             if not arguments.socket:
-                raise StoreError('missing_socket')
+                raise StoreError("missing_socket")
             serve(store, arguments.socket)
             return 0
         print(canonical(result).decode())
@@ -875,9 +1151,9 @@ def main():
     except StoreError as error:
         print(canonical(error_response(error.code)).decode())
     except (OSError, ValueError, TypeError, RecursionError):
-        print(canonical(error_response('state_unavailable')).decode())
+        print(canonical(error_response("state_unavailable")).decode())
     return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
