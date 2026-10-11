@@ -22,6 +22,8 @@ import (
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/sequencer"
+	occutils "github.com/Sidiora-Labs/Paxeer-X-Network/occ_tests/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client/config"
@@ -942,23 +944,166 @@ func TestEncodeRPCTransactionBlockHeight1(t *testing.T) {
 }
 
 func TestGetTransactionCountPending(t *testing.T) {
-	originalCtx := Ctx
-	defer func() { Ctx = originalCtx }()
-	Ctx = Ctx.WithBlockHeight(1)
-	// Test coverage for lines 280-283: pending block number
-	body := `{"jsonrpc": "2.0","method": "eth_getTransactionCount","params":["0x1234567890123456789012345678901234567890","pending"],"id":"test"}`
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%d", TestAddr, TestPort), strings.NewReader(body))
-	require.Nil(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	require.Nil(t, err)
-	resBody, err := io.ReadAll(res.Body)
-	require.Nil(t, err)
-	resObj := map[string]interface{}{}
-	require.Nil(t, json.Unmarshal(resBody, &resObj))
+	t.Run("full node without a sequencer route refuses pending", func(t *testing.T) {
+		originalCtx := Ctx
+		defer func() { Ctx = originalCtx }()
+		Ctx = Ctx.WithBlockHeight(1)
+		body := `{"jsonrpc": "2.0","method": "eth_getTransactionCount","params":["0x1234567890123456789012345678901234567890","pending"],"id":"test"}`
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%d", TestAddr, TestPort), strings.NewReader(body))
+		require.Nil(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		require.Nil(t, err)
+		resBody, err := io.ReadAll(res.Body)
+		require.Nil(t, err)
+		resObj := struct {
+			Result *hexutil.Uint64 `json:"result"`
+			Error  *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}{}
+		require.Nil(t, json.Unmarshal(resBody, &resObj))
+		require.Nil(t, resObj.Result)
+		require.NotNil(t, resObj.Error)
+		require.Equal(t, -32000, resObj.Error.Code)
+		require.Equal(t, "pending served by sequencer", resObj.Error.Message)
+	})
 
-	// Should return nonce for pending transactions
-	require.NotNil(t, resObj["result"])
+	sender := occutils.NewSigner()
+	recipient := occutils.NewSigner().EvmAddress
+	const committed = int64(1000)
+	s := newPendingSequencer(t, committed, sender)
+	queue, err := sequencer.NewNonceQueue(
+		sequencer.NonceQueueConfig{PerSender: 4, Total: 8, Lifetime: time.Minute},
+		pendingTxNonceReader{s: s},
+		func(_ common.Address, _ uint64, tx []byte) error {
+			_, err := s.exec.Accept(tx)
+			return err
+		},
+	)
+	require.NoError(t, err)
+	value := big.NewInt(pendingOnePaxWei)
+	for _, nonce := range []uint64{0, 1} {
+		held, err := queue.Hold(sender.EvmAddress, nonce, pendingTransfer(t, sender, nonce, recipient, value))
+		require.NoError(t, err)
+		require.False(t, held)
+	}
+	held, err := queue.Hold(sender.EvmAddress, 3, pendingTransfer(t, sender, 3, recipient, value))
+	require.NoError(t, err)
+	require.True(t, held)
+	require.True(t, queue.Held(sender.EvmAddress, 3))
+	require.Equal(t, 1, queue.Len())
+
+	// The sequencer's tmClient reports a mempool nonce of 99 and a proxy route;
+	// neither may be consulted for pending on the sequencer.
+	seqAPI := pendingTxSequencerAPI(s, &pendingNonceClient{
+		MockClient: &MockClient{latestOverride: committed},
+		nextNonce:  99,
+		proxyURL:   &url.URL{Scheme: "http", Host: "127.0.0.1:1"},
+	})
+
+	t.Run("sequencer reads the open-block nonce with a held future nonce", func(t *testing.T) {
+		nonce, err := seqAPI.GetTransactionCount(context.Background(), sender.EvmAddress, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber))
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Uint64(2), *nonce)
+
+		latest, err := seqAPI.GetTransactionCount(context.Background(), sender.EvmAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Uint64(0), *latest)
+	})
+
+	t.Run("full node forwards pending to the sequencer", func(t *testing.T) {
+		server := rpc.NewServer()
+		defer server.Stop()
+		require.NoError(t, server.RegisterName("eth", seqAPI))
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+		sequencerURL, err := url.Parse(httpServer.URL)
+		require.NoError(t, err)
+
+		fullNode := evmrpc.NewTransactionAPI(
+			&pendingNonceClient{MockClient: &MockClient{}, nextNonce: 99, proxyURL: sequencerURL},
+			nil,
+			nil,
+			nil,
+			"",
+			evmrpc.ConnectionTypeHTTP,
+			utils.None[time.Duration](),
+			&evmrpc.WatermarkManager{},
+			evmrpc.NewBlockCache(1),
+			&sync.Mutex{},
+		)
+		nonce, err := fullNode.GetTransactionCount(context.Background(), sender.EvmAddress, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber))
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Uint64(2), *nonce)
+	})
+}
+
+// pendingTxNonceReader reads the next nonce from the open block, the state the
+// sequencer's nonce queue compares against.
+type pendingTxNonceReader struct {
+	s *pendingSequencer
+}
+
+func (r pendingTxNonceReader) EvmNonce(addr common.Address) uint64 {
+	ctx, err := r.s.exec.Snapshot()
+	if err != nil {
+		panic(err)
+	}
+	return r.s.app.EvmKeeper.GetNonce(ctx, addr)
+}
+
+// pendingTxSequencerAPI is the transaction API as the sequencer serves it: the
+// real keeper, the open-block context provider and the pending watermarks.
+func pendingTxSequencerAPI(s *pendingSequencer, tmClient *pendingNonceClient) *evmrpc.TransactionAPI {
+	return evmrpc.NewTransactionAPI(
+		tmClient,
+		&s.app.EvmKeeper,
+		s.ctxProvider,
+		func(int64) client.TxConfig { return TxConfig },
+		"",
+		evmrpc.ConnectionTypeHTTP,
+		utils.None[time.Duration](),
+		s.wm,
+		evmrpc.NewBlockCache(1),
+		&sync.Mutex{},
+	)
+}
+
+func TestGetTransactionByHashPending(t *testing.T) {
+	sender := occutils.NewSigner()
+	recipient := occutils.NewSigner().EvmAddress
+	const committed = int64(1000)
+	s := newPendingSequencer(t, committed, sender)
+	tx := pendingTransfer(t, sender, 0, recipient, big.NewInt(pendingOnePaxWei))
+	accepted, err := s.exec.Accept(tx)
+	require.NoError(t, err)
+	require.Equal(t, committed+1, accepted.Height)
+
+	decoded, err := TxConfig.TxDecoder()(tx)
+	require.NoError(t, err)
+	evmMsg, ok := decoded.GetMsgs()[0].(*types.MsgEVMTransaction)
+	require.True(t, ok)
+	etx, _ := evmMsg.AsTransaction()
+	require.NotNil(t, etx)
+
+	api := pendingTxSequencerAPI(s, &pendingNonceClient{MockClient: &MockClient{latestOverride: committed}})
+	got, err := api.GetTransactionByHash(context.Background(), etx.Hash())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, etx.Hash(), got.Hash)
+	require.Equal(t, sender.EvmAddress, got.From)
+	require.Equal(t, hexutil.Uint64(0), got.Nonce)
+	require.NotNil(t, got.BlockNumber)
+	require.Equal(t, big.NewInt(committed+1), got.BlockNumber.ToInt())
+	require.Nil(t, got.BlockHash)
+	require.NotNil(t, got.TransactionIndex)
+	require.Equal(t, hexutil.Uint64(accepted.TxIndex), *got.TransactionIndex) //nolint:gosec
+
+	latest, err := api.GetTransactionCount(context.Background(), sender.EvmAddress, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber))
+	require.NoError(t, err)
+	require.Equal(t, hexutil.Uint64(0), *latest)
 }
 
 func TestGetTransactionCountPendingUsesProxy(t *testing.T) {
@@ -1014,7 +1159,7 @@ func TestGetTransactionCountPendingUsesProxy(t *testing.T) {
 	require.Equal(t, map[string]string{"blockNumber": "pending"}, gotBlockTag)
 }
 
-func TestGetTransactionCountPendingFallsBackToLocalNonce(t *testing.T) {
+func TestGetTransactionCountPendingRefusedWithoutSequencerRoute(t *testing.T) {
 	address := common.HexToAddress("0x1234567890123456789012345678901234567890")
 	api := evmrpc.NewTransactionAPI(
 		&pendingNonceClient{MockClient: &MockClient{}, nextNonce: 7},
@@ -1030,8 +1175,8 @@ func TestGetTransactionCountPendingFallsBackToLocalNonce(t *testing.T) {
 	)
 
 	nonce, err := api.GetTransactionCount(context.Background(), address, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber))
-	require.NoError(t, err)
-	require.Equal(t, hexutil.Uint64(7), *nonce)
+	require.ErrorIs(t, err, evmrpc.ErrPendingServedBySequencer)
+	require.Nil(t, nonce)
 }
 
 func TestGetTransactionCountWithBlockNumber(t *testing.T) {

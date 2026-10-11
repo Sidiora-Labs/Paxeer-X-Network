@@ -367,35 +367,17 @@ func (t *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		recordMetricsWithError(ctx, "eth_getTransactionCount", t.connectionType, startTime, returnErr, recover())
 	}()
 
-	if blockNrOrHash.BlockHash == nil && blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber {
-		if url, ok := t.tmClient.EvmProxy(address); ok {
-			recordRedirectedRequest(ctx, "eth_getTransactionCount", string(t.connectionType))
-
-			// HTTP transport pooling already happens globally underneath net/http, so
-			// creating a fresh RPC client per proxied request is fine here. If we
-			// start proxying over WebSocket, we'll need explicit custom pooling since
-			// the underlying TCP connection lifecycle is strictly bound to Dial -> Close calls.
-			client, err := rpc.DialContext(ctx, url.String())
-			if err != nil {
-				return nil, fmt.Errorf("rpc.DialContext(%q): %w", url.String(), err)
-			}
-			defer client.Close()
-
-			var nonce hexutil.Uint64
-			if err := client.CallContext(ctx, &nonce, "eth_getTransactionCount", address, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)); err != nil {
-				// No error wrapping, because evm server is too dumb to handle wrapped error.
-				return nil, err
-			}
-			return &nonce, nil
-		}
-
-		nonce := t.tmClient.EvmNextPendingNonce(address)
-		return (*hexutil.Uint64)(&nonce), nil
+	pending := blockNrOrHash.BlockHash == nil && blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber == rpc.PendingBlockNumber
+	if pending && (t.watermarks == nil || t.watermarks.pending == nil) {
+		return t.forwardPendingNonce(ctx, address)
 	}
 
 	height, err := t.watermarks.ResolveHeight(ctx, blockNrOrHash)
 	if err != nil {
 		return nil, err
+	}
+	if height == PendingCtxHeight {
+		return t.pendingNonce(address), nil
 	}
 	sdkCtx := t.ctxProvider(height)
 	if err := CheckVersion(sdkCtx, t.keeper); err != nil {
@@ -403,6 +385,42 @@ func (t *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	}
 	nonce := t.keeper.GetNonce(sdkCtx, address)
 	return (*hexutil.Uint64)(&nonce), nil
+}
+
+// pendingNonce is the sequencer's next nonce for address on the open block. Held
+// future nonces never move it: the nonce queue drains them into the open block
+// only once the gap fills, so the open-block nonce is the next executable one.
+func (t *TransactionAPI) pendingNonce(address common.Address) *hexutil.Uint64 {
+	nonce := t.keeper.GetNonce(t.ctxProvider(PendingCtxHeight), address)
+	return (*hexutil.Uint64)(&nonce)
+}
+
+// forwardPendingNonce asks the sequencer for the pending nonce from a node that
+// holds no open block. With no route to the sequencer the call is refused; the
+// local mempool nonce is never served for pending.
+func (t *TransactionAPI) forwardPendingNonce(ctx context.Context, address common.Address) (*hexutil.Uint64, error) {
+	url, ok := t.tmClient.EvmProxy(address)
+	if !ok {
+		return nil, ErrPendingServedBySequencer
+	}
+	recordRedirectedRequest(ctx, "eth_getTransactionCount", string(t.connectionType))
+
+	// HTTP transport pooling already happens globally underneath net/http, so
+	// creating a fresh RPC client per proxied request is fine here. If we
+	// start proxying over WebSocket, we'll need explicit custom pooling since
+	// the underlying TCP connection lifecycle is strictly bound to Dial -> Close calls.
+	client, err := rpc.DialContext(ctx, url.String())
+	if err != nil {
+		return nil, fmt.Errorf("rpc.DialContext(%q): %w", url.String(), err)
+	}
+	defer client.Close()
+
+	var nonce hexutil.Uint64
+	if err := client.CallContext(ctx, &nonce, "eth_getTransactionCount", address, rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)); err != nil {
+		// No error wrapping, because evm server is too dumb to handle wrapped error.
+		return nil, err
+	}
+	return &nonce, nil
 }
 
 func (t *TransactionAPI) getTransactionWithBlock(block *coretypes.ResultBlock, txIndex uint32, includeSynthetic bool) (*export.RPCTransaction, error) {
