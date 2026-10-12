@@ -71,6 +71,10 @@ pub struct NativeProgramAccountProfile2<'a> {
 }
 
 impl<'a> NativeProgramAccountProfile2<'a> {
+    /// # Errors
+    ///
+    /// Refuses a zero program id, a zero asset, and a seed longer than
+    /// `MAX_SEED_BYTES`.
     pub fn encode(&self) -> Result<Vec<u8>, InvalidNativeLifecycle> {
         if self.program_id.is_zero() || self.asset == [0; 32] || self.seed.len() > MAX_SEED_BYTES {
             return Err(InvalidNativeLifecycle);
@@ -83,6 +87,11 @@ impl<'a> NativeProgramAccountProfile2<'a> {
         Ok(bytes)
     }
 
+    /// # Errors
+    ///
+    /// Refuses a payload that is truncated, lacks the `LXPA2` tag, carries a
+    /// zero program id, a zero asset or a seed longer than `MAX_SEED_BYTES`,
+    /// or has trailing bytes after the seed.
     pub fn decode(payload: &'a [u8]) -> Result<Self, InvalidNativeLifecycle> {
         let mut remaining = payload;
         let program_id = ProgramId::new(take(&mut remaining)?);
