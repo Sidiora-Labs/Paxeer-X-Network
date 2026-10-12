@@ -503,13 +503,17 @@ fn execute(
     });
     let deadline = Duration::from_millis(u64::from(dispatch.deadline_ms));
     let started = Instant::now();
+    let live = || {
+        started.elapsed() < deadline
+            && !state
+                .read(dispatch.job)
+                .is_ok_and(|journal| journal.is_some_and(|j| j.cancel_fence >= dispatch.fence))
+    };
     let status = loop {
-        let fenced = state
-            .read(dispatch.job)
-            .is_ok_and(|journal| journal.is_some_and(|j| j.cancel_fence >= dispatch.fence));
+        let live = live();
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if !fenced && started.elapsed() < deadline => thread::sleep(POLL),
+            Ok(None) if live => thread::sleep(POLL),
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -517,6 +521,12 @@ fn execute(
             }
         }
     };
+    while !(writer.is_finished() && reader.is_finished()) {
+        if !live() {
+            return Err(ServiceError::ExecutionUnavailable);
+        }
+        thread::sleep(POLL);
+    }
     let written = writer.join();
     let answer = reader.join();
     if !status.success() {
@@ -530,5 +540,192 @@ fn execute(
             Execution::decode(&bytes)
         }
         _ => Err(ServiceError::ExecutionUnavailable),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::OnceLock;
+
+    const DESCENDANT_SECONDS: u64 = 30;
+    const BOUND: Duration = Duration::from_secs(5);
+    const MODEL: u8 = 0x11;
+    const DEADLINE_DEPLOYMENT: u8 = 0x22;
+    const CANCEL_DEPLOYMENT: u8 = 0x23;
+    const EXITED: &str = "exited";
+
+    fn digest(byte: u8) -> Result<Digest32, String> {
+        Digest32::new([byte; 32]).map_err(|_| "zero digest".to_string())
+    }
+
+    fn reason(exit: &Exit) -> String {
+        match exit {
+            Exit::NotStarted(reason) | Exit::Failed(reason) => (*reason).to_string(),
+        }
+    }
+
+    fn scratch(name: &str) -> Result<PathBuf, String> {
+        let (ns, _) = wall_clock().map_err(|e| reason(&e))?;
+        let dir =
+            std::env::temp_dir().join(format!("paxai-runner-{}-{name}-{ns}", std::process::id()));
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir)
+    }
+
+    /// The pinned engine directories of every test, written before any test spawns a process
+    /// so no forked child holds an engine's write descriptor at exec time. Each engine starts
+    /// a background sleep inheriting stdout, marks its exit and exits at once.
+    fn engine_root() -> Result<&'static PathBuf, String> {
+        static ROOT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+        ROOT.get_or_init(|| {
+            let root = scratch("models")?;
+            for deployment in [DEADLINE_DEPLOYMENT, CANCEL_DEPLOYMENT] {
+                let directory = pinned_directory(&root, digest(MODEL)?, digest(deployment)?);
+                fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+                let engine = directory.join(ENGINE);
+                fs::write(
+                    &engine,
+                    format!("#!/bin/sh\nsleep {DESCENDANT_SECONDS} &\n: > {EXITED}\nexit 0\n"),
+                )
+                .map_err(|e| e.to_string())?;
+                fs::set_permissions(&engine, fs::Permissions::from_mode(0o755))
+                    .map_err(|e| e.to_string())?;
+            }
+            std::env::set_var(MODELS_ENV, &root);
+            Ok(root)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+    }
+
+    fn engine_directory(deployment: u8) -> Result<PathBuf, String> {
+        Ok(pinned_directory(
+            engine_root()?,
+            digest(MODEL)?,
+            digest(deployment)?,
+        ))
+    }
+
+    fn request(job: u8, deployment: u8, fence: u64, deadline_ms: u32) -> Result<Vec<u8>, String> {
+        Dispatch {
+            job: JobKey::from_digest(digest(job)?),
+            fence,
+            model: digest(MODEL)?,
+            deployment: digest(deployment)?,
+            capability: digest(0x33)?,
+            unit_kind: layerx_paxai_worker::runner::TOKENS,
+            max_output_bytes: 1_024,
+            max_input_units: 1_024,
+            max_units: 1_024,
+            deadline_ms,
+            result_key: None,
+            input_manifest: &[],
+            payload: b"prompt",
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))
+    }
+
+    fn job_request_bytes(job: u8, fence: Option<u64>) -> Vec<u8> {
+        let mut out = MAGIC.to_vec();
+        out.extend_from_slice(&VERSION.to_be_bytes());
+        out.extend_from_slice(&[job; 32]);
+        if let Some(fence) = fence {
+            out.extend_from_slice(&fence.to_be_bytes());
+        }
+        out
+    }
+
+    /// Records `fence` through `cancel` once the cancel engine has exited and left its
+    /// descendant holding stdout; consumes the exit mark for the next run.
+    fn cancel_after_exit(state: &State, job: u8, fence: u64) -> Result<(), String> {
+        let mark = engine_directory(CANCEL_DEPLOYMENT)?.join(EXITED);
+        let waiting = Instant::now();
+        while fs::remove_file(&mark).is_err() {
+            if waiting.elapsed() > BOUND {
+                return Err("engine never exited".to_string());
+            }
+            thread::sleep(POLL);
+        }
+        thread::sleep(Duration::from_millis(100));
+        cancel(state, &job_request_bytes(job, Some(fence)))
+            .map(drop)
+            .map_err(|e| reason(&e))
+    }
+
+    /// A following dispatch of `job`, cancelled after the engine exits when `cancelled`,
+    /// answers a finished execution-unavailable report well before the descendant ends, and a
+    /// lookup answers the same report.
+    fn following_dispatch_finishes(
+        state: &State,
+        job: u8,
+        deployment: u8,
+        fence: u64,
+        deadline_ms: u32,
+        cancelled: bool,
+    ) -> Result<(), String> {
+        let bytes = request(job, deployment, fence, deadline_ms)?;
+        let started = Instant::now();
+        let dispatched = thread::scope(|scope| {
+            let dispatched = scope.spawn(|| dispatch(state, &bytes).map_err(|e| reason(&e)));
+            if cancelled {
+                cancel_after_exit(state, job, fence)?;
+            }
+            dispatched
+                .join()
+                .map_err(|_| "dispatch panicked".to_string())?
+        })?;
+        assert!(started.elapsed() < BOUND, "dispatch outlived the bound");
+        let report = Report::decode(&dispatched).map_err(|e| format!("{e:?}"))?;
+        assert_eq!(report.job, JobKey::from_digest(digest(job)?));
+        assert_eq!(report.fence, fence);
+        let Progress::Finished(completion) = report.progress else {
+            return Err(format!("dispatch answered {:?}", report.progress));
+        };
+        assert!(!completion.succeeded);
+        assert_eq!(
+            completion.error_code,
+            ServiceError::ExecutionUnavailable.code()
+        );
+        let looked_up = lookup(state, &job_request_bytes(job, None)).map_err(|e| reason(&e))?;
+        assert_eq!(looked_up, dispatched);
+        Ok(())
+    }
+
+    #[test]
+    fn execute_ends_at_deadline_while_a_descendant_holds_stdout() -> Result<(), String> {
+        let directory = engine_directory(DEADLINE_DEPLOYMENT)?;
+        let state = State {
+            root: scratch("deadline")?,
+        };
+        let bytes = request(0xa1, DEADLINE_DEPLOYMENT, 1, 200)?;
+        let attempt = Dispatch::decode(&bytes).map_err(|e| format!("{e:?}"))?;
+        let started = Instant::now();
+        let outcome = execute(&state, &attempt, &directory, &bytes);
+        assert!(started.elapsed() < BOUND, "execute outlived the bound");
+        assert_eq!(outcome, Err(ServiceError::ExecutionUnavailable));
+        following_dispatch_finishes(&state, 0xa1, DEADLINE_DEPLOYMENT, 2, 200, false)
+    }
+
+    #[test]
+    fn execute_ends_on_cancel_while_a_descendant_holds_stdout() -> Result<(), String> {
+        let directory = engine_directory(CANCEL_DEPLOYMENT)?;
+        let state = State {
+            root: scratch("cancel")?,
+        };
+        let deadline_ms = 60_000;
+        let bytes = request(0xb2, CANCEL_DEPLOYMENT, 1, deadline_ms)?;
+        let attempt = Dispatch::decode(&bytes).map_err(|e| format!("{e:?}"))?;
+        let started = Instant::now();
+        let outcome = thread::scope(|scope| {
+            let executed = scope.spawn(|| execute(&state, &attempt, &directory, &bytes));
+            cancel_after_exit(&state, 0xb2, 1)?;
+            executed.join().map_err(|_| "execute panicked".to_string())
+        })?;
+        assert!(started.elapsed() < BOUND, "execute outlived the bound");
+        assert_eq!(outcome, Err(ServiceError::ExecutionUnavailable));
+        following_dispatch_finishes(&state, 0xb2, CANCEL_DEPLOYMENT, 2, deadline_ms, true)
     }
 }
