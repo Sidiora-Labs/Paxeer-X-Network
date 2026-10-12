@@ -25071,7 +25071,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.8]
 title = "Scheduler keeper hook: due-job execution at block end"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.2.1"]

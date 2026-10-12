@@ -1649,3 +1649,10 @@ command = "go test -count=1 ./precompiles/layerxpay/ -run TestABIMatchesContract
 exit_code = 0
 log_path = "logs/2.4.9-verify-2.log"
 observed_and_assumption = "verify passed (253 passed, 0 failed (cycle 1: exit 1, logs/2.4.9-verify-1.log, 155 passed, 3 failed)). Gaps: none. Interpretations: the record views (escrow, budget, stream, stream result, service offer/agreement/commitment/delivery/progress/dispute) return one named struct, not flat outputs. Flat outputs would reuse input names (getOffer offerId, latestDelivery agreementId), which Solidity refuses as a redeclaration. Kernel stream event type 8 (80 B rate-change body, lx_stream_execution.h:120-132) is in the ABI as StreamRateUpdated(bytes32 indexed streamId, uint128 oldRate, uint128 newRate, uint128 paid), per req 2025.3/2015.4. The pay.md C section has no row for it, so the contract text needs a matching amendment."
+
+[finding.6.2.8]
+revision = "7699d6f6c"
+command = "go test -count=1 -v ./modules/layerxagent/keeper/"
+exit_code = 0
+log_path = "logs/6.2.8-verify-2.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed (first run also 5/0: 6.2.8-verify-1.log)). Gaps: the callData size cap is not checked in Keeper.Schedule; it is left to the 0x0905 precompile (6.2.5 do_1)"
