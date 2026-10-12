@@ -5,13 +5,15 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
-// InitGenesis loads a validated genesis. An active (unpaused) genesis must
-// carry a valid program-origin pair; the unset pair loads only paused.
+// InitGenesis loads a validated genesis. An active (unpaused) genesis that
+// carries a program-origin pair field must carry a valid pair; an active
+// genesis that carries neither field, the state exported before the program
+// origin existed, replays as it is.
 func (k Keeper) InitGenesis(ctx sdk.Context, genesis types.GenesisState) {
 	if err := genesis.Validate(); err != nil {
 		panic(err)
 	}
-	if !genesis.Paused {
+	if !genesis.Paused && (genesis.Params.KernelNetworkId != 0 || genesis.Params.ProgramFeeDenoms != nil) {
 		if err := types.ValidateProgramSettings(genesis.Params.KernelNetworkId, genesis.Params.ProgramFeeDenoms); err != nil {
 			panic(err)
 		}

@@ -359,10 +359,13 @@ func (app *App) runV610Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM modu
 	return newVM, nil
 }
 
-// registerXWebAttestors registers the initial web-search attestor set, sets the
-// threshold over it and lifts the module's pause, through the same keeper
-// methods a governance message reaches and with the module's own authority, so
-// every authority check runs exactly as it does for a proposal. A list with no
+// registerXWebAttestors registers the initial web-search attestor set and sets
+// the threshold over it, through the same keeper methods a governance message
+// reaches and with the module's own authority, so every authority check runs
+// exactly as it does for a proposal. It lifts the module's pause by writing the
+// pause flag in the xweb store directly: governance Unpause now refuses the
+// unset program pair this plan applied with, and the applied state must replay
+// unchanged. A list with no
 // entry writes none of the three and leaves the module as its own genesis left
 // it: paused, with an empty set and no threshold.
 func (app *App) registerXWebAttestors(ctx sdk.Context) error {
@@ -379,9 +382,8 @@ func (app *App) registerXWebAttestors(ctx sdk.Context) error {
 	if err := app.XWebKeeper.SetThreshold(ctx, xwebtypes.MsgSetThreshold{Authority: authority, Threshold: XWebThreshold}); err != nil {
 		return fmt.Errorf("upgrade %s: web-search threshold: %w", V610Upgrade, err)
 	}
-	if err := app.XWebKeeper.Unpause(ctx, xwebtypes.MsgUnpause{Authority: authority}); err != nil {
-		return fmt.Errorf("upgrade %s: web-search unpause: %w", V610Upgrade, err)
-	}
+	ctx.KVStore(app.GetKey(xwebtypes.StoreKey)).Delete(xwebtypes.PausedKey)
+	ctx.EventManager().EmitEvent(sdk.NewEvent(xwebtypes.EventUnpaused))
 	return nil
 }
 

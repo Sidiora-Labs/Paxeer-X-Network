@@ -3,9 +3,11 @@ package keeper_test
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
@@ -157,8 +159,8 @@ func TestUpdateParamsOriginTwoFields(t *testing.T) {
 		sdk.NewAttribute(types.AttributePayloadCap, "256"),
 		sdk.NewAttribute(types.AttributeCallbackCap, "300000"),
 		sdk.NewAttribute(types.AttributeTimeoutBlocks, "100"),
-		sdk.NewAttribute("kernel_network_id", "1"),
-		sdk.NewAttribute("program_fee_denoms", "uhpx,usid,uusdc,uusdl"))}, s.events(types.EventParamsSet))
+		sdk.NewAttribute(types.AttributeKernelNetworkID, "1"),
+		sdk.NewAttribute(types.AttributeProgramFeeDenoms, "uhpx,usid,uusdc,uusdl"))}, s.events(types.EventParamsSet))
 
 	require.NoError(t, s.k.UpdateParams(s.ctx, types.MsgSetParams{Authority: authority, Fee: sdk.NewInt(75),
 		MaxPayloadBytes: payloadCap, MaxCallbackGas: callbackCap, TimeoutBlocks: timeout, KernelNetworkId: 7,
@@ -168,8 +170,8 @@ func TestUpdateParamsOriginTwoFields(t *testing.T) {
 	require.Equal(t, want, s.k.GetParams(s.ctx), "a single mapped denom is a valid subset")
 	events := s.events(types.EventParamsSet)
 	require.Len(t, events, 2)
-	require.Equal(t, "7", attribute(events[1], "kernel_network_id"))
-	require.Equal(t, types.ProgramFeeDenomUSDC, attribute(events[1], "program_fee_denoms"))
+	require.Equal(t, "7", attribute(events[1], types.AttributeKernelNetworkID))
+	require.Equal(t, types.ProgramFeeDenomUSDC, attribute(events[1], types.AttributeProgramFeeDenoms))
 
 	for _, tc := range []struct {
 		name    string
@@ -244,8 +246,24 @@ func TestProgramPairRequiredWhileActive(t *testing.T) {
 	dormant := *types.DefaultGenesis()
 	require.True(t, dormant.Paused)
 	require.Equal(t, dormant, fresh.k.ExportGenesis(fresh.ctx), "the default dormant genesis loads")
-	active := dormant
-	active.Paused = false
+	replayed := dormant
+	replayed.Paused = false
+	require.Nil(t, replayed.Params.ProgramFeeDenoms)
+	replay := newSuite(t, false)
+	replay.k.InitGenesis(replay.ctx, replayed)
+	require.False(t, replay.k.IsPaused(replay.ctx), "a state carrying no program pair field replays as it is")
+	require.Equal(t, replayed, replay.k.ExportGenesis(replay.ctx))
+
+	var active types.GenesisState
+	encoded, err := json.Marshal(replayed)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"program_fee_denoms":null`)
+	require.NoError(t, json.Unmarshal([]byte(strings.Replace(string(encoded),
+		`"program_fee_denoms":null`, `"program_fee_denoms":[]`, 1)), &active))
+	require.False(t, active.Paused)
+	require.Zero(t, active.Params.KernelNetworkId)
+	require.NotNil(t, active.Params.ProgramFeeDenoms)
+	require.Empty(t, active.Params.ProgramFeeDenoms)
 	require.NoError(t, active.Validate(), "params validation alone cannot see the module is active")
 	panicErr := requireXWebPanic(t, types.ErrInvalidParams, "LXP_XWEB_INVALID_PARAMS",
 		func() { fresh.k.InitGenesis(fresh.ctx, active) })

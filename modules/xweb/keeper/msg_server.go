@@ -12,12 +12,6 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
-// The xweb_params_set attributes that carry the program-origin parameters.
-const (
-	attributeKernelNetworkID  = "kernel_network_id"
-	attributeProgramFeeDenoms = "program_fee_denoms"
-)
-
 type msgServer struct {
 	keeper Keeper
 }
@@ -188,8 +182,8 @@ func (k Keeper) UpdateParams(ctx sdk.Context, msg types.MsgSetParams) error {
 		sdk.NewAttribute(types.AttributePayloadCap, fmt.Sprint(msg.MaxPayloadBytes)),
 		sdk.NewAttribute(types.AttributeCallbackCap, fmt.Sprint(msg.MaxCallbackGas)),
 		sdk.NewAttribute(types.AttributeTimeoutBlocks, fmt.Sprint(msg.TimeoutBlocks)),
-		sdk.NewAttribute(attributeKernelNetworkID, fmt.Sprint(msg.KernelNetworkId)),
-		sdk.NewAttribute(attributeProgramFeeDenoms, strings.Join(msg.ProgramFeeDenoms, ","))))
+		sdk.NewAttribute(types.AttributeKernelNetworkID, fmt.Sprint(msg.KernelNetworkId)),
+		sdk.NewAttribute(types.AttributeProgramFeeDenoms, strings.Join(msg.ProgramFeeDenoms, ","))))
 	return nil
 }
 
