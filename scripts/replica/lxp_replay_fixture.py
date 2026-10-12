@@ -8,8 +8,18 @@ OUTPUT = ROOT / "tests" / "vectors" / "replay_corpus.lxb"
 
 ACTIVITY_TYPES = tuple(
     (module << 16) | ordinal
+    for module, maximum in ((1, 8), (2, 7), (3, 11), (4, 8), (5, 13), (6, 11))
+    for ordinal in range(1, maximum + 1)
+)
+ORIGINAL_ACTIVITY_TYPES = tuple(
+    (module << 16) | ordinal
     for module, maximum in ((1, 8), (2, 7), (3, 7), (4, 7), (5, 13), (6, 11))
     for ordinal in range(1, maximum + 1)
+)
+REPLAY_ACTIVITY_TYPES = ORIGINAL_ACTIVITY_TYPES + tuple(
+    activity_type
+    for activity_type in ACTIVITY_TYPES
+    if activity_type not in ORIGINAL_ACTIVITY_TYPES
 )
 
 
@@ -38,8 +48,7 @@ def activity(activity_type: int, sequence: int) -> bytes:
     parts += [b"\x04" + sized(actor)]
     parts += [b"\x05" + sized(authority)]
     parts += [b"\x06" + struct.pack(">Q", sequence)]
-    parts += [b"\x07" + struct.pack(">QQ", 1_700_000_000_000,
-                                     1_700_000_100_000)]
+    parts += [b"\x07" + struct.pack(">QQ", 1_700_000_000_000, 1_700_000_100_000)]
     parts += [b"\x08" + sized(idempotency)]
     parts += [b"\x09" + (1).to_bytes(16, "big")]
     parts += [b"\x0a" + sized(domain(b"LXP/v1/payload-hash", payload))]
@@ -53,21 +62,19 @@ def build() -> bytes:
     previous_state = bytes(32)
     previous_batch = bytes(32)
     previous_digest = bytes(32)
-    for sequence, activity_type in enumerate(ACTIVITY_TYPES, 1):
+    for sequence, activity_type in enumerate(REPLAY_ACTIVITY_TYPES, 1):
         encoded = activity(activity_type, sequence)
         activity_id = domain(b"LXP/v1/activity-id", encoded)
         state = domain(
             b"LXP/v1/state-root-chain",
             previous_state + struct.pack(">Q", sequence) + activity_id,
         )
-        receipt = (
-            struct.pack(">HQ", 1, sequence)
-            + activity_id
-            + previous_state
-            + state
-        )
+        receipt = struct.pack(">HQ", 1, sequence) + activity_id + previous_state + state
         event = struct.pack(">I", activity_type) + activity_id
-        boundary = sequence % 7 == 0 or sequence == len(ACTIVITY_TYPES)
+        boundary = sequence % 7 == 0 or sequence in (
+            len(ORIGINAL_ACTIVITY_TYPES),
+            len(REPLAY_ACTIVITY_TYPES),
+        )
         batch = bytes(32)
         if boundary:
             batch = domain(
