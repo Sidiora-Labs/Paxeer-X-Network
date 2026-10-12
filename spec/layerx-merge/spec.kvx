@@ -42212,7 +42212,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.123]
 title = "One serde_json pin across every Rust workspace and a refreshed programs vendor tree"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.56"]
@@ -42239,7 +42239,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.124]
 title = "layerx-proof complete-export refusal tests hold on main"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -42413,7 +42413,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.131]
 title = "Explorer receipts route reads committed heights through Finality"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = []
