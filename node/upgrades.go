@@ -2,6 +2,7 @@ package app
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -17,6 +18,7 @@ import (
 	layerxcustodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	layerxexchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	layerxledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
+	seqtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb"
 	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
@@ -202,6 +204,9 @@ func (app *App) RegisterUpgradeHandlers() {
 	// The v6.11 plan gates the custody proposal content and its messages and
 	// migrates the legacy SID ERC-20 balances into usid.
 	app.UpgradeKeeper.SetUpgradeHandler(V611Upgrade, app.runV611Upgrade)
+	// The merge plan brings the sequencer module up from the genesis its plan
+	// carries.
+	app.UpgradeKeeper.SetUpgradeHandler(MergeUpgrade, app.mergeUpgradePlan)
 }
 
 // runXWebUpgrade runs the module migrations with xweb taken as present, so the
@@ -402,6 +407,68 @@ func mergeStoreUpgrades() storetypes.StoreUpgrades {
 	return storetypes.StoreUpgrades{
 		Added: []string{storekeys.SequencerStoreKey},
 	}
+}
+
+// mergeUpgradePlan brings the sequencer module up at the merge height H_act
+// from the module genesis the plan carries in its info: the pinned leader list
+// L, the receipt keys and lastSeq 0 with the zero lastSeqHash. It runs the
+// module migrations with the sequencer taken as present, so the migrations
+// never initialise it from its default genesis, and writes no account state.
+// A plan whose info is not a valid sequencer genesis, carries no leader list,
+// carries a lastSeq other than 0 or pins no receipt key for H_act is refused,
+// and the block that would apply it stops.
+func (app *App) mergeUpgradePlan(ctx sdk.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+	sequencer := app.mm.Modules[seqtypes.ModuleName]
+	genesis := json.RawMessage(plan.Info)
+	if err := sequencer.ValidateGenesis(app.appCodec, nil, genesis); err != nil {
+		return fromVM, fmt.Errorf("upgrade %s: sequencer genesis: %w", MergeUpgrade, err)
+	}
+	versions := make(module.VersionMap, len(fromVM)+1)
+	for name, version := range fromVM {
+		versions[name] = version
+	}
+	versions[seqtypes.ModuleName] = sequencer.ConsensusVersion()
+	newVM, err := app.mm.RunMigrations(ctx, app.configurator, versions)
+	if err != nil {
+		return newVM, err
+	}
+	sequencer.InitGenesis(ctx, app.appCodec, genesis)
+	state, err := app.SequencerKeeper.ExportGenesis(ctx)
+	if err != nil {
+		return newVM, fmt.Errorf("upgrade %s: %w", MergeUpgrade, err)
+	}
+	if len(state.Leaders) == 0 {
+		return newVM, seqtypes.ErrInvalidGenesis.Wrapf("upgrade %s carries no leader list", MergeUpgrade)
+	}
+	if state.LastSeq != 0 {
+		return newVM, seqtypes.ErrInvalidGenesis.Wrapf("upgrade %s carries lastSeq %d, want 0", MergeUpgrade, state.LastSeq)
+	}
+	for _, key := range state.ReceiptKeys {
+		if key.Covers(uint64(ctx.BlockHeight())) { //nolint:gosec // block heights are positive
+			return newVM, nil
+		}
+	}
+	return newVM, seqtypes.ErrInvalidGenesis.Wrapf("upgrade %s pins no receipt key for height %d", MergeUpgrade, ctx.BlockHeight())
+}
+
+// sequencerPinnedLeader is the gate of the leader pin and of the
+// ProcessProposal order check. At heights at or above the height H_act at which
+// the merge plan brought the sequencer module up it returns L[r mod len(L)] from
+// the leader list in the module store and true; below H_act, and on a chain
+// that has not applied the plan, it returns false and the proposer rotation and
+// the mempool path run unchanged. It reads the module store, never node config.
+func (app *App) sequencerPinnedLeader(ctx sdk.Context, height int64, round int32) ([32]byte, bool, error) {
+	if !app.UpgradeKeeper.IsUpgradeActiveAtHeight(ctx, MergeUpgrade, height) {
+		return [32]byte{}, false, nil
+	}
+	leaders, err := app.SequencerKeeper.Leaders(ctx)
+	if err != nil {
+		return [32]byte{}, false, err
+	}
+	if len(leaders) == 0 {
+		return [32]byte{}, false, seqtypes.ErrInvalidGenesis.Wrapf("upgrade %s applied with no pinned leader list", MergeUpgrade)
+	}
+	return leaders[uint64(uint32(round))%uint64(len(leaders))], true, nil //nolint:gosec // the round is reduced modulo the list length
 }
 
 // activationModules lists the modules the activation plan initialises, in the
