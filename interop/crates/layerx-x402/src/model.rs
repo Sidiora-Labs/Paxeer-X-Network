@@ -179,7 +179,7 @@ impl PaymentRequirements {
         if self.is_layerx_network() {
             self.layerx_terms()?;
         } else {
-            layerx_profile(self.extra.as_ref(), None)?;
+            layerx_profile(self.extra.as_ref(), parse_hex32(&self.asset).ok().as_ref())?;
         }
         Ok(())
     }
@@ -606,5 +606,42 @@ const fn hex_nibble(byte: u8) -> Option<u8> {
         b'a'..=b'f' => Some(byte - b'a' + 10),
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{AtomicAmount, PaymentRequirements, X402Error};
+
+    const DID: &str = "did:layerx:66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a";
+    const ASSET: &str = "5c1d0a93e4b7f2682c9e1f0473ad5b6e8f1027c3d49a5b6e7f80912a3b4c5d6e";
+    const OTHER_ASSET: &str = "7e3f2cb506d9148abe1f3f2695cf7d80a1324e5f6bc7d8e9fa0b1c2d3e4f5061";
+
+    fn offer(account_asset: &str) -> PaymentRequirements {
+        PaymentRequirements {
+            scheme: "exact".to_owned(),
+            network: "eip155:125".to_owned(),
+            amount: AtomicAmount::from_u128(1_000),
+            asset: ASSET.to_owned(),
+            pay_to: "d8e40d9bc7fa7a1af1cbe0e704c35966ef486de86cd8f1bed990249f60f53cca".to_owned(),
+            max_timeout_seconds: 60,
+            extra: Some(json!({
+                "layerx": {
+                    "account": format!("agent:{DID}:asset:{account_asset}"),
+                    "currency": "SID",
+                }
+            })),
+        }
+    }
+
+    #[test]
+    fn an_eip155_asset_account_offer_validates_and_a_mismatched_asset_is_refused() {
+        assert_eq!(offer(ASSET).validate(), Ok(()));
+        assert_eq!(
+            offer(OTHER_ASSET).validate(),
+            Err(X402Error::ProfileMismatch)
+        );
     }
 }

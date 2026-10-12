@@ -651,7 +651,7 @@ fn metered_draws_settle_in_each_asset() -> Outcome {
         )?;
         assert_settled(&reply)?;
         let response = reply.decoded(PAYMENT_RESPONSE)?;
-        assert_eq!(response.get("network"), Some(&json!("layerx:1")));
+        assert_eq!(response.get("network"), Some(&json!("eip155:1337")));
         assert_eq!(
             response.pointer("/extensions/layerx/purposeHash"),
             Some(&json!(hex(&purpose_hash(&receiver_public_key()?))))
@@ -1117,6 +1117,7 @@ fn the_gate_reads_its_payment_settings_and_checks_the_configured_suite() -> Outc
     )?;
     assert_eq!(defaults.draw_fee_limit(), DEFAULT_DRAW_FEE_LIMIT);
     assert_eq!(defaults.payer(), None);
+    drop(defaults);
     let payer = text(&buyer, "/payerDid")?;
     let configured = PaymentGate::new(
         &configure_with(
@@ -1131,6 +1132,7 @@ fn the_gate_reads_its_payment_settings_and_checks_the_configured_suite() -> Outc
     )?;
     assert_eq!(configured.draw_fee_limit(), 42);
     assert_eq!(configured.payer(), Some(payer));
+    drop(configured);
     let mut unusable = configure_with(&scratch, &gateway, &buyer, None)?;
     unusable.payment.payer_did = Some("did:Upper".to_owned());
     assert!(matches!(

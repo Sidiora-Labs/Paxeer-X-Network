@@ -26,7 +26,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "metered"
               },
@@ -41,7 +41,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -58,7 +58,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "metered"
               },
@@ -73,7 +73,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -90,7 +90,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "metered"
               },
@@ -105,7 +105,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -122,7 +122,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "metered"
               },
@@ -137,7 +137,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -167,7 +167,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "metered"
               },
@@ -182,7 +182,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -199,7 +199,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "metered"
               },
@@ -214,7 +214,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -231,7 +231,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "metered"
               },
@@ -246,7 +246,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -263,7 +263,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "metered"
               },
@@ -278,7 +278,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -313,7 +313,7 @@
                 }
               },
               "maxTimeoutSeconds": 60,
-              "network": "layerx:1",
+              "network": "eip155:1337",
               "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
               "scheme": "metered"
             },
@@ -348,13 +348,13 @@
                 "purposeHash": "bbf2bcfb9ed0062aceb50ad1d99348837f7fe4e920fd8f031351a89837b44c28",
                 "receipt": "AANSAQADAAAAIEqCmD7s1pchGlfBi+NN758VaHQ23dUcqnv1r8X3GYxVAAAAAAAAAAkAAAAgKugq5+ydUpfqXxUvoZCoEB2zaKzn46mY03zUl/1Qg20AAAAgNR3noY2+d5F+ffj5IPCWXRsx9NUO7WmnW0HR3D37ON0AAAAgEtPLWb1Bbzu2aVXNHGzG8o0B5lMYGK1V2/WS1HAs6lgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAgx3on2AsRDezixld7sGq76li3P/hJMGRxiW/TRrRjBrcAAQAAAAEAAAABBgAAACBcHQqT5LfyaCyeHwRzrVtujxAnw9SaW25/gJEqO0xdbgAAAAAAAAAAAAAAAAAADCoAAAAgv3cw8cayJgAbQOE4svDjt5giRf4hH9FzMtXL58I8yWcAAAAAAAAAAAAAAAAABMBoAAAAAAAAAAAAAAAAAAS0PgAAAAAAAAABAAAAIDfnkDF0GP+3Q28f+uhyVUry8ceMb07ZBQFmiUdBv6HCAAAAAAAAAAAAAAAAAAAMKgAAAAAAAAAAAAAAAAAAGFQAAAAgl7okXYlxV8yRk6gWfmxS/ziNmD66v2V/qvwzZglNvb4AAAAgKvUcmvACIh8VKNIGhU/fMWbPT6FX2v1Gk6VD7Q3/05YAAAAgRJAwcFNjMr497jl5b2nBto9jrmqRcUmhk3xQLLPy0rYAAAAAAAAD6AEAAABAfv9JiiN+fBY0JeK8qTP0xcklbqtu94MjhufKznwaWTr7wa4rNA2hgqKqOxceG5XoD4+j+8g64Kcj7+PhUiSEDQ==",
                 "receiptDigest": "8d7d6aacef0e15991060d10b9228a7b2531262cde05c10e650f48fd9b4c9a4e1",
-                "verificationLevel": "sequencer-signed"
+                "verificationLevel": "receipted"
               }
             },
-            "network": "layerx:1",
+            "network": "eip155:1337",
             "payer": "bf7730f1c6b226001b40e138b2f0e3b7982245fe211fd17332d5cbe7c23cc967",
             "success": true,
-            "transaction": "lxp:8d7d6aacef0e15991060d10b9228a7b2531262cde05c10e650f48fd9b4c9a4e1"
+            "transaction": "0x4a82983eecd697211a57c18be34def9f15687436ddd51caa7bf5afc5f7198c55"
           }
         },
         "status": 200
@@ -382,7 +382,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -397,7 +397,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -412,7 +412,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -427,7 +427,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -455,7 +455,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -470,7 +470,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -485,7 +485,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -500,7 +500,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -532,7 +532,7 @@
                 }
               },
               "maxTimeoutSeconds": 60,
-              "network": "layerx:1",
+              "network": "eip155:1337",
               "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
               "scheme": "exact"
             },
@@ -563,13 +563,13 @@
               "layerx": {
                 "receipt": "AANSAQADAAAAIAHpV62vobse04jVshz2d94d+1x4cX1XJAbP5XNhn0ILAAAAAAAAAAkAAAAgakG1yncGh1/Ge3zIWXwH7sqTB5NE4RTtHYQS6y2mJeIAAAAgDm9zsbCvjlXXG5lllth4PuQsr4MeaBZOOEGdAiiZVWwAAAAgw7rY3wVUUY4Do+Wy+A3GywazUZijLKSGAqOWIHkTNNIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAgJf2nATaUO9VV3oyw+Ac9eUMCQu8kfn5fd75ubiK/o+EAAQAAAAEAAAABBQAAACBcHQqT5LfyaCyeHwRzrVtujxAnw9SaW25/gJEqO0xdbgAAAAAAAAAAAAAAAAAADCoAAAAgv3cw8cayJgAbQOE4svDjt5giRf4hH9FzMtXL58I8yWcAAAAAAAAAAAAAAAAABMBoAAAAAAAAAAAAAAAAAAS0PgAAAAAAAAABAAAAIDfnkDF0GP+3Q28f+uhyVUry8ceMb07ZBQFmiUdBv6HCAAAAAAAAAAAAAAAAAAAMKgAAAAAAAAAAAAAAAAAAGFQAAAAgvtKqrUPKudnx5TNedJ+t4dS8Aweo1AZvt76vpeE8i2UAAAAgF8gC+u1HQrNWr3SKRtiE+5ceE11DPC+iGr4dzejc3mAAAAAg1i5E7/HrPzHiNOstrDnEEeF99OzAkzNVMnhKp5REscsAAAAAAAAD6AEAAABATzVo8nr9CL0h9QsnNqicu5Ux0hKrtX3csjiITtWmMuPY2DXOPtKS6FndG3SvsG/8jOs7vFR12r9jy/sklBypAw==",
                 "receiptDigest": "bc8e44b4bc2eff008c35402ec3a235edb46cc7dd2446fc22dc8726fe9e1e337e",
-                "verificationLevel": "sequencer-signed"
+                "verificationLevel": "receipted"
               }
             },
-            "network": "layerx:1",
+            "network": "eip155:1337",
             "payer": "bf7730f1c6b226001b40e138b2f0e3b7982245fe211fd17332d5cbe7c23cc967",
             "success": true,
-            "transaction": "lxp:bc8e44b4bc2eff008c35402ec3a235edb46cc7dd2446fc22dc8726fe9e1e337e"
+            "transaction": "0x01e957adafa1bb1ed388d5b21cf677de1dfb5c78717d572406cfe573619f420b"
           }
         },
         "status": 200
@@ -597,7 +597,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -612,7 +612,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -627,7 +627,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -642,7 +642,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -670,7 +670,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -685,7 +685,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -700,7 +700,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -715,7 +715,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -747,7 +747,7 @@
                 }
               },
               "maxTimeoutSeconds": 60,
-              "network": "layerx:1",
+              "network": "eip155:1337",
               "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
               "scheme": "exact"
             },
@@ -778,13 +778,13 @@
               "layerx": {
                 "receipt": "AANSAQADAAAAIHSt3g58Led72bhn84bPDxEOmdJEXM6N8l3hMmd+o+iKAAAAAAAAAAkAAAAgpFhbX6xm+RdBK6DZ+LRfAva/Dh6EKODNqJWx4YHsoHQAAAAgJUyXnfqZ++9UXSR6vl8RsqIE1LYbHMn6G1lRKx0ZTK0AAAAgrZprb0Lq76dy9I/xpVDviG8cDEp9QCbWS9G+I8MMaNEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAg3BxqnW/DNPMTS9kxLlJVuk5qwxQVFb5nBouAJ4PMy2gAAQAAAAEAAAABBQAAACBtLhuk9cgDea0PLhWEvmx/kCE9Tlq2x9jp8KGyw9Tl9gAAAAAAAAAAAAONfqTGgAAAAAAgTGDh8HgRy20tUFusaApg3zsU2trlo+5RdviRy4PfkgsAAAAAAAAAAAFjRXhdigAAAAAAAAAAAAABX7f5uMOAAAAAAAAAAAABAAAAIL1Ayv7gGcsq+JwligIbWjj9TygLgiNy/aGMJjtxJ2/xAAAAAAAAAAAAA41+pMaAAAAAAAAAAAAAAAca/UmNAAAAAAAgogC2kVL6fE+6U89jJAtahgsfIiE3l4HHjUcHrnFz4bsAAAAgvJd/sr7QaI009Mfj6bHcZPwQEV+o03F321GxJVo+7EgAAAAgjtiKRRymmf4KzoF3wW8G0yUURRYlW8Hih62UTP4ARvoAAAAAAAAD6AEAAABAQMCEstZbUtld/D6qlV8Pa1U1c1XSFczQkE9mxsMnymKUJnHpr9vu5IcTWEWQrkRdP9Lwh5AIydfuTUfRvzGzDw==",
                 "receiptDigest": "362e27d338fcd28c1c0baec92ae2dd152b2d1d500d211962e48640b7c2ea36a0",
-                "verificationLevel": "sequencer-signed"
+                "verificationLevel": "receipted"
               }
             },
-            "network": "layerx:1",
+            "network": "eip155:1337",
             "payer": "4c60e1f07811cb6d2d505bac680a60df3b14dadae5a3ee5176f891cb83df920b",
             "success": true,
-            "transaction": "lxp:362e27d338fcd28c1c0baec92ae2dd152b2d1d500d211962e48640b7c2ea36a0"
+            "transaction": "0x74adde0e7c2de77bd9b867f386cf0f110e99d2445cce8df25de132677ea3e88a"
           }
         },
         "status": 200
@@ -812,7 +812,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -827,7 +827,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -842,7 +842,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -857,7 +857,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -885,7 +885,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -900,7 +900,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -915,7 +915,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -930,7 +930,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -962,7 +962,7 @@
                 }
               },
               "maxTimeoutSeconds": 60,
-              "network": "layerx:1",
+              "network": "eip155:1337",
               "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
               "scheme": "exact"
             },
@@ -993,13 +993,13 @@
               "layerx": {
                 "receipt": "AANSAQADAAAAIJjwLfMWDR/HqulvcjkfqyJ85OBZayqmSpEHdNB0yrWyAAAAAAAAAAkAAAAgCCI/avU5TQ/tvBt+71XWIIAIUGMPtyWmir9msMwyGvcAAAAgNoCSumbSYAlJiaT/43tP5Brnf5O/n15g23XsktDg460AAAAgJLwTyagDl+8fsvXKzxZIPaEmELPLpUjV/Njz9zc2hLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAgsNgXgkunwy/odrg+1WWArtqGS1AwfGGE4waLqpaB490AAQAAAAEAAAABBQAAACB+Pyy1BtkUir4fPyaVz32AoTJOX2vH2On6CxwtPk9QYQAAAAAAAAAAAAAAAAAAA+gAAAAgulJZvVRXr9jXFDQdMMLKqAp+fBkOjQdYUxAI+wrF4YsAAAAAAAAAAAAAAAAAAYagAAAAAAAAAAAAAAAAAAGCuAAAAAAAAAABAAAAIC6w5qVeJoOfevl9MyQwNCrSYLwtFXbCpJSjcEdcXzK5AAAAAAAAAAAAAAAAAAAD6AAAAAAAAAAAAAAAAAAAB9AAAAAgqjHIsHEYNd5Qd0gjSDbIu6XzJGMBXZnE8UmWPT0z0ckAAAAgBpD08c2yxrdslQufkjkf01yEH+rSvFgZeQJt5LZgkqwAAAAgr41kMeSJDe0hG0Vavf2RKnOfHnE09QIUpOkg2cCF6RoAAAAAAAAD6AEAAABAksU8LmzydZ+XcvmYlksYv7c/I2dHWZaB4i4rBLl4DHedrL13iKiLGMcbzcvT+rCQcxrE9YZKvEoYiAADRpA2Ag==",
                 "receiptDigest": "289ac16ceaf47010c2eb38f5bf421132b688cc76f7d279a67776835f5a569576",
-                "verificationLevel": "sequencer-signed"
+                "verificationLevel": "receipted"
               }
             },
-            "network": "layerx:1",
+            "network": "eip155:1337",
             "payer": "ba5259bd5457afd8d714341d30c2caa80a7e7c190e8d0758531008fb0ac5e18b",
             "success": true,
-            "transaction": "lxp:289ac16ceaf47010c2eb38f5bf421132b688cc76f7d279a67776835f5a569576"
+            "transaction": "0x98f02df3160d1fc7aae96f72391fab227ce4e0596b2aa64a910774d074cab5b2"
           }
         },
         "status": 200
@@ -1027,7 +1027,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -1042,7 +1042,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -1057,7 +1057,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -1072,7 +1072,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -1100,7 +1100,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "37e790317418ffb7436f1ffae872554af2f1c78c6f4ed9050166894741bfa1c2",
                 "scheme": "exact"
               },
@@ -1115,7 +1115,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "bd40cafee019cb2af89c258a021b5a38fd4f280b822372fda18c263b71276ff1",
                 "scheme": "exact"
               },
@@ -1130,7 +1130,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "2eb0e6a55e26839f7af97d332430342ad260bc2d1576c2a494a370475c5f32b9",
                 "scheme": "exact"
               },
@@ -1145,7 +1145,7 @@
                   }
                 },
                 "maxTimeoutSeconds": 60,
-                "network": "layerx:1",
+                "network": "eip155:1337",
                 "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
                 "scheme": "exact"
               }
@@ -1177,7 +1177,7 @@
                 }
               },
               "maxTimeoutSeconds": 60,
-              "network": "layerx:1",
+              "network": "eip155:1337",
               "payTo": "c0ad6d3255e6dfb57217ff7f1592886e87850493c0b5aca0d4fc4da5f0fc035b",
               "scheme": "exact"
             },
@@ -1208,13 +1208,13 @@
               "layerx": {
                 "receipt": "AANSAQADAAAAIANSUs0QTyyQ7HxvXM69g7exCHA5gDwRe+G0QVsn4W0cAAAAAAAAAAkAAAAgYf5ksYG1tgTJwEfcYO27+bXTCSt+77mxsCHujsarwtEAAAAg9G7qMz//3tT4odlzhveDR5THAQnRXLjC2WuqdFOyUGUAAAAgtMcOCCaRdi6PM3pzRUmcNtatmC2G5ZxKVIApmYIUUSYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAgiBILTy1GPGWRmQL7OhHBGUC56B3lsWS2rgq7XZTBKWEAAQAAAAEAAAABBQAAACCPQD3GF+olm88gTzem0I6RskNfYHzY6foLHC0+T1BhcgAAAAAAAAAAAAAAAAAAA+gAAAAg4qSe4Gvkf1ydpeWFnai9g3lnywetwt97J0y1Jd2xrw0AAAAAAAAAAAAAAAAAAYagAAAAAAAAAAAAAAAAAAGCuAAAAAAAAAABAAAAIMCtbTJV5t+1chf/fxWSiG6HhQSTwLWsoNT8TaXw/ANbAAAAAAAAAAAAAAAAAAAD6AAAAAAAAAAAAAAAAAAAB9AAAAAgls2dfkdSECjPsmoZfwR2AiN6NvrEncumv+NEIvSf3o0AAAAguBnJJMzp0ZoUDK4ir8t8XCmhQomXpVmDcTbC9InAPqwAAAAgV3nJpZQk209vPlWJrurq9igE0IZCa9wl9HjgpTowHDQAAAAAAAAD6AEAAABA0YEu947Sue/xN12M7j0RUtWHw7glMj9brx7L1lrYYSfrk4O7m7UikLmAy5Q6QIY7MJ+2YLSfIrB6A0JqXun0Cw==",
                 "receiptDigest": "8480bb706852c356e141c8cebce70eb8502bea743bc65ab8e794a50ee58201fe",
-                "verificationLevel": "sequencer-signed"
+                "verificationLevel": "receipted"
               }
             },
-            "network": "layerx:1",
+            "network": "eip155:1337",
             "payer": "e2a49ee06be47f5c9da5e5859da8bd837967cb07adc2df7b274cb525ddb1af0d",
             "success": true,
-            "transaction": "lxp:8480bb706852c356e141c8cebce70eb8502bea743bc65ab8e794a50ee58201fe"
+            "transaction": "0x035252cd104f2c90ec7c6f5ccebd83b7b1087039803c117be1b4415b27e16d1c"
           }
         },
         "status": 200
