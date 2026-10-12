@@ -1438,7 +1438,7 @@ fn check_golden_response(
     }
 }
 
-/// Enforces the typed error model: the ApiError record every failure envelope
+/// Enforces the typed error model: the `ApiError` record every failure envelope
 /// carries, its stable machine-code enum and its retriability classification.
 fn human_api_error_model(model: &Model, root: &Path, violations: &mut Vec<Violation>) {
     let origin = root.join("errors.kvx");
@@ -1605,6 +1605,16 @@ fn human_api_stream_push(
             "push must retain the existing stream.next operation shape",
         ));
     }
+    check_stream_push_vectors(model, operation, root, violations);
+    true
+}
+
+fn check_stream_push_vectors(
+    model: &Model,
+    operation: &Operation,
+    root: &Path,
+    violations: &mut Vec<Violation>,
+) {
     let directory = root.join("golden/stream-push-v2");
     let names = ["request.json", "response.json", "failure.json"];
     match fs::read_dir(&directory) {
@@ -1627,181 +1637,209 @@ fn human_api_stream_push(
     }
     for name in names {
         let path = directory.join(name);
-        let vector = match fs::read_to_string(&path)
+        let Some(vector) = fs::read_to_string(&path)
             .ok()
             .and_then(|body| parse_json(&body).ok())
-        {
-            Some(value) => value,
-            None => {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "missing or invalid JSON vector",
-                ));
-                continue;
-            }
-        };
-        if name == "request.json" {
-            let Some(headers) = vector.field("headers") else {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "request must carry the explicit push headers",
-                ));
-                continue;
-            };
-            for (key, expected) in [
-                ("Accept", "text/event-stream"),
-                ("X-LayerX-Stream-Profile", "2"),
-            ] {
-                if headers.field(key) != Some(&Json::String(expected.to_owned())) {
-                    violations.push(violation(
-                        &path,
-                        "invalid-stream-push-vector",
-                        "request push headers differ",
-                    ));
-                }
-            }
-            if vector.field("method") != Some(&Json::String("GET".to_owned()))
-                || !matches!(vector.field("path"), Some(Json::String(path)) if path.starts_with("/v1/stream/"))
-                || vector.field("body").is_some()
-            {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "request must retain bodyless stream.next GET",
-                ));
-            }
-            continue;
-        }
-        if vector.field("status") != Some(&Json::Number("200".to_owned())) {
+        else {
             violations.push(violation(
                 &path,
                 "invalid-stream-push-vector",
-                "push response status must be 200",
+                "missing or invalid JSON vector",
             ));
-        }
-        let headers = vector.field("headers");
+            continue;
+        };
+        check_stream_push_vector(model, operation, &path, &vector, name, violations);
+    }
+}
+
+fn check_stream_push_vector(
+    model: &Model,
+    operation: &Operation,
+    path: &Path,
+    vector: &Json,
+    name: &str,
+    violations: &mut Vec<Violation>,
+) {
+    if name == "request.json" {
+        let Some(headers) = vector.field("headers") else {
+            violations.push(violation(
+                path,
+                "invalid-stream-push-vector",
+                "request must carry the explicit push headers",
+            ));
+            return;
+        };
         for (key, expected) in [
-            ("Content-Type", "text/event-stream; charset=utf-8"),
+            ("Accept", "text/event-stream"),
             ("X-LayerX-Stream-Profile", "2"),
         ] {
-            if headers.and_then(|headers| headers.field(key))
-                != Some(&Json::String(expected.to_owned()))
-            {
+            if headers.field(key) != Some(&Json::String(expected.to_owned())) {
                 violations.push(violation(
-                    &path,
+                    path,
                     "invalid-stream-push-vector",
-                    "response push headers differ",
+                    "request push headers differ",
                 ));
             }
         }
-        let Some(Json::Array(frames)) = vector.field("frames") else {
-            violations.push(violation(
-                &path,
-                "invalid-stream-push-vector",
-                "response must contain frames",
-            ));
-            continue;
-        };
-        if frames.is_empty() || frames.len() > 100 || (name == "failure.json" && frames.len() != 1)
+        if vector.field("method") != Some(&Json::String("GET".to_owned()))
+            || !matches!(vector.field("path"), Some(Json::String(path)) if path.starts_with("/v1/stream/"))
+            || vector.field("body").is_some()
         {
             violations.push(violation(
-                &path,
+                path,
                 "invalid-stream-push-vector",
-                "invalid frame count",
+                "request must retain bodyless stream.next GET",
             ));
         }
-        let mut payload_bytes = 0_usize;
-        let mut wire_bytes = 0_usize;
-        let mut previous_cursor: Option<String> = None;
-        for frame in frames {
-            let Json::String(frame) = frame else {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "frame must be a UTF-8 string",
-                ));
-                continue;
-            };
-            wire_bytes = wire_bytes.saturating_add(frame.len());
-            let event = if name == "failure.json" {
-                "stream.error"
-            } else {
-                "stream.page"
-            };
-            let prefix = format!("event: {event}\ndata: ");
-            let Some(data) = frame
-                .strip_prefix(&prefix)
-                .and_then(|frame| frame.strip_suffix("\n\n"))
-                .filter(|data| !data.contains(['\n', '\r']))
-            else {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "frame must contain exactly its event and data lines",
-                ));
-                continue;
-            };
-            payload_bytes = payload_bytes.saturating_add(data.len());
-            let Ok(body) = parse_json(data) else {
-                violations.push(violation(
-                    &path,
-                    "invalid-stream-push-vector",
-                    "frame envelope is invalid JSON",
-                ));
-                continue;
-            };
-            let wrapped = Json::Object(vec![
-                (
-                    "status".to_owned(),
-                    Json::Number(if name == "failure.json" { "410" } else { "200" }.to_owned()),
-                ),
-                ("body".to_owned(), body.clone()),
-            ]);
-            if name == "failure.json" {
-                check_golden_failure(model, operation, &path, &wrapped, violations);
-            } else {
-                check_golden_response(model, operation, &path, &wrapped, violations);
-                let result = body.field("result");
-                let events = result.and_then(|result| result.field("events"));
-                let cursor = match events {
-                    Some(Json::Array(events)) if events.len() == 1 => events[0].field("cursor"),
-                    _ => None,
-                };
-                if cursor.is_none()
-                    || cursor != result.and_then(|result| result.field("next_cursor"))
-                {
-                    violations.push(violation(
-                        &path,
-                        "invalid-stream-push-vector",
-                        "next_cursor must equal the single delivered event cursor",
-                    ));
-                }
-                if let Some(Json::String(cursor)) = cursor {
-                    if cursor.is_empty()
-                        || cursor.len() > 512
-                        || previous_cursor.as_ref() == Some(cursor)
-                    {
-                        violations.push(violation(
-                            &path,
-                            "invalid-stream-push-vector",
-                            "event cursor is empty, repeated or exceeds its bound",
-                        ));
-                    }
-                    previous_cursor = Some(cursor.clone());
-                }
-            }
-        }
-        if payload_bytes > 1_048_576 || wire_bytes > 1_048_576 + 6_400 {
+        return;
+    }
+    if vector.field("status") != Some(&Json::Number("200".to_owned())) {
+        violations.push(violation(
+            path,
+            "invalid-stream-push-vector",
+            "push response status must be 200",
+        ));
+    }
+    let headers = vector.field("headers");
+    for (key, expected) in [
+        ("Content-Type", "text/event-stream; charset=utf-8"),
+        ("X-LayerX-Stream-Profile", "2"),
+    ] {
+        if headers.and_then(|headers| headers.field(key))
+            != Some(&Json::String(expected.to_owned()))
+        {
             violations.push(violation(
-                &path,
+                path,
                 "invalid-stream-push-vector",
-                "subscription exceeds original aggregate payload bound",
+                "response push headers differ",
             ));
         }
     }
-    true
+    let Some(Json::Array(frames)) = vector.field("frames") else {
+        violations.push(violation(
+            path,
+            "invalid-stream-push-vector",
+            "response must contain frames",
+        ));
+        return;
+    };
+    if frames.is_empty() || frames.len() > 100 || (name == "failure.json" && frames.len() != 1) {
+        violations.push(violation(
+            path,
+            "invalid-stream-push-vector",
+            "invalid frame count",
+        ));
+    }
+    check_stream_push_frames(
+        model,
+        operation,
+        path,
+        frames,
+        name == "failure.json",
+        violations,
+    );
+}
+
+fn check_stream_push_frames(
+    model: &Model,
+    operation: &Operation,
+    path: &Path,
+    frames: &[Json],
+    failure: bool,
+    violations: &mut Vec<Violation>,
+) {
+    let mut payload_bytes = 0_usize;
+    let mut wire_bytes = 0_usize;
+    let mut previous_cursor: Option<String> = None;
+    for frame in frames {
+        let Json::String(frame) = frame else {
+            violations.push(violation(
+                path,
+                "invalid-stream-push-vector",
+                "frame must be a UTF-8 string",
+            ));
+            continue;
+        };
+        wire_bytes = wire_bytes.saturating_add(frame.len());
+        let event = if failure {
+            "stream.error"
+        } else {
+            "stream.page"
+        };
+        let prefix = format!("event: {event}\ndata: ");
+        let Some(data) = frame
+            .strip_prefix(&prefix)
+            .and_then(|frame| frame.strip_suffix("\n\n"))
+            .filter(|data| !data.contains(['\n', '\r']))
+        else {
+            violations.push(violation(
+                path,
+                "invalid-stream-push-vector",
+                "frame must contain exactly its event and data lines",
+            ));
+            continue;
+        };
+        payload_bytes = payload_bytes.saturating_add(data.len());
+        let Ok(body) = parse_json(data) else {
+            violations.push(violation(
+                path,
+                "invalid-stream-push-vector",
+                "frame envelope is invalid JSON",
+            ));
+            continue;
+        };
+        let wrapped = Json::Object(vec![
+            (
+                "status".to_owned(),
+                Json::Number(if failure { "410" } else { "200" }.to_owned()),
+            ),
+            ("body".to_owned(), body.clone()),
+        ]);
+        if failure {
+            check_golden_failure(model, operation, path, &wrapped, violations);
+        } else {
+            check_golden_response(model, operation, path, &wrapped, violations);
+            check_stream_push_cursor(path, &body, &mut previous_cursor, violations);
+        }
+    }
+    if payload_bytes > 1_048_576 || wire_bytes > 1_048_576 + 6_400 {
+        violations.push(violation(
+            path,
+            "invalid-stream-push-vector",
+            "subscription exceeds original aggregate payload bound",
+        ));
+    }
+}
+
+fn check_stream_push_cursor(
+    path: &Path,
+    body: &Json,
+    previous_cursor: &mut Option<String>,
+    violations: &mut Vec<Violation>,
+) {
+    let result = body.field("result");
+    let events = result.and_then(|result| result.field("events"));
+    let cursor = match events {
+        Some(Json::Array(events)) if events.len() == 1 => events[0].field("cursor"),
+        _ => None,
+    };
+    if cursor.is_none() || cursor != result.and_then(|result| result.field("next_cursor")) {
+        violations.push(violation(
+            path,
+            "invalid-stream-push-vector",
+            "next_cursor must equal the single delivered event cursor",
+        ));
+    }
+    if let Some(Json::String(cursor)) = cursor {
+        if cursor.is_empty() || cursor.len() > 512 || previous_cursor.as_ref() == Some(cursor) {
+            violations.push(violation(
+                path,
+                "invalid-stream-push-vector",
+                "event cursor is empty, repeated or exceeds its bound",
+            ));
+        }
+        *previous_cursor = Some(cursor.clone());
+    }
 }
 
 /// Enforces the identity module spine: account creation, session revocation,
@@ -2149,7 +2187,7 @@ fn check_golden(
                 check_golden_response(model, operation, &response_path, &vector, violations);
             }
             Err(detail) => {
-                violations.push(violation(&response_path, "invalid-golden-json", detail))
+                violations.push(violation(&response_path, "invalid-golden-json", detail));
             }
         },
         Err(_) => violations.push(violation(
