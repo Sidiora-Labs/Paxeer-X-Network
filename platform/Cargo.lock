@@ -1710,6 +1710,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-perps-keeper"
+version = "0.1.0"
+dependencies = [
+ "layerx-platform-internal",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "layerx-platform-agent-boundary"
 version = "0.1.0"
 dependencies = [

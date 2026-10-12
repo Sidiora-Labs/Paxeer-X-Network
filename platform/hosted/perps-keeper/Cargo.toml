@@ -1,0 +1,24 @@
+[package]
+name = "layerx-perps-keeper"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "layerx-perps-keeper"
+path = "src/main.rs"
+
+[[test]]
+name = "keeper"
+path = "tests/keeper.rs"
+
+[dependencies]
+layerx-platform-internal.workspace = true
+rustls-native-certs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true
