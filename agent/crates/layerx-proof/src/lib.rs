@@ -10,6 +10,7 @@ pub mod level;
 pub mod merkle;
 pub mod program;
 pub mod receipt;
+pub mod sequencer_logs;
 pub mod settlement;
 pub mod signed_authority;
 pub mod state;
