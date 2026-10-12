@@ -1,6 +1,6 @@
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::TraceId;
-use layerx_proof::receipt::AuthorizedBatch;
+use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_visa_tap::{
     bind_verified_agent, prepare_trusted_intent, AgentIntent, AgentPublicKey, CredentialBinding,
     CredentialBindingStore, KeyStatus, LayerXIntentAuthority, MerchantCredentialStatus,
@@ -214,9 +214,26 @@ fn seller_middleware_binds_credentials_without_granting_protocol_authority() {
 #[test]
 fn merchant_middleware_surfaces_operation_result_through_verified_receipts() {
     let canonical_receipt = b"not-a-real-receipt";
-    let batch = AuthorizedBatch::new([1; 32], [2; 32], [3; 32], [4; 32], [5; 32]);
+    let mut sequencer_id = [0; 32];
+    sequencer_id[31] = 1;
+    let receipt_keys = [SequencerAuthorization::new(
+        sequencer_id,
+        ed25519_dalek::SigningKey::from_bytes(&[0x11; 32])
+            .verifying_key()
+            .to_bytes(),
+        900,
+        1_000,
+    )];
 
-    let result = MerchantOperationResult::from_receipt(canonical_receipt, &batch);
+    let result = MerchantOperationResult::from_receipt(
+        canonical_receipt,
+        &receipt_keys,
+        [0x66; 32],
+        [0x11; 32],
+        [0x22; 32],
+        [0x55; 32],
+        25,
+    );
     assert_eq!(result, Err(TapError::ReceiptMismatch));
 
     let pending = MerchantOperationResult::Pending;
