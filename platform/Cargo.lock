@@ -1497,6 +1497,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-ai-evaluator"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "layerx-oracle-feeder",
+ "layerx-platform-internal",
+ "layerx-programs-ai-market",
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "layerx-client"
 version = "0.1.0"
 dependencies = [

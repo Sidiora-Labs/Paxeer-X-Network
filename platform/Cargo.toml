@@ -22,6 +22,7 @@ members = [
     "hosted/testnet",
     "hosted/feeder",
     "hosted/perps-keeper",
+    "hosted/ai-evaluator",
     "sdk/generators",
     "release",
     "tools/kvx",
