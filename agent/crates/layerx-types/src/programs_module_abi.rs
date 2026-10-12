@@ -69,6 +69,9 @@ mod tests {
 
     #[test]
     fn the_named_versions_are_the_headers_own_and_ascend_to_the_registered_one() {
+        const _: () = assert!(INITIAL < ACCOUNT);
+        const _: () = assert!(ACCOUNT < SANDBOX);
+        const _: () = assert!(SANDBOX < SANDBOX_DESTROY);
         let declared = header_module_abi_versions();
         for (name, version) in [
             ("LX_PROGRAMS_ABI_VERSION", INITIAL),
@@ -82,9 +85,6 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} is not declared"));
             assert_eq!(*value, version, "{name}");
         }
-        assert!(INITIAL < ACCOUNT);
-        assert!(ACCOUNT < SANDBOX);
-        assert!(SANDBOX < SANDBOX_DESTROY);
         assert_eq!(CURRENT, SANDBOX_DESTROY);
         assert_eq!(
             declared

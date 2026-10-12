@@ -409,11 +409,34 @@ fn spot_payload_decoder_refuses_what_the_kernel_refuses() {
 #[test]
 fn perps_tif_requires_selected_abi3_activity_registration() {
     let (_, bytes) = vector("perps_order_place");
-    let mut order = PerpsPayload::decode(perps_type(4), &bytes).unwrap();
-    let PerpsPayload::OrderPlace { ref mut time_in_force, .. } = order else { panic!("order"); };
+    let mut order = match PerpsPayload::decode(perps_type(4), &bytes) {
+        Ok(order) => order,
+        Err(error) => panic!("perps_order_place decodes: {error:?}"),
+    };
+    let PerpsPayload::OrderPlace {
+        ref mut time_in_force,
+        ..
+    } = order
+    else {
+        panic!("order");
+    };
     *time_in_force = PerpsTimeInForce::ImmediateOrCancel;
-    let legacy = ModuleRegistry::new(&[ModuleRegistration::new(ModuleId::Perps, &(1..=11).map(perps_type).collect::<Vec<_>>()).unwrap()]).unwrap();
-    let selected = ModuleRegistry::new(&[ModuleRegistration::new(ModuleId::Perps, &(1..=12).map(perps_type).collect::<Vec<_>>()).unwrap()]).unwrap();
+    let registry = |last: u16| {
+        let types = (1..=last).map(perps_type).collect::<Vec<_>>();
+        let registration = match ModuleRegistration::new(ModuleId::Perps, &types) {
+            Ok(registration) => registration,
+            Err(error) => panic!("perps registration through {last}: {error:?}"),
+        };
+        match ModuleRegistry::new(&[registration]) {
+            Ok(registry) => registry,
+            Err(error) => panic!("perps registry through {last}: {error:?}"),
+        }
+    };
+    let legacy = registry(11);
+    let selected = registry(12);
     assert!(order.payload(&legacy).is_err());
-    assert_eq!(order.payload(&selected).unwrap().as_bytes().len(), 130);
+    match order.payload(&selected) {
+        Ok(payload) => assert_eq!(payload.as_bytes().len(), 130),
+        Err(error) => panic!("selected registry accepts the order: {error:?}"),
+    }
 }
