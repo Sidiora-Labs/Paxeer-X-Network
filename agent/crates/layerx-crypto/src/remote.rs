@@ -10,7 +10,10 @@ use ed25519_dalek::VerifyingKey;
 use openssl::ssl::{HandshakeError, SslConnector, SslFiletype, SslMethod, SslVerifyMode};
 
 use crate::ed25519;
-use crate::signer::{AgentSignature, SignError, SignFuture, Signer, SigningRequest};
+use crate::evm_transaction::Eip1559Call;
+use crate::signer::{
+    DidSignature, SignError, SignFuture, Signer, SigningRequest, TransactionSignFuture,
+};
 
 const REQUEST_MAGIC: &[u8; 4] = b"LXRS";
 const PROTOCOL_VERSION: u16 = 1;
@@ -116,7 +119,7 @@ impl RemoteSigner {
         })
     }
 
-    fn sign_once(&self, request: SigningRequest<'_>) -> Result<AgentSignature, SignRefusal> {
+    fn sign_once(&self, request: SigningRequest<'_>) -> Result<DidSignature, SignRefusal> {
         let body = encode_request(request)?;
         let stream = TcpStream::connect_timeout(&self.endpoint, self.timeout)
             .map_err(|error| io_refusal(&error))?;
@@ -135,7 +138,7 @@ impl RemoteSigner {
         let response = read_response(&mut tls)?;
         ed25519::verify(&self.public_key, &response, request.message())
             .map_err(|_| SignRefusal::InvalidSignature)?;
-        Ok(AgentSignature::new(response))
+        Ok(DidSignature::new(response))
     }
 }
 
@@ -152,6 +155,14 @@ impl Signer for RemoteSigner {
 
     fn sign<'a>(&'a self, request: SigningRequest<'a>) -> SignFuture<'a> {
         Box::pin(async move { self.sign_once(request).map_err(SignError::from) })
+    }
+
+    fn evm_address(&self) -> Option<[u8; 20]> {
+        None
+    }
+
+    fn sign_transaction<'a>(&'a self, _call: &'a Eip1559Call) -> TransactionSignFuture<'a> {
+        Box::pin(std::future::ready(Err(SignError::EvmKeyUnavailable)))
     }
 }
 

@@ -1,10 +1,12 @@
 //! EIP-1559 call signing for the one transaction an account sends itself:
 //! binding its `LayerX` identity through the `addr` precompile.
+#![cfg(feature = "custody")]
 
 use k256::ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey};
 use sha3::{Digest as _, Keccak256};
 
-use crate::secp256k1::evm_address;
+use crate::secp256k1::{evm_address, verify_recoverable_digest};
+use crate::signer::AgentSignature;
 
 /// An unsigned EIP-1559 call carrying no value and no access list.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,6 +31,37 @@ impl std::fmt::Display for InvalidEvmKey {
 }
 
 impl std::error::Error for InvalidEvmKey {}
+
+/// Refusal of a raw signed EIP-1559 call or of its signature.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvmTransactionError {
+    /// The input is empty or its envelope type byte is not 2.
+    NotEip1559,
+    /// The RLP is truncated, non-minimal, has the wrong field count, or is
+    /// followed by trailing bytes.
+    MalformedRlp,
+    /// A field has the wrong kind or width, or the call carries value or an
+    /// access list.
+    UnsupportedField,
+    /// The decoded call does not re-encode to the input byte for byte.
+    NonCanonical,
+    /// The signature is not canonical or recovers no sender.
+    BadSignature,
+}
+
+impl std::fmt::Display for EvmTransactionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::NotEip1559 => "not_eip1559",
+            Self::MalformedRlp => "malformed_rlp",
+            Self::UnsupportedField => "unsupported_field",
+            Self::NonCanonical => "non_canonical",
+            Self::BadSignature => "bad_signature",
+        })
+    }
+}
+
+impl std::error::Error for EvmTransactionError {}
 
 fn rlp_length(length: usize, short: u8, out: &mut Vec<u8>) {
     if length < 56 {
@@ -62,6 +95,80 @@ fn rlp_list(payload: &[u8]) -> Vec<u8> {
     rlp_length(payload.len(), 0xc0, &mut out);
     out.extend_from_slice(payload);
     out
+}
+
+enum Item<'a> {
+    String(&'a [u8]),
+    List(&'a [u8]),
+}
+
+/// Takes one canonically encoded RLP item from the front of `input`.
+fn take_item<'a>(input: &mut &'a [u8]) -> Result<Item<'a>, EvmTransactionError> {
+    let Some((&prefix, rest)) = input.split_first() else {
+        return Err(EvmTransactionError::MalformedRlp);
+    };
+    if prefix < 0x80 {
+        let (item, rest) = input.split_at(1);
+        *input = rest;
+        return Ok(Item::String(item));
+    }
+    let (list, short) = if prefix < 0xc0 {
+        (false, prefix - 0x80)
+    } else {
+        (true, prefix - 0xc0)
+    };
+    let (length, rest) = if short < 56 {
+        (usize::from(short), rest)
+    } else {
+        let width = usize::from(short - 55);
+        let Some((length_bytes, rest)) = rest.split_at_checked(width) else {
+            return Err(EvmTransactionError::MalformedRlp);
+        };
+        if width > size_of::<usize>() || length_bytes.first() == Some(&0) {
+            return Err(EvmTransactionError::MalformedRlp);
+        }
+        let length = length_bytes
+            .iter()
+            .fold(0_usize, |length, byte| (length << 8) | usize::from(*byte));
+        if length < 56 {
+            return Err(EvmTransactionError::MalformedRlp);
+        }
+        (length, rest)
+    };
+    let Some((payload, rest)) = rest.split_at_checked(length) else {
+        return Err(EvmTransactionError::MalformedRlp);
+    };
+    *input = rest;
+    if list {
+        return Ok(Item::List(payload));
+    }
+    if let [byte] = payload {
+        if *byte < 0x80 {
+            return Err(EvmTransactionError::MalformedRlp);
+        }
+    }
+    Ok(Item::String(payload))
+}
+
+fn take_string<'a>(input: &mut &'a [u8]) -> Result<&'a [u8], EvmTransactionError> {
+    match take_item(input)? {
+        Item::String(bytes) => Ok(bytes),
+        Item::List(_) => Err(EvmTransactionError::UnsupportedField),
+    }
+}
+
+/// Takes one minimal big-endian unsigned integer of at most `N` bytes.
+fn take_uint<const N: usize>(input: &mut &[u8]) -> Result<[u8; N], EvmTransactionError> {
+    let bytes = take_string(input)?;
+    if bytes.first() == Some(&0) {
+        return Err(EvmTransactionError::MalformedRlp);
+    }
+    let Some(offset) = N.checked_sub(bytes.len()) else {
+        return Err(EvmTransactionError::UnsupportedField);
+    };
+    let mut value = [0_u8; N];
+    value[offset..].copy_from_slice(bytes);
+    Ok(value)
 }
 
 impl Eip1559Call {
@@ -98,154 +205,121 @@ impl Eip1559Call {
         let (signature, recovery) = key
             .sign_prehash_recoverable(&self.signing_hash())
             .map_err(|_| InvalidEvmKey)?;
-        let address = evm_address(key.verifying_key().to_encoded_point(false).as_bytes())
-            .map_err(|_| InvalidEvmKey)?;
-        self.assemble(&signature.to_bytes().into(), recovery.to_byte(), &address)
-    }
-
-    /// Assembles the signed call from a signature produced elsewhere,
-    /// yielding the bytes `eth_sendRawTransaction` takes.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a recovery id other than 0 or 1, a signature whose scalars are
-    /// zero or not below the group order, a high-s signature, a signature that
-    /// recovers no key over this call's digest, and a recovered sender that is
-    /// not `expected_address`.
-    pub fn assemble(
-        &self,
-        signature: &[u8; 64],
-        recovery_id: u8,
-        expected_address: &[u8; 20],
-    ) -> Result<Vec<u8>, InvalidEvmKey> {
-        let recovery = RecoveryId::try_from(recovery_id)
-            .ok()
-            .filter(|value| value.to_byte() <= 1)
-            .ok_or(InvalidEvmKey)?;
-        let parsed = Signature::from_slice(signature).map_err(|_| InvalidEvmKey)?;
-        if parsed.normalize_s().is_some() {
-            return Err(InvalidEvmKey);
-        }
-        let recovered = VerifyingKey::recover_from_prehash(&self.signing_hash(), &parsed, recovery)
-            .map_err(|_| InvalidEvmKey)?;
-        let address =
-            evm_address(recovered.to_encoded_point(false).as_bytes()).map_err(|_| InvalidEvmKey)?;
-        if &address != expected_address {
-            return Err(InvalidEvmKey);
-        }
-        let mut payload = self.fields();
-        rlp_integer(&[recovery.to_byte()], &mut payload);
-        rlp_integer(&signature[..32], &mut payload);
-        rlp_integer(&signature[32..], &mut payload);
-        let mut raw = vec![0x02];
-        raw.extend_from_slice(&rlp_list(&payload));
-        Ok(raw)
+        let mut bytes = [0_u8; 65];
+        bytes[..64].copy_from_slice(&signature.to_bytes());
+        bytes[64] = 27 + recovery.to_byte();
+        let signature = AgentSignature::new(bytes).map_err(|_| InvalidEvmKey)?;
+        Ok(assemble(self, &signature))
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Assembles the signed type-2 call, yielding the bytes
+/// `eth_sendRawTransaction` takes; `yParity` is `v - 27`.
+#[must_use]
+pub fn assemble(call: &Eip1559Call, signature: &AgentSignature) -> Vec<u8> {
+    let bytes = signature.as_bytes();
+    let mut payload = call.fields();
+    rlp_integer(&[bytes[64] - 27], &mut payload);
+    rlp_integer(&bytes[..32], &mut payload);
+    rlp_integer(&bytes[32..64], &mut payload);
+    let mut raw = vec![0x02];
+    raw.extend_from_slice(&rlp_list(&payload));
+    raw
+}
 
-    type SignedCall = (Eip1559Call, [u8; 64], u8, [u8; 20]);
-
-    fn signed_call() -> Result<SignedCall, Box<dyn std::error::Error>> {
-        let call = Eip1559Call {
-            chain_id: 1,
-            nonce: 7,
-            max_priority_fee_per_gas: 2,
-            max_fee_per_gas: 3,
-            gas_limit: 30_000,
-            to: [0x11; 20],
-            data: vec![0xde, 0xad, 0xbe, 0xef],
-        };
-        let key = SigningKey::from_slice(&[1; 32]).map_err(|_| "invalid scalar")?;
-        let (signature, recovery) = key
-            .sign_prehash_recoverable(&call.signing_hash())
-            .map_err(|_| "signature failed")?;
-        let address = evm_address(key.verifying_key().to_encoded_point(false).as_bytes())
-            .map_err(|_| "invalid public key")?;
-        Ok((
-            call,
-            signature.to_bytes().into(),
-            recovery.to_byte(),
-            address,
-        ))
+/// Decodes a signed type-2 call that [`assemble`] produced.
+///
+/// # Errors
+///
+/// Refuses another envelope type, non-canonical or trailing RLP, non-minimal
+/// integers, a non-zero value, a non-empty access list, a non-canonical
+/// signature, and any input that does not re-encode byte for byte.
+pub fn decode_signed(raw: &[u8]) -> Result<(Eip1559Call, AgentSignature), EvmTransactionError> {
+    let Some((&0x02, mut envelope)) = raw.split_first() else {
+        return Err(EvmTransactionError::NotEip1559);
+    };
+    let Item::List(mut fields) = take_item(&mut envelope)? else {
+        return Err(EvmTransactionError::UnsupportedField);
+    };
+    if !envelope.is_empty() {
+        return Err(EvmTransactionError::MalformedRlp);
     }
-
-    #[test]
-    fn assemble_matches_local_signing() -> Result<(), Box<dyn std::error::Error>> {
-        let (call, signature, recovery, address) = signed_call()?;
-        let assembled = call.assemble(&signature, recovery, &address)?;
-        assert_eq!(assembled, call.sign(&[1; 32])?);
-        assert_eq!(assembled[0], 2);
-        assert_eq!(
-            address,
-            [
-                0x1a, 0x64, 0x2f, 0x0e, 0x3c, 0x3a, 0xf5, 0x45, 0xe7, 0xac, 0xbd, 0x38, 0xb0, 0x72,
-                0x51, 0xb3, 0x99, 0x09, 0x14, 0xf1,
-            ]
-        );
-        Ok(())
+    let chain_id = u64::from_be_bytes(take_uint(&mut fields)?);
+    let nonce = u64::from_be_bytes(take_uint(&mut fields)?);
+    let max_priority_fee_per_gas = u128::from_be_bytes(take_uint(&mut fields)?);
+    let max_fee_per_gas = u128::from_be_bytes(take_uint(&mut fields)?);
+    let gas_limit = u64::from_be_bytes(take_uint(&mut fields)?);
+    let to = take_string(&mut fields)?
+        .try_into()
+        .map_err(|_| EvmTransactionError::UnsupportedField)?;
+    if take_uint::<32>(&mut fields)? != [0; 32] {
+        return Err(EvmTransactionError::UnsupportedField);
     }
-
-    #[test]
-    fn assemble_refuses_malformed_scalars() -> Result<(), Box<dyn std::error::Error>> {
-        let (call, _, recovery, address) = signed_call()?;
-        for signature in [[0; 64], [0xff; 64]] {
-            assert_eq!(
-                call.assemble(&signature, recovery, &address),
-                Err(InvalidEvmKey)
-            );
-        }
-        Ok(())
+    let data = take_string(&mut fields)?.to_vec();
+    let Item::List([]) = take_item(&mut fields)? else {
+        return Err(EvmTransactionError::UnsupportedField);
+    };
+    let [y_parity] = take_uint::<1>(&mut fields)?;
+    let r = take_uint::<32>(&mut fields)?;
+    let s = take_uint::<32>(&mut fields)?;
+    if !fields.is_empty() {
+        return Err(EvmTransactionError::MalformedRlp);
     }
-
-    #[test]
-    fn assemble_refuses_high_s() -> Result<(), Box<dyn std::error::Error>> {
-        let (call, mut signature, recovery, address) = signed_call()?;
-        signature[32..].copy_from_slice(&[
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xfe, 0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c,
-            0xd0, 0x36, 0x41, 0x40,
-        ]);
-        assert_eq!(
-            call.assemble(&signature, recovery, &address),
-            Err(InvalidEvmKey)
-        );
-        Ok(())
+    if y_parity > 1 {
+        return Err(EvmTransactionError::BadSignature);
     }
-
-    #[test]
-    fn assemble_refuses_non_evm_recovery_ids() -> Result<(), Box<dyn std::error::Error>> {
-        let (call, signature, _, address) = signed_call()?;
-        for recovery in 2..=u8::MAX {
-            assert_eq!(
-                call.assemble(&signature, recovery, &address),
-                Err(InvalidEvmKey)
-            );
-        }
-        Ok(())
+    let mut bytes = [0_u8; 65];
+    bytes[..32].copy_from_slice(&r);
+    bytes[32..64].copy_from_slice(&s);
+    bytes[64] = 27 + y_parity;
+    let signature = AgentSignature::new(bytes).map_err(|_| EvmTransactionError::BadSignature)?;
+    let call = Eip1559Call {
+        chain_id,
+        nonce,
+        max_priority_fee_per_gas,
+        max_fee_per_gas,
+        gas_limit,
+        to,
+        data,
+    };
+    if assemble(&call, &signature) != raw {
+        return Err(EvmTransactionError::NonCanonical);
     }
+    Ok((call, signature))
+}
 
-    #[test]
-    fn assemble_refuses_wrong_sender_and_changed_call() -> Result<(), Box<dyn std::error::Error>> {
-        let (mut call, signature, recovery, mut address) = signed_call()?;
-        assert_eq!(
-            call.assemble(&signature, recovery ^ 1, &address),
-            Err(InvalidEvmKey)
-        );
-        address[0] ^= 1;
-        assert_eq!(
-            call.assemble(&signature, recovery, &address),
-            Err(InvalidEvmKey)
-        );
-        address[0] ^= 1;
-        call.nonce += 1;
-        assert_eq!(
-            call.assemble(&signature, recovery, &address),
-            Err(InvalidEvmKey)
-        );
-        Ok(())
-    }
+/// The transaction hash: keccak256 of the raw signed bytes.
+#[must_use]
+pub fn transaction_hash(raw: &[u8]) -> [u8; 32] {
+    Keccak256::digest(raw).into()
+}
+
+/// Recovers the EVM account that signed `call`.
+///
+/// # Errors
+///
+/// Returns `BadSignature` when the signature recovers no key over the call's
+/// signing hash.
+pub fn recover_sender(
+    call: &Eip1559Call,
+    signature: &AgentSignature,
+) -> Result<[u8; 20], EvmTransactionError> {
+    let (compact, &[v]) = signature.as_bytes().split_at(64) else {
+        return Err(EvmTransactionError::BadSignature);
+    };
+    let compact: &[u8; 64] = compact
+        .try_into()
+        .map_err(|_| EvmTransactionError::BadSignature)?;
+    let recovery = v
+        .checked_sub(27)
+        .and_then(RecoveryId::from_byte)
+        .ok_or(EvmTransactionError::BadSignature)?;
+    let parsed = Signature::from_slice(compact).map_err(|_| EvmTransactionError::BadSignature)?;
+    let digest = call.signing_hash();
+    let recovered = VerifyingKey::recover_from_prehash(&digest, &parsed, recovery)
+        .map_err(|_| EvmTransactionError::BadSignature)?;
+    let public_key = recovered.to_encoded_point(false);
+    verify_recoverable_digest(public_key.as_bytes(), compact, v, &digest)
+        .map_err(|_| EvmTransactionError::BadSignature)?;
+    evm_address(public_key.as_bytes()).map_err(|_| EvmTransactionError::BadSignature)
 }

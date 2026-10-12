@@ -276,7 +276,7 @@ fn remote_with_name(
     signer
 }
 
-fn sign(signer: &RemoteSigner) -> Result<layerx_crypto::signer::AgentSignature, SignError> {
+fn sign(signer: &RemoteSigner) -> Result<layerx_crypto::signer::DidSignature, SignError> {
     let canonical = support::canonical_send(25);
     let registry = support::registry();
     let Ok(disclosure) = bind(&canonical, &registry) else {

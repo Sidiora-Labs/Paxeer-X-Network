@@ -9,7 +9,9 @@ mod support;
 
 use layerx_crypto::disclosure::bind;
 use layerx_crypto::ed25519;
-use layerx_crypto::signer::{sign_disclosed, KeystoreSigner, LocalSigner, SignError, Signer};
+use layerx_crypto::signer::{
+    sign_disclosed, DidSignature, KeystoreSigner, LocalSigner, SignError, Signer,
+};
 use layerx_crypto::SignatureMessage;
 use layerx_wire::hash::Domain;
 use layerx_wire::limits::PROTOCOL_VERSION;
@@ -42,7 +44,7 @@ fn local_signer_is_object_safe_and_never_renders_key_material() {
     let Ok(disclosure) = bind(&canonical, &registry) else {
         panic!("canonical send disclosure rejected");
     };
-    let signature = ready(sign_disclosed(
+    let signature: Result<DidSignature, SignError> = ready(sign_disclosed(
         signer.as_ref(),
         &canonical,
         &disclosure,
@@ -51,6 +53,7 @@ fn local_signer_is_object_safe_and_never_renders_key_material() {
     let Ok(signature) = signature else {
         panic!("local signer refused valid request");
     };
+    assert_eq!(format!("{signature:?}"), "DidSignature([public signature])");
     let Ok(message) =
         SignatureMessage::new(Domain::SignaturePreimage, PROTOCOL_VERSION, 17, &canonical)
     else {
@@ -204,7 +207,8 @@ fn operating_system_keystore_signer_uses_a_real_ssh_agent() {
     let Ok(disclosure) = bind(&canonical, &registry) else {
         panic!("canonical send disclosure rejected");
     };
-    let signature = ready(sign_disclosed(&signer, &canonical, &disclosure, &registry));
+    let signature: Result<DidSignature, SignError> =
+        ready(sign_disclosed(&signer, &canonical, &disclosure, &registry));
     let Ok(signature) = signature else {
         panic!("real ssh-agent refused valid request");
     };

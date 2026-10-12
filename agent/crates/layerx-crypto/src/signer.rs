@@ -8,11 +8,13 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use ed25519_dalek::VerifyingKey;
+use k256::ecdsa::Signature;
 use layerx_types::payload::ModuleRegistry;
 use layerx_wire::hash::Domain;
 
 use crate::disclosure::{Disclosure, DisclosureError};
-use crate::{ct, ed25519, SignatureMessage};
+use crate::evm_transaction::Eip1559Call;
+use crate::{ct, ed25519, SignatureMessage, VerifyError};
 
 pub use crate::local::LocalSigner;
 
@@ -101,11 +103,12 @@ impl fmt::Debug for SigningRequest<'_> {
     }
 }
 
-/// Public signature material returned by every signer location.
+/// Ed25519 signature of the DID key; it signs only bind messages and payer
+/// grant authorizations, never a transaction.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct AgentSignature([u8; 64]);
+pub struct DidSignature([u8; 64]);
 
-impl AgentSignature {
+impl DidSignature {
     /// Borrows the canonical Ed25519 signature bytes.
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 64] {
@@ -114,6 +117,42 @@ impl AgentSignature {
 
     pub(crate) const fn new(bytes: [u8; 64]) -> Self {
         Self(bytes)
+    }
+}
+
+impl fmt::Debug for DidSignature {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DidSignature([public signature])")
+    }
+}
+
+/// Canonical 65-byte secp256k1 transaction signature `r || s || v`.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct AgentSignature([u8; 65]);
+
+impl AgentSignature {
+    /// Accepts a compact recoverable signature in canonical form.
+    ///
+    /// # Errors
+    ///
+    /// Returns `BadSignature` when `v` is not 27 or 28, a scalar is zero or
+    /// not below the group order, or `s` lies in the high half of the order.
+    pub fn new(bytes: [u8; 65]) -> Result<Self, VerifyError> {
+        if !matches!(bytes[64], 27 | 28) {
+            return Err(VerifyError::BadSignature);
+        }
+        let signature =
+            Signature::from_slice(&bytes[..64]).map_err(|_| VerifyError::BadSignature)?;
+        if signature.normalize_s().is_some() {
+            return Err(VerifyError::BadSignature);
+        }
+        Ok(Self(bytes))
+    }
+
+    /// Borrows the `r || s || v` signature bytes.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 65] {
+        &self.0
     }
 }
 
@@ -150,6 +189,8 @@ pub enum SignError {
     RemoteAuthentication,
     /// The remote signer returned a malformed framed response.
     RemoteMalformedResponse,
+    /// The signer holds no secp256k1 key able to sign an EVM transaction.
+    EvmKeyUnavailable,
 }
 
 impl fmt::Display for SignError {
@@ -186,6 +227,7 @@ impl fmt::Display for SignError {
             Self::RemoteMalformedResponse => {
                 formatter.write_str("remote signer returned a malformed response")
             }
+            Self::EvmKeyUnavailable => formatter.write_str("signer holds no EVM transaction key"),
         }
     }
 }
@@ -207,6 +249,10 @@ impl From<DisclosureError> for SignError {
 /// Boxed future used to keep the signer trait object-safe without imposing one
 /// asynchronous runtime on the workspace.
 pub type SignFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<DidSignature, SignError>> + Send + 'a>>;
+
+/// Boxed future of one EVM transaction signature.
+pub type TransactionSignFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AgentSignature, SignError>> + Send + 'a>>;
 
 /// Identical asynchronous-friendly interface for local, OS-keystore, and
@@ -217,6 +263,12 @@ pub trait Signer: fmt::Debug + Send + Sync {
 
     /// Signs one disclosure-bound canonical request or refuses it.
     fn sign<'a>(&'a self, request: SigningRequest<'a>) -> SignFuture<'a>;
+
+    /// Returns the EVM account whose key signs transactions, if any.
+    fn evm_address(&self) -> Option<[u8; 20]>;
+
+    /// Signs the EIP-1559 preimage of one call or refuses it.
+    fn sign_transaction<'a>(&'a self, call: &'a Eip1559Call) -> TransactionSignFuture<'a>;
 }
 
 /// Validates, re-encodes, and signs one canonical disclosed activity.
@@ -305,8 +357,16 @@ impl Signer for KeystoreSigner {
             )?;
             ed25519::verify(&self.public_key, &signature, request.message())
                 .map_err(|_| SignError::ReturnedSignatureInvalid)?;
-            Ok(AgentSignature::new(signature))
+            Ok(DidSignature::new(signature))
         })
+    }
+
+    fn evm_address(&self) -> Option<[u8; 20]> {
+        None
+    }
+
+    fn sign_transaction<'a>(&'a self, _call: &'a Eip1559Call) -> TransactionSignFuture<'a> {
+        Box::pin(std::future::ready(Err(SignError::EvmKeyUnavailable)))
     }
 }
 
