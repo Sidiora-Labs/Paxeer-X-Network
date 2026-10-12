@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Write as _};
 
 use ed25519_dalek::SigningKey;
 use layerx_crypto::disclosure::{
@@ -44,7 +44,12 @@ fn owner_key() -> [u8; 32] {
 }
 
 fn hex(value: &[u8; 32]) -> String {
-    value.iter().map(|byte| format!("{byte:02x}")).collect()
+    value
+        .iter()
+        .fold(String::with_capacity(64), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 fn account(name: &str) -> [u8; 32] {
