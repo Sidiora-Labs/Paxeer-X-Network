@@ -325,6 +325,7 @@ int main(void)
     uint8_t root_after[32];
     uint8_t hold_id[32];
     uint8_t escrow_root_before[32];
+    uint8_t expected_id[32];
     uint8_t record[LX_SERVICE_DISPUTE_RECORD_BYTES];
     size_t record_length = 0U;
     lx_escrow_record hold_before;
@@ -410,6 +411,8 @@ int main(void)
                                   3U);
     if (dispatch(LX_SERVICE_DISPUTE_OPEN, payload, length, &buyer, 1500U,
                  41U, 41U, &outcome) != LXP_OK || outcome != LXP_OK ||
+        expected_activity_id(LX_SERVICE_DISPUTE_OPEN, payload, length, 41U,
+                             expected_id) != LXP_OK ||
         event_is((uint16_t)LX_SERVICE_EVENT_DISPUTE_OPENED, open_id,
                  disputed_id, 3U, 41U) != 0)
         return 1;
@@ -427,7 +430,8 @@ int main(void)
         dispute.evidence_hash_count != 3U || dispute.resolved ||
         dispute.ruling != 0U || dispute.provider_basis_points != 0U ||
         dispute.resolution_sequence != 0U ||
-        dispute.global_sequence != 41U || dispute.activity_id[0] != 41U ||
+        dispute.global_sequence != 41U ||
+        memcmp(dispute.activity_id, expected_id, 32U) != 0 ||
         memcmp(dispute.raiser, buyer.principal, 32U) != 0 ||
         dispute.evidence_hashes[0][0] != 33U ||
         dispute.evidence_hashes[1][0] != 44U ||

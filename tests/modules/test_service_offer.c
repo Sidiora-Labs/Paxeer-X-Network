@@ -161,6 +161,7 @@ int main(void)
     uint8_t agreement_id[32];
     uint8_t escrow_id[32];
     uint8_t terms_hash[32];
+    uint8_t expected_id[32];
     uint8_t encoded[LX_SERVICE_AGREEMENT_RECORD_BYTES];
     lx_service_offer offer;
     lx_service_offer decoded_offer;
@@ -207,6 +208,8 @@ int main(void)
                            300U, (uint8_t)LX_SERVICE_DEFAULT_ACCEPT, 900U);
     if (dispatch(LX_SERVICE_OFFER_PUBLISH, payload, length, &provider, 100U,
                  41U, 4U, &outcome) != LXP_OK || outcome != LXP_OK ||
+        expected_activity_id(LX_SERVICE_OFFER_PUBLISH, payload, length, 4U,
+                             expected_id) != LXP_OK ||
         event_is((uint16_t)LX_SERVICE_EVENT_OFFER_PUBLISHED, offer_a,
                  provider.principal,
                  (uint8_t)LX_SERVICE_DEFAULT_ACCEPT, 41U) != 0 ||
@@ -215,7 +218,8 @@ int main(void)
         return 1;
     if (open_ctx(&ctx, 100U, 42U) != 0 ||
         lx_service_offer_lookup(&ctx, offer_a, &offer) != LXP_OK ||
-        offer.activity_id[0] != 4U || offer.global_sequence != 41U ||
+        memcmp(offer.activity_id, expected_id, 32U) != 0 ||
+        offer.global_sequence != 41U ||
         offer.price.hi != 0U || offer.price.lo != 25U || offer.withdrawn ||
         offer.accepted || offer.delivery_deadline != 1000U ||
         offer.acceptance_window != 200U || offer.dispute_window != 300U ||

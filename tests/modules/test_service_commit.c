@@ -106,6 +106,7 @@ int main(void)
     uint8_t report_three[32];
     uint8_t note_hash[32];
     uint8_t availability[32];
+    uint8_t expected_id[32];
     lx_service_commitment commitment;
     lx_service_commitment decoded_commitment;
     lx_service_agreement agreement;
@@ -187,6 +188,8 @@ int main(void)
         outcome != LXP_ERR_AGREEMENT_STATE ||
         dispatch(LX_SERVICE_COMMIT_TASK, payload, length, &provider, 100U,
                  7U, 10U, &outcome) != LXP_OK || outcome != LXP_OK ||
+        expected_activity_id(LX_SERVICE_COMMIT_TASK, payload, length, 10U,
+                             expected_id) != LXP_OK ||
         event_is((uint16_t)LX_SERVICE_EVENT_TASK_COMMITTED, commitment_id,
                  formed, 0U, 7U) != 0 ||
         record_present(commitment_prefix, commitment_id,
@@ -199,7 +202,8 @@ int main(void)
     if (open_ctx(&ctx, 100U, 9U) != 0 ||
         lx_service_commitment_lookup(&ctx, commitment_id, &commitment) !=
             LXP_OK ||
-        commitment.global_sequence != 7U || commitment.activity_id[0] != 10U ||
+        commitment.global_sequence != 7U ||
+        memcmp(commitment.activity_id, expected_id, 32U) != 0 ||
         commitment.deadline != 900U || commitment.resource_bound != 100U ||
         commitment.abandoned || commitment.abandon_reason != 0U ||
         memcmp(commitment.provider, provider.principal, 32U) != 0 ||
@@ -237,6 +241,8 @@ int main(void)
         outcome != LXP_ERR_AGREEMENT_STATE ||
         dispatch(LX_SERVICE_PROGRESS_REPORT, payload, length, &provider,
                  100U, 11U, 13U, &outcome) != LXP_OK || outcome != LXP_OK ||
+        expected_activity_id(LX_SERVICE_PROGRESS_REPORT, payload, length, 13U,
+                             expected_id) != LXP_OK ||
         event_is((uint16_t)LX_SERVICE_EVENT_PROGRESS_REPORTED, report_one,
                  commitment_id, 0U, 11U) != 0 ||
         record_present(progress_prefix, report_one,
@@ -277,7 +283,8 @@ int main(void)
         high_water != (uint32_t)LX_SERVICE_PROGRESS_COMPLETE_BPS ||
         lx_service_progress_lookup(&ctx, report_one, &progress) != LXP_OK ||
         progress.progress_bps != 2500U || progress.reported_at != 100U ||
-        progress.global_sequence != 11U || progress.activity_id[0] != 13U ||
+        progress.global_sequence != 11U ||
+        memcmp(progress.activity_id, expected_id, 32U) != 0 ||
         memcmp(progress.agreement_id, formed, 32U) != 0 ||
         memcmp(progress.provider, provider.principal, 32U) != 0 ||
         lx_service_progress_encode(&progress, progress_record) != LXP_OK ||

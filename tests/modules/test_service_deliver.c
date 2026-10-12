@@ -178,6 +178,7 @@ int main(void)
     uint8_t task_hash[32];
     uint8_t delivery_one[32];
     uint8_t delivery_two[32];
+    uint8_t expected_id[32];
     uint8_t contested[1];
     item_spec items[3];
     lx_service_delivery delivery;
@@ -295,6 +296,8 @@ int main(void)
     length = deliver_payload(payload, delivery_one, formed, items, 3U);
     if (dispatch(LX_SERVICE_DELIVER, payload, length, &provider, 100U, 8U,
                  11U, &outcome) != LXP_OK || outcome != LXP_OK ||
+        expected_activity_id(LX_SERVICE_DELIVER, payload, length, 11U,
+                             expected_id) != LXP_OK ||
         event_is((uint16_t)LX_SERVICE_EVENT_DELIVERED, delivery_one, formed,
                  3U, 8U) != 0 ||
         item_records_present(delivery_one, 3U) != 0 ||
@@ -305,7 +308,7 @@ int main(void)
     if (open_ctx(&ctx, 100U, 10U) != 0 ||
         lx_service_delivery_lookup(&ctx, delivery_one, &delivery) != LXP_OK ||
         delivery.deliverable_count != 3U || delivery.global_sequence != 8U ||
-        delivery.activity_id[0] != 11U ||
+        memcmp(delivery.activity_id, expected_id, 32U) != 0 ||
         delivery.deliverables[0].availability_reference[0] != 11U ||
         delivery.deliverables[1].availability_reference[0] != 22U ||
         delivery.deliverables[2].availability_reference[0] != 33U ||

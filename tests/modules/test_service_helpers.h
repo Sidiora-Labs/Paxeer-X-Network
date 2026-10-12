@@ -74,13 +74,41 @@ static inline int open_ctx(lxp_module_ctx *ctx, uint64_t timestamp,
     return lxp_module_ctx_bind_effects(ctx, &event_buffer) == LXP_OK ? 0 : 1;
 }
 
+static inline lxp_result canonical_activity_id(const lxp_activity *activity,
+                                               uint8_t out[32])
+{
+    lxp_arena encoding_arena;
+    lxp_byte_span encoded;
+    lxp_result status = lxp_arena_init(&encoding_arena, activity_bytes,
+                                       sizeof(activity_bytes));
+    if (status == LXP_OK)
+        status = lxp_activity_encode(activity, &encoding_arena, &encoded);
+    if (status == LXP_OK)
+        status = lxp_activity_id(encoded.bytes, encoded.length, out);
+    return status;
+}
+
+static inline lxp_result marker_activity(lxp_activity *activity,
+                                         uint32_t activity_type,
+                                         const uint8_t *payload,
+                                         size_t length,
+                                         uint8_t activity_marker)
+{
+    (void)memset(activity, 0, sizeof(*activity));
+    activity->protocol_version = LXP_PROTOCOL_VERSION;
+    activity->network_id = 7U;
+    activity->activity_type = activity_type;
+    activity->payload.bytes = payload;
+    activity->payload.length = length;
+    id32(activity->idempotency_key, activity_marker);
+    return lxp_hash_payload(payload, length, activity->payload_hash);
+}
+
 static inline lxp_result dispatch_activity(
     const lxp_activity *activity, const lxp_authority_resolved *authority,
     uint64_t timestamp, uint64_t sequence, lxp_result *module_result)
 {
     const lxp_module_registration *registration = NULL;
-    lxp_arena encoding_arena;
-    lxp_byte_span encoded;
     lxp_module_ctx ctx;
     lxp_result status;
 
@@ -91,13 +119,7 @@ static inline lxp_result dispatch_activity(
     if (status != LXP_OK) return status;
     if (open_ctx(&ctx, timestamp, sequence) != 0) return LXP_FATAL_INVARIANT;
     ctx.protocol_version = activity->protocol_version;
-    status = lxp_arena_init(&encoding_arena, activity_bytes,
-                            sizeof(activity_bytes));
-    if (status == LXP_OK)
-        status = lxp_activity_encode(activity, &encoding_arena, &encoded);
-    if (status == LXP_OK)
-        status = lxp_activity_id(encoded.bytes, encoded.length,
-                                 ctx.activity_id);
+    status = canonical_activity_id(activity, ctx.activity_id);
     if (status != LXP_OK) return status;
     status = lxp_kernel_dispatch(registration, &ctx, activity, authority,
                                  &event_buffer, module_result);
@@ -119,18 +141,24 @@ static inline lxp_result dispatch(uint32_t activity_type,
                                   lxp_result *module_result)
 {
     lxp_activity activity;
-    lxp_result status;
-    (void)memset(&activity, 0, sizeof(activity));
-    activity.protocol_version = LXP_PROTOCOL_VERSION;
-    activity.network_id = 7U;
-    activity.activity_type = activity_type;
-    activity.payload.bytes = payload;
-    activity.payload.length = length;
-    id32(activity.idempotency_key, activity_marker);
-    status = lxp_hash_payload(payload, length, activity.payload_hash);
+    lxp_result status = marker_activity(&activity, activity_type, payload,
+                                        length, activity_marker);
     if (status != LXP_OK) return status;
     return dispatch_activity(&activity, authority, timestamp, sequence,
                               module_result);
+}
+
+static inline lxp_result expected_activity_id(uint32_t activity_type,
+                                              const uint8_t *payload,
+                                              size_t length,
+                                              uint8_t activity_marker,
+                                              uint8_t out[32])
+{
+    lxp_activity activity;
+    lxp_result status = marker_activity(&activity, activity_type, payload,
+                                        length, activity_marker);
+    if (status != LXP_OK) return status;
+    return canonical_activity_id(&activity, out);
 }
 
 static inline lxp_result dispatch_signed_attest(
