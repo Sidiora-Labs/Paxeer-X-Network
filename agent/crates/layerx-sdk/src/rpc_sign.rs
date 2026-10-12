@@ -34,8 +34,6 @@ pub struct SignedObservation {
     pub transitions: Vec<Transition>,
 }
 
-/// Maps the daemon's level name onto its rung; the retired checkpoint and settlement names
-/// carry no rung and are refused.
 fn rung_name(text: &str) -> Option<Rung> {
     Some(match text {
         "Unverified" => Rung::Submitted,
