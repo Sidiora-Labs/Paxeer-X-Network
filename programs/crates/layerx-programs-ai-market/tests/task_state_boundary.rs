@@ -18,7 +18,7 @@ use layerx_programs_ai_market::{
         CodecResult, ARITHMETIC, BAD_SIGNATURE, CONFLICT, F01_INVALID_POLICY, F01_NO_TASK_CAPACITY,
         F01_POLICY_MISMATCH, F01_PRINCIPAL_MISMATCH, F01_STALE_REVISION, F01_TASK_ALREADY_ACCEPTED,
         F01_TASK_CONFLICT, F01_TASK_EXPIRED, F01_TASK_NOT_FOUND, F01_UNKNOWN_WORKER,
-        F01_WRONG_LIFECYCLE, F01_WRONG_WORKER, F02_DELEGATE_REVOKED,
+        F01_WRONG_LIFECYCLE, F01_WRONG_WORKER, F02_DELEGATE_REVOKED, F06_CLAIM_NOT_READY,
         F09_EVIDENCE_TASK_SET_UNSEALED, KEY_MISMATCH, NON_CANONICAL, SEQUENCE_GAP, UNAUTHORIZED,
         WRONG_CONFIG, WRONG_EPOCH, WRONG_MARKET, WRONG_PHASE, WRONG_ROSTER,
     },
@@ -1207,7 +1207,7 @@ fn a28_execution_height_timeout_commits_at_105() -> TestResult {
 
 #[test]
 fn a28_execution_height_timeout_refuses_at_110_and_cancels() -> TestResult {
-    for cancel_height in [110, 128] {
+    for cancel_height in [108, 110, 128] {
         let mut m = restored_execution_height_market()?;
         let a = m.admission(0x21, 0, 1, 108)?;
         m.admit(&a, 100)?;
@@ -1244,6 +1244,19 @@ fn a28_execution_height_timeout_refuses_at_110_and_cancels() -> TestResult {
             (TaskStatus::Cancelled, None, None)
         );
         assert_eq!(m.world.parts()?.rewards, rewards);
+        let state = decode_reward_state(&rewards)?;
+        let row = state.row(m.frozen.epoch)?;
+        assert_eq!(row.unclaimed_sum()?, 0);
+        assert_eq!(
+            row.check_claim(
+                &state.dictionary(),
+                a.worker,
+                m.workers[0].recipient,
+                1,
+                cancel_height
+            ),
+            Err(F06_CLAIM_NOT_READY)
+        );
         let after = m.world.bytes.clone();
         assert_eq!(
             m.world.route(&cancel, cancel_height)?,
@@ -1251,6 +1264,24 @@ fn a28_execution_height_timeout_refuses_at_110_and_cancels() -> TestResult {
         );
         assert_eq!(m.world.bytes, after);
     }
+    Ok(())
+}
+
+#[test]
+fn a28_unaccepted_cancellation_keeps_its_deadline_and_work_guards() -> TestResult {
+    let mut m = restored_execution_height_market()?;
+    let a = m.admission(0x21, 0, 1, 108)?;
+    m.admit(&a, 100)?;
+    let task = m.task_id(0x21, 1)?;
+    let before = m.world.bytes.clone();
+    assert_eq!(m.cancel(0x21, task, 108), Err(F01_TASK_EXPIRED));
+    assert_eq!(m.world.bytes, before);
+    assert_eq!(m.cancel(0x21, task, 128), Err(F01_TASK_EXPIRED));
+    assert_eq!(m.world.bytes, before);
+    assert_eq!(m.cancel(0x21, task, 63), Err(ARITHMETIC));
+    assert_eq!(m.world.bytes, before);
+    m.cancel(0x21, task, 107)?;
+    assert_eq!(m.find(task)?.status, TaskStatus::Cancelled);
     Ok(())
 }
 
@@ -1332,20 +1363,130 @@ fn a29_enrollment_remains_routed_to_worker_identity() -> TestResult {
     Ok(())
 }
 
+fn metadata_manifest(
+    market: &MarketHeader,
+    record: &WorkerCurrent,
+    at: u64,
+) -> CodecResult<Vec<u8>> {
+    let mut bytes = 1u16.to_be_bytes().to_vec();
+    bytes.extend_from_slice(market.market_id.as_bytes());
+    bytes.extend_from_slice(record.worker.as_bytes());
+    bytes.extend_from_slice(record.owner.as_bytes());
+    let revision = record.metadata_revision.checked_add(1).ok_or(ARITHMETIC)?;
+    let expiry = at
+        .checked_add(workers::MAX_METADATA_LIFETIME)
+        .ok_or(ARITHMETIC)?;
+    for value in [record.generation, record.key_version, revision, at, expiry] {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    bytes.extend_from_slice(&[60; 32]);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&[1, 1]);
+    for digest in [50, 61, 62, 63, 64] {
+        bytes.extend_from_slice(&[digest; 32]);
+    }
+    for _ in 0..4 {
+        bytes.extend_from_slice(&1024u32.to_be_bytes());
+    }
+    bytes.push(1);
+    bytes.extend_from_slice(&60_000u32.to_be_bytes());
+    bytes.extend_from_slice(&4u16.to_be_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.push(1);
+    let uri = b"https://worker.invalid/paxai/v1";
+    bytes.extend_from_slice(
+        &u32::try_from(uri.len())
+            .map_err(|_| ARITHMETIC)?
+            .to_be_bytes(),
+    );
+    bytes.extend_from_slice(uri);
+    bytes.extend_from_slice(&[70; 32]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&[71; 32]);
+    bytes.extend_from_slice(&[72; 32]);
+    bytes.extend_from_slice(&0u32.to_be_bytes());
+    Ok(bytes)
+}
+
+fn publish_worker_metadata(m: &mut Market, at: u64) -> CodecResult<MetadataDigest> {
+    let record = m
+        .world
+        .parts()?
+        .workers
+        .get(m.workers[0].worker)
+        .ok_or(NON_CANONICAL)?;
+    let manifest = metadata_manifest(&m.header, &record, at)?;
+    let summary = workers::decode_manifest(&manifest)?;
+    let mut payload = record.worker.bytes().to_vec();
+    payload.extend_from_slice(&record.metadata_revision.to_be_bytes());
+    payload.extend_from_slice(&summary.revision.to_be_bytes());
+    payload.extend_from_slice(summary.digest.as_bytes());
+    payload.extend_from_slice(&summary.valid_from.to_be_bytes());
+    payload.extend_from_slice(&summary.expiry.to_be_bytes());
+    payload.extend_from_slice(
+        &u32::try_from(manifest.len())
+            .map_err(|_| ARITHMETIC)?
+            .to_be_bytes(),
+    );
+    payload.extend_from_slice(&manifest);
+    let key = delegate_key(1);
+    let call = Req {
+        sequence: 1,
+        request: role_request(dispatch::PublishMetadata, 1, 1),
+        delegate: Some((key.clone(), key)),
+        ..m.bound(dispatch::PublishMetadata, record.owner, payload)
+    };
+    let before = m.world.bytes.clone();
+    let forged = Req {
+        delegate: Some((delegate_key(1), delegate_key(2))),
+        ..call.clone()
+    };
+    assert_eq!(m.world.route(&forged, at), Err(BAD_SIGNATURE));
+    assert_eq!(m.world.bytes, before);
+    assert_eq!(m.world.route(&call, at)?, ResultStatus::Ok);
+    let published = m
+        .world
+        .parts()?
+        .workers
+        .get(record.worker)
+        .ok_or(NON_CANONICAL)?;
+    assert_eq!(
+        (
+            published.metadata,
+            published.metadata_revision,
+            published.effective_epoch,
+            published.last_sequence,
+            published.last_metadata_height
+        ),
+        (summary.digest, 2, 5, 1, at)
+    );
+    Ok(summary.digest)
+}
+
 #[test]
 fn a29_changed_metadata_refuses_admission_until_the_next_roster() -> TestResult {
-    let mut m = opened(&[1], true)?;
-    let a = m.admission(0x21, 0, 1, 1172)?;
-    let worker = m.workers[0].worker;
-    let metadata = MetadataDigest::new([0x45; 32])?;
-    m.world.edit(|parts, _| {
-        let mut record = parts.workers.get(worker).ok_or(NON_CANONICAL)?;
-        record.metadata = metadata;
-        record.metadata_revision += 1;
-        record.last_metadata_height = 1140;
-        record.effective_epoch = 2;
-        parts.workers.replace(&record)
-    })?;
+    let mut world = World::create(ORIGIN)?;
+    let worker = world.enroll(1, ORIGIN + 2)?;
+    for n in 2..=4 {
+        world.evaluator(n, ORIGIN + 2 + u64::from(n))?;
+    }
+    world.schedule(4, 1006)?;
+    world.fund(500, 1007)?;
+    let frozen = world.open(1512)?;
+    world.advance(1513)?;
+    let header = world.parts()?.market()?;
+    let mut m = Market {
+        world,
+        frozen,
+        header,
+        workers: vec![worker],
+    };
+    assert_eq!(m.frozen.epoch, 4);
+    let metadata = publish_worker_metadata(&mut m, 1524)?;
+    let a = m.admission(0x21, 0, 1, 1556)?;
     let changed = Admit {
         metadata: metadata.bytes(),
         ..a
@@ -1353,19 +1494,30 @@ fn a29_changed_metadata_refuses_admission_until_the_next_roster() -> TestResult 
     let before = m.world.bytes.clone();
     for body in [a, changed] {
         let call = m.bound(dispatch::ADMIT_TASK, body.requester, body.payload());
-        assert_eq!(m.world.route(&call, 1141), Err(WRONG_ROSTER));
+        assert_eq!(m.world.route(&call, 1525), Err(WRONG_ROSTER));
         assert_eq!(m.world.bytes, before);
     }
+    m.world.terminalize(&m.frozen, &m.workers[0], 1624)?;
+    m.frozen = m.world.open(1640)?;
+    assert_eq!(m.frozen.epoch, 5);
+    assert_ne!(m.frozen.roster, frozen.roster);
+    let stale = m.admission(0x21, 0, 1, 1680)?;
+    let call = m.bound(dispatch::ADMIT_TASK, stale.requester, stale.payload());
+    let before = m.world.bytes.clone();
+    assert_eq!(m.world.route(&call, 1652), Err(WRONG_ROSTER));
+    assert_eq!(m.world.bytes, before);
     m.workers[0].metadata = metadata;
-    m.world.terminalize(&m.frozen, &m.workers[0], 1240)?;
-    m.frozen = m.world.open(1256)?;
     let body = Admit {
         metadata: metadata.bytes(),
-        ..m.admission(0x21, 0, 1, 1300)?
+        ..stale
     };
     let call = m.bound(dispatch::ADMIT_TASK, body.requester, body.payload());
-    assert_eq!(m.world.route(&call, 1268)?, ResultStatus::Ok);
-    assert_eq!(m.find(m.task_id(0x21, 1)?)?.status, TaskStatus::Admitted);
+    assert_eq!(m.world.route(&call, 1652)?, ResultStatus::Ok);
+    let admitted = m.find(m.task_id(0x21, 1)?)?;
+    assert_eq!(
+        (admitted.status, admitted.worker, admitted.deadline),
+        (TaskStatus::Admitted, worker.worker, 1680)
+    );
     Ok(())
 }
 
