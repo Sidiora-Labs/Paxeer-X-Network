@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { secp256k1 } from '@noble/curves/secp256k1';
@@ -43,12 +43,15 @@ import {
 } from '@sidiora/layerx-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import * as walletSdk from '../src/index.js';
 import {
   FEE_TOKEN_PRECOMPILE,
   GasStationError,
   LEDGER_PRECOMPILE,
   PAYER_GRANT_BYTES,
   ModuleError,
+  PaxeerProvider,
+  RpcResponseError,
   SPONSORED_SUBMIT_PATH,
   WEB_DATA_EVENTS,
   bridge,
@@ -370,6 +373,7 @@ const signer: ModuleProvider & { readonly isPaxeer: true } = {
 
 const submissions: SponsoredAdapterRequest[] = [];
 const answers: SponsoredSubmissionEvidence[] = [];
+const rpcCalls: { authorization: string | undefined; body: Json }[] = [];
 let server: Server;
 let gatewayUrl: string;
 
@@ -377,6 +381,13 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
   const chunks: Buffer[] = [];
   req.on('data', (chunk: Buffer) => chunks.push(chunk));
   req.on('end', () => {
+    if (req.method === 'POST' && req.url === '/rpc') {
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Json;
+      rpcCalls.push({ authorization: req.headers.authorization, body });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, error: { code: -32601, message: 'method not found' } }));
+      return;
+    }
     if (req.method !== 'POST' || req.url !== SPONSORED_SUBMIT_PATH || req.headers.authorization !== 'Bearer session-token') {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not_found' }));
@@ -641,6 +652,26 @@ describe('modules', () => {
     const imports = [...source.matchAll(/^import[\s\S]*?from\s+'([^']+)';$/gmu)].map((match) => match[1]);
     expect(imports).toEqual(['@sidiora/layerx-sdk/browser', './index.js']);
     expect(source).not.toMatch(/kernel\.js|readWalletCaps|WalletCapsSnapshot|lx_getWalletCaps/u);
+  });
+
+  it('acceptance 5.50.2: the wallet SDK carries no lx_getWalletCaps path and forwards the retired method to the RPC base', async () => {
+    const root = new URL('../src/', import.meta.url);
+    const sources = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.ts'));
+    expect(sources).toContain('kernel.ts');
+    expect(sources).toContain('provider.ts');
+    for (const file of sources) expect(readFileSync(new URL(file, root), 'utf8')).not.toMatch(/lx_getWalletCaps|readWalletCaps|decodeWalletCaps/u);
+    expect('readWalletCaps' in walletSdk).toBe(false);
+    expect('decodeWalletCaps' in walletSdk).toBe(false);
+
+    const provider = new PaxeerProvider({ gatewayUrl, rpcUrl: `${gatewayUrl}/rpc`, token: () => 'session-token' });
+    rpcCalls.length = 0;
+    const refusal = await provider.request({ method: 'lx_getWalletCaps', params: [] }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(RpcResponseError);
+    expect(refusal).toMatchObject({ code: -32601, message: 'method not found' });
+    expect(rpcCalls).toEqual([{ authorization: undefined, body: { jsonrpc: '2.0', id: 1, method: 'lx_getWalletCaps', params: [] } }]);
   });
 
   it('modules_events decode logs encoded from each precompile ABI', () => {
