@@ -2114,3 +2114,24 @@ command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402
 exit_code = 0
 log_path = "logs/0.152-verify-3.log"
 observed_and_assumption = "verify passed (18 passed, 0 failed). Unrelated: the re-recording also changed settlements from transaction lxp:<digest> / verificationLevel sequencer-signed to 0x<hash> / receipted (current seller output since the txHash change); delivery recovery in src/payment.rs (~line 851) still expects lxp:<digest> and sequencer-signed, and no test in this gate covers it"
+
+[finding.0.155]
+revision = "abed8e43a"
+command = "cargo test --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-sdkgen --test drift repository_conformance_root_declares_every_shipped_handwritten_file"
+exit_code = 0
+log_path = "logs/0.155-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed). Unrelated: clippy too_many_lines at drift.rs:35 (repo_fixture) and format_push_string at drift.rs:434 (declare_handwritten) are prior, not in the new test"
+
+[finding.7.2.1]
+revision = "3b2eb64bc"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --lib policy::"
+exit_code = 0
+log_path = "logs/7.2.1-verify-1.log"
+observed_and_assumption = "verify passed (6 passed, 0 failed). Landing on main met a conflict in interop/crates/layerx-gas-station/src/policy.rs with task 0.12; the branch is rebased and the gates rerun before it lands. Gaps: a failed DID read refuses with PolicyRefusal::InvalidAmount, the same reason the code already uses for an unavailable DID ledger; a dedicated variant would need a new arm in the exhaustive match at interop/crates/layerx-gas-station/src/service.rs:170-195, which is outside touches. The station still returns the read's own RPC error (503) to callers Unrelated: none (the first clippy pass hit a layerx-platform-internal evm_sender.rs:191 assemble compile error; main had already fixed it, and the worktree was rebased before the gates ran)"
+
+[finding.0.151]
+revision = "1524d7f3d"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-sdk"
+exit_code = 101
+log_path = "logs/0.151-verify-4.log"
+observed_and_assumption = "verify failed (lib 47 passed, 2 failed (integration binaries not reached)); the write-side commits are landed on main at this revision so the crate compiles again, and the task stays in_progress until task 0.157 reconciles the checkpoint settlement contract and the corpus-producing gate runs. Gaps: v5_native_corpus_binds_exact_profiles_authority_and_all_outcomes (program_http.rs:2441): returns Verification at program_http.rs:2443 because PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS is unset; the corpus is a source-revision-bound artifact produced only by scripts/qualification/paxeer-x/program-terminal-v5.py (--build then verify: native make build, layerx-programs-sandbox host-ffi, test_terminal_v5.c --dump-corpus) Unrelated: cargo clippy -p layerx-sdk --all-targets blocked by 15 workspace-lint errors in dependency layerx-proof"

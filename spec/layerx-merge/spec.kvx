@@ -43137,7 +43137,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.155]
 title = "Pipeline lock declares the sequencer receipt corpus as a handwritten conformance file"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.59"]
