@@ -45,7 +45,9 @@ impl CosignDirectory {
     ) -> Result<(), JournalError> {
         match self.admit(digest, signer, signature)? {
             Admission::Stored | Admission::AlreadyHeld => Ok(()),
-            Admission::Conflict => Err(JournalError::Conflict("cosign share already has different bytes".to_owned())),
+            Admission::Conflict => Err(JournalError::Conflict(
+                "cosign share already has different bytes".to_owned(),
+            )),
         }
     }
 
@@ -61,7 +63,9 @@ impl CosignDirectory {
         signature: &[u8; 65],
     ) -> Result<Admission, JournalError> {
         if recover_signer(digest, signature) != Ok(*signer) {
-            return Err(JournalError::Conflict("cosign signature does not bind digest and signer".to_owned()));
+            return Err(JournalError::Conflict(
+                "cosign signature does not bind digest and signer".to_owned(),
+            ));
         }
         let io = |error: std::io::Error| JournalError::Io(error.to_string());
         private_directory(&self.root).map_err(io)?;
@@ -72,15 +76,36 @@ impl CosignDirectory {
         if fs::symlink_metadata(&target).is_ok() {
             let admission = if read_bounded(&target).as_deref() == Some(bytes.as_bytes()) {
                 Admission::AlreadyHeld
-            } else { Admission::Conflict };
-            if admission == Admission::AlreadyHeld { fs::File::open(&target).and_then(|file| file.sync_all()).map_err(io)?; }
-            sync_dir(&directory).and_then(|()| sync_dir(&self.root)).map_err(io)?;
-            if let Some(parent) = self.root.parent().filter(|parent| !parent.as_os_str().is_empty()) { sync_dir(parent).map_err(io)?; }
+            } else {
+                Admission::Conflict
+            };
+            if admission == Admission::AlreadyHeld {
+                fs::File::open(&target)
+                    .and_then(|file| file.sync_all())
+                    .map_err(io)?;
+            }
+            sync_dir(&directory)
+                .and_then(|()| sync_dir(&self.root))
+                .map_err(io)?;
+            if let Some(parent) = self
+                .root
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                sync_dir(parent).map_err(io)?;
+            }
             return Ok(admission);
         }
         let staging = staging_path(&directory, &hex::encode(signer)).map_err(io)?;
-        let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&staging).map_err(io)?;
-        let written = file.write_all(bytes.as_bytes()).and_then(|()| file.sync_all());
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staging)
+            .map_err(io)?;
+        let written = file
+            .write_all(bytes.as_bytes())
+            .and_then(|()| file.sync_all());
         if let Err(error) = written {
             let _ = fs::remove_file(&staging);
             return Err(io(error));
@@ -90,13 +115,22 @@ impl CosignDirectory {
         let admission = match linked {
             Ok(()) => Admission::Stored,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                if read_bounded(&target).as_deref() == Some(bytes.as_bytes()) { Admission::AlreadyHeld }
-                else { Admission::Conflict }
+                if read_bounded(&target).as_deref() == Some(bytes.as_bytes()) {
+                    Admission::AlreadyHeld
+                } else {
+                    Admission::Conflict
+                }
             }
             Err(error) => return Err(io(error)),
         };
-        sync_dir(&directory).and_then(|()| sync_dir(&self.root)).map_err(io)?;
-        if let Some(parent) = self.root.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        sync_dir(&directory)
+            .and_then(|()| sync_dir(&self.root))
+            .map_err(io)?;
+        if let Some(parent) = self
+            .root
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             sync_dir(parent).map_err(io)?;
         }
         Ok(admission)
@@ -153,9 +187,15 @@ impl CosignDirectory {
             let Ok(claimed) = hex::fixed::<20>(&format!("0x{stem}")) else {
                 continue;
             };
-            if stem != hex::encode(&claimed) { continue; }
-            let Some(bytes) = read_bounded(&entry.path()) else { continue; };
-            let Ok(text) = std::str::from_utf8(&bytes) else { continue; };
+            if stem != hex::encode(&claimed) {
+                continue;
+            }
+            let Some(bytes) = read_bounded(&entry.path()) else {
+                continue;
+            };
+            let Ok(text) = std::str::from_utf8(&bytes) else {
+                continue;
+            };
             let Ok(signature) = hex::fixed::<65>(text.trim()) else {
                 continue;
             };
@@ -182,21 +222,34 @@ fn read_bounded(path: &Path) -> Option<Vec<u8>> {
     }
     let file = fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
-    file.take(MAX_ENTRY_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    file.take(MAX_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
     (bytes.len() as u64 <= MAX_ENTRY_BYTES).then_some(bytes)
 }
 
 fn staging_path(directory: &Path, name: &str) -> std::io::Result<PathBuf> {
     let mut unique = [0; 16];
-    openssl::rand::rand_bytes(&mut unique).map_err(|error| std::io::Error::other(error.to_string()))?;
-    Ok(directory.join(format!(".{name}.{}.{}", std::process::id(), hex::encode(&unique))))
+    openssl::rand::rand_bytes(&mut unique)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    Ok(directory.join(format!(
+        ".{name}.{}.{}",
+        std::process::id(),
+        hex::encode(&unique)
+    )))
 }
 
 fn private_directory(path: &Path) -> std::io::Result<()> {
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(path)?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)?;
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "cosign directory is not an owned directory"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "cosign directory is not an owned directory",
+        ));
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
 }
@@ -229,6 +282,7 @@ pub mod transport {
     pub const MAGIC: [u8; 4] = *b"LXSH";
     pub const VERSION: u16 = 1;
     pub const MAX_SWEEP_ENTRIES: usize = 256;
+    pub const DELIVERY_WORKERS: usize = 4;
     pub const MAX_PEERS: usize = 32;
     pub const MAX_CONNECTIONS: usize = 64;
     pub const MAX_TIMEOUT_MS: u64 = 60_000;
@@ -360,12 +414,21 @@ pub mod transport {
 
     #[derive(Debug, Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct Membership { attestors: Vec<String>, threshold: usize }
+    struct Membership {
+        attestors: Vec<String>,
+        threshold: usize,
+    }
 
     fn public_key(text: &str) -> Result<Vec<u8>, ConfigError> {
         let bytes = hex::decode(text).map_err(|_| bad("operator public key"))?;
-        if bytes.len() == 32 { if bytes.iter().all(|byte| *byte == 0) { return Err(bad("zero operator public key")); } return Ok(bytes); }
-        let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&bytes).map_err(|_| bad("operator public key"))?;
+        if bytes.len() == 32 {
+            if bytes.iter().all(|byte| *byte == 0) {
+                return Err(bad("zero operator public key"));
+            }
+            return Ok(bytes);
+        }
+        let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&bytes)
+            .map_err(|_| bad("operator public key"))?;
         Ok(key.to_encoded_point(true).as_bytes().to_vec())
     }
 
@@ -374,21 +437,34 @@ pub mod transport {
         let mut previous = None;
         for value in values {
             let address = hex::fixed::<20>(value).map_err(|_| bad("approved bridge attestor"))?;
-            if address == [0; 20] || address.iter().all(|byte| *byte == address[0]) || previous.is_some_and(|prior| prior >= address) || !members.insert(address) {
+            if address == [0; 20]
+                || address.iter().all(|byte| *byte == address[0])
+                || previous.is_some_and(|prior| prior >= address)
+                || !members.insert(address)
+            {
                 return Err(bad("approved bridge attestors must be ascending distinct non-placeholder addresses"));
             }
             previous = Some(address);
         }
-        if !(2..=MAX_PEERS + 1).contains(&members.len()) { return Err(bad("approved bridge membership cardinality")); }
+        if !(2..=MAX_PEERS + 1).contains(&members.len()) {
+            return Err(bad("approved bridge membership cardinality"));
+        }
         Ok(members)
     }
 
     fn read_metadata<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, ConfigError> {
-        if !path.is_absolute() { return Err(bad("operator metadata path must be absolute")); }
-        let metadata = fs::symlink_metadata(path).map_err(|error| bad(format!("operator metadata: {error}")))?;
-        if !metadata.is_file() || metadata.len() > 1_048_576 { return Err(bad("operator metadata must be a bounded regular file")); }
+        if !path.is_absolute() {
+            return Err(bad("operator metadata path must be absolute"));
+        }
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|error| bad(format!("operator metadata: {error}")))?;
+        if !metadata.is_file() || metadata.len() > 1_048_576 {
+            return Err(bad("operator metadata must be a bounded regular file"));
+        }
         let bytes = fs::read(path).map_err(|error| bad(format!("operator metadata: {error}")))?;
-        if bytes.len() > 1_048_576 { return Err(bad("operator metadata exceeds bound")); }
+        if bytes.len() > 1_048_576 {
+            return Err(bad("operator metadata exceeds bound"));
+        }
         serde_json::from_slice(&bytes).map_err(|error| bad(format!("operator metadata: {error}")))
     }
 
@@ -401,55 +477,129 @@ pub mod transport {
 
         pub fn validate(&self) -> Result<(), ConfigError> {
             if self.version != 1 || self.authority != "bridge" || self.approval.trim().is_empty() {
-                return Err(bad("explicit bridge operator approval metadata is required"));
+                return Err(bad(
+                    "explicit bridge operator approval metadata is required",
+                ));
             }
             let approved: Membership = read_metadata(&self.membership)?;
             let members = membership(&approved.attestors)?;
-            if approved.threshold < 2 || approved.threshold > members.len() || self.operators.len() != members.len() {
-                return Err(bad("approved membership and operator cardinality or threshold disagree"));
+            if approved.threshold < 2
+                || approved.threshold > members.len()
+                || self.operators.len() != members.len()
+            {
+                return Err(bad(
+                    "approved membership and operator cardinality or threshold disagree",
+                ));
             }
-            let mut operators = BTreeSet::new(); let mut instances = BTreeSet::new(); let mut storage = BTreeSet::new();
-            let mut pins = BTreeSet::new(); let mut attestor_keys = BTreeSet::new();
+            let mut operators = BTreeSet::new();
+            let mut instances = BTreeSet::new();
+            let mut storage = BTreeSet::new();
+            let mut pins = BTreeSet::new();
+            let mut attestor_keys = BTreeSet::new();
             let mut payer_keys = BTreeSet::new();
             for operator in &self.operators {
-                let address = hex::fixed::<20>(&operator.attestor).map_err(|_| bad("operator attestor"))?;
+                let address =
+                    hex::fixed::<20>(&operator.attestor).map_err(|_| bad("operator attestor"))?;
                 let public = public_key(&operator.signer_public_key)?;
-                let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&public).map_err(|_| bad("bridge attestor must be secp256k1"))?;
-                let pin = hex::fixed::<32>(&operator.spki_sha256).map_err(|_| bad("operator transport pin"))?;
-                if !members.contains(&address) || crate::attestation::ethereum_address(&key) != address
-                    || !operators.insert(address) || !attestor_keys.insert(public) || operator.signer_handle.is_empty()
-                    || operator.instance.trim().is_empty() || !instances.insert(&operator.instance)
-                    || operator.storage.trim().is_empty() || !storage.insert(&operator.storage)
-                    || pin == [0; 32] || !pins.insert(pin)
-                { return Err(bad("operator identities, signer bindings, storage and pins must be distinct and approved")); }
-                let paths = [&operator.journal_path, &operator.cosign_directory, &operator.delivery_directory];
-                if paths.iter().any(|path| !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)))
-                    || operator.journal_path.starts_with(&operator.cosign_directory)
-                    || operator.journal_path.starts_with(&operator.delivery_directory)
-                    || operator.cosign_directory.starts_with(&operator.delivery_directory)
-                    || operator.delivery_directory.starts_with(&operator.cosign_directory)
-                { return Err(bad("operator journal and share storage must be separate absolute paths")); }
-                if operator.fee_payers.is_empty() { return Err(bad("operator independent fee payer handles are required")); }
-                let mut chains = BTreeSet::new(); let mut handles = BTreeSet::new();
+                let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&public)
+                    .map_err(|_| bad("bridge attestor must be secp256k1"))?;
+                let pin = hex::fixed::<32>(&operator.spki_sha256)
+                    .map_err(|_| bad("operator transport pin"))?;
+                if !members.contains(&address)
+                    || crate::attestation::ethereum_address(&key) != address
+                    || !operators.insert(address)
+                    || !attestor_keys.insert(public)
+                    || operator.signer_handle.is_empty()
+                    || operator.instance.trim().is_empty()
+                    || !instances.insert(&operator.instance)
+                    || operator.storage.trim().is_empty()
+                    || !storage.insert(&operator.storage)
+                    || pin == [0; 32]
+                    || !pins.insert(pin)
+                {
+                    return Err(bad("operator identities, signer bindings, storage and pins must be distinct and approved"));
+                }
+                let paths = [
+                    &operator.journal_path,
+                    &operator.cosign_directory,
+                    &operator.delivery_directory,
+                ];
+                if paths.iter().any(|path| {
+                    !path.is_absolute()
+                        || path
+                            .components()
+                            .any(|part| matches!(part, std::path::Component::ParentDir))
+                }) || operator
+                    .journal_path
+                    .starts_with(&operator.cosign_directory)
+                    || operator
+                        .journal_path
+                        .starts_with(&operator.delivery_directory)
+                    || operator
+                        .cosign_directory
+                        .starts_with(&operator.delivery_directory)
+                    || operator
+                        .delivery_directory
+                        .starts_with(&operator.cosign_directory)
+                {
+                    return Err(bad(
+                        "operator journal and share storage must be separate absolute paths",
+                    ));
+                }
+                if operator.fee_payers.is_empty() {
+                    return Err(bad("operator independent fee payer handles are required"));
+                }
+                let mut chains = BTreeSet::new();
+                let mut handles = BTreeSet::new();
                 for payer in &operator.fee_payers {
                     let public = public_key(&payer.public_key)?;
-                    if payer.chain_id == 0 || payer.handle.is_empty() || payer.handle == operator.signer_handle
-                        || !chains.insert(payer.chain_id) || !handles.insert(&payer.handle) || !payer_keys.insert(public)
-                    { return Err(bad("fee payer chain handles and public keys must be independent")); }
+                    if payer.chain_id == 0
+                        || payer.handle.is_empty()
+                        || payer.handle == operator.signer_handle
+                        || !chains.insert(payer.chain_id)
+                        || !handles.insert(&payer.handle)
+                        || !payer_keys.insert(public)
+                    {
+                        return Err(bad(
+                            "fee payer chain handles and public keys must be independent",
+                        ));
+                    }
                 }
             }
-            if !attestor_keys.is_disjoint(&payer_keys) { return Err(bad("bridge attestor keys must not pay fees")); }
-            if self.destinations.is_empty() || self.destinations.len() > 64 { return Err(bad("registered destination inventory required")); }
+            if !attestor_keys.is_disjoint(&payer_keys) {
+                return Err(bad("bridge attestor keys must not pay fees"));
+            }
+            if self.destinations.is_empty() || self.destinations.len() > 64 {
+                return Err(bad("registered destination inventory required"));
+            }
             let mut chains = BTreeSet::new();
             for policy in &self.destinations {
-                if policy.chain_id == 0 || !chains.insert(policy.chain_id) || membership(&policy.attestors)? != members
-                    || policy.threshold != approved.threshold || hex::fixed::<20>(&policy.vault).map_err(|_| bad("destination vault"))? == [0; 20]
-                    || hex::fixed::<32>(&policy.observed_block_hash).map_err(|_| bad("destination policy observation"))? == [0; 32]
-                { return Err(bad("registered destination policy differs from approved bridge membership")); }
+                if policy.chain_id == 0
+                    || !chains.insert(policy.chain_id)
+                    || membership(&policy.attestors)? != members
+                    || policy.threshold != approved.threshold
+                    || hex::fixed::<20>(&policy.vault).map_err(|_| bad("destination vault"))?
+                        == [0; 20]
+                    || hex::fixed::<32>(&policy.observed_block_hash)
+                        .map_err(|_| bad("destination policy observation"))?
+                        == [0; 32]
+                {
+                    return Err(bad(
+                        "registered destination policy differs from approved bridge membership",
+                    ));
+                }
             }
             for operator in &self.operators {
-                if operator.fee_payers.iter().map(|payer| payer.chain_id).collect::<BTreeSet<_>>() != chains {
-                    return Err(bad("each operator needs its own fee payer for every registered destination"));
+                if operator
+                    .fee_payers
+                    .iter()
+                    .map(|payer| payer.chain_id)
+                    .collect::<BTreeSet<_>>()
+                    != chains
+                {
+                    return Err(bad(
+                        "each operator needs its own fee payer for every registered destination",
+                    ));
                 }
             }
             Ok(())
@@ -549,50 +699,121 @@ pub mod transport {
             )
             .map_err(|error| bad(format!("tls connector: {error:?}")))?;
             if let Some(inventory_path) = std::env::var_os(INVENTORY_VARIABLE) {
-                let relayer_path = std::env::var_os(RELAYER_CONFIG_VARIABLE).ok_or_else(|| bad("operator inventory requires explicit relayer configuration"))?;
+                let relayer_path = std::env::var_os(RELAYER_CONFIG_VARIABLE).ok_or_else(|| {
+                    bad("operator inventory requires explicit relayer configuration")
+                })?;
                 let inventory = OperatorInventory::load(Path::new(&inventory_path))?;
-                let relayer = crate::config::RelayerConfig::load(Path::new(&relayer_path)).map_err(|error| bad(error.to_string()))?;
+                let relayer = crate::config::RelayerConfig::load(Path::new(&relayer_path))
+                    .map_err(|error| bad(error.to_string()))?;
                 transport.validate_operator(&inventory, &relayer)?;
             }
             Ok(transport)
         }
 
-        pub fn validate_operator(&self, inventory: &OperatorInventory, relayer: &crate::config::RelayerConfig) -> Result<(), ConfigError> {
+        pub fn validate_operator(
+            &self,
+            inventory: &OperatorInventory,
+            relayer: &crate::config::RelayerConfig,
+        ) -> Result<(), ConfigError> {
             inventory.validate()?;
-            let local = inventory.operators.iter().find(|operator| hex::fixed::<20>(&operator.attestor).ok() == Some(self.attestor))
+            let local = inventory
+                .operators
+                .iter()
+                .find(|operator| hex::fixed::<20>(&operator.attestor).ok() == Some(self.attestor))
                 .ok_or_else(|| bad("local attestor is not an approved operator"))?;
-            let certificate = X509::from_pem(&fs::read(&self.certificate).map_err(|error| bad(error.to_string()))?).map_err(|error| bad(error.to_string()))?;
-            if spki_pin(&certificate).map_err(|error| bad(error.to_string()))? != hex::fixed::<32>(&local.spki_sha256).map_err(|_| bad("local pin"))?
-                || local.signer_handle != relayer.attestor.handle || public_key(&local.signer_public_key)? != public_key(&hex::prefixed(&relayer.attestor.public_key))?
-                || local.journal_path != relayer.journal_path || local.cosign_directory != self.cosign_root || local.delivery_directory != self.delivery
+            let certificate = X509::from_pem(
+                &fs::read(&self.certificate).map_err(|error| bad(error.to_string()))?,
+            )
+            .map_err(|error| bad(error.to_string()))?;
+            if spki_pin(&certificate).map_err(|error| bad(error.to_string()))?
+                != hex::fixed::<32>(&local.spki_sha256).map_err(|_| bad("local pin"))?
+                || local.signer_handle != relayer.attestor.handle
+                || public_key(&local.signer_public_key)?
+                    != public_key(&hex::prefixed(&relayer.attestor.public_key))?
+                || local.journal_path != relayer.journal_path
+                || local.cosign_directory != self.cosign_root
+                || local.delivery_directory != self.delivery
                 || relayer.cosign_directory.as_ref() != Some(&self.cosign_root)
-            { return Err(bad("local relayer signer, journal or transport differs from approved inventory")); }
-            let peers = self.peers.iter().map(|peer| (peer.attestor, peer.pin)).collect::<BTreeSet<_>>();
-            let expected = inventory.operators.iter().filter(|operator| operator.attestor != local.attestor).map(|operator| {
-                Ok((hex::fixed::<20>(&operator.attestor).map_err(|_| bad("operator attestor"))?, hex::fixed::<32>(&operator.spki_sha256).map_err(|_| bad("operator pin"))?))
-            }).collect::<Result<BTreeSet<_>, ConfigError>>()?;
-            if peers != expected { return Err(bad("transport peers do not equal the approved bridge roster")); }
+            {
+                return Err(bad(
+                    "local relayer signer, journal or transport differs from approved inventory",
+                ));
+            }
+            let peers = self
+                .peers
+                .iter()
+                .map(|peer| (peer.attestor, peer.pin))
+                .collect::<BTreeSet<_>>();
+            let expected = inventory
+                .operators
+                .iter()
+                .filter(|operator| operator.attestor != local.attestor)
+                .map(|operator| {
+                    Ok((
+                        hex::fixed::<20>(&operator.attestor)
+                            .map_err(|_| bad("operator attestor"))?,
+                        hex::fixed::<32>(&operator.spki_sha256).map_err(|_| bad("operator pin"))?,
+                    ))
+                })
+                .collect::<Result<BTreeSet<_>, ConfigError>>()?;
+            if peers != expected {
+                return Err(bad(
+                    "transport peers do not equal the approved bridge roster",
+                ));
+            }
             let mut configured = vec![(relayer.paxeer.chain_id, &relayer.paxeer.submitter)];
-            configured.extend(relayer.chains.iter().map(|chain| (chain.chain_id, &chain.submitter)));
-            if let Some(solana) = &relayer.solana { configured.push((solana.chain_id, &solana.fee_payer)); }
-            if configured.len() != local.fee_payers.len() { return Err(bad("relayer destination and fee payer inventory disagree")); }
+            configured.extend(
+                relayer
+                    .chains
+                    .iter()
+                    .map(|chain| (chain.chain_id, &chain.submitter)),
+            );
+            if let Some(solana) = &relayer.solana {
+                configured.push((solana.chain_id, &solana.fee_payer));
+            }
+            if configured.len() != local.fee_payers.len() {
+                return Err(bad("relayer destination and fee payer inventory disagree"));
+            }
             for (chain_id, key) in configured {
-                let approved = local.fee_payers.iter().find(|payer| payer.chain_id == chain_id).ok_or_else(|| bad("missing approved destination fee payer"))?;
-                if approved.handle != key.handle || public_key(&approved.public_key)? != public_key(&hex::prefixed(&key.public_key))? {
+                let approved = local
+                    .fee_payers
+                    .iter()
+                    .find(|payer| payer.chain_id == chain_id)
+                    .ok_or_else(|| bad("missing approved destination fee payer"))?;
+                if approved.handle != key.handle
+                    || public_key(&approved.public_key)?
+                        != public_key(&hex::prefixed(&key.public_key))?
+                {
                     return Err(bad("relayer fee payer differs from approved inventory"));
                 }
             }
-            if !inventory.destinations.iter().any(|policy| policy.chain_id == relayer.paxeer.chain_id && hex::fixed::<20>(&policy.vault).ok() == Some(crate::abi::LAYERX_BRIDGE_PRECOMPILE)) {
-                return Err(bad("registered Paxeer bridge inventory differs from relayer configuration"));
+            if !inventory.destinations.iter().any(|policy| {
+                policy.chain_id == relayer.paxeer.chain_id
+                    && hex::fixed::<20>(&policy.vault).ok()
+                        == Some(crate::abi::LAYERX_BRIDGE_PRECOMPILE)
+            }) {
+                return Err(bad(
+                    "registered Paxeer bridge inventory differs from relayer configuration",
+                ));
             }
             for chain in &relayer.chains {
-                if !inventory.destinations.iter().any(|policy| policy.chain_id == chain.chain_id && hex::fixed::<20>(&policy.vault).ok() == Some(chain.vault)) {
-                    return Err(bad("registered EVM vault inventory differs from relayer configuration"));
+                if !inventory.destinations.iter().any(|policy| {
+                    policy.chain_id == chain.chain_id
+                        && hex::fixed::<20>(&policy.vault).ok() == Some(chain.vault)
+                }) {
+                    return Err(bad(
+                        "registered EVM vault inventory differs from relayer configuration",
+                    ));
                 }
             }
             if let Some(solana) = &relayer.solana {
-                if !inventory.destinations.iter().any(|policy| policy.chain_id == solana.chain_id && hex::fixed::<20>(&policy.vault).ok() == Some(solana.vault)) {
-                    return Err(bad("registered Solana vault inventory differs from relayer configuration"));
+                if !inventory.destinations.iter().any(|policy| {
+                    policy.chain_id == solana.chain_id
+                        && hex::fixed::<20>(&policy.vault).ok() == Some(solana.vault)
+                }) {
+                    return Err(bad(
+                        "registered Solana vault inventory differs from relayer configuration",
+                    ));
                 }
             }
             Ok(())
@@ -708,7 +929,8 @@ pub mod transport {
 
         /// One bounded sweep: up to 256 own shares after the persisted
         /// cursor, wrapping, each offered to every peer lacking an
-        /// acknowledgement or conflict record for its current pin.
+        /// acknowledgement or conflict record for its current pin, with at
+        /// most `DELIVERY_WORKERS` concurrent deliveries per peer.
         pub fn sweep(&self) {
             let shares = self.cosign.own_shares(&self.attestor);
             if shares.is_empty() {
@@ -742,9 +964,18 @@ pub mod transport {
                                 return;
                             }
                         };
-                        for (digest, signature) in page {
-                            self.deliver(&connector, peer, digest, signature);
-                        }
+                        let next = std::sync::atomic::AtomicUsize::new(0);
+                        std::thread::scope(|workers| {
+                            for _ in 0..DELIVERY_WORKERS {
+                                workers.spawn(|| {
+                                    while let Some((digest, signature)) = page.get(
+                                        next.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                                    ) {
+                                        self.deliver(&connector, peer, digest, signature);
+                                    }
+                                });
+                            }
+                        });
                     });
                 }
             });
@@ -892,7 +1123,7 @@ pub mod transport {
     }
 
     fn write_atomic(directory: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
-        let staging = super::staging_path(directory, name)?;
+        let staging = super::staging_path(directory, "record")?;
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
