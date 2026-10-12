@@ -162,7 +162,7 @@ func TestEncodeCommittedBlock(t *testing.T) {
 		},
 	}
 
-	out, err := encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+	out, err := encodeCommittedHead(nil, evt, big.NewInt(42), 10_000_000)
 	require.Nil(t, out)
 	require.ErrorContains(t, err, "lacks canonical parent, transaction, and receipt roots")
 }
@@ -235,18 +235,18 @@ func TestEncodeCommittedBlockWithRoots(t *testing.T) {
 	} {
 		evt := event()
 		strip(&evt)
-		out, err := encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+		out, err := encodeCommittedHead(nil, evt, big.NewInt(42), 10_000_000)
 		require.Nil(t, out, name)
 		require.EqualError(t, err, "committed Autobahn head 12345 lacks canonical parent, transaction, and receipt roots", name)
 	}
 	evt := event()
 	evt.response.AppHash = nil
-	out, err = encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+	out, err = encodeCommittedHead(nil, evt, big.NewInt(42), 10_000_000)
 	require.Nil(t, out)
 	require.EqualError(t, err, "committed Autobahn head 12345 lacks a state root")
 	evt = event()
 	evt.hash = hash.Bytes()[1:]
-	out, err = encodeCommittedBlock(evt, big.NewInt(42), 10_000_000)
+	out, err = encodeCommittedHead(nil, evt, big.NewInt(42), 10_000_000)
 	require.Nil(t, out)
 	require.EqualError(t, err, "committed Autobahn head 12345 has a 31-byte block hash")
 }
@@ -257,7 +257,7 @@ func TestEncodeCommittedBlock_ZeroGasLimit(t *testing.T) {
 		header:   &tmproto.Header{Height: 1, Time: time.Unix(0, 0)},
 		response: &abci.ResponseFinalizeBlock{},
 	}
-	out, err := encodeCommittedBlock(evt, big.NewInt(0), 0)
+	out, err := encodeCommittedHead(nil, evt, big.NewInt(0), 0)
 	require.Nil(t, out)
 	require.ErrorContains(t, err, "lacks canonical parent, transaction, and receipt roots")
 }

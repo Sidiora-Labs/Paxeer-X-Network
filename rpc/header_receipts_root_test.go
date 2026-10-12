@@ -32,6 +32,8 @@ func TestHeaderReceiptsRootIsSameBlockResults(t *testing.T) {
 
 	conf, err := rpctest.CreateConfig(t, t.Name())
 	require.NoError(t, err)
+	// A loaded host commits slower than the default ten-second broadcast wait.
+	conf.RPC.TimeoutBroadcastTxCommit = 2 * time.Minute
 	kv := kvstore.NewApplication()
 	nodeService, closer, err := rpctest.StartTendermint(ctx, conf, kv, rpctest.SuppressStdout)
 	require.NoError(t, err)

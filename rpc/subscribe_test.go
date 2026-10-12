@@ -18,6 +18,7 @@ import (
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmed25519 "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/ed25519"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto/merkle"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/privval"
 	tmproto "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/layerxproof/verify"
@@ -122,6 +123,15 @@ func TestSubscribeNewHeadsAutobahn(t *testing.T) {
 	resultsHash := common.HexToHash("0x7474747474747474747474747474747474747474747474747474747474747474").Bytes()
 	proposer := common.HexToAddress("0x9999999999999999999999999999999999999999").Bytes()
 	ts := time.Unix(1_700_000_500, 0).UTC()
+	// The served receiptsRoot is the results root of block H, the value
+	// header H+1 commits as LastResultsHash, not header H's own field.
+	blockHeight := int64(MockHeight8)
+	blockResults, err := (&MockClient{}).BlockResults(context.Background(), &blockHeight)
+	require.NoError(t, err)
+	resultLeaves, err := abci.MarshalTxResults(blockResults.TxsResults)
+	require.NoError(t, err)
+	sameBlockRoot := common.BytesToHash(merkle.HashFromByteSlices(resultLeaves))
+	require.NotEqual(t, common.BytesToHash(resultsHash), sameBlockRoot)
 
 	expectedKeys := []string{
 		"parentHash", "sha3Uncles", "miner", "stateRoot", "transactionsRoot",
@@ -183,7 +193,7 @@ func TestSubscribeNewHeadsAutobahn(t *testing.T) {
 			require.NotEmpty(t, gasLimitStr)
 			require.NotEqual(t, "0x0", gasLimitStr)
 			require.Equal(t, common.BytesToHash(parentHash).Hex(), resultMap["parentHash"])
-			require.Equal(t, common.BytesToHash(resultsHash).Hex(), resultMap["receiptsRoot"])
+			require.Equal(t, sameBlockRoot.Hex(), resultMap["receiptsRoot"])
 			require.Equal(t, common.BytesToHash(dataHash).Hex(), resultMap["transactionsRoot"])
 			return
 		case <-timer.C:
