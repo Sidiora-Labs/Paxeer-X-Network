@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"regexp"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxexchange"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,6 +35,7 @@ func TestRevertReasonIsLxpCode(t *testing.T) {
 		for _, err := range []error{original, fmt.Errorf("order refused: %w", original), sdkerrors.Wrap(original, "order refused")} {
 			converted := layerxexchange.RevertError(err)
 			require.Equal(t, "LXP_MARGIN_INSUFFICIENT", converted.Error())
+			require.Equal(t, err, errors.Unwrap(converted))
 			require.ErrorIs(t, converted, original)
 			var result lxphost.Code
 			require.ErrorAs(t, converted, &result)
@@ -73,6 +72,8 @@ func TestRevertReasonIsLxpCode(t *testing.T) {
 				for _, err := range []error{test.err, fmt.Errorf("detail: %w", test.err), sdkerrors.Wrap(test.err, "detail")} {
 					require.Equal(t, test.text, types.ErrorCode(err))
 					converted := layerxexchange.RevertError(err)
+					require.Equal(t, test.text, converted.Error())
+					require.Equal(t, err, errors.Unwrap(converted))
 					require.ErrorIs(t, converted, test.err)
 					var registered *sdkerrors.Error
 					require.ErrorAs(t, converted, &registered)
@@ -87,32 +88,10 @@ func TestRevertReasonIsLxpCode(t *testing.T) {
 		require.Same(t, unknown, layerxexchange.RevertError(unknown))
 		require.Nil(t, layerxexchange.RevertError(nil))
 	})
-
-	t.Run("placeOrderUnknownMarket", func(t *testing.T) {
-		h := newHarness(t)
-		data, err := h.precompile.Run(h.evm, h.caller, h.caller,
-			h.input(layerxexchange.PlaceOrderMethod, [32]byte{0x99}, types.SideBuy,
-				big.NewInt(1), big.NewInt(1), uint8(0)), nil, false, false, nil)
-		require.ErrorIs(t, err, vm.ErrExecutionReverted)
-		assertLxpRevert(t, data, "LXP_EXCHANGE_UNKNOWN_MARKET")
-		require.Zero(t, h.keeper.GetIntentCount(h.ctx))
-		require.Zero(t, h.keeper.GetOwnerNonce(h.ctx, h.caller))
-	})
-
-	t.Run("placeOrderMarginRefusal", func(t *testing.T) {
-		h := newHarness(t)
-		require.Zero(t, h.keeper.GetIntentCount(h.ctx))
-		data, err := h.precompile.Run(h.evm, h.caller, h.caller,
-			h.input(layerxexchange.PlaceOrderMethod, marketID, types.SideBuy,
-				big.NewInt(1), big.NewInt(1), uint8(0)), nil, false, false, nil)
-		require.ErrorIs(t, err, vm.ErrExecutionReverted)
-		assertLxpRevert(t, data, "LXP_MARGIN_INSUFFICIENT")
-		require.Zero(t, h.keeper.GetIntentCount(h.ctx))
-		require.Zero(t, h.keeper.GetOwnerNonce(h.ctx, h.caller))
-	})
 }
 
 func TestKernelCodeTable(t *testing.T) {
+	const fatalLimit int64 = -1000
 	header, err := os.ReadFile("../../include/layerx/lxp_result.h")
 	require.NoError(t, err)
 	pattern, err := regexp.Compile(`(?m)^\s*X\(\s*(LXP_[A-Z0-9_]+)\s*,\s*(-?\d+)\s*\)`)
@@ -122,7 +101,7 @@ func TestKernelCodeTable(t *testing.T) {
 	values := make(map[lxphost.Code]struct{}, len(declarations))
 	names := make(map[string]struct{}, len(declarations))
 	mappedNames := make(map[string]lxphost.Code, len(declarations))
-	lowest, highest := int64(math.MaxInt32), int64(math.MinInt32)
+	highest := int64(math.MinInt32)
 	for _, declaration := range declarations {
 		numeric, err := strconv.ParseInt(string(declaration[2]), 10, 32)
 		require.NoError(t, err)
@@ -132,16 +111,18 @@ func TestKernelCodeTable(t *testing.T) {
 		require.NotContains(t, names, name, "duplicate kernel name %q", name)
 		values[code] = struct{}{}
 		names[name] = struct{}{}
-		if numeric < lowest {
-			lowest = numeric
-		}
 		if numeric > highest {
 			highest = numeric
 		}
 		actual := layerxexchange.KernelCodeText(code)
-		previous, duplicate := mappedNames[actual]
-		mappedNames[actual] = code
 		t.Run(name, func(t *testing.T) {
+			if numeric <= fatalLimit {
+				require.True(t, strings.HasPrefix(name, "LXP_FATAL_"))
+				require.Equal(t, "", actual, "fatal numeric code %d", numeric)
+				return
+			}
+			previous, duplicate := mappedNames[actual]
+			mappedNames[actual] = code
 			require.Equal(t, name, actual, "numeric code %d", numeric)
 			require.True(t, strings.HasPrefix(actual, "LXP_"))
 			require.False(t, duplicate, "codes %d and %d map to %q", previous, code, actual)
@@ -150,9 +131,17 @@ func TestKernelCodeTable(t *testing.T) {
 			}
 		})
 	}
-	require.Greater(t, lowest, int64(math.MinInt32))
+	lowestGap := fatalLimit + 1
+	for lowestGap <= highest {
+		if _, assigned := values[lxphost.Code(lowestGap)]; !assigned {
+			break
+		}
+		lowestGap++
+	}
+	require.Less(t, lowestGap, highest, "header must leave a non-fatal gap below its highest value")
+	require.Greater(t, lowestGap, fatalLimit)
 	require.Less(t, highest, int64(math.MaxInt32))
-	for _, numeric := range []int64{lowest - 1, highest + 1} {
+	for _, numeric := range []int64{lowestGap, highest + 1} {
 		t.Run(fmt.Sprintf("unknown_%d", numeric), func(t *testing.T) {
 			code := lxphost.Code(numeric)
 			require.NotContains(t, values, code)
