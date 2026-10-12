@@ -1014,6 +1014,63 @@ def fetch_routed(path, config, state, name):
     return json.loads(output.stdout)
 
 
+AMINO_UINT64 = re.compile(r"0|[1-9][0-9]*")
+
+
+def amino_uint64(value, reason):
+    require(type(value) is str and AMINO_UINT64.fullmatch(value) is not None, reason)
+    number = int(value)
+    require(number < 1 << 64, reason)
+    return number
+
+
+def governed_base64_key(value):
+    require(type(value) is str, "governed receipt key encoding differs")
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except ValueError as error:
+        raise Refused("governed receipt key bytes differ") from error
+    require(
+        len(decoded) == 32
+        and decoded != bytes(32)
+        and base64.b64encode(decoded).decode() == value,
+        "governed receipt key bytes differ",
+    )
+    return decoded
+
+
+def governed_receipt_keys(value):
+    keys = json.loads(value)
+    require(type(keys) is list and keys, "governed receipt key list is empty")
+    pinned = {}
+    for entry in keys:
+        require(
+            type(entry) is dict
+            and set(entry) == {"key_id", "public_key", "first_height", "last_height"},
+            "governed receipt key fields differ",
+        )
+        require(
+            type(entry["key_id"]) is str and type(entry["public_key"]) is str,
+            "governed receipt key encoding differs",
+        )
+        key_id = governed_base64_key(entry["key_id"])
+        public_key = governed_base64_key(entry["public_key"])
+        reason = "governed receipt key height range differs"
+        first = amino_uint64(entry["first_height"], reason)
+        last = amino_uint64(entry["last_height"], reason)
+        require(first <= last, reason)
+        require(key_id not in pinned, "governed receipt key id is duplicated")
+        pinned[key_id] = (public_key, first, last)
+    return pinned
+
+
+def governed_receipt_key(pinned, key_id, height):
+    require(key_id in pinned, "receipt key is not governed at the receipt height")
+    public_key, first, last = pinned[key_id]
+    require(first <= height <= last, "receipt height is outside its governed key range")
+    return public_key
+
+
 def chain_receipt_facts(receipt, chain_rest_url, chain_curl_config, state):
     require(
         chain_rest_url and chain_curl_config,
@@ -1115,42 +1172,8 @@ def chain_receipt_facts(receipt, chain_rest_url, chain_curl_config, state):
         and isinstance(parameter["value"], str),
         "chain receipt key parameter differs",
     )
-    keys = json.loads(parameter["value"])
-    require(isinstance(keys, list) and keys, "governed receipt key list is empty")
-    pinned = {}
-    for entry in keys:
-        require(
-            isinstance(entry, dict)
-            and set(entry) == {"key_id", "public_key", "first_height", "last_height"},
-            "governed receipt key fields differ",
-        )
-        require(
-            isinstance(entry["key_id"], str) and isinstance(entry["public_key"], str),
-            "governed receipt key encoding differs",
-        )
-        key_id = base64.b64decode(entry["key_id"], validate=True)
-        public_key = base64.b64decode(entry["public_key"], validate=True)
-        require(
-            len(key_id) == len(public_key) == 32
-            and key_id != bytes(32)
-            and public_key != bytes(32)
-            and base64.b64encode(key_id).decode() == entry["key_id"]
-            and base64.b64encode(public_key).decode() == entry["public_key"],
-            "governed receipt key bytes differ",
-        )
-        first, last = entry["first_height"], entry["last_height"]
-        require(
-            type(first) is int and type(last) is int and 0 <= first <= last < 1 << 64,
-            "governed receipt key height range differs",
-        )
-        require(key_id not in pinned, "governed receipt key id is duplicated")
-        pinned[key_id] = (public_key, first, last)
-    require(
-        protocol.context_hash in pinned,
-        "receipt key is not governed at the receipt height",
-    )
-    public_key, first, last = pinned[protocol.context_hash]
-    require(first <= height <= last, "receipt height is outside its governed key range")
+    pinned = governed_receipt_keys(parameter["value"])
+    public_key = governed_receipt_key(pinned, protocol.context_hash, height)
     expected = hashlib.sha256(
         b"PAXEER/v1/sequence\0"
         + protocol.previous_state_root
