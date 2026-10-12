@@ -131,6 +131,11 @@ func TestKernelCodeTable(t *testing.T) {
 			}
 		})
 	}
+	t.Run("fatalRangeBoundaries", func(t *testing.T) {
+		for _, numeric := range []int64{fatalLimit, math.MinInt32} {
+			require.Equal(t, "", layerxexchange.KernelCodeText(lxphost.Code(numeric)), "fatal numeric code %d", numeric)
+		}
+	})
 	lowestGap := fatalLimit + 1
 	for lowestGap <= highest {
 		if _, assigned := values[lxphost.Code(lowestGap)]; !assigned {
