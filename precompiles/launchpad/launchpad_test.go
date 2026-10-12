@@ -234,13 +234,26 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 		AccumulatedTokenFees: big.NewInt(0), AccumulatedFees: big.NewInt(0), AirdropEpoch: big.NewInt(0),
 		AirdropBalance: big.NewInt(0), Price: big.NewInt(10_000_000_000_000)}, market)
 	require.Equal(t, big.NewInt(1), h.view(launchpad.GetMarketCountMethod)[0])
-	require.Len(t, h.view(launchpad.GetMarketsMethod, big.NewInt(0), big.NewInt(10))[0], 1)
+	markets := *abi.ConvertType(h.view(launchpad.GetMarketsMethod, big.NewInt(0), big.NewInt(10))[0], new([]launchpad.Market)).(*[]launchpad.Market)
+	sameJSON(t, []launchpad.Market{market}, markets)
 	require.Len(t, h.view(launchpad.GetMarketsMethod, big.NewInt(1), big.NewInt(10))[0], 0)
-	require.Len(t, h.view(launchpad.GetMarketsByCreatorMethod, h.caller)[0], 1)
+	byCreator := *abi.ConvertType(h.view(launchpad.GetMarketsByCreatorMethod, h.caller)[0], new([]launchpad.Market)).(*[]launchpad.Market)
+	sameJSON(t, []launchpad.Market{market}, byCreator)
+	require.Len(t, h.view(launchpad.GetMarketsByCreatorMethod, token)[0], 0)
+	sameJSON(t, []interface{}{big.NewInt(10_000_000_000), big.NewInt(0), big.NewInt(1_000_000_000_000_000)},
+		h.view(launchpad.GetReservesMethod, token))
+	require.Equal(t, big.NewInt(10_000_000_000_000), h.view(launchpad.GetPriceMethod, token)[0])
+	sameJSON(t, []interface{}{[8]*big.Int{big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0),
+		big.NewInt(0), big.NewInt(0), big.NewInt(0)}, big.NewInt(0), big.NewInt(0)}, h.view(launchpad.GetPriceSnapshotsMethod, token))
+	require.Equal(t, 0, h.view(launchpad.GetAccumulatedFeesMethod, token)[0].(*big.Int).Sign())
+	require.Equal(t, []string{"quoteDenom", "virtualQuoteDefault", "virtualTokenDefault", "minFeeBps", "maxFeeBps",
+		"baseFeeBps", "protocolFeeBps", "feeDecayRate", "volatilityWeight", "concentrationWeight", "creationFee"},
+		h.method(launchpad.GetConfigMethod).Outputs[0].Type.TupleRawNames)
 	config := *abi.ConvertType(h.view(launchpad.GetConfigMethod)[0], new(launchpad.Config)).(*launchpad.Config)
-	require.Equal(t, quote, config.QuoteDenom)
-	require.Equal(t, big.NewInt(1000), config.ProtocolFeeBps)
-	require.Equal(t, big.NewInt(100_000_000), config.CreationFee)
+	sameJSON(t, launchpad.Config{QuoteDenom: quote, VirtualQuoteDefault: big.NewInt(10_000_000_000),
+		VirtualTokenDefault: big.NewInt(1_000_000_000_000_000), MinFeeBps: big.NewInt(10), MaxFeeBps: big.NewInt(300),
+		BaseFeeBps: big.NewInt(30), ProtocolFeeBps: big.NewInt(1000), FeeDecayRate: big.NewInt(500),
+		VolatilityWeight: big.NewInt(100), ConcentrationWeight: big.NewInt(100), CreationFee: big.NewInt(100_000_000)}, config)
 	require.Equal(t, big.NewInt(300), h.view(launchpad.GetFeeBpsMethod, token)[0])
 	require.Equal(t, 0, h.view(launchpad.GetProtocolFeesMethod, token)[0].(*big.Int).Sign())
 
@@ -285,6 +298,12 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	market = h.market(token)
 	require.Equal(t, big.NewInt(49_721_088), market.RealQuoteBalance)
 	require.Equal(t, big.NewInt(144_102_208_576), market.AccumulatedTokenFees)
+	afterSell := h.view(launchpad.GetPriceMethod, token)[0].(*big.Int)
+	require.Equal(t, market.Price, afterSell)
+	require.Equal(t, -1, afterSell.Cmp(big.NewInt(10_194_940_899_999)), "a sell lowers the price")
+	sameJSON(t, []interface{}{[8]*big.Int{big.NewInt(10_194_940_899_999), afterSell, big.NewInt(0), big.NewInt(0),
+		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0)}, big.NewInt(2), big.NewInt(2)},
+		h.view(launchpad.GetPriceSnapshotsMethod, token))
 	require.Equal(t, big.NewInt(300_000), h.view(launchpad.GetProtocolFeesMethod, token)[0])
 	require.Len(t, h.logs("FeeRecorded(address,uint256,uint256,uint256)"), 1, "a sell records no quote fee")
 
@@ -308,6 +327,29 @@ func TestCreateMarketAndTradeThroughThePrecompile(t *testing.T) {
 	require.Equal(t, quoteBalance, h.balance(h.callerAcc, quote))
 	require.Equal(t, tokenBalance, h.balance(h.callerAcc, denom))
 	require.Equal(t, big.NewInt(300_000), h.view(launchpad.GetProtocolFeesMethod, token)[0])
+	sameJSON(t, []interface{}{[8]*big.Int{big.NewInt(10_194_940_899_999), afterSell, big.NewInt(0), big.NewInt(0),
+		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0)}, big.NewInt(2), big.NewInt(2)},
+		h.view(launchpad.GetPriceSnapshotsMethod, token))
+
+	h.call(h.caller, launchpad.UnpauseMethod, token)
+	h.call(h.caller, launchpad.SellMethod, token, big.NewInt(1_000_000_000_000), big.NewInt(0), h.caller, deadline)
+	third := h.view(launchpad.GetPriceMethod, token)[0].(*big.Int)
+	require.Equal(t, -1, third.Cmp(afterSell), "a second sell lowers the price again")
+	sameJSON(t, []interface{}{[8]*big.Int{big.NewInt(10_194_940_899_999), afterSell, third, big.NewInt(0),
+		big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0)}, big.NewInt(3), big.NewInt(3)},
+		h.view(launchpad.GetPriceSnapshotsMethod, token))
+	market = h.market(token)
+	require.Equal(t, third, market.Price)
+	sameJSON(t, []interface{}{market.VirtualQuoteReserve, market.RealQuoteBalance, market.TokenReserve},
+		h.view(launchpad.GetReservesMethod, token))
+	require.Equal(t, market.AccumulatedFees, h.view(launchpad.GetAccumulatedFeesMethod, token)[0])
+	require.Equal(t, big.NewInt(2_700_000), market.AccumulatedFees)
+	stored, found := h.keeper.GetMarketByPointer(h.stateDB.Ctx(), token)
+	require.True(t, found)
+	feeBps, err := h.keeper.FeeBps(h.stateDB.Ctx(), stored)
+	require.NoError(t, err)
+	require.Equal(t, feeBps, h.view(launchpad.GetFeeBpsMethod, token)[0])
+	require.Equal(t, big.NewInt(1), h.view(launchpad.GetMarketCountMethod)[0])
 	message, broken := launchpadkeeper.SolvencyInvariant(h.keeper)(h.stateDB.Ctx())
 	require.False(t, broken, message)
 	t.Run("TestGetProtocolFeesPerMarket", TestGetProtocolFeesPerMarket)
