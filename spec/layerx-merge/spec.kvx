@@ -41243,7 +41243,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.55]
 title = "65-byte transaction signature and EVM transaction codec in layerx-crypto"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.138"]
