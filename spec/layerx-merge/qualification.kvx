@@ -1762,11 +1762,11 @@ log_path = "logs/0.128-verify-1.log"
 observed_and_assumption = "held unlanded: neither gate compiled because interop/Cargo.lock on main lacks the k256 and layerx-crypto entries that platform/hosted/internal gained with task 7.0.8; task 0.138 refreshes the lock and this worktree is rerun after it."
 
 [finding.0.125]
-revision = "395c21ee7"
-command = "npm --prefix human/wallet/sdk exec -- tsc -p tsconfig.json --noEmit && npm --prefix human/wallet/sdk test"
-exit_code = 1
-log_path = "logs/0.125-verify-1.log"
-observed_and_assumption = "held unlanded: the task premise did not hold, human/wallet/sdk resolves the pnpm-locked @noble/curves 1.9.1 which has ExtendedPoint and no Point, and the npm --prefix exec gate form runs tsc in the caller directory; decision 82 rescopes the task to the 1.9.1 API with package-directory pnpm gates and the worktree is reset and rerun."
+revision = "04961ee52"
+command = "cd human/wallet/sdk && pnpm exec tsc -p tsconfig.json --noEmit && pnpm exec vitest run test/point.test.ts"
+exit_code = 0
+log_path = "logs/0.125-verify-2.log"
+observed_and_assumption = "verify passed on main (4 passed, 0 failed) with index.ts and package.json unchanged under decision 82, so no landing commit exists; the point check on ed25519.ExtendedPoint with the locked 1.9.1 curve library is the delivered state."
 
 [finding.0.132]
 revision = "a46451972"

@@ -42278,7 +42278,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.125]
 title = "Wallet SDK uses the Ed25519 point API of the locked noble-curves"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []

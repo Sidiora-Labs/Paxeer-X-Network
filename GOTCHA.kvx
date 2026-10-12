@@ -7686,3 +7686,13 @@ fix = "return the joined errors to the caller and have callers require.NoError"
 area = "buf generate per file"
 symptom = "buf generate . --path api/<m>/<f>.proto also writes a gogofaster copy under build/proto/gogofaster"
 fix = "copy only the gocosmos pb.go into the module and remove build/"
+
+[gotcha.1623]
+area = "wallet SDK vitest in a fresh worktree"
+symptom = "human/wallet/sdk links @sidiora/layerx-sdk to agent/sdk/typescript whose exports point at the ignored dist/, so vitest cannot resolve @sidiora/layerx-sdk/browser"
+fix = "run npm ci and npm run build in agent/sdk/typescript of the worktree before the wallet SDK tests"
+
+[gotcha.1624]
+area = "worktree node_modules links"
+symptom = "pnpm install in human/wallet does not replace the gateway or agent/sdk/typescript node_modules links into the primary checkout"
+fix = "remove each link and install in place for every package the gate touches"
