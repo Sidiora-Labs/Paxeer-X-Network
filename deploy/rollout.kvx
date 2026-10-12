@@ -38,14 +38,6 @@ railway_service = "identity"
 health = "/healthz"
 order = 2
 
-[service.kernel]
-target = "box"
-image = "kernel"
-box_role = "kernel"
-box_unit = "layerx-kernel.service"
-health = "tcp:9443"
-order = 3
-
 [service.program-registry]
 target = "box"
 image = "layerx-program-registry"
@@ -174,20 +166,6 @@ railway_service = "interop"
 health = "/healthz"
 order = 11
 
-[service.relay-archive-a]
-target = "railway"
-image = "layerx-relay-archive"
-railway_service = "relay-archive-a"
-health = "/healthz"
-order = 11
-
-[service.relay-archive-b]
-target = "railway"
-image = "layerx-relay-archive"
-railway_service = "relay-archive-b"
-health = "/healthz"
-order = 11
-
 [service.archive]
 target = "box"
 image = "paxd"
@@ -237,13 +215,6 @@ box_role = "explorer-index"
 box_unit = "layerx-explorer-index.service"
 health = "tcp:9457"
 order = 12
-
-[service.intent-ingester]
-target = "railway"
-image = "intent-ingester"
-railway_service = "intent-ingester"
-health = "/healthz"
-order = 13
 
 [service.search-front]
 target = "railway"

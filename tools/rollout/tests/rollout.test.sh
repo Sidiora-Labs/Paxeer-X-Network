@@ -24,7 +24,7 @@ plan_precedes() {
 
 "$rollout" plan --sha "$sha" >"$tmp/plan"
 mapfile -t want < <(sed -n 's/^\[service\.\(.*\)\]$/\1/p' "$manifest")
-[ "${#want[@]}" -eq 32 ] || fail "manifest has ${#want[@]} services, want 32"
+[ "${#want[@]}" -eq 28 ] || fail "manifest has ${#want[@]} services, want 28"
 mapfile -t got < <(awk 'NR > 1 {print $2}' "$tmp/plan")
 [ "${#got[@]}" -eq "${#want[@]}" ] || fail "plan lists ${#got[@]} of ${#want[@]} services"
 for s in "${want[@]}"; do
@@ -34,18 +34,17 @@ awk 'NR > 1 {print $1}' "$tmp/plan" | sort -n -c || fail "plan is not in wave or
 
 for s in identity router redis-router redis-internal internal-kms internal-journeys internal-payments \
 	internal-approvals internal-programs webhooks-public webhooks-ingress dashboard dashboard-web interop \
-	search-front ramp relay-archive-a relay-archive-b wallet-gateway wallet-postgres gas-station indexer \
-	intent-ingester ai-evaluator perps-keeper; do
+	search-front ramp wallet-gateway wallet-postgres gas-station indexer ai-evaluator perps-keeper; do
 	grep -qE "^ *[0-9]+ $s +railway +$s " "$tmp/plan" || fail "$s is not a railway target"
 done
-for s in kernel program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby archive; do
+for s in program-registry oracle-feeder explorer-index sequencer-primary sequencer-standby archive; do
 	grep -qE "^ *[0-9]+ $s +box +$s ghcr\.io/sidiora-labs/[a-z0-9-]+:${sha:0:12} unit=[a-z0-9-]+\.service host=\\\$[A-Z_]+_HOST " "$tmp/plan" ||
 		fail "$s is not a box target"
 done
 grep -qE " router +railway +router commit=$sha " "$tmp/plan" || fail "railway rows do not pin the commit"
 grep -qE " redis-router +railway +redis-router skip stock-image=redis$" "$tmp/plan" || fail "stock redis is not skipped"
-awk 'NR > 1 && $2 == "kernel" {k = $1} NR > 1 && $2 == "router" {r = $1} END {exit !(k < r)}' "$tmp/plan" ||
-	fail "kernel does not precede router"
+awk 'NR > 1 && ($2 == "kernel" || $2 == "intent-ingester" || $2 ~ /relay-archive/ || $2 ~ /guarantor/) {exit 1}' "$tmp/plan" ||
+	fail "plan includes a retired service"
 plan_precedes sequencer-primary router "$tmp/plan" || fail "sequencer-primary does not precede router"
 plan_precedes sequencer-primary sequencer-standby "$tmp/plan" ||
 	fail "sequencer-standby does not follow sequencer-primary"
@@ -73,6 +72,10 @@ sys.path.insert(0, str(Path(sys.argv[1]) / "tools" / "rollout"))
 from rollout import services
 
 units = {unit["name"]: unit for unit in services(sys.argv[2])}
+assert not any(
+    name in {"kernel", "intent-ingester"} or "relay-archive" in name or "guarantor" in name
+    for name in units
+), units.keys()
 assert units["archive"] == {
     "name": "archive",
     "target": "box",
@@ -127,8 +130,21 @@ for order in 3 4; do
 	fi
 done
 
-"$rollout" apply --sha "$sha" --only kernel,router >"$tmp/apply"
+"$rollout" apply --sha "$sha" --only sequencer-primary,router >"$tmp/apply"
 [ "$(awk 'NR > 1' "$tmp/apply" | wc -l)" -eq 2 ] || fail "--only did not narrow the plan"
+grep -qE "^ *3 sequencer-primary +box +sequencer-primary " "$tmp/apply" || fail "--only misses sequencer-primary"
+grep -qE "^ *5 router +railway +router " "$tmp/apply" || fail "--only misses router"
+for mode in plan apply; do
+	for s in kernel intent-ingester relay-archive-a relay-archive-b; do
+		for selection in "$s" "$s,router"; do
+			status=0
+			"$rollout" "$mode" --sha "$sha" --only "$selection" >"$tmp/retired.out" 2>"$tmp/retired.err" || status=$?
+			[ "$status" -eq 2 ] || fail "$mode --only $selection returned $status, want 2"
+			[ ! -s "$tmp/retired.out" ] || fail "$mode --only $selection printed a partial plan"
+			grep -qxF "unknown services: $s" "$tmp/retired.err" || fail "$mode --only $selection returned the wrong refusal"
+		done
+	done
+done
 "$rollout" apply --sha "$sha" --only archive,ai-evaluator >"$tmp/new-units"
 [ "$(awk 'NR > 1' "$tmp/new-units" | wc -l)" -eq 2 ] || fail "--only did not select the two new units"
 grep -qE "^ *5 archive +box +archive " "$tmp/new-units" || fail "--only misses archive"
@@ -178,4 +194,4 @@ if "$ledger" "$sha" router box 2026-10-07T10:00:00Z pass 10.1.2.3:/var/log/x >/d
 	fail "ledger accepted evidence outside /root/lx-ops"
 fi
 
-echo "PASS rollout plan (${#want[@]} services), manifest rejection, ledger"
+echo "PASS rollout plan (${#want[@]} services), retired service rejection, manifest rejection, ledger"
