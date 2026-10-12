@@ -64,6 +64,39 @@ impl DidBudget {
     }
 }
 
+/// The key one sponsorship budget is charged to: the DID an account is bound to
+/// through addr 0x1004 `getLayerXDid` at pending state, or the account's own
+/// address when it is unbound.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct BudgetKey(String);
+impl BudgetKey {
+    /// # Errors
+    /// Refuses a value that is neither `did:layerx:<key>` nor a non-zero address.
+    pub fn parse(value: &str) -> Result<Self, PolicyRefusal> {
+        if valid_did(value) {
+            Ok(Self(value.to_owned()))
+        } else {
+            Err(PolicyRefusal::InvalidAmount)
+        }
+    }
+
+    /// # Errors
+    /// Refuses the zero address.
+    pub fn account(account: Address) -> Result<Self, PolicyRefusal> {
+        Self::parse(&crate::rpc::hex(&account))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn admits(&self, account: Address) -> bool {
+        account != [0; 20]
+            && (self.0.starts_with("did:layerx:") || self.0 == crate::rpc::hex(&account))
+    }
+}
+
 pub(crate) fn valid_did(did: &str) -> bool {
     let (hexadecimal, length) = if let Some(key) = did.strip_prefix("did:layerx:") {
         (key, 64)
@@ -202,14 +235,46 @@ impl QuotePolicy {
         balance: u128,
         now: u64,
     ) -> Result<(), PolicyRefusal> {
-        let gas_cost = fees.gas_cost().map_err(|_| PolicyRefusal::InvalidAmount)?;
-        if account == [0; 20] {
+        let budget = BudgetKey::parse(did)?;
+        self.reserve_for_budget(
+            Ok::<_, PolicyRefusal>(&budget),
+            account,
+            amount,
+            fees,
+            balance,
+            now,
+        )
+    }
+
+    /// Charges the per-account and DID gas budgets of `budget`, the outcome of
+    /// the 0x1004 DID read for `account`; a failed read refuses as the balance
+    /// floor does and consumes nothing.
+    ///
+    /// # Errors
+    /// Refuses a failed DID read, a budget key that does not belong to
+    /// `account`, fees whose gas cost overflows, and names the budget or
+    /// balance floor that would be exceeded. Failed checks consume no budget.
+    pub fn reserve_for_budget<E>(
+        &mut self,
+        budget: Result<&BudgetKey, E>,
+        account: Address,
+        amount: u128,
+        fees: crate::tx::Fees,
+        balance: u128,
+        now: u64,
+    ) -> Result<(), PolicyRefusal> {
+        let budget = budget.map_err(|_| PolicyRefusal::BalanceFloor)?;
+        if !budget.admits(account) {
             return Err(PolicyRefusal::InvalidAmount);
         }
+        let gas_cost = fees.gas_cost().map_err(|_| PolicyRefusal::InvalidAmount)?;
         let mut next = self.clone();
-        next.reserve_key(did, amount, gas_cost, balance, now)?;
-        next.did_budget
-            .reserve(did, fees.gas_limit, now / self.config.interval_seconds)?;
+        next.reserve_key(budget.as_str(), amount, gas_cost, balance, now)?;
+        next.did_budget.reserve(
+            budget.as_str(),
+            fees.gas_limit,
+            now / self.config.interval_seconds,
+        )?;
         *self = next;
         Ok(())
     }
@@ -224,6 +289,33 @@ impl QuotePolicy {
         fees: crate::tx::Fees,
         signer: &impl crate::signer::QuoteSigner,
         did: &str,
+        context: (u128, u64),
+    ) -> Result<crate::SignedQuote, crate::QuoteError> {
+        let budget = BudgetKey::parse(did).map_err(crate::QuoteError::Policy)?;
+        self.quote_for_budget(
+            request,
+            rate,
+            fees,
+            signer,
+            Ok::<_, PolicyRefusal>(&budget),
+            context,
+        )
+    }
+
+    /// Signs a quote charged to `budget`, the outcome of the 0x1004 DID read
+    /// for the requesting account; a failed read refuses before signing.
+    ///
+    /// # Errors
+    /// Refuses an invalid request, an unpriceable or above-maximum amount, a policy
+    /// refusal (a failed DID read refuses as the balance floor does) or a signer
+    /// failure. Failed quotes consume no budget.
+    pub fn quote_for_budget<E>(
+        &mut self,
+        request: &crate::QuoteRequest,
+        rate: &crate::price::GovernedRate,
+        fees: crate::tx::Fees,
+        signer: &impl crate::signer::QuoteSigner,
+        budget: Result<&BudgetKey, E>,
         context: (u128, u64),
     ) -> Result<crate::SignedQuote, crate::QuoteError> {
         let (balance, now) = context;
@@ -247,7 +339,7 @@ impl QuotePolicy {
             return Err(crate::QuoteError::AboveMaximum);
         }
         let mut next = self.clone();
-        next.reserve_for_did(did, request.account, amount, fees, balance, now)
+        next.reserve_for_budget(budget, request.account, amount, fees, balance, now)
             .map_err(crate::QuoteError::Policy)?;
         let quote = crate::quote::Quote {
             sponsor: signer.address(),
@@ -358,6 +450,174 @@ impl QuotePolicy {
 mod tests {
     use super::*;
     use crate::config::tests::config;
+    use crate::tx::Fees;
+
+    const A1: Address = [0xa1; 20];
+    const A2: Address = [0xa2; 20];
+
+    fn did() -> Result<BudgetKey, PolicyRefusal> {
+        BudgetKey::parse(&format!("did:layerx:{}", "d1".repeat(32)))
+    }
+
+    fn fees(gas_limit: u64) -> Fees {
+        Fees {
+            gas_limit,
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
+        }
+    }
+
+    type Read<'a> = Result<&'a BudgetKey, crate::rpc::RpcFault>;
+
+    fn limited_policy() -> Result<QuotePolicy, ConfigError> {
+        let config = StationConfig {
+            per_quote_limit: 100,
+            per_account_limit: 100,
+            per_interval_limit: 1000,
+            ..config()
+        };
+        Ok(QuotePolicy::new(&config)?.with_did_budget(DidBudget::new(1_000_000)))
+    }
+
+    #[test]
+    fn two_addresses_one_did_share_budget() -> Result<(), Box<dyn std::error::Error>> {
+        let did = did()?;
+        let mut policy = limited_policy()?;
+        let read = Read::Ok(&did);
+        assert_eq!(
+            policy.reserve_for_budget(read, A1, 70, fees(10), u128::MAX, 1000),
+            Ok(())
+        );
+        let before = policy.outstanding_pax();
+        assert_eq!(
+            policy.reserve_for_budget(read, A2, 40, fees(10), u128::MAX, 1000),
+            Err(PolicyRefusal::PerAccount)
+        );
+        assert_eq!(policy.outstanding_pax(), before);
+        assert_eq!(policy.did_budget().used(did.as_str(), 16), 10);
+        assert_eq!(
+            policy.reserve_for_budget(read, A2, 30, fees(10), u128::MAX, 1000),
+            Ok(())
+        );
+        assert_eq!(policy.did_budget().used(did.as_str(), 16), 20);
+        assert_eq!(policy.used(did.as_str(), 1000), 100);
+        assert_eq!(
+            policy.reserve_for_budget(read, A1, 1, fees(10), u128::MAX, 1000),
+            Err(PolicyRefusal::PerAccount)
+        );
+        assert_eq!(
+            policy.reserve_for_budget(read, A2, 40, fees(10), u128::MAX, 1060),
+            Ok(())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unbound_address_uses_its_own_budget() -> Result<(), Box<dyn std::error::Error>> {
+        let own = BudgetKey::account(A1)?;
+        let other = BudgetKey::account(A2)?;
+        assert_eq!(own.as_str(), format!("0x{}", "a1".repeat(20)));
+        assert_eq!(
+            BudgetKey::account([0; 20]),
+            Err(PolicyRefusal::InvalidAmount)
+        );
+        let mut policy = limited_policy()?;
+        assert_eq!(
+            policy.reserve_for_budget(Read::Ok(&own), A1, 70, fees(10), u128::MAX, 1000),
+            Ok(())
+        );
+        assert_eq!(
+            policy.reserve_for_budget(Read::Ok(&other), A2, 40, fees(10), u128::MAX, 1000),
+            Ok(())
+        );
+        let before = policy.outstanding_pax();
+        assert_eq!(
+            policy.reserve_for_budget(Read::Ok(&own), A1, 40, fees(10), u128::MAX, 1000),
+            Err(PolicyRefusal::PerAccount)
+        );
+        assert_eq!(
+            policy.reserve_for_budget(Read::Ok(&own), A2, 1, fees(10), u128::MAX, 1000),
+            Err(PolicyRefusal::InvalidAmount)
+        );
+        assert_eq!(policy.outstanding_pax(), before);
+        assert_eq!(policy.did_budget().used(own.as_str(), 16), 10);
+        assert_eq!(policy.did_budget().used(other.as_str(), 16), 10);
+        assert_eq!(
+            policy.reserve(A1, 30, 1, u128::MAX, 1000),
+            Ok(()),
+            "an unbound account's own address keys the same budget"
+        );
+        assert_eq!(
+            policy.reserve(A1, 1, 1, u128::MAX, 1000),
+            Err(PolicyRefusal::PerAccount)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn failed_did_read_refuses_quote() -> Result<(), Box<dyn std::error::Error>> {
+        let did = did()?;
+        let mut policy = QuotePolicy::new(&config())?.with_did_budget(DidBudget::new(1_000_000));
+        let signer = crate::signer::tests::signer()?;
+        let fees = Fees {
+            gas_limit: 750_000,
+            max_fee_per_gas: 1_000_000_000_000,
+            max_priority_fee_per_gas: 1,
+        };
+        let request = crate::QuoteRequest {
+            account: [0x11; 20],
+            max_token_amount: 2_400_000,
+            gas_cost: fees.gas_cost()?,
+            deadline: 1019,
+            quote_nonce: crate::quote::word(7),
+        };
+        let rate = crate::price::tests::RATE;
+        for fault in [
+            crate::rpc::RpcFault::Unavailable,
+            crate::rpc::RpcFault::Malformed,
+        ] {
+            assert!(matches!(
+                policy.quote_for_budget(
+                    &request,
+                    &rate,
+                    fees,
+                    &signer,
+                    Err::<&BudgetKey, _>(fault),
+                    (u128::MAX, 1000)
+                ),
+                Err(crate::QuoteError::Policy(PolicyRefusal::BalanceFloor))
+            ));
+            assert_eq!(policy.outstanding_pax(), 0);
+            assert_eq!(policy.did_budget().used(did.as_str(), 16), 0);
+        }
+        assert_eq!(
+            policy.reserve_for_budget(
+                Err::<&BudgetKey, _>(crate::rpc::RpcFault::Unavailable),
+                [0x11; 20],
+                1,
+                fees,
+                u128::MAX,
+                1000
+            ),
+            Err(PolicyRefusal::BalanceFloor)
+        );
+        assert_eq!(policy.used(did.as_str(), 1000), 0);
+        let quote = policy
+            .quote_for_budget(
+                &request,
+                &rate,
+                fees,
+                &signer,
+                Read::Ok(&did),
+                (u128::MAX, 1000),
+            )
+            .map_err(|error| format!("{error:?}"))?;
+        assert_eq!(quote.quote.token_amount, crate::quote::word(2_358_855));
+        assert_eq!(policy.outstanding_pax(), fees.gas_cost()?);
+        assert_eq!(policy.did_budget().used(did.as_str(), 16), 750_000);
+        Ok(())
+    }
+
     #[test]
     fn every_limit_and_atomic_refusal() -> Result<(), Box<dyn std::error::Error>> {
         let mut policy = QuotePolicy::new(&config())?;

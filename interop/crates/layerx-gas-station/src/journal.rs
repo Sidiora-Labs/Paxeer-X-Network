@@ -57,6 +57,21 @@ pub struct QuoteRecord {
     pub fees: Fees,
 }
 impl QuoteRecord {
+    /// The budget key the quote was charged to, from which a restart rebuilds
+    /// per-DID usage.
+    ///
+    /// # Errors
+    /// Refuses a record whose key is neither a DID nor its own account.
+    pub fn budget_key(&self) -> Result<crate::policy::BudgetKey, JournalError> {
+        crate::policy::BudgetKey::parse(&self.did)
+            .ok()
+            .filter(|key| {
+                key.as_str().starts_with("did:layerx:")
+                    || key.as_str() == crate::rpc::hex(&self.account)
+            })
+            .ok_or(JournalError::Corrupt)
+    }
+
     /// # Errors
     /// Refuses malformed or incorrectly signed records.
     pub fn signed_quote(&self) -> Result<SignedQuote, JournalError> {
@@ -75,7 +90,7 @@ impl QuoteRecord {
             .as_slice()
             .try_into()
             .map_err(|_| JournalError::Corrupt)?;
-        if !crate::policy::valid_did(&self.did)
+        if self.budget_key().is_err()
             || recover(digest, &signature).map_err(|_| JournalError::Corrupt)? != self.key.sponsor
             || self.amount == word(0)
             || self.amount > self.maximum

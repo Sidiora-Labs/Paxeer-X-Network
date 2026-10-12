@@ -8,7 +8,7 @@ use crate::journal::{
     Admission, Completion, Entry, Item, Journal, JournalError, Key, LiabilityRelease, QuoteRecord,
     Submission,
 };
-use crate::policy::DidBudget;
+use crate::policy::{BudgetKey, DidBudget};
 use crate::price::{PriceError, PriceSource};
 use crate::quote::{address_word, keccak, word, Address, Word};
 use crate::rpc::{bytes, hex, quantity, read, JsonRpc, RpcFault};
@@ -243,15 +243,16 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             }) {
                 return Err(StationError::Conflict);
             }
+            let budget = quote.budget_key()?;
             station
                 .policy
-                .restore_did_usage(&quote.did, quote.fees.gas_limit, quote.issued_at)
+                .restore_did_usage(budget.as_str(), quote.fees.gas_limit, quote.issued_at)
                 .map_err(|error| StationError::Quote(QuoteError::Policy(error)))?;
             station
                 .policy
                 .restore_usage(
                     quote.account,
-                    &quote.did,
+                    budget.as_str(),
                     amount(quote.amount)?,
                     amount(quote.gas_cost)?,
                     quote.issued_at,
@@ -650,7 +651,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         Ok(Progress::Completed(completion))
     }
-    fn did(&self, account: Address) -> Result<String, StationError> {
+    /// Resolves the budget key of `account` through addr 0x1004 `getLayerXDid`
+    /// at pending state; an unbound account keys by its own address.
+    fn budget_key(&self, account: Address) -> Result<BudgetKey, StationError> {
         let mut precompile = [0; 20];
         precompile[18..].copy_from_slice(&[0x10, 0x04]);
         let call = |method: &[u8]| {
@@ -662,7 +665,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             )
         };
         match call(b"getLayerXDid(address)") {
-            Ok(encoded) => decode_did(&encoded),
+            Ok(encoded) => {
+                BudgetKey::parse(&decode_did(&encoded)?).map_err(|_| RpcFault::Malformed.into())
+            }
             Err(RpcFault::Rejected { .. }) => {
                 let encoded = call(b"getUnifiedAccount(address)")?;
                 if encoded.len() > 1026 {
@@ -677,7 +682,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                     return Err(StationError::ReplayStateUnavailable);
                 }
                 abi_string(&raw, 128)?;
-                Ok(hex(&account))
+                BudgetKey::account(account).map_err(|_| StationError::Invalid)
             }
             Err(error) => Err(error.into()),
         }
@@ -772,11 +777,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             json!([hex(&key.sponsor), "pending"]),
         )?;
         let rate = self.prices.governed_rate().map_err(StationError::Price)?;
-        let did = self.did(request.account).map_err(|_| {
-            StationError::Quote(QuoteError::Policy(
-                crate::policy::PolicyRefusal::BalanceFloor,
-            ))
-        })?;
+        let budget = self.budget_key(request.account);
         let batch_nonce = self.batch_nonce(request.account)?;
         if admission.is_some_and(|value| value.batch_nonce != batch_nonce) {
             return Err(StationError::Conflict);
@@ -796,18 +797,19 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         }
         let mut policy = self.station.policy.clone();
         let signed = policy
-            .quote_for_did(
+            .quote_for_budget(
                 request,
                 &rate,
                 fees,
                 &self.station.signer,
-                &did,
+                budget.as_ref(),
                 (quantity(&balance)?, now),
             )
             .map_err(StationError::Quote)?;
+        let budget = budget?;
         let record = Box::new(QuoteRecord {
             key,
-            did,
+            did: budget.as_str().to_owned(),
             batch_nonce,
             chain_id: self.station.config.chain_id,
             paymaster: self.station.config.paymaster,
@@ -897,7 +899,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         {
             return Err(StationError::Invalid);
         }
-        if batch_nonce != quote.batch_nonce || self.did(request.account)? != quote.did {
+        if batch_nonce != quote.batch_nonce
+            || self.budget_key(request.account)?.as_str() != quote.did
+        {
             return Err(StationError::Conflict);
         }
         let nonce = self.rpc.pending_nonce(&request.key.sponsor)?;
