@@ -470,6 +470,83 @@ fn transfer(
     });
 }
 
+fn budget_create_operation(
+    activity: &Activity,
+    counterparties: &mut Vec<Counterparty>,
+    amounts: &mut Vec<DisclosedAmount>,
+    asset: &mut [u8; 32],
+    expiry: &mut u64,
+) -> Result<DisclosedNativeOperation, DisclosureError> {
+    let value = budget(activity)?;
+    counterparties.extend([
+        Counterparty {
+            role: CounterpartyRole::Payer,
+            account: value.source_account,
+        },
+        Counterparty {
+            role: CounterpartyRole::Recipient,
+            account: value.budget_account,
+        },
+    ]);
+    amounts.extend([
+        DisclosedAmount {
+            role: AmountRole::Transfer,
+            value: value.initial_amount,
+        },
+        DisclosedAmount {
+            role: AmountRole::SpendingLimit,
+            value: value.per_period_limit,
+        },
+    ]);
+    *asset = value.asset;
+    *expiry = value.expiry_ms;
+    Ok(DisclosedNativeOperation::BudgetCreate(Box::new(value)))
+}
+
+fn budget_context_operation(
+    activity: &Activity,
+    ordinal: u16,
+    context: &BudgetStateContext,
+    counterparties: &mut Vec<Counterparty>,
+    amounts: &mut Vec<DisclosedAmount>,
+) -> Result<DisclosedNativeOperation, DisclosureError> {
+    match ordinal {
+        2 => {
+            let value = budget_fund(activity, context)?;
+            transfer(
+                counterparties,
+                amounts,
+                context.source_account,
+                context.budget_account,
+                value.amount,
+            );
+            Ok(DisclosedNativeOperation::BudgetFund(Box::new(value)))
+        }
+        8 => {
+            let value = budget_defund(activity, context)?;
+            transfer(
+                counterparties,
+                amounts,
+                context.budget_account,
+                context.source_account,
+                value.amount,
+            );
+            Ok(DisclosedNativeOperation::BudgetDefund(Box::new(value)))
+        }
+        _ => {
+            let value = budget_revoke(activity, context)?;
+            transfer(
+                counterparties,
+                amounts,
+                context.budget_account,
+                context.source_account,
+                context.balance,
+            );
+            Ok(DisclosedNativeOperation::BudgetRevoke(Box::new(value)))
+        }
+    }
+}
+
 pub(super) fn fields(
     activity: &Activity,
     context: Option<&BudgetStateContext>,
@@ -501,32 +578,13 @@ pub(super) fn fields(
                 .map_err(|_| DisclosureError::MalformedPayload)?,
         )),
         (ModuleId::Governance, 3) => DisclosedNativeOperation::RecoveryPolicy(recovery(activity)?),
-        (ModuleId::Budget, 1) => {
-            let value = budget(activity)?;
-            counterparties.extend([
-                Counterparty {
-                    role: CounterpartyRole::Payer,
-                    account: value.source_account,
-                },
-                Counterparty {
-                    role: CounterpartyRole::Recipient,
-                    account: value.budget_account,
-                },
-            ]);
-            amounts.extend([
-                DisclosedAmount {
-                    role: AmountRole::Transfer,
-                    value: value.initial_amount,
-                },
-                DisclosedAmount {
-                    role: AmountRole::SpendingLimit,
-                    value: value.per_period_limit,
-                },
-            ]);
-            asset = value.asset;
-            expiry = value.expiry_ms;
-            DisclosedNativeOperation::BudgetCreate(Box::new(value))
-        }
+        (ModuleId::Budget, 1) => budget_create_operation(
+            activity,
+            &mut counterparties,
+            &mut amounts,
+            &mut asset,
+            &mut expiry,
+        )?,
         (ModuleId::Budget, ordinal @ (2 | 8 | 9)) => {
             let Some(context) = context else {
                 return Err(DisclosureError::UnsupportedActivity(
@@ -534,41 +592,13 @@ pub(super) fn fields(
                 ));
             };
             asset = context.asset;
-            match ordinal {
-                2 => {
-                    let value = budget_fund(activity, context)?;
-                    transfer(
-                        &mut counterparties,
-                        &mut amounts,
-                        context.source_account,
-                        context.budget_account,
-                        value.amount,
-                    );
-                    DisclosedNativeOperation::BudgetFund(Box::new(value))
-                }
-                8 => {
-                    let value = budget_defund(activity, context)?;
-                    transfer(
-                        &mut counterparties,
-                        &mut amounts,
-                        context.budget_account,
-                        context.source_account,
-                        value.amount,
-                    );
-                    DisclosedNativeOperation::BudgetDefund(Box::new(value))
-                }
-                _ => {
-                    let value = budget_revoke(activity, context)?;
-                    transfer(
-                        &mut counterparties,
-                        &mut amounts,
-                        context.budget_account,
-                        context.source_account,
-                        context.balance,
-                    );
-                    DisclosedNativeOperation::BudgetRevoke(Box::new(value))
-                }
-            }
+            budget_context_operation(
+                activity,
+                ordinal,
+                context,
+                &mut counterparties,
+                &mut amounts,
+            )?
         }
         _ => {
             return Err(DisclosureError::UnsupportedActivity(

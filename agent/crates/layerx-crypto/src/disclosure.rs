@@ -1195,7 +1195,7 @@ impl Disclosure {
         canonical: &[u8],
         registry: &ModuleRegistry,
     ) -> Result<(), DisclosureError> {
-        let actual = bind_with(canonical, registry, self.budget_context)?;
+        let actual = bind_with(canonical, registry, self.budget_context.as_ref())?;
         macro_rules! require_field {
             ($field:ident) => {
                 if self.$field != actual.$field {
@@ -1250,7 +1250,7 @@ pub fn bind_budget_mutation(
     registry: &ModuleRegistry,
     context: &BudgetStateContext,
 ) -> Result<Disclosure, DisclosureError> {
-    let disclosure = bind_with(canonical, registry, Some(*context))?;
+    let disclosure = bind_with(canonical, registry, Some(context))?;
     match disclosure.native_operation {
         Some(
             DisclosedNativeOperation::BudgetFund(_)
@@ -1266,7 +1266,7 @@ pub fn bind_budget_mutation(
 fn bind_with(
     canonical: &[u8],
     registry: &ModuleRegistry,
-    budget_context: Option<BudgetStateContext>,
+    budget_context: Option<&BudgetStateContext>,
 ) -> Result<Disclosure, DisclosureError> {
     let activity = decode_unsigned(canonical, registry)?;
     if !ct::eq_fixed(&hash::payload_hash(&activity)?, &activity.payload_hash()) {
@@ -1276,7 +1276,7 @@ fn bind_with(
     if !ct::eq(&reencoded, canonical) {
         return Err(DisclosureError::FieldMismatch("canonical_bytes"));
     }
-    let fields = decoded_fields(&activity, budget_context.as_ref())?;
+    let fields = decoded_fields(&activity, budget_context)?;
     let message = SignatureMessage::new(
         hash::Domain::SignaturePreimage,
         activity.protocol_version(),
@@ -1303,7 +1303,7 @@ fn bind_with(
         payment: fields.payment,
         activity,
         signing_digest: message.digest(),
-        budget_context,
+        budget_context: budget_context.copied(),
     })
 }
 

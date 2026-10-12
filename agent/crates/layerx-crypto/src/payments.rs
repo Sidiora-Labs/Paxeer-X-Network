@@ -574,6 +574,10 @@ fn decode_grant(d: &mut Decoder<'_>) -> Result<Grant, DisclosureError> {
 }
 
 impl Grant {
+    /// # Errors
+    /// Returns `MalformedPayload` when a limit, the expiration, the recipient, the asset or
+    /// the purpose hash is zero, when the recurring flag disagrees with the window length,
+    /// and a `Wire` refusal when the grant fields cannot be encoded.
     pub fn signing_digest(&self) -> Result<Id, DisclosureError> {
         if self.per_draw_maximum == 0
             || self.allowance == 0
