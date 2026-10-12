@@ -103,6 +103,15 @@ impl Eip1559Call {
         self.assemble(&signature.to_bytes().into(), recovery.to_byte(), &address)
     }
 
+    /// Assembles the signed call from a signature produced elsewhere,
+    /// yielding the bytes `eth_sendRawTransaction` takes.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a recovery id other than 0 or 1, a signature whose scalars are
+    /// zero or not below the group order, a high-s signature, a signature that
+    /// recovers no key over this call's digest, and a recovered sender that is
+    /// not `expected_address`.
     pub fn assemble(
         &self,
         signature: &[u8; 64],
