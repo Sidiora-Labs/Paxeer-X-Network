@@ -117,6 +117,12 @@ printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster
 	"$receipt_keys" >"$dir/rate.json.new"
 mv "$dir/rate.json.new" "$dir/rate.json"
 chmod 0644 "$dir/rate.json"
+check=0
+/usr/local/bin/paxeer-gas-station check --config "$config" --rate-config "$dir/rate.json" || check=$?
+if [ "$check" -ne 0 ]; then
+	echo "gas-station-init: paxeer-gas-station check refused the configuration (exit $check)" >&2
+	exit "$check"
+fi
 chown -R 4020:4020 "$dir"
 env -u "$GAS_STATION_RATE_OWNER_KEY_ENV" setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs \
 	/usr/local/bin/paxeer-gas-station --config "$config" --journal "$dir/sponsorship.jsonl" &
