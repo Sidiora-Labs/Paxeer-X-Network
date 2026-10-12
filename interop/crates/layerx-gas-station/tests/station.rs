@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
@@ -143,12 +144,33 @@ fn config() -> StationConfig {
         relayer_key_env: "PAXEER_STATION_TEST_KEY".into(),
     }
 }
-fn install_ephemeral_signer(config: &StationConfig) -> Result<LocalSigner, SignerError> {
+/// Serializes the process-wide environment the shared EVM sender loader reads.
+static SIGNER_ENVIRONMENT: Mutex<()> = Mutex::new(());
+/// Writes a fresh key to a private file, names it through
+/// `<relayer_key_env>_KEY_FILE` and loads the relayer through
+/// `LocalSigner::from_config`, the production loader path.
+fn install_ephemeral_signer(
+    config: &StationConfig,
+) -> Result<LocalSigner, Box<dyn std::error::Error>> {
     let key = SigningKey::random(&mut OsRng);
-    std::env::set_var(&config.relayer_key_env, hex(&key.to_bytes()));
-    let signer = LocalSigner::from_config(config);
-    std::env::remove_var(&config.relayer_key_env);
-    signer
+    let path = std::env::temp_dir().join(format!(
+        "paxeer-station-{}-{}.key",
+        std::process::id(),
+        &hex(&keccak(&key.to_bytes()))[2..18]
+    ));
+    std::fs::write(&path, hex(&key.to_bytes()))?;
+    let variable = format!("{}_KEY_FILE", config.relayer_key_env);
+    let signer = {
+        let _environment = SIGNER_ENVIRONMENT
+            .lock()
+            .map_err(|_| "signer environment lock poisoned")?;
+        std::env::set_var(&variable, &path);
+        let signer = LocalSigner::from_config(config);
+        std::env::remove_var(&variable);
+        signer
+    };
+    std::fs::remove_file(&path)?;
+    Ok(signer?)
 }
 const PAYMASTER_CODE: &str = "0x6080604052";
 fn finalized_anchor() -> Value {
