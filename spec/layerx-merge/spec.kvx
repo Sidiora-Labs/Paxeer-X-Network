@@ -526,6 +526,11 @@ title = "Vendor-native quotes in the exchange interface"
 ruling = "Acceptance 6.13.1-6.13.3 stand. Resolution 13.206 is narrowed: vendor-native TDX, SEV-SNP, SGX and NVIDIA H100 quotes are delivered by the task 6.7.1 widening, which verifies them through the vendor verifiers of task 0.154 against the governance-set roots, and the PXVE v1 dev envelope stays accepted beside them."
 rationale = "Keep the acceptance criteria and deliver the work: the earlier scope limit rested only on the absence of vendor verification libraries, which task 0.154 supplies, while req 6013 and acceptance 6.13.1-6.13.3 require native VCEK, PCK and SGX chain checks."
 
+[decision.88]
+title = "Malformed snapshot ring refusal in launchpad price history"
+ruling = "Task 3.2.10 do_2 admits a third refusal: a stored market whose snapshot ring is shorter than SnapshotSlots or whose SnapshotIndex lies outside the ring is refused with ErrInvalidMarket. The preserved malformed-ring assertions in modules/launchpad/keeper/history_test.go stand unchanged."
+rationale = "A ring that cannot be read is a state integrity fault, not a caller input fault; refusing it keeps the read path honest and keeps the existing test intact instead of narrowing the keeper to the two caller refusals the task line named."
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -11014,7 +11019,7 @@ requires = ["3.2.11", "3.2.13"]
 reqs = ["2.3", "2.7", "3022.3", "3023.2", "3023.3"]
 capabilities = ["3.6.1"]
 do_1 = "Add PricePoint{Height uint64, Price sdk.Int} and PriceHistory(ctx, token, fromHeight, toHeight) ([]PricePoint, error) to modules/launchpad/keeper/history.go beside the holding-history code (modules/launchpad/keeper/history.go:18); it reads Market.PriceSnapshots and the SnapshotHeights recorded by 3.2.11 and returns, oldest first in ring order (SnapshotSlots 8, modules/launchpad/types/math.go:17), every slot whose height is in [fromHeight, toHeight]; slots with height 0 hold no recorded swap and are skipped."
-do_2 = "Refuse an unknown token through mustMarket (modules/launchpad/keeper/keeper.go:136) with ErrUnknownMarket and fromHeight greater than toHeight with ErrInvalidRange (modules/launchpad/types/errors.go:40); no other refusal."
+do_2 = "Refuse an unknown token through mustMarket (modules/launchpad/keeper/keeper.go:136) with ErrUnknownMarket and fromHeight greater than toHeight with ErrInvalidRange (modules/launchpad/types/errors.go:40); a stored market whose snapshot ring is shorter than SnapshotSlots or whose SnapshotIndex lies outside the ring is refused with ErrInvalidMarket, as the preserved malformed-ring assertions in history_test.go require; no other refusal."
 do_3 = "PriceHistory only reads; Swap writes snapshots and heights (3.2.11)."
 do_4 = "Keep OpenHoldingHistory and EpochBalance (modules/launchpad/keeper/history.go:83-105, :155) unchanged."
 do_5 = "Extend modules/launchpad/keeper/history_test.go (TestAirdropHoldingHistory at :79 stays) with TestPriceHistoryRange (ten swaps at heights 10 to 19, PriceHistory(token, 14, 19) returns the six points at heights 14 to 19 with the swap prices) and TestPriceHistoryRefusals (LXP_LAUNCHPAD_UNKNOWN_MARKET, LXP_LAUNCHPAD_INVALID_RANGE)."
@@ -25756,7 +25761,7 @@ do_4 = "Clear the 32 clippy diagnostics in agent/crates/layerx-agent-api/src/ide
 do_5 = "The six layerx-client sources that import layerx_types::verify::VerificationLevel (client.rs, evidence/asset_record.rs, evidence/caps.rs, evidence.rs, read.rs, ai_market.rs) move to layerx_types::rung::Rung with the same mapping task 0.58 states, so the agent-api build graph compiles; task 0.58 keeps those files as migrated and does not re-edit them."
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["Rung", "Level", "VerificationLevel"]
-touches = ["agent/crates/layerx-agent-api/src/error.rs", "agent/crates/layerx-agent-api/src/lib.rs", "agent/crates/layerx-agent-api/src/read.rs", "agent/crates/layerx-agent-api/src/stream.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agent-api/tests/errors.rs", "agent/crates/layerx-agent-api/tests/read.rs", "agent/crates/layerx-types/src/verify.rs", "agent/crates/layerx-types/tests/verification.rs", "agent/crates/layerx-proof/src/level.rs", "agent/crates/layerx-proof/src/checkpoint.rs", "agent/crates/layerx-proof/src/evidence.rs", "agent/crates/layerx-proof/src/export.rs", "agent/crates/layerx-proof/src/inclusion.rs", "agent/crates/layerx-proof/src/receipt.rs", "agent/crates/layerx-proof/tests/checkpoint.rs", "agent/crates/layerx-proof/tests/export_complete.rs", "agent/crates/layerx-proof/tests/inclusion.rs", "agent/crates/layerx-proof/tests/native_owner_outcome.rs", "agent/crates/layerx-proof/tests/native_terminal_outcome.rs", "agent/crates/layerx-proof/tests/receipt.rs", "agent/crates/layerx-proof/examples/offline_export.rs", "agent/crates/layerx-proof/examples/offline_verify.rs", "agent/crates/layerx-client/src/client.rs", "agent/crates/layerx-client/src/evidence/asset_record.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/read.rs", "agent/crates/layerx-client/src/ai_market.rs"]
+touches = ["agent/crates/layerx-agent-api/src/error.rs", "agent/crates/layerx-agent-api/src/lib.rs", "agent/crates/layerx-agent-api/src/read.rs", "agent/crates/layerx-agent-api/src/stream.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agent-api/tests/errors.rs", "agent/crates/layerx-agent-api/tests/read.rs", "agent/crates/layerx-types/src/verify.rs", "agent/crates/layerx-types/tests/verification.rs", "agent/crates/layerx-proof/src/level.rs", "agent/crates/layerx-proof/src/checkpoint.rs", "agent/crates/layerx-proof/src/evidence.rs", "agent/crates/layerx-proof/src/export.rs", "agent/crates/layerx-proof/src/inclusion.rs", "agent/crates/layerx-proof/src/receipt.rs", "agent/crates/layerx-proof/tests/checkpoint.rs", "agent/crates/layerx-proof/tests/export_complete.rs", "agent/crates/layerx-proof/tests/inclusion.rs", "agent/crates/layerx-proof/tests/native_owner_outcome.rs", "agent/crates/layerx-proof/tests/native_terminal_outcome.rs", "agent/crates/layerx-proof/tests/receipt.rs", "agent/crates/layerx-proof/examples/offline_export.rs", "agent/crates/layerx-proof/examples/offline_verify.rs", "agent/crates/layerx-client/src/client.rs", "agent/crates/layerx-client/src/evidence/asset_record.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/read.rs", "agent/crates/layerx-client/src/ai_market.rs", "agent/crates/layerx-client/src/evidence/module_state.rs"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agent-api -p layerx-types -p layerx-proof --tests --examples"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test verification"
 gate_kind = "existing"
@@ -30734,7 +30739,7 @@ title = "Faucet funds through bank send and px_requestFunds"
 status = "in_progress"
 mode = "BUILD"
 wave = 5
-requires = ["7.0.8", "0.3", "0.114"]
+requires = ["7.0.8", "0.3", "0.114", "0.140"]
 reqs = ["7004.1", "7004.2", "7004.3", "7004.4"]
 capabilities = ["7.2.3"]
 do_1 = "Fund each claim in fund (platform/hosted/faucet/src/main.rs:903) as an EVM bank send transaction (precompiles/bank/bank.go:22) signed by EvmSender, with gas sponsored, and record funded only on pax_sequencerReceipt receipted."
@@ -41019,7 +41024,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.65]
 title = "Consensus sequencer source: public adapter and the transaction-0 sequence batch"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["9.0.17", "13.1.1", "0.71", "0.72"]
@@ -41033,7 +41038,7 @@ do_5 = "The adapter reuses SealBatch and BatchFields from task 0.72 for the seal
 do_6 = "Add node/sequencer/consensus_source_test.go: TestConsensusSourceTxZeroBatch (12 receipted transactions seq 31-42 give tx 0 MsgSequenceBatch{fromSeq 31, toSeq 42} that DecodeSequenceBatch reads and VerifySignature accepts, txs 1-12 the WAL bytes in seq order), TestConsensusSourceOpenTime (header time equals the L_open time), TestConsensusSourceRoutesFees (collected fee tokens are routed at Seal as endOfBlock routes them), TestConsensusSourceBelowActivation (Sequenced false below the activation height); add TestNodeInstallsSequencerSource to consensus/node/node_test.go."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["SequencerSource", "SealedBlock", "SetSequencerSource", "InjectSequenceBatch", "EncodeSequenceBatch", "SequencedTxRoot", "MsgSequenceBatch", "ConsensusSource", "endOfBlock"]
-touches = ["consensus/types/sequencer.go", "consensus/internal/state/execution.go", "consensus/node/node.go", "consensus/node/node_test.go", "node/app.go", "node/sequencer/seal.go", "node/sequencer/executor.go", "node/sequencer/consensus_source.go", "node/sequencer/consensus_source_test.go"]
+touches = ["consensus/types/sequencer.go", "consensus/internal/state/execution.go", "consensus/node/node.go", "consensus/node/node_test.go", "node/app.go", "node/sequencer/seal.go", "node/sequencer/executor.go", "node/sequencer/consensus_source.go", "node/sequencer/consensus_source_test.go", "consensus/node/public.go"]
 build_cmd = "go build ./consensus/... ./node/..."
 verify_cmd = "go test -count=1 ./node/sequencer/ ./consensus/node/ -run 'TestConsensusSource|TestNodeInstallsSequencerSource'"
 gate_kind = "planned"
@@ -42872,7 +42877,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.145]
 title = "Bridge cosign transport acknowledges delivered shares"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.138"]
@@ -52897,7 +52902,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.32]
 title = "layerxctl read-state and submit move to EVM reads and transactions"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.114"]

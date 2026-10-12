@@ -212,11 +212,11 @@ log_path = "logs/3.2.9-verify-1.log"
 observed_and_assumption = "verify passed (122 passed, 0 failed)."
 
 [finding.3.2.10]
-revision = "efafedbe8"
+revision = "31b67d765"
 command = "go test -count=1 -run History ./modules/launchpad/keeper/"
 exit_code = 1
 log_path = "logs/3.2.10-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; acceptance.3.23.2 / req.2 ac_7: PriceSnapshots stores prices without block heights, and Swap records none; both are outside touches. Empty and unrestricted ring reads are implemented; bounded queries explicitly refuse without inferred heights. acceptance.3.23.3: types.ErrInvalidRange and canonical LXP_LAUNCHPAD error text are absent from types/errors.go, owned by task 3.2.13. Build and verify stop at history.go:20; go vet also exited 1 (logs/3.2.10-vet-1.log)."
+observed_and_assumption = "verify failed (21 passed, 4 failed). Gaps: 3023.3 qualification conflicts with four preserved malformed-ring assertions requiring ErrInvalidMarket, which do_2 forbids."
 
 [finding.3.2.11]
 revision = "c53f23753"
@@ -524,7 +524,7 @@ revision = "a477f4728"
 command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test read"
 exit_code = 0
 log_path = "logs/6.5.12-verify-1.log"
-observed_and_assumption = "the gate passes and the task is landed; package clippy reports 32 pre-existing errors in identity.rs and read.rs outside touches."
+observed_and_assumption = "the gate passes and the task is landed; package clippy reports 32 existing errors in identity.rs and read.rs outside touches."
 
 [finding.9.0.4]
 revision = "2ed7c7ffc"
@@ -646,11 +646,11 @@ log_path = "logs/6.5.11-verify-1.log"
 observed_and_assumption = "verify passed (17 passed, 0 failed). Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --all-targets --no-deps | exit 101 | logs/6.5.11-lint-3.log | 32 existing errors in agent/crates/layerx-agent-api/src/identity.rs and src/read.rs; no owned-file diagnostics, test-target lint not reached"
 
 [finding.6.5.13]
-revision = "da8e8a946"
+revision = "1156383ff"
 command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test verification"
 exit_code = 101
 log_path = "logs/6.5.13-verify-1.log"
-observed_and_assumption = "verify passed (0 passed, 0 failed; compilation blocked, second command not reached). Gaps: clients.md(c) Committed proof production has no interface in the scoped legacy artifact for Comet commits, validator sets, or execution-result proofs; legacy verifiers therefore report at most Receipted. Unrelated: prior layerx-types/src/program_lifecycle.rs lint belongs to task 0.113; file untouched and no diagnostics there in this lint run."
+observed_and_assumption = "build failed; verify not reached (0 passed, 0 failed; compilation blocked, second command not reached). Gaps: do_4 lint clearance remains unqualified; dependency diagnostics stop Clippy before agent-api. Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api -p layerx-types -p layerx-proof --all-targets | exit 101 | logs/6.5.13-lint-1.log | 13 diagnostics in unowned layerx-proof/src/export_codec.rs:1056 and src/state_range.rs; no lints suppressed."
 
 [finding.6.5.16]
 revision = "2267fbfe5"
@@ -797,7 +797,7 @@ revision = "64c6296b1"
 command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test artifact_binding"
 exit_code = 0
 log_path = "logs/4.3.3-verify-1.log"
-observed_and_assumption = "the gate passes and the task is landed; evidence.rs already stored only the seal record so only the test file changed, the 4037.2 and 4037.3 tests live in artifact_contract.rs and the ai-artifacts retention test outside touches, and cargo clippy on any programs crate stops at 17 pre-existing lint errors in the layerx-program-sdk build script."
+observed_and_assumption = "the gate passes and the task is landed; evidence.rs already stored only the seal record so only the test file changed, the 4037.2 and 4037.3 tests live in artifact_contract.rs and the ai-artifacts retention test outside touches, and cargo clippy on any programs crate stops at 17 existing lint errors in the layerx-program-sdk build script."
 
 [finding.10.5.18]
 revision = "ae289bd96"
@@ -825,7 +825,7 @@ revision = "011d6704b"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test receipt_keys maintained_hash_batch_id_verifies_with_single_and_two_key_lists"
 exit_code = 0
 log_path = "logs/0.20-verify-1.log"
-observed_and_assumption = "the gate passes and the task is landed; AuthorityFacts carries a crate-private authenticated batch number set by MaintainedBatchDocument::authorize_with_keys from the signed header, the height-encoded path is unchanged, and workspace clippy stops at eight pre-existing errors in layerx-platform-internal; gateway tests need a redis-server binary that is not on the build host PATH."
+observed_and_assumption = "the gate passes and the task is landed; AuthorityFacts carries a crate-private authenticated batch number set by MaintainedBatchDocument::authorize_with_keys from the signed header, the height-encoded path is unchanged, and workspace clippy stops at eight existing errors in layerx-platform-internal; gateway tests need a redis-server binary that is not on the build host PATH."
 
 [finding.10.5.16]
 revision = "0c0f18c6b"
@@ -919,11 +919,11 @@ log_path = "logs/8.5.28-verify-1.log"
 observed_and_assumption = "held in progress at the reported revision (build exit 101); gaps: 8046.2: Added bounded gas-station quote operation and refusal tests; NativePlan::sponsor_key and sponsor() remain because production_onboarding.rs still uses the legacy sponsor path outside touches. Keyless first-transaction submission and a real station integration fixture remain absent.; 8046.3: bootstrap_intent still uses DID-based NativeOwnerBootstrap; the bound-address EVM bootstrap and binding-evidence interfa; unrelated: human/Cargo.lock requires an update; locked build, verification and Clippy stop before compilation. Clippy exit 101, log logs/8.5.28-lint-1.log."
 
 [finding.8.5.37]
-revision = "517afb5a0"
-command = "cd explorer/backend && mix test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_signature_controller_test.exs"
-exit_code = 127
+revision = "843d13e00"
+command = "explorer/deploy/tools/mix-in-builder.sh test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_signature_controller_test.exs"
+exit_code = 2
 log_path = "logs/8.5.37-verify-1.log"
-observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8072.1 ReceiptController deletion requires explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex, outside touches; its routes are removed.; 8072.2 Fetcher retirement requires explorer/backend/apps/indexer/lib/indexer/application.ex and lib/indexer/fetcher/paxeer_x_kernel_receipts.ex, outside touches.; 8072.3 and 10.2 Transaction-page signature rendering and replac; unrelated: mix is unavailable; formatter, compile and verify each exited 127 before execution; formatter log logs/8.5.37-format-1.log."
+observed_and_assumption = "verify failed (13 passed, 2 failed). Gaps: 10.4/R6: V3-seq-hash-mismatch requires its external prevSeqHash pin; no predecessor-read interface supplies that pin to the API, so the retained R6 refusal assertion receives 200. Unrelated: compile warning at explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/anchor_controller.ex:51: Explorer.Chain.PaxeerX.UnifiedAccount.anchors/3 is undefined or private; outside touches."
 
 [finding.8.5.41]
 revision = "fca0b2144"
@@ -1119,7 +1119,7 @@ revision = "7a1a658df"
 command = "node agent/sdk/typescript/dist/test/binding-preflight.test.js && cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_binding_preflight.py"
 exit_code = 0
 log_path = "logs/0.91-verify-3.log"
-observed_and_assumption = "the declared build and verify gates pass and the task is landed; tests/agent/sdk/python/test_ai_market.py keeps eleven pre-existing failures (schema constants, fixture reproduction, approval and journal cases built on 32-byte ed25519 keys while Review.approve requires a 33-byte secp256k1 key), which the Python AI market task 10.5.24 owns"
+observed_and_assumption = "the declared build and verify gates pass and the task is landed; tests/agent/sdk/python/test_ai_market.py keeps eleven existing failures (schema constants, fixture reproduction, approval and journal cases built on 32-byte ed25519 keys while Review.approve requires a 33-byte secp256k1 key), which the Python AI market task 10.5.24 owns"
 
 [finding.6.2.2]
 revision = "ad510818a"
@@ -2037,3 +2037,66 @@ command = "make test-service-attest"
 exit_code = 0
 log_path = "logs/13.3.2-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: none (do_1/do_4 code at src/modules/service/lx_service_module.c:203-208 already compares payload activityId to lxp_ctx_idempotency_key and returns LXP_ERR_INVALID_ATTESTATION, landed by 6.2.12; module file unchanged)"
+
+[finding.0.145]
+revision = "f42e8300f"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-bridge-relayer --test cosign_transport"
+exit_code = 0
+log_path = "logs/0.145-verify-2.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed)."
+
+[finding.0.65]
+revision = "fa50f3112"
+command = "go test -count=1 ./node/sequencer/ ./consensus/node/ -run 'TestConsensusSource"
+exit_code = 0
+log_path = "logs/0.65-verify-2.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed)."
+
+[finding.10.5.32]
+revision = "5a367799e"
+command = "cargo test --locked --manifest-path cmd/layerxctl/Cargo.toml --test files"
+exit_code = 0
+log_path = "logs/10.5.32-verify-1.log"
+observed_and_assumption = "verify passed (12 passed, 0 failed). Gaps: clients submitted-rung definition: permitted dependencies expose no raw transaction hash helper; an interrupted send cannot report a locally derived transaction hash."
+
+[finding.7.5.3]
+revision = "31bdd91c6"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway ws::"
+exit_code = 101
+log_path = "logs/7.5.3-verify-1.log"
+observed_and_assumption = "build failed; verify not reached (0 passed, 0 failed; tests not started). Gaps: 7005.3: HTTP lx_subscribe/lx_unsubscribe still return -32004 in platform/hosted/gateway/src/rpc.rs:404; HTTP eth_subscribe says Subscriptions are not relayed in platform/hosted/gateway/src/paxeer.rs:172. Both files are outside touches. Unrelated: E0599 at platform/hosted/internal/src/evm_sender.rs:191: Eip1559Call::assemble is missing; build and verify cannot reach gateway compilation. Clippy also exited 101 before owned-file linting; logs/7.5.3-lint-1.log."
+
+[finding.7.5.7]
+revision = "8a77d2fba"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway rpc_faucet"
+exit_code = 101
+log_path = "logs/7.5.7-verify-1.log"
+observed_and_assumption = "build failed; verify not reached (0 passed, 0 failed; compilation failed before tests). Gaps: 7004.4 CLI request and cli_uses_px_request_funds assertion updated; the declared gateway verify command excludes CLI tests. Unrelated: cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway -p layerx-platform-cli --all-targets | exit 101 | logs/7.5.7-lint-1.log; 17 existing Programs SDK bindgen errors also cause platform/emulator/build.rs to fail."
+
+[finding.10.5.38]
+revision = "38f8c0941"
+command = "npm --prefix agent/sdk/typescript run build && node agent/sdk/typescript/dist/test/intent.test.js"
+exit_code = 127
+log_path = "logs/10.5.38-verify-1.log"
+observed_and_assumption = "build and verify failed on a missing tsc binary (0 passed, 0 failed; tests not reached). Gaps: do_1-do_5: without that interface, signed intent submission, txHash/submitted responses and submitted-transaction revert handling cannot be connected to the real plan path; missing-interface stop condition triggered before edits. Unrelated: required fleet-commit helper exit 1 because no owned changes were staged; HEAD unchanged. NOADD=1 excluded prior dependency symlinks. Log: logs/10.5.38-commit.log"
+
+[finding.11.5.138]
+revision = "38f8c0941"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --component lni --component handover-client --component wire-codec --path platform/hosted/authority/src/human/budget_state.rs --path platform/hosted/authority/src/human/dynamic.rs --path platform/hosted/authority/src/lib.rs"
+exit_code = 1
+log_path = "logs/11.5.138-verify-1.log"
+observed_and_assumption = "verify failed (0 passed, 1 failed (scan gate; 17 retired references; no behavioral tests run)). Gaps: 11030.4: dynamic.rs:11 retains layerx_wire::activity; replacing the import alone would fabricate compatibility between different operation contracts. Unrelated: fleet-commit helper exited 1 because no scoped changes existed; NOADD=1 preserved prior untracked dependency links. No commit created; logs/11.5.138-commit.log."
+
+[finding.11.5.139]
+revision = "3a3cde89a"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --component paxeer-verifier --component handover-client --path platform/hosted/authority/src/main.rs --path platform/hosted/authority/src/trust.rs"
+exit_code = 1
+log_path = "logs/11.5.139-verify-1.log"
+observed_and_assumption = "verify failed (0 passed, 88 failed reference checks). Gaps: 11023.4: three handover-reference findings retained because unchanged budget consumers require the existing history/checkpoint interfaces. Unrelated: fleet-commit helper exited 1 because there were no owned changes to commit; NOADD=1 preserved prior dependency links; logs/11.5.139-commit-1.log"
+
+[finding.13.5.1]
+revision = "3a3cde89a"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test resolution_relay"
+exit_code = "not-run"
+log_path = "logs/13.5.1-verify-1.log"
+observed_and_assumption = "gates not run; the worker stopped at a missing required interface before any edit (0 passed, 0 failed (not run)). Gaps: acceptance.13.3.1: pending-tag routing remains unimplemented at the required-interface stop; Config currently contains only the generic Paxeer endpoint pool. Unrelated: fleet-commit.sh with NOADD=1 exited 1 because no task changes were staged; logs/13.5.1-commit-1.log. Existing dependency links were preserved; no commit was created."
