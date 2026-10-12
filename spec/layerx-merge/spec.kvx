@@ -42186,7 +42186,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.122]
 title = "make build writes the checkpoint settlement header without the retired finality policy field"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["11.5.63"]
