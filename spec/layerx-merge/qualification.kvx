@@ -1656,3 +1656,10 @@ command = "go test -count=1 -v ./modules/layerxagent/keeper/"
 exit_code = 0
 log_path = "logs/6.2.8-verify-2.log"
 observed_and_assumption = "verify passed (5 passed, 0 failed (first run also 5/0: 6.2.8-verify-1.log)). Gaps: the callData size cap is not checked in Keeper.Schedule; it is left to the 0x0905 precompile (6.2.5 do_1)"
+
+[finding.0.114]
+revision = "caa3950d9"
+command = "<verify_cmd as in task block>"
+exit_code = 101
+log_path = "logs/0.114-verify-1.log"
+observed_and_assumption = "verify passed (platform, human, interop passed; programs failed (serde_json pin conflict); cmd/layerxctl not reached by the && chain (passes standalone, see build log)). Gaps: programs/Cargo.lock cannot resolve: programs/crates/layerx-programs-arbiter/Cargo.toml depends on agent/crates/layerx-client (serde_json = '=1.0.149') while programs/crates/layerx-programs-arbiter/Cargo.toml, programs/sdk/rust/Cargo.toml and programs/sdk/rust/lint/Cargo.toml pin serde_json = '=1.0.151'; needs the separate pin-unification task. platform/Cargo.lock already resolved under --locked on this base and was left unchanged."
