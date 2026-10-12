@@ -1,5 +1,6 @@
 //! Oracle feeder for the kernel perps markets: median of public REST quotes,
-//! signed oracle observations, LNI submission and an on-disk journal.
+//! signed oracle observations pushed to layerxexchange `pushOracle` as EVM
+//! transactions, and an on-disk journal.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,10 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use ed25519_dalek::{Signer, SigningKey};
-use layerx_client::lni::handshake::{perform, HandshakeConfig};
-use layerx_client::lni::schema::Version;
-use layerx_client::lni::transport::{ConnectionGate, Limits, Uds};
-use layerx_client::submit::{submit_signed, Submission, SubmissionContext};
+use layerx_platform_internal::evm_sender::{Eip1559Call, EvmSender};
 use layerx_types::activity::{Authority, EnvelopeBuilder, Signature, TimestampBound};
 use layerx_types::amount::Amount;
 use layerx_types::ids::{Did, IdempotencyKey};
@@ -22,7 +20,7 @@ use layerx_wire::activity::encode_signed_envelope;
 use layerx_wire::hash::{payload_hash_for, Domain};
 use layerx_wire::sign::preimage_unsigned;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
@@ -54,7 +52,27 @@ pub const TRANSPORT_VERSION: u8 = 1;
 pub const PROTOCOL_VERSION_STATE_COMMITMENT: u16 = 3;
 const OBSERVATION_TAG: &[u8] = b"LXP:ORACLE:OBSERVATION:v1";
 const MAX_VALIDITY_MS: u64 = 300_000;
-const FRAME_BYTES: usize = 1_212_416;
+/// Environment prefix of the shared EVM sender loader: the feeder reads
+/// `LAYERX_FEEDER_EVM_SENDER_KEY_FILE` or `LAYERX_FEEDER_EVM_SENDER_KMS_KEY_ID`.
+pub const EVM_SENDER_PREFIX: &str = "LAYERX_FEEDER_EVM_SENDER";
+/// layerxexchange precompile.
+pub const LAYERX_EXCHANGE: [u8; 20] = precompile(0x10, 0x15);
+/// addr precompile.
+pub const ADDR_PRECOMPILE: [u8; 20] = precompile(0x10, 0x04);
+/// `pushOracle(bytes,bytes)`.
+pub const PUSH_ORACLE_SELECTOR: [u8; 4] = [0x0e, 0x4d, 0x93, 0x82];
+/// `getEvmAddrByLayerX(bytes32)`.
+pub const GET_EVM_ADDR_BY_LAYERX_SELECTOR: [u8; 4] = [0xc4, 0x13, 0xba, 0xd3];
+/// Readiness lasts this many cadences after the last accepted round.
+pub const HEALTH_WINDOW_CADENCES: u64 = 3;
+const RECEIPT_POLL: Duration = Duration::from_millis(50);
+
+const fn precompile(high: u8, low: u8) -> [u8; 20] {
+    let mut address = [0; 20];
+    address[18] = high;
+    address[19] = low;
+    address
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct MarketConfig {
@@ -83,7 +101,6 @@ pub struct Config {
     pub network_id: u32,
     pub protocol_version: u16,
     pub actor_did: String,
-    pub lni_socket: PathBuf,
     pub fee_limit: String,
     pub cadence_ms: u64,
     pub validity_ms: u64,
@@ -153,7 +170,7 @@ pub fn market_id(text: &str) -> Result<[u8; 32], String> {
 /// # Errors
 /// Refuses odd length or non-hex characters.
 pub fn hex_decode(text: &str) -> Result<Vec<u8>, String> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return Err("odd hex length".to_owned());
     }
     (0..text.len())
@@ -275,7 +292,7 @@ pub fn median(prices: &[u128]) -> Option<u128> {
         _ if n % 2 == 1 => Some(sorted[n / 2]),
         _ => {
             let (a, b) = (sorted[n / 2 - 1], sorted[n / 2]);
-            Some(a / 2 + b / 2 + (a % 2 + b % 2) / 2)
+            Some(a.midpoint(b))
         }
     }
 }
@@ -606,68 +623,274 @@ pub fn fetch_quote(
     parse_quote(source, pair, &body, now_ms, decimals)
 }
 
-/// Submits signed bytes over a fresh LNI connection. `Ok(true)` means the core
-/// acknowledged admission; `Ok(false)` means the outcome is unknown.
+/// Whether the feeder is ready: a round was accepted no longer than
+/// [`HEALTH_WINDOW_CADENCES`] cadences ago. `last_accepted_ms` 0 means never.
+#[must_use]
+pub fn ready(last_accepted_ms: u64, now_ms: u64, cadence_ms: u64) -> bool {
+    last_accepted_ms != 0
+        && now_ms.saturating_sub(last_accepted_ms)
+            <= cadence_ms.saturating_mul(HEALTH_WINDOW_CADENCES)
+}
+
+fn abi_word(value: usize) -> [u8; 32] {
+    let mut word = [0; 32];
+    word[32 - std::mem::size_of::<usize>()..].copy_from_slice(&value.to_be_bytes());
+    word
+}
+
+fn abi_bytes(bytes: &[u8], out: &mut Vec<u8>) {
+    out.extend_from_slice(&abi_word(bytes.len()));
+    out.extend_from_slice(bytes);
+    out.resize(out.len() + (32 - bytes.len() % 32) % 32, 0);
+}
+
+/// layerxexchange `pushOracle(bytes observation, bytes signature)` calldata:
+/// the 72-byte observation and its 64-byte oracle-key signature.
 ///
 /// # Errors
-/// Refuses connection, handshake or core admission failures.
-pub fn submit(
-    config: &Config,
-    registry: &ModuleRegistry,
-    key: &SigningKey,
-    signed: &[u8],
-    correlation_id: u64,
-) -> Result<bool, String> {
-    let limits = Limits {
-        maximum_frame_bytes: FRAME_BYTES,
-        maximum_connections: 1,
-        maximum_streams: 1,
-        maximum_queued_bytes: FRAME_BYTES,
-        deadline: Duration::from_millis(config.cadence_ms.max(1000)),
-    };
-    let mut transport = Uds::connect(&config.lni_socket, &ConnectionGate::new(1), limits)
-        .map_err(|e| format!("LNI unavailable: {e:?}"))?;
-    let handshake = perform(
-        &mut transport,
-        &HandshakeConfig {
-            built_interface_version: Version::V1_4,
-            expected_protocol_version: config.protocol_version,
-            expected_network_id: config.network_id,
-        },
-        None,
-    )
-    .map_err(|e| format!("LNI handshake: {e:?}"))?;
-    let context = SubmissionContext {
-        interface_version: handshake.node().interface_version,
-        protocol_version: config.protocol_version,
-        network_id: config.network_id,
-        correlation_id,
-        signer_public_key: key.verifying_key().to_bytes(),
-        attempt: 1,
-    };
-    match submit_signed(&mut transport, registry, context, signed)
-        .map_err(|e| format!("submit: {e:?}"))?
-    {
-        Submission::Acknowledged(_) => Ok(true),
-        Submission::Unknown(_) => Ok(false),
+/// Refuses a non-canonical observation.
+pub fn push_oracle(observation: &Observation, key: &SigningKey) -> Result<Vec<u8>, String> {
+    let transport = observation.transport(key)?;
+    let (observation, signature) = transport[1..].split_at(OBSERVATION_BYTES);
+    let mut data = Vec::with_capacity(292);
+    data.extend_from_slice(&PUSH_ORACLE_SELECTOR);
+    data.extend_from_slice(&abi_word(0x40));
+    data.extend_from_slice(&abi_word(0x40 + 32 + observation.len().div_ceil(32) * 32));
+    abi_bytes(observation, &mut data);
+    abi_bytes(signature, &mut data);
+    Ok(data)
+}
+
+/// Decodes an ABI `address` return word.
+///
+/// # Errors
+/// Refuses anything other than 32 bytes with 12 leading zero bytes.
+pub fn address_word(text: &str) -> Result<[u8; 20], String> {
+    let word = hex_decode(text.strip_prefix("0x").unwrap_or(text))?;
+    if word.len() != 32 || word[..12].iter().any(|byte| *byte != 0) {
+        return Err("malformed address word".to_owned());
+    }
+    word[12..]
+        .try_into()
+        .map_err(|_| "malformed address word".to_owned())
+}
+
+/// Refuses an EVM sender other than the 0x1004-bound address of the oracle key.
+///
+/// # Errors
+/// Names both addresses when they differ.
+pub fn require_bound_sender(bound: [u8; 20], sender: [u8; 20]) -> Result<(), String> {
+    if bound == sender {
+        Ok(())
+    } else {
+        Err(format!(
+            "EVM sender 0x{} is not 0x{}, the 0x1004-bound address of the oracle key",
+            hex_encode(&sender),
+            hex_encode(&bound)
+        ))
     }
 }
 
-/// Runs one feed round over every market. Returns the markets submitted.
+/// Reads a `pax_sequencerReceipt` answer: `Ok(true)` once receipted (or
+/// committed) with status 1, `Ok(false)` while unknown or only submitted.
+///
+/// # Errors
+/// Refuses a reverted push and an unknown rung.
+pub fn receipt_accepted(answer: &Value) -> Result<bool, String> {
+    if answer.is_null() {
+        return Ok(false);
+    }
+    match answer.get("rung").and_then(Value::as_str) {
+        Some("submitted") => Ok(false),
+        Some("receipted" | "committed") => match answer.get("status").and_then(Value::as_str) {
+            Some("0x1") => Ok(true),
+            Some("0x0") => Err(format!(
+                "pushOracle reverted: {}",
+                answer
+                    .get("returnData")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            )),
+            _ => Err("receipt without a status".to_owned()),
+        },
+        _ => Err("receipt with an unknown rung".to_owned()),
+    }
+}
+
+fn quantity(value: &Value) -> Result<u128, String> {
+    value
+        .as_str()
+        .and_then(|text| text.strip_prefix("0x"))
+        .and_then(|text| u128::from_str_radix(text, 16).ok())
+        .ok_or_else(|| format!("malformed quantity {value}"))
+}
+
+/// JSON-RPC client of the sequencer endpoint.
+pub struct Sequencer {
+    agent: ureq::Agent,
+    url: String,
+}
+
+/// Where a sent push stands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Push {
+    /// `pax_sequencerReceipt` answered receipted with status 1.
+    Accepted(String),
+    /// Sent, but not receipted before the deadline.
+    Pending(String),
+}
+
+impl Sequencer {
+    /// # Errors
+    /// Refuses an endpoint that is not an http or https URL.
+    pub fn new(agent: ureq::Agent, url: String) -> Result<Self, String> {
+        if url.starts_with("https://") || url.starts_with("http://") {
+            Ok(Self { agent, url })
+        } else {
+            Err("sequencer endpoint must be an http or https URL".to_owned())
+        }
+    }
+
+    /// One JSON-RPC call.
+    ///
+    /// # Errors
+    /// Refuses transport failures, malformed answers and JSON-RPC errors.
+    pub fn call(&self, method: &str, params: &Value) -> Result<Value, String> {
+        let request = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
+        let body = self
+            .agent
+            .post(&self.url)
+            .send_json(&request)
+            .map_err(|e| format!("{method}: {e}"))?
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| format!("{method}: {e}"))?;
+        let mut answer: Value =
+            serde_json::from_str(&body).map_err(|e| format!("{method}: {e}"))?;
+        if let Some(error) = answer.get("error") {
+            return Err(format!("{method}: {error}"));
+        }
+        answer
+            .get_mut("result")
+            .map(Value::take)
+            .ok_or_else(|| format!("{method}: no result"))
+    }
+
+    /// Refuses `sender` unless addr 0x1004 binds the oracle key to it.
+    ///
+    /// # Errors
+    /// Refuses an unbound oracle key or a different sender.
+    pub fn check_sender(&self, key: &SigningKey, sender: [u8; 20]) -> Result<(), String> {
+        let mut data = GET_EVM_ADDR_BY_LAYERX_SELECTOR.to_vec();
+        data.extend_from_slice(&key.verifying_key().to_bytes());
+        let bound = self.call(
+            "eth_call",
+            &json!([{
+                "to": format!("0x{}", hex_encode(&ADDR_PRECOMPILE)),
+                "data": format!("0x{}", hex_encode(&data)),
+            }, "latest"]),
+        )?;
+        let bound = address_word(bound.as_str().ok_or("eth_call: malformed result")?)?;
+        require_bound_sender(bound, sender)
+    }
+
+    /// Signs `data` to layerxexchange with `sender`, sends it and waits for
+    /// `pax_sequencerReceipt` until `deadline`.
+    ///
+    /// # Errors
+    /// Refuses estimation or send failures, a reverted push and malformed answers.
+    pub fn push(
+        &self,
+        sender: &EvmSender,
+        chain_id: u64,
+        data: Vec<u8>,
+        deadline: Instant,
+    ) -> Result<Push, String> {
+        let from = format!("0x{}", hex_encode(&sender.address()));
+        let to = format!("0x{}", hex_encode(&LAYERX_EXCHANGE));
+        let input = format!("0x{}", hex_encode(&data));
+        let nonce = quantity(&self.call("eth_getTransactionCount", &json!([from, "pending"]))?)?;
+        let gas_limit = quantity(&self.call(
+            "eth_estimateGas",
+            &json!([{"from": from, "to": to, "data": input}]),
+        )?)?;
+        let priority = quantity(&self.call("eth_maxPriorityFeePerGas", &json!([]))?)?;
+        let gas_price = quantity(&self.call("eth_gasPrice", &json!([]))?)?;
+        let call = Eip1559Call {
+            chain_id,
+            nonce: u64::try_from(nonce).map_err(|_| "nonce overflow")?,
+            max_priority_fee_per_gas: priority,
+            max_fee_per_gas: gas_price.max(priority),
+            gas_limit: u64::try_from(gas_limit).map_err(|_| "gas overflow")?,
+            to: LAYERX_EXCHANGE,
+            data,
+        };
+        let raw = sender.sign_transaction(&call).map_err(|e| e.to_string())?;
+        let hash = self.call(
+            "eth_sendRawTransaction",
+            &json!([format!("0x{}", hex_encode(&raw))]),
+        )?;
+        let hash = hash
+            .as_str()
+            .ok_or("eth_sendRawTransaction: malformed hash")?
+            .to_owned();
+        loop {
+            if receipt_accepted(&self.call("pax_sequencerReceipt", &json!([hash]))?)? {
+                return Ok(Push::Accepted(hash));
+            }
+            if Instant::now() >= deadline {
+                return Ok(Push::Pending(hash));
+            }
+            std::thread::sleep(RECEIPT_POLL);
+        }
+    }
+}
+
+/// The observation one round pushes for `market` from `quotes`.
+///
+/// # Errors
+/// Refuses quotes that do not aggregate and a malformed market id.
+pub fn round_observation(
+    config: &Config,
+    market: &MarketConfig,
+    quotes: &[Quote],
+    journal: &Journal,
+    now_ms: u64,
+) -> Result<Observation, String> {
+    let (price, observed_at) = aggregate(
+        quotes,
+        now_ms,
+        config.max_quote_age_ms,
+        config.max_divergence_bps,
+        config.min_sources,
+    )
+    .map_err(|e| format!("rejected: {e:?}"))?;
+    Ok(Observation {
+        market_id: market_id(&market.market_id)?,
+        observation_sequence: journal.next_observation_sequence(&market.symbol),
+        price,
+        observed_at,
+        source_identifier: config.source_identifier,
+    })
+}
+
+/// Runs one feed round over every market. Returns the markets whose push
+/// `pax_sequencerReceipt` answered receipted.
 ///
 /// # Errors
 /// Refuses only journal write failures; per-market failures are logged.
+#[allow(clippy::too_many_arguments)]
 pub fn run_round(
     config: &Config,
     agent: &ureq::Agent,
     key: &SigningKey,
-    registry: &ModuleRegistry,
+    sender: &EvmSender,
+    sequencer: &Sequencer,
     journal: &mut Journal,
     state_dir: &Path,
     now_ms: u64,
 ) -> Result<usize, String> {
-    let fee_limit = config.fee_limit()?;
-    let mut submitted = 0;
+    let mut accepted = 0;
     for market in &config.markets {
         let started = Instant::now();
         let quotes: Vec<Quote> = config
@@ -683,69 +906,184 @@ pub fn run_round(
                 }
             })
             .collect();
-        let (price, observed_at) = match aggregate(
-            &quotes,
-            now_ms,
-            config.max_quote_age_ms,
-            config.max_divergence_bps,
-            config.min_sources,
-        ) {
-            Ok(value) => value,
+        let observation = match round_observation(config, market, &quotes, journal, now_ms) {
+            Ok(observation) => observation,
             Err(error) => {
-                eprintln!("feeder: {} rejected: {error:?}", market.symbol);
+                eprintln!("feeder: {} {error}", market.symbol);
                 continue;
             }
         };
-        let observation = Observation {
-            market_id: market_id(&market.market_id)?,
-            observation_sequence: journal.next_observation_sequence(&market.symbol),
-            price,
-            observed_at,
-            source_identifier: config.source_identifier,
-        };
-        let scope = ActivityScope {
-            protocol_version: config.protocol_version,
-            network_id: config.network_id,
-            actor_did: &config.actor_did,
-            account_sequence: journal.next_account_sequence,
-            validity_ms: config.validity_ms,
-            fee_limit,
-        };
-        let signed = signed_activity(&observation, &scope, key, registry)?;
-        match submit(
-            config,
-            registry,
-            key,
-            &signed,
-            journal.next_account_sequence,
-        ) {
-            Ok(true) => {
-                let activity = layerx_wire::activity::decode_signed(&signed, registry)
-                    .map_err(|e| format!("{e:?}"))?;
-                let id = layerx_wire::hash::activity_id(&activity).map_err(|e| format!("{e:?}"))?;
-                journal.next_account_sequence += 1;
-                journal.markets.insert(
-                    market.symbol.clone(),
-                    MarketRecord {
-                        observation_sequence: observation.observation_sequence,
-                        price: price.to_string(),
-                        observed_at,
-                        activity_id: hex_encode(&id),
-                    },
-                );
-                journal.store(state_dir)?;
-                submitted += 1;
-                eprintln!(
-                    "feeder: {} {price} seq {} in {:?}",
-                    market.symbol,
-                    observation.observation_sequence,
-                    started.elapsed()
-                );
+        let deadline = started + Duration::from_millis(config.cadence_ms);
+        let push = push_oracle(&observation, key)
+            .and_then(|data| sequencer.push(sender, u64::from(config.network_id), data, deadline));
+        let hash = match push {
+            Ok(Push::Accepted(hash)) => {
+                accepted += 1;
+                hash
             }
-            // ponytail: an unknown outcome keeps the sequences; resolve by receipt lookup if the core starts refusing them as replays
-            Ok(false) => eprintln!("feeder: {} outcome unknown", market.symbol),
-            Err(error) => eprintln!("feeder: {} {error}", market.symbol),
-        }
+            Ok(Push::Pending(hash)) => {
+                eprintln!("feeder: {} {hash} not receipted yet", market.symbol);
+                hash
+            }
+            Err(error) => {
+                eprintln!("feeder: {} {error}", market.symbol);
+                continue;
+            }
+        };
+        // A sent observation sequence is spent either way: the chain only needs it to increase.
+        journal.markets.insert(
+            market.symbol.clone(),
+            MarketRecord {
+                observation_sequence: observation.observation_sequence,
+                price: observation.price.to_string(),
+                observed_at: observation.observed_at,
+                activity_id: hash.trim_start_matches("0x").to_owned(),
+            },
+        );
+        journal.store(state_dir)?;
+        eprintln!(
+            "feeder: {} {} seq {} in {:?}",
+            market.symbol,
+            observation.price,
+            observation.observation_sequence,
+            started.elapsed()
+        );
     }
-    Ok(submitted)
+    Ok(accepted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn word(value: usize) -> [u8; 32] {
+        abi_word(value)
+    }
+
+    fn config() -> Result<Config, String> {
+        Config::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/feeder.json"))
+    }
+
+    #[test]
+    fn one_round_pushes_one_observation_and_signature() -> Result<(), String> {
+        let config = config()?;
+        let market = &config.markets[0];
+        assert_eq!(market.symbol, "BTC-USD");
+        let now = 1_759_735_805_000;
+        let price = parse_fixed("65000.00", config.price_decimals)?;
+        let quotes: Vec<Quote> = ["coinbase", "kraken", "bitstamp"]
+            .iter()
+            .map(|source| Quote {
+                source: (*source).to_owned(),
+                price,
+                observed_at_ms: now,
+            })
+            .collect();
+        let journal = Journal::load(&std::env::temp_dir().join("layerx-feeder-absent"), 1)?;
+        let observation = round_observation(&config, market, &quotes, &journal, now)?;
+        assert_eq!(
+            observation,
+            Observation {
+                market_id: [0x11; 32],
+                observation_sequence: 1,
+                price: 6_500_000_000_000,
+                observed_at: now,
+                source_identifier: 1,
+            }
+        );
+
+        let key = SigningKey::from_bytes(&[0x42; 32]);
+        let data = push_oracle(&observation, &key)?;
+        assert_eq!(data.len(), 292);
+        assert_eq!(data[..4], PUSH_ORACLE_SELECTOR);
+        assert_eq!(data[4..36], word(0x40));
+        assert_eq!(data[36..68], word(0xc0));
+        assert_eq!(data[68..100], word(72));
+        assert_eq!(data[100..172], observation.encode()?);
+        assert_eq!(data[172..196], [0; 24]);
+        assert_eq!(data[196..228], word(64));
+        let signature: [u8; 64] = data[228..292].try_into().map_err(|_| "signature length")?;
+        layerx_crypto::ed25519::verify_digest(
+            &key.verifying_key().to_bytes(),
+            &signature,
+            &observation.signing_digest()?,
+        )
+        .map_err(|e| format!("observation signature: {e:?}"))?;
+
+        let directory =
+            std::env::temp_dir().join(format!("layerx-feeder-sender-{}", std::process::id()));
+        fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+        let file = directory.join("sender.key");
+        fs::write(&file, format!("{:064x}", 1)).map_err(|e| e.to_string())?;
+        std::env::set_var("LAYERX_FEEDER_TEST_SENDER_KEY_FILE", &file);
+        let sender = EvmSender::from_env("LAYERX_FEEDER_TEST_SENDER").map_err(|e| e.to_string())?;
+        fs::remove_dir_all(&directory).map_err(|e| e.to_string())?;
+        let call = Eip1559Call {
+            chain_id: u64::from(config.network_id),
+            nonce: 0,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2,
+            gas_limit: 120_000,
+            to: LAYERX_EXCHANGE,
+            data: data.clone(),
+        };
+        let raw = sender.sign_transaction(&call).map_err(|e| e.to_string())?;
+        assert_eq!(raw[0], 2);
+        assert!(raw.windows(data.len()).any(|window| window == data));
+        Ok(())
+    }
+
+    #[test]
+    fn unbound_sender_is_refused_at_start() -> Result<(), String> {
+        let bound =
+            address_word("0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf")?;
+        assert_eq!(
+            bound,
+            *b"\x7e\x5f\x45\x52\x09\x1a\x69\x12\x5d\x5d\xfc\xb7\xb8\xc2\x65\x90\x29\x39\x5b\xdf"
+        );
+        assert_eq!(require_bound_sender(bound, bound), Ok(()));
+        assert_eq!(
+            require_bound_sender(bound, [0x22; 20]),
+            Err(format!(
+                "EVM sender 0x{} is not 0x7e5f4552091a69125d5dfcb7b8c2659029395bdf, the 0x1004-bound address of the oracle key",
+                "22".repeat(20)
+            ))
+        );
+        assert!(address_word(&format!("0x01{}", "00".repeat(31))).is_err());
+        assert!(address_word("0x00").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn push_counts_only_when_receipted() {
+        assert_eq!(receipt_accepted(&Value::Null), Ok(false));
+        assert_eq!(
+            receipt_accepted(&json!({"rung": "submitted", "txHash": "0x01", "nonce": "0x0"})),
+            Ok(false)
+        );
+        assert_eq!(
+            receipt_accepted(&json!({"rung": "receipted", "status": "0x1"})),
+            Ok(true)
+        );
+        assert_eq!(
+            receipt_accepted(&json!({"rung": "committed", "status": "0x1"})),
+            Ok(true)
+        );
+        assert_eq!(
+            receipt_accepted(
+                &json!({"rung": "receipted", "status": "0x0", "returnData": "0x08c379a0"})
+            ),
+            Err("pushOracle reverted: 0x08c379a0".to_owned())
+        );
+        assert!(receipt_accepted(&json!({"rung": "receipted"})).is_err());
+        assert!(receipt_accepted(&json!({"rung": "pending"})).is_err());
+    }
+
+    #[test]
+    fn health_turns_not_ready_after_three_cadences() {
+        assert!(!ready(0, 1_000, 1_000));
+        assert!(ready(1_000, 1_000, 1_000));
+        assert!(ready(1_000, 4_000, 1_000));
+        assert!(!ready(1_000, 4_001, 1_000));
+    }
 }

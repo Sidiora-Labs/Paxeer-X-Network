@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ed25519-dalek.workspace = true
-layerx-client.workspace = true
+layerx-platform-internal.workspace = true
 layerx-types.workspace = true
 layerx-wire.workspace = true
 rustls-native-certs.workspace = true

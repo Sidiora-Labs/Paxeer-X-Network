@@ -1654,8 +1654,8 @@ name = "layerx-oracle-feeder"
 version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
- "layerx-client",
  "layerx-crypto",
+ "layerx-platform-internal",
  "layerx-types",
  "layerx-wire",
  "rustls-native-certs",
