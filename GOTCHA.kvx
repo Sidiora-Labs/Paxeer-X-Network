@@ -7576,3 +7576,58 @@ fix = "build those dists once in the main checkout (sdk first) before the integr
 area = "task 11.5.169"
 symptom = "build exit 127 in the Maven and npm integration packages came from a missing gradle and tsc, not from the code"
 fix = "check the toolchain (mvn, root npm ci and its node_modules link) before reading an exit 127 as a task failure"
+
+[gotcha.1601]
+area = "consensus rpc tests"
+symptom = "a test that commits through BroadcastTxCommit times out at the 10 s default on a loaded host"
+fix = "raise conf.RPC.TimeoutBroadcastTxCommit in the test node config; never relax the assertion"
+
+[gotcha.1602]
+area = "go test filters"
+symptom = "go test -run is case-sensitive, so a filter like TestXweb skips TestXWebUpgradeKeepsExistingXWebState"
+fix = "match the exact test name case in verify_cmd filters"
+
+[gotcha.1603]
+area = "node upgrade plans"
+symptom = "a test that pins the full knownUpgradePlans() list fails whenever another task registers a new plan"
+fix = "update the pinned list with the new plan in the task that registers it"
+
+[gotcha.1604]
+area = "programs/vendor"
+symptom = "the root *.pem and binaryen config.h gitignore rules hide 41 vendored files listed in .cargo-checksum.json, so a clean checkout fails the offline checksum"
+fix = "stage programs/vendor with git add -f after cargo vendor"
+
+[gotcha.1605]
+area = "programs/.cargo/config.toml"
+symptom = "cargo update and cargo vendor fail because the config forces offline vendored sources"
+fix = "set the config aside for the refresh and restore it unchanged afterwards"
+
+[gotcha.1606]
+area = "hosted gateway history.rs"
+symptom = "rustfmt on history.rs also reformats readiness_status, answer and page outside the test module"
+fix = "restore the non-test parts when the task scope is the test module only"
+
+[gotcha.1607]
+area = "layerx-proof LXHD codec"
+symptom = "a reversed header range fixture fails in CompleteOfflineArtifact::decode as Bound and never reaches verify_complete"
+fix = "test the decode refusal on its own and use a non-containing range that decodes for the verify refusal"
+
+[gotcha.1608]
+area = "lock-only branches"
+symptom = "a held branch that only refreshes Cargo.lock files becomes an empty commit after a lock-refresh repair task lands"
+fix = "run cargo metadata --locked on the new base before regenerating any lock; drop the empty commit"
+
+[gotcha.1609]
+area = "fleet-commit NOADD=1"
+symptom = "with NOADD=1 the commit helper stages nothing and reports no changes added"
+fix = "git add the owned files first, then run the helper"
+
+[gotcha.1610]
+area = "explorer factory"
+symptom = "with_block only accepts a consensus block, so a non-consensus fixture cannot be built directly"
+fix = "attach the transaction to a consensus block first, then flip block consensus and transaction block_consensus to false"
+
+[gotcha.1611]
+area = "consensus p2p tests"
+symptom = "consensus/internal/state imports config, which imports p2p, so in-package p2p tests cannot build the real state store"
+fix = "put store-backed tests in rpc/core and keep an in-memory store in p2p tests; adding a method to sm.Store also needs the mockery-style method in state/mocks/store.go"

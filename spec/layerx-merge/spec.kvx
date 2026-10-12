@@ -488,6 +488,12 @@ value = "acceptance 8.73.1 and 8.73.2 name the V1-pax-transfer sequencer case an
 basis = "SequencerReceipt.verify refuses valid-0 at R3; spec correction"
 affects = ["8.5.36"]
 
+[decision.81]
+title = "Gateway position cursor ownership"
+value = "page() in the hosted gateway accepts the indexer position cursor inside task 0.27 so its gateway history tests pass; 7.5.6 keeps the request-boundary cursor check, item triple fields and heights"
+basis = "7.5.6 requires 0.27 while 0.27 verifies the gateway history tests, so the page() change cannot wait for 7.5.6"
+affects = ["0.27", "7.5.6"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -19665,9 +19671,10 @@ do_7 = "Every caller that builds MsgSetParams or unpauses passes a valid program
 do_8 = "Write modules/xweb/keeper/msg_server_test.go::TestProgramPairRequiredWhileActive: Unpause with the unset pair returns ErrInvalidParams and the module stays paused, Unpause after UpdateParams sets a valid pair succeeds, and InitGenesis with Paused false and the unset pair panics with ErrInvalidParams while the default dormant genesis loads."
 do_9 = "Per decision 68 the v6.10 upgrade handler (node/upgrades.go:382) keeps producing the identical applied state by writing paused=false through the params store directly, never the governance Unpause path; InitGenesis refuses an unpaused module with the unset pair only when the genesis carries the merge plan height or any program pair field, and otherwise replays the exported state as is; node/upgrades_v610_test.go:139, node/upgrades_xweb_test.go:272 and modules/xweb/types/attestation_test.go:154 keep their assertions."
 do_10 = "Export the xweb_params_set attribute keys kernel_network_id and program_fee_denoms as typed constants in modules/xweb/types/events.go and use them in msg_server.go and the tests."
-do_11 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_11 = "The registered plan list test (node/upgrades_v610_test.go:56) expects exactly knownUpgradePlans() as node/upgrades.go:463 returns it, with MergeUpgrade (v7.0) after V611Upgrade; the assertion names every plan rather than being dropped."
+do_12 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["Params.KernelNetworkId", "Params.ProgramFeeDenoms", "ValidateProgramSettings", "MsgSetParams", "Keeper.Unpause", "Keeper.InitGenesis", "TestProgramPairRequiredWhileActive"]
-touches = ["modules/xweb/types/msgs.go", "modules/xweb/keeper/msg_server.go", "modules/xweb/keeper/msg_server_test.go", "modules/xweb/keeper/genesis.go", "modules/xweb/keeper/keeper_test.go", "modules/xweb/keeper/request_test.go", "modules/xweb/keeper/refund_test.go", "modules/xweb/types/msgs_test.go", "precompiles/xweb/xweb_test.go", "tools/chain/upgrade-replay/replay.go", "node/upgrades.go", "node/upgrades_v610_test.go", "node/upgrades_xweb_test.go", "modules/xweb/types/attestation_test.go", "modules/xweb/types/events.go"]
+touches = ["modules/xweb/types/msgs.go", "modules/xweb/keeper/msg_server.go", "modules/xweb/keeper/msg_server_test.go", "modules/xweb/keeper/genesis.go", "modules/xweb/keeper/keeper_test.go", "modules/xweb/keeper/request_test.go", "modules/xweb/keeper/refund_test.go", "modules/xweb/types/msgs_test.go", "precompiles/xweb/xweb_test.go", "tools/chain/upgrade-replay/replay.go", "node/upgrades.go", "node/upgrades_v610_test.go", "node/upgrades_xweb_test.go", "modules/xweb/types/attestation_test.go", "modules/xweb/types/events.go", "node/upgrades_v610_test.go"]
 build_cmd = "go build ./modules/xweb/keeper/ ./modules/xweb/types/ ./tools/chain/upgrade-replay/"
 verify_cmd = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run '^(TestMsgValidateBasic|TestUpdateParams.*|TestGenesisRoundTrip|TestProgramPairRequiredWhileActive|TestPauseAndUnpause|TestRequest.*|TestRefund.*|TestGovernanceMessagesRequireTheAuthority|TestDefaultGenesisIsDormant)$' && go test -count=1 ./precompiles/xweb/ -run 'TestRequest|TestFulfil|TestViews|TestRefund' && go test -count=1 ./node/ -run 'TestV610|TestXweb'"
 gate_kind = "existing"
@@ -25322,7 +25329,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.12]
 title = "Bind tool-execution attestation to the activity idempotency key in the kernel service module"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -25647,7 +25654,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.5.11]
 title = "agent-api major 2 write schema and error codes"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.57"]
@@ -30023,7 +30030,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.8]
 title = "Shared keystore-or-KMS EVM sender loader in the platform internal crate"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -30650,7 +30657,7 @@ do_1 = "Remove the lx_getHistory branch (platform/hosted/gateway/src/history.rs:
 do_2 = "Resolve DIDs to addresses through addr 0x1004 before the indexer read (platform/hosted/gateway/src/paxeer.rs:292-330)."
 do_3 = "Serve AI market views (platform/hosted/gateway/src/ai_views.rs:1-2) from the indexer projection with finalized meaning committed and the freshness state passed through (platform/hosted/indexer/src/ai_market.rs:389)."
 do_4 = "Return -32602 for a DID with no binding instead of a kernel lookup, as the px_getHistory arm already does for an invalid key (platform/hosted/gateway/src/history.rs:424-426)."
-do_5 = "Replace the 1-32 alphanumeric cursor check (MAXIMUM_CURSOR in params, platform/hosted/gateway/src/history.rs:145) with the 32-lowercase-hex block-position cursor of task 0.27, pass it through to /v1/history unchanged, refuse any other cursor including the 112-hex form with -32602 invalid_cursor, give each item blockHeight, txIndex and logIndex, order the unified merge by that triple, and put indexedHeight (indexer freshness) and chainHeight (eth_blockNumber) on every page (clients.md O14/O50, acceptance 6.26.1-6.26.3)."
+do_5 = "Task 0.27 (decision 81) already made page() accept the 32-lowercase-hex block-position cursor and merge by position; replace the 1-32 alphanumeric cursor check (MAXIMUM_CURSOR in params, platform/hosted/gateway/src/history.rs:145) with that cursor form at the request boundary, pass it through to /v1/history unchanged, refuse any other cursor including the 112-hex form with -32602 invalid_cursor, give each item blockHeight, txIndex and logIndex, order the unified merge by that triple, and put indexedHeight (indexer freshness) and chainHeight (eth_blockNumber) on every page (clients.md O14/O50, acceptance 6.26.1-6.26.3)."
 do_6 = "Serve px_listHolderRecords [address, kind, cursor?, limit?] in the history dispatch from the indexer /v1/holders/{address} route of task 0.27, kind one of budget or grant, answering {items, next_cursor, indexedHeight, chainHeight} (resolution 13.175, services.md S08)."
 do_7 = "Extend the history unit tests (platform/hosted/gateway/src/history.rs:555) for a bound DID, an unbound DID, lx_getHistory answering -32601, the triple cursor passing through, the 112-hex cursor refused, and px_listHolderRecords paging."
 do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
@@ -31205,7 +31212,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.7.1]
 title = "Rollout drops retired units"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 7
 requires = ["7.4.4"]
@@ -41135,7 +41142,7 @@ do_1 = "Add a tx_index column to the transfers and explorer_transfers tables in 
 do_2 = "Change store history and merged_history to page strictly after a (blockHeight, txIndex, logIndex) cursor encoded as 32 lowercase hex (u64 big-endian height, u32 txIndex, u32 logIndex), native value rows ordering as logIndex 0 before their logs; retire the id cursor and EXPLORER_CURSOR, and change parse_query (platform/hosted/indexer/src/api.rs:55-61) to refuse any other cursor, including the 112-hex form, with invalid_cursor (clients.md O14/O50)."
 do_3 = "Add a holder projection to store.rs fed from paxeer.rs decode_log: BudgetCreated, BudgetRevoked and BudgetClosed of layerxpay 0x101B, PayerGrantIssued and PayerGrantRevoked of layerxledger 0x101A, and GrantBody chunk 0 and GrantRevoked of 0x101C, keyed by the transaction sender as holder, and serve it on /v1/holders/{address}?kind=&cursor=&limit= in api.rs with the same cursor and freshness (resolution 13.175, services.md S08)."
 do_4 = "Add tests/history_position.rs over a real store: rows in one block page in triple order with no repeat or gap across pages, the 112-hex cursor is refused, a revoked budget shows its final state on /v1/holders, and freshness carries the indexed height (acceptance 6.26.1-6.26.3)."
-do_5 = "Per decision 76 bring the platform/hosted/gateway/src/history.rs unit tests (test module only) onto TransferRow tx_index and holders and 32-hex position cursors, and platform/hosted/indexer/tests/ingest.rs onto position order, position cursors and indexedHeight, chainHeight and freshness in /v1/history pages (clients.md), with the same coverage."
+do_5 = "Per decision 81 change page() in platform/hosted/gateway/src/history.rs (the strictly descending numeric row-id check, history.rs:244-257, and the unified merge cursor) to accept the indexer's 32-lowercase-hex position cursor, pass it to /v1/history unchanged and merge both sides by (blockHeight, txIndex, logIndex), and bring the history.rs unit tests onto TransferRow tx_index and holders and 32-hex position cursors, and platform/hosted/indexer/tests/ingest.rs onto position order, position cursors and indexedHeight, chainHeight and freshness in /v1/history pages (clients.md), with the same coverage."
 do_6 = "Existing database rows migrate with tx_index 0 and the explorer cache is cleared and re-imported when the column is added; chainHeight is the indexer's observed source head."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["TransferRow", "history", "merged_history", "parse_query", "EXPLORER_CURSOR"]
@@ -41894,7 +41901,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.111]
 title = "newHeads and the simulation header carry the same-block results root"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.51"]
@@ -41976,7 +41983,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.114]
 title = "Path-dependent workspace lock files carry the layerx-client ureq and serde_json dependencies"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.56", "0.123"]
@@ -42109,7 +42116,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.119]
 title = "Giga router prunes FinalizeBlock responses below the block retain height"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.112"]
@@ -42136,7 +42143,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.120]
 title = "Retired reserve namespace leaves the layerx-types id table and the human intents custody check"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["6.6.13"]
@@ -42161,7 +42168,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.121]
 title = "Visa TAP middleware test calls the seven-argument receipt API"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["7.5.20"]
@@ -42212,7 +42219,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.123]
 title = "One serde_json pin across every Rust workspace and a refreshed programs vendor tree"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.56"]
@@ -42239,7 +42246,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.124]
 title = "layerx-proof complete-export refusal tests hold on main"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -42290,7 +42297,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.126]
 title = "Retired-caller check finds symbols inside underscore-joined names and plural keys"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42339,7 +42346,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.128]
 title = "Interop layerx-migrate and layerx-ucp pass the workspace clippy level"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42388,7 +42395,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.130]
 title = "Pay contract document records the record-view structs and StreamRateUpdated"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42535,6 +42542,61 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.136]
+title = "Scheduled job execution settles its temporary coinbase account to the fee collector"
+status = "pending"
+mode = "BUILD"
+wave = 3
+requires = ["6.2.8", "0.129"]
+reqs = ["6006.2"]
+capabilities = ["6.1.6"]
+do_1 = "In Keeper.execute (modules/layerxagent/keeper/scheduler.go:99-143), after stateDB.Finalize at :136 and before write() at :139, move the spendable uhpx (balance less LockedCoins) and wei of state.GetCoinbaseAddress(cached.TxIndex()) to authtypes.NewModuleAddress(authtypes.FeeCollectorName) with k.evm.BankKeeper().SendCoinsAndWei in the cached context, mirroring the sweep at modules/evm/keeper/abci.go:153-159."
+do_2 = "On a sweep error return result.UsedGas with the error as the job reason without calling write(), so a reverted call or failed sweep leaves neither call state nor coinbase movement; the fee and refund settle legs at modules/layerxagent/keeper/scheduler.go:61-69 stay unchanged."
+do_3 = "Add TestEndBlockSweepsCoinbaseTransfer to modules/layerxagent/keeper/scheduler_test.go: a real deployed target that forwards wei to block.coinbase, run in a job-only block; assert the target is debited, GetCoinbaseAddress(0) holds zero uhpx and zero wei, and the fee collector gains gasUsed x baseFee plus the forwarded wei."
+do_4 = "Add TestEndBlockRevertedJobLeavesCoinbaseEmpty to the same file: a target that sends to block.coinbase and then reverts; assert the target balance and GetCoinbaseAddress(0) are unchanged and only the fee leg reaches the fee collector."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["Keeper.execute"]
+touches = ["modules/layerxagent/keeper/scheduler.go", "modules/layerxagent/keeper/scheduler_test.go"]
+build_cmd = "go build ./modules/layerxagent/... ./modules/evm/..."
+verify_cmd = "go test -count=1 -run 'TestEndBlockSweepsCoinbaseTransfer|TestEndBlockRevertedJobLeavesCoinbaseEmpty' ./modules/layerxagent/keeper/"
+planned_paths = []
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.137]
+title = "Explorer transaction and receipt status answer committed only for a transaction in a consensus block"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["8.5.36", "0.131"]
+reqs = ["8073.2", "8073.3"]
+capabilities = ["8.7.4"]
+do_1 = "status_of (explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller.ex:56-62) places an indexed transaction by its height only when block_consensus is true (explorer/backend/apps/explorer/lib/explorer/chain/transaction.ex:231); a row with block_consensus false or block_number nil takes the existing no-block branch (transaction_status_controller.ex:58-59): Status.of(nil, Finality.heights, sequencer_verification), receipted on a verified sequencer receipt, otherwise submitted (contracts/clients.md committed row)."
+do_2 = "Apply the same guard where receipt_controller.ex calls Status.of(receipt.block_number, heights) (explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex:107 after task 0.131): a receipt whose block is not consensus is never committed."
+do_3 = "Hash lookup (explorer/backend/apps/explorer/lib/explorer/chain.ex:934-951), Status.decide (explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/status.ex:66-71) and Finality.committed_height (explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/finality.ex:73-75) stay unchanged; the importer leaves block_number set for a non-consensus block (explorer/backend/apps/explorer/lib/explorer/chain/import/runner/blocks.ex:596-605), so the guard reads the row flag."
+do_4 = "transaction_status_controller_test.exs adds 'a transaction in a non-consensus block is not committed': insert blocks 100 and 101, attach the transaction to block 100 with with_block, then set block 100 consensus false and the transaction block_consensus false as the importer does (blocks.ex:596-605); with router_url nil, GET status answers rung submitted, block_number 100 and committed_height 101; and 'a transaction in a non-consensus block with a verified sequencer receipt is receipted': same rows, serve_router answering the V1-pax-transfer vector; GET status answers rung receipted."
+do_5 = "receipt_controller_test.exs adds the matching non-consensus case for the receipt endpoint."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["TransactionStatusController", "Status.of", "Finality.heights"]
+touches = ["explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller.ex", "explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller_test.exs", "explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex", "explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller_test.exs"]
+build_cmd = "cd explorer/backend && mix compile"
+verify_cmd = "cd explorer/backend && mix test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller_test.exs apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller_test.exs"
+planned_paths = []
+gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -58133,7 +58195,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.94]
 title = "Re-target lib.rs off the settlement domain and export trust"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]

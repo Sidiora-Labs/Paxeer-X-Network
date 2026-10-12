@@ -16,12 +16,11 @@ log_path = "logs/7.0.7-build-1.log"
 observed_and_assumption = "contracts/lib is empty until contracts/bootstrap-libs.sh fetches forge-std and openzeppelin-contracts; taken to mean the build_cmd must run the bootstrap first, amended in the task."
 
 [finding.7.0.8]
-revision = "488630ac9"
-command = "cargo clippy --manifest-path platform/Cargo.toml -p layerx-platform-internal --all-targets"
-exit_code = 101
-log_path = "logs/7.0.8-clippy-2.log"
-observed_and_assumption = "clippy diagnostics in platform/hosted/internal files the task does not own; taken as present before the task and left intact."
-
+revision = "60972a8ad"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal --lib evm_sender:: && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal --test kms_tls"
+exit_code = 0
+log_path = "logs/7.0.8-verify-2.log"
+observed_and_assumption = "verify passed (17 passed, 0 failed). Unrelated: cargo clippy --offline --manifest-path platform/Cargo.toml -p layerx-platform-internal -p layerx-crypto --all-targets failed on unresolved serde_json in existing agent/crates/layerx-crypto/src/account_derivation.rs tests; left unchanged | exit 101 | logs/7.0.8-clippy-2.log"
 [finding.12.0.2]
 revision = "488630ac9"
 command = "go test -count=1 -run TestParallelTransactionsWasmInstantiate ./occ_tests/"
@@ -232,12 +231,11 @@ exit_code = 0
 log_path = "logs/4.2.17-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: acceptance.4.6.3: zero-coefficient refusal needs a programs Go validator or protobuf validation generator; neither exists in this tree and the three-proto scope cannot implement executable validation."
 [finding.6.2.12]
-revision = "25225fff0"
+revision = "a6e3abf02"
 command = "make test-service-attest"
-exit_code = 2
+exit_code = 0
 log_path = "logs/6.2.12-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; 6012.1: real signed acceptance and mismatched-key vectors cannot be added; tests/modules/test_service_attest.c is outside touches. 6012.2: the required NULL and repeated-byte accessor vector is absent; tests/modules/test_service_attest.c is outside touches."
-
+observed_and_assumption = "verify passed (1 passed, 0 failed)."
 [finding.9.1.5]
 revision = "02f951ad0"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-authority --test receipt_keys"
@@ -628,11 +626,11 @@ log_path = "logs/4.2.9-verify-2.log"
 observed_and_assumption = "two cases fail and the branch is held: expired accepted-task cancellation returns F01_TASK_ALREADY_ACCEPTED and stale metadata returns Ok instead of WRONG_ROSTER, contradicting the scoped guards, and the build diagnostics reference another checkout because the cargo target directory was shared."
 
 [finding.6.5.11]
-revision = ""
+revision = "1d5ef7dd8"
 command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test write --test schema"
-exit_code = 101
+exit_code = 0
 log_path = "logs/6.5.11-verify-1.log"
-observed_and_assumption = "verify passed (9 passed, 1 failed; write binary not executed). Gaps: acceptance.6.58.1: Typed API negotiation refuses major 1 with unsupported_major and accepts major 2; daemon ingress proof is unavailable because agent/crates/layerx-agentd/src/agent_rpc.rs has no contract_major field and is outside touches. Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --all-targets --no-deps | exit 101 | logs/6.5.11-clippy-2.log | 32 diagnostics in unowned src/identity.rs and src/read.rs; the owned generator length diagnostic was fixed during formatting."
+observed_and_assumption = "verify passed (17 passed, 0 failed). Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --all-targets --no-deps | exit 101 | logs/6.5.11-lint-3.log | 32 existing errors in agent/crates/layerx-agent-api/src/identity.rs and src/read.rs; no owned-file diagnostics, test-target lint not reached"
 [finding.6.5.13]
 revision = "b707989f7"
 command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors"
@@ -1399,12 +1397,11 @@ log_path = "logs/1.2.8-verify-1.log"
 observed_and_assumption = "verify passed (7 passed, 0 failed)."
 
 [finding.5.2.1]
-revision = "ce8d37490"
-command = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run 'TestMsgValidateBasic"
-exit_code = 0
+revision = "ea82a464d"
+command = "<declared verify_cmd, run with -v>"
+exit_code = 1
 log_path = "logs/5.2.1-verify-1.log"
-observed_and_assumption = "verify passed (22 passed, 0 failed). Gaps: xweb_params_set attribute keys kernel_network_id and program_fee_denoms are unexported constants in msg_server.go because modules/xweb/types/events.go is outside touches Unrelated: modules/xweb/types/attestation_test.go:154 and node/upgrades_xweb_test.go:272 load a genesis with Paused false and the unset pair, which InitGenesis now panics on; both outside touches, not run"
-
+observed_and_assumption = "held unlanded: 28 of 29 verify tests pass; node/upgrades_v610_test.go:56 pins the plan list without MergeUpgrade (v7.0) registered at node/upgrades.go:464 by an earlier task, so do_11 and the touches now cover that test and the worktree is rerun."
 [finding.0.113]
 revision = ""
 command = "cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof --all-targets && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof"
@@ -1413,12 +1410,11 @@ log_path = "logs/0.113-verify-1.log"
 observed_and_assumption = "verify passed (--no-fail-fast evidence: 167 passed, 6 failed (logs/0.113-verify-1-nofailfast.log)). Gaps: none for lint scope; do_3 'every existing test keeps passing' not met by prior failures below Unrelated: native_terminal_outcome 4 tests panic without LAYERX_NATIVE_TERMINAL_RECORDS (env-gated); with the retained records tsv set they pass 4/4 on this revision | logs/0.113-native-terminal-retained.log"
 
 [finding.0.111]
-revision = ""
-command = "go test -count=1 ./rpc/... -run TestHeaderReceiptsRootIsSameBlockResults"
+revision = "b6c53abe5"
+command = "go test -count=1 ./rpc/... -run 'TestHeaderReceiptsRootIsSameBlockResults"
 exit_code = 0
-log_path = "logs/0.111-verify-2.log"
-observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: under Autobahn the notifier publishes at app Commit and giga BlockResults returns no TxsResults (per 0.51), so the newHeads root there matches eth_getBlockByNumber but is the zero-leaf root; out of scope Unrelated: none (gate scoped by -run; not run here) - TestSubscribeNewHeadsAutobahn (rpc/subscribe_test.go) and TestEncodeCommittedBlockWithRoots-style expectations of receiptsRoot == header LastResultsHash on the served newHeads payload now contradict req 10.4; subscribe_test's MockClient-backed assertion receiptsRoot == resultsHash will fail and needs re-targeting by its owning task"
-
+log_path = "logs/0.111-r2-verify-2.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed (first run exit 1, logs/0.111-r2-verify-1.log)). Gaps: do_5 - moved 5 of the 6 callers to encodeCommittedHead(nil, ...) with assertions unchanged (they are refused before the results read); the success caller in TestEncodeCommittedBlockWithRoots (rpc/notifier_internal_test.go:199) stays on encodeCommittedBlock, because through encodeCommittedHead its receiptsRoot assertion (header LastResultsHash 0x66..) and height 12345 cannot hold without a client serving block 12345 results, and writing a fake client is forbidden"
 [finding.0.112]
 revision = "655156bed"
 command = "go test -count=1 ./consensus/internal/p2p/ ./consensus/internal/rpc/core/ -run 'TestGigaRouterPersistsFinalizeBlockResponses"
@@ -1657,12 +1653,11 @@ log_path = "logs/6.2.8-verify-2.log"
 observed_and_assumption = "verify passed (5 passed, 0 failed (first run also 5/0: 6.2.8-verify-1.log)). Gaps: the callData size cap is not checked in Keeper.Schedule; it is left to the 0x0905 precompile (6.2.5 do_1)"
 
 [finding.0.114]
-revision = "caa3950d9"
+revision = "155be33f9"
 command = "<verify_cmd as in task block>"
-exit_code = 101
+exit_code = 0
 log_path = "logs/0.114-verify-1.log"
-observed_and_assumption = "verify passed (platform, human, interop passed; programs failed (serde_json pin conflict); cmd/layerxctl not reached by the && chain (passes standalone, see build log)). Gaps: programs/Cargo.lock cannot resolve: programs/crates/layerx-programs-arbiter/Cargo.toml depends on agent/crates/layerx-client (serde_json = '=1.0.149') while programs/crates/layerx-programs-arbiter/Cargo.toml, programs/sdk/rust/Cargo.toml and programs/sdk/rust/lint/Cargo.toml pin serde_json = '=1.0.151'; needs the separate pin-unification task. platform/Cargo.lock already resolved under --locked on this base and was left unchanged."
-
+observed_and_assumption = "verify passed on main after task 0.123 refreshed the same lock files (5 passed, 0 failed); the earlier lock-only commit became empty on rebase and was dropped, so no landing commit exists for this task."
 [finding.8.5.36]
 revision = "acb0c6143"
 command = "explorer/deploy/tools/mix-in-builder.sh test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller_test.exs"
@@ -1678,8 +1673,63 @@ log_path = "logs/0.25-verify-1.log"
 observed_and_assumption = "verify passed (7 passed, 0 failed). Gaps: do_2 says 'ordinal = logIndex' but the Go encoder (node/sequencer/receipt.go encodeReceipt) writes log i as ordinal i+1 and the pax_sequencerReceipt server (rpc/sequencer_receipt.go) serves logIndex i; the verifier follows the tree (effect n+1 has ordinal n+1, served logIndex n), so real receipts verify Unrelated: cargo clippy -p layerx-proof --all-targets --no-deps exits 101 because of existing lints in export_codec.rs, receipt.rs and state_range.rs (none in sequencer_logs.rs); without --no-deps it stops earlier on missing_errors_doc in layerx-types program_lifecycle.rs; log logs/0.25-clippy.log"
 
 [finding.0.27]
-revision = ""
-command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test history_position"
+revision = "61cdaced7"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test history_position && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test ingest && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway history"
+exit_code = 101
+log_path = "logs/0.27-verify-2.log"
+observed_and_assumption = "held unlanded: history_position 6 and ingest 5 pass; three gateway history tests fail because page() in platform/hosted/gateway/src/history.rs accepts only descending numeric row ids; decision 81 widens this task to change page(), and the worktree is rerun."
+[finding.0.123]
+revision = "9020a16a9"
+command = "(task verify_cmd: six cargo metadata --locked checks && make programs-build)"
 exit_code = 0
-log_path = "logs/0.27-verify-1.log"
-observed_and_assumption = "verify passed (6 passed, 0 failed). Gaps: blockscout.rs and paxscan.rs needed no change Unrelated: clippy --no-deps on layerx-indexer has 75 prior pedantic errors at HEAD, none on lines this task added; test targets are not linted because the lib fails first | logs/0.27-clippy-4.log"
+log_path = "logs/0.123-verify-1.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed (programs workspace compiled offline from vendor)). Unrelated: none (make programs-build emits a prior dead_code warning in layerx-programs-market fn remainder; not a failure)"
+
+[finding.0.124]
+revision = "30de054c3"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof --test export_complete"
+exit_code = 0
+log_path = "logs/0.124-verify-1.log"
+observed_and_assumption = "verify passed (13 passed, 0 failed). Unrelated: cargo clippy -p layerx-proof --all-targets exits 101 on missing_errors_doc in crates/layerx-types/src/program_lifecycle.rs:74 and :86 (dependency crate, not owned) | logs/0.124-clippy.log"
+
+[finding.11.5.94]
+revision = "7d3eafb65"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component settlement-domain --path human/tools/schema-check/src/lib.rs"
+exit_code = 0
+log_path = "logs/11.5.94-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (caller scan; Rust tests not run))."
+
+[finding.7.7.1]
+revision = "155be33f9"
+command = "bash tools/rollout/tests/rollout.test.sh"
+exit_code = 0
+log_path = "logs/7.7.1-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed)."
+
+[finding.0.121]
+revision = "150a810e2"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-visa-tap --test middleware --test conformance"
+exit_code = 0
+log_path = "logs/0.121-verify-1.log"
+observed_and_assumption = "verify passed (15 passed, 0 failed)."
+
+[finding.0.119]
+revision = "0b3e3c1f6"
+command = "go test -count=1 ./consensus/internal/p2p/ ./consensus/internal/rpc/core/ ./consensus/internal/state/ -run 'TestGigaRouterPrunesFinalizeBlockResponsesWithRetention"
+exit_code = 0
+log_path = "logs/0.119-verify-1.log"
+observed_and_assumption = "verify passed (12 passed (4 tests + TestPruneStates subtests), 0 failed). Gaps: do_3/do_4 real state store inside package p2p is impossible (state -> config -> p2p import cycle); p2p configs carry the in-memory testResponseStore (now with a real prune), and TestGigaRouterPrunesFinalizeBlockResponsesWithRetention lives in consensus/internal/rpc/core/blocks_autobahn_results_test.go over sm.NewStore on goleveldb with reopen; the verify_cmd -run covers that package"
+
+[finding.0.120]
+revision = "097bb85e8"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test ids"
+exit_code = 0
+log_path = "logs/0.120-verify-1.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed). Unrelated: clippy -D pedantic fails outside scope: agent layerx-types program_lifecycle.rs:74,86 missing_errors_doc and programs_module_abi.rs:85-86 assertions_on_constants; human layerx-intents precompile.rs:711 missing_errors_doc (logs 0.120-clippy-agent.log, 0.120-clippy-human.log)"
+
+[finding.0.122]
+revision = "4952747bb"
+command = "make build && grep -qxF '#define LXP_CHECKPOINT_MAXIMUM_ATTESTATION_DELAY_SECONDS UINT64_C(3600)' build/generated/lxp_checkpoint_settlement.h"
+exit_code = 2
+log_path = "logs/0.122-verify-1.log"
+observed_and_assumption = "held unlanded: the generated header carries the expected line and liblayerx.a builds, but make build stopped at programs-release-build on the serde_json pin before task 0.123 landed; the worktree is rerun on the new base."
