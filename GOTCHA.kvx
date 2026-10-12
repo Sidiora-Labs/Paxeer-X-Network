@@ -7271,3 +7271,43 @@ fix = "scope lint tasks to the whole crate"
 area = "1.1.6"
 symptom = "two verify runs: a worker reran verify_cmd with -v only for per-test counts"
 fix = "run verify_cmd once with -v from the start when per-test counts are wanted"
+
+[gotcha.1540]
+area = "spec do lines"
+symptom = "spec line references drift: addr.go:124 is addr.go:123 and station.rs:1187 moved to :1279"
+fix = "cite symbols not line numbers in do lines where the file is under active change"
+
+[gotcha.1541]
+area = "node/sequencer tests"
+symptom = "newHarness and newReceiptHarness build the app without custom precompiles"
+fix = "precompile tests use NewTestWrapper(..., true)"
+
+[gotcha.1542]
+area = "upgrade plans in tests"
+symptom = "upgrade plan scheduled ahead with a registered handler panics BINARY UPDATED BEFORE TRIGGER"
+fix = "set plan.Info to {\"upgradeType\":\"minor\"}"
+
+[gotcha.1543]
+area = "wasm keeper tests"
+symptom = "wasm QuerySmart panics on a context with zero block time"
+fix = "set a block time on the test context"
+
+[gotcha.1544]
+area = "interop/Cargo.lock"
+symptom = "interop/Cargo.lock on main fell behind layerx-client Cargo.toml so every --locked interop gate refused before compiling"
+fix = "refresh the lock offline with cargo metadata and commit it with the crate change"
+
+[gotcha.1545]
+area = "tests/modules/test_stream_lifecycle.c"
+symptom = "test_stream_lifecycle.c shifts a 32-bit unsigned value by 56 to build timestamp bytes, undefined behaviour that passes at -O2 and fails at -O0"
+fix = "cast to uint64_t before shifting"
+
+[gotcha.1546]
+area = "src/modules/stream/lx_stream_state.c"
+symptom = "stream result codec accepts only ordinals 1-7 so a result saved with ordinal 8 fails lx_stream_result_save with LXP_ERR_NON_CANONICAL"
+fix = "extend the codec before adding an activity ordinal"
+
+[gotcha.1547]
+area = "verify_cmd"
+symptom = "verify_cmd joining two go test runs with && skips the second on the first failure"
+fix = "run the second half alone for evidence when the first fails"

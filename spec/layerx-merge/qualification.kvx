@@ -166,12 +166,11 @@ log_path = "logs/9.2.4-verify-1.log"
 observed_and_assumption = "no commit was produced, the task returns to pending; 9004.3: node/check_total_block_gas_test.go is package app; importing the real Seal creates app -> sequencer -> app. No cycle-free bridge exists; an external test file requires expanded touches. 9041.3: real sealed-prefix and next-height sequence assertions are blocked by the same missing interface."
 
 [finding.2.2.3]
-revision = "b0008092d"
-command = "make test-result"
-exit_code = 0
+revision = ""
+command = "make test-result && go test -count=1 ./precompiles/common/ -run TestLXPRevertTable && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test errors"
+exit_code = 2
 log_path = "logs/2.2.3-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; Build qualification requires matching ArbiterRequired, UnauthorizedArbiter and EscrowLinkMismatch variants in agent/crates/layerx-types/src/result.rs; outside touches."
-
+observed_and_assumption = "verify passed (0 passed, 0 failed (tests not reached)). Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-types --all-targets exited 101 on existing missing_errors_doc findings in agent/crates/layerx-types/src/program_lifecycle.rs:74,86 and assertions_on_constants findings in agent/crates/layerx-types/src/programs_module_abi.rs:85-87; logs/2.2.3-clippy.log. Go vet passed; logs/2.2.3-vet.log."
 [finding.2.2.4]
 revision = "96ecaae3e"
 command = "make test-stream-accrual"
@@ -254,12 +253,11 @@ log_path = "exit 1"
 observed_and_assumption = "the worktree is held unlanded; 1001.2: Host lacks asset registration and branch account persistence; ACCOUNT_OPEN isolation and principal-sequence admission cannot execute. TestExecuteLedgerAdmission retains its success assertion and fails with LXP_MODULE_DISABLED. 1010.2: bound author fields pass through the governance path, but main-account SEND cannot reach asset checks; the asset path also retains mandatory Ed25519 activity verification without an EVM substitution interface."
 
 [finding.1.1.13]
-revision = "f1a49cb47"
+revision = ""
 command = "make build && go test -count=1 ./modules/lxphost/ -run TestReadBridge"
-exit_code = 1
+exit_code = 2
 log_path = "logs/1.1.13-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; 1004.3 / acceptance.1.4.3: Host.Execute refuses asset registration with LXP_ERR_MODULE_DISABLED; the 250-unit asset value assertions remain intact and unreached. 4.1: Host has no persisted/restored lx_account_registry interface; ReadBalance, ReadTotalUnits, ReadAccount and ReadAccountOwner cannot supply account-backed values. Unrelated: modules/lxphost/host.go: lxphost_reset registers only governance and Programs; lxphost_outcome_read rejects account-backed state."
-
+observed_and_assumption = "verify passed (0 passed, 0 failed; tests not reached). Gaps: acceptance.1.33.4: inherited package scan matches canonical account-name literals in unowned accountmap.go and package tests; assertion preserved. Unrelated: Makefile:234 checkpoint-settlement header generation fails its exact-one maximum_attestation_delay_seconds assertion against contracts/config/checkpoint-settlement.json; both gates stop before their Go commands."
 [finding.5.1.1]
 revision = "394df70af"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test attest"
@@ -630,12 +628,11 @@ log_path = "logs/4.2.9-verify-2.log"
 observed_and_assumption = "two cases fail and the branch is held: expired accepted-task cancellation returns F01_TASK_ALREADY_ACCEPTED and stale metadata returns Ok instead of WRONG_ROSTER, contradicting the scoped guards, and the build diagnostics reference another checkout because the cargo target directory was shared."
 
 [finding.6.5.11]
-revision = "9443df8f2"
-command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test write"
+revision = ""
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test write --test schema"
 exit_code = 101
 log_path = "logs/6.5.11-verify-1.log"
-observed_and_assumption = "the build fails because build.rs refuses src/generated.rs at version 1.11 against schema 2.0; the generated Rust, the version goldens and tests/write.rs are outside touches, so the branch is held."
-
+observed_and_assumption = "verify passed (9 passed, 1 failed; write binary not executed). Gaps: acceptance.6.58.1: Typed API negotiation refuses major 1 with unsupported_major and accepts major 2; daemon ingress proof is unavailable because agent/crates/layerx-agentd/src/agent_rpc.rs has no contract_major field and is outside touches. Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --all-targets --no-deps | exit 101 | logs/6.5.11-clippy-2.log | 32 diagnostics in unowned src/identity.rs and src/read.rs; the owned generator length diagnostic was fixed during formatting."
 [finding.6.5.13]
 revision = "b707989f7"
 command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors"
@@ -693,12 +690,11 @@ log_path = "logs/4.2.5-verify-1.log"
 observed_and_assumption = "the verify failed to resolve items that the build compiled because several checkouts shared one cargo target directory; the worker re-runs with a per-task target directory."
 
 [finding.4.2.11]
-revision = "b1a423af2"
-command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native"
-exit_code = 101
-log_path = "logs/4.2.11-verify-2.log"
-observed_and_assumption = "the verify emitted type errors from another checkout because the cargo target directory was shared, and the F06 dispatch routing was reported outside touches although dispatch.rs is in the task touches; the worker re-runs with a per-task target directory."
-
+revision = ""
+command = "make paxai-host-boundary-build && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test rewards_native"
+exit_code = 2
+log_path = "logs/4.2.11-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed; tests not reached). Gaps: acceptance.4.34.3 registered C account comparison is implemented; getProgramAccount and bank-denom/FUND parity are not exposed by the host fixture. Unrelated: Makefile:234 checkpoint header generation fails the maximum_attestation_delay_seconds cardinality check against contracts/config/checkpoint-settlement.json; fixture manifest and reward tests are not produced."
 [finding.6.5.31]
 revision = "fb2f077fb"
 command = "cd agent/sdk/typescript && npm run build && node dist/test/rpc.test.js"
@@ -931,12 +927,11 @@ log_path = "logs/8.5.20-verify-1.log"
 observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8032.2 / acceptance.8.32.2: sendSponsoredBatch drops the signed receipt in human/apps/web/src/api/gas-station.ts, which is excluded from touches; the wallet SDK submit interface also returns only a hash.; 8032.3 / acceptance.8.32.3: GasStationModule.pending exposes no retained transaction hash, and the TypeScript SDK lacks the sequencer receipt decoder/verifier and governed key interface; recovery now only reads stat; unrelated: typecheck cannot start because tsc is absent; verification fails on absent typescript before any behavior test runs.; repository ESLint is absent; format/lint command exited 127 | logs/8.5.20-format-1.log"
 
 [finding.8.5.23]
-revision = "6d19a1e35"
+revision = ""
 command = "cd human/apps/web && node --test e2e/explorer-account.test.ts"
-exit_code = 1
+exit_code = 0
 log_path = "logs/8.5.23-verify-1.log"
-observed_and_assumption = "held in progress at the reported revision (build exit 127); gaps: 8045.1: Native program and name projection replacements are absent; retained /v1 client methods use the sole native origin but cannot become native pages through the scoped interfaces.; 8045.3 / 8.6: mirror-server.ts, src/app/api/explorer/verify/route.ts, explorer-verifier.test.ts and package.json are outside touches; mirror verifier removal remains outstanding.; 8049.1 / 8.6: human/crates/layerx-explorer-index/src/m; unrelated: Typecheck cannot start because the fresh web checkout has no installed TypeScript executable (tsc: not found).; Existing unified-account decoder tests fail because unifiedDocument omits mandatory layerx_activity (GOTCHA.kvx entry 661); assertions and decoder checks preserved.; ESLint dependencies ar"
-
+observed_and_assumption = "verify passed (10 passed, 0 failed). Unrelated: human/apps/web/src/api/wallet.ts:75: TS2345; caller omits required GasQuoteRequest.did."
 [finding.10.5.37]
 revision = "ce4de45e8"
 command = "npm --prefix platform/middleware/seller test"
@@ -1134,12 +1129,11 @@ log_path = "logs/6.2.7-verify-1.log"
 observed_and_assumption = "the declared build and verify gates pass and the task is landed"
 
 [finding.6.5.46]
-revision = "a598a9b40"
-command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --all-targets"
+revision = ""
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test degraded"
 exit_code = 101
-log_path = "logs/6.5.46-clippy-1.log"
-observed_and_assumption = "clippy stops in the layerx-platform-internal dependency on eight deny-level lints in events.rs, producer.rs and tls.rs outside the gateway files of this task; task 0.107 owns them and the 6.5.46 verify_cmd does not include clippy."
-
+log_path = "logs/6.5.46-verify-1.log"
+observed_and_assumption = "verify passed (8 passed, 5 failed). Gaps: do_5: Service::refresh authenticates GET /internal/v1/principal; payment_events.rs has no lx_sendActivity call or eth_sendRawTransaction enrollment interface to migrate. Unrelated: payment restart Client::step requires the genuine webhook /internal/v1/readiness/payment admission route; events::Service lacks it and the gateway has no webhook dependency, outside touches. Existing restart assertion remains intact."
 [finding.0.92]
 revision = "e45446d3b"
 command = "python3 tools/paxeer-x/tests/retired_callers_test.py --self-test"
@@ -1565,3 +1559,87 @@ command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component repl
 exit_code = 0
 log_path = "logs/11.5.212-verify-1.log"
 observed_and_assumption = "verify passed (0 passed, 0 failed (static scan passed; no behavioral tests run)). Unrelated: Programs vendors serde_json 1.0.151 while layerx-client requires =1.0.149; make build stops at Makefile:3426 with Cargo exit 101."
+
+[finding.11.5.230]
+revision = "b3f8f0304"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component finality-authority --component lni --component paxeer-verifier --path tools/qualification/paxeer-x/arbiter-admission.py --path tools/qualification/paxeer-x/arbiter-native-authority.py --path tools/qualification/paxeer-x/arbiter-prestate-transport.py"
+exit_code = 0
+log_path = "logs/11.5.230-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (source scan; zero findings)). Gaps: 11022.2 / acceptance.11.22.2: the same arbiter Rust fixtures authenticate kernel batch headers and receipt inclusion, without a CometBFT commit/native per-key proof interface; source inventories now bind the existing chain verifier, but fixture migration is outside touches."
+
+[finding.11.5.231]
+revision = "91fc9dcc6"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component finality-authority --component batch-seal --component lni --component paxeer-verifier --path tools/qualification/paxeer-x/arbiter_prestate.py --path tools/qualification/paxeer-x/asset-execution-prestate.py --path tools/qualification/paxeer-x/asset-inventory.py"
+exit_code = 0
+log_path = "logs/11.5.231-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (static scan: zero findings; no test cases run)). Gaps: 11022.2: the retained native fixtures emit kernel header signatures and proofs, without Comet header/commit and native per-key proof inputs; fixture and Rust verifier migration is outside touches."
+
+[finding.11.5.236]
+revision = "950684e89"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component checkpoint-evidence --path tools/qualification/paxeer-x/market-sandbox-capture.py --path tools/qualification/paxeer-x/mcp_daemon_revocation.py --path tools/qualification/paxeer-x/mcp_served_writes.py"
+exit_code = 0
+log_path = "logs/11.5.236-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed). Gaps: 11025.2: Retired settlement level and rank five removed; agent-api Level, layerx-types VerificationLevel and daemon receipt/proof responses still implement certificate finality, without committed receipt evidence for retargeting CheckpointFinalised."
+
+[finding.11.5.238]
+revision = "2117a6049"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component finality-authority --component lni --path tools/qualification/paxeer-x/native-journey-approval.py --path tools/qualification/paxeer-x/native-program-presentation.py --path tools/qualification/paxeer-x/native-programs-link.py"
+exit_code = 0
+log_path = "logs/11.5.238-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (source scan; zero findings)). Gaps: 11009.2: the delegated replay harness has no chain-height ReceiptKeys query or sequencer WAL standby qualification; replacing that harness requires changes outside touches."
+
+[finding.11.5.242]
+revision = "b4e991cc3"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component guarantor-runtime --component finality-authority --component lni --component paxeer-verifier --component settlement-domain --path tools/qualification/paxeer-x/registry-router-bootstrap.py --path tools/qualification/paxeer-x/replay-catalogue.py --path tools/qualification/paxeer-x/router-authority-schema.py"
+exit_code = 0
+log_path = "logs/11.5.242-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (scan-only; zero retired references)). Gaps: 11021.2: platform/hosted/gateway/openrpc.json and rpc::tests::schema_lists_every_public_method still describe legacy ingress and omit the required chain methods; the replacement schema check refuses that catalogue."
+
+[finding.4.3.4]
+revision = "d3d50ce86"
+command = "go test -count=1 ./precompiles/layerxprograms/ -run TestRequiredGas"
+exit_code = 0
+log_path = "logs/4.3.4-verify-1.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: 4042.3 revert asserted through the framework Precompile built on this ABI with WithLXPReasons (LXP_PRECOMPILE_UNKNOWN_METHOD); the wired 0x101D precompile (layerxprograms.go, setup.go) is a later task and not in tree; it must route RequiredGas to layerxprograms.RequiredGas, not WithGasTable, since the framework table charges argument bytes only and charges UnknownMethodCallGas for unknown selectors, while acceptance 4.42.1/4.42.3 charge over the whole calldata (getProgram 36 bytes = 1108)"
+
+[finding.0.117]
+revision = "0638e0148"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --bin paxeer-gas-station"
+exit_code = 0
+log_path = "logs/0.117-verify-1.log"
+observed_and_assumption = "verify passed (6 passed, 0 failed)."
+
+[finding.3.4.8]
+revision = ""
+command = "go test -count=1 ./precompiles/launchpad/"
+exit_code = 1
+log_path = "logs/3.4.8-verify-2.log"
+observed_and_assumption = "verify passed (5 passed, 2 failed (cycle 1 with -v: logs/3.4.8-verify-1.log exit 1, 4 passed 3 failed)). Gaps: none (do_1 TestGetProtocolFeesPerMarket and do_3 pinned getProtocolFees row already landed with 3.2.11; do_2 full trimmed getConfig tuple names + values added; do_5 getReserves/getPrice/getPriceSnapshots 0,2,3-swap ring order, getMarkets/getMarketsByCreator records, getAccumulatedFees, getFeeBps vs keeper added; do_4 untouched) Unrelated: TestClaimAirdropForEpochThroughThePrecompile:474 expects substring 'not opened' but module now reverts LXP_LAUNCHPAD_INVALID_AIRDROP_EPOCH (prior on main, outside this task's do_* lines)"
+
+[finding.11.5.232]
+revision = ""
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --component lni --component settlement-domain --path tools/qualification/paxeer-x/authority-evidence-read.py --path tools/qualification/paxeer-x/authority-lni-readiness.py --path tools/qualification/paxeer-x/budget-proof-intake.py"
+exit_code = 1
+log_path = "logs/11.5.232-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 1 failed (scan gate; 24 references; no behavior tests)). Gaps: 11024.2: the obsolete settlement input was removed; receipt exports cannot be switched to chain-id/validator-history verification through the custody-only CLI without a receipt-evidence interface."
+
+[finding.4.2.12]
+revision = ""
+command = "make paxai-host-boundary-build && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test roster_transition"
+exit_code = 2
+log_path = "logs/4.2.12-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (tests not reached)). Unrelated: Makefile:234 checkpoint-settlement header assertion requires exactly one maximum_attestation_delay_seconds entry in contracts/config/checkpoint-settlement.json and exits 1; make exits 2 before fixture creation and roster tests."
+
+[finding.11.5.118]
+revision = ""
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --path interop/crates/layerx-interop-service/src/config.rs --path interop/crates/layerx-interop-service/src/server.rs"
+exit_code = 0
+log_path = "logs/11.5.118-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (source scan; Rust unit tests unrun)). Gaps: 11009.2/do_3: custodyproof/verify.go has no ReceiptKeys proof request or callable Rust bridge to its commit/header verifier; governed keys are read over authenticated TLS without Comet proof. Unrelated: build E0599 at human/crates/layerx-intents/src/native_custody.rs:46: AccountNamespace::SystemPaxeerReserve is absent; exit 101; logs/11.5.118-build-1.log"
+
+[finding.11.5.168]
+revision = ""
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component checkpoint-evidence --path platform/integrations/agents/src/daemon-providers.ts"
+exit_code = 0
+log_path = "logs/11.5.168-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (source scan only)). Gaps: acceptance.11.25.2 / req.11025.2: no TypeScript binding to custodyproof/verify.go or committed-proof input in AgentReceiptEvidence; CheckpointFinalised still refuses with unavailable-capability instead of verifying a block commit. Unrelated: fleet commit helper exit 1 because no new owned changes were staged; rebased earlier commit retained; logs/11.5.168-commit-1.log."

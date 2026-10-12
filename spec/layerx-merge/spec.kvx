@@ -15238,7 +15238,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.3.4]
 title = "Fixed per-method gas table for 0x101D"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.1"]
@@ -41887,7 +41887,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.117]
 title = "Gas station image fetches the receipt keys and refuses a bad configuration before either process starts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.108", "0.110"]
@@ -61407,7 +61407,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.230]
 title = "Re-target arbiter-admission.py, arbiter-native-authority.py, arbiter-prestate-transport.py off the guarantor runtime and 3 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61437,7 +61437,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.231]
 title = "Re-target arbiter_prestate.py, asset-execution-prestate.py, asset-inventory.py off the guarantor runtime and 4 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61582,7 +61582,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.236]
 title = "Re-target market-sandbox-capture.py, mcp_daemon_revocation.py, mcp_served_writes.py off the guarantor runtime and 1 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61638,7 +61638,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.238]
 title = "Re-target native-journey-approval.py, native-program-presentation.py, native-programs-link.py off the guarantor runtime and 2 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -61750,7 +61750,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.242]
 title = "Re-target registry-router-bootstrap.py, replay-catalogue.py, router-authority-schema.py off the guarantor runtime and 4 more"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
