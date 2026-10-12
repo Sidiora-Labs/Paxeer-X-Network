@@ -8081,7 +8081,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.6.7]
 title = "Giga executor hands 0x101B to the ordinary execution path"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = ["2.4.9"]
@@ -19661,7 +19661,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.1]
 title = "Validate and store the origin-2 params through MsgSetParams"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.1.3"]
@@ -25363,7 +25363,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.13]
 title = "Attestation replay test"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.12"]
@@ -30290,7 +30290,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3.2]
 title = "Perps price feeder pushes oracle observations as EVM transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["7.0.8", "0.3", "0.114"]
@@ -30373,7 +30373,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.4.2]
 title = "paxai-worker sends ai-market operations as layerxprograms calls"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["7.0.8", "0.114"]
@@ -30767,7 +30767,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.10]
 title = "Core boundary sends treasury payouts as EVM transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.0.8", "0.3", "0.114"]
@@ -31246,7 +31246,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.7.2]
 title = "Monitoring drops the kernel readiness scrape"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 7
 requires = ["7.4.6"]
@@ -41111,7 +41111,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.26]
 title = "Interop gateway settles on signed sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.25", "0.114"]
@@ -41138,7 +41138,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.27]
 title = "Indexer pages history by block position and lists budget and grant records by holder"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42376,7 +42376,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.129]
 title = "layerxagent JobExecuted and JobFailed are proto typed events"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.8"]
@@ -42451,7 +42451,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.132]
 title = "JVM generator renders numeric wire values for ProgramGuestAbi"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.93"]
@@ -42502,7 +42502,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.134]
 title = "Android sample compiles against the regenerated MoveCommitRequest"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.93"]
@@ -42527,7 +42527,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.135]
 title = "JVM descriptor idempotency matches the operation catalogue"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.93", "0.132"]
@@ -42553,7 +42553,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.136]
 title = "Scheduled job execution settles its temporary coinbase account to the fee collector"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.8", "0.129"]
@@ -42580,7 +42580,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.137]
 title = "Explorer transaction and receipt status answer committed only for a transaction in a consensus block"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["8.5.36", "0.131"]
@@ -42621,6 +42621,31 @@ symbols = ["Eip1559Call::assemble"]
 touches = ["interop/Cargo.lock", "agent/crates/layerx-crypto/src/evm_transaction.rs"]
 build_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null"
 verify_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null && cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-crypto --all-targets -- -D warnings"
+planned_paths = []
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.139]
+title = "Service fixtures assert the canonical activity id the shared dispatch helper stores"
+status = "in_progress"
+mode = "BUILD"
+wave = 0
+requires = ["6.2.12"]
+reqs = ["2025.1"]
+capabilities = []
+do_1 = "dispatch_activity in tests/modules/test_service_helpers.h:98-101 stores lxp_activity_id of the encoded activity in ctx.activity_id and the marker only feeds the idempotency key, so add a helper beside dispatch() that rebuilds exactly the canonical activity dispatch() builds (same protocol_version, network id, type, payload, payload hash and marker-derived idempotency key through lxp_activity_encode and lxp_activity_id) and returns its full 32-byte id."
+do_2 = "Replace the five first-byte marker assertions (tests/modules/test_service_offer.c:218, test_service_commit.c:202 and :280, test_service_deliver.c:308, test_service_dispute.c:430) with a memcmp of all 32 bytes against the helper result for that dispatch's type, payload and marker; no assertion is dropped or loosened, hand-built request structs that set id32 markers directly and the attest vectors stay as written."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["dispatch_activity", "expected_activity_id"]
+touches = ["tests/modules/test_service_helpers.h", "tests/modules/test_service_offer.c", "tests/modules/test_service_commit.c", "tests/modules/test_service_deliver.c", "tests/modules/test_service_dispute.c"]
+build_cmd = "make build/tests/test_service_offer build/tests/test_service_commit build/tests/test_service_deliver build/tests/test_service_dispute build/tests/test_service_attest"
+verify_cmd = "make test-service-offer test-service-commit test-service-deliver test-service-dispute test-service-attest test-service-acceptance"
 planned_paths = []
 gate_kind = "existing"
 max_builds = 1
@@ -56870,7 +56895,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.46]
 title = "Re-target stream.kvx, v1.kvx, write.kvx off the settlement domain and export trust and 2 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]

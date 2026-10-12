@@ -7661,3 +7661,28 @@ fix = "install with pnpm inside human/wallet and run gates from the package dire
 area = "explorer mix compile"
 symptom = "mix compile of the whole umbrella takes more than ten minutes on the shared host"
 fix = "run it detached with an exit file and poll"
+
+[gotcha.1618]
+area = "platform-sdkgen lock refresh"
+symptom = "platform-sdkgen --write stops at the first file not classified in platform/sdk/pipeline.kvx and names only one per run"
+fix = "declare every new handwritten file, tests included, in pipeline.kvx before refreshing the lock"
+
+[gotcha.1619]
+area = "platform-sdkgen lock digest"
+symptom = "the lock's generator digest covers generate_jvm.py, so any later edit to the generator, even reformatting, invalidates the lock"
+fix = "run --write again as the last step after formatting"
+
+[gotcha.1620]
+area = "Android sample ObjectMapper"
+symptom = "MoveQuoteRequest has no native_access_id and the sample ObjectMapper fails on unknown properties"
+fix = "strip native_access_id from the quote JSON before convertValue"
+
+[gotcha.1621]
+area = "sdk.Context in this tree"
+symptom = "sdk.Context has no Logger(), so a hook that must not halt cannot log an EmitTypedEvent error"
+fix = "return the joined errors to the caller and have callers require.NoError"
+
+[gotcha.1622]
+area = "buf generate per file"
+symptom = "buf generate . --path api/<m>/<f>.proto also writes a gogofaster copy under build/proto/gogofaster"
+fix = "copy only the gocosmos pb.go into the module and remove build/"

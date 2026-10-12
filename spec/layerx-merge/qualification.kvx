@@ -1397,11 +1397,11 @@ log_path = "logs/1.2.8-verify-1.log"
 observed_and_assumption = "verify passed (7 passed, 0 failed)."
 
 [finding.5.2.1]
-revision = "ea82a464d"
-command = "<declared verify_cmd, run with -v>"
-exit_code = 1
-log_path = "logs/5.2.1-verify-1.log"
-observed_and_assumption = "held unlanded: 28 of 29 verify tests pass; node/upgrades_v610_test.go:56 pins the plan list without MergeUpgrade (v7.0) registered at node/upgrades.go:464 by an earlier task, so do_11 and the touches now cover that test and the worktree is rerun."
+revision = "04961ee52"
+command = "go test -count=1 ./modules/xweb/types/ ./modules/xweb/keeper/ -run '^(TestMsgValidateBasic"
+exit_code = 0
+log_path = "logs/5.2.1-r2-verify-1.log"
+observed_and_assumption = "verify passed (29 passed, 0 failed)."
 [finding.0.113]
 revision = "d4a1b1b35"
 command = "<verify_cmd as in task block>"
@@ -1672,11 +1672,11 @@ log_path = "logs/0.25-verify-1.log"
 observed_and_assumption = "verify passed (7 passed, 0 failed). Gaps: do_2 says 'ordinal = logIndex' but the Go encoder (node/sequencer/receipt.go encodeReceipt) writes log i as ordinal i+1 and the pax_sequencerReceipt server (rpc/sequencer_receipt.go) serves logIndex i; the verifier follows the tree (effect n+1 has ordinal n+1, served logIndex n), so real receipts verify Unrelated: cargo clippy -p layerx-proof --all-targets --no-deps exits 101 because of existing lints in export_codec.rs, receipt.rs and state_range.rs (none in sequencer_logs.rs); without --no-deps it stops earlier on missing_errors_doc in layerx-types program_lifecycle.rs; log logs/0.25-clippy.log"
 
 [finding.0.27]
-revision = "61cdaced7"
+revision = "eb9ea8290"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test history_position && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test ingest && cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway history"
-exit_code = 101
-log_path = "logs/0.27-verify-2.log"
-observed_and_assumption = "held unlanded: history_position 6 and ingest 5 pass; three gateway history tests fail because page() in platform/hosted/gateway/src/history.rs accepts only descending numeric row ids; decision 81 widens this task to change page(), and the worktree is rerun."
+exit_code = 0
+log_path = "logs/0.27-verify-1.log"
+observed_and_assumption = "verify passed (18 passed, 0 failed (6 history_position, 5 ingest, 7 gateway history)). Unrelated: cargo clippy -p layerx-platform-gateway --all-targets cannot reach the gateway: layerx-indexer lib fails 71 pedantic clippy lints (doc_markdown, too_many_lines, manual is_multiple_of, needless_pass_by_value), none on lines this task changed (git blame)"
 [finding.0.123]
 revision = "9020a16a9"
 command = "(task verify_cmd: six cargo metadata --locked checks && make programs-build)"
@@ -1767,3 +1767,38 @@ command = "npm --prefix human/wallet/sdk exec -- tsc -p tsconfig.json --noEmit &
 exit_code = 1
 log_path = "logs/0.125-verify-1.log"
 observed_and_assumption = "held unlanded: the task premise did not hold, human/wallet/sdk resolves the pnpm-locked @noble/curves 1.9.1 which has ExtendedPoint and no Point, and the npm --prefix exec gate form runs tsc in the caller directory; decision 82 rescopes the task to the 1.9.1 API with package-directory pnpm gates and the worktree is reset and rerun."
+
+[finding.0.132]
+revision = "a46451972"
+command = "mvn -B -f platform/sdk/jvm/pom.xml test -Dtest=GeneratedProgramAbiTest"
+exit_code = 0
+log_path = "logs/0.132-verify-1.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed). Gaps: the emulator discovery reply carries value_accounts, which ProgramDiscoverResponse does not declare, so the default mapper refuses the full reply; the test fixture uses every other emulator discovery field and leaves value_accounts out Unrelated: committed GeneratedSchema.java was already stale against the agent schema (Level->Rung, SubmitResponse/TrackResponse/WaitRequest/WaitResponse field changes); regeneration carried that drift in, compile is clean | the lock refresh refused because files from earlier tasks were never classified; declared agent/sdk python/layerx_sdk/evm_transaction.py and .pyi plus conformance fixtures/sequencer-receipt-v1.json as handwritten | lock refresh also updated the agent-api source digest and the agent-api-rust generated.rs digest (prior drift)"
+
+[finding.0.134]
+revision = "133a3743d"
+command = "mvn -B -q -f platform/sdk/jvm/pom.xml -DskipTests install && mvn -B -f platform/integrations/android/pom.xml -Psample test-compile"
+exit_code = 0
+log_path = "logs/0.134-verify-1.log"
+observed_and_assumption = "verify passed (compile gate (no tests), 5 sample sources compiled, 0 failed)."
+
+[finding.0.129]
+revision = "89a2cdf33"
+command = "buf lint api && go test -count=1 ./modules/layerxagent/..."
+exit_code = 0
+log_path = "logs/0.129-verify-1.log"
+observed_and_assumption = "verify passed (5 passed (keeper package), 0 failed; buf lint clean)."
+
+[finding.2.6.7]
+revision = "cf2bb37e1"
+command = "go test -count=1 ./engine/executor/precompiles/ -run TestLateFailFastPrecompiles"
+exit_code = 0
+log_path = "logs/2.6.7-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed)."
+
+[finding.7.7.2]
+revision = "4dd250f14"
+command = "bash tools/ops/monitoring/test.sh"
+exit_code = 0
+log_path = "logs/7.7.2-verify-1.log"
+observed_and_assumption = "verify passed (24 passed, 0 failed). Gaps: acceptance.7.35.1: KernelReadyzDown and its cases remain in tools/ops/monitoring/rules.yml and tools/ops/monitoring/rules_test.yml outside touches; previously recorded in qualification.kvx finding.7.1.5."
