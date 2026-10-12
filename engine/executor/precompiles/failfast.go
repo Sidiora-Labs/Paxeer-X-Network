@@ -119,6 +119,7 @@ var LateFailFastPrecompileAddresses = []common.Address{
 	common.HexToAddress(launchpad.LaunchpadAddress),
 	common.HexToAddress(feetoken.FeeTokenAddress),
 	common.HexToAddress(xweb.XWebAddress),
+	common.HexToAddress("0x000000000000000000000000000000000000101B"),
 }
 
 // AllCustomPrecompilesFailFastLate maps every address of

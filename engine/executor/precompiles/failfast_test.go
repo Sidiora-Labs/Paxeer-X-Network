@@ -22,7 +22,7 @@ func TestSelfDestructAbortError(t *testing.T) {
 
 func TestLateFailFastPrecompiles(t *testing.T) {
 	late := gigaprecompiles.LateFailFastPrecompileAddresses
-	require.Len(t, late, 5)
+	require.Len(t, late, 6)
 	for _, addr := range gigaprecompiles.FailFastPrecompileAddresses {
 		require.Same(t, gigaprecompiles.FailFastSingleton, gigaprecompiles.AllCustomPrecompilesFailFast[addr])
 		require.Same(t, gigaprecompiles.FailFastSingleton, gigaprecompiles.AllCustomPrecompilesFailFastLate[addr])
@@ -39,9 +39,11 @@ func TestLateFailFastPrecompiles(t *testing.T) {
 		"0x0000000000000000000000000000000000001017",
 		"0x0000000000000000000000000000000000001018",
 		"0x0000000000000000000000000000000000001019",
+		"0x000000000000000000000000000000000000101B",
 	} {
 		require.Contains(t, late, common.HexToAddress(hex))
 	}
 	_, err := gigaprecompiles.FailFastSingleton.Run(nil, common.Address{}, common.Address{}, nil, nil, false, false, nil)
+	require.ErrorIs(t, err, gigaprecompiles.ErrInvalidPrecompileCall)
 	require.True(t, gigautils.ShouldExecutionAbort(err))
 }

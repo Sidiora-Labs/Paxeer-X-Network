@@ -79,6 +79,7 @@ var forkPrecompiles = []forkPrecompile{
 	{"launchpad", launchpadprecompile.LaunchpadAddress},
 	{"feetoken", feetokenprecompile.FeeTokenAddress},
 	{"xweb", xwebprecompile.XWebAddress},
+	{"layerxpay", "0x000000000000000000000000000000000000101B"},
 }
 
 // allStoreKeys is the canonical, sorted mount list of module KV stores, the
