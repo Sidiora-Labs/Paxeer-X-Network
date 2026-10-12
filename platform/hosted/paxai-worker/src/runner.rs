@@ -14,6 +14,9 @@
 //! output u32-len || output_manifest u32-len`; role 1 counts input units, role 2 output units.
 //! `describe` (empty request) answers `guarantees:u8 || count:u8 || (model32 || deployment32)*`;
 //! guarantee bit 0 is admission-id idempotency, bit 1 durable fenced acknowledgment.
+//! A model engine run by the runner reads the dispatch request on stdin and answers
+//! `segment_count:u8 || (role:u8 || unit_kind:u8 || count:u64)* || output u32-len ||
+//! output_manifest u32-len` on stdout.
 use crate::auth::{ServiceError, RESULT_KEY_BYTES};
 use crate::store::{JobKey, MAX_ENCRYPTED_BYTES, MAX_REFERENCE_BYTES};
 use layerx_programs_ai_market::{codec::Reader, errors::CodecResult, types::Digest32};
@@ -36,6 +39,8 @@ pub const MAX_SEGMENTS: usize = 16;
 pub const MAX_MODELS: usize = 16;
 pub const MAX_OUTPUT_BYTES: usize = MAX_ENCRYPTED_BYTES;
 pub const MAX_REPORT_BYTES: usize = MAX_OUTPUT_BYTES + MAX_REFERENCE_BYTES + 1_024;
+pub const MAX_PAYLOAD_BYTES: usize = MAX_ENCRYPTED_BYTES;
+pub const MAX_DISPATCH_BYTES: usize = MAX_PAYLOAD_BYTES + MAX_REFERENCE_BYTES + 1_024;
 /// Exit status of a runner that refused a request before starting anything.
 pub const EXIT_NOT_STARTED: i32 = 75;
 const POLL: Duration = Duration::from_millis(5);
@@ -112,6 +117,53 @@ impl Dispatch<'_> {
         put_bytes(&mut out, self.input_manifest)?;
         put_bytes(&mut out, self.payload)?;
         Ok(out)
+    }
+
+    /// The runner side of the protocol: the exact inverse of [`Self::encode`].
+    ///
+    /// # Errors
+    /// `NonCanonical` for any malformed or oversized request.
+    pub fn decode(bytes: &[u8]) -> Result<Dispatch<'_>, ServiceError> {
+        if bytes.len() > MAX_DISPATCH_BYTES {
+            return Err(ServiceError::NonCanonical);
+        }
+        Self::read(bytes).map_err(|_| ServiceError::NonCanonical)
+    }
+
+    fn read(bytes: &[u8]) -> CodecResult<Dispatch<'_>> {
+        let mut r = Reader::new(bytes);
+        read_header(&mut r)?;
+        let job = JobKey::from_digest(Digest32::new(r.fixed()?)?);
+        let fence = r.u64()?;
+        let model = Digest32::new(r.fixed()?)?;
+        let deployment = Digest32::new(r.fixed()?)?;
+        let capability = Digest32::new(r.fixed()?)?;
+        let unit_kind = r.u8()?;
+        let (max_output_bytes, max_input_units) = (r.u32()?, r.u32()?);
+        let (max_units, deadline_ms) = (r.u32()?, r.u32()?);
+        let result_key = match r.u8()? {
+            0 => None,
+            1 => Some(r.fixed()?),
+            _ => return Err(layerx_programs_ai_market::errors::NON_CANONICAL),
+        };
+        let input_manifest = r.bytes(MAX_REFERENCE_BYTES)?;
+        let payload = r.bytes(MAX_PAYLOAD_BYTES)?;
+        r.finish()?;
+        Ok(Dispatch {
+            job,
+            fence,
+            model,
+            deployment,
+            capability,
+            unit_kind,
+            max_output_bytes,
+            max_input_units,
+            max_units,
+            deadline_ms,
+            result_key,
+            input_manifest,
+            payload,
+        })
     }
 }
 
@@ -231,23 +283,7 @@ impl Report {
                 let error_code = r.u16()?;
                 let (start_ns, finish_ns) = (r.u64()?, r.u64()?);
                 let (started_at_ms, finished_at_ms) = (r.u64()?, r.u64()?);
-                let count = usize::from(r.u8()?);
-                if count > MAX_SEGMENTS {
-                    return Err(ServiceError::NonCanonical);
-                }
-                let mut segments = Vec::with_capacity(count);
-                for _ in 0..count {
-                    let role = match r.u8()? {
-                        INPUT_ROLE => Role::Input,
-                        OUTPUT_ROLE => Role::Output,
-                        _ => return Err(ServiceError::NonCanonical),
-                    };
-                    segments.push(Segment {
-                        role,
-                        unit_kind: r.u8()?,
-                        count: r.u64()?,
-                    });
-                }
+                let segments = read_segments(&mut r)?;
                 let completion = Completion {
                     succeeded: status == SUCCEEDED,
                     error_code,
@@ -269,6 +305,60 @@ impl Report {
             job,
             fence,
             progress,
+        })
+    }
+}
+
+fn read_segments(r: &mut Reader<'_>) -> Result<Vec<Segment>, ServiceError> {
+    let count = usize::from(r.u8()?);
+    if count > MAX_SEGMENTS {
+        return Err(ServiceError::NonCanonical);
+    }
+    let mut segments = Vec::with_capacity(count);
+    for _ in 0..count {
+        let role = match r.u8()? {
+            INPUT_ROLE => Role::Input,
+            OUTPUT_ROLE => Role::Output,
+            _ => return Err(ServiceError::NonCanonical),
+        };
+        segments.push(Segment {
+            role,
+            unit_kind: r.u8()?,
+            count: r.u64()?,
+        });
+    }
+    Ok(segments)
+}
+
+/// What a model engine measured and produced for one dispatch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Execution {
+    pub segments: Vec<Segment>,
+    pub output: Vec<u8>,
+    pub output_manifest: Vec<u8>,
+}
+impl Execution {
+    /// # Errors
+    /// `NonCanonical` for any malformed or oversized engine answer or an empty output manifest.
+    pub fn decode(bytes: &[u8]) -> Result<Self, ServiceError> {
+        let mut r = Reader::new(bytes);
+        let segments = read_segments(&mut r).map_err(|_| ServiceError::NonCanonical)?;
+        let output = r
+            .bytes(MAX_OUTPUT_BYTES)
+            .map_err(|_| ServiceError::NonCanonical)?
+            .to_vec();
+        let output_manifest = r
+            .bytes(MAX_REFERENCE_BYTES)
+            .map_err(|_| ServiceError::NonCanonical)?
+            .to_vec();
+        r.finish().map_err(|_| ServiceError::NonCanonical)?;
+        if output_manifest.is_empty() {
+            return Err(ServiceError::NonCanonical);
+        }
+        Ok(Self {
+            segments,
+            output,
+            output_manifest,
         })
     }
 }
@@ -386,6 +476,26 @@ pub struct Description {
     pub loaded: Vec<(Digest32, Digest32)>,
 }
 impl Description {
+    /// The runner side of the protocol: the exact inverse of [`Self::decode`].
+    ///
+    /// # Errors
+    /// `NonCanonical` for unknown guarantee bits or more than `MAX_MODELS` pairs.
+    pub fn encode(&self) -> Result<Vec<u8>, ServiceError> {
+        if self.guarantees & !(ADMISSION_IDEMPOTENT | FENCED_ACKNOWLEDGMENT) != 0
+            || self.loaded.len() > MAX_MODELS
+        {
+            return Err(ServiceError::NonCanonical);
+        }
+        let mut out = Vec::new();
+        header(&mut out);
+        out.push(self.guarantees);
+        out.push(u8::try_from(self.loaded.len()).map_err(|_| ServiceError::NonCanonical)?);
+        for (model, deployment) in &self.loaded {
+            out.extend_from_slice(model.as_bytes());
+            out.extend_from_slice(deployment.as_bytes());
+        }
+        Ok(out)
+    }
     /// # Errors
     /// `NonCanonical` for unknown guarantee bits, too many pairs or malformed bytes.
     pub fn decode(bytes: &[u8]) -> Result<Self, ServiceError> {
@@ -546,5 +656,153 @@ impl ProcessRunner {
             }
             _ => Err(RunnerError::Ambiguous),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Description, Dispatch, Execution, Role, Segment, ADMISSION_IDEMPOTENT,
+        FENCED_ACKNOWLEDGMENT, MAX_MODELS, TOKENS,
+    };
+    use crate::auth::ServiceError;
+    use crate::store::JobKey;
+    use layerx_programs_ai_market::types::Digest32;
+
+    fn digest(byte: u8) -> Result<Digest32, ServiceError> {
+        Ok(Digest32::new([byte; 32])?)
+    }
+
+    fn dispatch<'a>(
+        manifest: &'a [u8],
+        payload: &'a [u8],
+        result_key: Option<[u8; 32]>,
+    ) -> Result<Dispatch<'a>, ServiceError> {
+        Ok(Dispatch {
+            job: JobKey::from_digest(digest(1)?),
+            fence: 7,
+            model: digest(2)?,
+            deployment: digest(3)?,
+            capability: digest(4)?,
+            unit_kind: TOKENS,
+            max_output_bytes: 4_096,
+            max_input_units: 512,
+            max_units: 256,
+            deadline_ms: 30_000,
+            result_key,
+            input_manifest: manifest,
+            payload,
+        })
+    }
+
+    #[test]
+    fn dispatch_round_trip_is_exact() -> Result<(), ServiceError> {
+        for key in [None, Some([9; 32])] {
+            let request = dispatch(b"manifest", b"payload bytes", key)?;
+            let bytes = request.encode()?;
+            assert_eq!(Dispatch::decode(&bytes)?, request);
+            assert_eq!(Dispatch::decode(&bytes)?.encode()?, bytes);
+        }
+        let empty = dispatch(&[], &[], None)?;
+        assert_eq!(Dispatch::decode(&empty.encode()?)?, empty);
+        Ok(())
+    }
+
+    #[test]
+    fn dispatch_decode_refuses_malformed_requests() -> Result<(), ServiceError> {
+        let bytes = dispatch(b"m", b"p", None)?.encode()?;
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert_eq!(Dispatch::decode(&trailing), Err(ServiceError::NonCanonical));
+        assert_eq!(
+            Dispatch::decode(&bytes[..bytes.len() - 1]),
+            Err(ServiceError::NonCanonical)
+        );
+        let presence = 9 + 32 + 8 + 96 + 1 + 16;
+        let mut bad_presence = bytes.clone();
+        bad_presence[presence] = 2;
+        assert_eq!(
+            Dispatch::decode(&bad_presence),
+            Err(ServiceError::NonCanonical)
+        );
+        let mut zero_job = bytes.clone();
+        zero_job[9..41].fill(0);
+        assert_eq!(Dispatch::decode(&zero_job), Err(ServiceError::NonCanonical));
+        let mut bad_magic = bytes;
+        bad_magic[0] = b'Q';
+        assert_eq!(
+            Dispatch::decode(&bad_magic),
+            Err(ServiceError::NonCanonical)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn description_round_trip_is_exact() -> Result<(), ServiceError> {
+        for loaded in [
+            Vec::new(),
+            vec![(digest(2)?, digest(3)?), (digest(5)?, digest(6)?)],
+        ] {
+            let description = Description {
+                guarantees: ADMISSION_IDEMPOTENT | FENCED_ACKNOWLEDGMENT,
+                loaded,
+            };
+            let bytes = description.encode()?;
+            assert_eq!(Description::decode(&bytes)?, description);
+            assert_eq!(Description::decode(&bytes)?.encode()?, bytes);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn description_encode_refuses_what_decode_refuses() -> Result<(), ServiceError> {
+        let unknown_bit = Description {
+            guarantees: 4,
+            loaded: Vec::new(),
+        };
+        assert_eq!(unknown_bit.encode(), Err(ServiceError::NonCanonical));
+        let too_many = Description {
+            guarantees: ADMISSION_IDEMPOTENT,
+            loaded: vec![(digest(2)?, digest(3)?); MAX_MODELS + 1],
+        };
+        assert_eq!(too_many.encode(), Err(ServiceError::NonCanonical));
+        Ok(())
+    }
+
+    #[test]
+    fn execution_decode_reads_the_engine_answer() -> Result<(), ServiceError> {
+        let mut answer = vec![2, 1, TOKENS];
+        answer.extend_from_slice(&12u64.to_be_bytes());
+        answer.extend_from_slice(&[2, TOKENS]);
+        answer.extend_from_slice(&3u64.to_be_bytes());
+        answer.extend_from_slice(&2u32.to_be_bytes());
+        answer.extend_from_slice(b"ok");
+        answer.extend_from_slice(&1u32.to_be_bytes());
+        answer.push(0xAA);
+        assert_eq!(
+            Execution::decode(&answer)?,
+            Execution {
+                segments: vec![
+                    Segment {
+                        role: Role::Input,
+                        unit_kind: TOKENS,
+                        count: 12
+                    },
+                    Segment {
+                        role: Role::Output,
+                        unit_kind: TOKENS,
+                        count: 3
+                    },
+                ],
+                output: b"ok".to_vec(),
+                output_manifest: vec![0xAA],
+            }
+        );
+        let no_manifest = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            Execution::decode(&no_manifest),
+            Err(ServiceError::NonCanonical)
+        );
+        Ok(())
     }
 }
