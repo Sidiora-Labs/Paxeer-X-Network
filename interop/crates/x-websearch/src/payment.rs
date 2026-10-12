@@ -426,7 +426,12 @@ impl GatewayRpc {
     }
 
     pub fn with_authorization_file(mut self, path: &Path) -> Result<Self, GateError> {
-        if !self.tls && self.host.parse::<std::net::IpAddr>().is_ok_and(|ip| !ip.is_loopback()) {
+        if !self.tls
+            && self
+                .host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| !ip.is_loopback())
+        {
             return Err(GateError::Authorization);
         }
         if !self.tls && self.host.parse::<std::net::IpAddr>().is_err() && self.host != "localhost" {
@@ -447,8 +452,9 @@ impl GatewayRpc {
             Some(path) => Some(gateway_authorization(path).ok()?),
             None => None,
         };
-        let header = Zeroizing::new(authorization.as_ref().map_or_else(String::new,
-            |value| format!("Authorization: {}\r\n", value.as_str())));
+        let header = Zeroizing::new(authorization.as_ref().map_or_else(String::new, |value| {
+            format!("Authorization: {}\r\n", value.as_str())
+        }));
         let authorization_header = header.as_str();
         let request = Zeroizing::new(format!(
             "POST {} HTTP/1.1\r\nHost: {}\r\n{authorization_header}Content-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
@@ -480,31 +486,63 @@ impl GatewayRpc {
 
 fn gateway_authorization(path: &Path) -> Result<Zeroizing<String>, GateError> {
     use std::os::unix::fs::MetadataExt as _;
-    if !path.is_absolute() || path.components().any(|part| part.as_os_str().to_str()
-        .is_some_and(|part| part == ".env" || part.starts_with(".env."))) {
+    if !path.is_absolute()
+        || path.components().any(|part| {
+            part.as_os_str()
+                .to_str()
+                .is_some_and(|part| part == ".env" || part.starts_with(".env."))
+        })
+    {
         return Err(GateError::Authorization);
     }
     if fs::canonicalize(path).map_err(|_| GateError::Authorization)? != path {
         return Err(GateError::Authorization);
     }
-    let file = fs::OpenOptions::new().read(true).custom_flags(0x20000 | 0x800)
-        .open(path).map_err(|_| GateError::Authorization)?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(0x20000 | 0x800)
+        .open(path)
+        .map_err(|_| GateError::Authorization)?;
     let metadata = file.metadata().map_err(|_| GateError::Authorization)?;
-    let owner = fs::metadata("/proc/self").map_err(|_| GateError::Authorization)?.uid();
-    if !metadata.is_file() || metadata.nlink() != 1 || metadata.uid() != owner
-        || metadata.mode() & 0o077 != 0 || metadata.len() > 256 {
+    let owner = fs::metadata("/proc/self")
+        .map_err(|_| GateError::Authorization)?
+        .uid();
+    if !metadata.is_file()
+        || metadata.nlink() != 1
+        || metadata.uid() != owner
+        || metadata.mode() & 0o077 != 0
+        || metadata.len() > 256
+    {
         return Err(GateError::Authorization);
     }
     let mut bytes = Zeroizing::new(Vec::new());
-    file.take(257).read_to_end(&mut bytes).map_err(|_| GateError::Authorization)?;
-    if bytes.len() > 256 { return Err(GateError::Authorization); }
+    file.take(257)
+        .read_to_end(&mut bytes)
+        .map_err(|_| GateError::Authorization)?;
+    if bytes.len() > 256 {
+        return Err(GateError::Authorization);
+    }
     let text = std::str::from_utf8(&bytes).map_err(|_| GateError::Authorization)?;
-    let text = text.strip_suffix("\r\n").or_else(|| text.strip_suffix('\n')).unwrap_or(text);
-    let (id, secret) = text.strip_prefix("LayerX-Key ").and_then(|value| value.split_once(':'))
+    let text = text
+        .strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text);
+    let (id, secret) = text
+        .strip_prefix("LayerX-Key ")
+        .and_then(|value| value.split_once(':'))
         .ok_or(GateError::Authorization)?;
-    if id.is_empty() || id.len() > 64 || !id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        || !secret.strip_prefix("lxp_live_").is_some_and(|value| value.len() == 64
-            && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))) {
+    if id.is_empty()
+        || id.len() > 64
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        || !secret.strip_prefix("lxp_live_").is_some_and(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+    {
         return Err(GateError::Authorization);
     }
     Ok(Zeroizing::new(text.to_owned()))
@@ -670,8 +708,11 @@ impl DeliveryResponse {
         if self.body_digest != hex(&sha256(&[&self.body])) || !(100..=599).contains(&self.status) {
             return Err(io::ErrorKind::InvalidData.into());
         }
-        let digests: Vec<_> = self.headers.iter()
-            .filter(|(name, _)| name.eq_ignore_ascii_case("Content-Digest")).collect();
+        let digests: Vec<_> = self
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("Content-Digest"))
+            .collect();
         if digests.len() != 1
             || digests[0].1 != format!("sha-256=:{}:", STANDARD.encode(sha256(&[&self.body])))
             || self.content_type != "application/json"
@@ -1084,10 +1125,18 @@ impl PaymentGate {
             None => rpc,
         };
         let store = PaymentStore::open(&config.data_dir).map_err(GateError::Store)?;
-        let lease = fs::OpenOptions::new().read(true).write(true).create(true)
-            .truncate(false).mode(0o600).custom_flags(0x20000)
-            .open(store.root.join("writer.lock")).map_err(GateError::Store)?;
-        lease.try_lock().map_err(|_| GateError::Store(io::Error::other("payment journal already open")))?;
+        let lease = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(0x20000)
+            .open(store.root.join("writer.lock"))
+            .map_err(GateError::Store)?;
+        lease
+            .try_lock()
+            .map_err(|_| GateError::Store(io::Error::other("payment journal already open")))?;
         let public_key = receiver.verifying_key().to_bytes();
         let did = receiver_did(&public_key);
         let mut accounts = [[0; 32]; 4];
@@ -1108,7 +1157,7 @@ impl PaymentGate {
                 did,
                 accounts,
             },
-            network: format!("layerx:{}", config.kernel_network_id),
+            network: format!("eip155:{}", config.evm.chain_id),
             network_id: config.kernel_network_id,
             trust: config.gateway.sequencer,
             payer: payment.payer_did.clone(),
@@ -1372,9 +1421,18 @@ impl PaymentGate {
                 .response();
         }
         if delivery.state == DeliveryState::Failed && (self.clock)() < delivery.retry_after_ms {
-            let remaining = delivery.retry_after_ms.saturating_sub((self.clock)()).div_ceil(1_000);
-            let mut response = delivery.response.as_ref().ok_or(io::ErrorKind::InvalidData)?.response()?;
-            response.headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
+            let remaining = delivery
+                .retry_after_ms
+                .saturating_sub((self.clock)())
+                .div_ceil(1_000);
+            let mut response = delivery
+                .response
+                .as_ref()
+                .ok_or(io::ErrorKind::InvalidData)?
+                .response()?;
+            response
+                .headers
+                .retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
             return Ok(response.with_header("Retry-After", &remaining.max(1).to_string()));
         }
         delivery.state = DeliveryState::Computing;
@@ -1434,7 +1492,9 @@ impl PaymentGate {
             delivery.failures = delivery.failures.saturating_add(1);
             let delay = (1_u64 << delivery.failures.saturating_sub(1).min(6)).min(60);
             delivery.retry_after_ms = (self.clock)().saturating_add(delay * 1_000);
-            response.headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
+            response
+                .headers
+                .retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
             response = response.with_header("Retry-After", &delay.to_string());
             DeliveryState::Failed
         };
@@ -2355,5 +2415,87 @@ mod chunked_tests {
             }
             other => panic!("chunked answer not read: {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod offer_tests {
+    use std::error::Error;
+    use std::net::SocketAddr;
+
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine as _;
+    use ed25519_dalek::SigningKey;
+    use layerx_interop_gateway::adapter::{AdapterId, ConformanceSuite};
+    use layerx_x402::seller::Seller;
+    use serde_json::{json, Value};
+
+    use super::{receiver_did, PaymentGate, PAYER_DID, PAYMENT_REQUIRED};
+    use crate::config::Config;
+    use crate::server::{Request, Response, Route};
+
+    const fn fixed_clock() -> u64 {
+        1_700_000_000_000
+    }
+
+    #[test]
+    fn offers_carry_the_configured_eip155_chain_and_an_unpaid_fetch_answers_402(
+    ) -> Result<(), Box<dyn Error>> {
+        let data =
+            std::env::temp_dir().join(format!("x-websearch-payment-offers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data);
+        let mut config: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/config/valid.json"))?;
+        config["data_dir"] = json!(data);
+        config["evm"]["chain_id"] = json!(125);
+        let config = Config::parse(&config.to_string())?;
+        let conformance = ConformanceSuite::new(AdapterId::new("x402-v2")?, 1, [7; 32])?;
+        let gate = PaymentGate::new(
+            &config,
+            &SigningKey::from_bytes(&[11; 32]),
+            conformance,
+            fixed_clock,
+        )?;
+        let payer = receiver_did(&SigningKey::from_bytes(&[12; 32]).verifying_key().to_bytes());
+        let request = Request {
+            method: "GET".to_owned(),
+            route: Route::Fetch,
+            path: "/fetch".to_owned(),
+            query: Some("url=https%3A%2F%2Fpaxeer.app%2F".to_owned()),
+            headers: vec![
+                ("Host".to_owned(), "127.0.0.1:8480".to_owned()),
+                (PAYER_DID.to_owned(), payer.clone()),
+            ],
+            digest: None,
+            peer: SocketAddr::from(([127, 0, 0, 1], 40_000)),
+        };
+
+        let required = gate
+            .payment_required(&request, Some(&payer))
+            .map_err(|response| format!("offers refused with {}", response.status))?;
+        assert_eq!(required.accepts.len(), 8);
+        assert!(required
+            .accepts
+            .iter()
+            .all(|offer| offer.network == "eip155:125"));
+        let expected = serde_json::to_value(&required)?;
+        Seller::new(required)?;
+
+        let response = gate.settle(&request, &|_| Response::error(500, "released"));
+        assert_eq!(response.status, 402);
+        let header = response
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(PAYMENT_REQUIRED))
+            .map(|(_, value)| value)
+            .ok_or("402 without PAYMENT-REQUIRED")?;
+        let signalled: Value = serde_json::from_slice(&STANDARD.decode(header)?)?;
+        assert_eq!(signalled, expected);
+        let body: Value = serde_json::from_slice(&response.body)?;
+        assert_eq!(body["error"], json!("payment_required"));
+        assert_eq!(body["paymentRequired"], expected);
+        drop(gate);
+        std::fs::remove_dir_all(&data)?;
+        Ok(())
     }
 }
