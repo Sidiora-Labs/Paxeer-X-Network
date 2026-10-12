@@ -106,9 +106,18 @@ def validate_catalogue(document):
         require(
             isinstance(entry, dict)
             and "path" in entry
-            and set(entry) <= {"path", "symbols", "lines"}
+            and set(entry) <= {"path", "symbols", "lines", "citation"}
             and ("symbols" in entry or "lines" in entry),
             "invalid allowed reference",
+        )
+        require(
+            "citation" not in entry
+            or (
+                isinstance(entry["citation"], str)
+                and entry["citation"].strip()
+                and "\n" not in entry["citation"]
+            ),
+            "allowed reference citation is invalid: " + str(entry["path"]),
         )
         require(
             relative_path(entry["path"]) == entry["path"], "noncanonical allowed path"
@@ -172,10 +181,8 @@ def is_test_file(path):
 
 
 def symbol_pattern(symbol):
-    left = r"(?<![A-Za-z0-9_])" if symbol[0].isalnum() or symbol[0] == "_" else ""
-    right = ""
-    if symbol[-1].isalnum():
-        right = r"(?![A-Za-z0-9])"
+    left = r"(?<![A-Za-z0-9])" if symbol[0].isalnum() or symbol[0] == "_" else ""
+    right = r"s?(?![A-Za-z0-9])" if symbol[-1].isalnum() else ""
     return re.compile(left + re.escape(symbol) + right)
 
 
@@ -427,12 +434,49 @@ def self_test(catalogue):
         match_line(
             "live.rs",
             1,
-            "retained_layerxverify layerxverifyExtra",
+            "mylayerxverify layerxverifyExtra layerxverifying layerxverify2",
             patterns,
             allowances,
         ),
         [],
-        "identifier boundaries",
+        "unrelated longer words",
+    )
+    check_equal(
+        match_line(
+            "live_test.py", 7, "def test_layerxverify_case():", patterns, allowances
+        ),
+        [("live_test.py", 7, "verify", "layerxverify")],
+        "symbol embedded in underscore-joined name",
+    )
+    check_equal(
+        match_line("live.rs", 3, "retained_layerxverify", patterns, allowances),
+        [("live.rs", 3, "verify", "layerxverify")],
+        "underscore prefix is a separator",
+    )
+    settlement = [
+        (
+            "settlement-domain",
+            "settlement_domain",
+            symbol_pattern("settlement_domain"),
+        )
+    ]
+    check_equal(
+        match_line(
+            "genesis.json", 5, '"settlement_domains": [],', settlement, allowances
+        ),
+        [("genesis.json", 5, "settlement-domain", "settlement_domain")],
+        "plural key",
+    )
+    check_equal(
+        match_line(
+            "genesis.json",
+            5,
+            '"settlement_domainsX": [], "settlement_domainss": []',
+            settlement,
+            allowances,
+        ),
+        [],
+        "plural is a single trailing s",
     )
     check_equal(
         match_line(
@@ -552,7 +596,8 @@ def self_test(catalogue):
             "pkg/keeper_test.go": "layerxverify\n",
             "pkg/tests/live.rs": "layerxverify\n",
             "odd:name\nfile.rs": "layerxverify\n",
-            "clean.rs": "retained_layerxverify layerxverifyExtra\n",
+            "clean.rs": "mylayerxverify layerxverifyExtra layerxverifying\n",
+            "embedded.rs": "fn retained_layerxverifys_case() {}\n",
             **documentation_files(catalogue, "retained\n"),
         }
         for entry in allowances:
@@ -566,6 +611,7 @@ def self_test(catalogue):
         write_tracked(root, files)
         (root / "untracked.rs").write_text("layerxverify\n")
         expected = [
+            ("embedded.rs", 1, "verify", "layerxverify"),
             ("examples/vectors.rs", 1, "verify", "layerxverify"),
             ("odd:name\nfile.rs", 1, "verify", "layerxverify"),
             ("platform/hosted/indexer/src/abi.rs", 2, "verify", "layerxverify"),
@@ -839,6 +885,19 @@ def self_test(catalogue):
         ),
         "duplicate documentation path: spec/layerx-merge/docs",
         "duplicate documentation path refused",
+    )
+    check_equal(
+        refusal(
+            validate_catalogue,
+            {
+                **catalogue,
+                "allowed_references": [
+                    {"path": "live.rs", "lines": ["retained"], "citation": " "}
+                ],
+            },
+        ),
+        "allowed reference citation is invalid: live.rs",
+        "blank allowance citation refused",
     )
     for document, message in (
         ({}, "components are missing"),

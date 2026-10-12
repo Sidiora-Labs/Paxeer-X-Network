@@ -651,6 +651,29 @@
         "LXP_MODULE_DISABLED",
         "LXP_ERR_MODULE_DISABLED"
       ]
+    },
+    {
+      "path": "bridge/evm/src/PaxeerXVault.sol",
+      "lines": [
+        "_recordDeposit(asset, amount, paxeerRecipient);",
+        "_recordDeposit(NATIVE_ASSET, msg.value, paxeerRecipient);",
+        "function _recordDeposit(address asset, uint256 amount, bytes32 paxeerRecipient) private {"
+      ],
+      "citation": "spec/layerx-merge/spec.kvx [req.11005] retires the layerxExchange recordDeposit (precompiles/layerxexchange/layerxexchange.go:327-339); the private _recordDeposit of the bridge vault is a different function"
+    },
+    {
+      "path": "programs/vendor/windows-sys-0.52.0/src/Windows/Win32/NetworkManagement/NetworkDiagnosticsFramework/mod.rs",
+      "lines": [
+        "pub const RF_RESERVED_LNI: u32 = 65536u32;"
+      ],
+      "citation": "spec/layerx-merge/spec.kvx [req.11021] and [req.11032] retire the LNI transport; RF_RESERVED_LNI is a vendored Windows network diagnostics constant"
+    },
+    {
+      "path": "programs/vendor/windows-sys/src/Windows/Win32/NetworkManagement/NetworkDiagnosticsFramework/mod.rs",
+      "lines": [
+        "pub const RF_RESERVED_LNI: u32 = 65536u32;"
+      ],
+      "citation": "spec/layerx-merge/spec.kvx [req.11021] and [req.11032] retire the LNI transport; RF_RESERVED_LNI is a vendored Windows network diagnostics constant"
     }
   ]
 }
