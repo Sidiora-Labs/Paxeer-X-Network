@@ -56,6 +56,7 @@ type GigaRouterConfig struct {
 // the method it needs instead of the store type.
 type FinalizeBlockResponseStore interface {
 	SaveFinalizeBlockResponses(height int64, resp *abci.ResponseFinalizeBlock) error
+	PruneFinalizeBlockResponses(retainHeight int64) error
 }
 
 const defaultGigaHandshakeTimeout = 10 * time.Second
@@ -84,6 +85,9 @@ type GigaRouter struct {
 }
 
 func NewGigaRouter(cfg *GigaRouterConfig, key NodeSecretKey) (*GigaRouter, error) {
+	if cfg.StateStore == nil {
+		return nil, errors.New("GigaRouterConfig.StateStore is nil; FinalizeBlock responses cannot be persisted")
+	}
 	if cfg.HandshakeTimeout < 0 {
 		return nil, fmt.Errorf("HandshakeTimeout = %v, want >=0", cfg.HandshakeTimeout)
 	}
@@ -294,9 +298,6 @@ func (r *GigaRouter) executeBlock(ctx context.Context, b *atypes.GlobalBlock) (*
 		return nil, fmt.Errorf("block height %d exceeds maximum executable height %d", b.GlobalNumber, int64(math.MaxInt64))
 	}
 	height := int64(b.GlobalNumber) //nolint:gosec // checked above against math.MaxInt64.
-	if r.cfg.StateStore == nil {
-		return nil, errors.New("GigaRouterConfig.StateStore is nil; FinalizeBlock responses cannot be persisted")
-	}
 	app := r.cfg.Producer.App
 	hash := b.Header.Hash()
 	var proposerAddress types.Address
@@ -405,6 +406,11 @@ func (r *GigaRouter) runExecute(ctx context.Context) error {
 		}
 		if err := r.data.PruneBefore(pruneBefore); err != nil {
 			return fmt.Errorf("r.data.PruneBefore(%v): %w", pruneBefore, err)
+		}
+		if commitResp.RetainHeight > 0 {
+			if err := r.cfg.StateStore.PruneFinalizeBlockResponses(commitResp.RetainHeight); err != nil {
+				return fmt.Errorf("r.cfg.StateStore.PruneFinalizeBlockResponses(%v): %w", commitResp.RetainHeight, err)
+			}
 		}
 	}
 }

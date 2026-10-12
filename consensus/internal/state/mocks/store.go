@@ -168,6 +168,24 @@ func (_m *Store) LoadValidators(_a0 int64) (*types.ValidatorSet, error) {
 	return r0, r1
 }
 
+// PruneFinalizeBlockResponses provides a mock function with given fields: _a0
+func (_m *Store) PruneFinalizeBlockResponses(_a0 int64) error {
+	ret := _m.Called(_a0)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PruneFinalizeBlockResponses")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(int64) error); ok {
+		r0 = rf(_a0)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // PruneStates provides a mock function with given fields: _a0
 func (_m *Store) PruneStates(_a0 int64) error {
 	ret := _m.Called(_a0)

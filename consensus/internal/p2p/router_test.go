@@ -346,6 +346,7 @@ func TestRouter_GigaSetWhenConfigured(t *testing.T) {
 			InitialHeight: 42,
 			GenesisTime:   time.Now(),
 		},
+		StateStore: newTestResponseStore(),
 	})
 
 	router := makeRouterWithOptionsAndKey(opts, nodeKey)

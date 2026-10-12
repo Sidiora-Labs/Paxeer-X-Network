@@ -107,6 +107,8 @@ type Store interface {
 	Bootstrap(State) error
 	// PruneStates takes the height from which to prune up to (exclusive)
 	PruneStates(int64) error
+	// PruneFinalizeBlockResponses deletes the FinalizeBlock responses below the given height
+	PruneFinalizeBlockResponses(int64) error
 	// Close closes the connection with the database
 	Close() error
 }
@@ -264,6 +266,16 @@ func (store dbStore) PruneStates(retainHeight int64) error {
 	}
 
 	return nil
+}
+
+// PruneFinalizeBlockResponses deletes the FinalizeBlock responses, and legacy
+// ABCI responses, below retainHeight (exclusive). It leaves validator sets and
+// consensus params untouched.
+func (store dbStore) PruneFinalizeBlockResponses(retainHeight int64) error {
+	if retainHeight <= 0 {
+		return fmt.Errorf("height %v must be greater than 0", retainHeight)
+	}
+	return store.pruneFinalizeBlockResponses(retainHeight)
 }
 
 // pruneValidatorSets calls a reverse iterator from base height to retain height (exclusive), deleting

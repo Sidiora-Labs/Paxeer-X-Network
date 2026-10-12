@@ -279,6 +279,21 @@ func (s *testResponseStore) SaveFinalizeBlockResponses(height int64, resp *abci.
 	return nil
 }
 
+func (s *testResponseStore) PruneFinalizeBlockResponses(retainHeight int64) error {
+	if retainHeight <= 0 {
+		return fmt.Errorf("height %v must be greater than 0", retainHeight)
+	}
+	for responses, ctrl := range s.responses.Lock() {
+		for height := range responses {
+			if height < retainHeight {
+				delete(responses, height)
+			}
+		}
+		ctrl.Updated()
+	}
+	return nil
+}
+
 // WaitFor blocks until a response is stored at height and returns its bytes.
 func (s *testResponseStore) WaitFor(ctx context.Context, height int64) ([]byte, error) {
 	for responses, ctrl := range s.responses.Lock() {
@@ -291,6 +306,15 @@ func (s *testResponseStore) WaitFor(ctx context.Context, height int64) ([]byte, 
 		return responses[height], nil
 	}
 	panic("unreachable")
+}
+
+func TestNewGigaRouterRefusesNilStateStore(t *testing.T) {
+	rng := utils.TestRng()
+	router, err := NewGigaRouter(&GigaRouterConfig{
+		GenDoc: &types.GenesisDoc{ChainID: "giga-router-nil-store-test", InitialHeight: 1},
+	}, makeKey(rng))
+	require.Nil(t, router)
+	require.EqualError(t, err, "GigaRouterConfig.StateStore is nil; FinalizeBlock responses cannot be persisted")
 }
 
 func TestGigaRouterPersistsFinalizeBlockResponses(t *testing.T) {
