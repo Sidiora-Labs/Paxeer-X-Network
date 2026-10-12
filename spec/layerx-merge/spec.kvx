@@ -506,6 +506,11 @@ value = "Acceptance 7039.1 governs: feeder pushes go sponsored through the gas s
 basis = "7.3.2 and 7.1.2 gate results; interop/crates/layerx-gas-station/src/service.rs quote and submit accept executeSponsored batches only"
 affects = ["7.3.2", "7.1.2", "0.140", "0.141"]
 
+[decision.84]
+title = "Model runner engine binding"
+ruling = "The paxai worker's model runner (task 0.149) executes the engine pinned inside each (model, deployment) directory under PAXAI_RUNNER_MODELS; the repository bundles no inference engine and no model weights, so a gate host with an empty model directory exercises the recorded CapabilityMismatch path and the real engine path is exercised only where a pinned model directory is provisioned. The choice of engine and the first provisioned models are an operator decision recorded when they are provisioned."
+rationale = "The worker's runner protocol is fixed by its tests; binding the engine per model directory keeps the runner real without committing the repository to one inference stack."
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -7068,7 +7073,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.2]
 title = "Execute stream rate change after an old-rate settle"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.2.2", "0.122", "0.123"]
@@ -30386,7 +30391,7 @@ title = "paxai-worker sends ai-market operations as layerxprograms calls"
 status = "in_progress"
 mode = "BUILD"
 wave = 4
-requires = ["7.0.8", "0.114"]
+requires = ["7.0.8", "0.114", "0.142", "0.149"]
 reqs = ["7041.1", "7041.2", "7041.3"]
 capabilities = ["7.7.4"]
 do_1 = "Send ACCEPT_TASK, COMMIT_TASK_RESULT, Heartbeat, SealEvidence and EnrollWorker as layerxprograms 0x101D call transactions, one per operation (programs/crates/layerx-programs-ai-market/src/admission.rs:823, programs/crates/layerx-programs-ai-market/src/workers.rs:827), signed by EvmSender bound to the worker DID."
@@ -30394,11 +30399,15 @@ do_2 = "Keep the delegate ed25519 key (platform/hosted/paxai-worker/src/main.rs:
 do_3 = "Read roster and tasks through 0x101D getStateHead at committed height; the submission path (platform/hosted/paxai-worker/src/auth.rs:48) stays."
 do_4 = "Add the internal crate dependency to the worker manifest dependency table (platform/hosted/paxai-worker/Cargo.toml:16]) for EvmSender."
 do_5 = "Add a cfg(test) module to src/jobs.rs beside the actor check (platform/hosted/paxai-worker/src/jobs.rs:344): each operation produces one call transaction and a mismatched delegate key refuses signing; tests/task_chain_handoff.rs (platform/hosted/paxai-worker/tests/task_chain_handoff.rs:1140]) runs unchanged in the same gate."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "Read ai-market state at committed height H (the latest committed block of SequencerEndpoint::block_by_number) through SequencerEndpoint::call_at(H, ..) only: 0x101D getStateHead(bytes32) 0x0833650b for the ReadProof facts (state root and observed sequence of the LXPS1 record, src/modules/programs/state_record.c:198, as platform/hosted/ai-artifacts/src/main.rs:1468 builds them), and 0x101D simulateCall(bytes32,uint16,string,bytes,bytes,bytes,uint32,uint64[7],uint128) 0x3044bd56 with GUEST_ABI and ENTRYPOINT (agent/crates/layerx-client/src/ai_market.rs:69-71) carrying one READ_STATE_CHUNK 0x0A02 envelope (programs/crates/layerx-programs-ai-market/src/dispatch.rs:135) per chunk, its 46-byte ChunkRequest (programs/crates/layerx-programs-ai-market/src/codec.rs:1716) pinned to the revision and digest of the first chunk; this replaces the getStateHead-only read of do_3."
+do_7 = "Decode each simulateCall response with codec::decode_result (programs/crates/layerx-programs-ai-market/src/codec.rs:1362), reassemble the chunk bodies with ObservedSnapshot::capture (agent/crates/layerx-client/src/ai_market.rs:266) and bind roster and task records through FinalizedAuthority::bind (platform/hosted/paxai-worker/src/discovery.rs:105) with execution_height H; a chunk read at another height or revision refuses the whole capture."
+do_8 = "Send Heartbeat and EnrollWorker from main through OperationSender::send after each committed-height read, independent of job admission: EnrollWorker when the worker record is absent, one Heartbeat when heartbeat_distance (programs/crates/layerx-programs-ai-market/src/admission.rs:74) is reached; ACCEPT_TASK, COMMIT_TASK_RESULT and SealEvidence stay library sends until task 4.5.10 opens admission (platform/hosted/paxai-worker/src/main.rs:165)."
+do_9 = "Extend tests/task_chain_handoff.rs: a roster at committed height 700 is read with eth_call at block 0x2bc for getStateHead and every READ_STATE_CHUNK and binds execution_height 700; a due heartbeat sends exactly one 0x101D call transaction carrying Heartbeat."
+do_10 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["program_call", "EvmSender"]
-touches = ["platform/hosted/paxai-worker/src/main.rs", "platform/hosted/paxai-worker/src/jobs.rs", "platform/hosted/paxai-worker/Cargo.toml"]
-build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker"
-verify_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker"
+touches = ["platform/hosted/paxai-worker/src/main.rs", "platform/hosted/paxai-worker/src/jobs.rs", "platform/hosted/paxai-worker/Cargo.toml", "platform/hosted/paxai-worker/tests/task_chain_handoff.rs"]
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bins"
+verify_cmd = "PAXAI_RUNNER=$(realpath ${CARGO_TARGET_DIR:-platform/target})/debug/layerx-paxai-runner PAXAI_RUNNER_STATE=$(mktemp -d) cargo test --locked --no-fail-fast --manifest-path platform/Cargo.toml -p layerx-paxai-worker"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -42564,7 +42573,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.136]
 title = "Scheduled job execution settles its temporary coinbase account to the fee collector"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.8", "0.129"]
@@ -42626,10 +42635,10 @@ requires = ["7.0.8"]
 reqs = ["7034.3"]
 capabilities = []
 do_1 = "platform/hosted/internal gained k256 and layerx-crypto dependencies (platform/hosted/internal/Cargo.toml) and interop/Cargo.lock does not list them, so every --locked cargo command in the interop workspace exits 101; refresh interop/Cargo.lock offline (cargo metadata --offline --manifest-path interop/Cargo.toml) so it adds exactly those dependency entries and nothing else moves. The interop crates are path dependencies of the agent workspace, so agent/Cargo.lock is refreshed the same way (offline) for the entries the interop manifests gained (sha3 for layerx-interop-gateway from task 0.26) and nothing else moves."
-do_2 = "pub fn assemble at agent/crates/layerx-crypto/src/evm_transaction.rs:106 (and any other public fallible function in that file) and the public fallible functions at agent/crates/layerx-types/src/program_lifecycle.rs:74 and :86 carry a # Errors doc section naming the refusals, so clippy::missing_errors_doc under the pedantic deny level passes for layerx-types and layerx-crypto; no lint is allowed or capped. The clippy gate covers every target of layerx-types, so the constant-ordering checks at agent/crates/layerx-types/src/programs_module_abi.rs:85-87 become compile-time const assertions (const _: () = assert!(...)) that keep the same ordering facts, and the six unwrap calls at agent/crates/layerx-types/tests/trading_payload.rs:412-418 are replaced by the Result-returning test form with ? (the test returns Result<(), Box<dyn std::error::Error>>) or an explicit match that panics with the decoded value; no allow attribute, no lint cap, no assertion removed. The remaining layerx-crypto lints are fixed at their sites, not silenced: the public fallible function at agent/crates/layerx-crypto/src/payments.rs:577 gains its # Errors section; the 272-byte argument at agent/crates/layerx-crypto/src/disclosure.rs:1269 is taken by reference; the 124-line function at agent/crates/layerx-crypto/src/disclosure/native.rs:473 is split into named helpers that keep its behaviour and tests; the single-pattern match at agent/crates/layerx-crypto/src/disclosure/program.rs:186 becomes if let ... else."
+do_2 = "pub fn assemble at agent/crates/layerx-crypto/src/evm_transaction.rs:106 (and any other public fallible function in that file) and the public fallible functions at agent/crates/layerx-types/src/program_lifecycle.rs:74 and :86 carry a # Errors doc section naming the refusals, so clippy::missing_errors_doc under the pedantic deny level passes for layerx-types and layerx-crypto; no lint is allowed or capped. The clippy gate covers every target of layerx-types, so the constant-ordering checks at agent/crates/layerx-types/src/programs_module_abi.rs:85-87 become compile-time const assertions (const _: () = assert!(...)) that keep the same ordering facts, and the six unwrap calls at agent/crates/layerx-types/tests/trading_payload.rs:412-418 are replaced by the Result-returning test form with ? (the test returns Result<(), Box<dyn std::error::Error>>) or an explicit match that panics with the decoded value; no allow attribute, no lint cap, no assertion removed. The remaining layerx-crypto lints are fixed at their sites, not silenced: the public fallible function at agent/crates/layerx-crypto/src/payments.rs:577 gains its # Errors section; the 272-byte argument at agent/crates/layerx-crypto/src/disclosure.rs:1269 is taken by reference; the 124-line function at agent/crates/layerx-crypto/src/disclosure/native.rs:473 is split into named helpers that keep its behaviour and tests; the single-pattern match at agent/crates/layerx-crypto/src/disclosure/program.rs:186 becomes if let ... else. Every test target of layerx-crypto (agent/crates/layerx-crypto/tests/*.rs) passes the same clippy level with its lints fixed at their sites, starting with the format_collect at tests/budget_core_codec.rs:47 (write! into a String); clippy is run per target until no target reports a lint before the single verify run."
 do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["Eip1559Call::assemble"]
-touches = ["interop/Cargo.lock", "agent/Cargo.lock", "agent/crates/layerx-crypto/src/evm_transaction.rs", "agent/crates/layerx-types/src/program_lifecycle.rs", "agent/crates/layerx-types/src/programs_module_abi.rs", "agent/crates/layerx-types/tests/trading_payload.rs", "agent/crates/layerx-crypto/src/payments.rs", "agent/crates/layerx-crypto/src/disclosure.rs", "agent/crates/layerx-crypto/src/disclosure/native.rs", "agent/crates/layerx-crypto/src/disclosure/program.rs"]
+touches = ["interop/Cargo.lock", "agent/Cargo.lock", "agent/crates/layerx-crypto/src/evm_transaction.rs", "agent/crates/layerx-types/src/program_lifecycle.rs", "agent/crates/layerx-types/src/programs_module_abi.rs", "agent/crates/layerx-types/tests/trading_payload.rs", "agent/crates/layerx-crypto/src/payments.rs", "agent/crates/layerx-crypto/src/disclosure.rs", "agent/crates/layerx-crypto/src/disclosure/native.rs", "agent/crates/layerx-crypto/src/disclosure/program.rs", "agent/crates/layerx-crypto/tests/authority_grant.rs", "agent/crates/layerx-crypto/tests/budget_core_codec.rs", "agent/crates/layerx-crypto/tests/disclosure.rs", "agent/crates/layerx-crypto/tests/disclosure_session.rs", "agent/crates/layerx-crypto/tests/keystore.rs", "agent/crates/layerx-crypto/tests/native_fee_grant.rs", "agent/crates/layerx-crypto/tests/onboarding.rs", "agent/crates/layerx-crypto/tests/payments.rs", "agent/crates/layerx-crypto/tests/remote.rs", "agent/crates/layerx-crypto/tests/rotation.rs", "agent/crates/layerx-crypto/tests/secrets.rs", "agent/crates/layerx-crypto/tests/send.rs", "agent/crates/layerx-crypto/tests/signer.rs", "agent/crates/layerx-crypto/tests/verify.rs"]
 build_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null"
 verify_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null && cargo metadata --locked --format-version 1 --manifest-path agent/Cargo.toml >/dev/null && cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-crypto --all-targets -- -D warnings"
 planned_paths = []
@@ -42644,7 +42653,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.139]
 title = "Service fixtures assert the canonical activity id the shared dispatch helper stores"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["6.2.12"]
@@ -42754,8 +42763,10 @@ reqs = ["11021.2"]
 capabilities = []
 do_1 = "Add SequencerEndpoint::block_by_number(height: u64) -> Result<Option<SequencerBlock>, SequencerError> to agent/crates/layerx-client/src/sequencer.rs through eth_getBlockByNumber(hex height, true): SequencerBlock carries number, hash, parentHash, timestamp, transactionsRoot and every transaction as its raw signed bytes; null decodes to None, any other shape is a decode refusal, transport failures are Unavailable as for the existing methods."
 do_2 = "Extend agent/crates/layerx-client/tests/sequencer.rs against the in-process listener: a full block decodes with its raw transactions in index order, a null block is None, a malformed transaction list is refused, a closed connection is Unavailable."
-do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
-symbols = ["SequencerEndpoint::block_by_number", "SequencerBlock"]
+do_3 = "Add SequencerEndpoint::call_at(height: u64, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, SequencerError> beside call_pending (agent/crates/layerx-client/src/sequencer.rs:266) through eth_call({to, data}, hex height): the same return-data decode and refusal mapping as call_pending, a revert keeps code, message and data, transport failures are Unavailable; the pending tag is never sent by call_at."
+do_4 = "Extend agent/crates/layerx-client/tests/sequencer.rs against the in-process listener: call_at sends the explicit hex block number as the second eth_call parameter and returns the call data, and a revert at that height is an Rpc refusal with its data."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["SequencerEndpoint::block_by_number", "SequencerBlock", "SequencerEndpoint::call_at"]
 touches = ["agent/crates/layerx-client/src/sequencer.rs", "agent/crates/layerx-client/tests/sequencer.rs"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-client --tests"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-client --test sequencer"
@@ -42870,7 +42881,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.147]
 title = "Downstream Cargo locks follow the internal crate's new dependencies"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["7.1.2"]
@@ -42909,6 +42920,33 @@ touches = ["human/apps/wallet/package.json", "human/apps/wallet/pnpm-lock.yaml",
 build_cmd = "cd human/apps/wallet && pnpm install --frozen-lockfile --offline"
 verify_cmd = "npm --prefix human/apps/wallet run typecheck && npm --prefix human/apps/wallet test -- src/surfaces"
 planned_paths = []
+gate_kind = "existing"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.149]
+title = "Real model runner executable for the paxai worker gate"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = []
+reqs = ["7041.1"]
+capabilities = []
+do_1 = "Add the bin target layerx-paxai-runner (platform/hosted/paxai-worker/src/bin/paxai-runner.rs, declared beside the worker bin at platform/hosted/paxai-worker/Cargo.toml:12-14) that serves the PAXRUN1 protocol of platform/hosted/paxai-worker/src/runner.rs:3-16 exactly: invoked as <program> <verb> with the request on stdin and one report on stdout, exit 0 for a well-formed answer, exit 75 (runner.rs:40) when the request is refused before anything starts, stderr for diagnostics only."
+do_2 = "Add the runner-side codecs the bin needs to runner.rs: Dispatch::decode as the exact inverse of Dispatch::encode (runner.rs:88) and Description::encode as the exact inverse of Description::decode (runner.rs:391); reports are written with Report::encode (runner.rs:168); a cfg(test) round trip covers both."
+do_3 = "Keep one durable journal per admission identity under the directory named by PAXAI_RUNNER_STATE (write, sync, rename, directory sync, as platform/hosted/paxai-worker/src/membership.rs:8-9): dispatch of a journaled job32 answers its recorded report without executing again, lookup answers the recorded report or NOT_RECEIVED, cancel records the fence; describe advertises ADMISSION_IDEMPOTENT and FENCED_ACKNOWLEDGMENT (runner.rs:33-34); an absent or unwritable state directory exits 75."
+do_4 = "describe lists exactly the (model, deployment) pairs whose pinned directory exists under PAXAI_RUNNER_MODELS; a dispatch for a pair not listed is journaled and answered FAILED with the CapabilityMismatch code (platform/hosted/paxai-worker/src/auth.rs:73) and no output; a listed pair executes the pinned engine of its directory under the dispatch deadline and reports its output, output manifest, unit segments and start and finish times, never counts it did not measure."
+do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["layerx-paxai-runner", "Dispatch::decode", "Description::encode"]
+touches = ["platform/hosted/paxai-worker/src/bin/paxai-runner.rs", "platform/hosted/paxai-worker/src/runner.rs", "platform/hosted/paxai-worker/Cargo.toml"]
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bin layerx-paxai-runner"
+verify_cmd = "PAXAI_RUNNER=$(realpath ${CARGO_TARGET_DIR:-platform/target})/debug/layerx-paxai-runner PAXAI_RUNNER_STATE=$(mktemp -d) cargo test --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --lib --test job_recovery -- real_runner runner::"
+planned_paths = ["platform/hosted/paxai-worker/src/bin/paxai-runner.rs"]
 gate_kind = "existing"
 max_builds = 1
 max_verify_runs = 1
@@ -55901,7 +55939,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.2]
 title = "Re-target build.rs, error.rs off the settlement domain and export trust and 1 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -57163,7 +57201,7 @@ title = "Re-target stream.kvx, v1.kvx, write.kvx off the settlement domain and e
 status = "in_progress"
 mode = "BUILD"
 wave = 5
-requires = ["11.5.1", "0.2"]
+requires = ["11.5.1", "0.2", "11.5.2"]
 reqs = ["11024.2", "11024.4", "11025.2", "11025.4", "11027.2", "11027.4"]
 capabilities = ["11.5.4", "11.5.5", "11.5.7"]
 do_1 = "Re-target agent/schema/agent-api/stream.kvx:57 (settlement_domain) away from the Settlement domain and export trust: remove the SettlementDomain type and settlement_domain fields from the agent-api major 2 schema."
@@ -57174,7 +57212,7 @@ do_5 = "Re-target agent/schema/agent-api/write.kvx:45 (settlement_domain) away f
 do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["SettlementDomain", "settlement_domain", "checkpoint-settlement.json", "SettlementAnchored", "ANCHOR_SETTLEMENT_CONTRACT", "register_finality_evidence", "fetch_batch", "BatchFetch"]
 touches = ["agent/schema/agent-api/stream.kvx", "agent/schema/agent-api/v1.kvx", "agent/schema/agent-api/write.kvx"]
-build_cmd = "git diff --check -- agent/schema/agent-api/stream.kvx agent/schema/agent-api/v1.kvx agent/schema/agent-api/write.kvx"
+build_cmd = "git diff --check -- agent/schema/agent-api/stream.kvx agent/schema/agent-api/v1.kvx agent/schema/agent-api/write.kvx && cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agent-api"
 verify_cmd = "python3 tools/paxeer-x/tests/retired_callers_test.py --component settlement-domain --component checkpoint-evidence --component availability-fetch --path agent/schema/agent-api/stream.kvx --path agent/schema/agent-api/v1.kvx --path agent/schema/agent-api/write.kvx"
 gate_kind = "planned"
 planned_paths = ["tools/paxeer-x/tests/retired_callers_test.py"]
@@ -61890,9 +61928,10 @@ do_2 = "Use the rollout manifest entry at deploy/rollout.kvx:155 as the replacem
 do_3 = "Stop every reach into the retired construct at src/replica/lxp_replay.c:1; platform/relay_archive/runtime.py:4; include/layerx/lxp_replica.h:1; after the change nothing in the touched files depends on it."
 do_4 = "Leave the reference at cmd/layerx-archive-codec/main.c:17 alone: it sits in a retired tree and leaves with that tree, not with this change."
 do_5 = "Leave the reference at cmd/layerx-guarantor/producer.c:174 alone: it sits in a retired tree and leaves with that tree, not with this change."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "src/replica/lxp_replica_ingest.c:199 lxp_replica_ingest_batch calls lxp_replica_ack (include/layerx/lxp_batch.h:162), which this task retires from lxp_eligibility.c; the ingest path drops the acknowledgement step and the declaration goes with the definition, so make build links layerxd (Makefile LAYERXD_SOURCES) until task 11.7.23 deletes the replica tree. The replica ingest test target keeps compiling."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["lxp_replica", "lxp_replay", "relay_archive", "relay-archive"]
-touches = ["src/sequencer/lxp_eligibility.c"]
+touches = ["src/sequencer/lxp_eligibility.c", "src/replica/lxp_replica_ingest.c", "include/layerx/lxp_batch.h"]
 build_cmd = "make build"
 verify_cmd = "python3 tools/paxeer-x/tests/retired_callers_test.py --component replica --path src/sequencer/lxp_eligibility.c"
 gate_kind = "planned"
