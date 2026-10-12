@@ -268,11 +268,11 @@ log_path = "logs/1.1.13-verify-1.log"
 observed_and_assumption = "verify passed (4 passed, 0 failed)."
 
 [finding.5.1.1]
-revision = "394df70af"
+revision = "1c50b23ca"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test attest"
-exit_code = 101
+exit_code = 0
 log_path = "logs/5.1.1-verify-1.log"
-observed_and_assumption = "the worktree is held unlanded; 5.17.1: getKernelNetworkId and KernelNetworkId are absent from precompiles/xweb and modules/xweb; no genuine PAXEER_X_XWEB_RPC was supplied. 5.17.3: config.rs still requires kernel_network_id; main.rs still supplies it to KernelAttestor. Both files are outside touches. Unrelated: cargo clippy --locked --manifest-path interop/Cargo.toml -p x-websearch --all-targets | exit 101 | logs/5.1.1-clippy-2.log | existing errors in kernel.rs, payment.rs, submit.rs and watch.rs blocked integration-test lint; owned source findings were corrected during formatting."
+observed_and_assumption = "verify passed (27 passed, 0 failed). Unrelated: Previously recorded Clippy exit 101 retained without rerun; logs/5.1.1-clippy-2.log"
 
 [finding.2.2.1]
 revision = "7cdcbefd8"
@@ -632,11 +632,11 @@ log_path = "logs/4.2.2-verify-1.log"
 observed_and_assumption = "two cases fail and the branch is held: native Fund in src/modules/programs/sandbox.c returns LXP_ERR_NON_CANONICAL and the native sweep in sandbox_expiry.c refuses bound 128, both outside touches, so the activation, settlement and 300-lease backlog assertions are unreachable."
 
 [finding.4.2.9]
-revision = "d0a75efae"
+revision = "f9f60aa51"
 command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test task_state_boundary"
-exit_code = 101
-log_path = "logs/4.2.9-verify-2.log"
-observed_and_assumption = "two cases fail and the branch is held: expired accepted-task cancellation returns F01_TASK_ALREADY_ACCEPTED and stale metadata returns Ok instead of WRONG_ROSTER, contradicting the scoped guards, and the build diagnostics reference another checkout because the cargo target directory was shared."
+exit_code = 0
+log_path = "logs/4.2.9-verify-1.log"
+observed_and_assumption = "verify passed (20 passed, 0 failed). Unrelated: Scoped Clippy exit 101 at programs/crates/layerx-programs-ai-market/tests/artifact_binding.rs:2174 (128/100 lines), already recorded; logs/4.2.9-clippy-scoped.log"
 
 [finding.6.5.11]
 revision = "1d5ef7dd8"
@@ -1967,3 +1967,38 @@ command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto
 exit_code = 0
 log_path = "logs/0.55-verify-1.log"
 observed_and_assumption = "verify passed (14 passed, 0 failed). Gaps: none for this task; the old Eip1559Call::assemble(signature, recovery_id, expected_address) method and its in-file unit tests were replaced by the free assemble/recover_sender functions (no callers outside the file); Eip1559Call::sign keeps its signature and byte output"
+
+[finding.11.5.74]
+revision = "aa2903330"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component checkpoint-evidence --path human/apps/web/src/kit/model.ts"
+exit_code = 0
+log_path = "logs/11.5.74-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed (caller scan)). Gaps: none within assigned scope Unrelated: Commit helper exit 1 because no new staged changes; rebased task commits retained. Log: logs/11.5.74-commit.log."
+
+[finding.7.5.18]
+revision = "fe1a10abe"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-ap2 --test mandates"
+exit_code = 101
+log_path = "logs/7.5.18-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (test binary did not run)). Unrelated: agent/crates/layerx-sdk/src/lib.rs:394 accesses removed TrackedSubmission.verification_level (E0609), blocking build, verify and Clippy; Clippy exit 101 | logs/7.5.18-clippy-1.log"
+
+[finding.7.4.1]
+revision = "09f7ebb19"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-perps-keeper --test keeper"
+exit_code = 0
+log_path = "logs/7.4.1-verify-1.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: getFunding/getOracle/getDeficit/getPerpsPositions/fundingTick/adl are not yet implemented in precompiles/layerxexchange in the tree; the keeper is coded against the contract ABI and tests use ABI-encoded answers decoded by the real decoders"
+
+[finding.7.5.5]
+revision = "035c1cbf7"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway settlement_contract_tests"
+exit_code = 0
+log_path = "logs/7.5.5-verify-1.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed). Unrelated: NOADD=1 fleet-commit.sh | exit 1 | logs/7.5.5-commit-1.log | nothing to commit; clean rebased implementation revision retained"
+
+[finding.11.5.92]
+revision = "fd65f03bc"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni --path human/tools/boundary-check/src/lib.rs"
+exit_code = 0
+log_path = "logs/11.5.92-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed)."

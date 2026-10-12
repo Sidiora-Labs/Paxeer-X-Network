@@ -15087,7 +15087,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.9]
 title = "AI task lifecycle and worker identity by execution height"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
@@ -19571,7 +19571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.1]
 title = "Keep one attestor engine keyed by origin"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.6"]
@@ -30383,7 +30383,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.4.1]
 title = "Perps keeper package for funding ticks, liquidation and ADL"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["7.0.8", "0.114"]
@@ -30668,7 +30668,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.5]
 title = "Merchant settlement verifies against the ReceiptKeys list"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2", "0.3"]
@@ -58668,7 +58668,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.92]
 title = "Re-target lib.rs off the LNI transport"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.126"]
