@@ -531,6 +531,11 @@ title = "Malformed snapshot ring refusal in launchpad price history"
 ruling = "Task 3.2.10 do_2 admits a third refusal: a stored market whose snapshot ring is shorter than SnapshotSlots or whose SnapshotIndex lies outside the ring is refused with ErrInvalidMarket. The preserved malformed-ring assertions in modules/launchpad/keeper/history_test.go stand unchanged."
 rationale = "A ring that cannot be read is a state integrity fault, not a caller input fault; refusing it keeps the read path honest and keeps the existing test intact instead of narrowing the keeper to the two caller refusals the task line named."
 
+[decision.89]
+title = "Relay journal restore admits the local signer beyond the observation cap"
+ruling = "Task 0.171 do_2 stands: ProgramExchange::restore bounds the retained map at MAX_OBSERVATION_SIGNATURES current signers besides the local signer's own entry, while MAX_OBSERVATION_SIGNATURES stays at 16 and the Ready limit is unchanged; accept prunes signers who left the roster before any snapshot."
+rationale = "A sidecar whose own key rotated out of a full roster would otherwise refuse a journal it wrote itself; admitting only its own entry keeps every observation within the cap while keeping restart possible in that case."
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -30423,7 +30428,7 @@ title = "paxai-worker sends ai-market operations as layerxprograms calls"
 status = "in_progress"
 mode = "BUILD"
 wave = 4
-requires = ["7.0.8", "0.114", "0.142", "0.149"]
+requires = ["7.0.8", "0.114", "0.142", "0.149", "0.170"]
 reqs = ["7041.1", "7041.2", "7041.3"]
 capabilities = ["7.7.4"]
 do_1 = "Send ACCEPT_TASK, COMMIT_TASK_RESULT, Heartbeat, SealEvidence and EnrollWorker as layerxprograms 0x101D call transactions, one per operation (programs/crates/layerx-programs-ai-market/src/admission.rs:823, programs/crates/layerx-programs-ai-market/src/workers.rs:827), signed by EvmSender bound to the worker DID."
@@ -43304,6 +43309,58 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.170]
+title = "Model runner keeps the dispatch deadline and cancel fence through the engine pipe drain"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["0.149"]
+reqs = ["7041.1"]
+capabilities = []
+do_1 = "In execute (platform/hosted/paxai-worker/src/bin/paxai-runner.rs:476-534) keep the deadline and the recorded cancel fence in force until both the stdin writer and the stdout reader have finished, not only until the direct child exits (paxai-runner.rs:506-519): after try_wait reports exit, poll the writer and reader threads with is_finished under the same deadline, fence check and POLL interval, and join them only once finished."
+do_2 = "When the deadline passes or a cancel fence at or above the attempt's fence is recorded while a pipe is still open, return ServiceError::ExecutionUnavailable without joining the open pipe threads, leave them detached as the kill path already does (paxai-runner.rs:513-517), so dispatch reaches finish (paxai-runner.rs:440-446) and writes a JOURNAL_FINISHED report before the worker's outer timeout (platform/hosted/paxai-worker/src/runner.rs:635-644)."
+do_3 = "Add a cfg(test) module to paxai-runner.rs with execute_ends_at_deadline_while_a_descendant_holds_stdout and execute_ends_on_cancel_while_a_descendant_holds_stdout: each writes a real executable engine into a scratch model directory that starts a background sleep inheriting stdout and exits at once, runs execute against a State over a scratch state directory; the first uses a 200 ms deadline, the second records a cancel fence through cancel after the engine exits; both assert ExecutionUnavailable well before the sleep ends, and a following dispatch of the same job through dispatch and lookup answers a finished report, not Running."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["execute", "dispatch", "finish", "Journal::answer"]
+touches = ["platform/hosted/paxai-worker/src/bin/paxai-runner.rs"]
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bin layerx-paxai-runner --tests"
+verify_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bin layerx-paxai-runner while_a_descendant_holds_stdout"
+gate_kind = "planned"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.171]
+title = "Kernel relay journal stays restorable across an attestor roster rotation"
+status = "pending"
+mode = "BUILD"
+wave = 1
+requires = ["5.1.1"]
+reqs = ["5026.3"]
+capabilities = []
+do_1 = "In ProgramExchange::accept (interop/crates/x-websearch/src/kernel.rs:1258-1295) before inserting a verified signature (kernel.rs:1285), drop every held signature whose signer is neither in the current AttestorSet nor the held answer's own signer, so the held map, the snapshot written at kernel.rs:2020 (held_value, kernel.rs:1041-1051) and the journal never carry signers who left the roster."
+do_2 = "In ProgramExchange::restore (kernel.rs:1103-1160) keep the own-signer check and bound the restored map at MAX_OBSERVATION_SIGNATURES signers besides the local signer's own entry (kernel.rs:1148-1151); leave MAX_OBSERVATION_SIGNATURES at 16 (kernel.rs:70) and the Ready limit (interop/crates/x-websearch/src/attest.rs:706-748) unchanged."
+do_3 = "In the kernel.rs cfg(test) module relay (kernel.rs:2179) add program_journal_restores_after_a_roster_rotation: open a ProgramExchange on a scratch directory, hold a local program answer, accept matching records from 15 peer signers under a 16-member set with strict-majority threshold, rotate one peer out and a replacement in, accept the replacement's record, snapshot, and assert that restore into a fresh ProgramExchange succeeds, that ready under the rotated set returns exactly 16 signatures, and that a restored value carrying 17 current signers is still refused."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["ProgramExchange::accept", "ProgramExchange::restore", "ProgramExchange::snapshot", "MAX_OBSERVATION_SIGNATURES"]
+touches = ["interop/crates/x-websearch/src/kernel.rs"]
+build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p x-websearch --tests"
+verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --lib relay::program_journal_restores_after_a_roster_rotation"
+gate_kind = "planned"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
