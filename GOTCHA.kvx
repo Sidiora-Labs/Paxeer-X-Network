@@ -7696,3 +7696,8 @@ fix = "run npm ci and npm run build in agent/sdk/typescript of the worktree befo
 area = "worktree node_modules links"
 symptom = "pnpm install in human/wallet does not replace the gateway or agent/sdk/typescript node_modules links into the primary checkout"
 fix = "remove each link and install in place for every package the gate touches"
+
+[gotcha.1625]
+area = "host boundary fixture scan"
+symptom = "a raw-key scan that globs modules/lxphost/*.go without exclusions matches the canonical account name in accountmap.go and the test files the task text excludes"
+fix = "skip *_test.go and accountmap.go exactly as do_6 states before asserting no asset: or grant: literal"

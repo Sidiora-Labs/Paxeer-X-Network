@@ -1802,3 +1802,10 @@ command = "bash tools/ops/monitoring/test.sh"
 exit_code = 0
 log_path = "logs/7.7.2-verify-1.log"
 observed_and_assumption = "verify passed (24 passed, 0 failed). Gaps: acceptance.7.35.1: KernelReadyzDown and its cases remain in tools/ops/monitoring/rules.yml and tools/ops/monitoring/rules_test.yml outside touches; previously recorded in qualification.kvx finding.7.1.5."
+
+[finding.0.138]
+revision = "7f8ad9b16"
+command = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null && cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-crypto --all-targets -- -D warnings"
+exit_code = 101
+log_path = "logs/0.138-verify-1.log"
+observed_and_assumption = "held unlanded: the lock refresh and the layerx-crypto docs are committed, but the per-crate clippy gate stops first in the dependency layerx-types (program_lifecycle.rs:74 and :86 lack # Errors); the task is widened to own that file and rerun on the same worktree."
