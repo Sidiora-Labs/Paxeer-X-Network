@@ -2,6 +2,7 @@ package com.sidiora.layerx.android.sample;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sidiora.layerx.android.LayerXAndroid;
 import com.sidiora.layerx.android.MobileIntegrationException;
 import com.sidiora.layerx.android.ReceiptGate;
@@ -26,6 +27,8 @@ public final class WalletModel {
     @FunctionalInterface public interface Backoff {
         void pause(long millis) throws InterruptedException;
     }
+
+    private static final String NATIVE_ACCESS_ID = "native_access_id";
 
     private final LayerXAndroid mobile;
     private final ReceiptGate gate;
@@ -63,11 +66,18 @@ public final class WalletModel {
 
     public synchronized Snapshot pay(JsonNode quoteRequest, ReceiptGate.Expectation expectation, IdempotencyKey key) {
         try {
+            JsonNode quoteFields = quoteRequest;
+            String nativeAccessId = null;
+            JsonNode nativeAccess = quoteRequest.path(NATIVE_ACCESS_ID);
+            if (quoteRequest instanceof ObjectNode fields && (nativeAccess.isTextual() || nativeAccess.isNull())) {
+                nativeAccessId = nativeAccess.textValue();
+                quoteFields = fields.deepCopy().without(NATIVE_ACCESS_ID);
+            }
             HumanOperations.MoveQuoteRequest request = mapper.convertValue(
-                quoteRequest, HumanOperations.MoveQuoteRequest.class);
+                quoteFields, HumanOperations.MoveQuoteRequest.class);
             HumanOperations.MoveQuoteResponse quote = await(mobile.client().quote(request));
             HumanOperations.MoveCommitResponse committed = await(mobile.client().commit(
-                new HumanOperations.MoveCommitRequest(quote.quote_id()), key));
+                new HumanOperations.MoveCommitRequest(quote.quote_id(), nativeAccessId), key));
             JsonNode journey = mapper.valueToTree(committed);
             snapshot = new Snapshot(snapshot.serviceVersion(), snapshot.displayName(), snapshot.activityCount(),
                 gate.project(journey, expectation), deliveries, null);

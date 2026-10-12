@@ -74,6 +74,10 @@ jobs:
         run: make platform-test
       - name: Run Go and JVM conformance and compile Swift and C sharp SDKs
         run: make platform-verify-sdks
+      - name: Compile the Android sample against the installed JVM SDK
+        run: >-
+          mvn -B -f platform/sdk/jvm/pom.xml -DskipTests install &&
+          mvn -B -f platform/integrations/android/pom.xml -Psample test-compile
       - name: Exercise the developer CLI end to end against the emulator
         run: make platform-test-tooling
       - name: Build the source-bound published quickstart benchmark
