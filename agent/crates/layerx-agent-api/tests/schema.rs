@@ -87,8 +87,12 @@ fn declarations(source: &str) -> BTreeMap<String, String> {
 }
 
 fn hex(value: &str) -> Vec<u8> {
+    let value = value.trim();
+    assert!(value.as_bytes().chunks_exact(2).remainder().is_empty());
+    assert!(value
+        .bytes()
+        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')));
     value
-        .trim()
         .as_bytes()
         .chunks_exact(2)
         .map(|digits| {
@@ -274,9 +278,20 @@ fn programs_contract_is_included_with_receipt_resolution_and_call_idempotency() 
 }
 
 #[test]
-fn golden_request_and_response_vectors_are_reviewable_exact_bytes() {
+fn golden_request_and_response_vectors_are_reviewable_exact_bytes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let contract = agent_api_schema_v1();
+    let version_request = VersionRequest {
+        request_id: Sequence(7),
+        supported: contract.version,
+    };
+    let version_response = VersionResponse::try_from(version_request)?;
+    let encoded_request = version_request.encode();
+    let encoded_response = version_response.encode();
     let request = hex(REQUEST_VECTOR);
     let response = hex(RESPONSE_VECTOR);
+    assert_eq!(request, encoded_request);
+    assert_eq!(response, encoded_response);
     assert_eq!(&request[..4], &[0, 2, 0, 0]);
     assert_eq!(&request[4..12], &7_u64.to_be_bytes());
     assert_eq!(&response[..4], &[0, 2, 0, 0]);
@@ -285,6 +300,53 @@ fn golden_request_and_response_vectors_are_reviewable_exact_bytes() {
     assert!(AGENT_API_V1_SOURCE.contains(RESPONSE_VECTOR.trim()));
     assert!(AGENT_API_V1_SOURCE.contains("00010001000000000000000700000000010001"));
     assert!(AGENT_API_V1_SOURCE.contains("0001000100000000000000070000000000000100010001"));
+    if std::env::var_os("LAYERX_AGENT_API_RECORD_VERSION_VECTORS").is_some() {
+        let directory =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schema/agent-api/golden");
+        for (name, bytes) in [
+            ("version-request.hex", encoded_request.as_slice()),
+            ("version-response.hex", encoded_response.as_slice()),
+        ] {
+            let mut encoded = String::with_capacity(bytes.len() * 2 + 1);
+            for byte in bytes {
+                use std::fmt::Write;
+                write!(encoded, "{byte:02x}")?;
+            }
+            encoded.push('\n');
+            std::fs::write(directory.join(name), encoded)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn version_encoding_preserves_full_width_values_and_framing() {
+    let request = VersionRequest {
+        request_id: Sequence(0x0102_0304_0506_0708),
+        supported: ContractVersion {
+            major: 0xabcd,
+            minor: 0x1234,
+        },
+    };
+    assert_eq!(
+        request.encode(),
+        [0xab, 0xcd, 0x12, 0x34, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0xab, 0xcd, 0x12, 0x34,]
+    );
+    let response = VersionResponse {
+        request_id: Sequence(u64::MAX),
+        contract: ContractVersion {
+            major: u16::MAX,
+            minor: u16::MAX,
+        },
+        node_interface_major: u16::MAX,
+    };
+    assert_eq!(
+        response.encode(),
+        [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ]
+    );
 }
 
 #[test]

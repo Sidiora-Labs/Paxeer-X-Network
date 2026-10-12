@@ -33,6 +33,33 @@ pub struct VersionResponse {
     pub node_interface_major: u16,
 }
 
+impl VersionRequest {
+    #[must_use]
+    pub fn encode(self) -> [u8; 19] {
+        let mut bytes = [0; 19];
+        bytes[..2].copy_from_slice(&self.supported.major.to_be_bytes());
+        bytes[2..4].copy_from_slice(&self.supported.minor.to_be_bytes());
+        bytes[4..12].copy_from_slice(&self.request_id.get().to_be_bytes());
+        bytes[15..17].copy_from_slice(&self.supported.major.to_be_bytes());
+        bytes[17..19].copy_from_slice(&self.supported.minor.to_be_bytes());
+        bytes
+    }
+}
+
+impl VersionResponse {
+    #[must_use]
+    pub fn encode(self) -> [u8; 23] {
+        let mut bytes = [0; 23];
+        bytes[..2].copy_from_slice(&self.contract.major.to_be_bytes());
+        bytes[2..4].copy_from_slice(&self.contract.minor.to_be_bytes());
+        bytes[4..12].copy_from_slice(&self.request_id.get().to_be_bytes());
+        bytes[17..19].copy_from_slice(&self.contract.major.to_be_bytes());
+        bytes[19..21].copy_from_slice(&self.contract.minor.to_be_bytes());
+        bytes[21..23].copy_from_slice(&self.node_interface_major.to_be_bytes());
+        bytes
+    }
+}
+
 impl TryFrom<VersionRequest> for VersionResponse {
     type Error = &'static str;
 
