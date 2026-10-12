@@ -2023,3 +2023,17 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ai-
 exit_code = 101
 log_path = "logs/7.1.4-verify-2.log"
 observed_and_assumption = "verify did not compile on the rebased revision: the platform internal crate on main still calls the method form of assemble after the transaction codec task made it a free function (hosted/internal/src/evm_sender.rs:191); the earlier base passed 3 of 3 (logs/7.1.4-verify-1.log). Assumption: task 0.140 owns that file and lands the free-function call first, then this task reruns both gates once."
+
+[finding.11.5.190]
+revision = "a13ba8eb3"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component exchange-intents --path precompiles/layerxexchange/abi.json"
+exit_code = 1
+log_path = "logs/11.5.190-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 1 failed (scan gate; 2 findings; no test cases emitted)). Gaps: acceptance.11.5.4: a clean scan cannot exit 0 while the binding contract requires those selectors; tools/paxeer-x/retired_callers.json has no exchange ABI allowance and is outside touches."
+
+[finding.13.3.2]
+revision = "77f900fad"
+command = "make test-service-attest"
+exit_code = 0
+log_path = "logs/13.3.2-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed). Gaps: none (do_1/do_4 code at src/modules/service/lx_service_module.c:203-208 already compares payload activityId to lxp_ctx_idempotency_key and returns LXP_ERR_INVALID_ATTESTATION, landed by 6.2.12; module file unchanged)"

@@ -97723,7 +97723,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.2]
 title = "Tool attestation binds the activity idempotency key"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2", "6.2.12"]
