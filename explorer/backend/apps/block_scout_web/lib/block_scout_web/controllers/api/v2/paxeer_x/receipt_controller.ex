@@ -19,7 +19,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptController do
   alias BlockScoutWeb.Schemas.API.V2.PaxeerX.Parameters
   alias Explorer.Chain
   alias Explorer.Chain.{Block, Hash}
-  alias Explorer.Chain.PaxeerX.{Receipt, Status, UnifiedAccount}
+  alias Explorer.Chain.PaxeerX.{Finality, Receipt, Status}
 
   action_fallback(BlockScoutWeb.API.V2.FallbackController)
 
@@ -57,7 +57,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptController do
   """
   @spec receipts(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def receipts(conn, params) do
-    heights = UnifiedAccount.heights(@api_true)
+    heights = Finality.heights(@api_true)
 
     {receipts, next_page} =
       params
@@ -94,7 +94,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptController do
          %Receipt{} = receipt <- Receipt.public_get(receipt_id) do
       conn
       |> put_status(200)
-      |> json(details(receipt, UnifiedAccount.heights(@api_true)))
+      |> json(details(receipt, Finality.heights(@api_true)))
     else
       _missing -> {:error, :not_found}
     end

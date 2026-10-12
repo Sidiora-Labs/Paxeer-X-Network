@@ -22,8 +22,27 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
       [latest | _rest] = response["items"]
 
       assert latest["account"] == account_hash()
-      assert latest["status"] == "instant"
+      assert latest["status"] == "committed"
       assert latest["block_number"] == 30
+    end
+
+    test "places each receipt on the rung its block reaches against the committed height", %{conn: conn} do
+      insert_receipt(4)
+      insert_kernel_receipt(8)
+
+      response = json_response(get(conn, "/api/v2/paxeer-x/receipts"), 200)
+
+      assert [kernel, evm] = response["items"]
+
+      assert kernel["id"] == receipt_id(8)
+      assert kernel["origin"] == "kernel"
+      assert kernel["block_number"] == nil
+      assert kernel["status"] == "submitted"
+
+      assert evm["id"] == receipt_id(4)
+      assert evm["origin"] == "evm"
+      assert evm["block_number"] == 40
+      assert evm["status"] == "committed"
     end
 
     test "carries the newest row of a receipt that climbed the verification lattice", %{conn: conn} do
@@ -91,11 +110,30 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
 
       assert response["id"] == receipt_id(7)
       assert response["account"] == account_hash()
-      assert response["status"] == "instant"
+      assert response["status"] == "committed"
       assert response["verification_status"] == "checkpoint_finalised"
       assert response["block_number"] == 70
       assert response["transaction_hash"] == to_string(receipt.transaction_hash)
       refute is_nil(response["timestamp"])
+    end
+
+    test "answers with one kernel receipt held below the committed rung", %{conn: conn} do
+      insert_receipt(2)
+      insert_kernel_receipt(6)
+
+      response = json_response(get(conn, "/api/v2/paxeer-x/receipts/#{receipt_id(6)}"), 200)
+
+      assert response["id"] == receipt_id(6)
+      assert response["origin"] == "kernel"
+      assert response["status"] == "submitted"
+      assert response["block_number"] == nil
+      assert response["verification"] == "sequencer_verified"
+      assert response["verification_status"] == "batch_included"
+      assert response["transaction_hash"] == nil
+      assert response["timestamp"] == nil
+      assert response["provenance"]["kernel"]["batch_number"] == "6"
+      assert response["provenance"]["kernel"]["sequence"] == "1"
+      assert response["provenance"]["kernel"]["activity_id"] == receipt_id(6)
     end
   end
 
@@ -124,6 +162,39 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
     |> Receipt.changeset(attributes)
     |> Repo.insert!()
   end
+
+  defp insert_kernel_receipt(index) do
+    batch_id = digest("batch-#{index}")
+    raw_sha256 = digest("raw-#{index}")
+
+    %Receipt{}
+    |> Receipt.changeset(%{
+      origin: :kernel,
+      receipt_id: receipt_id(index),
+      account: account_hash(),
+      payload_hash: digest("payload-#{index}"),
+      status: :batch_included,
+      kernel_batch_number: index,
+      kernel_batch_id: batch_id,
+      kernel_sequence: 1,
+      kernel_activity_id: receipt_id(index),
+      kernel_result_code: 0,
+      kernel_receipt_sha256: digest("receipt-#{index}"),
+      kernel_canonical_sha256: digest("canonical-#{index}"),
+      kernel_batch_raw_sha256: raw_sha256,
+      kernel_state_root: digest("root-#{index}"),
+      kernel_proof: %{
+        "batch_id" => String.trim_leading(batch_id, "0x"),
+        "header_hex" => "0a0b",
+        "signature_hex" => String.duplicate("cd", 64),
+        "raw_sha256" => String.trim_leading(raw_sha256, "0x")
+      },
+      kernel_verification: :sequencer_verified
+    })
+    |> Repo.insert!()
+  end
+
+  defp digest(label), do: "0x" <> Base.encode16(:crypto.hash(:sha256, label), case: :lower)
 
   defp receipt_id(index), do: "0x" <> Base.encode16(<<index::256>>, case: :lower)
 
