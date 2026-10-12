@@ -1502,7 +1502,12 @@ fn kernel_network_view_returns_one_and_preserves_the_five_field_params_tuple() -
 
 #[test]
 fn origin_two_preimage_places_the_kernel_network_word_at_the_shared_offsets() -> Outcome {
-    let (request, attestation) = program_vector()?;
+    let scratch = Scratch::new("program-preimage-network")?;
+    let engine = program_engine(&scratch.0)?;
+    let node = Node::start(&["kernel-network.json"])?;
+    let (request, mut attestation) = program_vector()?;
+    let answer = Answer::try_from((&engine, &node.rpc()?, &request))?;
+    attestation.network_id = answer.attestation.network_id;
     let bytes = attestation.preimage();
     assert_eq!(bytes.len(), 188);
     assert_eq!(&bytes[15..43], &[0; 28]);
@@ -1513,6 +1518,7 @@ fn origin_two_preimage_places_the_kernel_network_word_at_the_shared_offsets() ->
         hex0x(&attestation.digest()),
         text(&vectors()?, "/vectors/1/digest")?
     );
+    assert_eq!(node.calls("eth_call"), 1);
     Ok(())
 }
 
@@ -1544,6 +1550,10 @@ fn attest_program_with_chain_network(rpc: &EvmRpc, state_name: &str) -> Outcome 
     };
     let answer = Answer::try_from((&engine, rpc, &request))?;
     let canonical = search::search_canonical_bytes("paxeer x network", &[])?;
+    assert_eq!(
+        answer.attestation,
+        request.attestation(1, keccak(&canonical), b"[]", 2)
+    );
     assert_eq!(answer.attestation.network_id, network_word(1));
     assert_eq!(answer.attestation.origin, ORIGIN_PROGRAM);
     assert_eq!(answer.attestation.content_digest, keccak(&canonical));
