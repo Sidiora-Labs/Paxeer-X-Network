@@ -29,10 +29,10 @@ use crate::attest::{
     MAX_RESPONSE_BYTES, ORIGIN_PROGRAM, SIGNATURE_LENGTH,
 };
 use crate::content::{ContentStore, PEER_HEADER};
+use crate::fetch::FetchError;
 use crate::fetch::{Fetcher, HttpClient, Url};
 use crate::index::WebIndex;
 use crate::payment::{hex, unhex, GatewayRpc, RpcAnswer, COMMITMENT};
-use crate::fetch::FetchError;
 use crate::search;
 use crate::server::{Response, RouteError, RouteTable};
 use crate::watch::{hex0x, keccak, unhex0x};
@@ -67,7 +67,7 @@ pub const RECORD_HEADER_BYTES: usize = 13;
 pub const OBSERVATION_HEADER_BYTES: usize = 146;
 
 /// The most attestor signatures one observation carries.
-pub const MAX_OBSERVATION_SIGNATURES: usize = 32;
+pub const MAX_OBSERVATION_SIGNATURES: usize = 16;
 
 /// How long a posted observation activity stays valid.
 pub const ACTIVITY_VALIDITY_MS: u64 = 60_000;
@@ -139,7 +139,9 @@ pub enum KernelError {
     /// No well-formed answer arrived.
     Unavailable,
     /// The gateway answered with a JSON-RPC error.
-    Rejected { code: i64 },
+    Rejected {
+        code: i64,
+    },
     /// The answer does not have the shape the method defines.
     Malformed,
     /// A request record is not a canonical program web request.
@@ -324,8 +326,12 @@ impl KernelWatcher {
     }
 
     pub fn with_authorization_file(mut self, path: &Path) -> io::Result<Self> {
-        self.rpc = self.rpc.with_authorization_file(path)
-            .map_err(|_| io::Error::new(io::ErrorKind::PermissionDenied, "kernel gateway authorization refused"))?;
+        self.rpc = self.rpc.with_authorization_file(path).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "kernel gateway authorization refused",
+            )
+        })?;
         Ok(self)
     }
 
@@ -574,12 +580,25 @@ pub fn observation_bytes(
     {
         return Err(KernelError::Encode);
     }
-    let digest = request.attestation(network_id, ready.content_digest, &ready.response, ready.full_length).digest();
-    if request.program_id == [0; 32] || !matches!(request.kind, 1 | 2)
-        || ready.digest != digest || ready.signers.len() != count
+    let digest = request
+        .attestation(
+            network_id,
+            ready.content_digest,
+            &ready.response,
+            ready.full_length,
+        )
+        .digest();
+    if request.program_id == [0; 32]
+        || !matches!(request.kind, 1 | 2)
+        || ready.digest != digest
+        || ready.signers.len() != count
         || ready.signers.windows(2).any(|pair| pair[0] >= pair[1])
-        || ready.signers.iter().zip(&ready.signatures)
-            .any(|(signer, signature)| recover_signer(&digest, signature).ok() != Some(*signer)) {
+        || ready
+            .signers
+            .iter()
+            .zip(&ready.signatures)
+            .any(|(signer, signature)| recover_signer(&digest, signature).ok() != Some(*signer))
+    {
         return Err(KernelError::Encode);
     }
     let mut out = Vec::with_capacity(
@@ -603,13 +622,26 @@ pub fn observation_bytes(
     Ok(out)
 }
 
-fn observation_signers(bytes: &[u8], digest: &[u8; 32])
-    -> Result<(Vec<[u8; 20]>, Vec<[u8; SIGNATURE_LENGTH]>), KernelError> {
-    if bytes.len() <= OBSERVATION_HEADER_BYTES { return Err(KernelError::Journal); }
-    let length = u32::from_be_bytes(bytes[142..146].try_into().map_err(|_| KernelError::Journal)?);
-    let offset = OBSERVATION_HEADER_BYTES.checked_add(length as usize).ok_or(KernelError::Journal)?;
+fn observation_signers(
+    bytes: &[u8],
+    digest: &[u8; 32],
+) -> Result<(Vec<[u8; 20]>, Vec<[u8; SIGNATURE_LENGTH]>), KernelError> {
+    if bytes.len() <= OBSERVATION_HEADER_BYTES {
+        return Err(KernelError::Journal);
+    }
+    let length = u32::from_be_bytes(
+        bytes[142..146]
+            .try_into()
+            .map_err(|_| KernelError::Journal)?,
+    );
+    let offset = OBSERVATION_HEADER_BYTES
+        .checked_add(length as usize)
+        .ok_or(KernelError::Journal)?;
     let count = usize::from(*bytes.get(offset).ok_or(KernelError::Journal)?);
-    if count == 0 || count > MAX_OBSERVATION_SIGNATURES || bytes.len() != offset + 1 + count * SIGNATURE_LENGTH {
+    if count == 0
+        || count > MAX_OBSERVATION_SIGNATURES
+        || bytes.len() != offset + 1 + count * SIGNATURE_LENGTH
+    {
         return Err(KernelError::Journal);
     }
     let mut signers = Vec::new();
@@ -701,7 +733,10 @@ pub fn encode_activity(
 }
 
 fn encode_activity_version(
-    observation: &[u8], submitter: &SubmitterKey, options: &ActivityOptions<'_>, protocol_version: u16,
+    observation: &[u8],
+    submitter: &SubmitterKey,
+    options: &ActivityOptions<'_>,
+    protocol_version: u16,
 ) -> Result<Vec<u8>, KernelError> {
     if options.actor_did.is_empty()
         || options.actor_did.len() > MAX_DID_BYTES
@@ -715,7 +750,13 @@ fn encode_activity_version(
     let unsigned = encode_envelope(observation, &authority, options, None, protocol_version)?;
     let preimage = domain_hash(Domain::SignaturePreimage, &unsigned);
     let signature = submitter.sign(&preimage).to_bytes();
-    encode_envelope(observation, &authority, options, Some(&signature), protocol_version)
+    encode_envelope(
+        observation,
+        &authority,
+        options,
+        Some(&signature),
+        protocol_version,
+    )
 }
 
 /// Posts observation activities through the gateway as the submitter DID.
@@ -749,7 +790,10 @@ impl ObservationSubmitter {
     }
 
     pub fn with_authorization_file(mut self, path: &Path) -> Result<Self, KernelError> {
-        self.rpc = self.rpc.with_authorization_file(path).map_err(|_| KernelError::Authorization)?;
+        self.rpc = self
+            .rpc
+            .with_authorization_file(path)
+            .map_err(|_| KernelError::Authorization)?;
         Ok(self)
     }
 
@@ -763,7 +807,9 @@ impl ObservationSubmitter {
         let Some(RpcAnswer::Result(value)) = answer else {
             return Outcome::Open;
         };
-        let Some(key) = self.receipt_key else { return Outcome::Open; };
+        let Some(key) = self.receipt_key else {
+            return Outcome::Open;
+        };
         if fixed::<32>(value.get("activity_id")) != Some(*activity_id) {
             return Outcome::Open;
         }
@@ -773,9 +819,14 @@ impl ObservationSubmitter {
         let Ok(receipt) = layerx_proof::receipt::verify_sequencer_signature(&bytes, key) else {
             return Outcome::Open;
         };
-        let Some(facts) = receipt.protocol() else { return Outcome::Open; };
-        if facts.activity_id() != *activity_id || facts.module_id() != 11
-            || facts.operation() != 1 || facts.fee_charged() > self.fee_limit {
+        let Some(facts) = receipt.protocol() else {
+            return Outcome::Open;
+        };
+        if facts.activity_id() != *activity_id
+            || facts.module_id() != 11
+            || facts.operation() != 1
+            || facts.fee_charged() > self.fee_limit
+        {
             return Outcome::Open;
         }
         if facts.result_code() != 0 {
@@ -1049,33 +1100,72 @@ impl ProgramExchange {
         self.answers().get(&key).map(held_value)
     }
 
-    fn restore(&self, request: &ProgramRequest, network_id: u32, value: &Value) -> Result<(), KernelError> {
-        let response = value.get("response").and_then(Value::as_str).and_then(unhex).ok_or(KernelError::Journal)?;
-        let full_length = value.get("full_length").and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok()).ok_or(KernelError::Journal)?;
+    fn restore(
+        &self,
+        request: &ProgramRequest,
+        network_id: u32,
+        value: &Value,
+    ) -> Result<(), KernelError> {
+        let response = value
+            .get("response")
+            .and_then(Value::as_str)
+            .and_then(unhex)
+            .ok_or(KernelError::Journal)?;
+        let full_length = value
+            .get("full_length")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or(KernelError::Journal)?;
         if response.len() > MAX_RESPONSE_BYTES || u64::from(full_length) < response.len() as u64 {
             return Err(KernelError::Journal);
         }
-        let attestation = request.attestation(network_id,
-            fixed(value.get("content_digest")).ok_or(KernelError::Journal)?, &response, full_length);
+        let attestation = request.attestation(
+            network_id,
+            fixed(value.get("content_digest")).ok_or(KernelError::Journal)?,
+            &response,
+            full_length,
+        );
         let digest = attestation.digest();
         let signer = fixed(value.get("signer")).ok_or(KernelError::Journal)?;
         let signature = fixed(value.get("signature")).ok_or(KernelError::Journal)?;
-        if recover_signer(&digest, &signature).ok() != Some(signer) { return Err(KernelError::Journal); }
+        if recover_signer(&digest, &signature).ok() != Some(signer) {
+            return Err(KernelError::Journal);
+        }
         let mut signatures = BTreeMap::new();
-        for row in value.get("signatures").and_then(Value::as_array).ok_or(KernelError::Journal)? {
+        for row in value
+            .get("signatures")
+            .and_then(Value::as_array)
+            .ok_or(KernelError::Journal)?
+        {
             let signer = fixed(row.get("signer")).ok_or(KernelError::Journal)?;
             let signature = fixed(row.get("signature")).ok_or(KernelError::Journal)?;
             if recover_signer(&digest, &signature).ok() != Some(signer)
-                || signatures.insert(signer, signature).is_some() { return Err(KernelError::Journal); }
+                || signatures.insert(signer, signature).is_some()
+            {
+                return Err(KernelError::Journal);
+            }
         }
-        if signatures.len() > MAX_OBSERVATION_SIGNATURES || signatures.get(&signer) != Some(&signature) {
+        if signatures.len() > MAX_OBSERVATION_SIGNATURES
+            || signatures.get(&signer) != Some(&signature)
+        {
             return Err(KernelError::Journal);
         }
-        self.answers().insert((request.program_id, request.request_id), Held {
-            answer: Answer { attestation, level: Level::Majority, response, callback_gas: 0,
-                timeout_height: u64::MAX, digest, signer, signature }, signatures,
-        });
+        self.answers().insert(
+            (request.program_id, request.request_id),
+            Held {
+                answer: Answer {
+                    attestation,
+                    level: Level::Majority,
+                    response,
+                    callback_gas: 0,
+                    timeout_height: u64::MAX,
+                    digest,
+                    signer,
+                    signature,
+                },
+                signatures,
+            },
+        );
         Ok(())
     }
 
@@ -1262,30 +1352,7 @@ impl ProgramExchange {
     pub fn ready(&self, key: ProgramKey, set: &AttestorSet) -> Option<Ready> {
         let answers = self.answers();
         let held = answers.get(&key)?;
-        let answer = &held.answer;
-        let registered: Vec<([u8; 20], [u8; SIGNATURE_LENGTH])> = held
-            .signatures
-            .iter()
-            .filter(|(signer, _)| set.contains(signer))
-            .map(|(signer, signature)| (*signer, *signature))
-            .collect();
-        let enough = set.threshold != 0
-            && usize::try_from(set.threshold).is_ok_and(|n| n > set.signers.len() / 2 && n <= set.signers.len())
-            && set.signers.iter().enumerate().all(|(i, signer)| !set.signers[..i].contains(signer))
-            && u32::try_from(registered.len()).is_ok_and(|count| count >= set.threshold);
-        if !enough {
-            return None;
-        }
-        Some(Ready {
-            request_id: key.1,
-            response: answer.response.clone(),
-            content_digest: answer.attestation.content_digest,
-            full_length: answer.attestation.full_length,
-            callback_gas: answer.callback_gas,
-            digest: answer.digest,
-            signers: registered.iter().map(|(signer, _)| *signer).collect(),
-            signatures: registered.iter().map(|(_, signature)| *signature).collect(),
-        })
+        Ready::from_signatures(&held.answer, set, &held.signatures)
     }
 }
 
@@ -1514,7 +1581,8 @@ impl RelayEntry {
         let sending = matches!(stage, Stage::Submitting | Stage::Unknown);
         if (sending && (signed.is_none() || observation.is_none()))
             || (signed.is_some() && (observation.is_none() || optional("attestation").is_none()))
-            || (matches!(stage, Stage::Completed | Stage::Rejected) && (signed.is_none() || optional("result").is_none()))
+            || (matches!(stage, Stage::Completed | Stage::Rejected)
+                && (signed.is_none() || optional("result").is_none()))
             || (stage == Stage::AwaitingQuorum && signed.is_some())
         {
             return None;
@@ -1548,16 +1616,18 @@ impl RelayEntry {
 /// by the request itself.
 fn retryable(reason: &AttestError) -> bool {
     match reason {
-        AttestError::Fetch(error) => matches!(
-            error,
-            FetchError::Resolve
-                | FetchError::RobotsUnavailable
-                | FetchError::Connect
-                | FetchError::ConnectTimeout
-                | FetchError::Timeout
-                | FetchError::Tls
-                | FetchError::Transport
-        ) || matches!(error, FetchError::Status(status) if *status == 429 || *status >= 500),
+        AttestError::Fetch(error) => {
+            matches!(
+                error,
+                FetchError::Resolve
+                    | FetchError::RobotsUnavailable
+                    | FetchError::Connect
+                    | FetchError::ConnectTimeout
+                    | FetchError::Timeout
+                    | FetchError::Tls
+                    | FetchError::Transport
+            ) || matches!(error, FetchError::Status(status) if *status == 429 || *status >= 500)
+        }
         AttestError::Search | AttestError::Store | AttestError::Sign(_) => true,
         AttestError::UnknownKind(_)
         | AttestError::Payload
@@ -1652,7 +1722,11 @@ impl KernelRelay {
                 .unwrap_or(0),
             retrying: pending
                 .iter()
-                .filter(|key| self.retries.get(key).is_some_and(|retry| retry.next_ms > now_ms))
+                .filter(|key| {
+                    self.retries
+                        .get(key)
+                        .is_some_and(|retry| retry.next_ms > now_ms)
+                })
                 .count(),
             next_sequence: self.watcher.next_sequence(),
         }
@@ -1675,8 +1749,13 @@ impl KernelRelay {
     ) -> Result<Self, KernelError> {
         std::fs::create_dir_all(state_dir).map_err(|_| KernelError::Journal)?;
         let path = state_dir.join(RELAY_JOURNAL_FILE);
-        let lock = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
-            .open(state_dir.join("kernel-relay.lock")).map_err(|_| KernelError::Journal)?;
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(state_dir.join("kernel-relay.lock"))
+            .map_err(|_| KernelError::Journal)?;
         lock.try_lock().map_err(|_| KernelError::Journal)?;
         let mut relay = Self::new(watcher, attestor, exchange, set, submitter);
         relay._journal_lock = Some(lock);
@@ -1695,42 +1774,65 @@ impl KernelRelay {
         }
         for entry in &relay.entries {
             if let Some(value) = &entry.attestation {
-                relay.exchange.restore(&entry.request, relay.network_id, value)?;
+                relay
+                    .exchange
+                    .restore(&entry.request, relay.network_id, value)?;
             }
             if let Some(signed) = &entry.signed {
                 let observation = entry.observation.as_deref().ok_or(KernelError::Journal)?;
                 if signed.activity_id != domain_hash(Domain::ActivityId, &signed.activity) {
                     return Err(KernelError::Journal);
                 }
-                let not_before = signed.not_after.checked_sub(ACTIVITY_VALIDITY_MS)
-                    .ok_or(KernelError::Journal)?.saturating_sub(1_000);
-                let expected = encode_activity_version(observation, &relay.submitter.key, &ActivityOptions {
-                    network_id: relay.network_id, actor_did: relay.submitter.did(),
-                    account_sequence: signed.account_sequence, fee_limit: relay.submitter.fee_limit,
-                    not_before, not_after: signed.not_after,
-                }, layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION)?;
+                let not_before = signed
+                    .not_after
+                    .checked_sub(ACTIVITY_VALIDITY_MS)
+                    .ok_or(KernelError::Journal)?
+                    .saturating_sub(1_000);
+                let expected = encode_activity_version(
+                    observation,
+                    &relay.submitter.key,
+                    &ActivityOptions {
+                        network_id: relay.network_id,
+                        actor_did: relay.submitter.did(),
+                        account_sequence: signed.account_sequence,
+                        fee_limit: relay.submitter.fee_limit,
+                        not_before,
+                        not_after: signed.not_after,
+                    },
+                    layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION,
+                )?;
                 if signed.activity != expected || observation.len() < OBSERVATION_HEADER_BYTES {
                     return Err(KernelError::Journal);
                 }
                 let held = relay.exchange.answers();
                 let held = held.get(&entry.key()).ok_or(KernelError::Journal)?;
                 let ready = Ready {
-                    request_id: entry.request.request_id, response: held.answer.response.clone(),
+                    request_id: entry.request.request_id,
+                    response: held.answer.response.clone(),
                     content_digest: held.answer.attestation.content_digest,
-                    full_length: held.answer.attestation.full_length, callback_gas: 0,
+                    full_length: held.answer.attestation.full_length,
+                    callback_gas: 0,
                     digest: held.answer.digest,
                     signers: observation_signers(observation, &held.answer.digest)?.0,
                     signatures: observation_signers(observation, &held.answer.digest)?.1,
                 };
-                if ready.signers.iter().zip(&ready.signatures)
+                if ready
+                    .signers
+                    .iter()
+                    .zip(&ready.signatures)
                     .any(|(signer, signature)| held.signatures.get(signer) != Some(signature))
-                    || observation_bytes(relay.network_id, &entry.request, &ready)? != observation {
+                    || observation_bytes(relay.network_id, &entry.request, &ready)? != observation
+                {
                     return Err(KernelError::Journal);
                 }
                 let terminal = relay.submitter.outcome(
-                    entry.result.clone().map(RpcAnswer::Result), &signed.activity_id);
+                    entry.result.clone().map(RpcAnswer::Result),
+                    &signed.activity_id,
+                );
                 if (entry.stage == Stage::Completed && !matches!(terminal, Outcome::Completed(_)))
-                    || (entry.stage == Stage::Rejected && !matches!(terminal, Outcome::Rejected(_, _))) {
+                    || (entry.stage == Stage::Rejected
+                        && !matches!(terminal, Outcome::Rejected(_, _)))
+                {
                     return Err(KernelError::Journal);
                 }
             }
@@ -1837,7 +1939,11 @@ impl KernelRelay {
                 continue;
             }
             self.first_seen.entry(key).or_insert(now_ms);
-            if self.retries.get(&key).is_some_and(|retry| retry.next_ms > now_ms) {
+            if self
+                .retries
+                .get(&key)
+                .is_some_and(|retry| retry.next_ms > now_ms)
+            {
                 continue;
             }
             let step = self.advance(index, next, now_ms)?;
@@ -1846,14 +1952,17 @@ impl KernelRelay {
                 || (entry.stage == Stage::AwaitingQuorum && entry.last_error.is_some());
             if failed {
                 let attempts = self.retries.get(&key).map_or(0, |retry| retry.attempts);
-                self.retries.insert(key, Retry {
-                    attempts: attempts.saturating_add(1),
-                    next_ms: now_ms.saturating_add(retry_delay_ms(
-                        self.backoff_base_ms,
-                        self.backoff_max_ms,
-                        attempts,
-                    )),
-                });
+                self.retries.insert(
+                    key,
+                    Retry {
+                        attempts: attempts.saturating_add(1),
+                        next_ms: now_ms.saturating_add(retry_delay_ms(
+                            self.backoff_base_ms,
+                            self.backoff_max_ms,
+                            attempts,
+                        )),
+                    },
+                );
             } else {
                 self.retries.remove(&key);
             }
@@ -1889,12 +1998,12 @@ impl KernelRelay {
                         self.entries[index].last_error = None;
                         self.store(next)?;
                         self.exchange.record(answer);
-                    },
+                    }
                     Err(reason) if retryable(&reason) => {
                         self.entries[index].last_error = Some(reason.to_string());
                         self.store(next)?;
                         return Ok(None);
-                    },
+                    }
                     Err(reason) => {
                         let entry = &mut self.entries[index];
                         entry.stage = Stage::Refused;
@@ -1934,21 +2043,39 @@ impl KernelRelay {
             self.store(next)?;
             let answer = self.submitter.send(&signed.activity);
             let fresh = matches!(&answer, Some(RpcAnswer::Result(_)));
-            return Ok(Some(self.settle(index, self.submitter.outcome(answer, &signed.activity_id), fresh)));
+            return Ok(Some(self.settle(
+                index,
+                self.submitter.outcome(answer, &signed.activity_id),
+                fresh,
+            )));
         }
         let Some(signed) = self.entries[index].signed.clone() else {
             return Err(KernelError::Journal);
         };
-        let looked = self.submitter.outcome(self.submitter.lookup(&signed.activity_id), &signed.activity_id);
+        let looked = self.submitter.outcome(
+            self.submitter.lookup(&signed.activity_id),
+            &signed.activity_id,
+        );
         if !matches!(looked, Outcome::Open) {
             return Ok(Some(self.settle(index, looked, false)));
         }
         if now_ms <= signed.not_after {
             let answer = self.submitter.send(&signed.activity);
-            return Ok(Some(self.settle(index, self.submitter.outcome(answer, &signed.activity_id), false)));
+            return Ok(Some(self.settle(
+                index,
+                self.submitter.outcome(answer, &signed.activity_id),
+                false,
+            )));
         }
-        if expired_unadmitted(&signed, now_ms, self.submitter.consumed(signed.account_sequence)) {
-            let observation = self.entries[index].observation.clone().ok_or(KernelError::Journal)?;
+        if expired_unadmitted(
+            &signed,
+            now_ms,
+            self.submitter.consumed(signed.account_sequence),
+        ) {
+            let observation = self.entries[index]
+                .observation
+                .clone()
+                .ok_or(KernelError::Journal)?;
             if let Ok(fresh) = self.submitter.sign(&observation, now_ms) {
                 let entry = &mut self.entries[index];
                 entry.signed = Some(fresh.clone());
@@ -1956,7 +2083,11 @@ impl KernelRelay {
                 self.store(next)?;
                 let answer = self.submitter.send(&fresh.activity);
                 let posted = matches!(&answer, Some(RpcAnswer::Result(_)));
-                return Ok(Some(self.settle(index, self.submitter.outcome(answer, &fresh.activity_id), posted)));
+                return Ok(Some(self.settle(
+                    index,
+                    self.submitter.outcome(answer, &fresh.activity_id),
+                    posted,
+                )));
             }
         }
         Ok(Some(self.settle(index, Outcome::Open, false)))
@@ -2023,9 +2154,7 @@ fn expired_unadmitted(signed: &Signed, now_ms: u64, consumed: Result<bool, Kerne
 fn parse_journal(bytes: &[u8]) -> Option<(u64, Vec<RelayEntry>)> {
     let value: Value = serde_json::from_slice(bytes).ok()?;
     let object = value.as_object()?;
-    if object.len() != 3
-        || object.get("version")?.as_str()? != RELAY_JOURNAL_VERSION
-    {
+    if object.len() != 3 || object.get("version")?.as_str()? != RELAY_JOURNAL_VERSION {
         return None;
     }
     let next = object.get("next_sequence")?.as_u64()?;
@@ -2035,13 +2164,14 @@ fn parse_journal(bytes: &[u8]) -> Option<(u64, Vec<RelayEntry>)> {
         .iter()
         .map(RelayEntry::parse)
         .collect::<Option<Vec<_>>>()?;
-    let ordered = entries.windows(2).all(|pair| {
-        pair[0].request.sequence < pair[1].request.sequence
+    let ordered = entries
+        .windows(2)
+        .all(|pair| pair[0].request.sequence < pair[1].request.sequence);
+    let distinct = entries.iter().enumerate().all(|(index, entry)| {
+        entries[..index]
+            .iter()
+            .all(|other| other.key() != entry.key())
     });
-    let distinct = entries
-        .iter()
-        .enumerate()
-        .all(|(index, entry)| entries[..index].iter().all(|other| other.key() != entry.key()));
     let behind = entries.iter().all(|entry| entry.request.sequence < next);
     (ordered && distinct && behind).then_some((next, entries))
 }
@@ -2069,9 +2199,13 @@ mod relay {
 
     fn ready(request: &ProgramRequest) -> Checked<Ready> {
         let response = b"Paxeer X Network".to_vec();
-        let content_digest: [u8; 32] =
-            unhex(CONTENT_DIGEST).ok_or("digest")?.try_into().map_err(|_| "digest")?;
-        let digest = request.attestation(NETWORK, content_digest, &response, 16).digest();
+        let content_digest: [u8; 32] = unhex(CONTENT_DIGEST)
+            .ok_or("digest")?
+            .try_into()
+            .map_err(|_| "digest")?;
+        let digest = request
+            .attestation(NETWORK, content_digest, &response, 16)
+            .digest();
         let mut keys = (1..=3_u8)
             .map(|index| {
                 let mut secret = [0_u8; 32];
@@ -2106,7 +2240,8 @@ mod relay {
     }
 
     fn scratch(name: &str) -> Checked<PathBuf> {
-        let path = std::env::temp_dir().join(format!("x-websearch-relay-{name}-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("x-websearch-relay-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path)?;
         Ok(path)
@@ -2127,7 +2262,14 @@ mod relay {
         let activity = encode_activity(&observation, &submitter(), &options)?;
         assert_eq!(hex(&activity), VECTOR.trim());
         let activity_id = domain_hash(Domain::ActivityId, &activity);
-        let other = encode_activity(&observation, &submitter(), &ActivityOptions { account_sequence: 8, ..options })?;
+        let other = encode_activity(
+            &observation,
+            &submitter(),
+            &ActivityOptions {
+                account_sequence: 8,
+                ..options
+            },
+        )?;
         assert_ne!(domain_hash(Domain::ActivityId, &other), activity_id);
         Ok(())
     }
@@ -2137,20 +2279,30 @@ mod relay {
         let dir = scratch("cursor")?;
         let mut watcher = KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0)?;
         watcher.resume_at(42)?;
-        assert_eq!(KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0)?.next_sequence(), 42);
+        assert_eq!(
+            KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0)?.next_sequence(),
+            42
+        );
         std::fs::write(dir.join(CURSOR_FILE), "not a sequence")?;
         assert!(KernelWatcher::open("http://127.0.0.1:9/rpc", &dir, 0).is_err());
 
-        let request = ProgramRequest { sequence: 41, ..request() };
+        let request = ProgramRequest {
+            sequence: 41,
+            ..request()
+        };
         let observation = observation_bytes(NETWORK, &request, &ready(&request)?)?;
-        let activity = encode_activity(&observation, &submitter(), &ActivityOptions {
-            network_id: NETWORK,
-            actor_did: DID,
-            account_sequence: 7,
-            fee_limit: 100,
-            not_before: 1_000,
-            not_after: 61_000,
-        })?;
+        let activity = encode_activity(
+            &observation,
+            &submitter(),
+            &ActivityOptions {
+                network_id: NETWORK,
+                actor_did: DID,
+                account_sequence: 7,
+                fee_limit: 100,
+                not_before: 1_000,
+                not_after: 61_000,
+            },
+        )?;
         let entry = RelayEntry {
             request,
             topic: REQUEST_TOPIC.to_vec(),
@@ -2176,7 +2328,8 @@ mod relay {
         assert!(parse_journal(journal(41).as_bytes()).is_none());
         let mut forged = entry.value();
         forged["activity_id"] = json!(hex0x(&[7; 32]));
-        let forged = json!({"version": RELAY_JOURNAL_VERSION, "next_sequence": 42, "entries": [forged]});
+        let forged =
+            json!({"version": RELAY_JOURNAL_VERSION, "next_sequence": 42, "entries": [forged]});
         assert!(parse_journal(forged.to_string().as_bytes()).is_none());
         std::fs::remove_dir_all(&dir)?;
         Ok(())
@@ -2219,11 +2372,24 @@ mod relay {
         assert_eq!(retry_delay_ms(1_000, 300_000, 9), 300_000);
         assert_eq!(retry_delay_ms(1_000, 300_000, u32::MAX), 300_000);
 
-        let signed = Signed { activity: Vec::new(), activity_id: [0; 32], account_sequence: 7, not_after: 61_000 };
+        let signed = Signed {
+            activity: Vec::new(),
+            activity_id: [0; 32],
+            account_sequence: 7,
+            not_after: 61_000,
+        };
         let late = 61_000 + ACTIVITY_VALIDITY_MS + 1;
         assert!(expired_unadmitted(&signed, late, Ok(false)));
         assert!(!expired_unadmitted(&signed, late, Ok(true)));
-        assert!(!expired_unadmitted(&signed, late, Err(KernelError::Unavailable)));
-        assert!(!expired_unadmitted(&signed, 61_000 + ACTIVITY_VALIDITY_MS, Ok(false)));
+        assert!(!expired_unadmitted(
+            &signed,
+            late,
+            Err(KernelError::Unavailable)
+        ));
+        assert!(!expired_unadmitted(
+            &signed,
+            61_000 + ACTIVITY_VALIDITY_MS,
+            Ok(false)
+        ));
     }
 }

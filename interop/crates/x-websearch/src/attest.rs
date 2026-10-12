@@ -44,7 +44,7 @@ const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const PEER_TOTAL_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCARD_LOG: &str = "discarded.jsonl";
 const ANSWERS_DIR: &str = "answers";
-const MAX_PROGRAM_SIGNATURES: usize = 16;
+const MAX_PROGRAM_SIGNATURES: usize = crate::kernel::MAX_OBSERVATION_SIGNATURES;
 const MAX_EVM_SIGNATURES: usize = 64;
 
 /// What attestors sign for one request's answer, laid out byte for byte as

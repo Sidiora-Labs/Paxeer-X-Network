@@ -13,15 +13,19 @@ use serde_json::{json, Value};
 use x_websearch::api::ApiPayload;
 use x_websearch::attest::{
     self, evm_requester, network_word, recover_signer, sign_digest, signer_address,
-    stored_response, Answer, Attestation, Attestor, AttestorSet, Discard, Level, Ready,
-    SignatureExchange, DOMAIN, MAX_RESPONSE_BYTES, ORIGIN_EVM, ORIGIN_PROGRAM, PREIMAGE_LENGTH,
+    stored_response, Answer, Attestation, Attestor, AttestorSet, Discard, Level,
+    ProgramAttestError, Ready, SignatureExchange, DOMAIN, MAX_RESPONSE_BYTES, ORIGIN_EVM,
+    ORIGIN_PROGRAM, PREIMAGE_LENGTH,
 };
 use x_websearch::canonical::{self, ContentKind};
-use x_websearch::config::{Config, FetchLimits};
+use x_websearch::config::FetchLimits;
 use x_websearch::content::ContentStore;
 use x_websearch::fetch::Fetcher;
 use x_websearch::index::WebIndex;
-use x_websearch::kernel::{observation_bytes, ProgramRequest, OBSERVATION_HEADER_BYTES};
+use x_websearch::kernel::{
+    observation_bytes, program_record, ProgramExchange, ProgramRequest, MAX_OBSERVATION_SIGNATURES,
+    OBSERVATION_HEADER_BYTES,
+};
 use x_websearch::keys::{KeyFiles, KeyRefusal, KeyRole};
 use x_websearch::search::{self, SearchResult};
 use x_websearch::watch::{
@@ -216,9 +220,13 @@ fn serve_rpc(
 
 impl Node {
     fn start(names: &[&str]) -> Outcome<Self> {
+        Self::with_rules(load_rules(names)?)
+    }
+
+    fn with_rules(rules: Vec<Rule>) -> Outcome<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let address = listener.local_addr()?;
-        let rules = Arc::new(Mutex::new(load_rules(names)?));
+        let rules = Arc::new(Mutex::new(rules));
         let calls = Arc::new(Mutex::new(Vec::new()));
         let served = Arc::clone(&calls);
         thread::spawn(move || {
@@ -1259,13 +1267,6 @@ fn signed_set(answer: &Answer, count: u8) -> Outcome<(AttestorSet, Signatures)> 
     ))
 }
 
-fn chain_rpc() -> Outcome<EvmRpc> {
-    let endpoint = std::env::var("PAXEER_X_XWEB_RPC").map_err(|_| {
-        fail("PAXEER_X_XWEB_RPC must identify a real chain with getKernelNetworkId")
-    })?;
-    Ok(EvmRpc::new(&endpoint)?)
-}
-
 #[test]
 fn program_search_digest_matches_the_shared_go_and_c_vector() -> Outcome {
     let (_, attestation) = program_vector()?;
@@ -1327,12 +1328,34 @@ fn ready_signatures_are_sorted_and_reach_the_registered_majority() -> Outcome {
 #[test]
 fn origin_two_ready_refuses_seventeen_signatures_and_admits_sixteen() -> Outcome {
     let answer = program_answer(1)?;
+    let scratch = Scratch::new("program-exchange-cap")?;
+    let exchange = ProgramExchange::open(&scratch.0, &[])?;
+    let key = (answer.attestation.requester, answer.request_id());
+    exchange.record(answer.clone());
     let (set, signatures) = signed_set(&answer, 17)?;
     assert_eq!(Ready::from_signatures(&answer, &set, &signatures), None);
+    for index in 2..=17 {
+        let peer = program_answer(index)?;
+        assert_eq!(
+            exchange.accept("signed-peer", key, &program_record(&peer), &set),
+            Ok(Some(peer.signer))
+        );
+    }
+    assert_eq!(exchange.ready(key, &set), None);
+    assert_eq!(MAX_OBSERVATION_SIGNATURES, 16);
     let (set, signatures) = signed_set(&answer, 16)?;
     let ready = Ready::from_signatures(&answer, &set, &signatures)
         .ok_or_else(|| fail("sixteen signatures refused"))?;
     assert_eq!(ready.signatures.len(), 16);
+    assert_eq!(exchange.ready(key, &set), Some(ready.clone()));
+    assert_eq!(
+        ready.signers,
+        signatures.keys().copied().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        ready.signatures,
+        signatures.values().copied().collect::<Vec<_>>()
+    );
     let (request, _) = program_vector()?;
     let observation = observation_bytes(1, &request, &ready)?;
     let offset = OBSERVATION_HEADER_BYTES + answer.response.len();
@@ -1424,6 +1447,28 @@ fn fetch_content_matches_the_canonical_digest_before_signing() -> Outcome {
     );
     assert_eq!(store.get(&answer.attestation.content_digest)?, Some(bytes));
     assert_eq!(answer.response, text.as_bytes());
+    let node = Node::start(&["kernel-network.json"])?;
+    let program_request = ProgramRequest {
+        program_id: [0x55; 32],
+        request_id: request.request_id,
+        kind: request.kind,
+        payload: request.payload.clone(),
+        sequence: 0,
+    };
+    let program = Answer::try_from((&engine, &node.rpc()?, &program_request))?;
+    assert_eq!(
+        program.attestation.content_digest,
+        answer.attestation.content_digest
+    );
+    assert_eq!(program.response, answer.response);
+    assert_eq!(
+        program.attestation.full_length,
+        answer.attestation.full_length
+    );
+    assert_eq!(
+        recover_signer(&program.digest, &program.signature)?,
+        engine.signer()
+    );
     assert_eq!(answer.digest, answer.attestation.digest());
     assert_eq!(
         recover_signer(&answer.digest, &answer.signature)?,
@@ -1434,7 +1479,8 @@ fn fetch_content_matches_the_canonical_digest_before_signing() -> Outcome {
 
 #[test]
 fn kernel_network_view_returns_one_and_preserves_the_five_field_params_tuple() -> Outcome {
-    let rpc = chain_rpc()?;
+    let node = Node::start(&["kernel-network.json"])?;
+    let rpc = node.rpc()?;
     assert_eq!(
         &keccak(b"getKernelNetworkId()")[..4],
         &[0xfc, 0x0d, 0x26, 0xf4]
@@ -1443,11 +1489,14 @@ fn kernel_network_view_returns_one_and_preserves_the_five_field_params_tuple() -
         rpc.eth_call(XWEB_PRECOMPILE, &keccak(b"getKernelNetworkId()")[..4])?,
         network_word(1)
     );
-    assert_eq!(
-        rpc.eth_call(XWEB_PRECOMPILE, &keccak(b"getParams()")[..4])?
-            .len(),
-        5 * 32
-    );
+    let params = rpc.eth_call(XWEB_PRECOMPILE, &keccak(b"getParams()")[..4])?;
+    let expected: Vec<u8> = [1_000_000_000_000_000_000, 8_192, 500_000, 3_600, 0]
+        .into_iter()
+        .flat_map(network_word)
+        .collect();
+    assert_eq!(params, expected);
+    assert_eq!(params.len(), 5 * 32);
+    assert_eq!(node.calls("eth_call"), 2);
     Ok(())
 }
 
@@ -1469,17 +1518,14 @@ fn origin_two_preimage_places_the_kernel_network_word_at_the_shared_offsets() ->
 
 #[test]
 fn origin_two_network_word_comes_from_the_chain() -> Outcome {
-    let mut config = read_json(&fixtures().join("config/valid.json"))?;
-    config
-        .as_object_mut()
-        .ok_or_else(|| fail("config is not an object"))?
-        .remove("kernel_network_id");
-    Config::parse(&config.to_string())?;
-    attest_program_with_chain_network(&chain_rpc()?)
+    let node = Node::start(&["kernel-network.json"])?;
+    attest_program_with_chain_network(&node.rpc()?, "origin-program-network")?;
+    assert_eq!(node.calls("eth_call"), 1);
+    Ok(())
 }
 
-fn attest_program_with_chain_network(rpc: &EvmRpc) -> Outcome {
-    let scratch = Scratch::new("program-chain-network")?;
+fn attest_program_with_chain_network(rpc: &EvmRpc, state_name: &str) -> Outcome {
+    let scratch = Scratch::new(state_name)?;
     let store = Arc::new(ContentStore::open(&scratch.0, &[])?);
     let index = Arc::new(WebIndex::open(&scratch.0)?);
     let engine = Attestor::new(
@@ -1538,5 +1584,163 @@ fn attest_program_with_chain_network(rpc: &EvmRpc) -> Outcome {
 
 #[test]
 fn program_attestor_uses_the_chain_network_and_the_same_evm_signing_key() -> Outcome {
-    attest_program_with_chain_network(&chain_rpc()?)
+    let node = Node::start(&["kernel-network.json"])?;
+    attest_program_with_chain_network(&node.rpc()?, "shared-program-key")
+}
+
+fn network_answer(answer: Value) -> Outcome<Node> {
+    let mut rules = load_rules(&["kernel-network.json"])?;
+    let rule = rules.first_mut().ok_or_else(|| fail("no network rule"))?;
+    rule.answer = answer;
+    Node::with_rules(rules)
+}
+
+fn program_engine(state: &Path) -> Outcome<Attestor> {
+    Ok(Attestor::new(
+        attestor_key(1)?,
+        CHAIN_ID,
+        Arc::new(loopback_fetcher()?),
+        Arc::new(WebIndex::open(state)?),
+        Arc::new(ContentStore::open(state, &[])?),
+    ))
+}
+
+#[test]
+fn program_network_refuses_noncanonical_words_and_preserves_rpc_errors() -> Outcome {
+    let scratch = Scratch::new("network-refusals")?;
+    let engine = program_engine(&scratch.0)?;
+    let (request, _) = program_vector()?;
+    let mut wide = network_word(1);
+    wide[0] = 1;
+    let mut upper = network_word(1);
+    upper[27] = 1;
+    let malformed = [
+        json!(hex0x(&[])),
+        json!(hex0x(&[0; 31])),
+        json!(hex0x(&[0; 33])),
+        json!(hex0x(&[0; 64])),
+        json!(hex0x(&[0; 32])),
+        json!(hex0x(&wide)),
+        json!(hex0x(&upper)),
+        json!("0xgg"),
+        json!(1),
+        Value::Null,
+    ];
+    for result in malformed {
+        let node = network_answer(json!({"result": result}))?;
+        assert_eq!(
+            Answer::try_from((&engine, &node.rpc()?, &request)),
+            Err(ProgramAttestError::Network(EvmError::Malformed))
+        );
+        assert_eq!(node.calls("eth_call"), 1);
+    }
+    let node = network_answer(json!({"error": {"code": -32000, "message": "call refused"}}))?;
+    let error = Answer::try_from((&engine, &node.rpc()?, &request))
+        .err()
+        .ok_or_else(|| fail("rejected call admitted"))?;
+    assert_eq!(
+        error,
+        ProgramAttestError::Network(EvmError::Rejected { code: -32000 })
+    );
+    assert_eq!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<EvmError>()),
+        Some(&EvmError::Rejected { code: -32000 })
+    );
+    let node = Node::with_rules(Vec::new())?;
+    assert_eq!(
+        Answer::try_from((&engine, &node.rpc()?, &request)),
+        Err(ProgramAttestError::Network(EvmError::Unavailable))
+    );
+    Ok(())
+}
+
+#[test]
+fn program_network_admits_the_full_uint32_range_without_changing_the_evm_word() -> Outcome {
+    let scratch = Scratch::new("network-uint32")?;
+    let engine = program_engine(&scratch.0)?;
+    let (request, _) = program_vector()?;
+    let word = network_word(u64::from(u32::MAX));
+    let node = network_answer(json!({"result": hex0x(&word)}))?;
+    let answer = Answer::try_from((&engine, &node.rpc()?, &request))?;
+    assert_eq!(answer.attestation.network_id, word);
+    assert_eq!(&answer.attestation.preimage()[15..43], &[0; 28]);
+    assert_eq!(
+        &answer.attestation.preimage()[43..47],
+        &u32::MAX.to_be_bytes()
+    );
+    assert_eq!(answer.digest, answer.attestation.digest());
+    assert_eq!(
+        recover_signer(&answer.digest, &answer.signature)?,
+        engine.signer()
+    );
+    let evm = WebRequest {
+        request_id: request.request_id,
+        requester: [1; 20],
+        kind: request.kind,
+        payload: request.payload,
+        callback_gas: 1,
+        paid: [0; 32],
+        timeout_height: 1,
+        block_number: 0,
+    };
+    assert_eq!(
+        engine.attest(&evm)?.attestation.network_id,
+        network_word(CHAIN_ID)
+    );
+    Ok(())
+}
+
+#[test]
+fn program_attestor_composes_content_errors_without_changing_attest_errors() -> Outcome {
+    let scratch = Scratch::new("program-content-refusals")?;
+    let engine = program_engine(&scratch.0)?;
+    let node = Node::start(&["kernel-network.json"])?;
+    let rpc = node.rpc()?;
+    let (request, _) = program_vector()?;
+    let unknown = ProgramRequest {
+        kind: 3,
+        ..request.clone()
+    };
+    assert_eq!(
+        Answer::try_from((&engine, &rpc, &unknown)),
+        Err(ProgramAttestError::Attest(
+            attest::AttestError::UnknownKind(3)
+        ))
+    );
+    let zero = ProgramRequest {
+        program_id: [0; 32],
+        ..request.clone()
+    };
+    let empty = ProgramRequest {
+        payload: Vec::new(),
+        ..request.clone()
+    };
+    for request in [zero, empty] {
+        assert_eq!(
+            Answer::try_from((&engine, &rpc, &request)),
+            Err(ProgramAttestError::Attest(attest::AttestError::Payload))
+        );
+    }
+    assert_eq!(node.calls("eth_call"), 0);
+    let binary = ProgramRequest {
+        payload: vec![0xff],
+        ..request
+    };
+    let error = Answer::try_from((&engine, &rpc, &binary))
+        .err()
+        .ok_or_else(|| fail("binary search admitted"))?;
+    assert_eq!(
+        error,
+        ProgramAttestError::Attest(attest::AttestError::Payload)
+    );
+    assert_eq!(
+        error
+            .source()
+            .and_then(|source| source.downcast_ref::<attest::AttestError>()),
+        Some(&attest::AttestError::Payload)
+    );
+    assert_eq!(node.calls("eth_call"), 1);
+    Ok(())
 }
