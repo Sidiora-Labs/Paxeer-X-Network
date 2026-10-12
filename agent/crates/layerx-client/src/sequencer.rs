@@ -1,8 +1,8 @@
 //! Sequencer JSON-RPC 2.0 endpoint.
 //!
 //! One HTTPS connection to the unified router (or a sequencer node) serving
-//! the pending-tag reads, `eth_sendRawTransaction`, `pax_sequencerReceipt` and
-//! the router's `px_getReceiptKeys`. Refusals keep the JSON-RPC code, message
+//! the pending-tag reads, committed blocks by height, `eth_sendRawTransaction`,
+//! `pax_sequencerReceipt` and the router's `px_getReceiptKeys`. Refusals keep the JSON-RPC code, message
 //! and data exactly as the server sent them; transport failures are reported
 //! as [`SequencerError::Unavailable`] so a caller can map an interrupted send
 //! to an unknown outcome.
@@ -174,6 +174,24 @@ pub struct ReceiptKeyEntry {
     pub last_height: u64,
 }
 
+/// A committed block with every transaction as its raw signed bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SequencerBlock {
+    /// Block height.
+    pub number: u64,
+    /// Block hash.
+    pub hash: [u8; 32],
+    /// Hash of the parent block.
+    pub parent_hash: [u8; 32],
+    /// Block timestamp in seconds.
+    pub timestamp: u64,
+    /// Root the header commits over the block's transactions.
+    pub transactions_root: [u8; 32],
+    /// The signed transactions in block index order, each in the encoding
+    /// `eth_sendRawTransaction` takes.
+    pub transactions: Vec<Vec<u8>>,
+}
+
 /// A JSON-RPC 2.0 client for the sequencer methods.
 #[derive(Debug)]
 pub struct SequencerEndpoint {
@@ -264,9 +282,28 @@ impl SequencerEndpoint {
     /// Transport, refusal (a revert keeps code, message and data) and decode
     /// failures as [`SequencerError`].
     pub fn call_pending(&self, to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, SequencerError> {
+        self.eth_call(to, data, "pending")
+    }
+
+    /// Return data of a read-only call of `to` with `data` against the
+    /// committed state at block `height`.
+    ///
+    /// # Errors
+    /// Transport, refusal (a revert keeps code, message and data) and decode
+    /// failures as [`SequencerError`].
+    pub fn call_at(
+        &self,
+        height: u64,
+        to: &[u8; 20],
+        data: &[u8],
+    ) -> Result<Vec<u8>, SequencerError> {
+        self.eth_call(to, data, &format!("{height:#x}"))
+    }
+
+    fn eth_call(&self, to: &[u8; 20], data: &[u8], block: &str) -> Result<Vec<u8>, SequencerError> {
         let result = self.call(
             "eth_call",
-            &json!([{"to": hex(to), "data": hex(data)}, "pending"]),
+            &json!([{"to": hex(to), "data": hex(data)}, block]),
         )?;
         result
             .as_str()
@@ -335,6 +372,28 @@ impl SequencerEndpoint {
         } else {
             Err(SequencerError::Malformed)
         }
+    }
+
+    /// The committed block at `height` with full transactions; `None` when the
+    /// node has no block at that height.
+    ///
+    /// # Errors
+    /// Transport and refusal failures as [`SequencerError`];
+    /// [`SequencerError::Malformed`] for a block of another height, a
+    /// transaction out of index order or located in another block, a
+    /// transaction type other than 0 to 4, or a transaction object that is not
+    /// exactly the shape of its type.
+    pub fn block_by_number(&self, height: u64) -> Result<Option<SequencerBlock>, SequencerError> {
+        let result = self.call(
+            "eth_getBlockByNumber",
+            &json!([format!("{height:#x}"), true]),
+        )?;
+        if result.is_null() {
+            return Ok(None);
+        }
+        decode_block(&result, height)
+            .map(Some)
+            .ok_or(SequencerError::Malformed)
     }
 
     /// EVM address bound to the `LayerX` DID public key, read at the pending
@@ -610,6 +669,261 @@ fn decode_log(value: &Value) -> Option<SequencerLog> {
     })
 }
 
+fn decode_block(value: &Value, height: u64) -> Option<SequencerBlock> {
+    let fields = Fields(value.as_object()?);
+    let number = fields.u64("number")?;
+    let hash = fields.fixed("hash")?;
+    if number != height {
+        return None;
+    }
+    let transactions = fields
+        .0
+        .get("transactions")?
+        .as_array()?
+        .iter()
+        .enumerate()
+        .map(|(index, transaction)| raw_transaction(transaction, number, &hash, index))
+        .collect::<Option<_>>()?;
+    Some(SequencerBlock {
+        number,
+        hash,
+        parent_hash: fields.fixed("parentHash")?,
+        timestamp: fields.u64("timestamp")?,
+        transactions_root: fields.fixed("transactionsRoot")?,
+        transactions,
+    })
+}
+
+const TRANSACTION_FIELDS: [&str; 15] = [
+    "blockHash",
+    "blockNumber",
+    "from",
+    "gas",
+    "gasPrice",
+    "hash",
+    "input",
+    "nonce",
+    "to",
+    "transactionIndex",
+    "value",
+    "type",
+    "v",
+    "r",
+    "s",
+];
+const LEGACY_TX: u8 = 0;
+const ACCESS_LIST_TX: u8 = 1;
+const DYNAMIC_FEE_TX: u8 = 2;
+const BLOB_TX: u8 = 3;
+const SET_CODE_TX: u8 = 4;
+
+/// Re-encodes a full transaction object at `index` of block `number` into its
+/// raw signed bytes.
+fn raw_transaction(
+    value: &Value,
+    number: u64,
+    block_hash: &[u8; 32],
+    index: usize,
+) -> Option<Vec<u8>> {
+    let object = value.as_object()?;
+    let kind = u8::try_from(quantity_u64(object.get("type")?)?).ok()?;
+    let mut names = TRANSACTION_FIELDS.to_vec();
+    match kind {
+        LEGACY_TX if object.contains_key("chainId") => names.push("chainId"),
+        LEGACY_TX => {}
+        ACCESS_LIST_TX => names.extend(["accessList", "chainId", "yParity"]),
+        DYNAMIC_FEE_TX => names.extend([
+            "accessList",
+            "chainId",
+            "yParity",
+            "maxFeePerGas",
+            "maxPriorityFeePerGas",
+        ]),
+        BLOB_TX => names.extend([
+            "accessList",
+            "chainId",
+            "yParity",
+            "maxFeePerGas",
+            "maxPriorityFeePerGas",
+            "maxFeePerBlobGas",
+            "blobVersionedHashes",
+        ]),
+        SET_CODE_TX => names.extend([
+            "accessList",
+            "chainId",
+            "yParity",
+            "maxFeePerGas",
+            "maxPriorityFeePerGas",
+            "authorizationList",
+        ]),
+        _ => return None,
+    }
+    let fields = Fields::exact(value, &names)?;
+    let located = fields.fixed::<32>("blockHash")? == *block_hash
+        && fields.u64("blockNumber")? == number
+        && fields.u64("transactionIndex")? == u64::try_from(index).ok()?;
+    fields.fixed::<20>("from")?;
+    fields.fixed::<32>("hash")?;
+    let r = fields.integer("r")?;
+    let s = fields.integer("s")?;
+    if !located || r.is_empty() || s.is_empty() {
+        return None;
+    }
+    let to = match fields.0.get("to")? {
+        Value::Null if kind < BLOB_TX => Vec::new(),
+        to => fixed::<20>(to)?.to_vec(),
+    };
+    if kind == LEGACY_TX {
+        return legacy_transaction(&fields, &to, &r, &s);
+    }
+    typed_transaction(&fields, kind, &to, &r, &s)
+}
+
+/// `rlp([nonce, gasPrice, gas, to, value, input, v, r, s])` with `v` matching
+/// the EIP-155 chain id when one is present and 27 or 28 otherwise.
+fn legacy_transaction(fields: &Fields<'_>, to: &[u8], r: &[u8], s: &[u8]) -> Option<Vec<u8>> {
+    let v = quantity_u128(fields.0.get("v")?)?;
+    let protected = match fields.0.get("chainId") {
+        Some(chain_id) => {
+            let base = u128::from(quantity_u64(chain_id)?) * 2 + 35;
+            v == base || v == base + 1
+        }
+        None => v == 27 || v == 28,
+    };
+    if !protected {
+        return None;
+    }
+    let mut payload = Vec::new();
+    for name in ["nonce", "gasPrice", "gas"] {
+        rlp_bytes(&fields.integer(name)?, &mut payload);
+    }
+    rlp_bytes(to, &mut payload);
+    rlp_bytes(&fields.integer("value")?, &mut payload);
+    rlp_bytes(&fields.bytes("input")?, &mut payload);
+    rlp_bytes(&fields.integer("v")?, &mut payload);
+    rlp_bytes(r, &mut payload);
+    rlp_bytes(s, &mut payload);
+    Some(rlp_list(&payload))
+}
+
+/// `kind || rlp([chainId, nonce, fees.., gas, to, value, input, accessList,
+/// type fields.., yParity, r, s])` for the EIP-2718 types 1 to 4.
+fn typed_transaction(
+    fields: &Fields<'_>,
+    kind: u8,
+    to: &[u8],
+    r: &[u8],
+    s: &[u8],
+) -> Option<Vec<u8>> {
+    let y_parity = fields.u64("yParity")?;
+    if y_parity > 1 || fields.u64("v")? != y_parity {
+        return None;
+    }
+    let mut payload = Vec::new();
+    rlp_bytes(&fields.integer("chainId")?, &mut payload);
+    rlp_bytes(&fields.integer("nonce")?, &mut payload);
+    if kind == ACCESS_LIST_TX {
+        rlp_bytes(&fields.integer("gasPrice")?, &mut payload);
+    } else {
+        rlp_bytes(&fields.integer("maxPriorityFeePerGas")?, &mut payload);
+        rlp_bytes(&fields.integer("maxFeePerGas")?, &mut payload);
+    }
+    rlp_bytes(&fields.integer("gas")?, &mut payload);
+    rlp_bytes(to, &mut payload);
+    rlp_bytes(&fields.integer("value")?, &mut payload);
+    rlp_bytes(&fields.bytes("input")?, &mut payload);
+    payload.extend(access_list(fields.0.get("accessList")?)?);
+    if kind == BLOB_TX {
+        rlp_bytes(&fields.integer("maxFeePerBlobGas")?, &mut payload);
+        let hashes = fields.0.get("blobVersionedHashes")?.as_array()?;
+        if hashes.is_empty() {
+            return None;
+        }
+        let mut list = Vec::new();
+        for hash in hashes {
+            rlp_bytes(&fixed::<32>(hash)?, &mut list);
+        }
+        payload.extend(rlp_list(&list));
+    }
+    if kind == SET_CODE_TX {
+        let authorizations = fields.0.get("authorizationList")?.as_array()?;
+        if authorizations.is_empty() {
+            return None;
+        }
+        let mut list = Vec::new();
+        for authorization in authorizations {
+            list.extend(authorization_tuple(authorization)?);
+        }
+        payload.extend(rlp_list(&list));
+    }
+    rlp_bytes(&fields.integer("yParity")?, &mut payload);
+    rlp_bytes(r, &mut payload);
+    rlp_bytes(s, &mut payload);
+    let mut raw = vec![kind];
+    raw.extend(rlp_list(&payload));
+    Some(raw)
+}
+
+fn access_list(value: &Value) -> Option<Vec<u8>> {
+    let mut payload = Vec::new();
+    for entry in value.as_array()? {
+        let fields = Fields::exact(entry, &["address", "storageKeys"])?;
+        let mut keys = Vec::new();
+        for key in fields.0.get("storageKeys")?.as_array()? {
+            rlp_bytes(&fixed::<32>(key)?, &mut keys);
+        }
+        let mut item = Vec::new();
+        rlp_bytes(&fields.fixed::<20>("address")?, &mut item);
+        item.extend(rlp_list(&keys));
+        payload.extend(rlp_list(&item));
+    }
+    Some(rlp_list(&payload))
+}
+
+fn authorization_tuple(value: &Value) -> Option<Vec<u8>> {
+    let fields = Fields::exact(value, &["chainId", "address", "nonce", "yParity", "r", "s"])?;
+    let y_parity = fields.integer("yParity")?;
+    if y_parity.len() > 1 || fields.integer("nonce")?.len() > 8 {
+        return None;
+    }
+    let mut item = Vec::new();
+    rlp_bytes(&fields.integer("chainId")?, &mut item);
+    rlp_bytes(&fields.fixed::<20>("address")?, &mut item);
+    rlp_bytes(&fields.integer("nonce")?, &mut item);
+    rlp_bytes(&y_parity, &mut item);
+    rlp_bytes(&fields.integer("r")?, &mut item);
+    rlp_bytes(&fields.integer("s")?, &mut item);
+    Some(rlp_list(&item))
+}
+
+fn rlp_header(length: usize, short: u8, out: &mut Vec<u8>) {
+    if let Ok(small @ 0..=55) = u8::try_from(length) {
+        out.push(short + small);
+        return;
+    }
+    let encoded = length.to_be_bytes();
+    let significant = &encoded[encoded.iter().take_while(|byte| **byte == 0).count()..];
+    let width = significant.iter().fold(0_u8, |width, _| width + 1);
+    out.push(short + 55 + width);
+    out.extend_from_slice(significant);
+}
+
+fn rlp_bytes(data: &[u8], out: &mut Vec<u8>) {
+    if let [byte @ 0..=0x7f] = data {
+        out.push(*byte);
+    } else {
+        rlp_header(data.len(), 0x80, out);
+        out.extend_from_slice(data);
+    }
+}
+
+fn rlp_list(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payload.len() + 9);
+    rlp_header(payload.len(), 0xc0, &mut out);
+    out.extend_from_slice(payload);
+    out
+}
+
 /// A JSON object holding exactly the expected member names.
 struct Fields<'a>(&'a Map<String, Value>);
 
@@ -630,6 +944,11 @@ impl<'a> Fields<'a> {
 
     fn bytes(&self, name: &str) -> Option<Vec<u8>> {
         bytes(self.0.get(name)?.as_str()?)
+    }
+
+    /// A 256-bit quantity as minimal big-endian bytes, empty for zero.
+    fn integer(&self, name: &str) -> Option<Vec<u8>> {
+        quantity_bytes(self.0.get(name)?)
     }
 
     fn string(&self, name: &str) -> Option<String> {
@@ -683,6 +1002,18 @@ fn quantity_digits(value: &Value, max_digits: usize) -> Option<&str> {
 
 fn quantity_u64(value: &Value) -> Option<u64> {
     u64::from_str_radix(quantity_digits(value, 16)?, 16).ok()
+}
+
+fn quantity_u128(value: &Value) -> Option<u128> {
+    u128::from_str_radix(quantity_digits(value, 32)?, 16).ok()
+}
+
+fn quantity_bytes(value: &Value) -> Option<Vec<u8>> {
+    match quantity_digits(value, 64)? {
+        "0" => Some(Vec::new()),
+        digits if digits.len().is_multiple_of(2) => bytes(&format!("0x{digits}")),
+        digits => bytes(&format!("0x0{digits}")),
+    }
 }
 
 fn quantity_u256(value: &Value) -> Option<[u8; 32]> {

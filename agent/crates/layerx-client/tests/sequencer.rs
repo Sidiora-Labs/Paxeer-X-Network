@@ -4,9 +4,10 @@ use std::net::TcpListener;
 use std::thread::JoinHandle;
 
 use layerx_client::sequencer::{
-    CallRequest, ExecutedReceipt, ReceiptKeyEntry, RpcRefusal, SequencerEndpoint, SequencerError,
-    SequencerLog, SequencerReceipt,
+    CallRequest, ExecutedReceipt, ReceiptKeyEntry, RpcRefusal, SequencerBlock, SequencerEndpoint,
+    SequencerError, SequencerLog, SequencerReceipt,
 };
+use layerx_crypto::evm_transaction::Eip1559Call;
 use serde_json::{json, Value};
 
 trait Must<T> {
@@ -527,4 +528,194 @@ fn endpoint_refuses_plain_remote_urls_and_unpinned_https() {
         Err(SequencerError::Endpoint)
     );
     assert!(SequencerEndpoint::new("https://router.example/", &[&[0x30, 0x82]]).is_ok());
+}
+
+const BLOCK_HASH: &str = "0x4b1f2c9d8e7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c";
+const PARENT_HASH: &str = "0x9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b";
+const TRANSACTIONS_ROOT: &str =
+    "0x1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d";
+
+/// The EIP-155 example: nonce 9, 20 gwei, 21000 gas, 1 ether to 0x3535..35
+/// on chain 1, signed with the key 0x4646..46.
+const LEGACY_RAW: &str = "f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83";
+
+fn unhex(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&text[index..index + 2], 16).must())
+        .collect()
+}
+
+fn quantity(bytes: &[u8]) -> String {
+    let digits = hex(bytes);
+    let trimmed = digits.trim_start_matches('0');
+    if trimmed.is_empty() {
+        "0x0".to_owned()
+    } else {
+        format!("0x{trimmed}")
+    }
+}
+
+fn location(index: u64) -> String {
+    format!(r#""blockHash":"{BLOCK_HASH}","blockNumber":"0x3e8","transactionIndex":"{index:#x}""#)
+}
+
+fn legacy_transaction(index: u64) -> String {
+    format!(
+        r#"{{{},"from":"0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f","gas":"0x5208","gasPrice":"0x4a817c800","hash":"0x33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788","input":"0x","nonce":"0x9","to":"0x3535353535353535353535353535353535353535","value":"0xde0b6b3a7640000","type":"0x0","chainId":"0x1","v":"0x25","r":"0x28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276","s":"0x67cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83"}}"#,
+        location(index)
+    )
+}
+
+/// A real EIP-1559 call signed with the key 0x4646..46 and its RPC object.
+fn dynamic_fee_transaction(index: u64) -> (Vec<u8>, String) {
+    let call = Eip1559Call {
+        chain_id: 229,
+        nonce: 3,
+        max_priority_fee_per_gas: 1_000_000_000,
+        max_fee_per_gas: 3_000_000_000,
+        gas_limit: 90_000,
+        to: [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x04,
+        ],
+        data: vec![0xc4, 0x13, 0xba, 0xd3, 0x01, 0x02],
+    };
+    let raw = call.sign(&[0x46; 32]).must();
+    let tail = raw.len() - 67;
+    assert_eq!(raw[tail + 1], 0xa0);
+    assert_eq!(raw[tail + 34], 0xa0);
+    let y_parity = match raw[tail] {
+        0x80 => "0x0",
+        0x01 => "0x1",
+        other => panic!("y parity byte {other:#x}"),
+    };
+    let object = format!(
+        r#"{{{},"from":"0x9d8a62f656a8d1615c1294fd71e9cfb3e4855a4f","gas":"0x15f90","gasPrice":"0x77359400","maxFeePerGas":"0xb2d05e00","maxPriorityFeePerGas":"0x3b9aca00","hash":"0x{}","input":"0xc413bad30102","nonce":"0x3","to":"0x0000000000000000000000000000000000001004","value":"0x0","type":"0x2","accessList":[],"chainId":"0xe5","v":"{y_parity}","r":"{}","s":"{}","yParity":"{y_parity}"}}"#,
+        location(index),
+        "5e".repeat(32),
+        quantity(&raw[tail + 2..tail + 34]),
+        quantity(&raw[tail + 35..]),
+    );
+    (raw, object)
+}
+
+fn block(transactions: &str) -> String {
+    format!(
+        r#""result":{{"number":"0x3e8","hash":"{BLOCK_HASH}","parentHash":"{PARENT_HASH}","timestamp":"0x67a1b2c3","transactionsRoot":"{TRANSACTIONS_ROOT}","gasLimit":"0x1c9c380","gasUsed":"0x1a9f8","miner":"0x0000000000000000000000000000000000000000","transactions":[{transactions}]}}"#
+    )
+}
+
+#[test]
+fn full_block_decodes_raw_transactions_in_index_order() {
+    let (dynamic_raw, dynamic) = dynamic_fee_transaction(1);
+    let (url, server) = serve(vec![(
+        "eth_getBlockByNumber",
+        Some(block(&format!("{},{dynamic}", legacy_transaction(0)))),
+    )]);
+    assert_eq!(
+        endpoint(&url).block_by_number(1000),
+        Ok(Some(SequencerBlock {
+            number: 1000,
+            hash: decode32(BLOCK_HASH),
+            parent_hash: decode32(PARENT_HASH),
+            timestamp: 0x67a1_b2c3,
+            transactions_root: decode32(TRANSACTIONS_ROOT),
+            transactions: vec![unhex(LEGACY_RAW), dynamic_raw],
+        }))
+    );
+    assert_eq!(server.join().must(), vec![json!(["0x3e8", true])]);
+}
+
+#[test]
+fn null_block_is_none() {
+    let (url, server) = serve(vec![(
+        "eth_getBlockByNumber",
+        Some(r#""result":null"#.to_owned()),
+    )]);
+    assert_eq!(endpoint(&url).block_by_number(0), Ok(None));
+    assert_eq!(server.join().must(), vec![json!(["0x0", true])]);
+}
+
+#[test]
+fn malformed_transaction_lists_are_refused() {
+    let (_, dynamic) = dynamic_fee_transaction(1);
+    let legacy = legacy_transaction(0);
+    let malformed = vec![
+        block(r#""0x33469b22e9f636356c4160a87eb19df52b7412e8eac32a4a55ffe88ea8350788""#),
+        block(&format!("{dynamic},{legacy}")),
+        block(&legacy.replace(r#""v":"0x25""#, r#""v":"0x1b""#)),
+        block(&format!(
+            "{legacy},{}",
+            dynamic.replace(r#","yParity":"#, r#","maxFeePerBlobGas":"0x1","yParity":"#)
+        )),
+        block(&format!(
+            "{legacy},{}",
+            dynamic.replace(r#""type":"0x2""#, r#""type":"0x5""#)
+        )),
+        block(&legacy.replace(BLOCK_HASH, PARENT_HASH)),
+        r#""result":{"number":"0x3e8"}"#.to_owned(),
+        block(&legacy).replace(r#""number":"0x3e8""#, r#""number":"0x3e9""#),
+    ];
+    let count = malformed.len();
+    let (url, server) = serve(
+        malformed
+            .into_iter()
+            .map(|members| ("eth_getBlockByNumber", Some(members)))
+            .collect(),
+    );
+    let endpoint = endpoint(&url);
+    for _ in 0..count {
+        assert_eq!(
+            endpoint.block_by_number(1000),
+            Err(SequencerError::Malformed)
+        );
+    }
+    assert_eq!(server.join().must().len(), count);
+}
+
+#[test]
+fn closed_connection_during_block_read_is_unavailable() {
+    let (url, server) = serve(vec![("eth_getBlockByNumber", None)]);
+    assert_eq!(
+        endpoint(&url).block_by_number(1000),
+        Err(SequencerError::Unavailable)
+    );
+    assert_eq!(server.join().must(), vec![json!(["0x3e8", true])]);
+}
+
+#[test]
+fn call_at_sends_the_explicit_height_and_keeps_a_revert_at_that_height() {
+    let reason = revert_data("LXP_ADDR_DID_NOT_BOUND: no binding at this height");
+    let (url, server) = serve(vec![
+        ("eth_call", Some(r#""result":"0x00ff10""#.to_owned())),
+        (
+            "eth_call",
+            Some(format!(
+                r#""error":{{"code":3,"message":"execution reverted","data":"0x{reason}"}}"#
+            )),
+        ),
+    ]);
+    let endpoint = endpoint(&url);
+    let mut to = [0_u8; 20];
+    to[18] = 0x10;
+    to[19] = 0x04;
+    assert_eq!(
+        endpoint.call_at(1000, &to, &[0xc4, 0x13, 0xba, 0xd3]),
+        Ok(vec![0x00, 0xff, 0x10])
+    );
+    assert_eq!(
+        endpoint.call_at(0, &to, &[]),
+        Err(SequencerError::Rpc(RpcRefusal {
+            code: 3,
+            message: "execution reverted".to_owned(),
+            data: Some(Value::String(format!("0x{reason}"))),
+        }))
+    );
+    assert_eq!(
+        server.join().must(),
+        vec![
+            json!([{"to": "0x0000000000000000000000000000000000001004", "data": "0xc413bad3"}, "0x3e8"]),
+            json!([{"to": "0x0000000000000000000000000000000000001004", "data": "0x"}, "0x0"]),
+        ]
+    );
 }
