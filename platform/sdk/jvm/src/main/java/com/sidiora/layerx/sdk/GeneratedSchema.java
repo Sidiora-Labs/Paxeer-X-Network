@@ -367,21 +367,6 @@ public final class GeneratedSchema {
                 Objects.requireNonNull(canonical_intent, "canonical_intent");
             }
         }
-        public enum Level {
-            UNVERIFIED("Unverified"),
-            SEQUENCERSIGNED("SequencerSigned"),
-            BATCHINCLUDED("BatchIncluded"),
-            STATEPROVEN("StateProven"),
-            CHECKPOINTFINALISED("CheckpointFinalised"),
-            SETTLEMENTANCHORED("SettlementAnchored");
-            private final String wire;
-            Level(String wire) { this.wire = wire; }
-            @JsonValue public String wire() { return wire; }
-            @JsonCreator public static Level fromWire(String wire) {
-                for (Level value : values()) if (value.wire.equals(wire)) return value;
-                throw new IllegalArgumentException("unknown schema variant");
-            }
-        }
         public record McpExternalSignatureV1(JsonNode variant, JsonNode preparation_ref, JsonNode signature) implements SchemaTypes.GeneratedResponse {
             public McpExternalSignatureV1 {
                 Objects.requireNonNull(variant, "variant");
@@ -740,16 +725,16 @@ public final class GeneratedSchema {
             }
         }
         public enum ProgramGuestAbi {
-            ABI_V1_VERSION("ABI_V1_VERSION"),
-            ABI_V2_VERSION("ABI_V2_VERSION"),
-            ABI_V3_VERSION("ABI_V3_VERSION"),
-            ABI_V4_VERSION("ABI_V4_VERSION"),
-            ABI_V5_VERSION("ABI_V5_VERSION");
-            private final String wire;
-            ProgramGuestAbi(String wire) { this.wire = wire; }
-            @JsonValue public String wire() { return wire; }
-            @JsonCreator public static ProgramGuestAbi fromWire(String wire) {
-                for (ProgramGuestAbi value : values()) if (value.wire.equals(wire)) return value;
+            ABI_V1_VERSION(1),
+            ABI_V2_VERSION(2),
+            ABI_V3_VERSION(3),
+            ABI_V4_VERSION(4),
+            ABI_V5_VERSION(5);
+            private final int wire;
+            ProgramGuestAbi(int wire) { this.wire = wire; }
+            @JsonValue public int wire() { return wire; }
+            @JsonCreator public static ProgramGuestAbi fromWire(int wire) {
+                for (ProgramGuestAbi value : values()) if (value.wire == wire) return value;
                 throw new IllegalArgumentException("unknown schema variant");
             }
         }
@@ -920,6 +905,18 @@ public final class GeneratedSchema {
                 throw new IllegalArgumentException("unknown schema variant");
             }
         }
+        public enum Rung {
+            SUBMITTED("Submitted"),
+            RECEIPTED("Receipted"),
+            COMMITTED("Committed");
+            private final String wire;
+            Rung(String wire) { this.wire = wire; }
+            @JsonValue public String wire() { return wire; }
+            @JsonCreator public static Rung fromWire(String wire) {
+                for (Rung value : values()) if (value.wire.equals(wire)) return value;
+                throw new IllegalArgumentException("unknown schema variant");
+            }
+        }
         public record SessionContext(JsonNode tenant, JsonNode agent_did, JsonNode authority_ref, JsonNode permitted_activity_types, JsonNode expiry, JsonNode client, JsonNode policy_version) implements SchemaTypes.GeneratedResponse {
             public SessionContext {
                 Objects.requireNonNull(tenant, "tenant");
@@ -970,7 +967,7 @@ public final class GeneratedSchema {
             }
         }
         public record SubmissionState(String kind, JsonNode value) implements SchemaTypes.GeneratedResponse {
-            private static final Set<String> KINDS = Set.of("Prepared", "Signed", "Queued", "Submitted", "Acknowledged", "Unknown", "Executed", "Failed", "Expired");
+            private static final Set<String> KINDS = Set.of("Prepared", "Signed", "Queued", "Submitted", "Unknown", "Executed", "Committed", "Failed", "Expired");
             public SubmissionState {
                 Objects.requireNonNull(kind, "kind");
                 Objects.requireNonNull(value, "value");
@@ -3356,12 +3353,13 @@ public final class GeneratedSchema {
                 Objects.requireNonNull(signature, "signature");
             }
         }
-        public record SubmitResponse(JsonNode value) implements SchemaTypes.GeneratedResponse {
-            @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public record SubmitResponse(JsonNode state, JsonNode evidence, JsonNode rung, JsonNode transitions) implements SchemaTypes.GeneratedResponse {
             public SubmitResponse {
-                Objects.requireNonNull(value, "value");
+                Objects.requireNonNull(state, "state");
+                Objects.requireNonNull(evidence, "evidence");
+                Objects.requireNonNull(rung, "rung");
+                Objects.requireNonNull(transitions, "transitions");
             }
-            @JsonValue public JsonNode wireValue() { return value; }
         }
         public static final SchemaTypes.TypedOperation<SubmitRequest, SubmitResponse> SUBMIT = new SchemaTypes.TypedOperation<>(OperationCatalog.Plane.AGENT, "submit", true, SubmitRequest.class, SubmitResponse.class);
         public record SubscriptionAcknowledgeRequest(JsonNode scope, JsonNode subscription_id, JsonNode cursor) implements SchemaTypes.GeneratedRequest {
@@ -3482,26 +3480,26 @@ public final class GeneratedSchema {
                 Objects.requireNonNull(submission_ref, "submission_ref");
             }
         }
-        public record TrackResponse(JsonNode state, JsonNode evidence, JsonNode verification_level, JsonNode transitions) implements SchemaTypes.GeneratedResponse {
+        public record TrackResponse(JsonNode state, JsonNode evidence, JsonNode rung, JsonNode transitions) implements SchemaTypes.GeneratedResponse {
             public TrackResponse {
                 Objects.requireNonNull(state, "state");
                 Objects.requireNonNull(evidence, "evidence");
-                Objects.requireNonNull(verification_level, "verification_level");
+                Objects.requireNonNull(rung, "rung");
                 Objects.requireNonNull(transitions, "transitions");
             }
         }
         public static final SchemaTypes.TypedOperation<TrackRequest, TrackResponse> TRACK = new SchemaTypes.TypedOperation<>(OperationCatalog.Plane.AGENT, "track", false, TrackRequest.class, TrackResponse.class);
-        public record WaitRequest(JsonNode submission_ref, JsonNode requested_verification_level, JsonNode deadline) implements SchemaTypes.GeneratedRequest {
+        public record WaitRequest(JsonNode submission_ref, JsonNode requested_rung, JsonNode deadline) implements SchemaTypes.GeneratedRequest {
             public WaitRequest {
                 Objects.requireNonNull(submission_ref, "submission_ref");
-                Objects.requireNonNull(requested_verification_level, "requested_verification_level");
+                Objects.requireNonNull(requested_rung, "requested_rung");
                 Objects.requireNonNull(deadline, "deadline");
             }
         }
-        public record WaitResponse(JsonNode submission, JsonNode actual_verification_level, JsonNode deadline_elapsed) implements SchemaTypes.GeneratedResponse {
+        public record WaitResponse(JsonNode submission, JsonNode actual_rung, JsonNode deadline_elapsed) implements SchemaTypes.GeneratedResponse {
             public WaitResponse {
                 Objects.requireNonNull(submission, "submission");
-                Objects.requireNonNull(actual_verification_level, "actual_verification_level");
+                Objects.requireNonNull(actual_rung, "actual_rung");
                 Objects.requireNonNull(deadline_elapsed, "deadline_elapsed");
             }
         }

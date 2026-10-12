@@ -224,10 +224,34 @@ def render_models(plane: Plane) -> list[str]:
         variants = string_list(entries.get("variants"))
         payload_variant = any(f"{variant}.required" in entries for variant in variants)
         if variants and not payload_variant:
+            declared_wires = entries.get("wire_values", variants)
+            wire_values = string_list(declared_wires)
+            if (
+                not isinstance(declared_wires, list)
+                or len(wire_values) != len(declared_wires)
+                or len(wire_values) != len(variants)
+            ):
+                raise SystemExit(f"{plane.name} {model}: wire_values must pair one string with each variant")
+            if "wire_values" in entries and all(re.fullmatch(r"0|[1-9][0-9]{0,8}", wire) for wire in wire_values):
+                lines.append(f"        public enum {name} {{")
+                for index, (variant, wire) in enumerate(zip(variants, wire_values)):
+                    suffix = ";" if index + 1 == len(variants) else ","
+                    lines.append(f"            {constant_name(variant)}({wire}){suffix}")
+                lines.extend([
+                    "            private final int wire;",
+                    f"            {name}(int wire) {{ this.wire = wire; }}",
+                    "            @JsonValue public int wire() { return wire; }",
+                    f"            @JsonCreator public static {name} fromWire(int wire) {{",
+                    f"                for ({name} value : values()) if (value.wire == wire) return value;",
+                    "                throw new IllegalArgumentException(\"unknown schema variant\");",
+                    "            }",
+                    "        }",
+                ])
+                continue
             lines.append(f"        public enum {name} {{")
-            for index, variant in enumerate(variants):
+            for index, (variant, wire) in enumerate(zip(variants, wire_values)):
                 suffix = ";" if index + 1 == len(variants) else ","
-                lines.append(f'            {constant_name(variant)}("{variant}"){suffix}')
+                lines.append(f'            {constant_name(variant)}("{wire}"){suffix}')
             lines.extend([
                 "            private final String wire;",
                 f"            {name}(String wire) {{ this.wire = wire; }}",

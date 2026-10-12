@@ -5,7 +5,7 @@ outputs = ["agent-api-rust", "agent-rust", "agent-typescript", "agent-python", "
 
 [source.agent-api]
 root = "agent/schema/agent-api"
-digest = "8f467f9251206f6793c9129bef130a081ea92c9ea68a750198ad5551828c2956"
+digest = "f140758cb4a75363f3e0ddbe859875863acf9697d998d9e76a1dd30634b229da"
 
 [source.human-api]
 root = "human/schema/human-api"
@@ -17,7 +17,7 @@ digest = "a1235902a2e119ece32f923bdc2fbf5f72f1e1b4ba32b5354915c47f5773f52b"
 
 [generator.platform-sdkgen]
 root = "platform/sdk/generators"
-digest = "16e8b5b8402afb1d65ca70db07aa0d1c6dc92d7aaa9160d027e2fcb6d5b8b24f"
+digest = "5f011c1fb84cc84e58adc9fef3c25a48bcff48797d9446dc8af0d71d9b7921dc"
 
 [generator.agent-sdk-gen]
 root = "agent/tools/sdk-gen"
@@ -33,7 +33,7 @@ root = "agent/crates/layerx-agent-api/src"
 
 [files.agent-api-rust]
 "operation_generated.rs" = "15639a6bf35ae43f77291233111b0b8b8be59fb78648d49215a92498c7e76236"
-"generated.rs" = "e90208a0db32b6366096d4bff6b102e5e8bff1cca3af2cb02425f696544f54ce"
+"generated.rs" = "4d542c6a9b5db8c2cd0ef44875e7c2b37039efbae3204ada7c9a08c7e9550a7b"
 
 [handwritten.agent-api-rust]
 "error.rs" = "handwritten"
@@ -124,6 +124,8 @@ root = "agent/sdk"
 "python/layerx_sdk/ai_market.py" = "handwritten"
 "python/layerx_sdk/bip39_english.py" = "handwritten"
 "python/layerx_sdk/bridge.py" = "handwritten"
+"python/layerx_sdk/evm_transaction.py" = "handwritten"
+"python/layerx_sdk/evm_transaction.pyi" = "handwritten"
 "python/layerx_sdk/exchange.py" = "handwritten"
 "python/layerx_sdk/intent.py" = "handwritten"
 "python/layerx_sdk/intent.pyi" = "handwritten"
@@ -286,7 +288,7 @@ root = "platform/sdk/jvm"
 "src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java" = "44d44b76c5310e93d32da7d93a5331901111d87920e84372e8e2c358c5ab3558"
 "src/main/java/com/sidiora/layerx/sdk/ProgramLifecycleRoutes.java" = "037a8b228781e81ba7490a8db5a59a6990597827084fa5771f420ce420cc8636"
 "src/main/java/com/sidiora/layerx/sdk/GeneratedContract.java" = "17df072d1a933f72db3e6543b272eecb0d2c0e9f3cc376a0a70d22abdacdfde8"
-"src/main/java/com/sidiora/layerx/sdk/GeneratedSchema.java" = "2874ce3c94ba5df038ea4991e897e6a063c633ec2cbb6203b11fcb3272e2864d"
+"src/main/java/com/sidiora/layerx/sdk/GeneratedSchema.java" = "5dff572a7237d84a84eae11626e5788edd44feab98f4b9ad1ca255f75314d076"
 "src/main/java/com/sidiora/layerx/sdk/GeneratedMirror.java" = "facf45b2da6828d41371b36bc0f2119f643d7b45003dead0c9590a9b0f0b6b8f"
 "src/main/java/com/sidiora/layerx/sdk/IdempotencyKey.java" = "2cfba7826e4bb7a6f0d4af63530f43c7aece547cf9f64ff1664b781cc431f6a4"
 "src/main/java/com/sidiora/layerx/sdk/OperationCatalog.java" = "477843c32935ffbc9ecff6dd6a35b78693b059c3d29a59aa021349b4a868e8e3"
@@ -323,6 +325,7 @@ root = "platform/sdk/jvm"
 "src/main/java/com/sidiora/layerx/sdk/util/GoldenVectorReader.java" = "handwritten"
 "src/main/java/com/sidiora/layerx/sdk/verify/MirrorSourceVerifier.java" = "handwritten"
 "src/test/java/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.java" = "handwritten"
+"src/test/java/com/sidiora/layerx/sdk/GeneratedProgramAbiTest.java" = "handwritten"
 "src/test/java/com/sidiora/layerx/sdk/NativeCapabilitySetTest.java" = "handwritten"
 "src/test/java/com/sidiora/layerx/sdk/NativeLifecycleTransportTest.java" = "handwritten"
 "src/test/java/com/sidiora/layerx/sdk/ProgramsContractTest.java" = "handwritten"
@@ -380,6 +383,7 @@ root = "platform/sdk/conformance"
 "fixtures/receipt-refusals-v1.json" = "handwritten"
 "fixtures/receipt-refusals-v2.json" = "handwritten"
 "fixtures/receipt-refusals-v3.json" = "handwritten"
+"fixtures/sequencer-receipt-v1.json" = "handwritten"
 "run-go.sh" = "handwritten"
 "secret-hygiene.test.py" = "handwritten"
 "secret-hygiene.test.rs" = "handwritten"
