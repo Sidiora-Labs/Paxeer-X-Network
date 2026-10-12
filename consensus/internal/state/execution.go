@@ -40,23 +40,11 @@ var (
 	ErrSealedBlockTooLarge = errors.New("sealed block exceeds the block data bytes")
 )
 
-// SequencerSource supplies the sealed pending block a leader proposes in
-// sequencer mode.
-type SequencerSource interface {
-	// Sequenced reports whether the block at height is built from the sealed
-	// slice; it is false below the activation height.
-	Sequenced(height int64) bool
-	// Seal closes the pending block for height and returns it.
-	Seal(ctx context.Context, height int64) (SealedBlock, error)
-}
+// SequencerSource is types.SequencerSource.
+type SequencerSource = types.SequencerSource
 
-// SealedBlock is a sealed pending block: the encoded MsgSequenceBatch, the
-// executed transactions in seq order and the time Open fixed for the height.
-type SealedBlock struct {
-	Batch    types.Tx
-	Txs      types.Txs
-	OpenTime time.Time
-}
+// SealedBlock is types.SealedBlock.
+type SealedBlock = types.SealedBlock
 
 // InjectSequenceBatch returns the block transactions of sb: its sequence
 // batch at tx 0 followed by the sealed slice in seq order, refused when they

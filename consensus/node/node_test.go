@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -893,4 +894,105 @@ func TestNodeShutdownJoinsPruner(t *testing.T) {
 	require.LessOrEqual(t, st.LastBlockHeight, height)
 	_, err = stateStore.LoadValidators(base)
 	require.NoError(t, err)
+}
+
+// sequencedApp is the kvstore application that also seals the pending block of every height at
+// or above activation, so it implements types.SequencerSource.
+type sequencedApp struct {
+	*kvstore.Application
+	activation int64
+
+	mu     sync.Mutex
+	sealed map[int64]types.SealedBlock
+}
+
+func (a *sequencedApp) Sequenced(height int64) bool { return height >= a.activation }
+
+func (a *sequencedApp) Seal(_ context.Context, height int64) (types.SealedBlock, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sb := types.SealedBlock{
+		Batch:    types.Tx(fmt.Sprintf("sequence-batch-%d", height)),
+		Txs:      types.Txs{types.Tx(fmt.Sprintf("seq-a-%d=1", height)), types.Tx(fmt.Sprintf("seq-b-%d=2", height))},
+		OpenTime: tmtime.Now(),
+	}
+	a.sealed[height] = sb
+	return sb, nil
+}
+
+func (a *sequencedApp) sealedAt(height int64) (types.SealedBlock, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sb, ok := a.sealed[height]
+	return sb, ok
+}
+
+func TestNodeInstallsSequencerSource(t *testing.T) {
+	cfg, err := config.ResetTestRoot(t.TempDir(), "node_sequencer_source_test")
+	require.NoError(t, err)
+	cfg.RPC.ListenAddress = fmt.Sprintf("tcp://%s", tcp.TestReserveAddr())
+
+	ctx := t.Context()
+	const activation int64 = 2
+	app := &sequencedApp{Application: kvstore.NewApplication(), activation: activation, sealed: map[int64]types.SealedBlock{}}
+	app.SetValidators(utils.OrPanic1(types.GenesisDocFromFile(cfg.GenesisFile())).ValidatorUpdates())
+	ns, err := New(
+		ctx,
+		cfg,
+		func() {},
+		app,
+		nil,
+		nil,
+		DefaultMetricsProvider(cfg.Instrumentation)(cfg.ChainID()),
+		types.DefaultConsensusPolicy(),
+	)
+	require.NoError(t, err)
+	n, ok := ns.(*nodeImpl)
+	require.True(t, ok)
+	t.Cleanup(leaktest.CheckTimeout(t, time.Second))
+
+	started := false
+	t.Cleanup(func() {
+		if !started {
+			return
+		}
+		if n.IsRunning() {
+			n.Stop()
+		}
+		n.Wait()
+	})
+
+	blocksSub, err := n.EventBus().SubscribeWithArgs(ctx, pubsub.SubscribeArgs{
+		ClientID: "node_test_sequencer_source",
+		Query:    types.EventQueryNewBlock,
+		Limit:    1000,
+	})
+	require.NoError(t, err)
+	require.NoError(t, n.Start(ctx))
+	started = true
+
+	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	blocks := map[int64]*types.Block{}
+	for len(blocks) < int(activation) {
+		msg, err := blocksSub.Next(tctx)
+		require.NoError(t, err, "waiting for block %d", activation)
+		block := msg.Data().(types.EventDataNewBlock).Block
+		blocks[block.Height] = block
+	}
+
+	below := blocks[activation-1]
+	require.NotNil(t, below)
+	_, sealedBelow := app.sealedAt(activation - 1)
+	require.False(t, sealedBelow, "no seal below the activation height")
+	for _, tx := range below.Txs {
+		require.NotEqual(t, types.Tx(fmt.Sprintf("sequence-batch-%d", activation-1)), tx)
+	}
+
+	at := blocks[activation]
+	require.NotNil(t, at)
+	sb, sealed := app.sealedAt(activation)
+	require.True(t, sealed, "the node seals through the application at the activation height")
+	require.Equal(t, append(types.Txs{sb.Batch}, sb.Txs...), at.Txs)
+	require.True(t, sb.OpenTime.Equal(at.Header.Time), "header time %v, open time %v", at.Header.Time, sb.OpenTime)
 }

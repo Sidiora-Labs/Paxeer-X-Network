@@ -1511,7 +1511,7 @@ func (app *App) ProcessProposalHandler(ctx sdk.Context, req *abci.RequestProcess
 	}
 
 	if sequenced {
-		if root := app.sequencedTxRoot(blockTxs, typedTxs); !bytes.Equal(batch.TxRoot, root[:]) {
+		if root := app.SequencedTxRoot(blockTxs, typedTxs); !bytes.Equal(batch.TxRoot, root[:]) {
 			logger.Error("sequence batch txRoot differs from the sealed sequence", "height", req.Header.Height,
 				"batchTxRoot", fmt.Sprintf("%X", batch.TxRoot), "txRoot", fmt.Sprintf("%X", root))
 			return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
@@ -3135,9 +3135,9 @@ func DecodeSequenceBatch(tx []byte) (seqtypes.MsgSequenceBatch, error) {
 	return m, nil
 }
 
-// sequencedTxRoot is sha256 over the activity ids of txs in order: keccak256 of the signed EVM
+// SequencedTxRoot is sha256 over the activity ids of txs in order: keccak256 of the signed EVM
 // transaction, else sha256 of the tx bytes.
-func (app *App) sequencedTxRoot(txs [][]byte, typedTxs []sdk.Tx) [32]byte {
+func (app *App) SequencedTxRoot(txs [][]byte, typedTxs []sdk.Tx) [32]byte {
 	root := sha256.New()
 	for i, tx := range txs {
 		id := sha256.Sum256(tx)

@@ -59,6 +59,7 @@ func New(
 			restartEvent,
 			pval,
 			nodeKey,
+			app,
 			proxyApp,
 			genProvider,
 			config.DefaultDBProvider,

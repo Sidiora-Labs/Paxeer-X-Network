@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	atypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/autobahn/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/consensus/crypto"
@@ -84,6 +85,7 @@ func makeNode(
 	restartEvent func(),
 	filePrivval *privval.FilePV,
 	nodeKey types.NodeKey,
+	app abci.Application,
 	proxyApp *proxy.Proxy,
 	genesisDocProvider genesisDocProvider,
 	dbProvider config.DBProvider,
@@ -258,6 +260,9 @@ func makeNode(
 			nodeMetrics.state,
 			consensusPolicy,
 		)
+		if src, ok := app.(types.SequencerSource); ok {
+			blockExec.SetSequencerSource(src)
+		}
 		closers = append([]closer{func() error {
 			blockExec.Stop()
 			return nil
