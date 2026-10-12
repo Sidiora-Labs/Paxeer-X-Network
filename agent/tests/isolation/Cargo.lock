@@ -431,7 +431,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -733,6 +733,7 @@ name = "layerx-agent-api"
 version = "0.1.0"
 dependencies = [
  "layerx-client",
+ "layerx-proof",
  "layerx-types",
 ]
 
@@ -745,6 +746,7 @@ dependencies = [
  "layerx-client",
  "layerx-crypto",
  "layerx-identity-binding",
+ "layerx-intents",
  "layerx-paxeer-verifier",
  "layerx-programs-protocol-adapter",
  "layerx-programs-registry",
@@ -753,7 +755,9 @@ dependencies = [
  "layerx-types",
  "layerx-wire",
  "rustix",
+ "rustls",
  "rustls-native-certs",
+ "rustls-webpki",
  "serde",
  "serde_json",
  "sha2",
@@ -768,12 +772,15 @@ dependencies = [
  "ed25519-dalek",
  "layerx-crypto",
  "layerx-paxeer-verifier",
+ "layerx-programs-ai-market",
  "layerx-proof",
  "layerx-types",
  "layerx-wire",
  "rustix",
  "rustls",
+ "serde_json",
  "sha2",
+ "ureq",
 ]
 
 [[package]]
@@ -808,17 +815,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-intents"
+version = "0.1.0"
+dependencies = [
+ "layerx-client",
+ "layerx-crypto",
+ "layerx-proof",
+ "layerx-sdk",
+ "layerx-types",
+ "layerx-wire",
+ "sha2",
+]
+
+[[package]]
+name = "layerx-interop-gateway"
+version = "0.1.0"
+dependencies = [
+ "layerx-proof",
+ "sha2",
+]
+
+[[package]]
 name = "layerx-mcp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "layerx-agent-api",
  "layerx-agentd",
  "layerx-crypto",
+ "layerx-interop-gateway",
+ "layerx-proof",
  "layerx-sdk",
  "layerx-types",
+ "layerx-x402",
  "rustix",
+ "serde",
  "serde_json",
  "sha2",
+ "sha3",
  "zeroize",
 ]
 
@@ -862,6 +896,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-programs-ai-market"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "layerx-program-sdk",
+ "sha2",
+ "spin",
+]
+
+[[package]]
 name = "layerx-programs-protocol-adapter"
 version = "0.1.0"
 dependencies = [
@@ -886,6 +930,7 @@ dependencies = [
  "blake3",
  "ed25519-dalek",
  "k256",
+ "layerx-program-sdk",
  "num-bigint",
  "sha2",
  "sha3",
@@ -935,6 +980,18 @@ name = "layerx-wire"
 version = "0.1.0"
 dependencies = [
  "layerx-types",
+]
+
+[[package]]
+name = "layerx-x402"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "layerx-interop-gateway",
+ "layerx-proof",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -1251,14 +1308,14 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "log",
  "once_cell",
@@ -1292,9 +1349,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.14"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0527518605e68109d875e248ea259b6758801cf165e4b2c2733ae3b51f12535a"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -1385,9 +1442,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.149"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",

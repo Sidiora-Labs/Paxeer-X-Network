@@ -2279,7 +2279,8 @@ pub(crate) mod parsing {
         fn parse(input: ParseStream) -> Result<Self> {
             let attrs = input.call(Attribute::parse_outer)?;
             let vis: Visibility = input.parse()?;
-            let sig: Signature = input.parse()?;
+            let allow_safe = true;
+            let sig = parse_signature(input, allow_safe)?;
             let semi_token: Token![;] = input.parse()?;
             Ok(ForeignItemFn {
                 attrs,
