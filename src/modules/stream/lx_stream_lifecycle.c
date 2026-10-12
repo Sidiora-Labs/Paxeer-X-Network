@@ -6,9 +6,9 @@
 #include <stdbool.h>
 #include <string.h>
 
-static lxp_result lifecycle_load(lxp_module_ctx *ctx,
-                                 const lx_stream_lifecycle_request *request,
-                                 lx_stream_record *record)
+lxp_result lx_stream_lifecycle_load(
+    lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
+    lx_stream_record *record)
 {
     lxp_result status;
     if (ctx == NULL || request == NULL || request->stream_id == NULL ||
@@ -27,7 +27,7 @@ lxp_result lx_stream_pause_execute(
     lx_stream_record record;
     lxp_u128 accrued;
     uint64_t timestamp;
-    lxp_result status = lifecycle_load(ctx, request, &record);
+    lxp_result status = lx_stream_lifecycle_load(ctx, request, &record);
     if (status != LXP_OK) return status;
     if (record.paused) return LXP_OK;
     timestamp = lxp_ctx_batch_timestamp_ms(ctx);
@@ -46,7 +46,7 @@ lxp_result lx_stream_resume_execute(
 {
     lx_stream_record record;
     uint64_t timestamp;
-    lxp_result status = lifecycle_load(ctx, request, &record);
+    lxp_result status = lx_stream_lifecycle_load(ctx, request, &record);
     if (status != LXP_OK) return status;
     if (!record.paused) return LXP_OK;
     timestamp = lxp_ctx_batch_timestamp_ms(ctx);
@@ -113,7 +113,7 @@ lxp_result lx_stream_close_execute(
             return LXP_ERR_CONTEXT_MISMATCH;
         return lx_stream_result_receipt(&result, receipt);
     }
-    status = lifecycle_load(ctx, request, &record);
+    status = lx_stream_lifecycle_load(ctx, request, &record);
     if (status != LXP_OK) return status;
     status = close_accounts_check(request, &record);
     if (status != LXP_OK) return status;

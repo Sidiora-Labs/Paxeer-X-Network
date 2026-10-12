@@ -664,6 +664,7 @@ static int rate_record(uint64_t rate, uint64_t accrued, uint64_t settled,
 
 static int rate_change_lifecycle(void)
 {
+    lx_stream_settle_request settle;
     lx_stream_open_payload open;
     lx_stream_economic_result result;
     lxp_receipt receipt;
@@ -743,7 +744,7 @@ static int rate_change_lifecycle(void)
     if (rate_record(5U, 30U, 30U, 30000U) != 0) return 1;
     CHECK(lx_stream_result_load(&ctx, (const uint8_t[32]){ 0x51U }, &result,
                                 &found) == LXP_OK);
-    CHECK(found && result.ordinal == 4U && result.leg_count == 1U);
+    CHECK(found && result.ordinal == 8U && result.leg_count == 1U);
     CHECK(memcmp(result.stream_id, id, 32U) == 0);
     CHECK(result.paid.hi == 0U && result.paid.lo == 30U);
     CHECK(lxp_u128_is_zero(result.refunded));
@@ -774,6 +775,35 @@ static int rate_change_lifecycle(void)
     CHECK(stream_three->balance.lo == 20U && provider->balance.lo == 140U);
     if (rate_record(5U, 80U, 80U, 40000U) != 0) return 1;
     CHECK(lxp_module_ctx_commit(&ctx) == LXP_OK);
+
+    /* A settle key given to a rate change and a rate-change key given to a
+     * settle on the same stream are context mismatches that move nothing. */
+    CHECK(rate_change(3U, 0x52U, 7U, 40000U, 17U, payer_two->id, &receipt) ==
+          LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(stream_three->balance.lo == 20U && provider->balance.lo == 140U);
+    CHECK(stream_three->next_sequence == 2U);
+    if (rate_record(5U, 80U, 80U, 40000U) != 0) return 1;
+    if (keyed(LX_STREAM_SETTLE, 3U, 0x51U, 40000U, 17U, provider->id,
+              &module_result) != 0) return 1;
+    CHECK(module_result == LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(effects.count == 0U);
+    (void)memset(&settle, 0, sizeof(settle));
+    settle.stream_id = id;
+    settle.stream_account = stream_three;
+    settle.recipient = provider;
+    (void)memcpy(settle.asset_id, asset.asset_id, 32U);
+    settle.idempotency_key[0] = 0x51U;
+    rate_asset = asset_state;
+    settle.context.assets = &rate_asset;
+    settle.context.asset_count = 1U;
+    CHECK(lx_stream_settle_execute(&ctx, &settle, &replayed) ==
+          LXP_ERR_CONTEXT_MISMATCH);
+    CHECK(observed.calls == 0U && ctx.staged_count == 0U);
+    CHECK(stream_three->balance.lo == 20U && provider->balance.lo == 140U);
+    CHECK(stream_three->next_sequence == 2U);
+    if (rate_record(5U, 80U, 80U, 40000U) != 0) return 1;
 
     if (keyed(LX_STREAM_CLOSE, 3U, 0x53U, 40000U, 17U, payer_two->id,
               &module_result) != 0) return 1;

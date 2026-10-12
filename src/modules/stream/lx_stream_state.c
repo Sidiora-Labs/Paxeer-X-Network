@@ -123,7 +123,7 @@ lxp_result lx_stream_result_load(lxp_module_ctx *ctx,
                                  (uint16_t)bytes[65]);
     result->leg_count = bytes[66];
     (void)memcpy(result->stream_id, bytes + 67U, 32U);
-    if (result->ordinal == 0U || result->ordinal > 7U ||
+    if (result->ordinal == 0U || result->ordinal > 8U ||
         result->leg_count > 2U)
         return LXP_ERR_NON_CANONICAL;
     *found = true;
@@ -138,7 +138,7 @@ lxp_result lx_stream_result_save(lxp_module_ctx *ctx,
     uint8_t bytes[LX_STREAM_RESULT_BYTES];
     lxp_result status;
     if (ctx == NULL || ctx->module_id != LXP_MODULE_STREAM || result == NULL ||
-        result->ordinal == 0U || result->ordinal > 7U ||
+        result->ordinal == 0U || result->ordinal > 8U ||
         result->leg_count > 2U)
         return LXP_ERR_NON_CANONICAL;
     status = lx_stream_result_key(idempotency_key, key);

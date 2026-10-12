@@ -115,25 +115,26 @@ static lxp_result validate_typed(lxp_module_ctx *ctx,
         if (status == LXP_OK) return LXP_ERR_SEQUENCE_REUSED;
         return status == LXP_ERR_UNKNOWN_FIELD ? LXP_OK : status;
     }
-    if (value->ordinal == 4U || value->ordinal == 7U) {
-        status = lx_stream_result_load(ctx,
-                                       value->typed->keyed.idempotency_key,
-                                       &result, &found);
+    if (value->ordinal == 4U || value->ordinal == 7U ||
+        value->ordinal == 8U) {
+        const uint8_t *stream_id = value->ordinal == 8U ?
+            value->typed->rate_change.stream_id : value->typed->keyed.stream_id;
+        const uint8_t *key = value->ordinal == 8U ?
+            value->typed->rate_change.idempotency_key :
+            value->typed->keyed.idempotency_key;
+        status = lx_stream_result_load(ctx, key, &result, &found);
         if (status != LXP_OK) return status;
         if (found) {
             if (result.ordinal != value->ordinal ||
-                memcmp(result.stream_id, value->typed->keyed.stream_id, 32U) != 0)
+                memcmp(result.stream_id, stream_id, 32U) != 0)
                 return LXP_ERR_CONTEXT_MISMATCH;
             return LXP_OK;
         }
-        status = lx_stream_load(ctx, value->typed->keyed.stream_id, &record);
+        status = lx_stream_load(ctx, stream_id, &record);
     } else if (value->ordinal == 2U) {
         status = lx_stream_load(ctx, value->typed->amount.stream_id, &record);
     } else if (value->ordinal == 3U) {
         status = lx_stream_load(ctx, value->typed->meter.stream_id, &record);
-    } else if (value->ordinal == 8U) {
-        status = lx_stream_load(ctx, value->typed->rate_change.stream_id,
-                                &record);
     } else {
         status = lx_stream_load(ctx, value->typed->id.stream_id, &record);
     }
@@ -182,8 +183,6 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
 {
     const stream_decoded *value = (const stream_decoded *)decoded;
     (void)effects;
-    if (value != NULL && value->ordinal == 8U)
-        return LXP_ERR_UNKNOWN_ACTIVITY;
     return stream_execute_typed(ctx, activity, authority, value);
 }
 

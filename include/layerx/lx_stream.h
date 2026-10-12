@@ -256,6 +256,9 @@ lxp_result lx_stream_resume_execute(
 lxp_result lx_stream_close_execute(
     lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
     lxp_receipt *receipt);
+lxp_result lx_stream_lifecycle_load(
+    lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
+    lx_stream_record *record);
 lxp_result lx_stream_rate_change_execute(
     lxp_module_ctx *ctx, const lx_stream_lifecycle_request *request,
     lxp_u128 new_rate, lxp_receipt *receipt);

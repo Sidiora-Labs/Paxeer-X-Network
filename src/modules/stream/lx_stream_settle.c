@@ -94,14 +94,14 @@ static lxp_result settle_check(const lx_stream_settle_request *request)
 
 static lxp_result settle_replay(lxp_module_ctx *ctx,
                                 const uint8_t idempotency_key[32],
-                                const uint8_t *stream_id,
+                                const uint8_t *stream_id, uint16_t ordinal,
                                 lxp_receipt *receipt, bool *found)
 {
     lx_stream_economic_result result;
     lxp_result status = lx_stream_result_load(ctx, idempotency_key, &result,
                                               found);
     if (status != LXP_OK || !*found) return status;
-    if (stream_id == NULL || result.ordinal != 4U ||
+    if (stream_id == NULL || result.ordinal != ordinal ||
         memcmp(result.stream_id, stream_id, 32U) != 0)
         return LXP_ERR_CONTEXT_MISMATCH;
     return lx_stream_result_receipt(&result, receipt);
@@ -109,7 +109,7 @@ static lxp_result settle_replay(lxp_module_ctx *ctx,
 
 static lxp_result settle_accrued(lxp_module_ctx *ctx,
                                  const lx_stream_settle_request *request,
-                                 lx_stream_record *record,
+                                 uint16_t ordinal, lx_stream_record *record,
                                  lx_stream_economic_result *result,
                                  lxp_receipt *receipt)
 {
@@ -141,7 +141,7 @@ static lxp_result settle_accrued(lxp_module_ctx *ctx,
     amount = lxp_u128_cmp(unsettled, balance) > 0 ? balance : unsettled;
     (void)memset(result, 0, sizeof(*result));
     (void)memset(receipt, 0, sizeof(*receipt));
-    result->ordinal = 4U;
+    result->ordinal = ordinal;
     (void)memcpy(result->stream_id, request->stream_id, 32U);
     if (lxp_u128_is_zero(amount)) {
         if (!lxp_u128_is_zero(unsettled))
@@ -197,12 +197,12 @@ lxp_result lx_stream_settle_execute(lxp_module_ctx *ctx,
     status = settle_check(request);
     if (status != LXP_OK) return status;
     status = settle_replay(ctx, request->idempotency_key, request->stream_id,
-                           receipt, &found);
+                           4U, receipt, &found);
     if (status != LXP_OK || found) return status;
     status = lx_stream_load(ctx, request->stream_id, &record);
     if (status != LXP_OK) return status;
     if (record.closed) return LXP_ERR_STREAM_CLOSED;
-    status = settle_accrued(ctx, request, &record, &result, receipt);
+    status = settle_accrued(ctx, request, 4U, &record, &result, receipt);
     if (status != LXP_OK) return status;
     return settle_save(ctx, request->idempotency_key, &record, &result);
 }
@@ -231,16 +231,13 @@ lxp_result lx_stream_rate_change_execute(
     status = settle_check(&settle);
     if (status != LXP_OK) return status;
     status = settle_replay(ctx, request->idempotency_key, request->stream_id,
-                           receipt, &found);
+                           8U, receipt, &found);
     if (status != LXP_OK || found) return status;
-    status = lx_stream_load(ctx, request->stream_id, &record);
+    status = lx_stream_lifecycle_load(ctx, request, &record);
     if (status != LXP_OK) return status;
-    if (record.closed) return LXP_ERR_STREAM_CLOSED;
-    if (memcmp(request->authority->principal, record.payer, 32U) != 0)
-        return LXP_ERR_UNAUTHORIZED_DEBIT;
     if (memcmp(request->payer->id, record.payer, 32U) != 0)
         return LXP_ERR_NON_CANONICAL;
-    status = settle_accrued(ctx, &settle, &record, &result, receipt);
+    status = settle_accrued(ctx, &settle, 8U, &record, &result, receipt);
     if (status != LXP_OK) return status;
     record.rate = new_rate;
     return settle_save(ctx, request->idempotency_key, &record, &result);

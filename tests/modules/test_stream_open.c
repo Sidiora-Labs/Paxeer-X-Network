@@ -613,6 +613,53 @@ static int rate_change_unchanged(const uint8_t stream_id[32],
     return 0;
 }
 
+static int rate_change_applied(const uint8_t stream_id[32],
+                               const uint8_t key[32])
+{
+    lx_stream_record stored;
+    lx_stream_economic_result result;
+    lxp_u128 value;
+    bool found = false;
+
+    /* The settle at the old rate of 10 per second pays 500 ms of accrual. */
+    CHECK(observed.calls == 1U && observed.leg_count == 1U);
+    CHECK(observed.reason == (uint16_t)LXP_REASON_STREAM_DRAW);
+    CHECK(payer->balance.hi == 0U && payer->balance.lo == 60U);
+    CHECK(provider->balance.hi == 0U && provider->balance.lo == 5U);
+    CHECK(stream_account->balance.hi == 0U &&
+          stream_account->balance.lo == 35U);
+    CHECK(stream_account->next_sequence == 1U);
+    CHECK(lx_stream_result_load(&ctx, key, &result, &found) == LXP_OK);
+    CHECK(found && result.ordinal == 8U && result.leg_count == 1U);
+    CHECK(memcmp(result.stream_id, stream_id, 32U) == 0);
+    CHECK(result.paid.hi == 0U && result.paid.lo == 5U);
+    CHECK(lxp_u128_is_zero(result.refunded));
+    CHECK(lx_stream_load(&ctx, stream_id, &stored) == LXP_OK);
+    CHECK(stored.rate.hi == 0U && stored.rate.lo == 20U);
+    CHECK(stored.accrued_total.lo == 5U && stored.settled_total.lo == 5U);
+    CHECK(stored.last_accrual_timestamp == 1500U);
+    CHECK(lxp_u128_is_zero(stored.remainder_carry));
+    CHECK(!stored.closed && !stored.paused && !stored.underfunded);
+
+    /* The settle event comes first, then the rate change event. */
+    CHECK(effects.count == 2U);
+    CHECK(effects.effects[0].event_type == 4U);
+    CHECK(effects.effects[0].body_length == 65U);
+    CHECK(memcmp(effects.effects[0].body, stream_id, 32U) == 0);
+    CHECK(lxp_u128_from_be(effects.effects[0].body + 32U, &value) == LXP_OK);
+    CHECK(value.hi == 0U && value.lo == 5U);
+    CHECK(effects.effects[1].event_type == 8U);
+    CHECK(effects.effects[1].body_length == 80U);
+    CHECK(memcmp(effects.effects[1].body, stream_id, 32U) == 0);
+    CHECK(lxp_u128_from_be(effects.effects[1].body + 32U, &value) == LXP_OK);
+    CHECK(value.hi == 0U && value.lo == 10U);
+    CHECK(lxp_u128_from_be(effects.effects[1].body + 48U, &value) == LXP_OK);
+    CHECK(value.hi == 0U && value.lo == 20U);
+    CHECK(lxp_u128_from_be(effects.effects[1].body + 64U, &value) == LXP_OK);
+    CHECK(value.hi == 0U && value.lo == 5U);
+    return 0;
+}
+
 static int dispatch_rate_change(void)
 {
     const lxp_module_iface *iface = lx_stream_module_iface();
@@ -663,15 +710,19 @@ static int dispatch_rate_change(void)
     (void)memcpy(authority.principal, payer->id, 32U);
     CHECK(lxp_module_ctx_set_mutable(&ctx, true) == LXP_OK);
     CHECK(iface->execute(&ctx, &activity, &authority, decoded, &effects) ==
-          LXP_ERR_UNKNOWN_ACTIVITY);
+          LXP_OK);
     CHECK(ctx.gas_used == 83U);
-    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+    if (rate_change_applied(bytes + 2U, bytes + 50U) != 0) return 1;
+    lxp_module_ctx_rollback(&ctx);
+    CHECK(payer->balance.lo == 60U && stream_account->balance.lo == 40U);
+    CHECK(provider->balance.lo == 0U && stream_account->next_sequence == 0U);
 
     CHECK(run(LX_STREAM_RATE_CHANGE, bytes, sizeof(bytes), payer->id, 1500U,
               2U, 83U, &module_result) == LXP_OK);
-    CHECK(module_result == LXP_ERR_UNKNOWN_ACTIVITY);
+    CHECK(module_result == LXP_OK);
     CHECK(ctx.gas_used == 83U);
-    if (rate_change_unchanged(bytes + 2U, before, root_before) != 0) return 1;
+    if (rate_change_applied(bytes + 2U, bytes + 50U) != 0) return 1;
+    lxp_module_ctx_rollback(&ctx);
     CHECK(run(LX_STREAM_RATE_CHANGE, bytes, sizeof(bytes), provider->id,
               1500U, 2U, 83U, &module_result) == LXP_OK);
     CHECK(module_result == LXP_ERR_UNAUTHORIZED_DEBIT);
