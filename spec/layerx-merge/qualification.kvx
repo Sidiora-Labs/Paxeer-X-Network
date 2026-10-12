@@ -1676,3 +1676,10 @@ command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof 
 exit_code = 0
 log_path = "logs/0.25-verify-1.log"
 observed_and_assumption = "verify passed (7 passed, 0 failed). Gaps: do_2 says 'ordinal = logIndex' but the Go encoder (node/sequencer/receipt.go encodeReceipt) writes log i as ordinal i+1 and the pax_sequencerReceipt server (rpc/sequencer_receipt.go) serves logIndex i; the verifier follows the tree (effect n+1 has ordinal n+1, served logIndex n), so real receipts verify Unrelated: cargo clippy -p layerx-proof --all-targets --no-deps exits 101 because of existing lints in export_codec.rs, receipt.rs and state_range.rs (none in sequencer_logs.rs); without --no-deps it stops earlier on missing_errors_doc in layerx-types program_lifecycle.rs; log logs/0.25-clippy.log"
+
+[finding.0.27]
+revision = ""
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test history_position"
+exit_code = 0
+log_path = "logs/0.27-verify-1.log"
+observed_and_assumption = "verify passed (6 passed, 0 failed). Gaps: blockscout.rs and paxscan.rs needed no change Unrelated: clippy --no-deps on layerx-indexer has 75 prior pedantic errors at HEAD, none on lines this task added; test targets are not linted because the lib fails first | logs/0.27-clippy-4.log"
