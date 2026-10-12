@@ -739,3 +739,40 @@ fn rust_operation_catalogue_matches_the_repository_schema() {
         "every agent transport operation needs an [operation.<name>] module declaration"
     );
 }
+
+#[test]
+fn repository_conformance_root_declares_every_shipped_handwritten_file() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let live =
+        capture(&root).unwrap_or_else(|error| panic!("capture repository pipeline: {error}"));
+    let lock = root.join("platform/sdk/pipeline.kvx");
+    let source = fs::read_to_string(&lock)
+        .unwrap_or_else(|error| panic!("read {}: {error}", lock.display()));
+    let committed = parse_lock(&source).unwrap_or_else(|error| panic!("parse lock: {error}"));
+    let conformance = |pipeline: &pipeline::Pipeline| {
+        pipeline
+            .outputs
+            .iter()
+            .find(|output| output.name == "platform-conformance")
+            .unwrap_or_else(|| panic!("no platform-conformance output"))
+            .handwritten
+            .clone()
+    };
+    let live_handwritten = conformance(&live);
+    let declared_handwritten = conformance(&committed);
+    assert_eq!(
+        live_handwritten, declared_handwritten,
+        "platform-conformance shipped handwritten files differ from the lock declarations"
+    );
+    for relative in [
+        "fixtures/receipt-sequencer-v1.json",
+        "fixtures/sequencer-receipt-v1.json",
+    ] {
+        assert!(
+            declared_handwritten
+                .iter()
+                .any(|declared| declared == relative),
+            "lock must declare {relative} handwritten"
+        );
+    }
+}
