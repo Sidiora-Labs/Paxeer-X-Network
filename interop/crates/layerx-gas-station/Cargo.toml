@@ -16,6 +16,7 @@ path = "src/main.rs"
 base64.workspace = true
 ed25519-dalek.workspace = true
 k256.workspace = true
+layerx-platform-internal = { path = "../../../platform/hosted/internal" }
 layerx-proof.workspace = true
 native-tls.workspace = true
 serde.workspace = true

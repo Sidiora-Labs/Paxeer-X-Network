@@ -1291,6 +1291,7 @@ dependencies = [
  "base64 0.23.1",
  "ed25519-dalek",
  "k256",
+ "layerx-platform-internal",
  "layerx-proof",
  "layerx-wire",
  "native-tls",
