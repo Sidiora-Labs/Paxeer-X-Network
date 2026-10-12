@@ -47,6 +47,9 @@ pub enum EvmTransactionError {
     NonCanonical,
     /// The signature is not canonical or recovers no sender.
     BadSignature,
+    /// A set-code call carries no authorization, or an authorization nonce
+    /// is `2^64 - 1`.
+    InvalidAuthorization,
 }
 
 impl std::fmt::Display for EvmTransactionError {
@@ -57,6 +60,7 @@ impl std::fmt::Display for EvmTransactionError {
             Self::UnsupportedField => "unsupported_field",
             Self::NonCanonical => "non_canonical",
             Self::BadSignature => "bad_signature",
+            Self::InvalidAuthorization => "invalid_authorization",
         })
     }
 }
@@ -322,4 +326,242 @@ pub fn recover_sender(
     verify_recoverable_digest(public_key.as_bytes(), compact, v, &digest)
         .map_err(|_| EvmTransactionError::BadSignature)?;
     evm_address(public_key.as_bytes()).map_err(|_| EvmTransactionError::BadSignature)
+}
+
+/// One EIP-7702 authorization tuple: the account delegates its code to
+/// `address` on `chain_id` at account nonce `nonce`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Eip7702Authorization {
+    pub chain_id: u64,
+    pub address: [u8; 20],
+    pub nonce: u64,
+}
+
+impl Eip7702Authorization {
+    fn fields(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(32);
+        rlp_integer(&self.chain_id.to_be_bytes(), &mut out);
+        rlp_bytes(&self.address, &mut out);
+        rlp_integer(&self.nonce.to_be_bytes(), &mut out);
+        out
+    }
+
+    /// The digest the authority signs:
+    /// `keccak256(0x05 || rlp([chain_id, address, nonce]))`.
+    #[must_use]
+    pub fn signing_hash(&self) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update([0x05]);
+        hasher.update(rlp_list(&self.fields()));
+        hasher.finalize().into()
+    }
+}
+
+/// An authorization tuple with the authority's canonical signature.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignedAuthorization {
+    pub authorization: Eip7702Authorization,
+    pub signature: AgentSignature,
+}
+
+impl SignedAuthorization {
+    fn encode(&self, out: &mut Vec<u8>) {
+        let bytes = self.signature.as_bytes();
+        let mut payload = self.authorization.fields();
+        rlp_integer(&[bytes[64] - 27], &mut payload);
+        rlp_integer(&bytes[..32], &mut payload);
+        rlp_integer(&bytes[32..64], &mut payload);
+        out.extend_from_slice(&rlp_list(&payload));
+    }
+}
+
+/// An unsigned EIP-7702 set-code call carrying no value and no access list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Eip7702Call {
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub max_priority_fee_per_gas: u128,
+    pub max_fee_per_gas: u128,
+    pub gas_limit: u64,
+    pub to: [u8; 20],
+    pub data: Vec<u8>,
+    pub authorization_list: Vec<SignedAuthorization>,
+}
+
+impl Eip7702Call {
+    fn fields(&self) -> Result<Vec<u8>, EvmTransactionError> {
+        if self.authorization_list.is_empty()
+            || self
+                .authorization_list
+                .iter()
+                .any(|signed| signed.authorization.nonce == u64::MAX)
+        {
+            return Err(EvmTransactionError::InvalidAuthorization);
+        }
+        let mut authorizations = Vec::with_capacity(self.authorization_list.len() * 96);
+        for signed in &self.authorization_list {
+            signed.encode(&mut authorizations);
+        }
+        let mut out = Vec::with_capacity(self.data.len() + authorizations.len() + 105);
+        rlp_integer(&self.chain_id.to_be_bytes(), &mut out);
+        rlp_integer(&self.nonce.to_be_bytes(), &mut out);
+        rlp_integer(&self.max_priority_fee_per_gas.to_be_bytes(), &mut out);
+        rlp_integer(&self.max_fee_per_gas.to_be_bytes(), &mut out);
+        rlp_integer(&self.gas_limit.to_be_bytes(), &mut out);
+        rlp_bytes(&self.to, &mut out);
+        rlp_integer(&[], &mut out);
+        rlp_bytes(&self.data, &mut out);
+        out.push(0xc0);
+        out.extend_from_slice(&rlp_list(&authorizations));
+        Ok(out)
+    }
+
+    /// The digest the sender signs: `keccak256(0x04 || rlp(fields))`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidAuthorization` for an empty authorization list or an
+    /// authorization nonce of `2^64 - 1`.
+    pub fn signing_hash(&self) -> Result<[u8; 32], EvmTransactionError> {
+        let mut hasher = Keccak256::new();
+        hasher.update([0x04]);
+        hasher.update(rlp_list(&self.fields()?));
+        Ok(hasher.finalize().into())
+    }
+}
+
+/// Assembles the signed type-4 call, yielding the bytes
+/// `eth_sendRawTransaction` takes; `yParity` is `v - 27`.
+///
+/// # Errors
+///
+/// Returns `InvalidAuthorization` for an empty authorization list or an
+/// authorization nonce of `2^64 - 1`.
+pub fn assemble_eip7702(
+    call: &Eip7702Call,
+    signature: &AgentSignature,
+) -> Result<Vec<u8>, EvmTransactionError> {
+    let bytes = signature.as_bytes();
+    let mut payload = call.fields()?;
+    rlp_integer(&[bytes[64] - 27], &mut payload);
+    rlp_integer(&bytes[..32], &mut payload);
+    rlp_integer(&bytes[32..64], &mut payload);
+    let mut raw = vec![0x04];
+    raw.extend_from_slice(&rlp_list(&payload));
+    Ok(raw)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AUTHORIZATION_DIGEST: &str =
+        "7e64f2b8f4556d9430b3f072472e8d1fff80e887a5c4a87d297280cece69fc3f";
+    const AUTHORIZATION_R: &str =
+        "b6fbecbe91902446a8fa14ab904062224fb59579eb7d23d7fc1178b9060f88cc";
+    const AUTHORIZATION_S: &str =
+        "2271ca524bc6a2c1f1ecdec38b61129d4a7b210ff3b395f14e2fb4ddad0e1e39";
+    const SIGNED_TYPE_FOUR: &str = "04f8c57d030102830186a09422222222222222222222222222222222222222228084deadbeefc0f85cf85a7d9411111111111111111111111111111111111111110780a0b6fbecbe91902446a8fa14ab904062224fb59579eb7d23d7fc1178b9060f88cca02271ca524bc6a2c1f1ecdec38b61129d4a7b210ff3b395f14e2fb4ddad0e1e3980a054a08cd9926429166423685ad95c24caff4a13854991303be6679661793472a4a05300ba51d42b6e4a9546095ada5b27b4164c61009ce0bbafeb618b17d7f63e94";
+
+    fn unhex(text: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
+        (0..text.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&text[index..index + 2], 16))
+            .collect()
+    }
+
+    fn sign(digest: &[u8; 32]) -> Result<AgentSignature, Box<dyn std::error::Error>> {
+        let mut secret = [0_u8; 32];
+        secret[31] = 1;
+        let key = SigningKey::from_slice(&secret).map_err(|_| "invalid scalar")?;
+        let (signature, recovery) = key
+            .sign_prehash_recoverable(digest)
+            .map_err(|_| "signing failed")?;
+        let mut bytes = [0_u8; 65];
+        bytes[..64].copy_from_slice(&signature.to_bytes());
+        bytes[64] = 27 + recovery.to_byte();
+        Ok(AgentSignature::new(bytes).map_err(|_| "noncanonical signature")?)
+    }
+
+    fn authorization() -> Eip7702Authorization {
+        Eip7702Authorization {
+            chain_id: 125,
+            address: [0x11; 20],
+            nonce: 7,
+        }
+    }
+
+    fn call(authorization_list: Vec<SignedAuthorization>) -> Eip7702Call {
+        Eip7702Call {
+            chain_id: 125,
+            nonce: 3,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2,
+            gas_limit: 100_000,
+            to: [0x22; 20],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+            authorization_list,
+        }
+    }
+
+    #[test]
+    fn authorization_digest_matches_reference_vector() -> Result<(), Box<dyn std::error::Error>> {
+        let digest = authorization().signing_hash();
+        assert_eq!(digest.to_vec(), unhex(AUTHORIZATION_DIGEST)?);
+        let signature = sign(&digest)?;
+        let mut expected = unhex(AUTHORIZATION_R)?;
+        expected.extend_from_slice(&unhex(AUTHORIZATION_S)?);
+        expected.push(27);
+        assert_eq!(signature.as_bytes().to_vec(), expected);
+        Ok(())
+    }
+
+    #[test]
+    fn type_four_call_matches_reference_vector() -> Result<(), Box<dyn std::error::Error>> {
+        let authorization = authorization();
+        let signed = SignedAuthorization {
+            authorization,
+            signature: sign(&authorization.signing_hash())?,
+        };
+        let call = call(vec![signed]);
+        let digest = call.signing_hash()?;
+        let raw = assemble_eip7702(&call, &sign(&digest)?)?;
+        assert_eq!(raw, unhex(SIGNED_TYPE_FOUR)?);
+        Ok(())
+    }
+
+    #[test]
+    fn type_four_call_refuses_empty_list_and_exhausted_nonce(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let signature = sign(&[0x42; 32])?;
+        let empty = call(Vec::new());
+        assert_eq!(
+            empty.signing_hash(),
+            Err(EvmTransactionError::InvalidAuthorization)
+        );
+        assert_eq!(
+            assemble_eip7702(&empty, &signature),
+            Err(EvmTransactionError::InvalidAuthorization)
+        );
+        let exhausted = call(vec![SignedAuthorization {
+            authorization: Eip7702Authorization {
+                nonce: u64::MAX,
+                ..authorization()
+            },
+            signature,
+        }]);
+        assert_eq!(
+            exhausted.signing_hash(),
+            Err(EvmTransactionError::InvalidAuthorization)
+        );
+        assert_eq!(
+            assemble_eip7702(&exhausted, &signature),
+            Err(EvmTransactionError::InvalidAuthorization)
+        );
+        assert_eq!(
+            EvmTransactionError::InvalidAuthorization.to_string(),
+            "invalid_authorization"
+        );
+        Ok(())
+    }
 }

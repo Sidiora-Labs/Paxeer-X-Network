@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use layerx_platform_internal::evm_sender::EvmSender;
 use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_proof::receipt::verify_sequencer_signature;
 use serde_json::{json, Map, Value};
@@ -240,7 +241,7 @@ impl PublisherConfig {
             (
                 "rate_owner_key_env",
                 !self.owner_key_env.is_empty()
-                    && self.owner_key_env != self.station.relayer_key_env
+                    && !self.owner_shares_relayer_source()
                     && self.owner_key_env.bytes().enumerate().all(|(i, b)| {
                         b == b'_' || b.is_ascii_uppercase() || (i > 0 && b.is_ascii_digit())
                     }),
@@ -289,6 +290,40 @@ impl PublisherConfig {
             }
         }
         Ok(())
+    }
+
+    /// Whether the owner key source is one the relayer's `EvmSender::from_env`
+    /// reads: the relayer prefix itself, its `<prefix>_KEY_FILE` or
+    /// `<prefix>_KMS_KEY_ID` variable, an owner value naming the same secret
+    /// file or KMS key id those variables hold, or an owner secret holding the
+    /// key of the relayer's secret file.
+    fn owner_shares_relayer_source(&self) -> bool {
+        let prefix = self.station.relayer_key_env.as_str();
+        let sources = [format!("{prefix}_KEY_FILE"), format!("{prefix}_KMS_KEY_ID")];
+        if self.owner_key_env == prefix || sources.contains(&self.owner_key_env) {
+            return true;
+        }
+        let Some(owner) = std::env::var_os(&self.owner_key_env) else {
+            return false;
+        };
+        let owner_file = std::fs::canonicalize(&owner).ok();
+        let shares_source = sources.iter().any(|source| {
+            std::env::var_os(source).is_some_and(|value| {
+                value == owner
+                    || owner_file.as_ref().is_some_and(|file| {
+                        std::fs::canonicalize(&value).ok().as_ref() == Some(file)
+                    })
+            })
+        });
+        shares_source
+            || (std::env::var_os(&sources[0]).is_some()
+                && owner
+                    .to_str()
+                    .and_then(|secret| EvmSender::from_hex_secret(secret).ok())
+                    .is_some_and(|owner| {
+                        EvmSender::from_env(prefix)
+                            .is_ok_and(|relayer| relayer.address() == owner.address())
+                    }))
     }
 
     /// The most wei the publisher may spend in one chain day: the fee ceiling
@@ -1104,6 +1139,68 @@ fn unsigned_envelope(fields: &[u8]) -> Result<Vec<u8>, JournalError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn publisher(relayer: &str, owner: &str) -> PublisherConfig {
+        let mut station = crate::config::tests::config();
+        station.relayer_key_env = relayer.to_owned();
+        PublisherConfig {
+            station,
+            owner_key_env: owner.to_owned(),
+            cadence_seconds: 60,
+            gas_budget_per_day: u128::from(RATE_GAS_LIMIT) * 100,
+            balance_floor: 1,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2,
+            confirmation_retry_seconds: 30,
+            sequencer_receipt_keys: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn owner_key_refused_when_it_resolves_to_the_relayer_source() -> Result<(), &'static str> {
+        let relayer = "GAS_STATION_RATE_PREFIX_TEST_RELAYER";
+        let owner = "GAS_STATION_RATE_PREFIX_TEST_OWNER";
+        for shared in [
+            relayer.to_owned(),
+            format!("{relayer}_KEY_FILE"),
+            format!("{relayer}_KMS_KEY_ID"),
+        ] {
+            assert!(publisher(relayer, &shared).owner_shares_relayer_source());
+        }
+        assert!(!publisher(relayer, owner).owner_shares_relayer_source());
+        let file = std::env::temp_dir().join("paxeer-rate-prefix-test-relayer.key");
+        std::env::set_var(format!("{relayer}_KEY_FILE"), &file);
+        std::env::set_var(owner, &file);
+        assert!(publisher(relayer, owner).owner_shares_relayer_source());
+        std::env::remove_var(format!("{relayer}_KEY_FILE"));
+        std::env::set_var(format!("{relayer}_KMS_KEY_ID"), "whk_rate_prefix_test");
+        std::env::set_var(owner, "whk_rate_prefix_test");
+        assert!(publisher(relayer, owner).owner_shares_relayer_source());
+        std::env::set_var(owner, format!("{:064x}", 1));
+        assert!(!publisher(relayer, owner).owner_shares_relayer_source());
+        std::env::remove_var(format!("{relayer}_KMS_KEY_ID"));
+        let key = std::env::temp_dir().join(format!(
+            "paxeer-rate-prefix-test-{}.key",
+            std::process::id()
+        ));
+        std::fs::write(&key, format!("{:064x}\n", 1)).map_err(|_| "key file")?;
+        std::env::set_var(format!("{relayer}_KEY_FILE"), &key);
+        std::env::set_var(owner, format!("0x{:064x}", 1));
+        assert!(publisher(relayer, owner).owner_shares_relayer_source());
+        std::env::set_var(owner, format!("{:064x}", 2));
+        assert!(!publisher(relayer, owner).owner_shares_relayer_source());
+        std::env::remove_var(format!("{relayer}_KEY_FILE"));
+        std::fs::remove_file(&key).map_err(|_| "key file")?;
+        std::env::remove_var(owner);
+        let shared = publisher(relayer, &format!("{relayer}_KEY_FILE"));
+        assert_eq!(
+            shared.validate(),
+            Err(ConfigError {
+                field: "rate_owner_key_env"
+            })
+        );
+        Ok(())
+    }
 
     #[test]
     fn integers_follow_toml_digit_rules() {

@@ -1,13 +1,6 @@
 use crate::config::StationConfig;
-use crate::quote::{keccak, Address, Word};
-use k256::ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey};
-use layerx_platform_internal::base64;
-use layerx_platform_internal::evm_sender::{EvmSender, EvmSenderError};
-use layerx_platform_internal::kms::SECP256K1_HANDLE_PREFIX;
-use layerx_platform_internal::secret::read_secret_file;
-use layerx_platform_internal::tls::{Upstream, UpstreamResponse};
-use serde::Deserialize;
-use std::path::Path;
+use crate::quote::{Address, Word};
+use layerx_platform_internal::evm_sender::{EvmSender, EvmSenderError, SignedAuthorization};
 use zeroize::Zeroizing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,7 +19,9 @@ impl From<EvmSenderError> for SignerError {
     fn from(error: EvmSenderError) -> Self {
         match error {
             EvmSenderError::InvalidKey => Self::InvalidKey,
-            EvmSenderError::Signing => Self::Signing,
+            EvmSenderError::Signing
+            | EvmSenderError::SignerMismatch
+            | EvmSenderError::InvalidAuthorization => Self::Signing,
             EvmSenderError::InvalidPrefix
             | EvmSenderError::MissingSource
             | EvmSenderError::AmbiguousSource
@@ -45,49 +40,23 @@ pub trait QuoteSigner {
     fn sign_digest(&self, digest: Word) -> Result<[u8; 65], SignerError>;
 }
 
-enum DigestKey {
-    Local(SigningKey),
-    Kms { upstream: Upstream, handle: String },
-}
-
-#[derive(Deserialize)]
-struct KmsKey {
-    key_id: String,
-    handle: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KmsSignature {
-    signature: String,
-    recovery_id: u8,
-}
-
 pub struct LocalSigner {
-    key: DigestKey,
-    address: Address,
+    sender: EvmSender,
 }
 impl LocalSigner {
     /// Loads the relayer through the shared EVM sender loader with
     /// `relayer_key_env` as its prefix: `<prefix>_KEY_FILE` or
-    /// `<prefix>_KMS_KEY_ID`. The digest key is bound to the loader's sender
-    /// address and every signature must recover to it.
+    /// `<prefix>_KMS_KEY_ID`. Every signature is made by that loader and
+    /// recovers to its sender address.
     ///
     /// # Errors
     /// Refuses an invalid configuration, an absent, ambiguous or unreadable
-    /// source, an invalid key, and a digest key that is not the loader's sender.
+    /// source and an invalid key.
     pub fn from_config(config: &StationConfig) -> Result<Self, SignerError> {
         config.validate().map_err(|_| SignerError::KeySource)?;
-        let prefix = config.relayer_key_env.as_str();
-        let sender = EvmSender::from_env(prefix)?;
-        let signer = match std::env::var_os(format!("{prefix}_KEY_FILE")) {
-            Some(path) => Self::from_file(Path::new(&path))?,
-            None => Self::from_kms(prefix, sender.address())?,
-        };
-        if signer.address != sender.address() {
-            return Err(SignerError::KeySource);
-        }
-        Ok(signer)
+        Ok(Self {
+            sender: EvmSender::from_env(config.relayer_key_env.as_str())?,
+        })
     }
 
     /// # Errors
@@ -97,115 +66,42 @@ impl LocalSigner {
         Self::decode(&secret)
     }
 
-    fn from_file(path: &Path) -> Result<Self, SignerError> {
-        let secret = read_secret_file(path).map_err(|_| SignerError::KeySource)?;
-        Self::decode(&secret)
-    }
-
-    fn from_kms(prefix: &str, address: Address) -> Result<Self, SignerError> {
-        let key_id =
-            std::env::var(format!("{prefix}_KMS_KEY_ID")).map_err(|_| SignerError::KeySource)?;
-        let upstream = Upstream::from_environment(prefix).map_err(|_| SignerError::KeySource)?;
-        let response = upstream
-            .get(&format!("/v1/signing-keys/{key_id}"))
-            .map_err(|_| SignerError::KeySource)?;
-        let key: KmsKey = json_body(&response).ok_or(SignerError::KeySource)?;
-        if key.key_id != key_id || !key.handle.starts_with(SECP256K1_HANDLE_PREFIX) {
-            return Err(SignerError::InvalidKey);
-        }
-        Ok(Self {
-            key: DigestKey::Kms {
-                upstream,
-                handle: key.handle,
-            },
-            address,
-        })
-    }
-
     fn decode(secret: &str) -> Result<Self, SignerError> {
-        let raw = secret.strip_prefix("0x").unwrap_or(secret);
-        if raw.len() != 64 || !raw.is_ascii() {
-            return Err(SignerError::InvalidKey);
-        }
-        let mut bytes = Zeroizing::new([0_u8; 32]);
-        for (index, byte) in bytes.iter_mut().enumerate() {
-            *byte = u8::from_str_radix(&raw[index * 2..index * 2 + 2], 16)
-                .map_err(|_| SignerError::InvalidKey)?;
-        }
-        let key = SigningKey::from_slice(bytes.as_ref()).map_err(|_| SignerError::InvalidKey)?;
-        let address = evm_address(key.verifying_key());
         Ok(Self {
-            key: DigestKey::Local(key),
-            address,
+            sender: EvmSender::from_hex_secret(secret)?,
         })
     }
 
-    fn kms_sign(
-        upstream: &Upstream,
-        handle: &str,
-        digest: &Word,
-    ) -> Result<(Signature, RecoveryId), SignerError> {
-        let request = serde_json::to_vec(&serde_json::json!({
-            "key_handle": handle,
-            "algorithm": "secp256k1",
-            "message": base64::encode(digest),
-        }))
-        .map_err(|_| SignerError::Signing)?;
-        let response = upstream
-            .post("/v1/signatures", &request)
-            .map_err(|_| SignerError::Signing)?;
-        let reply: KmsSignature = json_body(&response).ok_or(SignerError::Signing)?;
-        let bytes = base64::decode(&reply.signature).ok_or(SignerError::Signing)?;
-        let signature = Signature::from_slice(&bytes).map_err(|_| SignerError::Signing)?;
-        let recovery = RecoveryId::from_byte(reply.recovery_id).ok_or(SignerError::Signing)?;
-        Ok((signature, recovery))
+    /// Signs the EIP-7702 authorization delegating the signer's code to
+    /// `delegate` on `chain_id` at account nonce `nonce`.
+    ///
+    /// # Errors
+    /// Refuses a nonce of `2^64 - 1` and every signing failure.
+    pub fn sign_authorization(
+        &self,
+        chain_id: u64,
+        delegate: Address,
+        nonce: u64,
+    ) -> Result<SignedAuthorization, SignerError> {
+        Ok(self.sender.sign_authorization(chain_id, delegate, nonce)?)
     }
 }
 impl QuoteSigner for LocalSigner {
     fn address(&self) -> Address {
-        self.address
+        self.sender.address()
     }
     fn sign_digest(&self, digest: Word) -> Result<[u8; 65], SignerError> {
-        let (signature, recovery) = match &self.key {
-            DigestKey::Local(key) => key
-                .sign_prehash_recoverable(&digest)
-                .map_err(|_| SignerError::Signing)?,
-            DigestKey::Kms { upstream, handle } => Self::kms_sign(upstream, handle, &digest)?,
-        };
-        if recovery.to_byte() > 1 || signature.normalize_s().is_some() {
-            return Err(SignerError::Signing);
-        }
-        let recovered = VerifyingKey::recover_from_prehash(&digest, &signature, recovery)
-            .map_err(|_| SignerError::Signing)?;
-        if evm_address(&recovered) != self.address {
-            return Err(SignerError::Signing);
-        }
-        let mut result = [0; 65];
-        result[..64].copy_from_slice(&signature.to_bytes());
-        result[64] = recovery.to_byte() + 27;
-        Ok(result)
+        Ok(self.sender.sign_prehash(&digest)?)
     }
-}
-
-fn json_body<T: serde::de::DeserializeOwned>(response: &UpstreamResponse) -> Option<T> {
-    if response.status != 200 || response.content_type.split(';').next() != Some("application/json")
-    {
-        return None;
-    }
-    serde_json::from_slice(&response.body).ok()
-}
-
-fn evm_address(key: &VerifyingKey) -> Address {
-    let point = key.to_encoded_point(false);
-    let digest = keccak(&point.as_bytes()[1..]);
-    let mut address = [0; 20];
-    address.copy_from_slice(&digest[12..]);
-    address
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::quote::keccak;
+    use crate::tx::{authorization_digest, recover as recover_tx, Authorization};
+    use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+    use layerx_platform_internal::base64;
     use layerx_platform_internal::kms::{KeyStore, Service, SEAL_LABEL};
     use layerx_platform_internal::seal::SealKey;
     use layerx_platform_internal::secret::random_hex;
@@ -234,6 +130,14 @@ pub(crate) mod tests {
         Ok(evm_address(&VerifyingKey::recover_from_prehash(
             digest, &signature, recovery,
         )?))
+    }
+
+    fn evm_address(key: &VerifyingKey) -> Address {
+        let point = key.to_encoded_point(false);
+        let digest = keccak(&point.as_bytes()[1..]);
+        let mut address = [0; 20];
+        address.copy_from_slice(&digest[12..]);
+        address
     }
 
     struct Fixture {
@@ -551,5 +455,45 @@ pub(crate) mod tests {
             LocalSigner::from_config(&config),
             Err(SignerError::KeySource)
         ));
+    }
+
+    #[test]
+    fn kms_authorization_and_type_four_hash_recover_to_loader(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = Fixture::new()?;
+        let port = fixture.start_kms()?;
+        let (key_id, sponsor) = fixture.create_kms_key(port)?;
+        std::env::set_var(fixture.var("KMS_KEY_ID"), &key_id);
+        let loader = EvmSender::from_env(&fixture.config.relayer_key_env)?;
+        assert_eq!(loader.address(), sponsor);
+        let signer = LocalSigner::from_config(&fixture.config)?;
+        let delegation = signer.sign_authorization(125, [0x44; 20], 9)?;
+        let authorization = Authorization {
+            chain_id: 125,
+            delegate: [0x44; 20],
+            nonce: 9,
+            signature: *delegation.signature.as_bytes(),
+        };
+        assert_eq!(
+            authorization_digest(&authorization)?,
+            delegation.authorization.signing_hash()
+        );
+        assert_eq!(
+            recover_tx(
+                authorization_digest(&authorization)?,
+                &authorization.signature
+            )?,
+            loader.address()
+        );
+        let type_four = keccak(&[0x04, 0xc0]);
+        assert_eq!(
+            recover_tx(type_four, &signer.sign_digest(type_four)?)?,
+            loader.address()
+        );
+        assert!(matches!(
+            signer.sign_authorization(125, [0x44; 20], u64::MAX),
+            Err(SignerError::Signing)
+        ));
+        Ok(())
     }
 }

@@ -1,5 +1,7 @@
-use k256::ecdsa::SigningKey;
-pub use layerx_crypto::evm_transaction::Eip1559Call;
+use k256::ecdsa::{RecoveryId, Signature, SigningKey, VerifyingKey};
+use layerx_crypto::evm_transaction::assemble;
+pub use layerx_crypto::evm_transaction::{Eip1559Call, Eip7702Authorization, SignedAuthorization};
+use layerx_crypto::signer::AgentSignature;
 use serde::Deserialize;
 use std::env;
 use std::path::Path;
@@ -21,6 +23,8 @@ pub enum EvmSenderError {
     UnsupportedKmsAlgorithm,
     KmsUnavailable,
     Signing,
+    SignerMismatch,
+    InvalidAuthorization,
 }
 
 impl std::fmt::Display for EvmSenderError {
@@ -35,6 +39,8 @@ impl std::fmt::Display for EvmSenderError {
             Self::UnsupportedKmsAlgorithm => "evm_sender_unsupported_kms_algorithm",
             Self::KmsUnavailable => "evm_sender_kms_unavailable",
             Self::Signing => "evm_sender_signing_failed",
+            Self::SignerMismatch => "evm_sender_signer_mismatch",
+            Self::InvalidAuthorization => "evm_sender_invalid_authorization",
         })
     }
 }
@@ -96,9 +102,16 @@ impl EvmSender {
 
     fn from_file(path: &Path) -> Result<Self, EvmSenderError> {
         let encoded = read_secret_file(path).map_err(|_| EvmSenderError::KeyFileUnavailable)?;
-        let raw = encoded
-            .strip_prefix("0x")
-            .map_or(encoded.as_str(), |value| value);
+        Self::from_hex_secret(&encoded)
+    }
+
+    /// Loads a hexadecimal secp256k1 scalar, with or without `0x`, held in
+    /// memory by the caller.
+    ///
+    /// # Errors
+    /// Refuses anything but 64 hexadecimal digits of a valid nonzero scalar.
+    pub fn from_hex_secret(encoded: &str) -> Result<Self, EvmSenderError> {
+        let raw = encoded.strip_prefix("0x").map_or(encoded, |value| value);
         if !valid_hex(raw, 32) {
             return Err(EvmSenderError::InvalidKey);
         }
@@ -164,35 +177,119 @@ impl EvmSender {
     /// Signs an existing type-2 call for `eth_sendRawTransaction`.
     ///
     /// # Errors
-    /// Returns a sanitized refusal if signing fails.
+    /// Returns a sanitized refusal if signing fails or the signature does not
+    /// recover to [`Self::address`].
     pub fn sign_transaction(&self, tx: &Eip1559Call) -> Result<Vec<u8>, EvmSenderError> {
-        match &self.key {
-            SenderKey::File(secret) => tx.sign(secret).map_err(|_| EvmSenderError::Signing),
-            SenderKey::Kms { upstream, handle } => {
-                let request = serde_json::to_vec(&serde_json::json!({
-                    "key_handle": handle,
-                    "algorithm": "secp256k1",
-                    "message": base64::encode(&tx.signing_hash()),
-                }))
-                .map_err(|_| EvmSenderError::Signing)?;
-                let response = upstream
-                    .post("/v1/signatures", &request)
-                    .map_err(|_| EvmSenderError::KmsUnavailable)?;
-                if response.status != 200
-                    || response.content_type.split(';').next() != Some("application/json")
-                {
-                    return Err(EvmSenderError::Signing);
-                }
-                let signature: KmsSignature =
-                    serde_json::from_slice(&response.body).map_err(|_| EvmSenderError::Signing)?;
-                let bytes: [u8; 64] = base64::decode(&signature.signature)
-                    .and_then(|bytes| bytes.try_into().ok())
-                    .ok_or(EvmSenderError::Signing)?;
-                tx.assemble(&bytes, signature.recovery_id, &self.address)
-                    .map_err(|_| EvmSenderError::Signing)
-            }
-        }
+        let signature = self.agent_signature(&tx.signing_hash())?;
+        Ok(assemble(tx, &signature))
     }
+
+    /// Signs a 32-byte digest, yielding `r || s || v` with `v` in {27, 28}
+    /// and a low `s`.
+    ///
+    /// # Errors
+    /// Returns `KmsUnavailable` when the KMS cannot be reached, `Signing` for
+    /// a failed or malformed signature and `SignerMismatch` when the signature
+    /// recovers to an address other than [`Self::address`].
+    pub fn sign_prehash(&self, digest: &[u8; 32]) -> Result<[u8; 65], EvmSenderError> {
+        Ok(*self.agent_signature(digest)?.as_bytes())
+    }
+
+    /// Signs the EIP-7702 authorization delegating this sender's code to
+    /// `address` on `chain_id` at account nonce `nonce`.
+    ///
+    /// # Errors
+    /// Returns `InvalidAuthorization` for a nonce of `2^64 - 1`, and the
+    /// refusals of [`Self::sign_prehash`].
+    pub fn sign_authorization(
+        &self,
+        chain_id: u64,
+        address: [u8; 20],
+        nonce: u64,
+    ) -> Result<SignedAuthorization, EvmSenderError> {
+        if nonce == u64::MAX {
+            return Err(EvmSenderError::InvalidAuthorization);
+        }
+        let authorization = Eip7702Authorization {
+            chain_id,
+            address,
+            nonce,
+        };
+        let signature = self.agent_signature(&authorization.signing_hash())?;
+        Ok(SignedAuthorization {
+            authorization,
+            signature,
+        })
+    }
+
+    fn agent_signature(&self, digest: &[u8; 32]) -> Result<AgentSignature, EvmSenderError> {
+        let (compact, recovery_id) = match &self.key {
+            SenderKey::File(secret) => {
+                let key = SigningKey::from_slice(secret.as_ref())
+                    .map_err(|_| EvmSenderError::InvalidKey)?;
+                let (signature, recovery) = key
+                    .sign_prehash_recoverable(digest)
+                    .map_err(|_| EvmSenderError::Signing)?;
+                (signature.to_bytes().into(), recovery.to_byte())
+            }
+            SenderKey::Kms { upstream, handle } => Self::kms_sign(upstream, handle, digest)?,
+        };
+        checked_signature(digest, &compact, recovery_id, &self.address)
+    }
+
+    fn kms_sign(
+        upstream: &Upstream,
+        handle: &str,
+        digest: &[u8; 32],
+    ) -> Result<([u8; 64], u8), EvmSenderError> {
+        let request = serde_json::to_vec(&serde_json::json!({
+            "key_handle": handle,
+            "algorithm": "secp256k1",
+            "message": base64::encode(digest),
+        }))
+        .map_err(|_| EvmSenderError::Signing)?;
+        let response = upstream
+            .post("/v1/signatures", &request)
+            .map_err(|_| EvmSenderError::KmsUnavailable)?;
+        if response.status != 200
+            || response.content_type.split(';').next() != Some("application/json")
+        {
+            return Err(EvmSenderError::Signing);
+        }
+        let signature: KmsSignature =
+            serde_json::from_slice(&response.body).map_err(|_| EvmSenderError::Signing)?;
+        let bytes: [u8; 64] = base64::decode(&signature.signature)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(EvmSenderError::Signing)?;
+        Ok((bytes, signature.recovery_id))
+    }
+}
+
+/// Accepts a compact signature only when it is canonical, its recovery id is
+/// 0 or 1, and it recovers to `expected` over `digest`.
+fn checked_signature(
+    digest: &[u8; 32],
+    compact: &[u8; 64],
+    recovery_id: u8,
+    expected: &[u8; 20],
+) -> Result<AgentSignature, EvmSenderError> {
+    let recovery = RecoveryId::from_byte(recovery_id)
+        .filter(|recovery| recovery.to_byte() <= 1)
+        .ok_or(EvmSenderError::Signing)?;
+    let mut bytes = [0_u8; 65];
+    bytes[..64].copy_from_slice(compact);
+    bytes[64] = 27 + recovery.to_byte();
+    let signature = AgentSignature::new(bytes).map_err(|_| EvmSenderError::Signing)?;
+    let parsed = Signature::from_slice(compact).map_err(|_| EvmSenderError::Signing)?;
+    let recovered = VerifyingKey::recover_from_prehash(digest, &parsed, recovery)
+        .map_err(|_| EvmSenderError::Signing)?;
+    let address =
+        layerx_crypto::secp256k1::evm_address(recovered.to_encoded_point(false).as_bytes())
+            .map_err(|_| EvmSenderError::Signing)?;
+    if &address != expected {
+        return Err(EvmSenderError::SignerMismatch);
+    }
+    Ok(signature)
 }
 
 #[cfg(test)]
@@ -203,7 +300,6 @@ mod tests {
     use crate::secret::{random_hex, MAX_SECRET_BYTES};
     use crate::{http, tls};
     use ed25519_dalek::Verifier as _;
-    use k256::ecdsa::Signature;
     use std::fs;
     use std::io::Write;
     use std::net::{TcpListener, TcpStream};
@@ -616,6 +712,19 @@ mod tests {
         let signed = sender.sign_transaction(&call)?;
         assert_eq!(sender.sign_transaction(&call)?, signed);
         assert_eq!(recovered_address(&call, &signed)?, address);
+        let digest = [0x5a; 32];
+        assert_eq!(
+            recover_prehash(&digest, &sender.sign_prehash(&digest)?)?,
+            address
+        );
+        let authorization = sender.sign_authorization(125, [0x33; 20], 1)?;
+        assert_eq!(
+            recover_prehash(
+                &authorization.authorization.signing_hash(),
+                authorization.signature.as_bytes()
+            )?,
+            address
+        );
         Ok(())
     }
 
@@ -773,35 +882,34 @@ mod tests {
     fn assembled_signature_refuses_wrong_sender_and_noncanonical_values(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let call = call();
+        let digest = call.signing_hash();
         let key = SigningKey::from_slice(&[1; 32]).map_err(|_| "invalid scalar")?;
         let (signature, recovery) = key
-            .sign_prehash_recoverable(&call.signing_hash())
+            .sign_prehash_recoverable(&digest)
             .map_err(|_| "signature failed")?;
         let address = layerx_crypto::secp256k1::evm_address(
             key.verifying_key().to_encoded_point(false).as_bytes(),
         )
         .map_err(|_| "invalid public key")?;
         let bytes: [u8; 64] = signature.to_bytes().into();
-        assert_eq!(
-            call.assemble(&bytes, recovery.to_byte(), &address)?,
-            call.sign(&[1; 32])?
-        );
+        let accepted = checked_signature(&digest, &bytes, recovery.to_byte(), &address)?;
+        assert_eq!(assemble(&call, &accepted), call.sign(&[1; 32])?);
         let mut wrong_address = address;
         wrong_address[0] ^= 1;
         assert_eq!(
-            call.assemble(&bytes, recovery.to_byte(), &wrong_address),
-            Err(layerx_crypto::evm_transaction::InvalidEvmKey)
+            checked_signature(&digest, &bytes, recovery.to_byte(), &wrong_address).err(),
+            Some(EvmSenderError::SignerMismatch)
         );
         for parity in 2..=u8::MAX {
             assert_eq!(
-                call.assemble(&bytes, parity, &address),
-                Err(layerx_crypto::evm_transaction::InvalidEvmKey)
+                checked_signature(&digest, &bytes, parity, &address).err(),
+                Some(EvmSenderError::Signing)
             );
         }
         for invalid in [[0; 64], [0xff; 64]] {
             assert_eq!(
-                call.assemble(&invalid, recovery.to_byte(), &address),
-                Err(layerx_crypto::evm_transaction::InvalidEvmKey)
+                checked_signature(&digest, &invalid, recovery.to_byte(), &address).err(),
+                Some(EvmSenderError::Signing)
             );
         }
         let mut high = bytes;
@@ -811,8 +919,92 @@ mod tests {
             0xd0, 0x36, 0x41, 0x40,
         ]);
         assert_eq!(
-            call.assemble(&high, recovery.to_byte(), &address),
-            Err(layerx_crypto::evm_transaction::InvalidEvmKey)
+            checked_signature(&digest, &high, recovery.to_byte(), &address).err(),
+            Some(EvmSenderError::Signing)
+        );
+        Ok(())
+    }
+
+    fn unhex_vector(text: &str) -> Result<Vec<u8>, std::num::ParseIntError> {
+        (0..text.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&text[index..index + 2], 16))
+            .collect()
+    }
+
+    fn recover_prehash(
+        digest: &[u8; 32],
+        signature: &[u8; 65],
+    ) -> Result<[u8; 20], Box<dyn std::error::Error>> {
+        let parsed = Signature::from_slice(&signature[..64])?;
+        assert!(parsed.normalize_s().is_none());
+        let recovery = RecoveryId::from_byte(signature[64] - 27).ok_or("invalid parity")?;
+        let recovered = VerifyingKey::recover_from_prehash(digest, &parsed, recovery)?;
+        layerx_crypto::secp256k1::evm_address(recovered.to_encoded_point(false).as_bytes())
+            .map_err(|_| "invalid recovered key".into())
+    }
+
+    #[test]
+    fn file_key_signs_prehash_authorization_and_type_four() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let fixture = Fixture::new()?;
+        fixture.key_file(format!("{:064x}", 1).as_bytes())?;
+        let sender = fixture.load()?;
+        let digest = [0x42; 32];
+        let signature = sender.sign_prehash(&digest)?;
+        assert_eq!(sender.sign_prehash(&digest)?, signature);
+        assert!(matches!(signature[64], 27 | 28));
+        assert_eq!(recover_prehash(&digest, &signature)?, ADDRESS);
+        let signed = sender.sign_authorization(125, [0x11; 20], 7)?;
+        assert_eq!(
+            signed.authorization,
+            Eip7702Authorization {
+                chain_id: 125,
+                address: [0x11; 20],
+                nonce: 7,
+            }
+        );
+        let mut expected = unhex_vector(
+            "b6fbecbe91902446a8fa14ab904062224fb59579eb7d23d7fc1178b9060f88cc2271ca524bc6a2c1f1ecdec38b61129d4a7b210ff3b395f14e2fb4ddad0e1e39",
+        )?;
+        expected.push(27);
+        assert_eq!(signed.signature.as_bytes().to_vec(), expected);
+        assert_eq!(
+            sender.sign_authorization(125, [0x11; 20], u64::MAX).err(),
+            Some(EvmSenderError::InvalidAuthorization)
+        );
+        let call = layerx_crypto::evm_transaction::Eip7702Call {
+            chain_id: 125,
+            nonce: 3,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2,
+            gas_limit: 100_000,
+            to: [0x22; 20],
+            data: vec![0xde, 0xad, 0xbe, 0xef],
+            authorization_list: vec![signed],
+        };
+        let hash = call.signing_hash()?;
+        let raw = layerx_crypto::evm_transaction::assemble_eip7702(
+            &call,
+            &AgentSignature::new(sender.sign_prehash(&hash)?)
+                .map_err(|_| "noncanonical signature")?,
+        )?;
+        assert_eq!(raw, unhex_vector("04f8c57d030102830186a09422222222222222222222222222222222222222228084deadbeefc0f85cf85a7d9411111111111111111111111111111111111111110780a0b6fbecbe91902446a8fa14ab904062224fb59579eb7d23d7fc1178b9060f88cca02271ca524bc6a2c1f1ecdec38b61129d4a7b210ff3b395f14e2fb4ddad0e1e3980a054a08cd9926429166423685ad95c24caff4a13854991303be6679661793472a4a05300ba51d42b6e4a9546095ada5b27b4164c61009ce0bbafeb618b17d7f63e94")?);
+        assert_eq!(
+            EvmSender::from_hex_secret(&format!("0x{:064x}", 1))?.address(),
+            ADDRESS
+        );
+        assert_eq!(
+            EvmSender::from_hex_secret("private-content-marker").err(),
+            Some(EvmSenderError::InvalidKey)
+        );
+        assert_eq!(
+            EvmSenderError::SignerMismatch.to_string(),
+            "evm_sender_signer_mismatch"
+        );
+        assert_eq!(
+            EvmSenderError::InvalidAuthorization.to_string(),
+            "evm_sender_invalid_authorization"
         );
         Ok(())
     }
