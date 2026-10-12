@@ -42272,7 +42272,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.125]
 title = "Wallet SDK uses the Ed25519 point API of the locked noble-curves"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42370,7 +42370,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.129]
 title = "layerxagent JobExecuted and JobFailed are proto typed events"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.8"]
@@ -42445,7 +42445,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.132]
 title = "JVM generator renders numeric wire values for ProgramGuestAbi"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.93"]
@@ -42471,7 +42471,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.133]
 title = "Registry router bootstrap reads governed receipt key heights in Amino JSON form"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["11.5.242"]
@@ -42496,7 +42496,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.134]
 title = "Android sample compiles against the regenerated MoveCommitRequest"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.93"]
