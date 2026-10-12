@@ -36563,7 +36563,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.36]
 title = "Explorer transaction status answers rungs from the chain and the verified sequencer receipt"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["8.5.35", "0.46"]
