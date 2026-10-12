@@ -7,9 +7,14 @@
 //! redaction, audit and trace propagation follow the human service exactly.
 
 use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter};
 
+use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_proof::merkle::leaf_hash;
-use layerx_proof::receipt::{verify, AuthorizedBatch};
+use layerx_proof::receipt::{verify, verify_sequencer_signature, AuthorizedBatch, ReceiptKeys};
+use layerx_proof::sequencer_logs::{verify_logs, SequencerLog, SequencerLogRefusal};
+use sha2::{Digest as _, Sha256};
+use sha3::Keccak256;
 
 use crate::adapter::{AdapterDescriptor, AdapterId};
 use crate::audit::{AuditChain, AuditEventKind};
@@ -24,6 +29,19 @@ const RECORD_VERSION: u8 = 1;
 const REGISTRY_CHAIN: &str = "gateway-registry";
 const TRANSLATION_PREFIX: &str = "tr-";
 const TELEMETRY_PREFIX: &str = "tel-";
+/// The layerxledger precompile address, 0x101A.
+const LEDGER_ADDRESS: [u8; 20] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x1a,
+];
+const PAYMENT_EXACT_EVENT: &[u8] = b"PaymentExact(bytes32,bytes32,bytes32,bytes32,uint128)";
+const PAYMENT_DRAWN_EVENT: &[u8] =
+    b"PaymentDrawn(bytes32,bytes32,bytes32,bytes32,uint128,bytes32,bytes32)";
+/// `PaymentExact` data: assetId and amount, one ABI word each.
+const PAYMENT_EXACT_DATA_BYTES: usize = 64;
+/// `PaymentDrawn` data: assetId, amount, idempotencyKey and contextHash.
+const PAYMENT_DRAWN_DATA_BYTES: usize = 128;
+/// Position of the idempotencyKey word in `PaymentDrawn` data.
+const PAYMENT_DRAWN_KEY_WORD: std::ops::Range<usize> = 64..96;
 
 const fn hex_digit(nibble: u8) -> char {
     match nibble {
@@ -257,6 +275,71 @@ fn adapter_call_emission(
     .map_err(redacted)
 }
 
+/// Why a signed sequencer receipt could not settle a translation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SequencerSettlementError {
+    /// A refusal shared with every settlement path, including a receipt the
+    /// sequencer signature verifier rejected.
+    Gateway(GatewayError),
+    /// The served logs disagree with the receipt's signed effects.
+    Logs(SequencerLogRefusal),
+    /// The verified logs do not hold exactly one layerxledger payment log
+    /// carrying the translation's idempotency key.
+    PaymentUnmatched,
+}
+
+impl Display for SequencerSettlementError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gateway(error) => Display::fmt(error, formatter),
+            Self::Logs(refusal) => {
+                write!(
+                    formatter,
+                    "receipt logs disagree with the signed effects: {refusal:?}"
+                )
+            }
+            Self::PaymentUnmatched => formatter
+                .write_str("receipt holds no single layerxledger payment for the idempotency key"),
+        }
+    }
+}
+
+impl std::error::Error for SequencerSettlementError {}
+
+impl From<GatewayError> for SequencerSettlementError {
+    fn from(value: GatewayError) -> Self {
+        Self::Gateway(value)
+    }
+}
+
+fn keccak256(bytes: &[u8]) -> [u8; 32] {
+    Keccak256::digest(bytes).into()
+}
+
+/// Whether one verified log is a layerxledger payment for `idempotency_key`:
+/// a `PaymentExact` whose indexed paymentReference is the key, or a
+/// `PaymentDrawn` whose idempotencyKey data word is the key.
+fn pays_idempotency_key(
+    log: &SequencerLog,
+    idempotency_key: &[u8; 32],
+    payment_exact: &[u8; 32],
+    payment_drawn: &[u8; 32],
+) -> bool {
+    if log.address() != LEDGER_ADDRESS {
+        return false;
+    }
+    match log.topics() {
+        [topic, _, _, reference] if topic == payment_exact => {
+            log.data().len() == PAYMENT_EXACT_DATA_BYTES && reference == idempotency_key
+        }
+        [topic, _, _, _] if topic == payment_drawn => {
+            log.data().len() == PAYMENT_DRAWN_DATA_BYTES
+                && log.data().get(PAYMENT_DRAWN_KEY_WORD) == Some(idempotency_key.as_slice())
+        }
+        _ => false,
+    }
+}
+
 /// The interoperability gateway core: the adapter registry, the
 /// principal-scoped translation store, and the hash-chained audit logs.
 #[derive(Debug)]
@@ -429,7 +512,76 @@ impl GatewayCore {
         trace: &TraceId,
         now: u64,
     ) -> Result<TranslationStatus, Traced<GatewayError>> {
-        let fail = |error: GatewayError| trace.wrap(error);
+        self.settle_verified(principal, idempotency_key, trace, now, || {
+            let verified =
+                verify(canonical_receipt, authorised).map_err(GatewayError::ReceiptRejected)?;
+            leaf_hash(verified.canonical_bytes())
+                .map_err(|_| GatewayError::Corrupt("receipt cannot be digested"))
+        })
+    }
+
+    /// Terminates one state-changing translation on a sequencer-signed
+    /// `ProtocolReceipt` v2. The receipt signature is verified against the
+    /// height-ranged `ReceiptKeys` list, the served logs are bound to the
+    /// receipt's signed effects, and exactly one layerxledger (0x101A) log
+    /// must pay the translation's idempotency key: a `PaymentExact` matched by
+    /// its paymentReference or a `PaymentDrawn` matched by the idempotencyKey
+    /// in its data. The translation records the sha256 digest of the signed
+    /// receipt bytes.
+    ///
+    /// # Errors
+    ///
+    /// Refuses unknown, read-only, closed and conflicting translations as
+    /// [`Self::settle_with_receipt`] does, a receipt the signature verifier
+    /// rejects, logs that disagree with the signed effects, and a receipt
+    /// without exactly one matching payment log, leaving the translation
+    /// pending.
+    #[allow(clippy::too_many_arguments)]
+    pub fn settle_with_sequencer_receipt(
+        &mut self,
+        principal: &PrincipalId,
+        idempotency_key: [u8; 32],
+        signed_receipt: &[u8],
+        logs: Vec<SequencerLog>,
+        receipt_keys: &[SequencerAuthorization],
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<TranslationStatus, Traced<SequencerSettlementError>> {
+        self.settle_verified(principal, idempotency_key, trace, now, || {
+            let receipt =
+                verify_sequencer_signature(signed_receipt, ReceiptKeys::HeightRanges(receipt_keys))
+                    .map_err(GatewayError::ReceiptRejected)?;
+            let verified = verify_logs(&receipt, logs).map_err(SequencerSettlementError::Logs)?;
+            let payment_exact = keccak256(PAYMENT_EXACT_EVENT);
+            let payment_drawn = keccak256(PAYMENT_DRAWN_EVENT);
+            let matches = verified
+                .logs()
+                .iter()
+                .filter(|log| {
+                    pays_idempotency_key(log, &idempotency_key, &payment_exact, &payment_drawn)
+                })
+                .count();
+            if matches != 1 {
+                return Err(SequencerSettlementError::PaymentUnmatched);
+            }
+            Ok(Sha256::digest(signed_receipt).into())
+        })
+    }
+
+    /// Records one state-changing translation as receipt-verified once
+    /// `verify` yields the receipt digest. Nothing is written unless the
+    /// translation exists in the principal's scope, is state-changing, the
+    /// receipt verifies, and the translation is pending or already settled on
+    /// the same digest.
+    fn settle_verified<E: From<GatewayError>>(
+        &mut self,
+        principal: &PrincipalId,
+        idempotency_key: [u8; 32],
+        trace: &TraceId,
+        now: u64,
+        verify: impl FnOnce() -> Result<[u8; 32], E>,
+    ) -> Result<TranslationStatus, Traced<E>> {
+        let fail = |error: GatewayError| trace.wrap(E::from(error));
         let row = translation_row(idempotency_key).map_err(fail)?;
         let mut scope = self.store.principal(principal);
         let stored = scope
@@ -439,10 +591,7 @@ impl GatewayCore {
         if record.kind != TranslationKind::StateChanging {
             return Err(fail(GatewayError::NotStateChanging));
         }
-        let verified = verify(canonical_receipt, authorised)
-            .map_err(|failure| fail(GatewayError::ReceiptRejected(failure)))?;
-        let receipt_digest = leaf_hash(verified.canonical_bytes())
-            .map_err(|_| fail(GatewayError::Corrupt("receipt cannot be digested")))?;
+        let receipt_digest = verify().map_err(|error| trace.wrap(error))?;
         match record.status {
             TranslationStatus::Pending => {}
             TranslationStatus::ReceiptVerified {

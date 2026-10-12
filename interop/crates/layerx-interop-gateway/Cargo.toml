@@ -8,10 +8,12 @@ license.workspace = true
 [dependencies]
 layerx-proof.workspace = true
 sha2.workspace = true
+sha3.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
 layerx-types.workspace = true
+layerx-wire.workspace = true
 
 [lints]
 workspace = true

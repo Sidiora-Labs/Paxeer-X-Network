@@ -4,14 +4,23 @@ use layerx_interop_gateway::adapter::{
 };
 use layerx_interop_gateway::audit::{verify_export, AuditEventKind};
 use layerx_interop_gateway::error::{error_emission, GatewayError, Retriability};
-use layerx_interop_gateway::gateway::{TranslationKind, TranslationRequest, TranslationStatus};
+use layerx_interop_gateway::gateway::{
+    SequencerSettlementError, TranslationKind, TranslationRequest, TranslationStatus,
+};
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::TraceId;
 use layerx_interop_gateway::{interop_gateway_core, GatewayCore};
+use layerx_proof::inclusion::SequencerAuthorization;
 use layerx_proof::merkle::leaf_hash;
-use layerx_proof::receipt::AuthorizedBatch;
+use layerx_proof::receipt::{AuthorizedBatch, ReceiptCheck, VerificationFailure};
+use layerx_proof::sequencer_logs::{LogField, SequencerLog, SequencerLogRefusal};
 use layerx_types::payload::ModuleId;
+use layerx_wire::encode::Encoder;
+use layerx_wire::hash::receipt_digest as wire_receipt_digest;
+use layerx_wire::limits::{MAX_MESSAGE_BYTES, MAX_SEQUENCER_EFFECTS, PROTOCOL_VERSION};
+use layerx_wire::WireError;
 use sha2::{Digest as _, Sha256};
+use sha3::Keccak256;
 
 const AGENT_ACCOUNT: [u8; 32] = [0xa1; 32];
 const ASSET: [u8; 32] = [0xc1; 32];
@@ -595,4 +604,412 @@ fn traces_propagate_onto_audits_errors_and_boundary_headers() {
     let rendered =
         error_emission(&failure).unwrap_or_else(|error| panic!("error emission: {error}"));
     assert!(!rendered.is_empty());
+}
+
+const SEQUENCER_MODULE_ID: u16 = 12;
+const SEQUENCER_KEY_ID: [u8; 32] = [0x33; 32];
+const SEQUENCER_HEIGHT: u64 = 26_400_000;
+const SEQUENCER_SEED: [u8; 32] = [7; 32];
+const SEQUENCER_ACTIVITY_ID: [u8; 32] = [0xac; 32];
+const SEQUENCER_PREVIOUS_HASH: [u8; 32] = [0x04; 32];
+const SEQUENCER_SEQUENCE: u64 = 7;
+const SEQUENCER_FEE_DENOM: &str = "upax";
+const LEDGER_ADDRESS: [u8; 20] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x1a,
+];
+const PAYER: [u8; 32] = [0xa1; 32];
+const PAYEE: [u8; 32] = [0xb2; 32];
+const GRANT: [u8; 32] = [0x6a; 32];
+const CONTEXT: [u8; 32] = [0x7c; 32];
+const PAID_AMOUNT: u128 = 1_000;
+const EFFECT_KIND_STATE: u8 = 1;
+const EFFECT_KIND_EVENT: u8 = 3;
+
+fn keccak256(bytes: &[u8]) -> [u8; 32] {
+    Keccak256::digest(bytes).into()
+}
+
+fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
+fn abi_amount(amount: u128) -> [u8; 32] {
+    let mut word = [0; 32];
+    word[16..].copy_from_slice(&amount.to_be_bytes());
+    word
+}
+
+fn transfer_log(log_index: u64) -> SequencerLog {
+    let mut reason = [0; 32];
+    reason[31] = 1;
+    SequencerLog::new(
+        LEDGER_ADDRESS,
+        vec![
+            keccak256(b"Transfer(bytes32,bytes32,bytes32,uint128,uint8)"),
+            PAYER,
+            PAYEE,
+            ASSET,
+        ],
+        [abi_amount(PAID_AMOUNT), reason].concat(),
+        log_index,
+    )
+}
+
+fn payment_exact_log(log_index: u64, payment_reference: [u8; 32]) -> SequencerLog {
+    SequencerLog::new(
+        LEDGER_ADDRESS,
+        vec![
+            keccak256(b"PaymentExact(bytes32,bytes32,bytes32,bytes32,uint128)"),
+            PAYER,
+            PAYEE,
+            payment_reference,
+        ],
+        [ASSET, abi_amount(PAID_AMOUNT)].concat(),
+        log_index,
+    )
+}
+
+fn payment_drawn_log(log_index: u64, idempotency_key: [u8; 32]) -> SequencerLog {
+    SequencerLog::new(
+        LEDGER_ADDRESS,
+        vec![
+            keccak256(b"PaymentDrawn(bytes32,bytes32,bytes32,bytes32,uint128,bytes32,bytes32)"),
+            GRANT,
+            PAYER,
+            PAYEE,
+        ],
+        [ASSET, abi_amount(PAID_AMOUNT), idempotency_key, CONTEXT].concat(),
+        log_index,
+    )
+}
+
+fn sequencer_summary_body(log_count: u32) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&61_340_u64.to_be_bytes());
+    body.extend_from_slice(&61_340_u64.to_be_bytes());
+    body.extend_from_slice(&1_000_000_000_u64.to_be_bytes());
+    body.extend_from_slice(&0_u32.to_be_bytes());
+    body.extend_from_slice(&[0; 20]);
+    body.extend_from_slice(&[0; 20]);
+    body.extend_from_slice(&sha256(b""));
+    body.extend_from_slice(&0_u32.to_be_bytes());
+    body.extend_from_slice(&log_count.to_be_bytes());
+    body.push(u8::try_from(SEQUENCER_FEE_DENOM.len()).unwrap_or(u8::MAX));
+    body.extend_from_slice(SEQUENCER_FEE_DENOM.as_bytes());
+    body
+}
+
+fn sequencer_log_body(log: &SequencerLog) -> Vec<u8> {
+    let mut body = log.address().to_vec();
+    body.push(u8::try_from(log.topics().len()).unwrap_or(u8::MAX));
+    for topic in log.topics() {
+        body.extend_from_slice(topic);
+    }
+    body.extend_from_slice(&sha256(log.data()));
+    body
+}
+
+fn encode_sequencer_receipt(
+    logs: &[SequencerLog],
+    signature: Option<[u8; 64]>,
+) -> Result<Vec<u8>, WireError> {
+    let log_count = u32::try_from(logs.len()).unwrap_or_else(|_| panic!("log count exceeds u32"));
+    let mut effects = vec![(0_u16, EFFECT_KIND_STATE, sequencer_summary_body(log_count))];
+    for (ordinal, log) in (1_u16..).zip(logs) {
+        effects.push((ordinal, EFFECT_KIND_EVENT, sequencer_log_body(log)));
+    }
+    let mut sequence_preimage = b"PAXEER/v1/sequence\0".to_vec();
+    sequence_preimage.extend_from_slice(&SEQUENCER_PREVIOUS_HASH);
+    sequence_preimage.extend_from_slice(&SEQUENCER_SEQUENCE.to_be_bytes());
+    sequence_preimage.extend_from_slice(&SEQUENCER_ACTIVITY_ID);
+    let mut batch_id = [0; 32];
+    batch_id[24..].copy_from_slice(&SEQUENCER_HEIGHT.to_be_bytes());
+    let mut from = [0; 32];
+    from[12..].copy_from_slice(&[0xaa; 20]);
+    let mut to = [0; 32];
+    to[12..].copy_from_slice(&LEDGER_ADDRESS);
+
+    let mut encoder = Encoder::new(MAX_MESSAGE_BYTES);
+    encoder.structure_header_version(0x5201, PROTOCOL_VERSION)?;
+    encoder.u16(PROTOCOL_VERSION)?;
+    encoder.bytes(&SEQUENCER_ACTIVITY_ID, 32)?;
+    encoder.u64(SEQUENCER_SEQUENCE)?;
+    encoder.bytes(&SEQUENCER_PREVIOUS_HASH, 32)?;
+    encoder.bytes(&sha256(&sequence_preimage), 32)?;
+    encoder.bytes(&sha256(b""), 32)?;
+    encoder.i32(0)?;
+    encoder.sequence_length(effects.len(), MAX_SEQUENCER_EFFECTS)?;
+    for (ordinal, kind, body) in &effects {
+        encoder.u16(SEQUENCER_MODULE_ID)?;
+        encoder.u16(*ordinal)?;
+        encoder.u16(0)?;
+        encoder.tag(*kind, 3)?;
+        encoder.u8(0)?;
+        encoder.bytes(&[0; 32], 32)?;
+        encoder.bytes(body, 256)?;
+    }
+    encoder.u128(52_000_000_000_000)?;
+    encoder.bytes(&batch_id, 32)?;
+    encoder.u16(SEQUENCER_MODULE_ID)?;
+    encoder.u32(1)?;
+    encoder.u32(0)?;
+    encoder.u8(2)?;
+    encoder.bytes(&sha256(SEQUENCER_FEE_DENOM.as_bytes()), 32)?;
+    encoder.u128(1_000_000_000_000_000_000)?;
+    encoder.bytes(&from, 32)?;
+    encoder.u128(5_000_000_000_000_000_000)?;
+    encoder.u128(3_999_948_000_000_000_000)?;
+    encoder.u64(41)?;
+    encoder.bytes(&to, 32)?;
+    encoder.u128(2_000_000_000_000_000_000)?;
+    encoder.u128(3_000_000_000_000_000_000)?;
+    encoder.bytes(&[0; 32], 32)?;
+    encoder.bytes(&[0; 32], 32)?;
+    encoder.bytes(&SEQUENCER_KEY_ID, 32)?;
+    encoder.u64(1_750_000_000_250)?;
+    encoder.u8(u8::from(signature.is_some()))?;
+    if let Some(signature) = signature {
+        encoder.bytes(&signature, 64)?;
+    }
+    Ok(encoder.finish())
+}
+
+fn signed_sequencer_receipt(logs: &[SequencerLog]) -> Vec<u8> {
+    let signer = SigningKey::from_bytes(&SEQUENCER_SEED);
+    let unsigned = encode_sequencer_receipt(logs, None)
+        .unwrap_or_else(|error| panic!("unsigned receipt: {error:?}"));
+    let digest =
+        wire_receipt_digest(&unsigned).unwrap_or_else(|error| panic!("receipt digest: {error:?}"));
+    encode_sequencer_receipt(logs, Some(signer.sign(&digest).to_bytes()))
+        .unwrap_or_else(|error| panic!("signed receipt: {error:?}"))
+}
+
+fn receipt_keys(first: u64, last: u64) -> [SequencerAuthorization; 1] {
+    [SequencerAuthorization::new(
+        SEQUENCER_KEY_ID,
+        SigningKey::from_bytes(&SEQUENCER_SEED)
+            .verifying_key()
+            .to_bytes(),
+        first,
+        last,
+    )]
+}
+
+fn in_range_keys() -> [SequencerAuthorization; 1] {
+    receipt_keys(SEQUENCER_HEIGHT - 100, SEQUENCER_HEIGHT + 100)
+}
+
+fn pending_state_changing(core: &mut GatewayCore, alice: &PrincipalId, key_byte: u8) {
+    let opened = core
+        .begin_translation(
+            alice,
+            &request(TranslationKind::StateChanging, key_byte),
+            &TraceId::mint([0x10; 16]),
+            10,
+        )
+        .unwrap_or_else(|error| panic!("begin: {error}"));
+    assert_eq!(opened, TranslationStatus::Pending);
+}
+
+fn assert_nothing_recorded(core: &GatewayCore, alice: &PrincipalId, key: [u8; 32]) {
+    assert_eq!(
+        core.translation(alice, key),
+        Some(TranslationStatus::Pending),
+        "a refused sequencer settlement must leave the translation pending"
+    );
+    let chain = core
+        .principal_audit(alice)
+        .unwrap_or_else(|| panic!("principal audit chain missing"));
+    assert_eq!(chain.entries().len(), 1);
+    assert!(
+        chain
+            .entries()
+            .iter()
+            .all(|entry| entry.kind() != AuditEventKind::TranslationCompleted),
+        "a refused sequencer settlement must not audit a completion"
+    );
+}
+
+fn assert_settled(core: &GatewayCore, alice: &PrincipalId, key: [u8; 32], receipt: &[u8]) {
+    let receipt_digest = sha256(receipt);
+    assert_eq!(
+        core.translation(alice, key),
+        Some(TranslationStatus::ReceiptVerified { receipt_digest })
+    );
+    let chain = core
+        .principal_audit(alice)
+        .unwrap_or_else(|| panic!("principal audit chain missing"));
+    let completed = chain
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == AuditEventKind::TranslationCompleted)
+        .unwrap_or_else(|| panic!("completion was not audited"));
+    assert_eq!(completed.subject(), receipt_digest);
+    let head = chain.head().unwrap_or_else(|error| panic!("head: {error}"));
+    verify_export("alice", &chain.export(), &head)
+        .unwrap_or_else(|error| panic!("audit chain broken: {error}"));
+}
+
+#[test]
+fn a_payment_exact_receipt_matched_by_payment_reference_settles_the_translation() {
+    let mut core = registered_core();
+    let alice = principal("alice");
+    let key = [0x81; 32];
+    pending_state_changing(&mut core, &alice, 0x81);
+    let logs = vec![transfer_log(0), payment_exact_log(1, key)];
+    let receipt = signed_sequencer_receipt(&logs);
+    let trace = TraceId::mint([0x81; 16]);
+
+    let settled = core
+        .settle_with_sequencer_receipt(
+            &alice,
+            key,
+            &receipt,
+            logs.clone(),
+            &in_range_keys(),
+            &trace,
+            11,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error}"));
+    assert_eq!(
+        settled,
+        TranslationStatus::ReceiptVerified {
+            receipt_digest: sha256(&receipt)
+        }
+    );
+    assert_settled(&core, &alice, key, &receipt);
+
+    let replay = core
+        .settle_with_sequencer_receipt(&alice, key, &receipt, logs, &in_range_keys(), &trace, 12)
+        .unwrap_or_else(|error| panic!("replayed settle: {error}"));
+    assert_eq!(replay, settled);
+}
+
+#[test]
+fn a_payment_drawn_receipt_matched_by_its_idempotency_key_settles_the_translation() {
+    let mut core = registered_core();
+    let alice = principal("alice");
+    let key = [0x82; 32];
+    pending_state_changing(&mut core, &alice, 0x82);
+    let logs = vec![transfer_log(0), payment_drawn_log(1, key)];
+    let receipt = signed_sequencer_receipt(&logs);
+
+    let settled = core
+        .settle_with_sequencer_receipt(
+            &alice,
+            key,
+            &receipt,
+            logs,
+            &in_range_keys(),
+            &TraceId::mint([0x82; 16]),
+            11,
+        )
+        .unwrap_or_else(|error| panic!("settle: {error}"));
+    assert_eq!(
+        settled,
+        TranslationStatus::ReceiptVerified {
+            receipt_digest: sha256(&receipt)
+        }
+    );
+    assert_settled(&core, &alice, key, &receipt);
+}
+
+#[test]
+fn a_payment_for_a_differing_idempotency_key_is_refused_and_records_nothing() {
+    let mut core = registered_core();
+    let alice = principal("alice");
+    let key = [0x83; 32];
+    pending_state_changing(&mut core, &alice, 0x83);
+    let trace = TraceId::mint([0x83; 16]);
+
+    for logs in [
+        vec![transfer_log(0), payment_exact_log(1, [0x84; 32])],
+        vec![transfer_log(0), payment_drawn_log(1, [0x84; 32])],
+    ] {
+        let receipt = signed_sequencer_receipt(&logs);
+        let refused = core
+            .settle_with_sequencer_receipt(
+                &alice,
+                key,
+                &receipt,
+                logs,
+                &in_range_keys(),
+                &trace,
+                11,
+            )
+            .map_err(|error| *error.error());
+        assert_eq!(refused, Err(SequencerSettlementError::PaymentUnmatched));
+        assert_nothing_recorded(&core, &alice, key);
+    }
+}
+
+#[test]
+fn a_receipt_key_outside_its_height_range_is_refused_and_records_nothing() {
+    let mut core = registered_core();
+    let alice = principal("alice");
+    let key = [0x85; 32];
+    pending_state_changing(&mut core, &alice, 0x85);
+    let logs = vec![transfer_log(0), payment_exact_log(1, key)];
+    let receipt = signed_sequencer_receipt(&logs);
+    let trace = TraceId::mint([0x85; 16]);
+
+    for keys in [
+        receipt_keys(SEQUENCER_HEIGHT - 100, SEQUENCER_HEIGHT - 1),
+        receipt_keys(SEQUENCER_HEIGHT + 1, SEQUENCER_HEIGHT + 100),
+    ] {
+        let refused = core
+            .settle_with_sequencer_receipt(&alice, key, &receipt, logs.clone(), &keys, &trace, 11)
+            .map_err(|error| *error.error());
+        assert_eq!(
+            refused,
+            Err(SequencerSettlementError::Gateway(
+                GatewayError::ReceiptRejected(VerificationFailure {
+                    check: ReceiptCheck::SequencerSignature
+                })
+            ))
+        );
+        assert_nothing_recorded(&core, &alice, key);
+    }
+}
+
+#[test]
+fn an_altered_log_is_refused_and_records_nothing() {
+    let mut core = registered_core();
+    let alice = principal("alice");
+    let key = [0x86; 32];
+    pending_state_changing(&mut core, &alice, 0x86);
+    let logs = vec![transfer_log(0), payment_exact_log(1, key)];
+    let receipt = signed_sequencer_receipt(&logs);
+    let altered_payment = payment_exact_log(1, key);
+    let mut altered_data = altered_payment.data().to_vec();
+    altered_data[63] ^= 0x01;
+    let altered = vec![
+        transfer_log(0),
+        SequencerLog::new(
+            altered_payment.address(),
+            altered_payment.topics().to_vec(),
+            altered_data,
+            altered_payment.log_index(),
+        ),
+    ];
+
+    let refused = core
+        .settle_with_sequencer_receipt(
+            &alice,
+            key,
+            &receipt,
+            altered,
+            &in_range_keys(),
+            &TraceId::mint([0x86; 16]),
+            11,
+        )
+        .map_err(|error| *error.error());
+    assert_eq!(
+        refused,
+        Err(SequencerSettlementError::Logs(SequencerLogRefusal::Log {
+            index: 1,
+            field: LogField::Data
+        }))
+    );
+    assert_nothing_recorded(&core, &alice, key);
 }
