@@ -332,6 +332,7 @@ fn decode_activity(
         for (direction, account, counterparty) in legs {
             unit.transfers.push(TransferRow {
                 height_or_seq: sequence,
+                tx_index: 0,
                 kind: kind.to_owned(),
                 direction,
                 account: hex(&account),

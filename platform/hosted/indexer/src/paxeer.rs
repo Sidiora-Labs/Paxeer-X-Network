@@ -12,16 +12,19 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use serde_json::{json, Map, Value};
 
-use crate::abi::{address_text, bare_bytes32, keccak, AbiRegistry, DecodedEvent};
+use crate::abi::{
+    address_text, bare_bytes32, keccak, precompile_address, AbiRegistry, DecodedEvent, LoadedAbi,
+};
 use crate::codec::{
     base64_decode, be_decimal, hex, hex0x, is_zero, quantity_u64, quantity_word, to_quantity,
     unhex, unhex_fixed,
 };
 use crate::follow::{walk_back, FollowPolicy, StepOutcome};
-use crate::store::{AssetRow, EventRow, Store, TransferRow, Unit};
+use crate::store::{AssetRow, EventRow, HolderRow, Position, Store, TransferRow, Unit};
 use crate::transport::Endpoint;
 use crate::IndexError;
 
@@ -50,6 +53,124 @@ pub enum AttributeEncoding {
 #[must_use]
 pub fn erc20_transfer_topic() -> [u8; 32] {
     keccak(b"Transfer(address,address,uint256)")
+}
+
+/// One holder record contract: its label, precompile number, record kind,
+/// record id argument and the record events with the state each leaves.
+struct HolderContract {
+    contract: &'static str,
+    number: u16,
+    kind: &'static str,
+    id: &'static str,
+    events: &'static [(&'static str, &'static str)],
+}
+
+const HOLDER_CONTRACTS: [HolderContract; 3] = [
+    HolderContract {
+        contract: "layerxledger",
+        number: 0x101A,
+        kind: "grant",
+        id: "grantId",
+        events: &[
+            ("PayerGrantIssued", "active"),
+            ("PayerGrantRevoked", "revoked"),
+        ],
+    },
+    HolderContract {
+        contract: "layerxpay",
+        number: 0x101B,
+        kind: "budget",
+        id: "budgetId",
+        events: &[
+            ("BudgetCreated", "active"),
+            ("BudgetRevoked", "revoked"),
+            ("BudgetClosed", "closed"),
+        ],
+    },
+    HolderContract {
+        contract: "layerxauth",
+        number: 0x101C,
+        kind: "grant",
+        id: "grantId",
+        events: &[("GrantBody", "active"), ("GrantRevoked", "revoked")],
+    },
+];
+
+/// The holder record events as ABI documents, by contract label.
+fn holder_abi(contract: &str) -> Value {
+    let id = |name: &str| json!({"name": name, "type": "bytes32", "indexed": true});
+    let value = |name: &str, kind: &str| json!({"name": name, "type": kind, "indexed": false});
+    let event =
+        |name: &str, inputs: Vec<Value>| json!({"type": "event", "name": name, "inputs": inputs});
+    match contract {
+        "layerxledger" => json!([
+            event("PayerGrantIssued", vec![id("grantId")]),
+            event("PayerGrantRevoked", vec![id("grantId")]),
+        ]),
+        "layerxpay" => {
+            let drained = vec![
+                id("budgetId"),
+                value("drained", "uint128"),
+                value("revocationSequence", "uint64"),
+            ];
+            json!([
+                event(
+                    "BudgetCreated",
+                    vec![
+                        id("budgetId"),
+                        value("assetId", "bytes32"),
+                        value("amount", "uint128")
+                    ],
+                ),
+                event("BudgetRevoked", drained.clone()),
+                event("BudgetClosed", drained),
+            ])
+        }
+        _ => json!([
+            event(
+                "GrantBody",
+                vec![
+                    id("grantId"),
+                    value("sub", "uint8"),
+                    value("chunk", "uint8"),
+                    value("body", "bytes"),
+                ],
+            ),
+            event(
+                "GrantRevoked",
+                vec![id("grantId"), value("record", "bytes")]
+            ),
+        ]),
+    }
+}
+
+/// The registry of the holder record events of 0x101A, 0x101B and 0x101C.
+fn holder_registry() -> Result<&'static AbiRegistry, IndexError> {
+    static REGISTRY: OnceLock<Result<AbiRegistry, String>> = OnceLock::new();
+    REGISTRY
+        .get_or_init(|| {
+            let mut registry = AbiRegistry::default();
+            for holder in &HOLDER_CONTRACTS {
+                registry.insert(LoadedAbi {
+                    contract: holder.contract.to_owned(),
+                    address: Some(precompile_address(holder.number)),
+                    events: AbiRegistry::parse_events(
+                        holder.contract,
+                        &holder_abi(holder.contract),
+                    )
+                    .map_err(|error| error.to_string())?,
+                });
+            }
+            Ok(registry)
+        })
+        .as_ref()
+        .map_err(|error| IndexError::Decode(format!("holder record ABI: {error}")))
+}
+
+/// A `u32` index quantity (`transactionIndex`) of `value`.
+fn index_of(value: &Value, name: &str) -> Result<u32, IndexError> {
+    u32::try_from(quantity_u64(field_str(value, name)?)?)
+        .map_err(|_| IndexError::Decode(format!("{name} exceeds u32")))
 }
 
 fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, IndexError> {
@@ -128,6 +249,7 @@ pub fn decode_block(block: &Value, inputs: &BlockInputs<'_>) -> Result<Unit, Ind
         if field_str(receipt, "status")? != "0x1" {
             continue;
         }
+        let tx_index = index_of(transaction, "transactionIndex")?;
         let value = quantity_word(field_str(transaction, "value")?)?;
         let from = address_of(transaction, "from")?
             .ok_or_else(|| IndexError::Decode("transaction has no sender".to_owned()))?;
@@ -136,6 +258,7 @@ pub fn decode_block(block: &Value, inputs: &BlockInputs<'_>) -> Result<Unit, Ind
             let decoded = json!({ "block_number": height.to_string(), "value_wei": amount });
             unit.transfers.push(TransferRow {
                 height_or_seq: height,
+                tx_index,
                 kind: "native_transfer".to_owned(),
                 direction: "out",
                 account: from.clone(),
@@ -148,6 +271,7 @@ pub fn decode_block(block: &Value, inputs: &BlockInputs<'_>) -> Result<Unit, Ind
             });
             unit.transfers.push(TransferRow {
                 height_or_seq: height,
+                tx_index,
                 kind: "native_transfer".to_owned(),
                 direction: "in",
                 account: to,
@@ -174,7 +298,13 @@ pub fn decode_block(block: &Value, inputs: &BlockInputs<'_>) -> Result<Unit, Ind
             if log.get("removed").and_then(Value::as_bool) == Some(true) {
                 continue;
             }
-            decode_log(&mut unit, log, height, &tx_hash, inputs)?;
+            let source = LogSource {
+                height,
+                tx_hash: &tx_hash,
+                tx_index,
+                sender: &from,
+            };
+            decode_log(&mut unit, log, &source, inputs)?;
         }
     }
     for transaction in inputs.cosmos_txs {
@@ -183,16 +313,35 @@ pub fn decode_block(block: &Value, inputs: &BlockInputs<'_>) -> Result<Unit, Ind
     Ok(unit)
 }
 
+/// The transaction a log belongs to.
+struct LogSource<'a> {
+    height: u64,
+    tx_hash: &'a str,
+    tx_index: u32,
+    /// The transaction sender, the holder of the records it touches.
+    sender: &'a str,
+}
+
 fn decode_log(
     unit: &mut Unit,
     log: &Value,
-    height: u64,
-    tx_hash: &str,
+    source: &LogSource<'_>,
     inputs: &BlockInputs<'_>,
 ) -> Result<(), IndexError> {
+    let LogSource {
+        height,
+        tx_hash,
+        tx_index,
+        sender,
+    } = *source;
     let emitter = unhex_fixed::<20>(field_str(log, "address")?)?;
     let emitter_text = address_text(emitter);
     let log_index = quantity_u64(field_str(log, "logIndex")?)?;
+    if index_of(log, "transactionIndex")? != tx_index {
+        return Err(IndexError::Integrity(format!(
+            "log {log_index} of {tx_hash} names another transaction index"
+        )));
+    }
     let topics = field(log, "topics")?
         .as_array()
         .ok_or_else(|| IndexError::Decode("log topics are not an array".to_owned()))?
@@ -232,6 +381,7 @@ fn decode_log(
         if from != zero {
             unit.transfers.push(TransferRow {
                 height_or_seq: height,
+                tx_index,
                 kind: kind.to_owned(),
                 direction: "out",
                 account: from.clone(),
@@ -246,6 +396,7 @@ fn decode_log(
         if to != zero {
             unit.transfers.push(TransferRow {
                 height_or_seq: height,
+                tx_index,
                 kind: kind.to_owned(),
                 direction: "in",
                 account: to,
@@ -267,25 +418,51 @@ fn decode_log(
         });
         return Ok(());
     }
+    let undecodable = |unit: &mut Unit, error: &IndexError| {
+        unit.events.push(EventRow {
+            height_or_seq: height,
+            source: "evm-log".to_owned(),
+            name: "undecodable".to_owned(),
+            contract: None,
+            account: None,
+            tx_id: tx_hash.to_owned(),
+            ordinal,
+            decoded: json!({
+                "address": emitter_text,
+                "error": error.to_string(),
+                "topics": topics.iter().map(|topic| hex0x(topic)).collect::<Vec<_>>(),
+                "data": hex0x(&data),
+            }),
+        });
+    };
+    match holder_registry()?.decode_log(emitter, &topics, &data) {
+        Ok(Some((_, decoded))) => {
+            let position = Position {
+                height,
+                tx_index,
+                log_index: u32::try_from(log_index).map_err(|_| {
+                    IndexError::Integrity(format!("log {log_index} of {tx_hash} exceeds u32"))
+                })?,
+            };
+            let document = json!({
+                "block_number": height.to_string(),
+                "log_index": log_index.to_string(),
+                "address": emitter_text,
+                "contract": decoded.contract,
+                "event": decoded.name,
+                "signature": decoded.signature,
+                "args": Value::Object(decoded.args.clone()),
+            });
+            holder_record(unit, &decoded, position, tx_hash, sender, document);
+        }
+        Ok(None) => {}
+        Err(error) => undecodable(unit, &error),
+    }
     let (event, decoded) = match inputs.registry.decode_log(emitter, &topics, &data) {
         Ok(Some((event, decoded))) => (event, decoded),
         Ok(None) => return Ok(()),
         Err(error) => {
-            unit.events.push(EventRow {
-                height_or_seq: height,
-                source: "evm-log".to_owned(),
-                name: "undecodable".to_owned(),
-                contract: None,
-                account: None,
-                tx_id: tx_hash.to_owned(),
-                ordinal,
-                decoded: json!({
-                    "address": emitter_text,
-                    "error": error.to_string(),
-                    "topics": topics.iter().map(|topic| hex0x(topic)).collect::<Vec<_>>(),
-                    "data": hex0x(&data),
-                }),
-            });
+            undecodable(unit, &error);
             return Ok(());
         }
     };
@@ -293,7 +470,7 @@ fn decode_log(
         .first_address(&event.params)
         .or_else(|| decoded.arg("account").and_then(bare_bytes32))
         .or_else(|| decoded.arg("beneficiary").and_then(bare_bytes32));
-    custody_legs(unit, &decoded, height, tx_hash, ordinal, &emitter_text);
+    custody_legs(unit, &decoded, source, ordinal, &emitter_text);
     unit.events.push(EventRow {
         height_or_seq: height,
         source: "evm-log".to_owned(),
@@ -315,14 +492,61 @@ fn decode_log(
     Ok(())
 }
 
+/// Records one holder record event: `GrantBody` counts once, at its first
+/// chunk.
+fn holder_record(
+    unit: &mut Unit,
+    decoded: &DecodedEvent,
+    position: Position,
+    tx_hash: &str,
+    sender: &str,
+    document: Value,
+) {
+    let Some(holder) = HOLDER_CONTRACTS
+        .iter()
+        .find(|holder| holder.contract == decoded.contract)
+    else {
+        return;
+    };
+    let Some(&(event, state)) = holder
+        .events
+        .iter()
+        .find(|(event, _)| *event == decoded.name)
+    else {
+        return;
+    };
+    if event == "GrantBody" && decoded.arg("chunk").and_then(Value::as_str) != Some("0") {
+        return;
+    }
+    let Some(record_id) = decoded.arg(holder.id).and_then(bare_bytes32) else {
+        return;
+    };
+    unit.holders.push(HolderRow {
+        position,
+        holder: sender.to_owned(),
+        kind: holder.kind,
+        contract: holder.contract,
+        record_id,
+        event,
+        state,
+        tx_id: tx_hash.to_owned(),
+        decoded: document,
+    });
+}
+
 fn custody_legs(
     unit: &mut Unit,
     decoded: &DecodedEvent,
-    height: u64,
-    tx_hash: &str,
+    source: &LogSource<'_>,
     ordinal: u64,
     emitter: &str,
 ) {
+    let LogSource {
+        height,
+        tx_hash,
+        tx_index,
+        ..
+    } = *source;
     let text = |name: &str| decoded.arg(name).and_then(Value::as_str).map(str::to_owned);
     let bytes32 = |name: &str| decoded.arg(name).and_then(bare_bytes32);
     let legs: Vec<(&str, &'static str, String, Option<String>)> = match decoded.name.as_str() {
@@ -371,6 +595,7 @@ fn custody_legs(
     for (kind, direction, account, counterparty) in legs {
         unit.transfers.push(TransferRow {
             height_or_seq: height,
+            tx_index,
             kind: kind.to_owned(),
             direction,
             account,
@@ -464,6 +689,10 @@ pub fn decode_cosmos_tx(
         )));
     }
     let tx_hash = hex0x(&unhex_fixed::<32>(field_str(transaction, "hash")?)?);
+    let tx_index = field(transaction, "index")?
+        .as_u64()
+        .and_then(|index| u32::try_from(index).ok())
+        .ok_or_else(|| IndexError::Decode("tx index is not a u32".to_owned()))?;
     let result = field(transaction, "tx_result")?;
     if result.get("code").and_then(Value::as_u64).unwrap_or(0) != 0 {
         return Ok(());
@@ -549,6 +778,7 @@ pub fn decode_cosmos_tx(
                                 {
                                     unit.transfers.push(TransferRow {
                                         height_or_seq: height,
+                                        tx_index,
                                         kind: "bank_transfer".to_owned(),
                                         direction,
                                         account: account.clone(),
@@ -592,6 +822,7 @@ pub fn decode_cosmos_tx(
                     unit.assets.push(denom_asset(&denom));
                     unit.transfers.push(TransferRow {
                         height_or_seq: height,
+                        tx_index,
                         kind: transfer_kind.to_owned(),
                         direction,
                         account: holder.clone(),
@@ -861,15 +1092,26 @@ impl PaxeerIngester {
     }
 
     pub fn observe_comet(&self, store: &Store) -> Result<(), IndexError> {
-        let Some(comet) = &self.comet else { return Ok(()); };
+        let Some(comet) = &self.comet else {
+            return Ok(());
+        };
         let observation = (|| {
             let status = comet.rpc("status", &json!({}))?;
-            if status.pointer("/node_info/other/tx_index").and_then(Value::as_str) != Some("on") {
-                return Err(IndexError::Source("Comet transaction indexing is unavailable".to_owned()));
+            if status
+                .pointer("/node_info/other/tx_index")
+                .and_then(Value::as_str)
+                != Some("on")
+            {
+                return Err(IndexError::Source(
+                    "Comet transaction indexing is unavailable".to_owned(),
+                ));
             }
-            let sync = status.get("sync_info")
+            let sync = status
+                .get("sync_info")
                 .ok_or_else(|| IndexError::Decode("Comet status has no sync_info".to_owned()))?;
-            let head = sync.get("latest_block_height").and_then(Value::as_str)
+            let head = sync
+                .get("latest_block_height")
+                .and_then(Value::as_str)
                 .and_then(|value| value.parse::<u64>().ok())
                 .ok_or_else(|| IndexError::Decode("Comet status has no block height".to_owned()))?;
             store.record_source_head("comet", Some(head))?;

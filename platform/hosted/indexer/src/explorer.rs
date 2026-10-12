@@ -6,7 +6,10 @@
 //! older ERC-20, pointer and native transfers are imported from the
 //! explorer the first time the account's history is read. Rows at or above
 //! the start block are left to the node walk, so nothing is counted twice.
-//! The import is persisted in the store and served after the indexed rows.
+//! The import is persisted in the store and served with the indexed rows
+//! in block position order.
+
+use std::collections::HashMap;
 
 use serde_json::Value;
 
@@ -75,16 +78,27 @@ fn legs(account: &str, from: &str, to: &str) -> Vec<(&'static str, u64, Option<S
     legs
 }
 
+/// The block height and in-block index of one transaction document.
+fn transaction_position(item: &Value) -> Option<(u64, u32)> {
+    Some((
+        number(item.get("block_number").or_else(|| item.get("block")))?,
+        u32::try_from(number(item.get("position"))?).ok()?,
+    ))
+}
+
 /// Converts one `token-transfers` item into `account`'s keyed rows. Only
-/// ERC-20 transfers below `floor` produce rows.
+/// ERC-20 transfers below `floor` produce rows; `transaction_index`
+/// answers the in-block index of a transaction hash at a height.
 ///
 /// # Errors
-/// Returns [`IndexError::Decode`] when the item is malformed.
+/// Returns [`IndexError::Decode`] when the item is malformed, or the
+/// `transaction_index` failure.
 pub fn token_transfer_rows(
     store: &Store,
     account: &str,
     floor: u64,
     item: &Value,
+    transaction_index: &mut dyn FnMut(&str, u64) -> Result<u32, IndexError>,
 ) -> Result<Vec<(u64, TransferRow)>, IndexError> {
     let token = item
         .get("token")
@@ -117,6 +131,7 @@ pub fn token_transfer_rows(
     } else {
         "erc20_transfer"
     };
+    let tx_index = transaction_index(&tx_hash, height)?;
     let ordinal = log_index + 1;
     let decoded = serde_json::json!({
         "block_number": height.to_string(),
@@ -134,6 +149,7 @@ pub fn token_transfer_rows(
                 (height << 36) | (ordinal << 1) | bit,
                 TransferRow {
                     height_or_seq: height,
+                    tx_index,
                     kind: kind.to_owned(),
                     direction,
                     account: account.to_owned(),
@@ -181,6 +197,7 @@ pub fn transaction_rows(
     if height >= BLOCK_LIMIT || position >= INDEX_LIMIT {
         return Err(decode_error("position"));
     }
+    let tx_index = u32::try_from(position).map_err(|_| decode_error("position"))?;
     let decoded = serde_json::json!({
         "block_number": height.to_string(),
         "value_wei": amount,
@@ -193,6 +210,7 @@ pub fn transaction_rows(
                 (height << 36) | (1 << 35) | (position << 1) | bit,
                 TransferRow {
                     height_or_seq: height,
+                    tx_index,
                     kind: "native_transfer".to_owned(),
                     direction,
                     account: account.to_owned(),
@@ -283,17 +301,49 @@ impl ExplorerApi {
             return Ok(());
         }
         let mut rows = Vec::new();
-        self.walk(
-            &format!("/api/v2/addresses/{account}/token-transfers"),
-            |item| {
-                rows.extend(token_transfer_rows(store, account, self.floor, item)?);
-                Ok(())
-            },
-        )?;
+        let mut positions: HashMap<String, (u64, u32)> = HashMap::new();
         self.walk(
             &format!("/api/v2/addresses/{account}/transactions"),
             |item| {
+                if let (Some(hash), Some(position)) = (
+                    item.get("hash").and_then(Value::as_str),
+                    transaction_position(item),
+                ) {
+                    positions.insert(hash.to_ascii_lowercase(), position);
+                }
                 rows.extend(transaction_rows(account, self.floor, item)?);
+                Ok(())
+            },
+        )?;
+        let mut transaction_index = |hash: &str, height: u64| -> Result<u32, IndexError> {
+            let (block, index) = if let Some(position) = positions.get(hash) {
+                *position
+            } else {
+                let document = self
+                    .endpoint
+                    .get_json(&format!("/api/v2/transactions/{hash}"))?;
+                let position = transaction_position(&document)
+                    .ok_or_else(|| decode_error("transaction position"))?;
+                positions.insert(hash.to_owned(), position);
+                position
+            };
+            if block != height {
+                return Err(IndexError::Integrity(format!(
+                    "explorer places transaction {hash} at block {block}, its transfer at {height}"
+                )));
+            }
+            Ok(index)
+        };
+        self.walk(
+            &format!("/api/v2/addresses/{account}/token-transfers"),
+            |item| {
+                rows.extend(token_transfer_rows(
+                    store,
+                    account,
+                    self.floor,
+                    item,
+                    &mut transaction_index,
+                )?);
                 Ok(())
             },
         )?;
@@ -311,7 +361,7 @@ mod tests {
 
     use super::ExplorerApi;
     use crate::api::{route_with, Readiness};
-    use crate::store::{Store, Unit, EXPLORER_CURSOR};
+    use crate::store::{Position, Store, Unit};
     use crate::transport::{Endpoint, Security};
 
     const ACCOUNT: &str = "0x9f2a6c0e3b1d4e5f60718293a4b5c6d7e8f90a1b";
@@ -346,14 +396,30 @@ mod tests {
                     .to_owned();
                 counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let token = format!("/api/v2/addresses/{ACCOUNT}/token-transfers");
+                let lookup = target
+                    .strip_prefix("/api/v2/transactions/0xaa")
+                    .and_then(|hash| {
+                        let block = hash.get(hash.len().checked_sub(4)?..)?;
+                        let position = match block {
+                            "1100" => 2,
+                            "1200" => 0,
+                            "1300" => 1,
+                            _ => return None,
+                        };
+                        Some(format!(
+                            "{{\"hash\":\"0xaa{hash}\",\"block_number\":{block},\"position\":{position}}}"
+                        ))
+                    });
                 let body = if target == token {
-                    TOKEN_PAGE_ONE
+                    TOKEN_PAGE_ONE.to_owned()
                 } else if target == format!("{token}?block_number=1200&index=4") {
-                    TOKEN_PAGE_TWO
+                    TOKEN_PAGE_TWO.to_owned()
                 } else if target == format!("/api/v2/addresses/{ACCOUNT}/transactions") {
-                    TRANSACTIONS
+                    TRANSACTIONS.to_owned()
+                } else if let Some(document) = lookup {
+                    document
                 } else {
-                    "{\"message\":\"Not found\"}"
+                    "{\"message\":\"Not found\"}".to_owned()
                 };
                 let status = if body.starts_with("{\"message\"") {
                     "404 Not Found"
@@ -381,6 +447,7 @@ mod tests {
             boundary: 5000,
             transfers: vec![crate::store::TransferRow {
                 height_or_seq: 5000,
+                tx_index: 0,
                 kind: "native_transfer".to_owned(),
                 direction: "in",
                 account: ACCOUNT.to_owned(),
@@ -392,6 +459,7 @@ mod tests {
                 decoded,
             }],
             events: Vec::new(),
+            holders: Vec::new(),
             assets: Vec::new(),
             accounts: vec![ACCOUNT.to_owned()],
         }
@@ -436,20 +504,33 @@ mod tests {
             .as_array()
             .unwrap_or_else(|| panic!("no items"));
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0]["tx_id"], "0xnode");
-        assert_eq!(items[0]["final_basis"], "local_finality_depth");
-        assert_eq!(items[1]["height_or_seq"], "1300");
-        assert_eq!(items[1]["kind"], "erc20_transfer");
-        assert_eq!(items[1]["direction"], "out");
-        assert_eq!(items[1]["amount"], "250000000000000000");
-        assert_eq!(items[1]["final_basis"], "explorer_api");
+        assert_eq!(items[0]["height_or_seq"], "1100");
+        assert_eq!(items[0]["tx_index"], "2");
+        assert_eq!(items[0]["ordinal"], "4");
+        assert_eq!(
+            items[0]["asset"],
+            "evm:0x21f7cf8e59a3f3c3b2c3f0c5e8b5e43e8b1d6a0b"
+        );
+        assert_eq!(items[0]["final_basis"], "explorer_api");
+        assert_eq!(items[1]["height_or_seq"], "1200");
+        assert_eq!(items[1]["tx_index"], "0");
+        assert_eq!(items[1]["direction"], "in");
+        assert_eq!(items[1]["counterparty"], Value::Null);
         let cursor = first["next_cursor"]
             .as_str()
             .unwrap_or_else(|| panic!("no cursor"))
             .to_owned();
-        assert!(cursor.parse::<u64>().unwrap_or_default() > EXPLORER_CURSOR);
+        assert_eq!(
+            cursor,
+            Position {
+                height: 1200,
+                tx_index: 0,
+                log_index: 4
+            }
+            .encode()
+        );
         let requests = served.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(requests, 3);
+        assert_eq!(requests, 6);
 
         let second = body(&route_with(
             &store,
@@ -464,11 +545,15 @@ mod tests {
             .iter()
             .filter_map(|item| item["height_or_seq"].as_str())
             .collect();
-        assert_eq!(heights, vec!["1250", "1200"]);
+        assert_eq!(heights, vec!["1250", "1300"]);
         assert_eq!(items[0]["kind"], "native_transfer");
         assert_eq!(items[0]["direction"], "in");
-        assert_eq!(items[1]["direction"], "in");
-        assert_eq!(items[1]["counterparty"], Value::Null);
+        assert_eq!(items[0]["tx_index"], "3");
+        assert_eq!(items[0]["log_index"], "0");
+        assert_eq!(items[1]["kind"], "erc20_transfer");
+        assert_eq!(items[1]["direction"], "out");
+        assert_eq!(items[1]["tx_index"], "1");
+        assert_eq!(items[1]["amount"], "250000000000000000");
         let cursor = second["next_cursor"]
             .as_str()
             .unwrap_or_else(|| panic!("no cursor"))
@@ -484,11 +569,8 @@ mod tests {
             .as_array()
             .unwrap_or_else(|| panic!("no items"));
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["height_or_seq"], "1100");
-        assert_eq!(
-            items[0]["asset"],
-            "evm:0x21f7cf8e59a3f3c3b2c3f0c5e8b5e43e8b1d6a0b"
-        );
+        assert_eq!(items[0]["tx_id"], "0xnode");
+        assert_eq!(items[0]["final_basis"], "local_finality_depth");
         assert_eq!(third["next_cursor"], Value::Null);
         assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), requests);
 
@@ -504,7 +586,7 @@ mod tests {
             .iter()
             .filter_map(|item| item["height_or_seq"].as_str())
             .collect();
-        assert_eq!(heights, vec!["5000", "1250"]);
+        assert_eq!(heights, vec!["1250", "5000"]);
     }
 
     #[test]

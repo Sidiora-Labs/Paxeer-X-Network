@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS transfers(
     tx_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL,
     decoded_json TEXT NOT NULL,
+    tx_index INTEGER NOT NULL DEFAULT 0,
     UNIQUE(chain, tx_id, ordinal, direction)
 );
 CREATE INDEX IF NOT EXISTS transfers_account ON transfers(account, id);
@@ -102,8 +103,26 @@ CREATE TABLE IF NOT EXISTS explorer_transfers(
     tx_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL,
     decoded_json TEXT NOT NULL,
+    tx_index INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(account, key)
 );
+CREATE TABLE IF NOT EXISTS holder_records(
+    chain TEXT NOT NULL,
+    height INTEGER NOT NULL,
+    tx_index INTEGER NOT NULL,
+    log_index INTEGER NOT NULL,
+    holder TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    contract TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    state TEXT NOT NULL,
+    tx_id TEXT NOT NULL,
+    decoded_json TEXT NOT NULL,
+    PRIMARY KEY(chain, height, tx_index, log_index)
+);
+CREATE INDEX IF NOT EXISTS holder_records_holder ON holder_records(holder, kind, height, tx_index, log_index);
+CREATE INDEX IF NOT EXISTS holder_records_record ON holder_records(holder, contract, record_id);
 CREATE TABLE IF NOT EXISTS explorer_accounts(
     account TEXT PRIMARY KEY,
     imported_at INTEGER NOT NULL
@@ -158,8 +177,6 @@ CREATE TABLE IF NOT EXISTS chain_links(
 /// Evidence source of the published local stability level: the configured
 /// reorg depth below the indexed head. It never implies LayerX settlement.
 pub const STABILITY_SOURCE: &str = "local_finality_depth";
-/// Cursors at or above this value continue inside the explorer-imported rows.
-pub const EXPLORER_CURSOR: u64 = 1 << 62;
 /// Explorer row keys are strictly below this value.
 pub const EXPLORER_KEY_LIMIT: u64 = (1 << 62) - 1;
 /// The provenance of explorer-imported rows.
@@ -171,10 +188,71 @@ pub const SETTLEMENT_UNVERIFIED: &str = "unverified";
 /// anchor evidence bound to the receipt.
 pub const SETTLEMENT_UNAVAILABLE_REASON: &str = "no_verified_checkpoint_evidence";
 
+/// A history position: the block height (or `LayerX` sequence), the index of
+/// the source transaction in it and the log index of the row inside that
+/// block. Native value rows sit at log index 0 together with their
+/// transaction's first log, ordered before it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Position {
+    pub height: u64,
+    pub tx_index: u32,
+    pub log_index: u32,
+}
+
+impl Position {
+    /// The length of a cursor's text form.
+    pub const TEXT_LENGTH: usize = 32;
+
+    /// The cursor text: 32 lowercase hex digits, the big-endian `u64`
+    /// height, then the big-endian `u32` transaction and log indexes.
+    #[must_use]
+    pub fn encode(&self) -> String {
+        format!(
+            "{:016x}{:08x}{:08x}",
+            self.height, self.tx_index, self.log_index
+        )
+    }
+
+    /// Parses a cursor text exactly as [`Position::encode`] writes it.
+    /// Anything else, including upper-case digits, another length or a
+    /// height the store cannot hold, is refused.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        if text.len() != Self::TEXT_LENGTH
+            || !text
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return None;
+        }
+        let height = u64::from_str_radix(&text[..16], 16).ok()?;
+        i64::try_from(height).ok()?;
+        Some(Self {
+            height,
+            tx_index: u32::from_str_radix(&text[16..24], 16).ok()?,
+            log_index: u32::from_str_radix(&text[24..], 16).ok()?,
+        })
+    }
+
+    fn from_stored(height: i64, tx_index: i64, log_index: i64) -> Result<Self, IndexError> {
+        let index = |value: i64| {
+            u32::try_from(value)
+                .map_err(|_| IndexError::Store(format!("stored index {value} is not a u32")))
+        };
+        Ok(Self {
+            height: unsigned(height)?,
+            tx_index: index(tx_index)?,
+            log_index: index(log_index)?,
+        })
+    }
+}
+
 /// One decoded transfer leg.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferRow {
     pub height_or_seq: u64,
+    /// The index of the source transaction in its block.
+    pub tx_index: u32,
     pub kind: String,
     /// `in` for a credit to `account`, `out` for a debit from it.
     pub direction: &'static str,
@@ -197,6 +275,23 @@ pub struct EventRow {
     pub account: Option<String>,
     pub tx_id: String,
     pub ordinal: u64,
+    pub decoded: Value,
+}
+
+/// One budget or grant record event, keyed by the transaction sender as
+/// its holder.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HolderRow {
+    pub position: Position,
+    pub holder: String,
+    /// `budget` or `grant`.
+    pub kind: &'static str,
+    pub contract: &'static str,
+    pub record_id: String,
+    pub event: &'static str,
+    /// The record state this event leaves: `active`, `revoked` or `closed`.
+    pub state: &'static str,
+    pub tx_id: String,
     pub decoded: Value,
 }
 
@@ -226,6 +321,7 @@ pub struct Unit {
     pub boundary: u64,
     pub transfers: Vec<TransferRow>,
     pub events: Vec<EventRow>,
+    pub holders: Vec<HolderRow>,
     pub assets: Vec<AssetRow>,
     pub accounts: Vec<String>,
 }
@@ -289,6 +385,15 @@ fn unsigned(value: i64) -> Result<u64, IndexError> {
     u64::try_from(value).map_err(|_| IndexError::Store(format!("stored {value} is negative")))
 }
 
+/// A transfer ordinal as the log index of its history position.
+fn log_index(ordinal: u64) -> Result<u32, IndexError> {
+    u32::try_from(ordinal).map_err(|_| {
+        IndexError::Integrity(format!(
+            "transfer ordinal {ordinal} exceeds the u32 log index of a history position"
+        ))
+    })
+}
+
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -299,6 +404,157 @@ fn now() -> i64 {
 
 fn parse_json(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or(Value::Null)
+}
+
+/// The log index of a row's history position: a log's ordinal is its log
+/// index plus one and a native value row's ordinal is 0, so the native row
+/// shares log index 0 with its transaction's first log and sorts before it.
+const POSITION_LOG_INDEX: &str = "(MAX(ordinal, 1) - 1)";
+
+/// The history row layout shared by the indexed and explorer-imported
+/// branches; `{filter}` is the position predicate over `?4`..`?6`.
+const HISTORY_ROWS: &str = "
+SELECT id, height_or_seq, chain, kind, direction, account, counterparty, asset, amount, tx_id,
+    ordinal, decoded_json,
+    (SELECT document FROM settlement_evidence evidence WHERE evidence.chain = transfers.chain
+     AND evidence.activity_id = transfers.tx_id AND evidence.sequence = transfers.height_or_seq),
+    tx_index, 0 AS source
+FROM transfers WHERE account = ?1 AND (?2 IS NULL OR kind = ?2) AND {filter}
+UNION ALL
+SELECT key, height_or_seq, NULL, kind, direction, account, counterparty, asset, amount, tx_id,
+    ordinal, decoded_json, NULL, tx_index, 1 AS source
+FROM explorer_transfers WHERE ?3 AND account = ?1 AND (?2 IS NULL OR kind = ?2) AND {filter}
+ORDER BY 2, 14, 11, 15, 1 LIMIT ?7";
+
+/// One account's history rows, indexed and (when `explorer`) imported.
+struct HistoryQuery<'a> {
+    connection: &'a Connection,
+    finality: &'a [(String, Option<i64>)],
+    account: &'a str,
+    kind: Option<&'a str>,
+    explorer: bool,
+}
+
+impl HistoryQuery<'_> {
+    /// Up to `fetch` rows strictly after `cursor`, in position order.
+    fn after(
+        &self,
+        cursor: Option<Position>,
+        fetch: usize,
+    ) -> Result<Vec<(Position, Value)>, IndexError> {
+        self.read(
+            &format!(
+                "(?4 IS NULL OR (height_or_seq, tx_index, {POSITION_LOG_INDEX}) > (?4, ?5, ?6))"
+            ),
+            cursor,
+            i64::try_from(fetch).unwrap_or(i64::MAX),
+        )
+    }
+
+    /// Every row at `position`.
+    fn at(&self, position: Position) -> Result<Vec<(Position, Value)>, IndexError> {
+        self.read(
+            &format!("(height_or_seq, tx_index, {POSITION_LOG_INDEX}) = (?4, ?5, ?6)"),
+            Some(position),
+            -1,
+        )
+    }
+
+    fn read(
+        &self,
+        filter: &str,
+        position: Option<Position>,
+        fetch: i64,
+    ) -> Result<Vec<(Position, Value)>, IndexError> {
+        let (height, tx_index, log_index) = match position {
+            Some(position) => (
+                Some(signed(position.height)?),
+                Some(position.tx_index),
+                Some(position.log_index),
+            ),
+            None => (None, None, None),
+        };
+        let mut statement = self
+            .connection
+            .prepare(&HISTORY_ROWS.replace("{filter}", filter))?;
+        let rows = statement
+            .query_map(
+                params![
+                    self.account,
+                    self.kind,
+                    self.explorer,
+                    height,
+                    tx_index,
+                    log_index,
+                    fetch
+                ],
+                |row| {
+                    let document = if row.get::<_, i64>(14)? == 0 {
+                        Store::transfer_document(row, self.finality)
+                    } else {
+                        Store::explorer_document(row)?
+                    };
+                    Ok((
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(13)?,
+                        row.get::<_, i64>(10)?,
+                        document,
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter()
+            .map(|(height, tx_index, ordinal, document)| {
+                Ok((
+                    Position::from_stored(height, tx_index, ordinal.max(1) - 1)?,
+                    document,
+                ))
+            })
+            .collect()
+    }
+}
+
+/// One stored holder record event.
+struct RecordEvent {
+    height: i64,
+    tx_index: i64,
+    log_index: i64,
+    event: String,
+    state: String,
+    tx_id: String,
+    decoded: String,
+}
+
+impl RecordEvent {
+    fn read(row: &Row<'_>, offset: usize) -> rusqlite::Result<Self> {
+        Ok(Self {
+            height: row.get(offset)?,
+            tx_index: row.get(offset + 1)?,
+            log_index: row.get(offset + 2)?,
+            event: row.get(offset + 3)?,
+            state: row.get(offset + 4)?,
+            tx_id: row.get(offset + 5)?,
+            decoded: row.get(offset + 6)?,
+        })
+    }
+
+    fn position(&self) -> Result<Position, IndexError> {
+        Position::from_stored(self.height, self.tx_index, self.log_index)
+    }
+
+    fn document(&self) -> Result<Value, IndexError> {
+        let position = self.position()?;
+        Ok(json!({
+            "event": self.event,
+            "state": self.state,
+            "height": position.height.to_string(),
+            "tx_index": position.tx_index.to_string(),
+            "log_index": position.log_index.to_string(),
+            "cursor": position.encode(),
+            "tx_id": self.tx_id,
+            "decoded": parse_json(&self.decoded),
+        }))
+    }
 }
 
 impl Store {
@@ -342,6 +598,7 @@ impl Store {
         if depth_column == 0 {
             connection.execute_batch("ALTER TABLE cursors ADD COLUMN stability_depth TEXT")?;
         }
+        Self::migrate_positions(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -374,6 +631,44 @@ impl Store {
                  SELECT chain, first_seen, account FROM accounts;
              INSERT OR IGNORE INTO account_observations(chain, position, account)
                  SELECT chain, last_seen, account FROM accounts;",
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Adds the transaction index to a store written before history paged
+    /// by position. Node-indexed rows keep their place at index 0; the
+    /// explorer import is a cache, so it is dropped and read again with
+    /// its transaction indexes on the account's next history read.
+    fn migrate_positions(connection: &mut Connection) -> Result<(), IndexError> {
+        let has_column = |table: &str| -> Result<bool, IndexError> {
+            let count: i64 = connection.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = 'tx_index'",
+                params![table],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        };
+        let transfers = has_column("transfers")?;
+        let explorer = has_column("explorer_transfers")?;
+        let transaction = connection.transaction()?;
+        if !transfers {
+            transaction.execute_batch(
+                "ALTER TABLE transfers ADD COLUMN tx_index INTEGER NOT NULL DEFAULT 0",
+            )?;
+        }
+        if !explorer {
+            transaction.execute_batch(
+                "ALTER TABLE explorer_transfers ADD COLUMN tx_index INTEGER NOT NULL DEFAULT 0;
+                 DELETE FROM explorer_transfers;
+                 DELETE FROM explorer_accounts;",
+            )?;
+        }
+        transaction.execute_batch(
+            "CREATE INDEX IF NOT EXISTS transfers_account_position
+                 ON transfers(account, height_or_seq, tx_index, ordinal);
+             CREATE INDEX IF NOT EXISTS explorer_transfers_position
+                 ON explorer_transfers(account, height_or_seq, tx_index, ordinal);",
         )?;
         transaction.commit()?;
         Ok(())
@@ -705,8 +1000,8 @@ impl Store {
         for transfer in &unit.transfers {
             transaction.execute(
                 "INSERT INTO transfers(height_or_seq, chain, kind, direction, account, counterparty,
-                    asset, amount, tx_id, ordinal, decoded_json)
-                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    asset, amount, tx_id, ordinal, decoded_json, tx_index)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     signed(transfer.height_or_seq)?,
                     unit.chain,
@@ -717,11 +1012,33 @@ impl Store {
                     transfer.asset,
                     transfer.amount,
                     transfer.tx_id,
-                    signed(transfer.ordinal)?,
-                    transfer.decoded.to_string()
+                    log_index(transfer.ordinal)?,
+                    transfer.decoded.to_string(),
+                    transfer.tx_index
                 ],
             )?;
             accounts.push(&transfer.account);
+        }
+        for record in &unit.holders {
+            transaction.execute(
+                "INSERT INTO holder_records(chain, height, tx_index, log_index, holder, kind,
+                    contract, record_id, event, state, tx_id, decoded_json)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    unit.chain,
+                    signed(record.position.height)?,
+                    record.position.tx_index,
+                    record.position.log_index,
+                    record.holder,
+                    record.kind,
+                    record.contract,
+                    record.record_id,
+                    record.event,
+                    record.state,
+                    record.tx_id,
+                    record.decoded.to_string()
+                ],
+            )?;
         }
         for event in &unit.events {
             transaction.execute(
@@ -962,6 +1279,10 @@ impl Store {
                     params![chain, boundary],
                 )?;
                 transaction.execute(
+                    "DELETE FROM holder_records WHERE chain = ?1 AND height > ?2",
+                    params![chain, boundary],
+                )?;
+                transaction.execute(
                     "DELETE FROM chain_links WHERE chain = ?1 AND position > ?2",
                     params![chain, signed(fork)?],
                 )?;
@@ -976,6 +1297,7 @@ impl Store {
                     "DELETE FROM transfers WHERE chain = ?1",
                     "DELETE FROM settlement_evidence WHERE chain = ?1",
                     "DELETE FROM events WHERE chain = ?1",
+                    "DELETE FROM holder_records WHERE chain = ?1",
                     "DELETE FROM chain_links WHERE chain = ?1",
                     "DELETE FROM cursors WHERE chain = ?1",
                 ] {
@@ -1163,37 +1485,20 @@ impl Store {
         Ok(())
     }
 
-    /// Newest-first transfer history of `account`. `cursor` is the exclusive
-    /// upper row id returned as `next_cursor` by the previous page.
+    /// Oldest-first transfer history of `account`'s indexed rows, paged
+    /// strictly after `cursor`. See [`Store::merged_history`] for the
+    /// paging rules.
     ///
     /// # Errors
     /// Returns [`IndexError::Store`] on SQLite failure.
     pub fn history(
         &self,
         account: &str,
-        cursor: Option<u64>,
+        cursor: Option<Position>,
         limit: usize,
         kind: Option<&str>,
     ) -> Result<Page, IndexError> {
-        let connection = self.lock()?;
-        let finality = Self::finality(&connection)?;
-        let upper = cursor.map_or(Ok(i64::MAX), signed)?;
-        let fetch = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
-        let mut statement = connection.prepare(
-            "SELECT id, height_or_seq, chain, kind, direction, account, counterparty, asset, amount,
-                tx_id, ordinal, decoded_json,
-                (SELECT document FROM settlement_evidence evidence WHERE evidence.chain = transfers.chain
-                 AND evidence.activity_id = transfers.tx_id AND evidence.sequence = transfers.height_or_seq)
-             FROM transfers
-             WHERE account = ?1 AND id < ?2 AND (?3 IS NULL OR kind = ?3)
-             ORDER BY id DESC LIMIT ?4",
-        )?;
-        let rows = statement
-            .query_map(params![account, upper, kind, fetch], |row| {
-                Ok(Self::transfer_document(row, &finality))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self::page(rows, limit))
+        self.history_page(account, cursor, limit, kind, false)
     }
 
     /// Whether the explorer history of `account` has been imported in full.
@@ -1233,8 +1538,8 @@ impl Store {
             }
             transaction.execute(
                 "INSERT OR IGNORE INTO explorer_transfers(account, key, height_or_seq, kind, direction,
-                     counterparty, asset, amount, tx_id, ordinal, decoded_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     counterparty, asset, amount, tx_id, ordinal, decoded_json, tx_index)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     account,
                     signed(*key)?,
@@ -1245,8 +1550,9 @@ impl Store {
                     row.asset,
                     row.amount,
                     row.tx_id,
-                    signed(row.ordinal)?,
+                    log_index(row.ordinal)?,
                     row.decoded.to_string(),
+                    row.tx_index,
                 ],
             )?;
         }
@@ -1260,87 +1566,169 @@ impl Store {
         Ok(())
     }
 
-    /// One page of `account` history: the indexed rows newest first, then
-    /// the explorer-imported rows below the indexed range, newest first.
-    /// A cursor at or above [`EXPLORER_CURSOR`] continues inside the
-    /// explorer rows.
+    /// One page of `account` history over the indexed rows and the
+    /// explorer-imported rows together, in `(height, tx_index, log_index)`
+    /// order, strictly after `cursor`. `next_cursor` is the position of the
+    /// page's last row when more rows follow. Rows that share one position
+    /// (the two legs of a self-transfer) never straddle a page boundary, so
+    /// a page may exceed `limit` by the rest of its last position's rows; a
+    /// `limit` of 0 reads as 1.
     ///
     /// # Errors
     /// Returns [`IndexError::Store`] on SQLite failure.
     pub fn merged_history(
         &self,
         account: &str,
-        cursor: Option<u64>,
+        cursor: Option<Position>,
         limit: usize,
         kind: Option<&str>,
     ) -> Result<Page, IndexError> {
-        let (mut items, upper) = match cursor {
-            Some(cursor) if cursor >= EXPLORER_CURSOR => (Vec::new(), cursor - EXPLORER_CURSOR),
-            _ => {
-                let page = self.history(account, cursor, limit, kind)?;
-                if page.next_cursor.is_some() {
-                    return Ok(page);
-                }
-                (page.items, EXPLORER_KEY_LIMIT)
-            }
-        };
-        let wanted = limit.saturating_sub(items.len()).saturating_add(1);
+        self.history_page(account, cursor, limit, kind, true)
+    }
+
+    fn history_page(
+        &self,
+        account: &str,
+        cursor: Option<Position>,
+        limit: usize,
+        kind: Option<&str>,
+        explorer: bool,
+    ) -> Result<Page, IndexError> {
+        let limit = limit.max(1);
         let connection = self.lock()?;
+        let finality = Self::finality(&connection)?;
+        let query = HistoryQuery {
+            connection: &connection,
+            finality: &finality,
+            account,
+            kind,
+            explorer,
+        };
+        let mut rows = query.after(cursor, limit.saturating_add(1))?;
+        let mut next_cursor = None;
+        if let (Some((boundary, _)), Some((following, _))) = (rows.get(limit - 1), rows.get(limit))
+        {
+            let boundary = *boundary;
+            let more = if *following > boundary {
+                rows.truncate(limit);
+                true
+            } else {
+                rows.retain(|(position, _)| *position < boundary);
+                rows.extend(query.at(boundary)?);
+                !query.after(Some(boundary), 1)?.is_empty()
+            };
+            next_cursor = more.then(|| boundary.encode());
+        }
+        Ok(Page {
+            items: rows.into_iter().map(|(_, value)| value).collect(),
+            next_cursor,
+        })
+    }
+
+    /// One page of `holder`'s budget or grant records (`kind`, or both),
+    /// one item per record at the position of its first event, carrying the
+    /// state its latest event left, paged strictly after `cursor`.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on `SQLite` failure.
+    pub fn holder_records(
+        &self,
+        holder: &str,
+        kind: Option<&str>,
+        cursor: Option<Position>,
+        limit: usize,
+    ) -> Result<Page, IndexError> {
+        let limit = limit.max(1);
+        let connection = self.lock()?;
+        let boundary = Self::finality(&connection)?
+            .into_iter()
+            .find(|(chain, _)| chain == crate::paxeer::CHAIN)
+            .and_then(|(_, boundary)| boundary);
         let mut statement = connection.prepare(
-            "SELECT key, height_or_seq, kind, direction, account, counterparty, asset, amount,
-                tx_id, ordinal, decoded_json
-             FROM explorer_transfers
-             WHERE account = ?1 AND key < ?2 AND (?3 IS NULL OR kind = ?3)
-             ORDER BY key DESC LIMIT ?4",
+            "WITH ranked AS (
+                SELECT height, tx_index, log_index, kind, contract, record_id, event, state, tx_id,
+                    decoded_json,
+                    ROW_NUMBER() OVER (PARTITION BY contract, record_id
+                        ORDER BY height, tx_index, log_index) AS opened_rank,
+                    ROW_NUMBER() OVER (PARTITION BY contract, record_id
+                        ORDER BY height DESC, tx_index DESC, log_index DESC) AS latest_rank
+                FROM holder_records WHERE chain = ?1 AND holder = ?2 AND (?3 IS NULL OR kind = ?3)
+             )
+             SELECT opened.height, opened.tx_index, opened.log_index, opened.event, opened.state,
+                 opened.tx_id, opened.decoded_json, opened.kind, opened.contract, opened.record_id,
+                 latest.height, latest.tx_index, latest.log_index, latest.event, latest.state,
+                 latest.tx_id, latest.decoded_json
+             FROM ranked opened JOIN ranked latest ON latest.contract = opened.contract
+                 AND latest.record_id = opened.record_id AND latest.latest_rank = 1
+             WHERE opened.opened_rank = 1 AND (?4 IS NULL
+                 OR (opened.height, opened.tx_index, opened.log_index) > (?4, ?5, ?6))
+             ORDER BY opened.height, opened.tx_index, opened.log_index LIMIT ?7",
         )?;
-        let explorer = statement
+        let (height, tx_index, log_index) = cursor.map_or(Ok((None, None, None)), |cursor| {
+            Ok::<_, IndexError>((
+                Some(signed(cursor.height)?),
+                Some(cursor.tx_index),
+                Some(cursor.log_index),
+            ))
+        })?;
+        let fetch = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+        let raw = statement
             .query_map(
-                params![account, signed(upper)?, kind, i64::try_from(wanted).unwrap_or(i64::MAX)],
+                params![
+                    crate::paxeer::CHAIN,
+                    holder,
+                    kind,
+                    height,
+                    tx_index,
+                    log_index,
+                    fetch
+                ],
                 |row| {
-                    let key: i64 = row.get(0)?;
-                    let decoded: String = row.get(10)?;
-                    let id = EXPLORER_CURSOR + u64::try_from(key).unwrap_or_default();
                     Ok((
-                        key,
-                        json!({
-                            "id": id.to_string(),
-                            "height_or_seq": row.get::<_, i64>(1)?.to_string(),
-                            "chain": crate::paxeer::CHAIN,
-                            "kind": row.get::<_, String>(2)?,
-                            "direction": row.get::<_, String>(3)?,
-                            "account": row.get::<_, String>(4)?,
-                            "counterparty": row.get::<_, Option<String>>(5)?,
-                            "asset": row.get::<_, String>(6)?,
-                            "amount": row.get::<_, String>(7)?,
-                            "tx_id": row.get::<_, String>(8)?,
-                            "ordinal": row.get::<_, i64>(9)?.to_string(),
-                            "final": true,
-                            "final_basis": EXPLORER_SOURCE,
-                            "stability": {
-                                "level": "explorer_recorded",
-                                "source": EXPLORER_SOURCE,
-                                "finalized_boundary": Value::Null,
-                            },
-                            "settlement": {"level": SETTLEMENT_UNVERIFIED, "source": Value::Null, "reason": SETTLEMENT_UNAVAILABLE_REASON},
-                            "decoded": parse_json(&decoded),
-                        }),
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
+                        RecordEvent::read(row, 0)?,
+                        RecordEvent::read(row, 10)?,
                     ))
                 },
             )?
             .collect::<Result<Vec<_>, _>>()?;
-        let room = limit.saturating_sub(items.len());
-        let more = explorer.len() > room;
-        let mut next_cursor = None;
-        if more {
-            next_cursor = Some(match explorer[..room].last() {
-                Some((key, _)) => {
-                    (EXPLORER_CURSOR + u64::try_from(*key).unwrap_or_default()).to_string()
-                }
-                None => (EXPLORER_CURSOR + EXPLORER_KEY_LIMIT).to_string(),
-            });
+        let mut rows = Vec::with_capacity(raw.len());
+        for (kind, contract, record_id, opened, latest) in raw {
+            let position = opened.position()?;
+            let final_record = boundary.is_some_and(|boundary| latest.height <= boundary);
+            rows.push((
+                position,
+                json!({
+                    "kind": kind,
+                    "contract": contract,
+                    "record_id": record_id,
+                    "holder": holder,
+                    "state": latest.state,
+                    "final": final_record,
+                    "final_basis": STABILITY_SOURCE,
+                    "stability": {
+                        "level": if final_record { "depth_stable" } else { "reversible" },
+                        "source": STABILITY_SOURCE,
+                        "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
+                    },
+                    "opened": opened.document()?,
+                    "latest": latest.document()?,
+                }),
+            ));
         }
-        items.extend(explorer.into_iter().take(room).map(|(_, value)| value));
-        Ok(Page { items, next_cursor })
+        let more = rows.len() > limit;
+        rows.truncate(limit);
+        let next_cursor = if more {
+            rows.last().map(|(position, _)| position.encode())
+        } else {
+            None
+        };
+        Ok(Page {
+            items: rows.into_iter().map(|(_, value)| value).collect(),
+            next_cursor,
+        })
     }
 
     fn finality(connection: &Connection) -> Result<Vec<(String, Option<i64>)>, IndexError> {
@@ -1351,7 +1739,7 @@ impl Store {
         Ok(rows)
     }
 
-    fn transfer_document(row: &Row<'_>, finality: &[(String, Option<i64>)]) -> (i64, Value) {
+    fn transfer_document(row: &Row<'_>, finality: &[(String, Option<i64>)]) -> Value {
         let id: i64 = row.get(0).unwrap_or_default();
         let position: i64 = row.get(1).unwrap_or_default();
         let chain: String = row.get(2).unwrap_or_default();
@@ -1361,47 +1749,61 @@ impl Store {
             .and_then(|(_, boundary)| *boundary);
         let final_row = boundary.is_some_and(|boundary| position <= boundary);
         let decoded: String = row.get(11).unwrap_or_default();
-        (
-            id,
-            json!({
-                "id": id.to_string(),
-                "height_or_seq": position.to_string(),
-                "chain": chain,
-                "kind": row.get::<_, String>(3).unwrap_or_default(),
-                "direction": row.get::<_, String>(4).unwrap_or_default(),
-                "account": row.get::<_, String>(5).unwrap_or_default(),
-                "counterparty": row.get::<_, Option<String>>(6).unwrap_or_default(),
-                "asset": row.get::<_, String>(7).unwrap_or_default(),
-                "amount": row.get::<_, String>(8).unwrap_or_default(),
-                "tx_id": row.get::<_, String>(9).unwrap_or_default(),
-                "ordinal": row.get::<_, i64>(10).unwrap_or_default().to_string(),
-                "final": final_row,
-                "final_basis": STABILITY_SOURCE,
-                "stability": {
-                    "level": if final_row { "depth_stable" } else { "reversible" },
-                    "source": STABILITY_SOURCE,
-                    "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
-                },
-                "settlement": row.get::<_, Option<String>>(12).unwrap_or_default().map_or_else(
-                    || json!({"level": SETTLEMENT_UNVERIFIED, "source": Value::Null, "reason": SETTLEMENT_UNAVAILABLE_REASON}),
-                    |document| parse_json(&document)),
-                "decoded": parse_json(&decoded),
-            }),
-        )
+        json!({
+            "id": id.to_string(),
+            "height_or_seq": position.to_string(),
+            "tx_index": row.get::<_, i64>(13).unwrap_or_default().to_string(),
+            "log_index": (row.get::<_, i64>(10).unwrap_or_default().max(1) - 1).to_string(),
+            "chain": chain,
+            "kind": row.get::<_, String>(3).unwrap_or_default(),
+            "direction": row.get::<_, String>(4).unwrap_or_default(),
+            "account": row.get::<_, String>(5).unwrap_or_default(),
+            "counterparty": row.get::<_, Option<String>>(6).unwrap_or_default(),
+            "asset": row.get::<_, String>(7).unwrap_or_default(),
+            "amount": row.get::<_, String>(8).unwrap_or_default(),
+            "tx_id": row.get::<_, String>(9).unwrap_or_default(),
+            "ordinal": row.get::<_, i64>(10).unwrap_or_default().to_string(),
+            "final": final_row,
+            "final_basis": STABILITY_SOURCE,
+            "stability": {
+                "level": if final_row { "depth_stable" } else { "reversible" },
+                "source": STABILITY_SOURCE,
+                "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
+            },
+            "settlement": row.get::<_, Option<String>>(12).unwrap_or_default().map_or_else(
+                || json!({"level": SETTLEMENT_UNVERIFIED, "source": Value::Null, "reason": SETTLEMENT_UNAVAILABLE_REASON}),
+                |document| parse_json(&document)),
+            "decoded": parse_json(&decoded),
+        })
     }
 
-    fn page(mut rows: Vec<(i64, Value)>, limit: usize) -> Page {
-        let more = rows.len() > limit;
-        rows.truncate(limit);
-        let next_cursor = if more {
-            rows.last().map(|(id, _)| id.to_string())
-        } else {
-            None
-        };
-        Page {
-            items: rows.into_iter().map(|(_, value)| value).collect(),
-            next_cursor,
-        }
+    /// One explorer-imported row in the [`HISTORY_ROWS`] column layout.
+    fn explorer_document(row: &Row<'_>) -> rusqlite::Result<Value> {
+        let decoded: String = row.get(11)?;
+        Ok(json!({
+            "id": format!("explorer:{}", row.get::<_, i64>(0)?),
+            "height_or_seq": row.get::<_, i64>(1)?.to_string(),
+            "tx_index": row.get::<_, i64>(13)?.to_string(),
+            "log_index": (row.get::<_, i64>(10)?.max(1) - 1).to_string(),
+            "chain": crate::paxeer::CHAIN,
+            "kind": row.get::<_, String>(3)?,
+            "direction": row.get::<_, String>(4)?,
+            "account": row.get::<_, String>(5)?,
+            "counterparty": row.get::<_, Option<String>>(6)?,
+            "asset": row.get::<_, String>(7)?,
+            "amount": row.get::<_, String>(8)?,
+            "tx_id": row.get::<_, String>(9)?,
+            "ordinal": row.get::<_, i64>(10)?.to_string(),
+            "final": true,
+            "final_basis": EXPLORER_SOURCE,
+            "stability": {
+                "level": "explorer_recorded",
+                "source": EXPLORER_SOURCE,
+                "finalized_boundary": Value::Null,
+            },
+            "settlement": {"level": SETTLEMENT_UNVERIFIED, "source": Value::Null, "reason": SETTLEMENT_UNAVAILABLE_REASON},
+            "decoded": parse_json(&decoded),
+        }))
     }
 
     /// Every event row of `chain`, oldest first, for inspection and tests.
@@ -1443,12 +1845,13 @@ impl Store {
             "SELECT id, height_or_seq, chain, kind, direction, account, counterparty, asset, amount,
                 tx_id, ordinal, decoded_json,
                 (SELECT document FROM settlement_evidence evidence WHERE evidence.chain = transfers.chain
-                 AND evidence.activity_id = transfers.tx_id AND evidence.sequence = transfers.height_or_seq)
+                 AND evidence.activity_id = transfers.tx_id AND evidence.sequence = transfers.height_or_seq),
+                tx_index
              FROM transfers WHERE chain = ?1 ORDER BY id",
         )?;
         let rows = statement
             .query_map(params![chain], |row| {
-                Ok(Self::transfer_document(row, &finality).1)
+                Ok(Self::transfer_document(row, &finality))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -1720,6 +2123,7 @@ mod tests {
             transfers: (0..rows)
                 .map(|ordinal| TransferRow {
                     height_or_seq: position,
+                    tx_index: 0,
                     kind: if ordinal % 2 == 0 { "a" } else { "b" }.to_owned(),
                     direction: "in",
                     account: "alice".to_owned(),
@@ -1727,7 +2131,7 @@ mod tests {
                     asset: "coin".to_owned(),
                     amount: (ordinal + 1).to_string(),
                     tx_id: format!("{hash}-tx"),
-                    ordinal: ordinal as u64,
+                    ordinal: ordinal as u64 + 1,
                     decoded: json!({}),
                 })
                 .collect(),
@@ -1736,7 +2140,7 @@ mod tests {
     }
 
     #[test]
-    fn history_pages_newest_first_with_an_exclusive_cursor_and_kind_filter() {
+    fn history_pages_oldest_first_after_a_position_cursor_with_kind_filter() {
         let store = Store::open_in_memory().unwrap_or_else(|error| panic!("{error}"));
         store
             .commit(&unit(1, "h1", "h0", 3), 10)
@@ -1748,23 +2152,28 @@ mod tests {
             .history("alice", None, 2, None)
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(first.items.len(), 2);
-        assert_eq!(first.items[0]["height_or_seq"], "2");
-        assert_eq!(first.items[0]["amount"], "2");
+        assert_eq!(first.items[0]["height_or_seq"], "1");
+        assert_eq!(first.items[0]["amount"], "1");
         let next = first
             .next_cursor
             .clone()
             .unwrap_or_else(|| panic!("no next cursor"));
-        let cursor: u64 = next.parse().unwrap_or(0);
+        assert_eq!(next, "00000000000000010000000000000001");
+        let cursor = Position::parse(&next).unwrap_or_else(|| panic!("bad cursor {next}"));
         let second = store
             .history("alice", Some(cursor), 2, None)
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(second.items.len(), 2);
         assert_eq!(second.items[0]["height_or_seq"], "1");
-        let last_cursor: u64 = second.next_cursor.unwrap_or_default().parse().unwrap_or(0);
+        assert_eq!(second.items[0]["amount"], "3");
+        assert_eq!(second.items[1]["height_or_seq"], "2");
+        let last = second.next_cursor.unwrap_or_default();
+        let last_cursor = Position::parse(&last).unwrap_or_else(|| panic!("bad cursor {last}"));
         let third = store
             .history("alice", Some(last_cursor), 2, None)
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(third.items.len(), 1);
+        assert_eq!(third.items[0]["amount"], "2");
         assert_eq!(third.next_cursor, None);
         let only_b = store
             .history("alice", None, 10, Some("b"))
@@ -1804,7 +2213,7 @@ mod tests {
             .iter()
             .map(|item| item["final"].as_bool().unwrap_or(false))
             .collect();
-        assert_eq!(finals, vec![false, false, true, true, true]);
+        assert_eq!(finals, vec![true, true, true, false, false]);
         assert!(matches!(
             store.rollback("test", Some(2)),
             Err(IndexError::ReorgBeyondFinality { .. })

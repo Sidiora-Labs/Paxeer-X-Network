@@ -294,6 +294,7 @@ fn layerx_unit(
             .iter()
             .map(|asset| TransferRow {
                 height_or_seq: position * 10,
+                tx_index: 0,
                 kind: "lxp_credit".to_owned(),
                 direction: "in",
                 account: account.to_owned(),

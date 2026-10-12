@@ -1,5 +1,6 @@
-//! The read API: `/healthz`, `/readyz`, `/v1/history/{account}`, `/v1/assets` and
-//! `/v1/assets/{id}`, served over plain HTTP on loopback or over TLS.
+//! The read API: `/healthz`, `/readyz`, `/v1/history/{account}`,
+//! `/v1/holders/{address}`, `/v1/assets` and `/v1/assets/{id}`, served over
+//! plain HTTP on loopback or over TLS.
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,7 +14,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::codec::percent_decode;
-use crate::store::{Page, Store};
+use crate::store::{Page, Position, Store};
 use crate::IndexError;
 
 /// Default page size.
@@ -27,15 +28,29 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
+/// The record kinds `/v1/holders/{address}` lists.
+const HOLDER_KINDS: [&str; 2] = ["budget", "grant"];
+
+/// The cursor form a route pages by.
+#[derive(Clone, Copy)]
+enum CursorForm {
+    /// A positive row id below `i64::MAX`.
+    Row,
+    /// A history [`Position`] in its 32-hex text form.
+    Position,
+}
+
 struct Query {
     cursor: Option<u64>,
+    position: Option<Position>,
     limit: usize,
     kind: Option<String>,
 }
 
-fn parse_query(query: Option<&str>, allow_kind: bool) -> Result<Query, Response> {
+fn parse_query(query: Option<&str>, form: CursorForm, allow_kind: bool) -> Result<Query, Response> {
     let mut parsed = Query {
         cursor: None,
+        position: None,
         limit: DEFAULT_LIMIT,
         kind: None,
     };
@@ -52,15 +67,23 @@ fn parse_query(query: Option<&str>, allow_kind: bool) -> Result<Query, Response>
             return Err(refusal(400, "duplicate_query_parameter", None));
         }
         match name.as_str() {
-            "cursor" => {
-                parsed.cursor = Some(
-                    value
-                        .parse::<u64>()
-                        .ok()
-                        .filter(|cursor| *cursor > 0 && i64::try_from(*cursor).is_ok())
-                        .ok_or_else(|| refusal(400, "invalid_cursor", None))?,
-                );
-            }
+            "cursor" => match form {
+                CursorForm::Row => {
+                    parsed.cursor = Some(
+                        value
+                            .parse::<u64>()
+                            .ok()
+                            .filter(|cursor| *cursor > 0 && i64::try_from(*cursor).is_ok())
+                            .ok_or_else(|| refusal(400, "invalid_cursor", None))?,
+                    );
+                }
+                CursorForm::Position => {
+                    parsed.position = Some(
+                        Position::parse(&value)
+                            .ok_or_else(|| refusal(400, "invalid_cursor", None))?,
+                    );
+                }
+            },
             "limit" => {
                 parsed.limit = value
                     .parse::<usize>()
@@ -91,6 +114,33 @@ fn page(page: Page) -> Response {
         200,
         &json!({ "version": 1, "items": page.items, "next_cursor": page.next_cursor }),
     )
+}
+
+/// A history-cursor page with its freshness: the indexed Paxeer height,
+/// the chain height last observed at the source and the readiness document.
+fn fresh_page(store: &Store, readiness: &Readiness, page: Result<Page, IndexError>) -> Response {
+    let freshness = || -> Result<_, IndexError> {
+        Ok((
+            store
+                .cursor(crate::paxeer::CHAIN)?
+                .map(|cursor| cursor.position),
+            store
+                .source_observation(crate::paxeer::CHAIN)?
+                .and_then(|observation| observation.source_head),
+            readiness_document(store, readiness)?,
+        ))
+    };
+    match page.and_then(|page| Ok((page, freshness()?))) {
+        Ok((page, (indexed_height, chain_height, document))) => json(
+            200,
+            &json!({
+                "version": 1, "items": page.items, "next_cursor": page.next_cursor,
+                "indexedHeight": indexed_height, "chainHeight": chain_height,
+                "freshness": document,
+            }),
+        ),
+        Err(error) => failure(&error),
+    }
 }
 
 fn failure(error: &IndexError) -> Response {
@@ -251,7 +301,7 @@ pub fn route_with(store: &Store, readiness: &Readiness, method: &str, target: &s
         };
     }
     if path == "/v1/assets" {
-        let query = match parse_query(query, false) {
+        let query = match parse_query(query, CursorForm::Row, false) {
             Ok(query) => query,
             Err(response) => return response,
         };
@@ -279,7 +329,7 @@ pub fn route_with(store: &Store, readiness: &Readiness, method: &str, target: &s
             Ok(_) => return refusal(404, "not_found", None),
             Err(response) => return response,
         };
-        let query = match parse_query(query, true) {
+        let query = match parse_query(query, CursorForm::Position, true) {
             Ok(query) => query,
             Err(response) => return response,
         };
@@ -289,19 +339,34 @@ pub fn route_with(store: &Store, readiness: &Readiness, method: &str, target: &s
                 return refusal(503, "explorer_unavailable", Some(1));
             }
         }
-        return match (
-            store.merged_history(&account, query.cursor, query.limit, query.kind.as_deref()),
-            readiness_document(store, readiness),
-        ) {
-            (Ok(page), Ok(freshness)) => json(
-                200,
-                &json!({
-                    "version": 1, "items": page.items, "next_cursor": page.next_cursor,
-                    "freshness": freshness,
-                }),
-            ),
-            (Err(error), _) | (_, Err(error)) => failure(&error),
+        return fresh_page(
+            store,
+            readiness,
+            store.merged_history(&account, query.position, query.limit, query.kind.as_deref()),
+        );
+    }
+    if let Some(segment) = path.strip_prefix("/v1/holders/") {
+        let holder = match identifier(segment) {
+            Ok(holder) if !holder.contains('/') => holder.to_ascii_lowercase(),
+            Ok(_) => return refusal(404, "not_found", None),
+            Err(response) => return response,
         };
+        let query = match parse_query(query, CursorForm::Position, true) {
+            Ok(query) => query,
+            Err(response) => return response,
+        };
+        if query
+            .kind
+            .as_deref()
+            .is_some_and(|kind| !HOLDER_KINDS.contains(&kind))
+        {
+            return refusal(400, "invalid_kind", None);
+        }
+        return fresh_page(
+            store,
+            readiness,
+            store.holder_records(&holder, query.kind.as_deref(), query.position, query.limit),
+        );
     }
     refusal(404, "not_found", None)
 }
