@@ -7701,3 +7701,54 @@ fix = "remove each link and install in place for every package the gate touches"
 area = "host boundary fixture scan"
 symptom = "a raw-key scan that globs modules/lxphost/*.go without exclusions matches the canonical account name in accountmap.go and the test files the task text excludes"
 fix = "skip *_test.go and accountmap.go exactly as do_6 states before asserting no asset: or grant: literal"
+
+
+[gotcha.1626]
+area = "platform workspace lock"
+symptom = "changing a platform crate's dependency list makes every --locked cargo command fail until platform/Cargo.lock is refreshed"
+fix = "refresh with cargo metadata --offline in the same task and commit the lock"
+
+[gotcha.1627]
+area = "KMS signing keys route"
+symptom = "POST /v1/signing-keys needs an Idempotency-Key header that tls::Upstream::post never sends, and KeyStore::create_with_algorithm is crate private"
+fix = "create secp256k1 keys through the internal crate, not from outside it"
+
+[gotcha.1628]
+area = "gas station quote and submit"
+symptom = "the gas station accepts only 7702 executeSponsored batches, so a service that can sign only type-2 transactions cannot be sponsored"
+fix = "sign the account digest and the authorization through the shared EVM sender (task 0.140) and build the batch"
+
+[gotcha.1629]
+area = "agent workspace lock"
+symptom = "a dependency added to an interop crate makes --locked commands in the agent workspace fail too, because the interop crates are path dependencies of agent/Cargo.toml"
+fix = "refresh agent/Cargo.lock offline in the same task; git treats it as binary, so review with git diff --text"
+
+[gotcha.1630]
+area = "wallet app typecheck"
+symptom = "human/apps/wallet typecheck fails inside the linked wallet SDK source (ExtendedPoint) although the SDK builds on its own"
+fix = "the app tsconfig paths map @noble/curves and @noble/hashes to the app node_modules, so the app pins must equal the SDK pins (task 0.148)"
+
+[gotcha.1631]
+area = "cargo test crate gates"
+symptom = "a crate-wide cargo test stops at the first failing integration test binary, so later test binaries never run and their counts are missing from the log"
+fix = "read the log for the first failing binary before assuming later tests were reached; name test binaries with --test when a gate must report each one"
+
+[gotcha.1632]
+area = "ai-market errors"
+symptom = "ApplicationError of the ai-market crate does not implement std::error::Error, so ? in a test returning Box<dyn Error> does not compile"
+fix = "convert with ServiceError::from before using ?"
+
+[gotcha.1633]
+area = "gas station tests"
+symptom = "GasStation::new reads GAS_STATION_DID_GAS_LIMIT from the process environment, so tests in one binary that set different values race"
+fix = "set one value per test binary"
+
+[gotcha.1634]
+area = "python gates"
+symptom = "python3 -m py_compile writes __pycache__ next to the module even when the module sets sys.dont_write_bytecode"
+fix = "delete the __pycache__ directory before staging"
+
+[gotcha.1635]
+area = "json fixture writers"
+symptom = "serde_json key order depends on the preserve_order feature, so a fixture written once may differ byte-for-byte from the next writer"
+fix = "insert keys in sorted order in the writer so both orderings produce the same bytes"
