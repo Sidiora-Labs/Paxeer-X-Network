@@ -1032,6 +1032,7 @@ dependencies = [
  "layerx-programs-runtime",
  "layerx-types",
  "layerx-wire",
+ "serde_json",
  "sha2",
 ]
 
