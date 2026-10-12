@@ -9,8 +9,9 @@ use std::time::Duration;
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use k256::ecdsa::{RecoveryId, Signature as EvmSignature, VerifyingKey as EvmVerifyingKey};
-use layerx_crypto::evm_transaction::Eip1559Call;
+use layerx_crypto::evm_transaction::{assemble, Eip1559Call};
 use layerx_crypto::secp256k1::evm_address;
+use layerx_crypto::signer::AgentSignature;
 use layerx_platform_internal::base64;
 use native_tls::{Certificate, Identity, TlsConnector};
 use serde_json::{json, Value};
@@ -589,7 +590,11 @@ fn secp256k1_handle_signs_transaction_recoverable_to_its_address() -> TestResult
     let request = json!({"algorithm":"secp256k1", "key_handle":key["handle"],
         "message":base64::encode(&digest)});
     let (signed, signature, recovery) = secp256k1_signature(&fixture, &request)?;
-    let raw = call.assemble(&signature, recovery, &address)?;
+    let mut bytes = [0_u8; 65];
+    bytes[..64].copy_from_slice(&signature);
+    bytes[64] = 27 + recovery;
+    let sig = AgentSignature::new(bytes).map_err(|_| "noncanonical signature")?;
+    let raw = assemble(&call, &sig);
     assert_eq!(transaction_sender(&raw, &call)?, address);
     assert_secp256k1_refusals(&fixture, &key["handle"], &digest);
     fixture.child.kill()?;
