@@ -2,14 +2,16 @@
 //! `px_getHistory` and `px_getUnifiedHistory`, answered from the
 //! `layerx-indexer` read API.
 //!
-//! Every answer is the indexer's own rows, newest first in the indexer's
-//! commit order, each joined with its asset's indexer record plus the
-//! symbol and decimals the `LayerX` asset registry declares for it. Cursors
-//! are the indexer's opaque row cursors, passed through unchanged; because
-//! both chains share one row sequence, a unified page is the exact merge of
+//! Every answer is the indexer's own rows, oldest first in
+//! `(blockHeight, txIndex, logIndex)` position order, each joined with its
+//! asset's indexer record plus the symbol and decimals the `LayerX` asset
+//! registry declares for it. Cursors are the indexer's 32-lowercase-hex
+//! position cursors, passed through unchanged; because every side pages
+//! strictly after the same position, a unified page is the exact merge of
 //! every side's page at the same cursor.
 
 use super::{public_reads, Config, Endpoint};
+use layerx_indexer::store::Position;
 use layerx_platform_gateway::evm;
 use layerx_platform_gateway::http::{self, Client, UpstreamResponse};
 use serde_json::{json, Value};
@@ -211,7 +213,7 @@ pub(super) fn paxeer_key(account: &str) -> Option<String> {
 }
 
 struct Page {
-    items: Vec<(u64, Value)>,
+    items: Vec<(Position, String, Value)>,
     next_cursor: Option<String>,
 }
 
@@ -233,32 +235,51 @@ fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failu
     }
     let next_cursor = match body.get("next_cursor") {
         Some(Value::Null) => None,
-        Some(Value::String(cursor)) => Some(cursor.clone()),
+        Some(Value::String(cursor)) if Position::parse(cursor).is_some() => Some(cursor.clone()),
         _ => return Err(invalid()),
     };
     let rows = body
         .get("items")
         .and_then(Value::as_array)
         .ok_or_else(invalid)?;
-    if usize::try_from(query.limit).map_or(true, |limit| rows.len() > limit) {
-        return Err(invalid());
-    }
+    let limit = usize::try_from(query.limit).map_err(|_| invalid())?;
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
-        let id = row
-            .get("id")
-            .and_then(Value::as_str)
-            .and_then(|id| id.parse::<u64>().ok())
-            .filter(|_| row.get("asset").is_some_and(Value::is_string))
+        let id = text(row, "id")
+            .filter(|id| !id.is_empty() && row.get("asset").is_some_and(Value::is_string))
             .ok_or_else(invalid)?;
-        if items.last().is_some_and(|(last, _)| *last <= id) {
+        let position = row_position(row).ok_or_else(invalid)?;
+        if items.last().is_some_and(|(last, _, _)| *last > position) {
             return Err(invalid());
         }
-        items.push((id, row.clone()));
+        items.push((position, id.to_owned(), row.clone()));
     }
-    body.get("freshness").filter(|value| readiness_status(value).is_some())
+    // The indexer reads a limit of 0 as 1 and keeps the rows of the page's
+    // last position together, so only rows sharing the position of row
+    // `limit` may follow it.
+    let limit = limit.max(1);
+    if let (Some((boundary, _, _)), Some(overflow)) = (items.get(limit - 1), items.get(limit..)) {
+        if overflow.iter().any(|(position, _, _)| position != boundary) {
+            return Err(invalid());
+        }
+    }
+    body.get("freshness")
+        .filter(|value| readiness_status(value).is_some())
         .ok_or_else(invalid)?;
     Ok(Page { items, next_cursor })
+}
+
+/// The `(blockHeight, txIndex, logIndex)` position an indexer row carries
+/// as the decimal strings `height_or_seq`, `tx_index` and `log_index`.
+fn row_position(row: &Value) -> Option<Position> {
+    let field = |name: &str| text(row, name).and_then(|value| value.parse::<u64>().ok());
+    let height = field("height_or_seq")?;
+    i64::try_from(height).ok()?;
+    Some(Position {
+        height,
+        tx_index: u32::try_from(field("tx_index")?).ok()?,
+        log_index: u32::try_from(field("log_index")?).ok()?,
+    })
 }
 
 fn text<'a>(document: &'a Value, field: &str) -> Option<&'a str> {
@@ -356,7 +377,10 @@ fn join_assets(
 
 /// One page of the merged history of `accounts`, each tagged with the side
 /// it answers for. A single account's page and cursor are the indexer's own;
-/// several accounts are merged newest first with each row tagged by `side`.
+/// several accounts are merged in `(blockHeight, txIndex, logIndex)` order
+/// with each row tagged by `side`. Rows sharing the last position of a
+/// merged page stay together, as on the indexer, so resuming strictly after
+/// that position neither repeats nor skips a row.
 pub(super) fn history(
     source: &Source<'_>,
     registry: &dyn Fn() -> Vec<Value>,
@@ -367,31 +391,41 @@ pub(super) fn history(
     let (mut items, next_cursor): (Vec<Value>, Option<String>) = if let [(_, account)] = accounts {
         let page = page(source, account, query)?;
         (
-            page.items.into_iter().map(|(_, item)| item).collect(),
+            page.items.into_iter().map(|(_, _, item)| item).collect(),
             page.next_cursor,
         )
     } else {
-        let mut merged: BTreeMap<u64, Value> = BTreeMap::new();
+        let mut merged: BTreeMap<(Position, String), Value> = BTreeMap::new();
         let mut more = false;
         for (side, account) in accounts {
             let page = page(source, account, query)?;
             more |= page.next_cursor.is_some();
-            for (id, mut item) in page.items {
+            for (position, id, mut item) in page.items {
                 if let Some(row) = item.as_object_mut() {
                     row.insert("side".to_owned(), json!(side));
                 }
-                merged.entry(id).or_insert(item);
+                merged.entry((position, id)).or_insert(item);
             }
         }
-        more |= merged.len() > limit;
-        let newest: Vec<(u64, Value)> = merged.into_iter().rev().take(limit).collect();
+        let boundary = merged
+            .keys()
+            .nth(limit.saturating_sub(1))
+            .map(|(position, _)| *position);
+        let mut rows: Vec<(Position, Value)> = Vec::with_capacity(merged.len());
+        for ((position, _), item) in merged {
+            if boundary.is_some_and(|boundary| position > boundary) {
+                more = true;
+                break;
+            }
+            rows.push((position, item));
+        }
         let next_cursor = if more {
-            newest.last().map(|(id, _)| id.to_string())
+            rows.last().map(|(position, _)| position.encode())
         } else {
             None
         };
         (
-            newest.into_iter().map(|(_, item)| item).collect(),
+            rows.into_iter().map(|(_, item)| item).collect(),
             next_cursor,
         )
     };
@@ -459,7 +493,14 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
     };
     let freshness = match source.get("/readyz", "") {
         Ok((200 | 503, body)) if readiness_status(&body).is_some() => body,
-        _ => return refusal(id, -32001, "History unavailable", json!({"code": "invalid_indexer_readiness"})),
+        _ => {
+            return refusal(
+                id,
+                -32001,
+                "History unavailable",
+                json!({"code": "invalid_indexer_readiness"}),
+            )
+        }
     };
     if let Some(object) = result.as_object_mut() {
         object.insert("freshness".to_owned(), freshness);
@@ -498,12 +539,22 @@ fn readiness_status(body: &Value) -> Option<&'static str> {
     let mut names = Vec::new();
     for source in sources {
         let name = source.get("source")?.as_str()?;
-        if !matches!(name, "layerx" | "paxeer" | "comet") || names.contains(&name) { return None; }
+        if !matches!(name, "layerx" | "paxeer" | "comet") || names.contains(&name) {
+            return None;
+        }
         names.push(name);
-        for field in ["source_head", "indexed_cursor", "finalized_cursor", "last_success_at",
-                      "freshness_secs", "last_error_at"] {
+        for field in [
+            "source_head",
+            "indexed_cursor",
+            "finalized_cursor",
+            "last_success_at",
+            "freshness_secs",
+            "last_error_at",
+        ] {
             let value = source.get(field)?;
-            if !value.is_null() && value.as_u64().is_none() { return None; }
+            if !value.is_null() && value.as_u64().is_none() {
+                return None;
+            }
         }
         source.get("reconciled")?.as_bool()?;
         source.get("consecutive_failures")?.as_u64()?;
@@ -514,7 +565,8 @@ fn readiness_status(body: &Value) -> Option<&'static str> {
                     || source.get("last_success_at")?.as_u64().is_none()
                     || source.get("freshness_secs")?.as_u64().is_none()
                     || source.get("consecutive_failures")?.as_u64()? != 0
-                    || source.get("source_head")? != source.get("indexed_cursor")? {
+                    || source.get("source_head")? != source.get("indexed_cursor")?
+                {
                     return None;
                 }
                 0
