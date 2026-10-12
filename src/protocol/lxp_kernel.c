@@ -2322,6 +2322,7 @@ lxp_result lxp_kernel_dispatch(const lxp_module_registration *registration,
             memcmp(ctx->ledger_admission.activity_binding, ctx->activity_id, 32U) != 0)
             return LXP_ERR_CONTEXT_MISMATCH;
     }
+    ctx->activity = activity;
     status = registration->iface->decode(
         ctx, lxp_activity_type_ordinal(activity->activity_type),
         activity->payload.bytes, activity->payload.length, &decoded);

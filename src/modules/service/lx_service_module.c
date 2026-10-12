@@ -374,7 +374,6 @@ static lxp_result module_execute(lxp_module_ctx *ctx,
         return LXP_ERR_UNKNOWN_ACTIVITY;
     status = lxp_ctx_charge_gas(ctx, value->payload_length + 1U);
     if (status != LXP_OK) return status;
-    ctx->activity = activity;
     payload = &value->payload;
     switch (value->ordinal) {
     case 1U:
