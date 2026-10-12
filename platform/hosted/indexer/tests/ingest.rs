@@ -10,7 +10,7 @@ use layerx_indexer::api;
 use layerx_indexer::follow::{FollowPolicy, StepOutcome};
 use layerx_indexer::layerx::LayerXIngester;
 use layerx_indexer::paxeer::{AttributeEncoding, PaxeerIngester};
-use layerx_indexer::store::{AssetRow, Store};
+use layerx_indexer::store::{AssetRow, Position, Store};
 use layerx_indexer::transport::{Endpoint, Security};
 use layerx_indexer::IndexError;
 use layerx_types::receipt::{ACTIVITY_RECEIPT_FIELDS, LXP_RECEIPT_FIELDS};
@@ -534,10 +534,23 @@ fn paxeer_blocks_logs_and_tx_search_decode_paginate_and_roll_back() {
     assert_eq!(first.status, 200);
     let first: Value = serde_json::from_str(&first.body).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(first["items"].as_array().map(Vec::len), Some(2));
+    assert_eq!(first["indexedHeight"], 3);
+    assert_eq!(first["chainHeight"], 3);
+    assert_eq!(first["freshness"]["version"], 1);
+    assert_eq!(first["freshness"]["database"], "ok");
     let next = first["next_cursor"]
         .as_str()
         .unwrap_or_else(|| panic!("second page cursor"))
         .to_owned();
+    assert_eq!(next, "00000000000000020000000100000000");
+    assert_eq!(
+        Position::parse(&next),
+        Some(Position {
+            height: 2,
+            tx_index: 1,
+            log_index: 0
+        })
+    );
     let second = api::route(
         &store,
         "GET",
@@ -546,30 +559,58 @@ fn paxeer_blocks_logs_and_tx_search_decode_paginate_and_roll_back() {
             alice.to_uppercase().replacen("0X", "0x", 1)
         ),
     );
+    assert_eq!(second.status, 200);
     let second: Value =
         serde_json::from_str(&second.body).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(second["items"].as_array().map(Vec::len), Some(1));
     assert!(second["next_cursor"].is_null());
-    let mut kinds: Vec<String> = first["items"]
+    assert_eq!(second["indexedHeight"], 3);
+    assert_eq!(second["chainHeight"], 3);
+    let walked: Vec<(String, (u64, u64, u64))> = first["items"]
         .as_array()
         .into_iter()
         .chain(second["items"].as_array())
         .flatten()
-        .filter_map(|item| item["kind"].as_str().map(str::to_owned))
+        .map(|item| {
+            let index = |field: &str| {
+                item[field]
+                    .as_str()
+                    .and_then(|text| text.parse::<u64>().ok())
+                    .unwrap_or_else(|| panic!("{field} in {item}"))
+            };
+            (
+                item["kind"].as_str().unwrap_or_default().to_owned(),
+                (
+                    index("height_or_seq"),
+                    index("tx_index"),
+                    index("log_index"),
+                ),
+            )
+        })
         .collect();
-    kinds.sort();
     assert_eq!(
-        kinds,
-        ["custody_deposit", "erc20_transfer", "native_transfer"]
+        walked,
+        [
+            ("native_transfer".to_owned(), (2, 0, 0)),
+            ("erc20_transfer".to_owned(), (2, 1, 0)),
+            ("custody_deposit".to_owned(), (2, 2, 1)),
+        ]
     );
-    let ids: Vec<u64> = first["items"]
-        .as_array()
-        .into_iter()
-        .chain(second["items"].as_array())
-        .flatten()
-        .filter_map(|item| item["id"].as_str().and_then(|id| id.parse().ok()))
-        .collect();
-    assert!(ids.windows(2).all(|pair| pair[0] > pair[1]));
+    for cursor in [
+        "1".to_owned(),
+        "000000000000000A0000000100000000".to_owned(),
+        "ab".repeat(56),
+    ] {
+        let refused = api::route(
+            &store,
+            "GET",
+            &format!("/v1/history/{alice}?cursor={cursor}"),
+        );
+        assert_eq!(refused.status, 400, "{cursor}");
+        let refused: Value =
+            serde_json::from_str(&refused.body).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(refused["error"]["code"], "invalid_cursor", "{cursor}");
+    }
     let filtered = api::route(
         &store,
         "GET",
@@ -735,7 +776,14 @@ fn the_api_answers_over_a_real_socket() {
         .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(
         page,
-        json!({"version": 1, "items": [], "next_cursor": null})
+        json!({
+            "version": 1, "items": [], "next_cursor": null,
+            "indexedHeight": null, "chainHeight": null,
+            "freshness": {
+                "version": 1, "status": "unavailable", "database": "ok",
+                "started_at": 0, "sources": [],
+            },
+        })
     );
     assert!(api::bind(
         "0.0.0.0:0"

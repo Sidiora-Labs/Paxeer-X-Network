@@ -555,7 +555,7 @@ pub(super) fn status(config: &Config) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use layerx_indexer::store::{AssetRow, Store, TransferRow, Unit};
+    use layerx_indexer::store::{AssetRow, HolderRow, Position, Store, TransferRow, Unit};
     use std::net::TcpListener;
     use std::sync::Arc;
 
@@ -566,9 +566,12 @@ mod tests {
     const FRANK: &str = "0xffffffffffffffffffffffffffffffffffffffff";
     const POINTER: &str = "0xcccccccccccccccccccccccccccccccccccccccc";
     const TICKET: &str = "denom:factory/pax1issuer/ticket";
+    const BUDGET: &str = "0101010101010101010101010101010101010101010101010101010101010101";
 
+    /// One transfer leg of transaction `tx_index` at `position`: a native
+    /// value row when `ordinal` is 0, else the log at index `ordinal - 1`.
     fn leg(
-        position: u64,
+        (position, tx_index, ordinal): (u64, u32, u64),
         kind: &str,
         direction: &'static str,
         account: &str,
@@ -578,14 +581,15 @@ mod tests {
     ) -> TransferRow {
         TransferRow {
             height_or_seq: position,
+            tx_index,
             kind: kind.to_owned(),
             direction,
             account: account.to_owned(),
             counterparty: Some(counterparty.to_owned()),
             asset: asset.to_owned(),
             amount: amount.to_owned(),
-            tx_id: format!("{kind}-{position}"),
-            ordinal: 0,
+            tx_id: format!("{kind}-{position}-{tx_index}"),
+            ordinal,
             decoded: json!({"position": position.to_string()}),
         }
     }
@@ -626,11 +630,21 @@ mod tests {
         }
     }
 
+    fn at(height: u64, tx_index: u32, log_index: u32) -> Position {
+        Position {
+            height,
+            tx_index,
+            log_index,
+        }
+    }
+
     /// A real indexer store and read API on a loopback port, filled with both
-    /// chains interleaved in commit order. Row ids: 1-2 LayerX transfer
-    /// alice->bob, 3-4 Paxeer native eve->frank, 5 LayerX credit to alice,
-    /// 6-7 Paxeer pointer frank->eve, 8 Paxeer custody deposit into alice,
-    /// 9-10 Paxeer bank ticket eve->frank, 11 an unregistered asset to eve.
+    /// chains interleaved in commit order. Row ids: 1-2 `LayerX` transfer
+    /// alice->bob at (1,0,0), 3-4 Paxeer native eve->frank at (10,0,0), 5
+    /// `LayerX` credit to alice at (2,0,0), 6-7 Paxeer pointer frank->eve at
+    /// (11,0,0), 8 Paxeer custody deposit into alice at (11,1,0), 9-10 Paxeer
+    /// bank ticket eve->frank at (12,0,0), 11 an unregistered asset to eve at
+    /// (12,1,0). Eve holds one budget opened at (12,2,1).
     fn indexer() -> Indexer {
         let store = Store::open_in_memory().unwrap_or_else(|error| panic!("{error}"));
         store
@@ -644,8 +658,8 @@ mod tests {
                 "layerx",
                 1,
                 vec![
-                    leg(1, "lxp_transfer", "out", ALICE, BOB, LXP, "5"),
-                    leg(1, "lxp_transfer", "in", BOB, ALICE, LXP, "5"),
+                    leg((1, 0, 0), "lxp_transfer", "out", ALICE, BOB, LXP, "5"),
+                    leg((1, 0, 0), "lxp_transfer", "in", BOB, ALICE, LXP, "5"),
                 ],
                 vec![AssetRow {
                     metadata: json!({"supply": "100"}),
@@ -657,7 +671,7 @@ mod tests {
                 10,
                 vec![
                     leg(
-                        10,
+                        (10, 0, 0),
                         "native_transfer",
                         "out",
                         EVE,
@@ -666,7 +680,7 @@ mod tests {
                         "1000000000000000000",
                     ),
                     leg(
-                        10,
+                        (10, 0, 0),
                         "native_transfer",
                         "in",
                         FRANK,
@@ -682,7 +696,7 @@ mod tests {
                 2,
                 vec![TransferRow {
                     counterparty: None,
-                    ..leg(2, "lxp_credit", "in", ALICE, "", LXP, "7")
+                    ..leg((2, 0, 0), "lxp_credit", "in", ALICE, "", LXP, "7")
                 }],
                 Vec::new(),
             ),
@@ -691,7 +705,7 @@ mod tests {
                 11,
                 vec![
                     leg(
-                        11,
+                        (11, 0, 1),
                         "pointer_transfer",
                         "in",
                         EVE,
@@ -700,7 +714,7 @@ mod tests {
                         "3",
                     ),
                     leg(
-                        11,
+                        (11, 0, 1),
                         "pointer_transfer",
                         "out",
                         FRANK,
@@ -708,34 +722,47 @@ mod tests {
                         &format!("evm:{POINTER}"),
                         "3",
                     ),
-                    leg(11, "custody_deposit", "in", ALICE, EVE, LXP, "9"),
+                    leg((11, 1, 0), "custody_deposit", "in", ALICE, EVE, LXP, "9"),
                 ],
                 Vec::new(),
             ),
-            unit(
-                "paxeer",
-                12,
-                vec![
-                    leg(12, "bank_transfer", "out", EVE, FRANK, TICKET, "2"),
-                    leg(12, "bank_transfer", "in", FRANK, EVE, TICKET, "2"),
-                    leg(
-                        12,
-                        "erc20_transfer",
-                        "in",
-                        EVE,
-                        FRANK,
-                        "evm:0x0000000000000000000000000000000000000abc",
-                        "4",
-                    ),
-                ],
-                vec![asset(
-                    TICKET,
+            Unit {
+                holders: vec![HolderRow {
+                    position: at(12, 2, 1),
+                    holder: EVE.to_owned(),
+                    kind: "budget",
+                    contract: "layerxpay",
+                    record_id: BUDGET.to_owned(),
+                    event: "BudgetCreated",
+                    state: "active",
+                    tx_id: "budget-12-2".to_owned(),
+                    decoded: json!({"args": {"amount": "500"}}),
+                }],
+                ..unit(
                     "paxeer",
-                    "tokenfactory",
-                    None,
-                    Some("factory/pax1issuer/ticket"),
-                )],
-            ),
+                    12,
+                    vec![
+                        leg((12, 0, 0), "bank_transfer", "out", EVE, FRANK, TICKET, "2"),
+                        leg((12, 0, 0), "bank_transfer", "in", FRANK, EVE, TICKET, "2"),
+                        leg(
+                            (12, 1, 1),
+                            "erc20_transfer",
+                            "in",
+                            EVE,
+                            FRANK,
+                            "evm:0x0000000000000000000000000000000000000abc",
+                            "4",
+                        ),
+                    ],
+                    vec![asset(
+                        TICKET,
+                        "paxeer",
+                        "tokenfactory",
+                        None,
+                        Some("factory/pax1issuer/ticket"),
+                    )],
+                )
+            },
         ];
         for unit in &units {
             store
@@ -778,10 +805,15 @@ mod tests {
         .unwrap_or_else(|failure| panic!("{failure:?}"))
     }
 
-    fn ids(page: &Value) -> Vec<u64> {
+    fn items(page: &Value) -> &[Value] {
         page["items"]
             .as_array()
+            .map(Vec::as_slice)
             .unwrap_or_else(|| panic!("no items in {page}"))
+    }
+
+    fn ids(page: &Value) -> Vec<u64> {
+        items(page)
             .iter()
             .map(|item| {
                 item["id"]
@@ -790,6 +822,27 @@ mod tests {
                     .unwrap_or_else(|| panic!("row id in {item}"))
             })
             .collect()
+    }
+
+    fn position(item: &Value) -> Position {
+        let field = |name: &str| {
+            item[name]
+                .as_str()
+                .and_then(|text| text.parse::<u64>().ok())
+                .unwrap_or_else(|| panic!("{name} in {item}"))
+        };
+        let index = |name: &str| {
+            u32::try_from(field(name)).unwrap_or_else(|error| panic!("{name}: {error}"))
+        };
+        at(
+            field("height_or_seq"),
+            index("tx_index"),
+            index("log_index"),
+        )
+    }
+
+    fn positions(page: &Value) -> Vec<Position> {
+        items(page).iter().map(position).collect()
     }
 
     fn raw(indexer: &Indexer, path: &str, query: &str) -> Value {
@@ -802,32 +855,45 @@ mod tests {
         .1
     }
 
+    fn refused_code(indexer: &Indexer, cursor: &str) -> Value {
+        match history(
+            &Source {
+                indexer,
+                client: None,
+            },
+            &registry,
+            &[("layerx", ALICE.to_owned())],
+            &query(Some(cursor), 10, None),
+        ) {
+            Err(Failure::Refused(body)) => body["error"]["code"].clone(),
+            other => panic!("cursor {cursor} answered {other:?}"),
+        }
+    }
+
     #[test]
     fn layerx_history_joins_registry_metadata_and_passes_the_indexer_cursor_through() {
         let indexer = indexer();
         let alice = [("layerx", ALICE.to_owned())];
         let first = read(&indexer, &alice, &query(None, 2, None));
-        assert_eq!(ids(&first), vec![8, 5]);
+        assert_eq!(ids(&first), vec![1, 5]);
+        assert_eq!(positions(&first), vec![at(1, 0, 0), at(2, 0, 0)]);
         let upstream = raw(&indexer, &format!("/v1/history/{ALICE}"), "limit=2");
         assert_eq!(first["next_cursor"], upstream["next_cursor"]);
-        assert_eq!(first["next_cursor"], json!("5"));
-        for (item, row) in first["items"]
-            .as_array()
-            .unwrap_or_else(|| panic!("items"))
-            .iter()
-            .zip(
-                upstream["items"]
-                    .as_array()
-                    .unwrap_or_else(|| panic!("rows")),
-            )
-        {
+        assert_eq!(
+            first["next_cursor"],
+            json!("00000000000000020000000000000000")
+        );
+        assert_eq!(upstream["indexedHeight"], json!(12));
+        assert_eq!(upstream["chainHeight"], Value::Null);
+        assert_eq!(upstream["freshness"]["version"], json!(1));
+        for (item, row) in items(&first).iter().zip(items(&upstream)) {
             let mut stripped = item.clone();
             if let Some(object) = stripped.as_object_mut() {
                 object.remove("asset_metadata");
             }
             assert_eq!(&stripped, row);
         }
-        let joined = &first["items"][1]["asset_metadata"];
+        let joined = &first["items"][0]["asset_metadata"];
         assert_eq!(joined["asset"], json!(LXP));
         assert_eq!(joined["chain"], json!("layerx"));
         assert_eq!(joined["kind"], json!("layerx"));
@@ -836,14 +902,15 @@ mod tests {
         assert_eq!(joined["native_id"], json!(LXP));
         assert_eq!(joined["pointer"], Value::Null);
         assert_eq!(joined["metadata"], json!({"supply": "100"}));
-        assert_eq!(first["items"][0]["chain"], json!("paxeer"));
-        assert_eq!(first["items"][0]["kind"], json!("custody_deposit"));
+        assert_eq!(first["items"][0]["direction"], json!("out"));
+        assert_eq!(first["items"][0]["counterparty"], json!(BOB));
         let cursor = first["next_cursor"].as_str().unwrap_or_default();
         let second = read(&indexer, &alice, &query(Some(cursor), 2, None));
-        assert_eq!(ids(&second), vec![1]);
+        assert_eq!(ids(&second), vec![8]);
+        assert_eq!(positions(&second), vec![at(11, 1, 0)]);
         assert_eq!(second["next_cursor"], Value::Null);
-        assert_eq!(second["items"][0]["direction"], json!("out"));
-        assert_eq!(second["items"][0]["counterparty"], json!(BOB));
+        assert_eq!(second["items"][0]["chain"], json!("paxeer"));
+        assert_eq!(second["items"][0]["kind"], json!("custody_deposit"));
         let credits = read(&indexer, &alice, &query(None, 10, Some("lxp_credit")));
         assert_eq!(ids(&credits), vec![5]);
         assert_eq!(credits["items"][0]["amount"], json!("7"));
@@ -854,18 +921,22 @@ mod tests {
         let indexer = indexer();
         let eve = [("paxeer", EVE.to_owned())];
         let page = read(&indexer, &eve, &query(None, 50, None));
-        assert_eq!(ids(&page), vec![11, 9, 6, 3]);
+        assert_eq!(ids(&page), vec![3, 6, 9, 11]);
+        assert_eq!(
+            positions(&page),
+            vec![at(10, 0, 0), at(11, 0, 0), at(12, 0, 0), at(12, 1, 0)]
+        );
         assert_eq!(page["next_cursor"], Value::Null);
         let metadata = |index: usize| page["items"][index]["asset_metadata"].clone();
-        assert_eq!(metadata(0), Value::Null);
-        let ticket = metadata(1);
-        assert_eq!(ticket["asset"], json!(TICKET));
-        assert_eq!(ticket["kind"], json!("tokenfactory"));
-        assert_eq!(ticket["denom"], json!("factory/pax1issuer/ticket"));
-        assert_eq!(ticket["symbol"], Value::Null);
-        assert_eq!(ticket["decimals"], Value::Null);
-        assert_eq!(ticket["native_id"], Value::Null);
-        let pointer = metadata(2);
+        let native = metadata(0);
+        assert_eq!(native["asset"], json!("evm:native"));
+        assert_eq!(native["kind"], json!("native"));
+        assert_eq!(native["decimals"], json!(18));
+        assert_eq!(native["symbol"], Value::Null);
+        assert_eq!(native["pointer"], Value::Null);
+        assert_eq!(page["items"][0]["amount"], json!("1000000000000000000"));
+        assert_eq!(page["items"][0]["direction"], json!("out"));
+        let pointer = metadata(1);
         assert_eq!(pointer["asset"], json!(format!("evm:{POINTER}")));
         assert_eq!(pointer["chain"], json!("paxeer"));
         assert_eq!(pointer["kind"], json!("pointer"));
@@ -874,52 +945,76 @@ mod tests {
         assert_eq!(pointer["symbol"], json!("LXP"));
         assert_eq!(pointer["decimals"], json!(6));
         assert_eq!(pointer["native_id"], json!(LXP));
-        let native = metadata(3);
-        assert_eq!(native["asset"], json!("evm:native"));
-        assert_eq!(native["kind"], json!("native"));
-        assert_eq!(native["decimals"], json!(18));
-        assert_eq!(native["symbol"], Value::Null);
-        assert_eq!(native["pointer"], Value::Null);
-        assert_eq!(page["items"][3]["amount"], json!("1000000000000000000"));
-        assert_eq!(page["items"][3]["direction"], json!("out"));
+        let ticket = metadata(2);
+        assert_eq!(ticket["asset"], json!(TICKET));
+        assert_eq!(ticket["kind"], json!("tokenfactory"));
+        assert_eq!(ticket["denom"], json!("factory/pax1issuer/ticket"));
+        assert_eq!(ticket["symbol"], Value::Null);
+        assert_eq!(ticket["decimals"], Value::Null);
+        assert_eq!(ticket["native_id"], Value::Null);
+        assert_eq!(metadata(3), Value::Null);
         let paged = read(&indexer, &eve, &query(None, 3, None));
-        assert_eq!(ids(&paged), vec![11, 9, 6]);
-        assert_eq!(paged["next_cursor"], json!("6"));
-        let rest = read(&indexer, &eve, &query(Some("6"), 3, None));
-        assert_eq!(ids(&rest), vec![3]);
+        assert_eq!(ids(&paged), vec![3, 6, 9]);
+        assert_eq!(
+            paged["next_cursor"],
+            json!("000000000000000c0000000000000000")
+        );
+        let rest = read(
+            &indexer,
+            &eve,
+            &query(Some("000000000000000c0000000000000000"), 3, None),
+        );
+        assert_eq!(ids(&rest), vec![11]);
         assert_eq!(rest["next_cursor"], Value::Null);
     }
 
     #[test]
-    fn unified_history_merges_both_sides_newest_first_across_pages() {
+    fn paxeer_holder_records_page_by_position_with_indexed_height() {
+        let indexer = indexer();
+        let budgets = raw(&indexer, &format!("/v1/holders/{EVE}"), "kind=budget");
+        let records = items(&budgets);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["kind"], json!("budget"));
+        assert_eq!(records[0]["contract"], json!("layerxpay"));
+        assert_eq!(records[0]["record_id"], json!(BUDGET));
+        assert_eq!(records[0]["holder"], json!(EVE));
+        assert_eq!(records[0]["state"], json!("active"));
+        assert_eq!(
+            records[0]["opened"]["cursor"],
+            json!("000000000000000c0000000200000001")
+        );
+        assert_eq!(budgets["next_cursor"], Value::Null);
+        assert_eq!(budgets["indexedHeight"], json!(12));
+        let grants = raw(&indexer, &format!("/v1/holders/{EVE}"), "kind=grant");
+        assert_eq!(items(&grants).len(), 0);
+    }
+
+    #[test]
+    fn unified_history_merges_both_sides_in_position_order_across_pages() {
         let indexer = indexer();
         let sides = [("paxeer", EVE.to_owned()), ("layerx", ALICE.to_owned())];
         let whole = read(&indexer, &sides, &query(None, 100, None));
-        assert_eq!(ids(&whole), vec![11, 9, 8, 6, 5, 3, 1]);
+        assert_eq!(ids(&whole), vec![1, 5, 3, 6, 8, 9, 11]);
+        let order = positions(&whole);
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
         assert_eq!(whole["next_cursor"], Value::Null);
-        let tags: Vec<&str> = whole["items"]
-            .as_array()
-            .unwrap_or_else(|| panic!("items"))
+        let tags: Vec<&str> = items(&whole)
             .iter()
             .map(|item| item["side"].as_str().unwrap_or_default())
             .collect();
         assert_eq!(
             tags,
-            vec!["paxeer", "paxeer", "layerx", "paxeer", "layerx", "paxeer", "layerx"]
+            vec!["layerx", "layerx", "paxeer", "paxeer", "layerx", "paxeer", "paxeer"]
         );
-        let chains: Vec<&str> = whole["items"]
-            .as_array()
-            .unwrap_or_else(|| panic!("items"))
+        let chains: Vec<&str> = items(&whole)
             .iter()
             .map(|item| item["chain"].as_str().unwrap_or_default())
             .collect();
         assert_eq!(
             chains,
-            vec!["paxeer", "paxeer", "paxeer", "paxeer", "layerx", "paxeer", "layerx"]
+            vec!["layerx", "layerx", "paxeer", "paxeer", "paxeer", "paxeer", "paxeer"]
         );
-        assert!(whole["items"]
-            .as_array()
-            .unwrap_or_else(|| panic!("items"))
+        assert!(items(&whole)
             .iter()
             .all(|item| item.get("asset_metadata").is_some()));
         let mut walked = Vec::new();
@@ -930,7 +1025,10 @@ mod tests {
             walked.extend(ids(&page));
             match page["next_cursor"].as_str() {
                 Some(next) => {
-                    assert_eq!(Some(next.to_owned()), ids(&page).last().map(u64::to_string));
+                    assert_eq!(
+                        Some(next.to_owned()),
+                        positions(&page).last().map(Position::encode)
+                    );
                     cursor = Some(next.to_owned());
                 }
                 None => break,
@@ -961,18 +1059,17 @@ mod tests {
     #[test]
     fn history_refusals_keep_the_indexer_answer() {
         let indexer = indexer();
-        let refused = history(
-            &Source {
-                indexer: &indexer,
-                client: None,
-            },
-            &registry,
-            &[("layerx", ALICE.to_owned())],
-            &query(Some("abc"), 10, None),
-        );
-        match refused {
-            Err(Failure::Refused(body)) => assert!(body.to_string().contains("invalid_cursor")),
-            other => panic!("{other:?}"),
+        for cursor in [
+            "abc",
+            "5",
+            "000000000000000C0000000000000000",
+            "ab".repeat(56).as_str(),
+        ] {
+            assert_eq!(
+                refused_code(&indexer, cursor),
+                json!("invalid_cursor"),
+                "{cursor}"
+            );
         }
         let closed = TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("{error}"));
         let address = closed
@@ -997,13 +1094,18 @@ mod tests {
 
     #[test]
     fn history_params_accounts_and_endpoints_are_exact() {
+        let cursor = at(66, 3, 7).encode();
+        assert_eq!(cursor, "00000000000000420000000300000007");
         assert_eq!(
             params(Some(&json!([ALICE]))),
             Ok((ALICE.to_owned(), query(None, DEFAULT_LIMIT, None)))
         );
         assert_eq!(
-            params(Some(&json!([EVE, "42", 7, "erc20_transfer"]))),
-            Ok((EVE.to_owned(), query(Some("42"), 7, Some("erc20_transfer"))))
+            params(Some(&json!([EVE, cursor, 7, "erc20_transfer"]))),
+            Ok((
+                EVE.to_owned(),
+                query(Some(&cursor), 7, Some("erc20_transfer"))
+            ))
         );
         assert_eq!(
             params(Some(&json!([EVE, null, null, null]))),
@@ -1017,6 +1119,7 @@ mod tests {
             json!([EVE, ""]),
             json!([EVE, "1&limit=500"]),
             json!([EVE, "x".repeat(33)]),
+            json!([EVE, "ab".repeat(56)]),
             json!([EVE, null, 0]),
             json!([EVE, null, 101]),
             json!([EVE, null, "5"]),
@@ -1030,8 +1133,8 @@ mod tests {
         }
         assert_eq!(params(None), Err(-32602));
         assert_eq!(
-            query(Some("42"), 7, Some("erc20_transfer")).encoded(),
-            "limit=7&cursor=42&kind=erc20_transfer"
+            query(Some(&cursor), 7, Some("erc20_transfer")).encoded(),
+            format!("limit=7&cursor={cursor}&kind=erc20_transfer")
         );
         assert_eq!(encode(TICKET), "denom%3Afactory%2Fpax1issuer%2Fticket");
         assert_eq!(
