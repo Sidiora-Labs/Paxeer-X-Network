@@ -1145,8 +1145,8 @@ impl ProgramExchange {
                 return Err(KernelError::Journal);
             }
         }
-        if signatures.len() > MAX_OBSERVATION_SIGNATURES
-            || signatures.get(&signer) != Some(&signature)
+        if signatures.get(&signer) != Some(&signature)
+            || signatures.len() - 1 > MAX_OBSERVATION_SIGNATURES
         {
             return Err(KernelError::Journal);
         }
@@ -1282,6 +1282,9 @@ impl ProgramExchange {
         match verdict {
             Ok(signer) => {
                 if let (Some(held), Some(record)) = (self.answers().get_mut(&key), parsed) {
+                    let own = held.answer.signer;
+                    held.signatures
+                        .retain(|kept, _| *kept == own || set.contains(kept));
                     held.signatures.insert(signer, record.signature);
                 }
                 Ok(Some(signer))
@@ -2331,6 +2334,99 @@ mod relay {
         let forged =
             json!({"version": RELAY_JOURNAL_VERSION, "next_sequence": 42, "entries": [forged]});
         assert!(parse_journal(forged.to_string().as_bytes()).is_none());
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn program_journal_restores_after_a_roster_rotation() -> Checked {
+        let dir = scratch("rotation")?;
+        let request = request();
+        let key = (request.program_id, request.request_id);
+        let response = b"Paxeer X Network".to_vec();
+        let content_digest: [u8; 32] = unhex(CONTENT_DIGEST)
+            .ok_or("digest")?
+            .try_into()
+            .map_err(|_| "digest")?;
+        let attestation = request.attestation(NETWORK, content_digest, &response, 16);
+        let digest = attestation.digest();
+        let keys = (1..=18_u8)
+            .map(|index| {
+                let mut secret = [0_u8; 32];
+                secret[31] = index;
+                SigningKey::from_slice(&secret)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut signed = Vec::new();
+        for key in &keys {
+            let signature = sign_digest(key, &digest)?;
+            signed.push((recover_signer(&digest, &signature)?, signature));
+        }
+        let (local_signer, local_signature) = signed[0];
+        let exchange = ProgramExchange::open(&dir, &[])?;
+        exchange.record(Answer {
+            attestation,
+            level: Level::Majority,
+            response,
+            callback_gas: 0,
+            timeout_height: u64::MAX,
+            digest,
+            signer: local_signer,
+            signature: local_signature,
+        });
+        let record = |(signer, signature): ([u8; 20], [u8; SIGNATURE_LENGTH])| {
+            let mut record = program_record(&exchange.answer(key).ok_or("held")?);
+            record["signer"] = json!(hex0x(&signer));
+            record["signature"] = json!(hex0x(&signature));
+            Checked::Ok(record)
+        };
+        let set = AttestorSet {
+            signers: signed[..16].iter().map(|(signer, _)| *signer).collect(),
+            threshold: 9,
+        };
+        for peer in &signed[1..16] {
+            assert_eq!(
+                exchange.accept("peer", key, &record(*peer)?, &set),
+                Ok(Some(peer.0))
+            );
+        }
+        let rotated = AttestorSet {
+            signers: signed[..15]
+                .iter()
+                .chain(&signed[16..17])
+                .map(|(signer, _)| *signer)
+                .collect(),
+            threshold: 9,
+        };
+        assert_eq!(
+            exchange.accept("peer", key, &record(signed[16])?, &rotated),
+            Ok(Some(signed[16].0))
+        );
+        let snapshot = exchange.snapshot(key).ok_or("snapshot")?;
+        assert_eq!(
+            snapshot["signatures"].as_array().map(Vec::len),
+            Some(MAX_OBSERVATION_SIGNATURES)
+        );
+
+        let restored = ProgramExchange::open(&dir, &[])?;
+        restored.restore(&request, NETWORK, &snapshot)?;
+        let ready = restored.ready(key, &rotated).ok_or("not ready")?;
+        assert_eq!(ready.signatures.len(), MAX_OBSERVATION_SIGNATURES);
+        let mut expected: Vec<_> = rotated.signers.clone();
+        expected.sort_unstable();
+        assert_eq!(ready.signers, expected);
+
+        let mut oversized = snapshot;
+        oversized["signatures"] = json!(signed
+            .iter()
+            .map(|(signer, signature)| json!({"signer": hex(signer), "signature": hex(signature)}))
+            .collect::<Vec<_>>());
+        let fresh = ProgramExchange::open(&dir, &[])?;
+        assert_eq!(
+            fresh.restore(&request, NETWORK, &oversized),
+            Err(KernelError::Journal)
+        );
+        assert!(fresh.answer(key).is_none());
         std::fs::remove_dir_all(&dir)?;
         Ok(())
     }
