@@ -41812,7 +41812,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.114]
 title = "Path-dependent workspace lock files carry the layerx-client ureq and serde_json dependencies"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 0
 requires = ["0.56"]
