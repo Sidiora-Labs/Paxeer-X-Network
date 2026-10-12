@@ -989,13 +989,30 @@ fn rogue_sequencer_key_and_false_key_range_are_refused_against_independent_trust
     // The receipt is not a leaf of the real batch, so the control cannot pass either.
     assert!(control.is_err());
     assert!(!matches!(control, Err(CompleteExportError::Header { .. })));
+    // A reversed key range is not a canonical header record and never decodes.
+    let reversed = receipt_artifact(&header_record(0, native.first_key, 1, 0), activity);
+    assert_eq!(
+        CompleteOfflineArtifact::decode(
+            &[receipt_ref(activity)],
+            &reversed[..1],
+            &reversed[1..2],
+            &NO_RECORDS,
+            &reversed[2..],
+        )
+        .err(),
+        Some(ArtifactDecodeError::Record {
+            bucket: "headers",
+            index: 0,
+            error: ExportCodecError::Bound,
+        })
+    );
     let rogue = ed_key(0x77).verifying_key().to_bytes();
     let handover = native.history.intervals()[1].public_key();
     for header in [
         header_record(0, rogue, 1, 13),
         header_record(0, handover, 1, 13),
         header_record(0, native.first_key, 2, 13),
-        header_record(0, native.first_key, 1, 0),
+        header_record(0, native.first_key, 0, 0),
         header_record(14, native.first_key, 1, 15),
         {
             let mut wrong_id = header_record(0, native.first_key, 1, 13);

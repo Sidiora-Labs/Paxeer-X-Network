@@ -840,6 +840,7 @@ impl<'a> CompleteVerifier<'a> {
                 if dependency_receipt_activity_id != activity_id {
                     return Err(CompleteExportError::MaintenanceLink { fact });
                 }
+                let link = self.receipt_link(activity_id, fact)?;
                 verify_nested_account_maintenance(
                     &record.account_value,
                     account_id,
@@ -850,7 +851,6 @@ impl<'a> CompleteVerifier<'a> {
                     parameter_version,
                 )
                 .map_err(|error| CompleteExportError::AccountState { fact, error })?;
-                let link = self.receipt_link(activity_id, fact)?;
                 let maintenance = decode_maintenance(&record.receipt_bytes)
                     .map_err(|_| CompleteExportError::MaintenanceLink { fact })?;
                 let occupancy = maintenance.occupancy();
