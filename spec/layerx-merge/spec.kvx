@@ -30196,7 +30196,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.4]
 title = "AI evaluator service package"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.8", "0.114"]
@@ -43054,7 +43054,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.152]
 title = "Web search payment offers carry the eip155 network the x402 seller admits"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["6.5.20"]
@@ -43786,7 +43786,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.12]
 title = "Gas station: DID-keyed budgets and sequencer nonce"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["0.1", "0.3", "0.114", "0.138"]

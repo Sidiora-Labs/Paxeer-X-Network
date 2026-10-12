@@ -1899,11 +1899,11 @@ log_path = "logs/6.2.13-verify-1.log"
 observed_and_assumption = "verify passed (1 passed (test_service_attest binary + lxp_check_sole_writer.sh), 0 failed)."
 
 [finding.0.12]
-revision = "1f536ea90"
+revision = "90b659d07"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test did_budget --test station -- --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage"
-exit_code = 101
-log_path = "logs/0.12-verify-1.log"
-observed_and_assumption = "verify passed (did_budget 6 passed 0 failed; station 2 passed 8 failed (all Error: KeySource)). Gaps: there is no separate DID-unavailable PolicyRefusal variant, because adding one would break the exhaustive match in src/service.rs, which this task does not own; a failed DID read answers PolicyRefusal::BalanceFloor, as do_3/do_6 specify Unrelated: tests/station.rs install_ephemeral_signer sets a plain env key, but LocalSigner::from_config (src/signer.rs, task 7.1.2) now needs EvmSender env plus a KEY_FILE or KMS source, so 8 station tests fail with KeySource"
+exit_code = 0
+log_path = "logs/0.12-verify-r3-1.log"
+observed_and_assumption = "verify passed (16 passed, 0 failed (did_budget 6, station 10, 2 skipped)). Unrelated: none at this revision (the earlier evm_sender assemble break was fixed on main by 0.140)"
 
 [finding.7.4.2]
 revision = "150ca3b91342016b2799a1f11ee0cf5ac172da35"
@@ -2018,11 +2018,11 @@ log_path = "logs/0.150-verify-4.log"
 observed_and_assumption = "verify passed (2 passed, 0 failed (CARGO_TARGET_DIR seeded with rustc_info.seed.json; verify 1-3 exit 101 on environment faults)). Unrelated: /dev/null on this host is a regular file, which breaks cargo's rustc target probe when no cached probe exists; restore with rm /dev/null && mknod -m 666 /dev/null c 1 3"
 
 [finding.7.1.4]
-revision = "60b45e6ec"
+revision = "54dc95a9e"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ai-evaluator --test epoch"
-exit_code = 101
-log_path = "logs/7.1.4-verify-2.log"
-observed_and_assumption = "verify did not compile on the rebased revision: the platform internal crate on main still calls the method form of assemble after the transaction codec task made it a free function (hosted/internal/src/evm_sender.rs:191); the earlier base passed 3 of 3 (logs/7.1.4-verify-1.log). Assumption: task 0.140 owns that file and lands the free-function call first, then this task reruns both gates once."
+exit_code = 0
+log_path = "logs/7.1.4-verify-3.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed). Gaps: 0x101D getStateHead returns only the program lifecycle record, so the service gates on ACTIVE through it and reads guest state with simulateCall READ_STATE_CHUNK captures at the finalized height | the reader principal is configured, not derived | per-epoch scores come from <assessments_dir>/<epoch>.json written by the external assessment pipeline | tests drive dispatch::route directly, so the RPC/precompile paths are not exercised Unrelated: cargo clippy on hosted/feeder/src/lib.rs:366 struct_field_names (crate linted clean with --no-deps) | head commit summary still reads 'gates blocked upstream' from the prior base; no owned file changed, so no new commit"
 
 [finding.11.5.190]
 revision = "a13ba8eb3"
@@ -2107,3 +2107,10 @@ command = "declared verify_cmd (4 cargo test parts)"
 exit_code = 0
 log_path = "logs/0.140-verify-2.log"
 observed_and_assumption = "verify passed (133 passed, 0 failed). Gaps: none; do_4 names <prefix>_KMS_KEY but EvmSender::from_env reads <prefix>_KMS_KEY_ID, implemented against the real name"
+
+[finding.0.152]
+revision = "130294159"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-x402 --lib model && cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --lib payment && cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --test payment"
+exit_code = 0
+log_path = "logs/0.152-verify-3.log"
+observed_and_assumption = "verify passed (18 passed, 0 failed). Unrelated: the re-recording also changed settlements from transaction lxp:<digest> / verificationLevel sequencer-signed to 0x<hash> / receipted (current seller output since the txHash change); delivery recovery in src/payment.rs (~line 851) still expects lxp:<digest> and sequencer-signed, and no test in this gate covers it"
