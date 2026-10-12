@@ -1282,6 +1282,15 @@ fn a28_unaccepted_cancellation_keeps_its_deadline_and_work_guards() -> TestResul
     assert_eq!(m.world.bytes, before);
     m.cancel(0x21, task, 107)?;
     assert_eq!(m.find(task)?.status, TaskStatus::Cancelled);
+    let mut m = opened(&[1], true)?;
+    let a = m.admission(0x21, 0, 1, 1172)?;
+    m.admit(&a, 1140)?;
+    let task = m.task_id(0x21, 1)?;
+    let before = m.world.bytes.clone();
+    assert_eq!(m.cancel(0x21, task, 1127), Err(WRONG_PHASE));
+    assert_eq!(m.world.bytes, before);
+    m.cancel(0x21, task, 1141)?;
+    assert_eq!(m.find(task)?.status, TaskStatus::Cancelled);
     Ok(())
 }
 
@@ -1512,6 +1521,12 @@ fn a29_changed_metadata_refuses_admission_until_the_next_roster() -> TestResult 
         ..stale
     };
     let call = m.bound(dispatch::ADMIT_TASK, body.requester, body.payload());
+    let old_roster = Req {
+        roster: Presence::Present(frozen.roster),
+        ..call.clone()
+    };
+    assert_eq!(m.world.route(&old_roster, 1652), Err(WRONG_ROSTER));
+    assert_eq!(m.world.bytes, before);
     assert_eq!(m.world.route(&call, 1652)?, ResultStatus::Ok);
     let admitted = m.find(m.task_id(0x21, 1)?)?;
     assert_eq!(
