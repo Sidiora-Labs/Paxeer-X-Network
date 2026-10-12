@@ -1642,3 +1642,10 @@ command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component chec
 exit_code = 0
 log_path = "logs/11.5.168-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed (source scan only)). Gaps: acceptance.11.25.2 / req.11025.2: no TypeScript binding to custodyproof/verify.go or committed-proof input in AgentReceiptEvidence; CheckpointFinalised still refuses with unavailable-capability instead of verifying a block commit. Unrelated: fleet commit helper exit 1 because no new owned changes were staged; rebased earlier commit retained; logs/11.5.168-commit-1.log."
+
+[finding.2.4.9]
+revision = "10faef10a"
+command = "go test -count=1 ./precompiles/layerxpay/ -run TestABIMatchesContract -v"
+exit_code = 0
+log_path = "logs/2.4.9-verify-2.log"
+observed_and_assumption = "verify passed (253 passed, 0 failed (cycle 1: exit 1, logs/2.4.9-verify-1.log, 155 passed, 3 failed)). Gaps: none. Interpretations: the record views (escrow, budget, stream, stream result, service offer/agreement/commitment/delivery/progress/dispute) return one named struct, not flat outputs. Flat outputs would reuse input names (getOffer offerId, latestDelivery agreementId), which Solidity refuses as a redeclaration. Kernel stream event type 8 (80 B rate-change body, lx_stream_execution.h:120-132) is in the ABI as StreamRateUpdated(bytes32 indexed streamId, uint128 oldRate, uint128 newRate, uint128 paid), per req 2025.3/2015.4. The pay.md C section has no row for it, so the contract text needs a matching amendment."

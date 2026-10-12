@@ -7342,7 +7342,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.4.9]
 title = "0x101B ABI and Solidity interface"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = []
