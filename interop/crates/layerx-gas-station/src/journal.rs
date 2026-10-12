@@ -400,6 +400,41 @@ impl State {
         Some(nonce)
     }
 
+    /// The token amount and gas limit quoted under the budget key `did` in
+    /// the interval `interval` of `interval_seconds` seconds, summed over
+    /// every journalled quote issued in it.
+    /// # Errors
+    /// Refuses a zero interval length, an amount wider than 128 bits or an
+    /// overflowing total.
+    pub fn did_spend(
+        &self,
+        did: &str,
+        interval_seconds: u64,
+        interval: u64,
+    ) -> Result<(u128, u64), JournalError> {
+        if interval_seconds == 0 {
+            return Err(JournalError::Corrupt);
+        }
+        self.items
+            .values()
+            .filter_map(|item| item.quote.as_ref())
+            .filter(|quote| quote.did == did && quote.issued_at / interval_seconds == interval)
+            .try_fold((0u128, 0u64), |(amount, gas), quote| {
+                if quote.amount[..16] != [0; 16] {
+                    return Err(JournalError::Corrupt);
+                }
+                let mut low = [0; 16];
+                low.copy_from_slice(&quote.amount[16..]);
+                Ok((
+                    amount
+                        .checked_add(u128::from_be_bytes(low))
+                        .ok_or(JournalError::Corrupt)?,
+                    gas.checked_add(quote.fees.gas_limit)
+                        .ok_or(JournalError::Corrupt)?,
+                ))
+            })
+    }
+
     /// # Errors
     /// Refuses a corrupt fee record.
     pub fn liability(&self, key: Key) -> Result<u128, JournalError> {

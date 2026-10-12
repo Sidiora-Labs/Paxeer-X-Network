@@ -84,11 +84,12 @@ pub struct QuotePolicy {
     config: StationConfig,
     interval: Option<u64>,
     last_time: u64,
-    accounts: BTreeMap<Address, u128>,
+    accounts: BTreeMap<String, u128>,
     total: u128,
     reserved_pax: u128,
     finalized_spend: u128,
     did_budget: DidBudget,
+    replay_key: Option<String>,
 }
 impl QuotePolicy {
     /// # Errors
@@ -104,6 +105,7 @@ impl QuotePolicy {
             reserved_pax: 0,
             finalized_spend: 0,
             did_budget: DidBudget::new(0),
+            replay_key: None,
         })
     }
 
@@ -118,6 +120,17 @@ impl QuotePolicy {
         &self.did_budget
     }
 
+    /// The token amount reserved under the budget key `key` (a DID, or the
+    /// EVM address of an account with no bound DID) in the interval of `now`.
+    #[must_use]
+    pub fn used(&self, key: &str, now: u64) -> u128 {
+        if self.interval == Some(now / self.config.interval_seconds) {
+            self.accounts.get(key).copied().unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
     pub(crate) fn restore_did_usage(
         &mut self,
         did: &str,
@@ -125,7 +138,9 @@ impl QuotePolicy {
         now: u64,
     ) -> Result<(), PolicyRefusal> {
         self.did_budget
-            .reserve(did, gas, now / self.config.interval_seconds)
+            .reserve(did, gas, now / self.config.interval_seconds)?;
+        self.replay_key = Some(did.to_owned());
+        Ok(())
     }
 
     pub(crate) fn restore_usage(
@@ -135,9 +150,16 @@ impl QuotePolicy {
         gas: u128,
         now: u64,
     ) -> Result<(), PolicyRefusal> {
+        if account == [0; 20] {
+            return Err(PolicyRefusal::InvalidAmount);
+        }
+        let key = self
+            .replay_key
+            .take()
+            .unwrap_or_else(|| crate::rpc::hex(&account));
         let active = self.reserved_pax;
         self.reserved_pax = 0;
-        let result = self.reserve(account, amount, gas, u128::MAX, now);
+        let result = self.reserve_key(&key, amount, gas, u128::MAX, now);
         self.reserved_pax = active;
         result
     }
@@ -188,8 +210,11 @@ impl QuotePolicy {
         now: u64,
     ) -> Result<(), PolicyRefusal> {
         let gas_cost = fees.gas_cost().map_err(|_| PolicyRefusal::InvalidAmount)?;
+        if account == [0; 20] {
+            return Err(PolicyRefusal::InvalidAmount);
+        }
         let mut next = self.clone();
-        next.reserve(account, amount, gas_cost, balance, now)?;
+        next.reserve_key(did, amount, gas_cost, balance, now)?;
         next.did_budget
             .reserve(did, fees.gas_limit, now / self.config.interval_seconds)?;
         *self = next;
@@ -264,6 +289,7 @@ impl QuotePolicy {
         })
     }
 
+    /// Reserves for an account with no bound DID, whose budget key is its EVM address.
     /// # Errors
     /// Names the budget or balance floor that would be exceeded. Failed checks consume no budget.
     pub fn reserve(
@@ -274,7 +300,21 @@ impl QuotePolicy {
         balance: u128,
         now: u64,
     ) -> Result<(), PolicyRefusal> {
-        if amount == 0 || gas_cost == 0 || account == [0; 20] {
+        if account == [0; 20] {
+            return Err(PolicyRefusal::InvalidAmount);
+        }
+        self.reserve_key(&crate::rpc::hex(&account), amount, gas_cost, balance, now)
+    }
+
+    fn reserve_key(
+        &mut self,
+        key: &str,
+        amount: u128,
+        gas_cost: u128,
+        balance: u128,
+        now: u64,
+    ) -> Result<(), PolicyRefusal> {
+        if amount == 0 || gas_cost == 0 || !valid_did(key) {
             return Err(PolicyRefusal::InvalidAmount);
         }
         if now < self.last_time {
@@ -283,7 +323,7 @@ impl QuotePolicy {
         let interval = now / self.config.interval_seconds;
         let same_interval = self.interval == Some(interval);
         let prior_account = if same_interval {
-            self.accounts.get(&account).copied().unwrap_or(0)
+            self.accounts.get(key).copied().unwrap_or(0)
         } else {
             0
         };
@@ -314,7 +354,7 @@ impl QuotePolicy {
         }
         self.interval = Some(interval);
         self.last_time = now;
-        self.accounts.insert(account, account_total);
+        self.accounts.insert(key.to_owned(), account_total);
         self.total = total;
         self.reserved_pax = reserved;
         Ok(())
