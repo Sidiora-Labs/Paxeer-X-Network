@@ -1,0 +1,22 @@
+syntax = "proto3";
+package paxprotocol.paxchain.layerxagent;
+
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/types";
+
+// EventJobExecuted is the end-block outcome of a scheduled job that ran and
+// settled: JobExecuted(jobId, creator, gasUsed, refund).
+message EventJobExecuted {
+  uint64 job_id = 1;
+  string creator = 2;
+  uint64 gas_used = 3;
+  string refund = 4;
+}
+
+// EventJobFailed is the end-block outcome of a scheduled job that reverted or
+// failed to settle: JobFailed(jobId, creator, reason), the reason being the
+// deterministic revert string truncated to the cap.
+message EventJobFailed {
+  uint64 job_id = 1;
+  string creator = 2;
+  string reason = 3;
+}

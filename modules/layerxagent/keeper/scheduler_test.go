@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
 	agentcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxagent/common"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/cachemulti"
@@ -19,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	tmdb "github.com/tendermint/tm-db"
 )
@@ -138,32 +141,37 @@ func reverter(t *testing.T, burn uint64, reason string) []byte {
 	return append(code, payload...)
 }
 
-func events(ctx sdk.Context, kind string) []map[string]string {
-	var out []map[string]string
+// outcomes parses every typed event of kind's message type in ctx.
+func outcomes[T proto.Message](t *testing.T, ctx sdk.Context, kind T) []T {
+	t.Helper()
+	var out []T
 	for _, event := range ctx.EventManager().Events() {
-		if event.Type != kind {
+		if event.Type != proto.MessageName(kind) {
 			continue
 		}
-		attrs := map[string]string{}
-		for _, attr := range event.Attributes {
-			attrs[string(attr.Key)] = string(attr.Value)
-		}
-		out = append(out, attrs)
+		parsed, err := sdk.ParseTypedEvent(abci.Event(event))
+		require.NoError(t, err)
+		typed, ok := parsed.(T)
+		require.True(t, ok, event.Type)
+		out = append(out, typed)
 	}
 	return out
 }
 
-func executed(id uint64, creator common.Address, gasUsed uint64, refund int64) map[string]string {
-	return map[string]string{
-		keeper.AttributeJobID: fmt.Sprint(id), keeper.AttributeCreator: creator.Hex(),
-		keeper.AttributeGasUsed: fmt.Sprint(gasUsed), keeper.AttributeRefund: fmt.Sprint(refund),
-	}
+func executedEvents(t *testing.T, ctx sdk.Context) []*types.EventJobExecuted {
+	return outcomes(t, ctx, &types.EventJobExecuted{})
 }
 
-func failed(id uint64, creator common.Address, reason string) map[string]string {
-	return map[string]string{
-		keeper.AttributeJobID: fmt.Sprint(id), keeper.AttributeCreator: creator.Hex(), keeper.AttributeReason: reason,
-	}
+func failedEvents(t *testing.T, ctx sdk.Context) []*types.EventJobFailed {
+	return outcomes(t, ctx, &types.EventJobFailed{})
+}
+
+func executed(id uint64, creator common.Address, gasUsed uint64, refund int64) *types.EventJobExecuted {
+	return &types.EventJobExecuted{JobId: id, Creator: creator.Hex(), GasUsed: gasUsed, Refund: fmt.Sprint(refund)}
+}
+
+func failed(id uint64, creator common.Address, reason string) *types.EventJobFailed {
+	return &types.EventJobFailed{JobId: id, Creator: creator.Hex(), Reason: reason}
 }
 
 func TestMaxJobsPerCreator(t *testing.T) {
@@ -253,9 +261,9 @@ func TestCancelRefundsDeposit(t *testing.T) {
 
 	// The job no longer runs once cancelled.
 	end := h.ctx.WithBlockHeight(int64(later)).WithEventManager(sdk.NewEventManager())
-	h.keeper.EndBlocker(end)
-	require.Empty(t, events(end, keeper.EventJobExecuted))
-	require.Empty(t, events(end, keeper.EventJobFailed))
+	require.NoError(t, h.keeper.EndBlocker(end))
+	require.Empty(t, executedEvents(t, end))
+	require.Empty(t, failedEvents(t, end))
 }
 
 func TestEndBlockRunsDueJobsInIdOrder(t *testing.T) {
@@ -272,19 +280,19 @@ func TestEndBlockRunsDueJobsInIdOrder(t *testing.T) {
 	end := h.ctx.WithBlockHeight(int64(dueAt)).WithEventManager(sdk.NewEventManager())
 
 	// Without an active plan nothing runs.
-	keeper.NewKeeper(h.key, &testkeeper.EVMTestApp.EvmKeeper, "absent-plan").EndBlocker(end)
+	require.NoError(t, keeper.NewKeeper(h.key, &testkeeper.EVMTestApp.EvmKeeper, "absent-plan").EndBlocker(end))
 	require.Empty(t, end.EventManager().Events())
 	require.Equal(t, []uint64{1, 2, 3, 4}, h.keeper.Pending(end, h.creator))
 
 	collectorBefore := h.balance(end, collector)
 	creatorBefore := h.balance(end, h.creatorAcc)
-	h.keeper.EndBlocker(end)
+	require.NoError(t, h.keeper.EndBlocker(end))
 
-	require.Equal(t, []map[string]string{
+	require.Equal(t, []*types.EventJobExecuted{
 		executed(3, h.creator, 40_000, 1_600_000),
 		executed(4, h.creator, intrinsic, 2_000_000-210_000),
-	}, events(end, keeper.EventJobExecuted))
-	require.Empty(t, events(end, keeper.EventJobFailed))
+	}, executedEvents(t, end))
+	require.Empty(t, failedEvents(t, end))
 	require.Equal(t, new(big.Int).Add(collectorBefore, big.NewInt(400_000+210_000)), h.balance(end, collector))
 	require.Equal(t, new(big.Int).Add(creatorBefore, big.NewInt(1_600_000+1_790_000)), h.balance(end, h.creatorAcc))
 	require.Equal(t, new(big.Int).Mul(deposit, big.NewInt(2)), h.balance(end, module))
@@ -309,9 +317,9 @@ func TestEndBlockFailureAndCap(t *testing.T) {
 	end := h.ctx.WithBlockHeight(int64(dueAt)).WithEventManager(sdk.NewEventManager())
 	collectorBefore := h.balance(end, collector)
 	creatorBefore := h.balance(end, h.creatorAcc)
-	h.keeper.EndBlocker(end)
-	require.Equal(t, []map[string]string{failed(5, h.creator, "boom")}, events(end, keeper.EventJobFailed))
-	require.Empty(t, events(end, keeper.EventJobExecuted))
+	require.NoError(t, h.keeper.EndBlocker(end))
+	require.Equal(t, []*types.EventJobFailed{failed(5, h.creator, "boom")}, failedEvents(t, end))
+	require.Empty(t, executedEvents(t, end))
 	require.Equal(t, new(big.Int).Add(collectorBefore, big.NewInt(300_000)), h.balance(end, collector))
 	require.Equal(t, new(big.Int).Add(creatorBefore, big.NewInt(1_700_000)), h.balance(end, h.creatorAcc))
 	_, found := h.keeper.GetJob(end, 5)
@@ -327,8 +335,8 @@ func TestEndBlockFailureAndCap(t *testing.T) {
 	h.ctx = end.WithBlockHeight(int64(dueAt))
 	require.Equal(t, uint64(6), h.schedule(failing, dueAt+1))
 	next := end.WithBlockHeight(int64(dueAt) + 1).WithEventManager(sdk.NewEventManager())
-	h.keeper.EndBlocker(next)
-	require.Equal(t, []map[string]string{failed(6, h.creator, "boo")}, events(next, keeper.EventJobFailed))
+	require.NoError(t, h.keeper.EndBlocker(next))
+	require.Equal(t, []*types.EventJobFailed{failed(6, h.creator, "boo")}, failedEvents(t, next))
 
 	// With a cap of two, the third due job rolls to the next height.
 	h.ctx = next
@@ -336,19 +344,19 @@ func TestEndBlockFailureAndCap(t *testing.T) {
 		require.Equal(t, want, h.schedule(idle, dueAt+2))
 	}
 	capped := next.WithBlockHeight(int64(dueAt) + 2).WithEventManager(sdk.NewEventManager())
-	h.keeper.EndBlocker(capped)
-	require.Equal(t, []map[string]string{
+	require.NoError(t, h.keeper.EndBlocker(capped))
+	require.Equal(t, []*types.EventJobExecuted{
 		executed(7, h.creator, intrinsic, 2_000_000-210_000),
 		executed(8, h.creator, intrinsic, 2_000_000-210_000),
-	}, events(capped, keeper.EventJobExecuted))
+	}, executedEvents(t, capped))
 	job, found := h.keeper.GetJob(capped, 9)
 	require.True(t, found)
 	require.Equal(t, dueAt+2, job.ExecuteAtBlock)
 
 	rolled := capped.WithBlockHeight(int64(dueAt) + 3).WithEventManager(sdk.NewEventManager())
-	h.keeper.EndBlocker(rolled)
-	require.Equal(t, []map[string]string{executed(9, h.creator, intrinsic, 2_000_000-210_000)},
-		events(rolled, keeper.EventJobExecuted))
+	require.NoError(t, h.keeper.EndBlocker(rolled))
+	require.Equal(t, []*types.EventJobExecuted{executed(9, h.creator, intrinsic, 2_000_000-210_000)},
+		executedEvents(t, rolled))
 	_, found = h.keeper.GetJob(rolled, 9)
 	require.False(t, found)
 	require.Equal(t, []uint64{1, 2, 3, 4}, h.keeper.Pending(rolled, h.creator))

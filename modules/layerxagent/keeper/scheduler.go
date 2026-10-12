@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -15,28 +17,16 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
-// Typed events of the end-block hook. No transaction receipt exists at end
-// block, so job outcomes are Cosmos events rather than EVM logs.
-const (
-	EventJobExecuted = "layerxagent.EventJobExecuted"
-	EventJobFailed   = "layerxagent.EventJobFailed"
-
-	AttributeJobID   = "job_id"
-	AttributeCreator = "creator"
-	AttributeGasUsed = "gas_used"
-	AttributeRefund  = "refund"
-	AttributeReason  = "reason"
-)
-
 // EndBlocker runs the jobs due at the block height in (block, id) order, at
 // most MaxJobsPerBlock of them; the rest stay due and roll to the next
 // height. Each job runs as its creator in a cached context under its own gas
 // limit; gasUsed x baseFee of its deposit goes to the fee collector whether
 // it succeeds or fails and the rest returns to the creator. Nothing a job
-// does halts the block.
-func (k Keeper) EndBlocker(ctx sdk.Context) {
+// does halts the block; the returned error joins the encoding failures of
+// outcome events, reported after every due job has run and settled.
+func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	if ctx.BlockHeight() < 0 || k.Active(ctx) != nil {
-		return
+		return nil
 	}
 	params := k.GetParams(ctx)
 	var due []Job
@@ -45,12 +35,16 @@ func (k Keeper) EndBlocker(ctx sdk.Context) {
 		return uint64(len(due)) >= params.MaxJobsPerBlock
 	})
 	baseFee := k.baseFee(ctx)
+	var errs []error
 	for _, job := range due {
-		k.runJob(ctx, job, baseFee, params.MaxReasonBytes)
+		if err := k.runJob(ctx, job, baseFee, params.MaxReasonBytes); err != nil {
+			errs = append(errs, fmt.Errorf("job %d: %w", job.ID, err))
+		}
 	}
+	return errors.Join(errs...)
 }
 
-func (k Keeper) runJob(ctx sdk.Context, job Job, baseFee *big.Int, reasonCap uint64) {
+func (k Keeper) runJob(ctx sdk.Context, job Job, baseFee *big.Int, reasonCap uint64) error {
 	k.DeleteJob(ctx, job)
 	gasUsed, reasons := k.execute(ctx, job, baseFee)
 
@@ -68,18 +62,21 @@ func (k Keeper) runJob(ctx sdk.Context, job Job, baseFee *big.Int, reasonCap uin
 		reasons = append(reasons, "refund: "+err.Error())
 	}
 
+	// No transaction receipt exists at end block, so job outcomes are Cosmos
+	// typed events rather than EVM logs.
 	if len(reasons) == 0 {
-		ctx.EventManager().EmitEvent(sdk.NewEvent(EventJobExecuted,
-			sdk.NewAttribute(AttributeJobID, fmt.Sprint(job.ID)),
-			sdk.NewAttribute(AttributeCreator, job.Creator.Hex()),
-			sdk.NewAttribute(AttributeGasUsed, fmt.Sprint(gasUsed)),
-			sdk.NewAttribute(AttributeRefund, refund.String())))
-		return
+		return ctx.EventManager().EmitTypedEvent(&types.EventJobExecuted{
+			JobId:   job.ID,
+			Creator: job.Creator.Hex(),
+			GasUsed: gasUsed,
+			Refund:  refund.String(),
+		})
 	}
-	ctx.EventManager().EmitEvent(sdk.NewEvent(EventJobFailed,
-		sdk.NewAttribute(AttributeJobID, fmt.Sprint(job.ID)),
-		sdk.NewAttribute(AttributeCreator, job.Creator.Hex()),
-		sdk.NewAttribute(AttributeReason, truncate(strings.Join(reasons, "; "), reasonCap))))
+	return ctx.EventManager().EmitTypedEvent(&types.EventJobFailed{
+		JobId:   job.ID,
+		Creator: job.Creator.Hex(),
+		Reason:  truncate(strings.Join(reasons, "; "), reasonCap),
+	})
 }
 
 // settle pays amount out of escrow in its own cached context so a failed
