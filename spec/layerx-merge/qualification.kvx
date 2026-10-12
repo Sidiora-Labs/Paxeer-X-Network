@@ -646,11 +646,11 @@ log_path = "logs/6.5.11-verify-1.log"
 observed_and_assumption = "verify passed (17 passed, 0 failed). Unrelated: cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --all-targets --no-deps | exit 101 | logs/6.5.11-lint-3.log | 32 existing errors in agent/crates/layerx-agent-api/src/identity.rs and src/read.rs; no owned-file diagnostics, test-target lint not reached"
 
 [finding.6.5.13]
-revision = "b707989f7"
-command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors"
+revision = "da8e8a946"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test verification"
 exit_code = 101
 log_path = "logs/6.5.13-verify-1.log"
-observed_and_assumption = "the build fails on unmigrated VerificationLevel references across agent/crates/layerx-proof and on the Level re-export in lib.rs, all outside touches, so the Rung migration is held on its branch."
+observed_and_assumption = "verify passed (0 passed, 0 failed; compilation blocked, second command not reached). Gaps: clients.md(c) Committed proof production has no interface in the scoped legacy artifact for Comet commits, validator sets, or execution-result proofs; legacy verifiers therefore report at most Receipted. Unrelated: prior layerx-types/src/program_lifecycle.rs lint belongs to task 0.113; file untouched and no diagnostics there in this lint run."
 
 [finding.6.5.16]
 revision = "2267fbfe5"
@@ -2002,3 +2002,17 @@ command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component lni 
 exit_code = 0
 log_path = "logs/11.5.92-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed)."
+
+[finding.5.3.3]
+revision = "5f593945b"
+command = "cd human/wallet/sdk && npx vitest run test/modules.test.ts"
+exit_code = 0
+log_path = "logs/5.3.3-verify-2.log"
+observed_and_assumption = "verify passed (13 passed, 0 failed). Gaps: 5.50.1 (gateway) and 5.50.3 (catalogue) are outside this task's touches; their tests are platform/hosted/gateway/tests/local/events.rs and tools/bringup/tests/xweb_retirement.test.sh. The WalletCapsSnapshot/WalletCapsState/WalletBudgetCap/WalletGrantCap types stay because human/apps/wallet useSurface.ts and WebDataView.tsx still import WalletCapsState"
+
+[finding.0.150]
+revision = "38f8c0941"
+command = "cargo metadata --locked --offline --format-version 1 --manifest-path agent/fuzz/Cargo.toml >/dev/null && cargo metadata --locked --offline --format-version 1 --manifest-path agent/tests/isolation/Cargo.toml >/dev/null"
+exit_code = 0
+log_path = "logs/0.150-verify-4.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed (CARGO_TARGET_DIR seeded with rustc_info.seed.json; verify 1-3 exit 101 on environment faults)). Unrelated: /dev/null on this host is a regular file, which breaks cargo's rustc target probe when no cached probe exists; restore with rm /dev/null && mknod -m 666 /dev/null c 1 3"

@@ -19912,7 +19912,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3.3]
 title = "Remove lx_getWalletCaps"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["5.2.5"]
@@ -42990,7 +42990,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.150]
 title = "Platform and agent test workspace locks follow the gateway's sha3 dependency"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["0.26", "0.138", "0.149"]
