@@ -7631,3 +7631,33 @@ fix = "attach the transaction to a consensus block first, then flip block consen
 area = "consensus p2p tests"
 symptom = "consensus/internal/state imports config, which imports p2p, so in-package p2p tests cannot build the real state store"
 fix = "put store-backed tests in rpc/core and keep an in-memory store in p2p tests; adding a method to sm.Store also needs the mockery-style method in state/mocks/store.go"
+
+[gotcha.1612]
+area = "go build gates"
+symptom = "go build fails with no non-test Go files on a package that holds only a test"
+fix = "gate such a package with go vet or go test -run ^$"
+
+[gotcha.1613]
+area = "interop workspace locks"
+symptom = "every --locked cargo command in interop exits 101 after a member outside interop/crates (platform/hosted/internal) gains dependencies"
+fix = "refresh interop/Cargo.lock in the task that adds the dependency, and list every workspace lock the crate belongs to"
+
+[gotcha.1614]
+area = "cargo clippy per crate"
+symptom = "cargo clippy -p <crate> also lints the workspace path dependencies, so a pedantic denial in a dependency crate blocks the gate"
+fix = "fix the dependency crate's lint in a repair task; never add allow attributes"
+
+[gotcha.1615]
+area = "npm --prefix exec"
+symptom = "npm --prefix <dir> exec -- tsc -p tsconfig.json runs in the caller's directory, not in <dir>, so tsconfig.json is not found"
+fix = "cd into the package for exec gates; npm --prefix run <script> does change directory"
+
+[gotcha.1616]
+area = "human/wallet packages"
+symptom = "human/wallet/* are pnpm packages locked by human/wallet/pnpm-lock.yaml; the root npm package-lock.json pins a different @noble/curves major and does not govern them"
+fix = "install with pnpm inside human/wallet and run gates from the package directory"
+
+[gotcha.1617]
+area = "explorer mix compile"
+symptom = "mix compile of the whole umbrella takes more than ten minutes on the shared host"
+fix = "run it detached with an exit file and poll"

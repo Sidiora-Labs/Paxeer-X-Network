@@ -1403,12 +1403,11 @@ exit_code = 1
 log_path = "logs/5.2.1-verify-1.log"
 observed_and_assumption = "held unlanded: 28 of 29 verify tests pass; node/upgrades_v610_test.go:56 pins the plan list without MergeUpgrade (v7.0) registered at node/upgrades.go:464 by an earlier task, so do_11 and the touches now cover that test and the worktree is rerun."
 [finding.0.113]
-revision = ""
-command = "cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof --all-targets && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof"
+revision = "d4a1b1b35"
+command = "<verify_cmd as in task block>"
 exit_code = 101
 log_path = "logs/0.113-verify-1.log"
-observed_and_assumption = "verify passed (--no-fail-fast evidence: 167 passed, 6 failed (logs/0.113-verify-1-nofailfast.log)). Gaps: none for lint scope; do_3 'every existing test keeps passing' not met by prior failures below Unrelated: native_terminal_outcome 4 tests panic without LAYERX_NATIVE_TERMINAL_RECORDS (env-gated); with the retained records tsv set they pass 4/4 on this revision | logs/0.113-native-terminal-retained.log"
-
+observed_and_assumption = "held unlanded: build passed; the verify clippy run stops in layerx-crypto (agent/crates/layerx-crypto/src/evm_transaction.rs:106 assemble lacks a # Errors section, from task 7.0.8), so the tests did not run; task 0.138 adds the docs and this worktree is rerun after it."
 [finding.0.111]
 revision = "b6c53abe5"
 command = "go test -count=1 ./rpc/... -run 'TestHeaderReceiptsRootIsSameBlockResults"
@@ -1728,8 +1727,43 @@ log_path = "logs/0.120-verify-1.log"
 observed_and_assumption = "verify passed (5 passed, 0 failed). Unrelated: clippy -D pedantic fails outside scope: agent layerx-types program_lifecycle.rs:74,86 missing_errors_doc and programs_module_abi.rs:85-86 assertions_on_constants; human layerx-intents precompile.rs:711 missing_errors_doc (logs 0.120-clippy-agent.log, 0.120-clippy-human.log)"
 
 [finding.0.122]
-revision = "4952747bb"
+revision = "46d993400"
 command = "make build && grep -qxF '#define LXP_CHECKPOINT_MAXIMUM_ATTESTATION_DELAY_SECONDS UINT64_C(3600)' build/generated/lxp_checkpoint_settlement.h"
-exit_code = 2
+exit_code = 0
 log_path = "logs/0.122-verify-1.log"
-observed_and_assumption = "held unlanded: the generated header carries the expected line and liblayerx.a builds, but make build stopped at programs-release-build on the serde_json pin before task 0.123 landed; the worktree is rerun on the new base."
+observed_and_assumption = "verify passed (1 passed, 0 failed)."
+
+[finding.0.131]
+revision = "a2e35b248"
+command = "explorer/deploy/tools/mix-in-builder.sh test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller_test.exs (declared verify_cmd)"
+exit_code = 0
+log_path = "logs/0.131-verify-1.log"
+observed_and_assumption = "verify passed (12 passed, 0 failed). Gaps: none (two prior assertions expected rung 'instant', which Status.of never yields; they now assert 'committed', the rung Finality's committed height gives a consensus block; new list and detail cases assert a kernel row with no block is 'submitted')"
+
+[finding.0.133]
+revision = "9ad181082"
+command = "python3 -m pytest tools/qualification/test_registry_router_bootstrap.py -k governed_receipt_keys"
+exit_code = 0
+log_path = "logs/0.133-verify-1.log"
+observed_and_assumption = "verify passed (20 passed, 0 failed)."
+
+[finding.0.130]
+revision = "05f2c064d"
+command = "go test -count=1 ./precompiles/layerxpay/ -run TestABIMatchesContract -v"
+exit_code = 0
+log_path = "logs/0.130-verify-1.log"
+observed_and_assumption = "verify passed (253 passed, 0 failed); the declared build gate go build fails on a package that holds only test files (no non-test Go files), so the build check is the compile inside the verify run and the build_cmd is corrected to go vet."
+
+[finding.0.128]
+revision = "356d98ca6"
+command = "cargo clippy --locked --manifest-path interop/Cargo.toml -p layerx-migrate -p layerx-ucp --all-targets -- -D warnings"
+exit_code = 101
+log_path = "logs/0.128-verify-1.log"
+observed_and_assumption = "held unlanded: neither gate compiled because interop/Cargo.lock on main lacks the k256 and layerx-crypto entries that platform/hosted/internal gained with task 7.0.8; task 0.138 refreshes the lock and this worktree is rerun after it."
+
+[finding.0.125]
+revision = "395c21ee7"
+command = "npm --prefix human/wallet/sdk exec -- tsc -p tsconfig.json --noEmit && npm --prefix human/wallet/sdk test"
+exit_code = 1
+log_path = "logs/0.125-verify-1.log"
+observed_and_assumption = "held unlanded: the task premise did not hold, human/wallet/sdk resolves the pnpm-locked @noble/curves 1.9.1 which has ExtendedPoint and no Point, and the npm --prefix exec gate form runs tsc in the caller directory; decision 82 rescopes the task to the 1.9.1 API with package-directory pnpm gates and the worktree is reset and rerun."

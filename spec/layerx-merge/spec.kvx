@@ -494,6 +494,12 @@ value = "page() in the hosted gateway accepts the indexer position cursor inside
 basis = "7.5.6 requires 0.27 while 0.27 verifies the gateway history tests, so the page() change cannot wait for 7.5.6"
 affects = ["0.27", "7.5.6"]
 
+[decision.82]
+title = "Wallet SDK curve library version"
+value = "human/wallet/sdk stays on the pnpm-locked @noble/curves 1.9.1 with ed25519.ExtendedPoint; the root package-lock.json does not govern the pnpm packages under human/wallet, and their gates run from the package directory with pnpm"
+basis = "human/wallet/pnpm-lock.yaml; 0.125 gate result"
+affects = ["0.125", "0.116"]
+
 [design]
 flow = "Wallet, agent or developer client -> unified router -> sequencer (eth_sendRawTransaction) -> execute at receipt on the open block -> WAL group fsync and hot-standby ack -> signed receipt (pax_sequencerReceipt) and pending reads -> block proposed in receipt order with MsgSequenceBatch at tx 0 -> validators check order in ProcessProposal, execute with OCC and commit -> committed receipt and history."
 domains = "One execution domain, paxd. The LayerX kernel is folded in: its C modules and the Rust program runtime run inside chain keepers through a cgo lxp_module_ctx shim (decision.1), kernel accounts are derived bank addresses (decision.2), and the kernel daemon, its WAL, replicas, finality and checkpoint anchoring are retired because block commit is finality."
@@ -30090,7 +30096,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1.2]
 title = "Gas station relayer key through the shared EVM sender loader"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["7.0.8", "0.114"]
@@ -41190,7 +41196,7 @@ title = "65-byte transaction signature and EVM transaction codec in layerx-crypt
 status = "pending"
 mode = "BUILD"
 wave = 1
-requires = []
+requires = ["0.138"]
 reqs = ["6015.2", "6015.3"]
 capabilities = ["6.3.2"]
 do_1 = "In agent/crates/layerx-crypto/src/signer.rs rename the 64-byte ed25519 output of Signer::sign to DidSignature([u8; 64]) with the same as_bytes accessor (clients.md B2: the DID key signs only bind messages and payer grants), and redefine AgentSignature as the 65-byte secp256k1 r||s||v transaction signature with v in {27, 28} and a low-S check in its constructor."
@@ -41297,7 +41303,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.59]
 title = "Shared sequencer receipt conformance corpus"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -41958,7 +41964,7 @@ title = "layerx-types and layerx-proof crates pass their clippy deny level in ev
 status = "in_progress"
 mode = "BUILD"
 wave = 0
-requires = ["0.124"]
+requires = ["0.124", "0.138"]
 reqs = ["8.1"]
 capabilities = []
 do_1 = "Add the # Errors doc sections the missing_errors_doc lint asks for at agent/crates/layerx-types/src/program_lifecycle.rs:74 and :86, and replace the constant assertions at agent/crates/layerx-types/src/programs_module_abi.rs:85-87 with compile-time const assertions (const _: () = assert!(...)) so assertions_on_constants no longer fires while the same values stay checked."
@@ -42193,7 +42199,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.122]
 title = "make build writes the checkpoint settlement header without the retired finality policy field"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["11.5.63"]
@@ -42278,13 +42284,13 @@ wave = 1
 requires = []
 reqs = ["8.1"]
 capabilities = []
-do_1 = "requireLxPoint (human/wallet/sdk/src/index.ts:760) reads ed25519.ExtendedPoint, which the locked @noble/curves 2.4.0 does not export (TS2339): use the point class the locked version exports (ed25519.Point.fromHex, isSmallOrder, toBytes) with the same canonical and small-order refusals and the same LX_PUBLIC_KEY_INVALID error."
-do_2 = "Set the @noble/curves range in human/wallet/sdk/package.json to the locked major and refresh the root package-lock.json with npm install --package-lock-only so the manifest and lock agree; no other dependency changes."
+do_1 = "Per decision 82 the wallet SDK stays on the @noble/curves 1.9.1 that human/wallet/pnpm-lock.yaml locks for human/wallet/sdk (the root package-lock.json 2.4.0 does not govern the pnpm packages under human/wallet), so requireLxPoint (human/wallet/sdk/src/index.ts:760) keeps ed25519.ExtendedPoint with the same canonical and small-order refusals and the same LX_PUBLIC_KEY_INVALID error; the package range in human/wallet/sdk/package.json stays ^1.9.1."
+do_2 = "Run the gates from inside the package so the pnpm-installed dependencies resolve; if the worktree node_modules under human/wallet are links into the primary checkout, replace them with a real pnpm install --frozen-lockfile run in human/wallet of the worktree before the gates (not a repair cycle); the task is complete when the typecheck and the point tests pass with index.ts unchanged, and any source change is reported as a gap."
 do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["requireLxPoint"]
-touches = ["human/wallet/sdk/src/index.ts", "human/wallet/sdk/package.json", "package-lock.json"]
-build_cmd = "npm --prefix human/wallet/sdk exec -- tsc -p tsconfig.json --noEmit"
-verify_cmd = "npm --prefix human/wallet/sdk exec -- tsc -p tsconfig.json --noEmit && npm --prefix human/wallet/sdk test"
+touches = ["human/wallet/sdk/src/index.ts", "human/wallet/sdk/package.json"]
+build_cmd = "cd human/wallet/sdk && pnpm exec tsc -p tsconfig.json --noEmit"
+verify_cmd = "cd human/wallet/sdk && pnpm exec tsc -p tsconfig.json --noEmit && pnpm exec vitest run test/point.test.ts"
 gate_kind = "existing"
 planned_paths = []
 max_builds = 1
@@ -42349,7 +42355,7 @@ title = "Interop layerx-migrate and layerx-ucp pass the workspace clippy level"
 status = "in_progress"
 mode = "BUILD"
 wave = 1
-requires = []
+requires = ["0.138"]
 reqs = ["8.1"]
 capabilities = []
 do_1 = "Bring the 16 clippy denials in interop/crates/layerx-migrate/src (ethereum.rs, gateway_client.rs, history.rs, journal.rs, ramp_v2.rs, solana.rs) and the one at interop/crates/layerx-ucp/src/lib.rs:664 to the interop workspace lint level with the same behaviour; mapping_v2.rs is cleared by task 7.6.2; no lint is allowed or capped."
@@ -42395,7 +42401,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.130]
 title = "Pay contract document records the record-view structs and StreamRateUpdated"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
@@ -42406,7 +42412,7 @@ do_2 = "Add the row for kernel stream event type 8, StreamRateUpdated(bytes32 in
 do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["StreamRateUpdated"]
 touches = ["spec/layerx-merge/contracts/pay.md"]
-build_cmd = "go build ./precompiles/layerxpay/"
+build_cmd = "go vet ./precompiles/layerxpay/"
 verify_cmd = "go test -count=1 ./precompiles/layerxpay/ -run TestABIMatchesContract"
 gate_kind = "existing"
 planned_paths = []
@@ -42420,7 +42426,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.131]
 title = "Explorer receipts route reads committed heights through Finality"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
@@ -42471,7 +42477,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.133]
 title = "Registry router bootstrap reads governed receipt key heights in Amino JSON form"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["11.5.242"]
@@ -42592,6 +42598,31 @@ build_cmd = "cd explorer/backend && mix compile"
 verify_cmd = "cd explorer/backend && mix test apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/transaction_status_controller_test.exs apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller_test.exs"
 planned_paths = []
 gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.138]
+title = "Interop lock and layerx-crypto error docs after the KMS EVM sender"
+status = "in_progress"
+mode = "BUILD"
+wave = 0
+requires = ["7.0.8"]
+reqs = ["7034.3"]
+capabilities = []
+do_1 = "platform/hosted/internal gained k256 and layerx-crypto dependencies (platform/hosted/internal/Cargo.toml) and interop/Cargo.lock does not list them, so every --locked cargo command in the interop workspace exits 101; refresh interop/Cargo.lock offline (cargo metadata --offline --manifest-path interop/Cargo.toml) so it adds exactly those dependency entries and nothing else moves."
+do_2 = "pub fn assemble at agent/crates/layerx-crypto/src/evm_transaction.rs:106 (and any other public fallible function in that file) carries a # Errors doc section naming the refusals, so clippy::missing_errors_doc under the pedantic deny level passes for layerx-crypto; no lint is allowed or capped."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["Eip1559Call::assemble"]
+touches = ["interop/Cargo.lock", "agent/crates/layerx-crypto/src/evm_transaction.rs"]
+build_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null"
+verify_cmd = "cargo metadata --locked --format-version 1 --manifest-path interop/Cargo.toml >/dev/null && cargo clippy --locked --manifest-path agent/Cargo.toml -p layerx-crypto --all-targets -- -D warnings"
+planned_paths = []
+gate_kind = "existing"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -43079,7 +43110,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.12]
 title = "Gas station: DID-keyed budgets and sequencer nonce"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.1", "0.3", "0.114"]
