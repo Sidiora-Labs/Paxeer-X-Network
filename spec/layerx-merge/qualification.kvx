@@ -1610,12 +1610,11 @@ log_path = "logs/0.117-verify-1.log"
 observed_and_assumption = "verify passed (6 passed, 0 failed)."
 
 [finding.3.4.8]
-revision = ""
+revision = "b7ddba201"
 command = "go test -count=1 ./precompiles/launchpad/"
-exit_code = 1
-log_path = "logs/3.4.8-verify-2.log"
-observed_and_assumption = "verify passed (5 passed, 2 failed (cycle 1 with -v: logs/3.4.8-verify-1.log exit 1, 4 passed 3 failed)). Gaps: none (do_1 TestGetProtocolFeesPerMarket and do_3 pinned getProtocolFees row already landed with 3.2.11; do_2 full trimmed getConfig tuple names + values added; do_5 getReserves/getPrice/getPriceSnapshots 0,2,3-swap ring order, getMarkets/getMarketsByCreator records, getAccumulatedFees, getFeeBps vs keeper added; do_4 untouched) Unrelated: TestClaimAirdropForEpochThroughThePrecompile:474 expects substring 'not opened' but module now reverts LXP_LAUNCHPAD_INVALID_AIRDROP_EPOCH (prior on main, outside this task's do_* lines)"
-
+exit_code = 0
+log_path = "logs/3.4.8-verify-3.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed)."
 [finding.11.5.232]
 revision = ""
 command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --component lni --component settlement-domain --path tools/qualification/paxeer-x/authority-evidence-read.py --path tools/qualification/paxeer-x/authority-lni-readiness.py --path tools/qualification/paxeer-x/budget-proof-intake.py"
