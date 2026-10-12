@@ -2100,3 +2100,10 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-pla
 exit_code = "not-run"
 log_path = "logs/13.5.1-verify-1.log"
 observed_and_assumption = "gates not run; the worker stopped at a missing required interface before any edit (0 passed, 0 failed (not run)). Gaps: acceptance.13.3.1: pending-tag routing remains unimplemented at the required-interface stop; Config currently contains only the generic Paxeer endpoint pool. Unrelated: fleet-commit.sh with NOADD=1 exited 1 because no task changes were staged; logs/13.5.1-commit-1.log. Existing dependency links were preserved; no commit was created."
+
+[finding.0.140]
+revision = "8cc8c5c16"
+command = "declared verify_cmd (4 cargo test parts)"
+exit_code = 0
+log_path = "logs/0.140-verify-2.log"
+observed_and_assumption = "verify passed (133 passed, 0 failed). Gaps: none; do_4 names <prefix>_KMS_KEY but EvmSender::from_env reads <prefix>_KMS_KEY_ID, implemented against the real name"
