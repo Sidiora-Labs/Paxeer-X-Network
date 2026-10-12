@@ -7850,7 +7850,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.5.11]
 title = "Cross-architecture replay identity for the new pay activity types"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["2.4.1", "2.3.2"]
@@ -7878,7 +7878,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.5.12]
 title = "Qualification replay list and digest for the new pay activity types"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["2.4.1", "2.3.2"]
@@ -19938,7 +19938,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.4.1]
 title = "Origin-2 admission, committed cap, fee account split and pause on FulfilProgram"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["5.3.1", "5.1.4"]
@@ -20574,7 +20574,8 @@ do_4 = "Port the read rows (tests/test_programs_web_read.c:380-448) against getP
 do_5 = "Use the observation fixture bytes the adapter test reads (tests/network/test_web_adapter.c:1)."
 do_6 = "Write tools/bringup/tests/xweb_retirement.test.sh asserting the retirements: no lx_getProgramEvents (platform/hosted/gateway/src/rpc.rs:347), no lx_getWalletCaps (platform/hosted/gateway/src/rpc.rs:368), no src/modules/web (src/modules/web/lx_web_intake.c:510), no LXP_MODULE_WEB registration (src/protocol/lxp_genesis.c:67-68), no LAYERX-PAYER-DID (tools/qualification/paxeer-x/paid-web-contract.py:405) and no lx_ method in the sidecar (interop/crates/x-websearch/src/payment.rs:1981)."
 do_7 = "Write the tests modules/xweb/keeper/parity_test.go with one case per acceptance of this task that they name (of 5.52.1, 5.52.2, 5.52.3, 5.52.4), each using the real keeper, precompile or binary path whose behaviour starts at tests/modules/test_web_intake.c:555; no test double replaces the path under test."
-do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_8 = "The settlement parser deletion is performed by task 0.157; this task keeps that removal and does not re-add the parser."
+do_9 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["TestParity"]
 touches = ["modules/xweb/keeper/parity_test.go", "tools/bringup/tests/xweb_retirement.test.sh"]
 build_cmd = "go build ./modules/xweb/keeper/"
@@ -25752,9 +25753,10 @@ do_1 = "agent-api src/error.rs replaces enum Level (line 129) and From<Verificat
 do_2 = "layerx-types src/verify.rs removes VerificationLevel; tests/verification.rs moves to Rung. layerx-proof level.rs, checkpoint.rs, evidence.rs, export.rs, inclusion.rs and receipt.rs report Rung, with SettlementAnchored and CheckpointFinalised removed; proof tests and the offline_export and offline_verify examples follow."
 do_3 = "Tests: errors.rs::rung_has_three_variants, errors.rs::verification_status_uses_rungs, errors.rs::no_settlement_anchored. Every other caller moves in 0.58, which must land directly after this task."
 do_4 = "Clear the 32 clippy diagnostics in agent/crates/layerx-agent-api/src/identity.rs and src/read.rs at the agent workspace lint level with the same behaviour; no lint is allowed or capped."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "The six layerx-client sources that import layerx_types::verify::VerificationLevel (client.rs, evidence/asset_record.rs, evidence/caps.rs, evidence.rs, read.rs, ai_market.rs) move to layerx_types::rung::Rung with the same mapping task 0.58 states, so the agent-api build graph compiles; task 0.58 keeps those files as migrated and does not re-edit them."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["Rung", "Level", "VerificationLevel"]
-touches = ["agent/crates/layerx-agent-api/src/error.rs", "agent/crates/layerx-agent-api/src/lib.rs", "agent/crates/layerx-agent-api/src/read.rs", "agent/crates/layerx-agent-api/src/stream.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agent-api/tests/errors.rs", "agent/crates/layerx-agent-api/tests/read.rs", "agent/crates/layerx-types/src/verify.rs", "agent/crates/layerx-types/tests/verification.rs", "agent/crates/layerx-proof/src/level.rs", "agent/crates/layerx-proof/src/checkpoint.rs", "agent/crates/layerx-proof/src/evidence.rs", "agent/crates/layerx-proof/src/export.rs", "agent/crates/layerx-proof/src/inclusion.rs", "agent/crates/layerx-proof/src/receipt.rs", "agent/crates/layerx-proof/tests/checkpoint.rs", "agent/crates/layerx-proof/tests/export_complete.rs", "agent/crates/layerx-proof/tests/inclusion.rs", "agent/crates/layerx-proof/tests/native_owner_outcome.rs", "agent/crates/layerx-proof/tests/native_terminal_outcome.rs", "agent/crates/layerx-proof/tests/receipt.rs", "agent/crates/layerx-proof/examples/offline_export.rs", "agent/crates/layerx-proof/examples/offline_verify.rs"]
+touches = ["agent/crates/layerx-agent-api/src/error.rs", "agent/crates/layerx-agent-api/src/lib.rs", "agent/crates/layerx-agent-api/src/read.rs", "agent/crates/layerx-agent-api/src/stream.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agent-api/tests/errors.rs", "agent/crates/layerx-agent-api/tests/read.rs", "agent/crates/layerx-types/src/verify.rs", "agent/crates/layerx-types/tests/verification.rs", "agent/crates/layerx-proof/src/level.rs", "agent/crates/layerx-proof/src/checkpoint.rs", "agent/crates/layerx-proof/src/evidence.rs", "agent/crates/layerx-proof/src/export.rs", "agent/crates/layerx-proof/src/inclusion.rs", "agent/crates/layerx-proof/src/receipt.rs", "agent/crates/layerx-proof/tests/checkpoint.rs", "agent/crates/layerx-proof/tests/export_complete.rs", "agent/crates/layerx-proof/tests/inclusion.rs", "agent/crates/layerx-proof/tests/native_owner_outcome.rs", "agent/crates/layerx-proof/tests/native_terminal_outcome.rs", "agent/crates/layerx-proof/tests/receipt.rs", "agent/crates/layerx-proof/examples/offline_export.rs", "agent/crates/layerx-proof/examples/offline_verify.rs", "agent/crates/layerx-client/src/client.rs", "agent/crates/layerx-client/src/evidence/asset_record.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/read.rs", "agent/crates/layerx-client/src/ai_market.rs"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agent-api -p layerx-types -p layerx-proof --tests --examples"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agent-api --test errors && cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types --test verification"
 gate_kind = "existing"
@@ -27186,7 +27188,8 @@ do_1 = "Remove expected_settlement_domain (agent/crates/layerx-agentd/src/read/m
 do_2 = "Delete agent/crates/layerx-proof/src/settlement.rs and agent/crates/layerx-types/src/settlement.rs."
 do_3 = "Put chain id 125 and the validator set into exports."
 do_4 = "Re-target agent/crates/layerx-agentd/tests/finality.rs settlement cases."
-do_5 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_5 = "The settlement parser deletion is performed by task 0.157; this task keeps that removal and does not re-add the parser."
+do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["SettlementDomain"]
 touches = ["agent/crates/layerx-agentd/src/read/mod.rs", "agent/crates/layerx-proof/src/settlement.rs", "agent/crates/layerx-types/src/settlement.rs"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd --tests"
@@ -30244,7 +30247,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.1]
 title = "Gas station budgets keyed per DID through addr 0x1004"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["7.1.1", "0.114"]
@@ -30394,7 +30397,8 @@ do_2 = "Scan positions with getPerpsPositions, send liquidate with liquidatorAcc
 do_3 = "Sign with EvmSender and register the sender with gas station sponsorship (interop/crates/layerx-gas-station/src/service.rs:270-274); a chain refusal of a duplicate tick is logged and not retried for that interval."
 do_4 = "Expose metrics for last funding tick per market, positions below maintenance not liquidated and the insurance fund balance, keyed by the market id of getMarket (precompiles/layerxexchange/LayerXExchange.sol:129)."
 do_5 = "Add the package to the platform workspace (platform/Cargo.toml:2-29) with tests/keeper.rs covering a due tick, a liquidation and a duplicate tick."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "Sponsorship of the keeper's transactions is operator registration of the keeper's logged sender address in registered_senders of the gas-station configuration; the keeper sends self-signed type-2 transactions and does not call the sponsored quote or submit routes."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["layerx-perps-keeper", "funding_tick_due", "liquidates_below_maintenance"]
 touches = ["platform/hosted/perps-keeper/Cargo.toml", "platform/hosted/perps-keeper/src/main.rs", "platform/Cargo.toml"]
 build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-perps-keeper"
@@ -30427,9 +30431,10 @@ do_7 = "Decode each simulateCall response with codec::decode_result (programs/cr
 do_8 = "Send Heartbeat and EnrollWorker from main through OperationSender::send after each committed-height read, independent of job admission: EnrollWorker when the worker record is absent, one Heartbeat when heartbeat_distance (programs/crates/layerx-programs-ai-market/src/admission.rs:74) is reached; ACCEPT_TASK, COMMIT_TASK_RESULT and SealEvidence stay library sends until task 4.5.10 opens admission (platform/hosted/paxai-worker/src/main.rs:165)."
 do_9 = "Extend tests/task_chain_handoff.rs: a roster at committed height 700 is read with eth_call at block 0x2bc for getStateHead and every READ_STATE_CHUNK and binds execution_height 700; a due heartbeat sends exactly one 0x101D call transaction carrying Heartbeat."
 do_10 = "The runner lookup request carries the job's lease fence, so a NOT_RECEIVED answer settles in jobs.rs against the lease fence instead of fence 0, and a runner answer carrying a fence below the lease is refused as stale; the test in tests/job_recovery.rs proves an unknown job is never returned to ACCEPTED by a lookup."
-do_11 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_11 = "The 0x1015 views and writes the keeper is coded against (getFunding, getOracle, getDeficit, getPerpsPositions, fundingTick, adl) exist in precompiles/layerxexchange with the ABI the keeper decodes; if any is missing this task adds it, and the insurance and margin balances remain readable through the ledger balanceOf view."
+do_12 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["program_call", "EvmSender"]
-touches = ["platform/hosted/paxai-worker/src/main.rs", "platform/hosted/paxai-worker/src/jobs.rs", "platform/hosted/paxai-worker/Cargo.toml", "platform/hosted/paxai-worker/tests/task_chain_handoff.rs", "platform/hosted/paxai-worker/src/runner.rs", "platform/hosted/paxai-worker/src/bin/paxai-runner.rs"]
+touches = ["platform/hosted/paxai-worker/src/main.rs", "platform/hosted/paxai-worker/src/jobs.rs", "platform/hosted/paxai-worker/Cargo.toml", "platform/hosted/paxai-worker/tests/task_chain_handoff.rs", "platform/hosted/paxai-worker/src/runner.rs", "platform/hosted/paxai-worker/src/bin/paxai-runner.rs", "precompiles/layerxexchange/layerxexchange.go", "precompiles/layerxexchange/abi.json", "precompiles/layerxexchange/LayerXExchange.sol"]
 build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bins"
 verify_cmd = "PAXAI_RUNNER=$(realpath ${CARGO_TARGET_DIR:-platform/target})/debug/layerx-paxai-runner PAXAI_RUNNER_STATE=$(mktemp -d) cargo test --locked --no-fail-fast --manifest-path platform/Cargo.toml -p layerx-paxai-worker"
 gate_kind = "existing"
@@ -30612,7 +30617,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.3]
 title = "Router WebSocket relays eth_subscribe and pending receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4", "0.114"]
@@ -30699,7 +30704,7 @@ title = "History and AI views on the one-chain indexer"
 status = "pending"
 mode = "BUILD"
 wave = 6
-requires = ["0.27", "6.5.47", "0.114"]
+requires = ["0.27", "6.5.47", "0.114", "0.156"]
 reqs = ["7012.1", "7012.2", "7012.3", "7015.1", "7015.2", "7015.3", "6026.1", "6026.2", "6026.3"]
 capabilities = ["7.2.2"]
 do_1 = "Remove the lx_getHistory branch (platform/hosted/gateway/src/history.rs:420-428) from history dispatch (platform/hosted/gateway/src/history.rs:479); px_getHistory and px_getUnifiedHistory read the indexer for EVM addresses only."
@@ -30726,7 +30731,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.7]
 title = "Faucet funds through bank send and px_requestFunds"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.0.8", "0.3", "0.114"]
@@ -31010,7 +31015,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.17]
 title = "Protocol adapter layerx-x402 verifies settlement on sequencer receipts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["7.2.2", "0.26", "0.114"]
@@ -31041,7 +31046,7 @@ title = "Protocol adapter layerx-ap2 verifies settlement on sequencer receipts"
 status = "in_progress"
 mode = "BUILD"
 wave = 5
-requires = ["7.2.2", "0.26"]
+requires = ["7.2.2", "0.26", "0.151"]
 reqs = ["7026.1", "7026.2", "7026.3"]
 capabilities = ["7.3.7"]
 do_1 = "Replace the authorised batch verification (interop/crates/layerx-ap2/src/adapter.rs:10) with ProtocolReceipt v2 verification against the ReceiptKeys list from layerx-portable v2 (interop/crates/layerx-portable/src/receipt.rs:120)."
@@ -31384,9 +31389,10 @@ do_2 = "Delete statusOf, the settlement contract and guarantor reads (interop/cr
 do_3 = "Change the archive payload (interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol:81, interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol:126) to header and app hash."
 do_4 = "Keep the signer client and keys (interop/crates/layerx-mirror/src/signer.rs:51, interop/crates/layerx-mirror-signer/src/lib.rs:428)."
 do_5 = "Update the archive contract test (interop/contracts/ethereum-mirror/test/LayerXMirrorArchive.t.sol:82) for the header payload; the shared checkpoint vectors (interop/crates/layerx-mirror/tests/checkpoint_vectors.rs:23) run unchanged in the same gate."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "The web wallet api (human/apps/web/src/api/wallet.ts:75) and the e2e gas-station quote request (human/apps/web/e2e/gas-station.test.ts:116) carry the did field GasQuoteRequest requires since the wallet SDK change, so the web build type-checks."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["CommittedHeader"]
-touches = ["interop/crates/layerx-mirror/src/node.rs", "interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol", "interop/contracts/ethereum-mirror/test/LayerXMirrorArchive.t.sol"]
+touches = ["interop/crates/layerx-mirror/src/node.rs", "interop/contracts/ethereum-mirror/LayerXMirrorArchive.sol", "interop/contracts/ethereum-mirror/test/LayerXMirrorArchive.t.sol", "human/apps/web/src/api/wallet.ts", "human/apps/web/e2e/gas-station.test.ts"]
 build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-mirror"
 verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-mirror --test checkpoint_vectors --test publish"
 gate_kind = "existing"
@@ -36947,7 +36953,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.5.42]
 title = "CLI allowlist and registration move to eth and px names"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.4", "0.114"]
@@ -41337,9 +41343,10 @@ do_2 = "agentd export.rs drops the settlement-anchored check and writes rung nam
 do_3 = "Metrics, audit records, SDK RPC projections, MCP tool outputs, human-service projections, explorer-index verification, hosted reads and the CLI receipt view carry the rung name; tests assert the three rung names and that no retired name is emitted. Harness packages agent/tests/parity, agent/tests/qualify, agent/qualification/pay2 and platform/docs/samples/verify-receipt-rust are edited in the same change and built at the wave gate."
 do_4 = "agent/crates/layerx-agentd/src/agent_rpc.rs negotiates and reports contract_major 2 on the version handshake (acceptance 6.58.1), refusing any other major with the existing version refusal."
 do_5 = "The layerx-sdk sources are migrated by task 0.151; this task does not re-edit them."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "The six layerx-client import sites named by task 6.5.13 are migrated there; this task does not re-edit them."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["Rung", "VerificationLevel", "Level"]
-touches = ["agent/crates/layerx-agentd/examples/native_handover_programs.rs", "agent/crates/layerx-agentd/examples/native_handover_reads.rs", "agent/crates/layerx-agentd/src/admin.rs", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/audit/record.rs", "agent/crates/layerx-agentd/src/budget/budget_proof.rs", "agent/crates/layerx-agentd/src/budget/program_lifecycle_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/cache.rs", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/degraded.rs", "agent/crates/layerx-agentd/src/enrolment.rs", "agent/crates/layerx-agentd/src/events/ingest.rs", "agent/crates/layerx-agentd/src/export.rs", "agent/crates/layerx-agentd/src/finality.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/identity.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/managed_agent_rotation.rs", "agent/crates/layerx-agentd/src/obs/metrics.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/protocol_evidence.rs", "agent/crates/layerx-agentd/src/protocol_evidence/native_owner/tests.rs", "agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs", "agent/crates/layerx-agentd/src/read/balance.rs", "agent/crates/layerx-agentd/src/read/checkpoint.rs", "agent/crates/layerx-agentd/src/read/native.rs", "agent/crates/layerx-agentd/src/read/proof_bundle.rs", "agent/crates/layerx-agentd/src/receipt.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/tenant/errors.rs", "agent/crates/layerx-agentd/src/tenant/isolation.rs", "agent/crates/layerx-agentd/tests/approval.rs", "agent/crates/layerx-agentd/tests/approval_events.rs", "agent/crates/layerx-agentd/tests/audit_coverage.rs", "agent/crates/layerx-agentd/tests/audit_export.rs", "agent/crates/layerx-agentd/tests/balance.rs", "agent/crates/layerx-agentd/tests/budget_durable_limits.rs", "agent/crates/layerx-agentd/tests/budget_reconcile.rs", "agent/crates/layerx-agentd/tests/cache.rs", "agent/crates/layerx-agentd/tests/checkpoint.rs", "agent/crates/layerx-agentd/tests/config.rs", "agent/crates/layerx-agentd/tests/degraded.rs", "agent/crates/layerx-agentd/tests/delivery.rs", "agent/crates/layerx-agentd/tests/export_offline_bounds.rs", "agent/crates/layerx-agentd/tests/finality.rs", "agent/crates/layerx-agentd/tests/gaps.rs", "agent/crates/layerx-agentd/tests/handshake_gate.rs", "agent/crates/layerx-agentd/tests/history.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "agent/crates/layerx-agentd/tests/identity.rs", "agent/crates/layerx-agentd/tests/ingest.rs", "agent/crates/layerx-agentd/tests/native_owner_receipts.rs", "agent/crates/layerx-agentd/tests/native_program_human_peer.rs", "agent/crates/layerx-agentd/tests/observability.rs", "agent/crates/layerx-agentd/tests/operator.rs", "agent/crates/layerx-agentd/tests/outbox.rs", "agent/crates/layerx-agentd/tests/outbox_recover.rs", "agent/crates/layerx-agentd/tests/protocol_evidence.rs", "agent/crates/layerx-agentd/tests/receipts.rs", "agent/crates/layerx-agentd/tests/redaction.rs", "agent/crates/layerx-agentd/tests/revocation.rs", "agent/crates/layerx-agentd/tests/session.rs", "agent/crates/layerx-agentd/tests/subscription.rs", "agent/crates/layerx-agentd/tests/support/mod.rs", "agent/crates/layerx-agentd/tests/tenant_isolation.rs", "agent/crates/layerx-agentd/tests/tenant_leakage.rs", "agent/crates/layerx-agentd/tests/tenant_resolve.rs", "agent/crates/layerx-agentd/tests/w7_core_time.rs", "agent/crates/layerx-agentd/tests/w7_subscription_permit.rs", "agent/crates/layerx-agentd/tests/webhook.rs", "agent/crates/layerx-client/examples/module_state.rs", "agent/crates/layerx-client/src/ai_market.rs", "agent/crates/layerx-client/src/caps.rs", "agent/crates/layerx-client/src/client.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/evidence/asset_record.rs", "agent/crates/layerx-client/src/evidence/caps.rs", "agent/crates/layerx-client/src/evidence/module_state.rs", "agent/crates/layerx-client/src/read.rs", "agent/crates/layerx-client/src/read/module.rs", "agent/crates/layerx-client/tests/caps_discovery.rs", "agent/crates/layerx-client/tests/effective_asset.rs", "agent/crates/layerx-client/tests/maintenance_reads.rs", "agent/crates/layerx-client/tests/module_reads.rs", "agent/crates/layerx-client/tests/reads.rs", "agent/crates/layerx-client/tests/receipt.rs", "agent/crates/layerx-mcp/src/tools/read.rs", "agent/crates/layerx-mcp/src/tools/web.rs", "agent/crates/layerx-mcp/src/tools/write.rs", "agent/crates/layerx-mcp/tests/daemon_bound.rs", "agent/crates/layerx-mcp/tests/faucet.rs", "agent/crates/layerx-mcp/tests/read.rs", "agent/crates/layerx-mcp/tests/readonly.rs", "agent/crates/layerx-mcp/tests/scope.rs", "agent/crates/layerx-mcp/tests/web.rs", "agent/crates/layerx-mcp/tests/write.rs", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-sdk/tests/offline_export.rs", "agent/crates/layerx-sdk/tests/receipt_fixture.rs", "agent/crates/layerx-sdk/tests/sdk.rs", "agent/qualification/pay2/pay2e_test.rs", "agent/tests/parity/src/main.rs", "agent/tests/qualify/fabrication.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/src/mirror.rs", "human/crates/layerx-explorer-index/src/unified.rs", "human/crates/layerx-explorer-index/src/verify.rs", "human/crates/layerx-explorer-index/tests/rebuild.rs", "human/crates/layerx-explorer-index/tests/unified_http.rs", "human/crates/layerx-explorer-index/tests/verify.rs", "human/crates/layerx-human-service/src/activity/detail.rs", "human/crates/layerx-human-service/src/activity/mod.rs", "human/crates/layerx-human-service/src/agents/archive.rs", "human/crates/layerx-human-service/src/agents/controls.rs", "human/crates/layerx-human-service/src/agents/create.rs", "human/crates/layerx-human-service/src/agents/create_native.rs", "human/crates/layerx-human-service/src/agents/recovery.rs", "human/crates/layerx-human-service/src/agents/spend.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "human/crates/layerx-human-service/src/approvals/render.rs", "human/crates/layerx-human-service/src/custody/sessions.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/onboarding/native.rs", "human/crates/layerx-human-service/src/server/agent_creation.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/production_rotation.rs", "human/crates/layerx-human-service/src/server/projection.rs", "human/crates/layerx-human-service/tests/activity.rs", "human/crates/layerx-human-service/tests/agent_controls.rs", "human/crates/layerx-human-service/tests/agent_create.rs", "human/crates/layerx-human-service/tests/agent_recovery.rs", "human/crates/layerx-human-service/tests/approvals.rs", "human/crates/layerx-human-service/tests/archive.rs", "human/crates/layerx-human-service/tests/decide.rs", "human/crates/layerx-human-service/tests/deposit.rs", "human/crates/layerx-human-service/tests/detail.rs", "human/crates/layerx-human-service/tests/export.rs", "human/crates/layerx-human-service/tests/intent_submit.rs", "human/crates/layerx-human-service/tests/journey_faults.rs", "human/crates/layerx-human-service/tests/move_money.rs", "human/crates/layerx-human-service/tests/native_lifecycle.rs", "human/crates/layerx-human-service/tests/onboarding.rs", "human/crates/layerx-human-service/tests/render.rs", "human/crates/layerx-human-service/tests/session_keys.rs", "human/crates/layerx-human-service/tests/support/withdraw_native.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs", "human/crates/layerx-human-service/tests/withdraw.rs", "human/crates/layerx-human-test-support/src/lib.rs", "interop/crates/layerx-mirror/src/node.rs", "interop/crates/layerx-mirror/src/publisher.rs", "platform/cli/src/receipt.rs", "platform/cli/tests/mcp_daemon_bound.rs", "platform/docs/samples/verify-receipt-rust/src/main.rs", "platform/emulator/src/settlement.rs", "platform/hosted/agent-boundary/tests/real_node/custody.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "platform/hosted/authority/src/human/budget_state.rs", "platform/hosted/authority/tests/budget_proof_exports.rs", "platform/hosted/core/src/caps_reads.rs", "platform/hosted/core/src/lib.rs", "platform/hosted/core/src/main.rs", "platform/hosted/core/src/public_reads.rs", "platform/hosted/core/tests/custody_asset_send.rs", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/settlement.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/indexer/src/ai_reputation.rs", "platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/webhooks/src/ai_market.rs", "platform/hosted/webhooks/src/events.rs", "platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs", "agent/crates/layerx-agentd/tests/export.rs"]
+touches = ["agent/crates/layerx-agentd/examples/native_handover_programs.rs", "agent/crates/layerx-agentd/examples/native_handover_reads.rs", "agent/crates/layerx-agentd/src/admin.rs", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/audit/record.rs", "agent/crates/layerx-agentd/src/budget/budget_proof.rs", "agent/crates/layerx-agentd/src/budget/program_lifecycle_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/cache.rs", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/degraded.rs", "agent/crates/layerx-agentd/src/enrolment.rs", "agent/crates/layerx-agentd/src/events/ingest.rs", "agent/crates/layerx-agentd/src/export.rs", "agent/crates/layerx-agentd/src/finality.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/identity.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/managed_agent_rotation.rs", "agent/crates/layerx-agentd/src/obs/metrics.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/protocol_evidence.rs", "agent/crates/layerx-agentd/src/protocol_evidence/native_owner/tests.rs", "agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs", "agent/crates/layerx-agentd/src/read/balance.rs", "agent/crates/layerx-agentd/src/read/checkpoint.rs", "agent/crates/layerx-agentd/src/read/native.rs", "agent/crates/layerx-agentd/src/read/proof_bundle.rs", "agent/crates/layerx-agentd/src/receipt.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/tenant/errors.rs", "agent/crates/layerx-agentd/src/tenant/isolation.rs", "agent/crates/layerx-agentd/tests/approval.rs", "agent/crates/layerx-agentd/tests/approval_events.rs", "agent/crates/layerx-agentd/tests/audit_coverage.rs", "agent/crates/layerx-agentd/tests/audit_export.rs", "agent/crates/layerx-agentd/tests/balance.rs", "agent/crates/layerx-agentd/tests/budget_durable_limits.rs", "agent/crates/layerx-agentd/tests/budget_reconcile.rs", "agent/crates/layerx-agentd/tests/cache.rs", "agent/crates/layerx-agentd/tests/checkpoint.rs", "agent/crates/layerx-agentd/tests/config.rs", "agent/crates/layerx-agentd/tests/degraded.rs", "agent/crates/layerx-agentd/tests/delivery.rs", "agent/crates/layerx-agentd/tests/export_offline_bounds.rs", "agent/crates/layerx-agentd/tests/finality.rs", "agent/crates/layerx-agentd/tests/gaps.rs", "agent/crates/layerx-agentd/tests/handshake_gate.rs", "agent/crates/layerx-agentd/tests/history.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "agent/crates/layerx-agentd/tests/identity.rs", "agent/crates/layerx-agentd/tests/ingest.rs", "agent/crates/layerx-agentd/tests/native_owner_receipts.rs", "agent/crates/layerx-agentd/tests/native_program_human_peer.rs", "agent/crates/layerx-agentd/tests/observability.rs", "agent/crates/layerx-agentd/tests/operator.rs", "agent/crates/layerx-agentd/tests/outbox.rs", "agent/crates/layerx-agentd/tests/outbox_recover.rs", "agent/crates/layerx-agentd/tests/protocol_evidence.rs", "agent/crates/layerx-agentd/tests/receipts.rs", "agent/crates/layerx-agentd/tests/redaction.rs", "agent/crates/layerx-agentd/tests/revocation.rs", "agent/crates/layerx-agentd/tests/session.rs", "agent/crates/layerx-agentd/tests/subscription.rs", "agent/crates/layerx-agentd/tests/support/mod.rs", "agent/crates/layerx-agentd/tests/tenant_isolation.rs", "agent/crates/layerx-agentd/tests/tenant_leakage.rs", "agent/crates/layerx-agentd/tests/tenant_resolve.rs", "agent/crates/layerx-agentd/tests/w7_core_time.rs", "agent/crates/layerx-agentd/tests/w7_subscription_permit.rs", "agent/crates/layerx-agentd/tests/webhook.rs", "agent/crates/layerx-client/examples/module_state.rs", "agent/crates/layerx-client/src/caps.rs", "agent/crates/layerx-client/src/evidence/module_state.rs", "agent/crates/layerx-client/src/read/module.rs", "agent/crates/layerx-client/tests/caps_discovery.rs", "agent/crates/layerx-client/tests/effective_asset.rs", "agent/crates/layerx-client/tests/maintenance_reads.rs", "agent/crates/layerx-client/tests/module_reads.rs", "agent/crates/layerx-client/tests/reads.rs", "agent/crates/layerx-client/tests/receipt.rs", "agent/crates/layerx-mcp/src/tools/read.rs", "agent/crates/layerx-mcp/src/tools/web.rs", "agent/crates/layerx-mcp/src/tools/write.rs", "agent/crates/layerx-mcp/tests/daemon_bound.rs", "agent/crates/layerx-mcp/tests/faucet.rs", "agent/crates/layerx-mcp/tests/read.rs", "agent/crates/layerx-mcp/tests/readonly.rs", "agent/crates/layerx-mcp/tests/scope.rs", "agent/crates/layerx-mcp/tests/web.rs", "agent/crates/layerx-mcp/tests/write.rs", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/crates/layerx-sdk/tests/offline_export.rs", "agent/crates/layerx-sdk/tests/receipt_fixture.rs", "agent/crates/layerx-sdk/tests/sdk.rs", "agent/qualification/pay2/pay2e_test.rs", "agent/tests/parity/src/main.rs", "agent/tests/qualify/fabrication.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/src/mirror.rs", "human/crates/layerx-explorer-index/src/unified.rs", "human/crates/layerx-explorer-index/src/verify.rs", "human/crates/layerx-explorer-index/tests/rebuild.rs", "human/crates/layerx-explorer-index/tests/unified_http.rs", "human/crates/layerx-explorer-index/tests/verify.rs", "human/crates/layerx-human-service/src/activity/detail.rs", "human/crates/layerx-human-service/src/activity/mod.rs", "human/crates/layerx-human-service/src/agents/archive.rs", "human/crates/layerx-human-service/src/agents/controls.rs", "human/crates/layerx-human-service/src/agents/create.rs", "human/crates/layerx-human-service/src/agents/create_native.rs", "human/crates/layerx-human-service/src/agents/recovery.rs", "human/crates/layerx-human-service/src/agents/spend.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "human/crates/layerx-human-service/src/approvals/render.rs", "human/crates/layerx-human-service/src/custody/sessions.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/onboarding/native.rs", "human/crates/layerx-human-service/src/server/agent_creation.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/production_rotation.rs", "human/crates/layerx-human-service/src/server/projection.rs", "human/crates/layerx-human-service/tests/activity.rs", "human/crates/layerx-human-service/tests/agent_controls.rs", "human/crates/layerx-human-service/tests/agent_create.rs", "human/crates/layerx-human-service/tests/agent_recovery.rs", "human/crates/layerx-human-service/tests/approvals.rs", "human/crates/layerx-human-service/tests/archive.rs", "human/crates/layerx-human-service/tests/decide.rs", "human/crates/layerx-human-service/tests/deposit.rs", "human/crates/layerx-human-service/tests/detail.rs", "human/crates/layerx-human-service/tests/export.rs", "human/crates/layerx-human-service/tests/intent_submit.rs", "human/crates/layerx-human-service/tests/journey_faults.rs", "human/crates/layerx-human-service/tests/move_money.rs", "human/crates/layerx-human-service/tests/native_lifecycle.rs", "human/crates/layerx-human-service/tests/onboarding.rs", "human/crates/layerx-human-service/tests/render.rs", "human/crates/layerx-human-service/tests/session_keys.rs", "human/crates/layerx-human-service/tests/support/withdraw_native.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs", "human/crates/layerx-human-service/tests/withdraw.rs", "human/crates/layerx-human-test-support/src/lib.rs", "interop/crates/layerx-mirror/src/node.rs", "interop/crates/layerx-mirror/src/publisher.rs", "platform/cli/src/receipt.rs", "platform/cli/tests/mcp_daemon_bound.rs", "platform/docs/samples/verify-receipt-rust/src/main.rs", "platform/emulator/src/settlement.rs", "platform/hosted/agent-boundary/tests/real_node/custody.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "platform/hosted/authority/src/human/budget_state.rs", "platform/hosted/authority/tests/budget_proof_exports.rs", "platform/hosted/core/src/caps_reads.rs", "platform/hosted/core/src/lib.rs", "platform/hosted/core/src/main.rs", "platform/hosted/core/src/public_reads.rs", "platform/hosted/core/tests/custody_asset_send.rs", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/settlement.rs", "platform/hosted/indexer/src/ai_market.rs", "platform/hosted/indexer/src/ai_reputation.rs", "platform/hosted/node/tests/probe/src/main.rs", "platform/hosted/webhooks/src/ai_market.rs", "platform/hosted/webhooks/src/events.rs", "platform/ramps/toolkit/src/bin/ramp-verify-receipt.rs", "agent/crates/layerx-agentd/tests/export.rs"]
 build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml --workspace --tests --examples && cargo build --locked --manifest-path human/Cargo.toml --workspace --tests && cargo build --locked --manifest-path platform/Cargo.toml --workspace --tests && cargo build --locked --manifest-path interop/Cargo.toml -p layerx-mirror --tests"
 verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test export"
 gate_kind = "existing"
@@ -42015,7 +42022,7 @@ title = "layerx-types and layerx-proof crates pass their clippy deny level in ev
 status = "in_progress"
 mode = "BUILD"
 wave = 0
-requires = ["0.124", "0.138"]
+requires = ["0.124", "0.138", "0.157"]
 reqs = ["8.1"]
 capabilities = []
 do_1 = "Add the # Errors doc sections the missing_errors_doc lint asks for at agent/crates/layerx-types/src/program_lifecycle.rs:74 and :86, and replace the constant assertions at agent/crates/layerx-types/src/programs_module_abi.rs:85-87 with compile-time const assertions (const _: () = assert!(...)) so assertions_on_constants no longer fires while the same values stay checked."
@@ -42735,7 +42742,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.140]
 title = "Shared EVM sender signs prehashes and EIP-7702 authorizations for the gas station relayer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["7.0.8", "7.1.2", "0.138"]
@@ -42864,7 +42871,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.145]
 title = "Bridge cosign transport acknowledges delivered shares"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.138"]
@@ -43106,6 +43113,82 @@ build_cmd = "go build ./precompiles/layerxagent/teeattestor/..."
 verify_cmd = "go test -count=1 ./precompiles/layerxagent/teeattestor/quote/"
 planned_paths = ["precompiles/layerxagent/teeattestor/quote/quote.go", "precompiles/layerxagent/teeattestor/quote/sevsnp.go", "precompiles/layerxagent/teeattestor/quote/dcap.go", "precompiles/layerxagent/teeattestor/quote/nvidia.go", "precompiles/layerxagent/teeattestor/quote/quote_test.go", "precompiles/layerxagent/teeattestor/quote/testdata"]
 gate_kind = "planned"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result; record exact revision, command, exit code and private evidence path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.155]
+title = "Pipeline lock declares the sequencer receipt corpus as a handwritten conformance file"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["0.59"]
+reqs = ["6082.3", "6061.2"]
+capabilities = []
+do_1 = "Add \"fixtures/receipt-sequencer-v1.json\" = \"handwritten\" to [handwritten.platform-conformance] in platform/sdk/pipeline.kvx (346-388) in sorted order between fixtures/receipt-refusals-v3.json and fixtures/sequencer-receipt-v1.json, and keep the distinct fixtures/sequencer-receipt-v1.json entry. Leave every digest and the unclassified-file enforcement in drift_gate (platform/sdk/generators/src/main.rs:2155-2162) and classified_lock (main.rs:2229-2246) unchanged."
+do_2 = "In platform/sdk/generators/tests/drift.rs add repository_conformance_root_declares_every_shipped_handwritten_file: against the real repository root (CARGO_MANIFEST_DIR joined with ../../..) capture the live pipeline and parse_lock the committed platform/sdk/pipeline.kvx, and assert that the platform-conformance output's live handwritten list equals its declared handwritten list, naming fixtures/receipt-sequencer-v1.json."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["drift_gate", "classified_lock", "capture", "parse_lock"]
+touches = ["platform/sdk/pipeline.kvx", "platform/sdk/generators/tests/drift.rs"]
+build_cmd = "cargo build --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-sdkgen --tests"
+verify_cmd = "cargo test --offline --manifest-path platform/Cargo.toml --locked -p layerx-platform-sdkgen --test drift repository_conformance_root_declares_every_shipped_handwritten_file"
+gate_kind = "planned"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.156]
+title = "Unified history keeps the indexer's native-before-first-log order on a shared position"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["0.27"]
+reqs = ["6026.1", "6026.2", "6026.3"]
+capabilities = []
+do_1 = "In page() (platform/hosted/gateway/src/history.rs:220-268) read each row's decimal ordinal, refuse a row whose ordinal is missing, not decimal or whose max(ordinal, 1) - 1 differs from its log_index as invalid_indexer_response, and carry the ordinal with the row."
+do_2 = "In the merged branch of history() (history.rs:398-421) order rows by the indexer's own order (platform/hosted/indexer/src/store.rs:426): position, then ordinal, then indexed rows before explorer:<n> rows, then the numeric row id, instead of the textual id; keep one entry per row id and the existing boundary rule that keeps every row of the page's last position together."
+do_3 = "In the history.rs unit tests add unified_history_keeps_native_before_first_log_on_a_shared_position over a real Store: fill at least nine rows so that one transaction's native leg (ordinal 0) and its first log leg (ordinal 1) for the same account get the ids 9 and 11, then assert that px_getHistory for that account and the two-account unified read both list the native row before the log row, and that a two-row page boundary on that position neither repeats nor skips a row."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = ["history", "page", "row_position", "POSITION_LOG_INDEX"]
+touches = ["platform/hosted/gateway/src/history.rs"]
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway"
+verify_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway history::tests::unified_history_keeps_native_before_first_log_on_a_shared_position"
+gate_kind = "planned"
+planned_paths = []
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the bounded gate result or time limit; record revision, command, exit code and log path. Do not mark complete without the declared evidence."
+path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
+evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+[task.0.157]
+title = "Checkpoint settlement parser retirement pulled forward"
+status = "pending"
+mode = "BUILD"
+wave = 0
+requires = ["6.5.13"]
+reqs = ["5052.1", "5052.2", "5052.3", "5052.4"]
+capabilities = []
+do_1 = "The checkpoint settlement parser in agent/crates/layerx-types/src/settlement.rs and its re-export in layerx-proof are removed together with the seven checkpoint tests that read contracts/config/checkpoint-settlement.json as a settlement document, and every caller in agentd and the client crates that constructed a settlement document from that file is removed or moved to the export trust policy reader; this is the deletion task 5.7.1 do_2, task 6.6.12 and task 10.7.2 describe, pulled forward so the agent workspace tests pass on the current tree."
+do_2 = "cargo test --locked -p layerx-types -p layerx-proof passes with no checkpoint settlement test left and no reference to settlement_domains in the agent workspace outside retired-name tests."
+do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+symbols = []
+touches = ["agent/crates/layerx-types/src/settlement.rs", "agent/crates/layerx-types/src/lib.rs", "agent/crates/layerx-proof/src/settlement.rs", "agent/crates/layerx-proof/src/lib.rs", "agent/crates/layerx-proof/tests/checkpoint.rs", "agent/crates/layerx-client/tests/availability_daemon.rs"]
+build_cmd = "cargo build --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof --tests"
+verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-types -p layerx-proof"
+planned_paths = []
+gate_kind = "existing"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -43605,9 +43688,10 @@ do_3 = "Fail closed: when the DID lookup fails no quote is signed, refused in th
 do_4 = "The 7702 path and the ante handler are unchanged (contracts/src/BatchCallAndSponsor.sol:113-120)."
 do_5 = "Add interop/crates/layerx-gas-station/tests/did_budget.rs with accounts_sharing_did_share_budget, unbound_account_uses_address, journal_replay_restores_did_totals, did_lookup_failure_refuses, balance_floor_refuses_quote and budget_charged_through_precompile (precompiles/addr/addr.go:391)."
 do_6 = "station.rs passes &quote.did to restore_usage so journal replay totals SID by DID through the call itself and not through the order of the preceding restore_did_usage call; when the 0x1004 getLayerXDid read fails the station answers a policy refusal of the same shape as BalanceFloor (no budget spent, nothing signed) instead of StationError::Rpc(Unavailable), with a did_budget test for each."
-do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_7 = "install_ephemeral_signer in tests/station.rs supplies the EvmSender environment and the KEY_FILE source that LocalSigner::from_config requires since task 7.1.2, so the station tests build a real local signer and the eight tests that currently fail with KeySource pass; the failed DID read refusal stays PolicyRefusal::BalanceFloor as do_3 and do_6 state."
+do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["DidBudget", "QuoteRecord.did"]
-touches = ["interop/crates/layerx-gas-station/src/policy.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/tests/did_budget.rs", "interop/crates/layerx-gas-station/src/station.rs"]
+touches = ["interop/crates/layerx-gas-station/src/policy.rs", "interop/crates/layerx-gas-station/src/journal.rs", "interop/crates/layerx-gas-station/tests/did_budget.rs", "interop/crates/layerx-gas-station/src/station.rs", "interop/crates/layerx-gas-station/tests/station.rs"]
 build_cmd = "cargo build --locked --manifest-path interop/Cargo.toml -p layerx-gas-station"
 verify_cmd = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --test did_budget --test station -- --skip authenticated_retry_real_https_retains_unknown_liability_within_deadline --skip first_use_replay_state_real_https_preserves_retained_storage"
 gate_kind = "planned"
@@ -43736,7 +43820,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.9.1.3]
 title = "Activation plan for modules/sequencer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 1
 requires = ["0.1", "9.0.19", "9.0.20"]
@@ -52193,7 +52277,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.38]
 title = "TypeScript intent client submits through EVM transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["10.1.2"]
@@ -52698,7 +52782,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.28]
 title = "CLI RPC allowlist admits eth_* and major-2 names so wallet derive --bind completes"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.114"]
@@ -52810,7 +52894,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.5.32]
 title = "layerxctl read-state and submit move to EVM reads and transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.114"]
@@ -53070,7 +53154,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.6.4]
 title = "Gateway websocket answers -32601 for lx_subscribe and lx_unsubscribe"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.114"]
@@ -53221,7 +53305,8 @@ do_2 = "Below the plan height each method behaves as today; at the plan height e
 do_3 = "Assert 0x1012 and 0x1013 methods return LXP_MODULE_DISABLED through RetiredRevert (task 10.0.5) while the addresses stay registered (precompiles/setup.go:81-83)."
 do_4 = "Assert 0x1014 reads answer until the anchor store delete step (head requirement 8.4) (pattern precompiles/setup_test.go:92)."
 do_5 = "Gate the change on the merge plan through latestCustomPrecompilesAtHeight (modules/evm/keeper/keeper.go:251), so the precompile set and revert bytes below H stay byte-identical to today."
-do_6 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_6 = "The settlement parser deletion is performed by task 0.157; this task keeps that removal and does not re-add the parser."
+do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["TestMergeGate"]
 touches = ["precompiles/merge_gate_test.go"]
 build_cmd = "go build ./precompiles/..."
@@ -57816,7 +57901,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.62]
 title = "Re-target main.rs off the activity wire codec and its C differential and 1 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.114"]
@@ -58157,7 +58242,7 @@ title = "Re-target model.ts off the checkpoint certificates and guarantor attest
 status = "in_progress"
 mode = "BUILD"
 wave = 5
-requires = ["11.5.1", "0.2"]
+requires = ["11.5.1", "0.2", "11.5.72", "11.5.73", "7.7.5"]
 reqs = ["11025.2", "11025.4"]
 capabilities = ["11.5.5"]
 do_1 = "Re-target human/apps/web/src/kit/model.ts:43 (settlement_anchored) away from the Checkpoint certificates and guarantor attestations in client evidence: drop the anchored level from the status copy and models."
@@ -58166,9 +58251,10 @@ do_3 = "Stop every reach into the retired construct at agent/crates/layerx-clien
 do_4 = "Leave the reference at explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/receipt.ex:32 alone: it sits in a retired tree and leaves with that tree, not with this change."
 do_5 = "Leave the reference at explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/receipt.ex:32 alone: it sits in a retired tree and leaves with that tree, not with this change."
 do_6 = "Drop settlement-anchored from VerificationLevel and verificationLevelVariants in human/apps/web/src/api/generated/index.ts:655-657 and stop human/apps/web/src/journeys/home/model.ts:109 and :145 forwarding it to verificationWord."
-do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_7 = "The anchored-caller migration includes human/apps/web/src/journeys/custody/evidence.ts (lines 15-20), which no other task owns, so the web build passes once tasks 11.5.72, 11.5.73 and 7.7.5 have landed their own files."
+do_8 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["SettlementAnchored", "ANCHOR_SETTLEMENT_CONTRACT", "register_finality_evidence"]
-touches = ["human/apps/web/src/kit/model.ts", "human/apps/web/src/api/generated/index.ts", "human/apps/web/src/journeys/home/model.ts"]
+touches = ["human/apps/web/src/kit/model.ts", "human/apps/web/src/api/generated/index.ts", "human/apps/web/src/journeys/home/model.ts", "human/apps/web/src/journeys/custody/evidence.ts"]
 build_cmd = "npm --prefix human/wallet/sdk run build && npm --prefix human/apps/web run build"
 verify_cmd = "python3 tools/paxeer-x/tests/retired_callers_test.py --component checkpoint-evidence --path human/apps/web/src/kit/model.ts"
 gate_kind = "planned"
@@ -59976,7 +60062,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.138]
 title = "Re-target budget_state.rs, dynamic.rs, lib.rs off the finality authority, evidence register, receipt authority, authority replica and sequencer handover and 3 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.114"]
@@ -60004,7 +60090,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.139]
 title = "Re-target main.rs, trust.rs off the LNI transport and 2 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.114"]
@@ -60704,7 +60790,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.163]
 title = "Re-target deployment.rs, head_attestation.rs, lib.rs off the finality authority, evidence register, receipt authority, authority replica and sequencer handover and 2 more"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2", "0.114"]
@@ -62145,7 +62231,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.11.5.214]
 title = "Re-target lxp_snapshot.c, lxp_state_proof.c, lxp_state_root.c off the kernel idempotency table"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["11.5.1", "0.2"]
@@ -97637,7 +97723,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.3.2]
 title = "Tool attestation binds the activity idempotency key"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["13.2.2", "6.2.12"]
@@ -98178,7 +98264,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.5.1]
 title = "Router relays subscriptions to the sequencer"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["13.1.5", "0.114"]

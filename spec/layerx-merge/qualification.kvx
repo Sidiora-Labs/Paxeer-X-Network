@@ -2016,3 +2016,10 @@ command = "cargo metadata --locked --offline --format-version 1 --manifest-path 
 exit_code = 0
 log_path = "logs/0.150-verify-4.log"
 observed_and_assumption = "verify passed (2 passed, 0 failed (CARGO_TARGET_DIR seeded with rustc_info.seed.json; verify 1-3 exit 101 on environment faults)). Unrelated: /dev/null on this host is a regular file, which breaks cargo's rustc target probe when no cached probe exists; restore with rm /dev/null && mknod -m 666 /dev/null c 1 3"
+
+[finding.7.1.4]
+revision = "60b45e6ec"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ai-evaluator --test epoch"
+exit_code = 101
+log_path = "logs/7.1.4-verify-2.log"
+observed_and_assumption = "verify did not compile on the rebased revision: the platform internal crate on main still calls the method form of assemble after the transaction codec task made it a free function (hosted/internal/src/evm_sender.rs:191); the earlier base passed 3 of 3 (logs/7.1.4-verify-1.log). Assumption: task 0.140 owns that file and lands the free-function call first, then this task reruns both gates once."
