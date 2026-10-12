@@ -251,6 +251,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 .policy
                 .restore_usage(
                     quote.account,
+                    &quote.did,
                     amount(quote.amount)?,
                     amount(quote.gas_cost)?,
                     quote.issued_at,
@@ -771,7 +772,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             json!([hex(&key.sponsor), "pending"]),
         )?;
         let rate = self.prices.governed_rate().map_err(StationError::Price)?;
-        let did = self.did(request.account)?;
+        let did = self.did(request.account).map_err(|_| {
+            StationError::Quote(QuoteError::Policy(
+                crate::policy::PolicyRefusal::BalanceFloor,
+            ))
+        })?;
         let batch_nonce = self.batch_nonce(request.account)?;
         if admission.is_some_and(|value| value.batch_nonce != batch_nonce) {
             return Err(StationError::Conflict);

@@ -457,6 +457,14 @@ fn journal_replay_restores_did_totals() -> TestResult {
             PolicyRefusal::PerAccount
         )))
     );
+    let sharing = signer()?.address();
+    harness.chain.bind(sharing, Binding::Bound([0x31; 32]));
+    assert_eq!(
+        quote(&mut station, sharing, 3).err(),
+        Some(StationError::Quote(QuoteError::Policy(
+            PolicyRefusal::PerAccount
+        )))
+    );
     assert_eq!(harness.signatures.get(), 2);
     assert_eq!(station.journal().state().items.len(), 2);
     let third = signer()?.address();
@@ -481,7 +489,9 @@ fn did_lookup_failure_refuses() -> TestResult {
     let mut station = harness.open()?;
     assert_eq!(
         quote(&mut station, account, 1).err(),
-        Some(StationError::Rpc(RpcFault::Unavailable))
+        Some(StationError::Quote(QuoteError::Policy(
+            PolicyRefusal::BalanceFloor
+        )))
     );
     assert_eq!(harness.signatures.get(), 0);
     assert!(station.journal().state().items.is_empty());

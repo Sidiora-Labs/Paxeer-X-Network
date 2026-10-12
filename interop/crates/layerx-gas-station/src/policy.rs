@@ -89,7 +89,6 @@ pub struct QuotePolicy {
     reserved_pax: u128,
     finalized_spend: u128,
     did_budget: DidBudget,
-    replay_key: Option<String>,
 }
 impl QuotePolicy {
     /// # Errors
@@ -105,7 +104,6 @@ impl QuotePolicy {
             reserved_pax: 0,
             finalized_spend: 0,
             did_budget: DidBudget::new(0),
-            replay_key: None,
         })
     }
 
@@ -138,14 +136,13 @@ impl QuotePolicy {
         now: u64,
     ) -> Result<(), PolicyRefusal> {
         self.did_budget
-            .reserve(did, gas, now / self.config.interval_seconds)?;
-        self.replay_key = Some(did.to_owned());
-        Ok(())
+            .reserve(did, gas, now / self.config.interval_seconds)
     }
 
     pub(crate) fn restore_usage(
         &mut self,
         account: Address,
+        did: &str,
         amount: u128,
         gas: u128,
         now: u64,
@@ -153,13 +150,9 @@ impl QuotePolicy {
         if account == [0; 20] {
             return Err(PolicyRefusal::InvalidAmount);
         }
-        let key = self
-            .replay_key
-            .take()
-            .unwrap_or_else(|| crate::rpc::hex(&account));
         let active = self.reserved_pax;
         self.reserved_pax = 0;
-        let result = self.reserve_key(&key, amount, gas, u128::MAX, now);
+        let result = self.reserve_key(did, amount, gas, u128::MAX, now);
         self.reserved_pax = active;
         result
     }
