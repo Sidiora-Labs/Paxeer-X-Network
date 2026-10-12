@@ -1669,3 +1669,10 @@ command = "explorer/deploy/tools/mix-in-builder.sh test apps/block_scout_web/tes
 exit_code = 0
 log_path = "logs/8.5.36-verify-3.log"
 observed_and_assumption = "verify passed (11 passed, 0 failed). Gaps: pax_sequencerReceipt and px_getReceiptKeys are both read from the SequencerReceipt router_url; SequencerReceipt.router_call is private and outside touches, so the controller carries its own JSON-RPC post for pax_sequencerReceipt Unrelated: a mix test invocation naming files from both the explorer and block_scout_web apps fails in block_scout_web test_helper with Background migrations failed (sandbox already manual from the first app)"
+
+[finding.0.25]
+revision = "897c488d4"
+command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof --test sequencer_logs"
+exit_code = 0
+log_path = "logs/0.25-verify-1.log"
+observed_and_assumption = "verify passed (7 passed, 0 failed). Gaps: do_2 says 'ordinal = logIndex' but the Go encoder (node/sequencer/receipt.go encodeReceipt) writes log i as ordinal i+1 and the pax_sequencerReceipt server (rpc/sequencer_receipt.go) serves logIndex i; the verifier follows the tree (effect n+1 has ordinal n+1, served logIndex n), so real receipts verify Unrelated: cargo clippy -p layerx-proof --all-targets --no-deps exits 101 because of existing lints in export_codec.rs, receipt.rs and state_range.rs (none in sequencer_logs.rs); without --no-deps it stops earlier on missing_errors_doc in layerx-types program_lifecycle.rs; log logs/0.25-clippy.log"

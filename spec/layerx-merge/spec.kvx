@@ -40915,7 +40915,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.25]
 title = "Sequencer receipt log verifier in layerx-proof"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = []
