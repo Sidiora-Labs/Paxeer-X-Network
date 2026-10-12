@@ -212,8 +212,12 @@ pub(super) fn paxeer_key(account: &str) -> Option<String> {
         .map(|address| evm::address_hex(&address))
 }
 
+/// The indexer's order of one history row: its position, its ordinal,
+/// indexed rows before explorer-imported rows, then its numeric row id.
+type RowKey = (Position, u64, bool, u64);
+
 struct Page {
-    items: Vec<(Position, String, Value)>,
+    items: Vec<(RowKey, Value)>,
     next_cursor: Option<String>,
 }
 
@@ -243,23 +247,32 @@ fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failu
         .and_then(Value::as_array)
         .ok_or_else(invalid)?;
     let limit = usize::try_from(query.limit).map_err(|_| invalid())?;
-    let mut items = Vec::with_capacity(rows.len());
+    let mut items: Vec<(RowKey, Value)> = Vec::with_capacity(rows.len());
     for row in rows {
-        let id = text(row, "id")
-            .filter(|id| !id.is_empty() && row.get("asset").is_some_and(Value::is_string))
+        let (explorer, id) = text(row, "id")
+            .filter(|_| row.get("asset").is_some_and(Value::is_string))
+            .and_then(row_id)
             .ok_or_else(invalid)?;
         let position = row_position(row).ok_or_else(invalid)?;
-        if items.last().is_some_and(|(last, _, _)| *last > position) {
+        let ordinal = text(row, "ordinal")
+            .and_then(decimal)
+            .filter(|ordinal| (*ordinal).max(1) - 1 == u64::from(position.log_index))
+            .ok_or_else(invalid)?;
+        if items.last().is_some_and(|((last, ..), _)| *last > position) {
             return Err(invalid());
         }
-        items.push((position, id.to_owned(), row.clone()));
+        items.push(((position, ordinal, explorer, id), row.clone()));
     }
     // The indexer reads a limit of 0 as 1 and keeps the rows of the page's
     // last position together, so only rows sharing the position of row
     // `limit` may follow it.
     let limit = limit.max(1);
-    if let (Some((boundary, _, _)), Some(overflow)) = (items.get(limit - 1), items.get(limit..)) {
-        if overflow.iter().any(|(position, _, _)| position != boundary) {
+    if let (Some(((boundary, ..), _)), Some(overflow)) = (items.get(limit - 1), items.get(limit..))
+    {
+        if overflow
+            .iter()
+            .any(|((position, ..), _)| position != boundary)
+        {
             return Err(invalid());
         }
     }
@@ -280,6 +293,22 @@ fn row_position(row: &Value) -> Option<Position> {
         tx_index: u32::try_from(field("tx_index")?).ok()?,
         log_index: u32::try_from(field("log_index")?).ok()?,
     })
+}
+
+/// A row id: the indexed row `<n>` or the explorer-imported row
+/// `explorer:<n>`, as whether it is imported and its number.
+fn row_id(id: &str) -> Option<(bool, u64)> {
+    match id.strip_prefix("explorer:") {
+        Some(number) => decimal(number).map(|number| (true, number)),
+        None => decimal(id).map(|number| (false, number)),
+    }
+}
+
+/// A non-empty string of ASCII digits as a `u64`.
+fn decimal(text: &str) -> Option<u64> {
+    (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| text.parse().ok())
+        .flatten()
 }
 
 fn text<'a>(document: &'a Value, field: &str) -> Option<&'a str> {
@@ -377,10 +406,11 @@ fn join_assets(
 
 /// One page of the merged history of `accounts`, each tagged with the side
 /// it answers for. A single account's page and cursor are the indexer's own;
-/// several accounts are merged in `(blockHeight, txIndex, logIndex)` order
-/// with each row tagged by `side`. Rows sharing the last position of a
-/// merged page stay together, as on the indexer, so resuming strictly after
-/// that position neither repeats nor skips a row.
+/// several accounts are merged in the indexer's own row order (position,
+/// ordinal, indexed before imported, row id) with each row tagged by
+/// `side`. Rows sharing the last position of a merged page stay together,
+/// as on the indexer, so resuming strictly after that position neither
+/// repeats nor skips a row.
 pub(super) fn history(
     source: &Source<'_>,
     registry: &dyn Fn() -> Vec<Value>,
@@ -391,28 +421,28 @@ pub(super) fn history(
     let (mut items, next_cursor): (Vec<Value>, Option<String>) = if let [(_, account)] = accounts {
         let page = page(source, account, query)?;
         (
-            page.items.into_iter().map(|(_, _, item)| item).collect(),
+            page.items.into_iter().map(|(_, item)| item).collect(),
             page.next_cursor,
         )
     } else {
-        let mut merged: BTreeMap<(Position, String), Value> = BTreeMap::new();
+        let mut merged: BTreeMap<RowKey, Value> = BTreeMap::new();
         let mut more = false;
         for (side, account) in accounts {
             let page = page(source, account, query)?;
             more |= page.next_cursor.is_some();
-            for (position, id, mut item) in page.items {
+            for (key, mut item) in page.items {
                 if let Some(row) = item.as_object_mut() {
                     row.insert("side".to_owned(), json!(side));
                 }
-                merged.entry((position, id)).or_insert(item);
+                merged.entry(key).or_insert(item);
             }
         }
         let boundary = merged
             .keys()
             .nth(limit.saturating_sub(1))
-            .map(|(position, _)| *position);
+            .map(|(position, ..)| *position);
         let mut rows: Vec<(Position, Value)> = Vec::with_capacity(merged.len());
-        for ((position, _), item) in merged {
+        for ((position, ..), item) in merged {
             if boundary.is_some_and(|boundary| position > boundary) {
                 more = true;
                 break;
@@ -821,6 +851,11 @@ mod tests {
                 .commit(unit, 64)
                 .unwrap_or_else(|error| panic!("{error}"));
         }
+        serve(store)
+    }
+
+    /// The indexer read API over `store` on a loopback port.
+    fn serve(store: Store) -> Indexer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("{error}"));
         let address = listener
             .local_addr()
@@ -1090,6 +1125,198 @@ mod tests {
         let deposits = read(&indexer, &sides, &query(None, 10, Some("custody_deposit")));
         assert_eq!(ids(&deposits), vec![8]);
         assert_eq!(deposits["items"][0]["side"], json!("layerx"));
+    }
+
+    /// Every page of `accounts` history at `limit`, walked from the start.
+    fn walk(indexer: &Indexer, accounts: &[(&'static str, String)], limit: u64) -> Vec<Vec<u64>> {
+        let mut pages = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = read(indexer, accounts, &query(cursor.as_deref(), limit, None));
+            pages.push(ids(&page));
+            match page["next_cursor"].as_str() {
+                Some(next) => cursor = Some(next.to_owned()),
+                None => return pages,
+            }
+        }
+    }
+
+    #[test]
+    fn unified_history_keeps_native_before_first_log_on_a_shared_position() {
+        let store = Store::open_in_memory().unwrap_or_else(|error| panic!("{error}"));
+        let token = "evm:0x0000000000000000000000000000000000000abc";
+        let swap = |row: TransferRow| TransferRow {
+            tx_id: "swap-20-0".to_owned(),
+            ..row
+        };
+        let units = [
+            unit(
+                "layerx",
+                1,
+                vec![
+                    leg((1, 0, 0), "lxp_transfer", "out", ALICE, BOB, LXP, "5"),
+                    leg((1, 0, 0), "lxp_transfer", "in", BOB, ALICE, LXP, "5"),
+                ],
+                vec![asset(LXP, "layerx", "layerx", None, None)],
+            ),
+            unit(
+                "layerx",
+                2,
+                vec![TransferRow {
+                    counterparty: None,
+                    ..leg((2, 0, 0), "lxp_credit", "in", ALICE, "", LXP, "7")
+                }],
+                Vec::new(),
+            ),
+            unit(
+                "paxeer",
+                19,
+                vec![
+                    leg(
+                        (19, 0, 0),
+                        "native_transfer",
+                        "out",
+                        EVE,
+                        FRANK,
+                        "evm:native",
+                        "1",
+                    ),
+                    leg(
+                        (19, 0, 0),
+                        "native_transfer",
+                        "in",
+                        FRANK,
+                        EVE,
+                        "evm:native",
+                        "1",
+                    ),
+                    leg((19, 1, 1), "erc20_transfer", "out", FRANK, EVE, token, "4"),
+                    leg((19, 1, 1), "erc20_transfer", "in", EVE, FRANK, token, "4"),
+                    leg((19, 2, 0), "custody_deposit", "in", ALICE, EVE, LXP, "9"),
+                ],
+                vec![asset("evm:native", "paxeer", "native", None, None)],
+            ),
+            unit(
+                "paxeer",
+                20,
+                vec![
+                    swap(leg(
+                        (20, 0, 0),
+                        "native_transfer",
+                        "out",
+                        EVE,
+                        FRANK,
+                        "evm:native",
+                        "2",
+                    )),
+                    swap(leg(
+                        (20, 0, 0),
+                        "native_transfer",
+                        "in",
+                        FRANK,
+                        EVE,
+                        "evm:native",
+                        "2",
+                    )),
+                    swap(leg(
+                        (20, 0, 1),
+                        "erc20_transfer",
+                        "out",
+                        EVE,
+                        FRANK,
+                        token,
+                        "6",
+                    )),
+                    swap(leg(
+                        (20, 0, 1),
+                        "erc20_transfer",
+                        "in",
+                        FRANK,
+                        EVE,
+                        token,
+                        "6",
+                    )),
+                ],
+                Vec::new(),
+            ),
+        ];
+        for unit in &units {
+            store
+                .commit(unit, 64)
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+        let indexer = serve(store);
+        let eve = [("paxeer", EVE.to_owned())];
+        let sides = [("paxeer", EVE.to_owned()), ("layerx", ALICE.to_owned())];
+        let shared = at(20, 0, 0);
+
+        let history = read(&indexer, &eve, &query(None, 100, None));
+        assert_eq!(ids(&history), vec![4, 7, 9, 11]);
+        assert_eq!(
+            positions(&history),
+            vec![at(19, 0, 0), at(19, 1, 0), shared, shared]
+        );
+        let legs: Vec<(&str, &str, &str)> = items(&history)[2..]
+            .iter()
+            .map(|item| {
+                (
+                    item["tx_id"].as_str().unwrap_or_default(),
+                    item["kind"].as_str().unwrap_or_default(),
+                    item["ordinal"].as_str().unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            legs,
+            vec![
+                ("swap-20-0", "native_transfer", "0"),
+                ("swap-20-0", "erc20_transfer", "1")
+            ]
+        );
+        assert_eq!(history["next_cursor"], Value::Null);
+
+        let unified = read(&indexer, &sides, &query(None, 100, None));
+        assert_eq!(ids(&unified), vec![1, 3, 4, 7, 8, 9, 11]);
+        assert_eq!(
+            positions(&unified),
+            vec![
+                at(1, 0, 0),
+                at(2, 0, 0),
+                at(19, 0, 0),
+                at(19, 1, 0),
+                at(19, 2, 0),
+                shared,
+                shared
+            ]
+        );
+        let tags: Vec<&str> = items(&unified)
+            .iter()
+            .map(|item| item["side"].as_str().unwrap_or_default())
+            .collect();
+        assert_eq!(
+            tags,
+            vec!["layerx", "layerx", "paxeer", "paxeer", "layerx", "paxeer", "paxeer"]
+        );
+        assert_eq!(unified["next_cursor"], Value::Null);
+
+        let before = at(19, 2, 0).encode();
+        for (accounts, cursor) in [(&eve[..], at(19, 1, 0).encode()), (&sides[..], before)] {
+            for limit in [1, 2] {
+                let page = read(&indexer, accounts, &query(Some(&cursor), limit, None));
+                assert_eq!(ids(&page), vec![9, 11], "{accounts:?} {limit}");
+                assert_eq!(page["next_cursor"], Value::Null, "{accounts:?} {limit}");
+            }
+        }
+
+        assert_eq!(walk(&indexer, &eve, 2), vec![vec![4, 7], vec![9, 11]]);
+        assert_eq!(
+            walk(&indexer, &sides, 2),
+            vec![vec![1, 3], vec![4, 7], vec![8, 9, 11]]
+        );
+        assert_eq!(
+            walk(&indexer, &sides, 1),
+            vec![vec![1], vec![3], vec![4], vec![7], vec![8], vec![9, 11]]
+        );
     }
 
     #[test]
