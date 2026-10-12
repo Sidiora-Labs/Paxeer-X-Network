@@ -7860,7 +7860,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.5.11]
 title = "Cross-architecture replay identity for the new pay activity types"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["2.4.1", "2.3.2"]
@@ -30627,7 +30627,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.5.3]
 title = "Router WebSocket relays eth_subscribe and pending receipts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.4", "0.114"]

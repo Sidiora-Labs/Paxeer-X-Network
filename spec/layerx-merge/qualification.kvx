@@ -2060,11 +2060,11 @@ log_path = "logs/10.5.32-verify-1.log"
 observed_and_assumption = "verify passed (12 passed, 0 failed). Gaps: clients submitted-rung definition: permitted dependencies expose no raw transaction hash helper; an interrupted send cannot report a locally derived transaction hash."
 
 [finding.7.5.3]
-revision = "31bdd91c6"
+revision = "b9fc1f6fd"
 command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway ws::"
-exit_code = 101
+exit_code = 0
 log_path = "logs/7.5.3-verify-1.log"
-observed_and_assumption = "build failed; verify not reached (0 passed, 0 failed; tests not started). Gaps: 7005.3: HTTP lx_subscribe/lx_unsubscribe still return -32004 in platform/hosted/gateway/src/rpc.rs:404; HTTP eth_subscribe says Subscriptions are not relayed in platform/hosted/gateway/src/paxeer.rs:172. Both files are outside touches. Unrelated: E0599 at platform/hosted/internal/src/evm_sender.rs:191: Eip1559Call::assemble is missing; build and verify cannot reach gateway compilation. Clippy also exited 101 before owned-file linting; logs/7.5.3-lint-1.log."
+observed_and_assumption = "verify passed (22 passed, 0 failed). Gaps: 7005.3: HTTP lx_subscribe/lx_unsubscribe still answer -32004 in platform/hosted/gateway/src/rpc.rs:404; HTTP eth_subscribe still says Subscriptions are not relayed in platform/hosted/gateway/src/paxeer.rs:172. Both files are outside touches. Unrelated: Fleet helper exited 1 because the relaunch produced no new source changes; the rebased implementation commit is retained. Log: logs/7.5.3-commit.log."
 
 [finding.7.5.7]
 revision = "8a77d2fba"
@@ -2135,3 +2135,31 @@ command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-sdk"
 exit_code = 101
 log_path = "logs/0.151-verify-4.log"
 observed_and_assumption = "verify failed (lib 47 passed, 2 failed (integration binaries not reached)); the write-side commits are landed on main at this revision so the crate compiles again, and the task stays in_progress until task 0.157 reconciles the checkpoint settlement contract and the corpus-producing gate runs. Gaps: v5_native_corpus_binds_exact_profiles_authority_and_all_outcomes (program_http.rs:2441): returns Verification at program_http.rs:2443 because PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS is unset; the corpus is a source-revision-bound artifact produced only by scripts/qualification/paxeer-x/program-terminal-v5.py (--build then verify: native make build, layerx-programs-sandbox host-ffi, test_terminal_v5.c --dump-corpus) Unrelated: cargo clippy -p layerx-sdk --all-targets blocked by 15 workspace-lint errors in dependency layerx-proof"
+
+[finding.2.5.11]
+revision = "b105f16fb"
+command = "make test-replay-crossarch"
+exit_code = 0
+log_path = "logs/2.5.11-verify-1.log"
+observed_and_assumption = "verify passed (5 passed, 0 failed)."
+
+[finding.11.5.62]
+revision = "7bb686a50"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component wire-codec --component layerxctl-port --path cmd/layerxctl/src/main.rs"
+exit_code = 1
+log_path = "logs/11.5.62-verify-1.log"
+observed_and_assumption = "verify failed (0 passed, 5 failed caller checks; scan emits no test counts). Gaps: acceptance.11.32.4: transport references remain at cmd/layerxctl/src/main.rs:11,12,13,150; required-interface stop left source unchanged. Unrelated: commit helper exited 1 with no scoped changes; NOADD=1 preserved existing untracked dependency links; no new commit. Log: logs/11.5.62-commit.log"
+
+[finding.11.5.163]
+revision = "3a3cde89a"
+command = "python3 tools/paxeer-x/tests/retired_callers_test.py --component finality-authority --component lni --component wire-codec --path platform/hosted/registry/src/deployment.rs --path platform/hosted/registry/src/head_attestation.rs --path platform/hosted/registry/src/lib.rs"
+exit_code = 1
+log_path = "logs/11.5.163-verify-1.log"
+observed_and_assumption = "build failed; the scan ran without behavioural tests (0 passed, 0 failed (scan-only; 22 retired-reference findings)). Gaps: 11030.4: One activity-codec reference remains in deployment.rs:32 because its required proof replacement is missing. Unrelated: Commit helper exited 1 with nothing staged; no task commit was created. Existing untracked dependency links were preserved. Log: logs/11.5.163-commit.log."
+
+[finding.8.5.42]
+revision = "74960fbab"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-cli --test rpc_identity"
+exit_code = 101
+log_path = "logs/8.5.42-verify-1.log"
+observed_and_assumption = "build failed; verify not reached (repaired on main since, relaunched) (0 passed, 0 failed; compilation blocked before tests). Gaps: 8079.3/7.4.4: faucet.rs, wallet.rs and rpc_subscription.rs retain lx_ calls outside touches. Unrelated: rpc.rs unit checks still require the retired OpenRPC fixture contract; original checks preserved, fixture outside touches, unit matrix not run."
