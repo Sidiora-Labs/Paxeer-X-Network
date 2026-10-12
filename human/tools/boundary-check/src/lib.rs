@@ -130,9 +130,9 @@ fn source_violation(body: &str) -> Option<&'static str> {
     {
         return Some("ambient-nondeterminism");
     }
-    if body.contains("::transport::Uds")
-        || body.contains("::transport::Tls")
-        || body.contains("::abi::Handle")
+    if body.contains("lni::transport::Uds")
+        || body.contains("lni::transport::Tls")
+        || body.contains("lni::abi::Handle")
     {
         return Some("direct-core-connection");
     }

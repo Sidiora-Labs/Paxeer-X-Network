@@ -646,6 +646,15 @@
       ]
     },
     {
+      "path": "human/tools/boundary-check/src/lib.rs",
+      "lines": [
+        "if body.contains(\"lni::transport::Uds\")",
+        "|| body.contains(\"lni::transport::Tls\")",
+        "|| body.contains(\"lni::abi::Handle\")"
+      ],
+      "citation": "spec/layerx-merge/spec.kvx [task.11.5.92] do_1/do_2: direct-core-connection refusal rules only scan source text"
+    },
+    {
       "path": "include/layerx/lxp_result.h",
       "symbols": [
         "LXP_MODULE_DISABLED",
