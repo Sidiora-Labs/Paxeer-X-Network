@@ -6,8 +6,8 @@
 use ed25519_dalek::{Signer, SigningKey};
 use layerx_programs_ai_market::{
     admission::{
-        admit_evaluator, Admission, AdmissionContext, AdmissionTable, ApprovalTerms,
-        EvaluatorConsent, Participant, TABLE_MAX_BYTES,
+        admit_evaluator, Admission, AdmissionContext, AdmissionMeta, AdmissionTable, ApprovalTerms,
+        EvaluatorConsent, Participant, FLAG_ADMITTED, META_MAX_BYTES, TABLE_MAX_BYTES,
     },
     aggregation_codec::{EpochAggregation, QualityStatus, WorkerAggregate},
     closure::{self, Outcome as Close},
@@ -1579,5 +1579,84 @@ fn a11_exact_retries_return_retained_results_without_new_effects() -> TestResult
     assert_eq!(restarted.bytes, closing);
     let fresh = restarted.owner_call(dispatch::REQUEST_CLOSE, &REASON)?;
     assert_eq!(restarted.refused(&fresh, OPEN_AT + 5)?, F01_ALREADY_CLOSING);
+    Ok(())
+}
+
+fn meta_bytes(meta: &AdmissionMeta) -> CodecResult<Vec<u8>> {
+    let mut out = vec![0; META_MAX_BYTES];
+    let n = meta.encode(&mut out)?;
+    out.truncate(n);
+    Ok(out)
+}
+
+#[test]
+fn a36_routed_approve_admission_then_admit_worker_reads_admitted() -> TestResult {
+    let mut world = World::create()?;
+    let record = world.edit(|parts, market| {
+        let slot = parts.workers.free_slot()?;
+        let record = worker_record(LOW, market, slot, 130)?;
+        parts.workers.insert(&record)?;
+        parts.replay.bind(
+            ActorSlot::worker(usize::from(slot))?,
+            record.owner,
+            version()?,
+        )?;
+        Ok(record)
+    })?;
+    let market = world.header()?;
+    let participant = Participant::Worker(record.worker);
+    let mut approval = vec![participant.role() as u8];
+    approval.extend_from_slice(&participant.bytes());
+    approval.extend_from_slice(record.owner.as_bytes());
+    approval.extend_from_slice(&[7; 32]);
+    approval.extend_from_slice(&record.delegate.0);
+    approval.extend_from_slice(&1u64.to_be_bytes());
+    approval.extend_from_slice(record.proposal_digest(&market)?.as_bytes());
+    approval.extend_from_slice(&0u64.to_be_bytes());
+    approval.extend_from_slice(&1u64.to_be_bytes());
+    approval.extend_from_slice(&(ORIGIN + 64).to_be_bytes());
+    assert_eq!(approval.len(), 193);
+    let approve = Req {
+        sequence: world.owner_sequence,
+        request: tag(0x80, 0, world.owner_sequence),
+        ..req(dispatch::ApproveAdmission, owner()?, approval)
+    };
+    let revision = world.revision()?;
+    let frame = world.route(&approve, 131)?;
+    let approved = world.parts()?.admission.get(participant).ok_or(NOT_FOUND)?;
+    assert_eq!(
+        frame,
+        Frame {
+            status: ResultStatus::Ok,
+            error: None,
+            revision: revision + 1,
+            payload: meta_bytes(&approved)?,
+        }
+    );
+    assert_eq!(approved.membership_flags, 0);
+    let digest = approved.approval.ok_or(NOT_FOUND)?.digest;
+    let mut payload = record.worker.as_bytes().to_vec();
+    for value in [1u64, 0, 1] {
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+    payload.extend_from_slice(digest.as_bytes());
+    let admit = Req {
+        sequence: 1,
+        request: tag(0x81, LOW, 1),
+        ..req(dispatch::AdmitWorker, record.owner, payload)
+    };
+    let frame = world.route(&admit, 132)?;
+    let admitted = world.parts()?.admission.get(participant).ok_or(NOT_FOUND)?;
+    assert_eq!(
+        frame,
+        Frame {
+            status: ResultStatus::Ok,
+            error: None,
+            revision: revision + 2,
+            payload: meta_bytes(&admitted)?,
+        }
+    );
+    assert_eq!(admitted.membership_flags, FLAG_ADMITTED);
+    assert_eq!(world.revision()?, revision + 2);
     Ok(())
 }

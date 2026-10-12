@@ -10,8 +10,8 @@ use crate::registry_ops::{self, CallContext, PolicySection};
 use crate::state::{self, RetainedResult, Section, SharedState};
 use crate::types::{Presence, RequestDigest};
 use crate::{
-    aggregation, closure, commit_reveal, epoch, evidence, queries, rewards, tasks, value_adapter,
-    workers, MAX_STATE_BYTES,
+    admission, aggregation, closure, commit_reveal, epoch, evidence, queries, rewards, tasks,
+    value_adapter, workers, MAX_STATE_BYTES,
 };
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SequencePolicy {
@@ -714,6 +714,7 @@ const TRANSITION_SCRATCH_BYTES: usize = max_of(&[
     rewards::SCRATCH_BYTES,
     F01_SECTION_CAP + CONTROL_CAP,
     REBIND_SCRATCH_BYTES,
+    admission::ADMISSION_SCRATCH_BYTES,
 ]);
 /// Router scratch: at least the largest scratch any routed transition or the F01 revision
 /// rebinding needs.
@@ -1031,6 +1032,24 @@ fn transition_inner(
         }
         0x0501..=0x0503 | 0x0601..=0x0605 | 0x0701..=0x0703 => {
             settlement(ctx, envelope, present(current)?, next, scratch, event)
+        }
+        0x0801..=0x0809 => {
+            match admission::apply_admission(ctx, envelope, present(current)?, next, scratch, event)
+            {
+                admission::AdmissionOutcome::Applied {
+                    revision,
+                    state_len,
+                    event_len,
+                    ..
+                } => Ok(Step::Applied {
+                    revision,
+                    state_len,
+                    event_len,
+                    payload: Payload::Suffix,
+                }),
+                admission::AdmissionOutcome::Retained(retained) => Ok(Step::Retained(retained)),
+                admission::AdmissionOutcome::Refused(error) => Err(error),
+            }
         }
         0x0A01 | 0x0A02 => read(ctx, envelope, present(current)?, scratch),
         _ => Err(UNKNOWN_OPERATION),
