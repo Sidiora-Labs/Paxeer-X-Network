@@ -23,6 +23,7 @@ use layerx_sdk::approval::{
 };
 use layerx_sdk::{Client, Deployment, Operation, SdkError, SubmissionOutcome, GUARANTEES};
 use layerx_types::result::ResultCode;
+use layerx_types::rung::Rung;
 
 fn direct_config() -> ClientConfig {
     ClientConfig {
@@ -278,13 +279,13 @@ fn reads_never_present_unverified_or_below_requested_values() {
     assert!(Client::accept_verified_read(Level::StateProven, proven).is_ok());
 }
 
-fn tracked(state: SubmissionState, evidence: Vec<EvidenceRef>, level: Level) -> TrackedSubmission {
+fn tracked(state: SubmissionState, evidence: Vec<EvidenceRef>, rung: Rung) -> TrackedSubmission {
     TrackedSubmission {
         submission_ref: SubmissionRef::new("submission-a")
             .unwrap_or_else(|error| panic!("submission: {error:?}")),
         state,
         evidence,
-        verification_level: level,
+        rung,
         transitions: Vec::new(),
     }
 }
@@ -294,7 +295,7 @@ fn unknown_and_future_protocol_codes_remain_lossless() {
     let unknown = Client::submission_outcome(tracked(
         SubmissionState::Unknown,
         Vec::new(),
-        Level::Unverified,
+        Rung::Submitted,
     ));
     assert!(matches!(unknown, Ok(SubmissionOutcome::Unknown(_))));
 
@@ -302,7 +303,7 @@ fn unknown_and_future_protocol_codes_remain_lossless() {
     let failed = Client::submission_outcome(tracked(
         SubmissionState::Failed { result: future },
         Vec::new(),
-        Level::Unverified,
+        Rung::Submitted,
     ));
     assert!(matches!(
         failed,
@@ -315,12 +316,34 @@ fn unknown_and_future_protocol_codes_remain_lossless() {
                 .unwrap_or_else(|error| panic!("receipt: {error:?}")),
         },
         Vec::new(),
-        Level::Unverified,
+        Rung::Submitted,
     ));
     assert_eq!(
         executed_without_proof,
         Err(SdkError::ExecutedWithoutEvidence)
     );
+
+    let executed = |rung| {
+        Client::submission_outcome(tracked(
+            SubmissionState::Executed {
+                receipt_ref: layerx_agent_api::track::ReceiptRef::new("receipt-a")
+                    .unwrap_or_else(|error| panic!("receipt: {error:?}")),
+            },
+            vec![EvidenceRef {
+                kind: "receipt".into(),
+                digest: [0x22; 32],
+            }],
+            rung,
+        ))
+    };
+    assert_eq!(
+        executed(Rung::Submitted),
+        Err(SdkError::ExecutedWithoutEvidence)
+    );
+    assert!(matches!(
+        executed(Rung::Receipted),
+        Ok(SubmissionOutcome::Executed(submission)) if submission.rung == Rung::Receipted
+    ));
 }
 
 #[test]

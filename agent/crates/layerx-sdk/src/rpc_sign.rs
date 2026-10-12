@@ -2,7 +2,7 @@
 
 use layerx_agent_api::error::RequestId;
 use layerx_agent_api::idempotency::Key;
-use layerx_agent_api::verify::Level;
+use layerx_types::rung::Rung;
 use serde_json::{json, Value};
 
 use crate::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};
@@ -29,19 +29,17 @@ pub struct Transition {
 pub struct SignedObservation {
     pub activity_id: [u8; 32],
     pub submission_ref: String,
-    pub verification_level: Level,
+    pub verification_level: Rung,
     pub evidence: Vec<Evidence>,
     pub transitions: Vec<Transition>,
 }
 
-fn level_name(text: &str) -> Option<Level> {
+/// Maps the daemon's level name onto its rung; the retired checkpoint and settlement names
+/// carry no rung and are refused.
+fn rung_name(text: &str) -> Option<Rung> {
     Some(match text {
-        "Unverified" => Level::Unverified,
-        "SequencerSigned" => Level::SequencerSigned,
-        "BatchIncluded" => Level::BatchIncluded,
-        "StateProven" => Level::StateProven,
-        "CheckpointFinalised" => Level::CheckpointFinalised,
-        "SettlementAnchored" => Level::SettlementAnchored,
+        "Unverified" => Rung::Submitted,
+        "SequencerSigned" | "BatchIncluded" | "StateProven" => Rung::Receipted,
         _ => return None,
     })
 }
@@ -105,7 +103,7 @@ fn decode_signed(value: &Value, operation: Operation) -> Result<SignedObservatio
         submission_ref: text(&submission["submission_ref"], operation)?,
         verification_level: submission["verification_level"]
             .as_str()
-            .and_then(level_name)
+            .and_then(rung_name)
             .ok_or_else(|| violation(operation))?,
         evidence,
         transitions,
@@ -139,5 +137,57 @@ impl AgentEnvelopeTransport {
             Some(key),
         )?;
         decode_signed(&success.value, operation)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn observation(level: &str) -> Value {
+        json!({
+            "activity_id": "11".repeat(32),
+            "submission": {
+                "submission_ref": "submission-a",
+                "state": "Signed",
+                "verification_level": level,
+                "evidence": [],
+                "transitions": [],
+            },
+            "receipt": null,
+        })
+    }
+
+    #[test]
+    fn signed_observation_carries_the_rung() {
+        for (level, rung) in [
+            ("Unverified", Rung::Submitted),
+            ("SequencerSigned", Rung::Receipted),
+            ("BatchIncluded", Rung::Receipted),
+            ("StateProven", Rung::Receipted),
+        ] {
+            let decoded = decode_signed(&observation(level), Operation::Sign)
+                .unwrap_or_else(|error| panic!("{level}: {error:?}"));
+            assert_eq!(decoded.verification_level, rung);
+            assert_eq!(decoded.submission_ref, "submission-a");
+            assert_eq!(decoded.activity_id, [0x11; 32]);
+        }
+    }
+
+    #[test]
+    fn retired_and_unknown_level_names_are_refused() {
+        for level in [
+            "CheckpointFinalised",
+            "SettlementAnchored",
+            "submitted",
+            "Receipted",
+            "Committed",
+        ] {
+            assert_eq!(
+                decode_signed(&observation(level), Operation::Sign),
+                Err(violation(Operation::Sign)),
+                "{level}"
+            );
+        }
     }
 }

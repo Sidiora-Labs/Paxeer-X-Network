@@ -32,6 +32,7 @@ use layerx_proof::export::{
     verify as verify_offline_export, ExportVerificationError, OfflineExport, VerificationReport,
 };
 use layerx_types::result::ResultCode;
+use layerx_types::rung::Rung;
 
 pub mod agent_envelope;
 pub mod approval;
@@ -390,8 +391,7 @@ impl Client {
         match &submission.state {
             SubmissionState::Unknown => Ok(SubmissionOutcome::Unknown(submission)),
             SubmissionState::Executed { .. }
-                if submission.evidence.is_empty()
-                    || submission.verification_level == Level::Unverified =>
+                if submission.evidence.is_empty() || submission.rung == Rung::Submitted =>
             {
                 Err(SdkError::ExecutedWithoutEvidence)
             }
