@@ -55,11 +55,12 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.TransactionStatusController do
 
   defp status_of(%Hash{} = transaction_hash) do
     case Chain.hash_to_transaction(transaction_hash, @api_true) do
-      {:ok, %{block_number: nil}} ->
-        {:ok, Status.of(nil, Finality.heights(@api_true), sequencer_verification(transaction_hash))}
+      {:ok, %{block_number: block_number, block_consensus: true}} when is_integer(block_number) ->
+        {:ok, Status.of(block_number, Finality.heights(@api_true))}
 
       {:ok, %{block_number: block_number}} ->
-        {:ok, Status.of(block_number, Finality.heights(@api_true))}
+        status = Status.of(nil, Finality.heights(@api_true), sequencer_verification(transaction_hash))
+        {:ok, %Status{status | block_number: block_number}}
 
       {:error, :not_found} ->
         case sequencer_verification(transaction_hash) do

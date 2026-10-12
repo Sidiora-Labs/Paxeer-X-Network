@@ -1,7 +1,9 @@
 defmodule BlockScoutWeb.API.V2.PaxeerX.TransactionStatusControllerTest do
   use BlockScoutWeb.ConnCase
 
+  alias Explorer.Chain.{Block, Transaction}
   alias Explorer.Chain.PaxeerX.SequencerReceipt
+  alias Explorer.Repo
   alias Plug.Conn
 
   @vectors Path.expand(
@@ -82,6 +84,35 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.TransactionStatusControllerTest do
       assert response == %{"rung" => "submitted", "block_number" => nil, "committed_height" => nil}
     end
 
+    test "a transaction in a non-consensus block is not committed", %{conn: conn} do
+      block = insert(:block, number: 100)
+      insert(:block, number: 101)
+      transaction = :transaction |> insert() |> with_block(block) |> lose_consensus(block)
+
+      response = json_response(get(conn, "/api/v2/transactions/#{transaction.hash}/status"), 200)
+
+      assert response == %{"rung" => "submitted", "block_number" => 100, "committed_height" => 101}
+    end
+
+    test "a transaction in a non-consensus block with a verified sequencer receipt is receipted",
+         %{conn: conn, cases: cases} do
+      test_case = cases["V1-pax-transfer"]
+      {:ok, hash} = Explorer.Chain.string_to_full_hash(tx_hash(test_case))
+      block = insert(:block, number: 100)
+      insert(:block, number: 101)
+      :transaction |> insert(hash: hash) |> with_block(block) |> lose_consensus(block)
+
+      serve_router(%{
+        "pax_sequencerReceipt" => test_case["receiptJson"],
+        "px_getReceiptKeys" => [test_case["pinnedKey"]]
+      })
+
+      response = json_response(get(conn, "/api/v2/transactions/#{hash}/status"), 200)
+
+      assert response == %{"rung" => "receipted", "block_number" => 100, "committed_height" => 101}
+      assert received_calls() == [{"pax_sequencerReceipt", [to_string(hash)]}, {"px_getReceiptKeys", []}]
+    end
+
     test "a hash with a verified sequencer receipt and no indexed transaction answers receipted",
          %{conn: conn, cases: cases} do
       test_case = cases["V1-pax-transfer"]
@@ -156,6 +187,14 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.TransactionStatusControllerTest do
 
       assert %{"message" => "Not found"} = json_response(request, 404)
     end
+  end
+
+  defp lose_consensus(%Transaction{} = transaction, %Block{} = block) do
+    block |> Ecto.Changeset.change(consensus: false) |> Repo.update!()
+
+    transaction
+    |> Ecto.Changeset.change(block_consensus: false)
+    |> Repo.update!()
   end
 
   defp tx_hash(%{"rawTransaction" => "0x" <> raw}) do

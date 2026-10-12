@@ -1,6 +1,7 @@
 defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
   use BlockScoutWeb.ConnCase
 
+  alias Explorer.Chain.{Block, Transaction}
   alias Explorer.Chain.PaxeerX.Receipt
   alias Explorer.Repo
 
@@ -43,6 +44,21 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
       assert evm["origin"] == "evm"
       assert evm["block_number"] == 40
       assert evm["status"] == "committed"
+    end
+
+    test "a receipt in a non-consensus block is never committed", %{conn: conn} do
+      receipt = insert_receipt(10)
+      insert_receipt(11)
+      lose_consensus(receipt)
+
+      response = json_response(get(conn, "/api/v2/paxeer-x/receipts"), 200)
+
+      assert [%{"id" => id, "status" => "committed", "block_number" => 110}] = response["items"]
+      assert id == receipt_id(11)
+      assert response["next_page_params"] == nil
+
+      assert %{"message" => "Not found"} =
+               json_response(get(conn, "/api/v2/paxeer-x/receipts/#{receipt_id(10)}"), 404)
     end
 
     test "carries the newest row of a receipt that climbed the verification lattice", %{conn: conn} do
@@ -161,6 +177,17 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptControllerTest do
     %Receipt{}
     |> Receipt.changeset(attributes)
     |> Repo.insert!()
+  end
+
+  defp lose_consensus(%Receipt{} = receipt) do
+    Block |> Repo.get_by!(hash: receipt.block_hash) |> Ecto.Changeset.change(consensus: false) |> Repo.update!()
+
+    Transaction
+    |> Repo.get_by!(hash: receipt.transaction_hash)
+    |> Ecto.Changeset.change(block_consensus: false)
+    |> Repo.update!()
+
+    receipt |> Ecto.Changeset.change(block_consensus: false) |> Repo.update!()
   end
 
   defp insert_kernel_receipt(index) do

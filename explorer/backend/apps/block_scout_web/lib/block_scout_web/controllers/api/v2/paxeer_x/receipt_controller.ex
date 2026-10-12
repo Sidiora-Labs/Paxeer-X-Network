@@ -104,7 +104,7 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptController do
     %{
       "id" => to_string(receipt.receipt_id),
       "account" => hex(receipt.account),
-      "status" => to_string(Status.of(receipt.block_number, heights).rung),
+      "status" => to_string(Status.of(consensus_block_number(receipt), heights).rung),
       "block_number" => receipt.block_number,
       "origin" => to_string(receipt.origin),
       "verification" => verification(receipt),
@@ -122,6 +122,11 @@ defmodule BlockScoutWeb.API.V2.PaxeerX.ReceiptController do
       "timestamp" => timestamp(receipt)
     })
   end
+
+  defp consensus_block_number(%Receipt{origin: :evm, block_consensus: true, block_number: block_number}),
+    do: block_number
+
+  defp consensus_block_number(%Receipt{}), do: nil
 
   defp verification(%Receipt{origin: :kernel, kernel_verification: verification}), do: to_string(verification)
 
