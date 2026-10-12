@@ -2177,3 +2177,45 @@ command = "make test-module-ctx test-snapshot test-state-root test-arena"
 exit_code = 2
 log_path = "logs/0.153-verify-1.log"
 observed_and_assumption = "build passed; verify exit 2: test-module-ctx and test-snapshot pass, test-state-root fails at tests/state/lxp_test_state_root.c:115 because module id 10 is now the registered web module, test-arena passes alone (logs/0.153-verify-1-arena.log). tests/programs/test_paxai_storage_continuity.c:94 pins the old KV bound and would not compile. Task widened to repair both tests; held in_progress until the rerun passes."
+
+[finding.0.156]
+revision = "c01da0ff9"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway history::tests::unified_history_keeps_native_before_first_log_on_a_shared_position"
+exit_code = 0
+log_path = "logs/0.156-verify-3.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed) after two compile repairs (E0308 deref, E0282 row vector type). Unrelated: clippy on the gateway crate stops in the layerx-indexer lib (71 pedantic lints, for example doc_markdown at platform/hosted/indexer/src/store.rs:2103) and main.rs:3605 warns that route is unused."
+
+[finding.0.170]
+revision = "9902bbf7e"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-paxai-worker --bin layerx-paxai-runner while_a_descendant_holds_stdout"
+exit_code = 0
+log_path = "logs/0.170-verify-1.log"
+observed_and_assumption = "verify passed (2 passed, 0 failed)."
+
+[finding.0.171]
+revision = "54872218e"
+command = "cargo test --locked --manifest-path interop/Cargo.toml -p x-websearch --lib relay::program_journal_restores_after_a_roster_rotation"
+exit_code = 0
+log_path = "logs/0.171-verify-1.log"
+observed_and_assumption = "verify passed (1 passed, 0 failed). accept drops held signers outside the current AttestorSet and the answer's own signer; restore counts signers besides the own entry against MAX_OBSERVATION_SIGNATURES per decision.89. Unrelated: clippy on x-websearch flags existing lints in kernel.rs at lines 328, 435, 460, 628, 792, 1665, 1764 and 1984 outside the changed lines."
+
+[finding.9.1.3]
+revision = "8fa2e96cf"
+command = "go test -count=1 ./node/ -run TestUpgradesSequencer"
+exit_code = 0
+log_path = "logs/9.1.3-verify-2.log"
+observed_and_assumption = "verify passed (3 passed, 0 failed) after one environment repair (kernel and programs archives built in the fresh worktree). Gaps: 9031.3 App.Sequenced in node/app.go still reads the activation height from node config and nothing in production calls consensus State.SetLeaderPin, so the module-store gate sequencerPinnedLeader is not yet wired there; 9031.5 UpgradeInfo in sdk/store/types/store.go has no Info field, so an upgrade-info file on disk cannot carry L or ReceiptKeys and the handler refuses it, values reach the plan only through a governance Plan.Info; 9031.4 rehearsal belongs to 9.6.4."
+
+[finding.5.4.1]
+revision = "8ab1ccd4a"
+command = "go test -count=1 -run TestFulfilProgram ./modules/xweb/keeper/"
+exit_code = 0
+log_path = "logs/5.4.1-verify-2.log"
+observed_and_assumption = "verify passed (52 passed, 0 failed) after one environment repair (archives built). Gaps: do_12 activation-before-pause and TestFulfilProgramActivationBeforePause belong to 5.6.5 (UpgradeActivationReader); do_7 genesis pending and committed counters need fields in modules/xweb/types/genesis.go outside touches; 5014.3 the 123-byte pending record carries no bank denom and xweb has no asset-id-to-denom table, so splitProgramFee pays in the one mapped denom the fee account holds enough of and refuses when none or two qualify, which a third party can make ambiguous by sending another mapped denom; a real asset-to-denom binding is needed. TestFeeAccountDerivation compiles but is outside the -run filter."
+
+[finding.0.160]
+revision = "2c8795081"
+command = "make paxai-host-boundary-build && cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test host_boundary --test fuel_budget"
+exit_code = 2
+log_path = "logs/0.160-verify-1.log"
+observed_and_assumption = "build exit 2: the per-package opt-level s profile yields a 538102-byte guest, 13918 bytes above the 524184 deploy bound, and the new Makefile size guard refuses it before the tests run (opt-level z gives 569603). The 493853-byte figure in do_1 predates later ai-market growth. Decision.94 adds a binaryen wasm-opt -Oz post-pass (448162 bytes measured on this guest); held in_progress for the rerun."

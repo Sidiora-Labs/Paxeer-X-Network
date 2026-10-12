@@ -7857,3 +7857,18 @@ fix = "TRANSITION_SCRATCH_BYTES must include the producer's scratch size and the
 area = "kernel"
 symptom = "stack overflow or several MB of stack per thread after raising LXP_KERNEL_MAX_MODULE_KV"
 fix = "lxp_kernel embeds the module KV table by value (about 2.4 MB at 2048 rows); allocate kernels on the heap in threads and tests that hold two of them"
+
+[gotcha.1657]
+area = "programs"
+symptom = "ai-market wasm32 release guest exceeds the deploy payload bound; per-package opt-level z is larger than s under the workspace lto profile"
+fix = "post-process with binaryen wasm-opt -Oz --strip-debug --strip-producers (538102 to 448162 bytes); apt-get install binaryen on the build host"
+
+[gotcha.1658]
+area = "go"
+symptom = "go build ./node/... passes in a fresh worktree but go test ./node/ or ./modules/xweb/keeper/ fails at link"
+fix = "run make build/liblayerx.a programs/target/debug/liblayerx_programs_sandbox.a first"
+
+[gotcha.1659]
+area = "rust"
+symptom = "test engines written as executables fail exec with text file busy under parallel tests"
+fix = "create every engine file in one OnceLock fixture before any test thread spawns a process"
