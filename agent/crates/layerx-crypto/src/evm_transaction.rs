@@ -147,7 +147,9 @@ impl Eip1559Call {
 mod tests {
     use super::*;
 
-    fn signed_call() -> Result<(Eip1559Call, [u8; 64], u8, [u8; 20]), Box<dyn std::error::Error>> {
+    type SignedCall = (Eip1559Call, [u8; 64], u8, [u8; 20]);
+
+    fn signed_call() -> Result<SignedCall, Box<dyn std::error::Error>> {
         let call = Eip1559Call {
             chain_id: 1,
             nonce: 7,

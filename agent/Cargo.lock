@@ -916,6 +916,7 @@ version = "0.1.0"
 dependencies = [
  "layerx-proof",
  "sha2",
+ "sha3",
 ]
 
 [[package]]
