@@ -148,7 +148,9 @@ def operation_specs(plane: Plane) -> list[dict[str, object]]:
         wire = section.split(".", 1)[1]
         request_model = entries.get("request") if isinstance(entries.get("request"), str) else None
         response_model = entries.get("response") if isinstance(entries.get("response"), str) else None
-        request_fallback = string_list(entries.get("request_required")) or string_list(entries.get("required"))
+        request_required = string_list(entries.get("request_required"))
+        operation_required = string_list(entries.get("required"))
+        request_fallback = request_required or operation_required
         response_fallback = string_list(entries.get("response_required"))
         result.append({
             "wire": wire,
@@ -159,7 +161,7 @@ def operation_specs(plane: Plane) -> list[dict[str, object]]:
             "idempotency": bool(entries.get("idempotency")) or wire in mutations
                 or (
                     entries.get("method") != "GET"
-                    and "idempotency_key" in request_fallback
+                    and "idempotency_key" in request_required + operation_required
                 ),
         })
     return result

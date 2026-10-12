@@ -2967,7 +2967,7 @@ public final class GeneratedSchema {
             }
             @JsonValue public JsonNode wireValue() { return value; }
         }
-        public static final SchemaTypes.TypedOperation<McpInvokeRequest, McpInvokeResponse> MCP_INVOKE = new SchemaTypes.TypedOperation<>(OperationCatalog.Plane.AGENT, "mcp.invoke", false, McpInvokeRequest.class, McpInvokeResponse.class);
+        public static final SchemaTypes.TypedOperation<McpInvokeRequest, McpInvokeResponse> MCP_INVOKE = new SchemaTypes.TypedOperation<>(OperationCatalog.Plane.AGENT, "mcp.invoke", true, McpInvokeRequest.class, McpInvokeResponse.class);
         public record PolicyDryRunRequest(JsonNode tenant, JsonNode agent_did, JsonNode session_id, JsonNode capability_id, JsonNode activity_type, JsonNode counterparty, JsonNode asset, JsonNode amount, JsonNode purpose, JsonNode core_sequence) implements SchemaTypes.GeneratedRequest {
             public PolicyDryRunRequest {
                 Objects.requireNonNull(tenant, "tenant");
