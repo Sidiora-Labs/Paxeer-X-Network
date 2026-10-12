@@ -1289,11 +1289,10 @@ observed_and_assumption = "verify passed (6 passed, 0 failed). Gaps: 9015.2: Cus
 
 [finding.2.3.2]
 revision = "4bf2a8208"
-command = "make test-stream-lifecycle"
-exit_code = 0
-log_path = "logs/2.3.2-verify-2.log"
-observed_and_assumption = "verify passed (1 passed, 0 failed (verify-1 exit 2, line 729: logs/2.3.2-verify-1.log)). Gaps: - ordinal 8 is still unreachable through the kernel: module_execute in src/modules/stream/lx_stream_open.c refuses it with LXP_ERR_UNKNOWN_ACTIVITY, and tests/modules/test_stream_open.c asserts that refusal. Both files are outside touches, so the stream_execute_typed case 8 and the event type 8 (body: stream id, old rate, new rate, paid, after the settle event 4) are compiled but not exercised by any test"
-
+command = "make test-stream-lifecycle test-stream-open test-stream-settle"
+exit_code = 2
+log_path = "logs/2.3.2-verify-1.log"
+observed_and_assumption = "verify passed (0 passed, 0 failed (not reached)). Gaps: none in code; acceptance 2.15.1-2.15.6 are not yet demonstrated because no stream test binary could be built Unrelated: programs-build (Makefile:3422) fails offline: agent/crates/layerx-client pins serde_json =1.0.149 but programs/vendor carries 1.0.151, so test targets that depend on programs-build cannot link"
 [finding.6.2.6]
 revision = "aafef017e"
 command = "go test -count=1 ./precompiles/layerxagent/teeattestor/"
