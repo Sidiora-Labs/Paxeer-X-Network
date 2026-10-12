@@ -7842,3 +7842,18 @@ fix = "check stat -c %F /dev/null; when it is a regular file the probe reads its
 area = "git"
 symptom = "NOADD=1 fleet commit records an empty commit because nothing was staged"
 fix = "git add the owned paths explicitly before the NOADD=1 commit"
+
+[gotcha.1654]
+area = "rust"
+symptom = "gas station crate tests under clippy pedantic -D flag similar_names on signer/signed and unnecessary_wraps on helpers that only return Ok"
+fix = "rename the pair and expose the helper through a Result type alias such as Read<'a> = Result<&'a K, E>"
+
+[gotcha.1655]
+area = "programs"
+symptom = "ai-market dispatch arm refuses CAPACITY or NON_CANONICAL for a newly routed producer"
+fix = "TRANSITION_SCRATCH_BYTES must include the producer's scratch size and the arm's Payload must be the bytes the producer hashed, not the digest, because applied_frame compares result_digest(payload) with common.result"
+
+[gotcha.1656]
+area = "kernel"
+symptom = "stack overflow or several MB of stack per thread after raising LXP_KERNEL_MAX_MODULE_KV"
+fix = "lxp_kernel embeds the module KV table by value (about 2.4 MB at 2048 rows); allocate kernels on the heap in threads and tests that hold two of them"

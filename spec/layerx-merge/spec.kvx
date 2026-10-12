@@ -30257,7 +30257,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.1]
 title = "Gas station budgets keyed per DID through addr 0x1004"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.1.1", "0.114"]
@@ -43094,9 +43094,10 @@ reqs = ["4012.2"]
 capabilities = []
 do_1 = "Raise LXP_KERNEL_MAX_MODULE_KV (include/layerx/lxp_kernel.h:18) so the Programs module holds 300 live sandbox leases with their escrow and ledger rows beside the existing rows, and raise LXP_MODULE_MAX_STAGED_WRITES (:21) so one expiry batch stages the writes of 128 lease destroys; every bound check that uses them (src/state/lxp_state_root.c:26, :535; src/state/lxp_snapshot.c:371, :953; src/protocol/lxp_module_ctx.c:50-53, :505-506) keeps refusing one above the new limit."
 do_2 = "Per-context staged arrays sized by LXP_MODULE_MAX_STAGED_WRITES (src/protocol/lxp_module_ctx.c:50-53) move off the stack if the new size exceeds it; snapshot and state-root encodings stay byte-identical for states within the old bounds."
-do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
+do_3 = "tests/state/lxp_test_state_root.c:113 probes module id 10 as unknown, which is now the registered web module (LXP_MODULE_RESERVED_COUNT is 11): probe the first unregistered id (LXP_MODULE_RESERVED_COUNT) so the LXP_ERR_UNKNOWN_MODULE refusal is still exercised; tests/programs/test_paxai_storage_continuity.c:94 pins LXP_KERNEL_MAX_MODULE_KV at 512 and must pin the raised bound so the continuity test compiles; threads started at src/protocol/lxp_kernel.c:5997 and src/network/lxp_verify_pool.c:81 must not hold an lxp_kernel by value on a thread stack now that module KV is about 2.4 MB, confirm or report the instance that needs the heap."
+do_4 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["LXP_KERNEL_MAX_MODULE_KV", "LXP_MODULE_MAX_STAGED_WRITES"]
-touches = ["include/layerx/lxp_kernel.h", "src/protocol/lxp_module_ctx.c"]
+touches = ["include/layerx/lxp_kernel.h", "src/protocol/lxp_module_ctx.c", "tests/state/lxp_test_state_root.c", "tests/programs/test_paxai_storage_continuity.c"]
 build_cmd = "make build"
 verify_cmd = "make test-module-ctx test-snapshot test-state-root test-arena"
 planned_paths = []
@@ -43238,14 +43239,14 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.0.159]
 title = "AI market dispatch routes F08 admission to apply_admission"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
 reqs = ["4036.1", "4052.2"]
 capabilities = []
-do_1 = "transition_inner (programs/crates/layerx-programs-ai-market/src/dispatch.rs:972) routes 0x0801-0x0809 to admission::apply_admission (src/admission.rs:1577): Applied maps to Step::Applied with Payload::record of the result digest, Retained to Step::Retained, Refused to the carried ApplicationError; the direct-caller rule of src/host_adapter.rs:57 holds for every arm."
-do_2 = "tests/host_boundary.rs:930-938 expects each of 0x0801-0x0809 to reach its admission arm (a refusal from apply_admission, never UNKNOWN_OPERATION), and an indirect caller is still refused; market_protocol_boundary.rs adds one ApproveAdmission then AdmitWorker case through dispatch::route whose admission record reads ADMITTED."
+do_1 = "transition_inner (programs/crates/layerx-programs-ai-market/src/dispatch.rs:972) routes 0x0801-0x0809 to admission::apply_admission (src/admission.rs:1577): Applied maps to Step::Applied with Payload::Suffix carrying the encoded AdmissionMeta whose digest is the event result (applied_frame refuses NON_CANONICAL unless result_digest(payload) equals common.result), Retained to Step::Retained, Refused to the carried ApplicationError; the direct-caller rule of src/host_adapter.rs:57 holds for every arm."
+do_2 = "tests/host_boundary.rs:930-938 expects each of 0x0801-0x0809 to reach its admission arm (a refusal from apply_admission, never UNKNOWN_OPERATION), and the indirect-caller refusal stays in DirectCall::read_context ahead of dispatch::route (the C harness at tests/programs/test_ai_host_boundary.c carries no immediate-caller field); market_protocol_boundary.rs adds one ApproveAdmission then AdmitWorker case through dispatch::route whose admission record reads ADMITTED."
 do_3 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."
 symbols = ["apply_admission"]
 touches = ["programs/crates/layerx-programs-ai-market/src/dispatch.rs", "programs/crates/layerx-programs-ai-market/tests/host_boundary.rs", "programs/crates/layerx-programs-ai-market/tests/market_protocol_boundary.rs"]

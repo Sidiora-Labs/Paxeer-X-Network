@@ -2123,11 +2123,11 @@ log_path = "logs/0.155-verify-1.log"
 observed_and_assumption = "verify passed (1 passed, 0 failed). Unrelated: clippy too_many_lines at drift.rs:35 (repo_fixture) and format_push_string at drift.rs:434 (declare_handwritten) are prior, not in the new test"
 
 [finding.7.2.1]
-revision = "3b2eb64bc"
+revision = "17bc4207a"
 command = "cargo test --locked --manifest-path interop/Cargo.toml -p layerx-gas-station --lib policy::"
 exit_code = 0
-log_path = "logs/7.2.1-verify-1.log"
-observed_and_assumption = "verify passed (6 passed, 0 failed). Landing on main met a conflict in interop/crates/layerx-gas-station/src/policy.rs with task 0.12; the branch is rebased and the gates rerun before it lands. Gaps: a failed DID read refuses with PolicyRefusal::InvalidAmount, the same reason the code already uses for an unavailable DID ledger; a dedicated variant would need a new arm in the exhaustive match at interop/crates/layerx-gas-station/src/service.rs:170-195, which is outside touches. The station still returns the read's own RPC error (503) to callers Unrelated: none (the first clippy pass hit a layerx-platform-internal evm_sender.rs:191 assemble compile error; main had already fixed it, and the worktree was rebased before the gates ran)"
+log_path = "logs/7.2.1-verify-2.log"
+observed_and_assumption = "verify passed (6 passed, 0 failed). Gaps: the per-interval check stays the station-wide aggregate cap. Keying it per budget key would remove the global cap, a weakened check, so only the per-account bucket is keyed."
 
 [finding.0.151]
 revision = "1524d7f3d"
@@ -2163,3 +2163,17 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-pla
 exit_code = 101
 log_path = "logs/8.5.42-verify-1.log"
 observed_and_assumption = "build failed; verify not reached (repaired on main since, relaunched) (0 passed, 0 failed; compilation blocked before tests). Gaps: 8079.3/7.4.4: faucet.rs, wallet.rs and rpc_subscription.rs retain lx_ calls outside touches. Unrelated: rpc.rs unit checks still require the retired OpenRPC fixture contract; original checks preserved, fixture outside touches, unit matrix not run."
+
+[finding.0.159]
+revision = "b005bfacf"
+command = "cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-ai-market --test market_protocol_boundary --test admission_lifecycle"
+exit_code = 0
+log_path = "logs/0.159-verify-1.log"
+observed_and_assumption = "verify passed (32 passed, 0 failed). do_1 uses Payload::Suffix (the encoded AdmissionMeta) because applied_frame requires result_digest(payload) to equal the event result; the indirect-caller case stays with DirectCall::read_context since the C harness carries no caller field; host_boundary.rs now expects NON_CANONICAL for 0x0801-0x0809 at revision 1 and needs the prebuilt wasm harness, built but outside verify_cmd. Unrelated: clippy on the crate stops in the layerx-program-sdk build script (17 pedantic errors)."
+
+[finding.0.153]
+revision = "67678ff08"
+command = "make test-module-ctx test-snapshot test-state-root test-arena"
+exit_code = 2
+log_path = "logs/0.153-verify-1.log"
+observed_and_assumption = "build passed; verify exit 2: test-module-ctx and test-snapshot pass, test-state-root fails at tests/state/lxp_test_state_root.c:115 because module id 10 is now the registered web module, test-arena passes alone (logs/0.153-verify-1-arena.log). tests/programs/test_paxai_storage_continuity.c:94 pins the old KV bound and would not compile. Task widened to repair both tests; held in_progress until the rerun passes."
