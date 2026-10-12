@@ -1,4 +1,4 @@
-use layerx_types::account::{AccountId, AccountNamespace};
+use layerx_types::account::AccountId;
 use layerx_types::amount::Amount;
 use layerx_types::ids::AssetId;
 use layerx_types::limits::MAX_PAYLOAD_BYTES;
@@ -43,7 +43,6 @@ impl NativeCustodyCredit {
             || payload[359..HEAD_BYTES] != 2_u32.to_be_bytes()
             || payload[37..41] == [0; 4]
             || payload[41..43] != 3_u16.to_be_bytes()
-            || reserve.namespace() != AccountNamespace::SystemPaxeerReserve
             || reserve == recipient
         {
             return Err(invalid());
