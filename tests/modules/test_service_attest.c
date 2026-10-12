@@ -250,6 +250,39 @@ static int execution_record_copy(const uint8_t attestation_id[32],
     return 0;
 }
 
+static int test_attest_binds_idempotency_key(
+    const uint8_t *encoded, size_t encoded_length,
+    const lx_service_execution *execution,
+    const lxp_authority_resolved *authority, const uint8_t seed[32])
+{
+    uint8_t other_key[32];
+    uint8_t record[LX_SERVICE_EXECUTION_RECORD_BYTES];
+    lx_service_execution stored;
+    lxp_module_ctx ctx;
+    lxp_result outcome = LXP_OK;
+    (void)memcpy(other_key, execution->activity_id, 32U);
+    other_key[31] ^= 1U;
+    if (dispatch_signed_attest(encoded, encoded_length, authority, seed,
+                                other_key, 100U, 6U, &outcome) != LXP_OK ||
+        outcome != LXP_ERR_INVALID_ATTESTATION || event_buffer.count != 0U ||
+        execution_record_copy(execution->attestation_id, record) == 0)
+        return 1;
+    if (dispatch_signed_attest(encoded, encoded_length, authority, seed,
+                                execution->activity_id, 100U, 6U,
+                                &outcome) != LXP_OK || outcome != LXP_OK ||
+        event_is((uint16_t)LX_SERVICE_EVENT_EXECUTION_ATTESTED,
+                  execution->attestation_id, execution->commitment_id,
+                  0U, 6U) != 0 ||
+        execution_record_copy(execution->attestation_id, record) != 0 ||
+        open_ctx(&ctx, 100U, 7U) != 0 ||
+        lx_service_execution_lookup(&ctx, execution->attestation_id,
+                                    &stored) != LXP_OK ||
+        memcmp(stored.activity_id, execution->activity_id, 32U) != 0 ||
+        memcmp(stored.activity_id, other_key, 32U) == 0)
+        return 1;
+    return 0;
+}
+
 static int test_tool_exec_attest_replay(
     const uint8_t *encoded, size_t encoded_length,
     const lx_service_execution *execution,
@@ -258,13 +291,7 @@ static int test_tool_exec_attest_replay(
     uint8_t before[LX_SERVICE_EXECUTION_RECORD_BYTES];
     uint8_t after[LX_SERVICE_EXECUTION_RECORD_BYTES];
     lxp_result outcome = LXP_OK;
-    if (dispatch_signed_attest(encoded, encoded_length, authority, seed,
-                                execution->activity_id, 100U, 6U,
-                                &outcome) != LXP_OK || outcome != LXP_OK ||
-        event_is((uint16_t)LX_SERVICE_EVENT_EXECUTION_ATTESTED,
-                  execution->attestation_id, execution->commitment_id,
-                  0U, 6U) != 0 ||
-        execution_record_copy(execution->attestation_id, before) != 0)
+    if (execution_record_copy(execution->attestation_id, before) != 0)
         return 1;
     if (dispatch_signed_attest(encoded, encoded_length, authority, seed,
                                 execution->activity_id, 100U, 6U,
@@ -401,7 +428,9 @@ int main(void)
         outcome != LXP_ERR_INVALID_ATTESTATION)
         return 1;
     encoded[LX_SERVICE_ATTESTATION_BYTES] ^= 1U;
-    if (test_tool_exec_attest_replay(encoded, encoded_length, &execution,
+    if (test_attest_binds_idempotency_key(encoded, encoded_length,
+                                          &execution, &provider, seed) != 0 ||
+        test_tool_exec_attest_replay(encoded, encoded_length, &execution,
                                      &provider, seed) != 0)
         return 1;
     if (open_ctx(&ctx, 100U, 8U) != 0 ||
