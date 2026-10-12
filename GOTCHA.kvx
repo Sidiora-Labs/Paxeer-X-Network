@@ -7752,3 +7752,93 @@ fix = "delete the __pycache__ directory before staging"
 area = "json fixture writers"
 symptom = "serde_json key order depends on the preserve_order feature, so a fixture written once may differ byte-for-byte from the next writer"
 fix = "insert keys in sorted order in the writer so both orderings produce the same bytes"
+
+[gotcha.1636]
+area = "xweb keeper tests"
+symptom = "xwebtestutil.NewKeeper creates its store key internally, so an external test that needs raw store access cannot reach it"
+fix = "Create the store key in the test and pass it through xwebtestutil.WithXWebStore"
+
+[gotcha.1637]
+area = "go test filters"
+symptom = "go test -run TestProgramOrigin also matches the existing TestProgramOriginUsesTheXWebSet in msg_server_test.go, so pass counts include it"
+fix = "Anchor the pattern (^TestProgramOrigin[A-Z]) or count the extra case when reading the verify output"
+
+[gotcha.1638]
+area = "shell chains"
+symptom = "mkdir -p on a path that already exists as a file fails and stops the following && chain, so a heredoc write after it silently never happens"
+fix = "Check the path with test -d first or write to a fresh directory"
+
+[gotcha.1639]
+area = "evm fee tokens"
+symptom = "Reading a coinbase fee-token balance after ProcessBlock always gives zero, because EndBlock sweeps coinbase(idx) to the fee collector and ProcessBlock routes the collector to the fee-token holding account"
+fix = "Assert the fee-token holding account after the block; assert the coinbase only inside the same block before EndBlock"
+
+[gotcha.1640]
+area = "pnpm lockfiles"
+symptom = "pnpm install --lockfile-only re-resolves the whole wallet app lockfile (about 380 lines change: peer suffixes and libc fields)"
+fix = "Edit the two importer entries by hand when only named packages change"
+
+[gotcha.1641]
+area = "pnpm offline"
+symptom = "pnpm --offline lockfile resolution fails when the metadata cache has no entry for a package (for example @playwright/test), while the frozen offline install works"
+fix = "Use pnpm install --frozen-lockfile --offline for the build; do not resolve offline"
+
+[gotcha.1642]
+area = "explorer formatting"
+symptom = "mix format on the host fails in a worktree without deps because the formatter imports open_api_spex"
+fix = "Format explorer backend files with explorer/deploy/tools/mix-in-builder.sh format <files>"
+
+[gotcha.1643]
+area = "cargo clippy"
+symptom = "cargo clippy --keep-going still stops at the first test target that fails a lint, so one run hides the other targets"
+fix = "Loop over --lib and each --test target to see every finding before the single verify"
+
+[gotcha.1644]
+area = "cargo locks"
+symptom = "agent/Cargo.lock and platform/Cargo.lock are -diff in .gitattributes, so git diff only says Binary files differ"
+fix = "Review lock changes with git diff --text or diff -a against a saved copy"
+
+[gotcha.1645]
+area = "cargo clippy"
+symptom = "Pedantic clippy errors in path dependencies stop clippy from compiling the dependent crate, hiding findings in the crate under review"
+fix = "Run clippy with --no-deps -- --cap-lints warn to see the crate's own findings"
+
+[gotcha.1646]
+area = "cargo locks"
+symptom = "--locked platform and agent gates fail before compiling while a lock lacks a new dependency edge (sha3 for the interop gateway)"
+fix = "Refresh offline with cargo metadata --offline, review with git diff --text, and land the lock refresh with the task"
+
+[gotcha.1647]
+area = "paxai runner"
+symptom = "Separate runner processes need a per-job lock to stay idempotent; std File::lock (MSRV 1.91) does this without a new dependency"
+fix = "Hold the lock only while reading or writing the job journal, not while the engine runs, so a cancel can still be recorded"
+
+[gotcha.1648]
+area = "node transactions"
+symptom = "The node's transactionsRoot is the Comet DataHash (rpc/block.go:479), a merkle over Cosmos tx bytes, so EVM raw transactions cannot be checked against it directly"
+fix = "Verify EVM transactions through the sequencer receipt and committed proof, not the header transactionsRoot"
+
+[gotcha.1649]
+area = "layerx-client"
+symptom = "RPCTransaction from the node has no raw field; raw bytes must be rebuilt by RLP from the full transaction object fields (types 0-4)"
+fix = "Rebuild the raw bytes with the existing RLP encoder; re-derive the hash only where a keccak dependency exists"
+
+[gotcha.1650]
+area = "sdk-gen formatting"
+symptom = "Mandatory Prettier/Black formatting of generated clients differs from the raw bytes sdk-gen emits, so the byte-exact drift check and the formatting rule conflict"
+fix = "The generator emits formatted output (or the drift check compares formatted bytes); never hand-edit generated clients"
+
+[gotcha.1651]
+area = "kernel tests"
+symptom = "make build does not compile tests/test_replica_ingest.c, so retiring an acknowledgement API passes the build while the test target is left calling the removed function"
+fix = "Build and run the replica ingest test target in the verify when the ingest API changes"
+
+[gotcha.1652]
+area = "rust"
+symptom = "cargo invoked from a scripted shell hangs or fails in the rustc target probe when stdin is attached"
+fix = "run cargo with </dev/null in orchestration scripts so the probe does not inherit the shell stdin"
+
+[gotcha.1653]
+area = "git"
+symptom = "NOADD=1 fleet commit records an empty commit because nothing was staged"
+fix = "git add the owned paths explicitly before the NOADD=1 commit"
