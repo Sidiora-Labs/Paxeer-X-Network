@@ -8,6 +8,7 @@ import (
 
 	abci "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/abci/types"
 	tmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/consensus/proto/tendermint/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxagent/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
@@ -360,4 +361,96 @@ func TestEndBlockFailureAndCap(t *testing.T) {
 	_, found = h.keeper.GetJob(rolled, 9)
 	require.False(t, found)
 	require.Equal(t, []uint64{1, 2, 3, 4}, h.keeper.Pending(rolled, h.creator))
+}
+
+// forwarded is the wei a coinbase forwarder sends: one uhpx and half of one.
+var forwarded = big.NewInt(1_500_000_000_000)
+
+// forwarder is runtime code that sends forwarded wei to block.coinbase, then
+// runs tail.
+func forwarder(tail ...byte) []byte {
+	value := make([]byte, 8)
+	forwarded.FillBytes(value)
+	code := []byte{byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.PUSH8)}
+	code = append(code, value...)
+	code = append(code, byte(vm.COINBASE), byte(vm.GAS), byte(vm.CALL), byte(vm.POP))
+	return append(code, tail...)
+}
+
+// fund mints uhpx to the account of the EVM address addr.
+func (h *harness) fund(addr common.Address, uhpx int64) sdk.AccAddress {
+	h.t.Helper()
+	app := testkeeper.EVMTestApp
+	acc := app.EvmKeeper.GetPaxAddressOrDefault(h.ctx, addr)
+	coins := sdk.NewCoins(sdk.NewCoin(sdk.MustGetBaseDenom(), sdk.NewInt(uhpx)))
+	require.NoError(h.t, app.BankKeeper.MintCoins(h.ctx, "evm", coins))
+	require.NoError(h.t, app.BankKeeper.SendCoinsFromModuleToAccount(h.ctx, "evm", acc, coins))
+	return acc
+}
+
+func TestEndBlockSweepsCoinbaseTransfer(t *testing.T) {
+	h := newHarness(t)
+	target := h.deploy(forwarder(byte(vm.STOP)))
+	targetAcc := h.fund(target, 2)
+	require.Equal(t, uint64(1), h.schedule(target, dueAt))
+
+	collector := authtypes.NewModuleAddress(authtypes.FeeCollectorName)
+	coinbase := state.GetCoinbaseAddress(0)
+	end := h.ctx.WithBlockHeight(int64(dueAt)).WithEventManager(sdk.NewEventManager())
+	require.Equal(t, 0, end.TxIndex())
+	collectorBefore := h.balance(end, collector)
+	creatorBefore := h.balance(end, h.creatorAcc)
+	targetBefore := h.balance(end, targetAcc)
+	require.Zero(t, h.balance(end, coinbase).Sign())
+	require.NoError(t, h.keeper.EndBlocker(end))
+
+	require.Empty(t, failedEvents(t, end))
+	events := executedEvents(t, end)
+	require.Len(t, events, 1)
+	gasUsed := events[0].GasUsed
+	require.Greater(t, gasUsed, intrinsic)
+	require.LessOrEqual(t, gasUsed, gasLimit)
+	fee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), big.NewInt(baseFee))
+	refund := new(big.Int).Sub(deposit, fee)
+	require.Equal(t, executed(1, h.creator, gasUsed, refund.Int64()), events[0])
+
+	require.Equal(t, new(big.Int).Sub(targetBefore, forwarded), h.balance(end, targetAcc))
+	bank := testkeeper.EVMTestApp.BankKeeper
+	require.True(t, bank.GetBalance(end, coinbase, sdk.MustGetBaseDenom()).Amount.IsZero())
+	require.True(t, bank.GetWeiBalance(end, coinbase).IsZero())
+	require.Equal(t, new(big.Int).Add(collectorBefore, new(big.Int).Add(fee, forwarded)), h.balance(end, collector))
+	require.Equal(t, new(big.Int).Add(creatorBefore, refund), h.balance(end, h.creatorAcc))
+	require.Zero(t, h.balance(end, h.keeper.ModuleAddress()).Sign())
+}
+
+func TestEndBlockRevertedJobLeavesCoinbaseEmpty(t *testing.T) {
+	h := newHarness(t)
+	target := h.deploy(forwarder(byte(vm.PUSH1), 0, byte(vm.PUSH1), 0, byte(vm.REVERT)))
+	targetAcc := h.fund(target, 2)
+	require.Equal(t, uint64(1), h.schedule(target, dueAt))
+
+	collector := authtypes.NewModuleAddress(authtypes.FeeCollectorName)
+	coinbase := state.GetCoinbaseAddress(0)
+	end := h.ctx.WithBlockHeight(int64(dueAt)).WithEventManager(sdk.NewEventManager())
+	require.Equal(t, 0, end.TxIndex())
+	collectorBefore := h.balance(end, collector)
+	creatorBefore := h.balance(end, h.creatorAcc)
+	targetBefore := h.balance(end, targetAcc)
+	coinbaseBefore := h.balance(end, coinbase)
+	require.NoError(t, h.keeper.EndBlocker(end))
+
+	require.Empty(t, executedEvents(t, end))
+	require.Equal(t, []*types.EventJobFailed{failed(1, h.creator, "execution reverted")}, failedEvents(t, end))
+	require.Equal(t, targetBefore, h.balance(end, targetAcc))
+	require.Equal(t, coinbaseBefore, h.balance(end, coinbase))
+
+	// Only the fee leg reaches the collector: what it gains is exactly what
+	// the creator's refund falls short of the deposit.
+	fee := new(big.Int).Sub(h.balance(end, collector), collectorBefore)
+	require.Equal(t, new(big.Int).Sub(deposit, fee), new(big.Int).Sub(h.balance(end, h.creatorAcc), creatorBefore))
+	gas, rem := new(big.Int).QuoRem(fee, big.NewInt(baseFee), new(big.Int))
+	require.Zero(t, rem.Sign())
+	require.Greater(t, gas.Uint64(), intrinsic)
+	require.LessOrEqual(t, gas.Uint64(), gasLimit)
+	require.Zero(t, h.balance(end, h.keeper.ModuleAddress()).Sign())
 }

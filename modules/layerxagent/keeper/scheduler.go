@@ -135,9 +135,27 @@ func (k Keeper) execute(ctx sdk.Context, job Job, baseFee *big.Int) (gasUsed uin
 	if _, err := stateDB.Finalize(); err != nil {
 		return result.UsedGas, []string{err.Error()}
 	}
+	if err := k.sweepCoinbase(cached); err != nil {
+		return result.UsedGas, []string{err.Error()}
+	}
 	write()
 	ctx.EventManager().EmitEvents(cached.EventManager().Events())
 	return result.UsedGas, nil
+}
+
+// sweepCoinbase moves what the job sent to block.coinbase, held by the
+// temporary coinbase account of ctx's transaction index, to the fee
+// collector, as the EVM end block does for transactions.
+func (k Keeper) sweepCoinbase(ctx sdk.Context) error {
+	bank := k.evm.BankKeeper()
+	coinbase := state.GetCoinbaseAddress(ctx.TxIndex())
+	denom := k.evm.GetBaseDenom(ctx)
+	uhpx := bank.GetBalance(ctx, coinbase, denom).Amount.Sub(bank.LockedCoins(ctx, coinbase).AmountOf(denom))
+	wei := bank.GetWeiBalance(ctx, coinbase)
+	if uhpx.IsZero() && wei.IsZero() {
+		return nil
+	}
+	return bank.SendCoinsAndWei(ctx, coinbase, authtypes.NewModuleAddress(authtypes.FeeCollectorName), uhpx, wei)
 }
 
 // revertReason is the Error(string) message of a reverted job, else the
