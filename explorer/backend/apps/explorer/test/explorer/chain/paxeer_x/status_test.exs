@@ -5,7 +5,11 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
   alias Explorer.Chain.PaxeerX.Anchor, as: AnchorRow
   alias Explorer.Chain.PaxeerX.Finality
   alias Explorer.Chain.PaxeerX.Finality.Heights
+  alias Explorer.Chain.PaxeerX.SequencerReceipt
   alias Explorer.Chain.PaxeerX.Status
+
+  @vectors Path.expand("../../../support/fixture/paxeer_x/receipt_vectors.json", __DIR__)
+  @uint64_max 18_446_744_073_709_551_615
 
   setup do
     original = Application.get_env(:explorer, Finality)
@@ -100,7 +104,7 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
     end
 
     test "the committed rung has no anchor observation" do
-      assert Status.of(100, %Heights{committed_height: 100}).anchor == nil
+      refute Map.has_key?(Status.of(100, %Heights{committed_height: 100}), :anchor)
     end
 
     test "a negative committed height is refused" do
@@ -109,6 +113,129 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
 
     test "a non-integer committed height is refused" do
       assert_raise FunctionClauseError, fn -> Status.of(100, %Heights{committed_height: "100"}) end
+    end
+  end
+
+  describe "of/3 receipted rung" do
+    setup do
+      vectors = @vectors |> File.read!() |> Jason.decode!()
+
+      {:ok,
+       kernel: Map.new(vectors["receipts"], &{&1["name"], &1}),
+       cases: Map.new(vectors["sequencer"]["cases"], &{&1["id"], &1})}
+    end
+
+    test "a hash with a verified sequencer receipt and no block is receipted", %{cases: cases} do
+      test_case = cases["V1-pax-transfer"]
+      key = pinned(test_case)
+      verification = verify_case(test_case)
+
+      assert verification == {:receipted, key}
+
+      assert Status.of(nil, %Heights{committed_height: 100}, verification) == %Status{
+               rung: :receipted,
+               reason: :sequencer_receipt,
+               block_number: nil,
+               committed_height: 100
+             }
+
+      assert Status.of(nil, %Heights{}, verification) == %Status{
+               rung: :receipted,
+               reason: :sequencer_receipt,
+               block_number: nil,
+               committed_height: nil
+             }
+    end
+
+    test "a verified sequencer receipt whose block is above the committed head is receipted", %{cases: cases} do
+      verification = verify_case(cases["V1-pax-transfer"])
+
+      assert Status.of(101, %Heights{committed_height: 100}, verification) == %Status{
+               rung: :receipted,
+               reason: :sequencer_receipt,
+               block_number: 101,
+               committed_height: 100
+             }
+    end
+
+    test "valid-0 carries a signature its pinned key verifies", %{kernel: kernel} do
+      vector = kernel["valid-0"]
+
+      assert {:ok, receipt} =
+               SequencerReceipt.verify_signature(bytes(vector["receipt"]), bytes(vector["public_key"]))
+
+      assert receipt.activity_id == bytes(vector["activity_id"])
+    end
+
+    test "valid-0 stops at R3 under the full checks and stays submitted with no block", %{kernel: kernel} do
+      vector = kernel["valid-0"]
+      verification = verify_kernel(vector)
+
+      assert verification == {:error, :r3}
+
+      assert Status.of(nil, %Heights{committed_height: 100}, verification) == %Status{
+               rung: :submitted,
+               reason: :no_block,
+               block_number: nil,
+               committed_height: 100
+             }
+    end
+
+    test "a bit-flipped receipt body with no block stays submitted", %{kernel: kernel} do
+      vector = kernel["bit-flipped-body"]
+      verification = verify_kernel(vector)
+
+      assert verification == {:error, :r2}
+
+      assert Status.of(nil, %Heights{committed_height: 100}, verification) == %Status{
+               rung: :submitted,
+               reason: :no_block,
+               block_number: nil,
+               committed_height: 100
+             }
+    end
+
+    test "a receipt refused at any step cannot promote a rung", %{cases: cases} do
+      for step <- [:r1, :r2, :r3, :r4, :r5, :r6, :r7, :r8] do
+        assert Status.rung(nil, %Heights{committed_height: 100}, {:error, step}) == :submitted
+        assert Status.rung(101, %Heights{committed_height: 100}, {:error, step}) == :submitted
+      end
+
+      for {id, step} <- [
+            {"V3-key-not-pinned", :r3},
+            {"V3-height-outside-key-range", :r3},
+            {"V3-activity-id-not-raw-hash", :r4},
+            {"V3-seq-hash-mismatch", :r6},
+            {"V3-tampered-log", :r5},
+            {"V3-non-canonical-bytes", :r2}
+          ] do
+        test_case = cases[id]
+        verification = verify_case(test_case)
+
+        assert verification == {:error, step}, id
+        assert Status.rung(nil, %Heights{committed_height: 100}, verification) == :submitted
+      end
+    end
+
+    test "block 100 under committed height 100 is committed whatever the receipt says", %{cases: cases} do
+      verification = verify_case(cases["V1-pax-transfer"])
+
+      for verification <- [verification, {:error, :r2}, nil] do
+        assert Status.of(100, %Heights{committed_height: 100}, verification) == %Status{
+                 rung: :committed,
+                 reason: :in_committed_block,
+                 block_number: 100,
+                 committed_height: 100
+               }
+      end
+    end
+
+    test "a verification that is not a SequencerReceipt.verify result is refused" do
+      for verification <- [:ok, {:error, :r9}, {:receipted, nil}, {:committed, %{}, 0}, true] do
+        assert_raise FunctionClauseError, fn ->
+          Status.of(nil, %Heights{committed_height: 100}, verification)
+        end
+      end
     end
   end
 
@@ -212,7 +339,7 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
 
       assert Finality.heights() == %Heights{committed_height: anchor.block_number}
       assert Status.rung(nil, Finality.heights()) == :submitted
-      assert Status.of(anchor.block_number, Finality.heights()).anchor == nil
+      refute Map.has_key?(Status.of(anchor.block_number, Finality.heights()), :anchor)
       assert Status.rung(anchor.block_number, Finality.heights()) == :committed
     end
 
@@ -225,6 +352,39 @@ defmodule Explorer.Chain.PaxeerX.StatusTest do
       assert Status.rung(0, Finality.heights()) == :submitted
     end
   end
+
+  defp bytes("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
+  defp bytes(hex), do: Base.decode16!(hex, case: :mixed)
+
+  defp pinned(%{"pinnedKey" => key}) do
+    {:ok, [pinned]} = SequencerReceipt.decode_receipt_keys([key])
+    pinned
+  end
+
+  defp verify_case(test_case) do
+    tx_hash = test_case["rawTransaction"] |> bytes() |> ExKeccak.hash_256()
+
+    SequencerReceipt.verify(tx_hash, test_case["receiptJson"], [pinned(test_case)],
+      prev_seq_hash: test_case["prevSeqHash"]
+    )
+  end
+
+  defp verify_kernel(vector) do
+    {:ok, receipt} = vector["receipt"] |> bytes() |> SequencerReceipt.decode()
+
+    key = %{
+      key_id: receipt.context_hash,
+      public_key: bytes(vector["public_key"]),
+      first_height: 0,
+      last_height: @uint64_max
+    }
+
+    answer = %{"rung" => "receipted", "receipt" => "0x" <> vector["receipt"], "txHash" => hex(receipt.activity_id)}
+
+    SequencerReceipt.verify(receipt.activity_id, answer, [key])
+  end
+
+  defp hex(bytes), do: "0x" <> Base.encode16(bytes, case: :lower)
 
   defp insert_anchor(batch_number, status, sealed_height) do
     block = insert(:block, number: 5_000 + batch_number)

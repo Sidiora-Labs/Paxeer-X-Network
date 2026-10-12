@@ -5,37 +5,32 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.TransactionStatus do
   """
   require OpenApiSpex
 
-  alias BlockScoutWeb.Schemas.API.V2.General
   alias BlockScoutWeb.Schemas.API.V2.PaxeerX.SettlementRung
   alias OpenApiSpex.Schema
 
   OpenApiSpex.schema(%{
     title: "PaxeerXTransactionStatus",
     description:
-      "The rung a transaction has reached on the settlement ladder, with the anchor batches the " <>
-        "sealed and the final rungs were measured against. A batch no anchor reports is null rather " <>
-        "than zero.",
+      "The rung a transaction has reached on the settlement ladder, with the block holding it and the " <>
+        "committed height that rung was measured against. A height the explorer does not know is null " <>
+        "rather than zero.",
     type: :object,
     properties: %{
       rung: SettlementRung,
       block_number: %Schema{
         type: :integer,
+        minimum: 0,
         nullable: true,
-        description: "Block holding the transaction, null while no block holds it"
+        description: "Block holding the transaction, null while no indexed block holds it"
       },
-      sealed_batch_number: %Schema{
+      committed_height: %Schema{
         type: :integer,
+        minimum: 0,
         nullable: true,
-        description: "Batch of the latest checkpoint the anchor reports as sealing"
-      },
-      finalized_batch_number: %Schema{
-        type: :integer,
-        nullable: true,
-        description: "Batch of the latest checkpoint the anchor reports as finalized"
-      },
-      checkpoint_id: General.FullHashNullable
+        description: "Highest indexed consensus block, null while the explorer has indexed none"
+      }
     },
-    required: [:rung, :block_number, :sealed_batch_number, :finalized_batch_number, :checkpoint_id],
+    required: [:rung, :block_number, :committed_height],
     nullable: false,
     additionalProperties: false
   })

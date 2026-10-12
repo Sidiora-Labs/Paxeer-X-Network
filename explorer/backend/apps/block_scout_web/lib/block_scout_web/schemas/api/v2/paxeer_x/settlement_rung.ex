@@ -8,11 +8,12 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.SettlementRung do
   OpenApiSpex.schema(%{
     title: "PaxeerXSettlementRung",
     description:
-      "The rung the settlement ladder puts an item on: `pending` while no consensus block holds it, " <>
-        "`instant` once one does, `sealed` once an anchor checkpoint seals its height, and `final` " <>
-        "once a finalized checkpoint covers it.",
+      "The rung the settlement ladder puts an item on: `submitted` while neither a committed block " <>
+        "nor a verified sequencer receipt holds it, `receipted` once a sequencer receipt passes the " <>
+        "client checks R1-R6 against the pinned receipt keys, and `committed` once a block the " <>
+        "committed head covers holds it.",
     type: :string,
-    enum: ["pending", "instant", "sealed", "final"],
+    enum: ["submitted", "receipted", "committed"],
     nullable: false
   })
 end
