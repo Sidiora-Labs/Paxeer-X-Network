@@ -7311,3 +7311,268 @@ fix = "extend the codec before adding an activity ordinal"
 area = "verify_cmd"
 symptom = "verify_cmd joining two go test runs with && skips the second on the first failure"
 fix = "run the second half alone for evidence when the first fails"
+
+[gotcha.1548]
+area = "task 0.70"
+symptom = "a rebase onto a main that already carries the branch commit silently drops it, leaving the worktree head equal to main"
+fix = "check git log main..HEAD after a rebase before reporting files"
+
+[gotcha.1549]
+area = "task 1.1.13"
+symptom = "direct Go references to the macro-backed C.lxp_u128/C.lxp_receipt typedefs give inconsistent cgo definitions across files"
+fix = "use C.struct_lxp_u128 and C.struct_lxp_receipt"
+
+[gotcha.1550]
+area = "task 2.2.3"
+symptom = "agent/crates/layerx-types/build.rs enforces ordered parity between LXP_RESULT_CODE_LIST and result.rs, so make build fails when only the header changes"
+fix = "change include/layerx/lxp_result.h and agent/crates/layerx-types/src/result.rs in the same task"
+
+[gotcha.1551]
+area = "task 2.2.6"
+symptom = "go build passes for a package that imports lxphost, but go test cannot link without build/liblayerx.a and the Programs runtime"
+fix = "run make build programs/target/debug/liblayerx_programs_sandbox.a before go test"
+
+[gotcha.1552]
+area = "task 3.2.8"
+symptom = "LXPCodeName returns \"\" for any value <= -1000, including absent values, not LXP_UNKNOWN"
+fix = "take unknown probes above the fatal limit"
+
+[gotcha.1553]
+area = "task 4.2.11"
+symptom = "a cargo target dir shared across worktrees compiled layerx_program_sdk from another worktree (two crate versions, E0308)"
+fix = "use a per-task CARGO_TARGET_DIR"
+
+[gotcha.1554]
+area = "task 4.2.11"
+symptom = "rewards_native/roster_transition need build/paxai-host-boundary/manifest"
+fix = "run make paxai-host-boundary-build before the cargo test"
+
+[gotcha.1555]
+area = "task 6.5.47"
+symptom = "the central RPC backend admission in gateway rpc.rs runs before route handlers, so retiring a handler alone yields -32010 not -32601"
+fix = "the lx_ refusal must sit ahead of admission (task 10.6.2)"
+
+[gotcha.1556]
+area = "task 6.5.46"
+symptom = "obsolete LAYERX_GATEWAY_SEQUENCER_PUBLIC_KEY_FILE fixtures leave gateway startup-refusal tests hanging on Command.output"
+fix = "use LAYERX_GATEWAY_RECEIPT_KEYS_FILE"
+
+[gotcha.1557]
+area = "task 9.2.6"
+symptom = "the giga TestWrapper context chain id can differ from App.ChainID, and FinalizeBlock validates against App.ChainID"
+fix = "set App.ChainID from the wrapper context"
+
+[gotcha.1558]
+area = "task 9.2.8"
+symptom = "the cache merge iterator Error() reports normal exhaustion as invalid"
+fix = "check Error() only while Valid()"
+
+[gotcha.1559]
+area = "task 9.2.9"
+symptom = "WAL Replay drops the lease checkpoint before the last COMMITTED entry"
+fix = "carry the lease checkpoint separately"
+
+[gotcha.1560]
+area = "task 7.5.16"
+symptom = "removing a crate dependency from layerx-bridge-relayer breaks tests/operator_cosign_contract.rs, which the crate-wide verify compiles"
+fix = "include every tests/*.rs that imports the removed crate in touches"
+
+[gotcha.1561]
+area = "task 7.5.13"
+symptom = "layerx-platform-registry cargo test needs a prebuilt build/bin/layerxd and genuine native discovery captures that its cargo build never produces"
+fix = "build layerxd and provide the captures before the verify, or give the task a harness requirement"
+
+[gotcha.1562]
+area = "task 8.5.3"
+symptom = "worktrees created before the node_modules link change have no node_modules, so tsc/vitest exit 127"
+fix = "new-worktree.sh now links main node_modules; add the links by hand on older worktrees before relaunching"
+
+[gotcha.1563]
+area = "task 8.5.23"
+symptom = "npm ci --ignore-scripts in a web worktree leaves agent/sdk/typescript deps and the linked @paxeer/wallet, @layerx/ui dist missing, about 122 typecheck errors"
+fix = "link main node_modules (new-worktree.sh) instead of npm ci"
+
+[gotcha.1564]
+area = "task 8.5.25"
+symptom = "main human/Cargo.lock still lacks layerx-client ureq/serde_json, so every --locked human gate stops before compiling"
+fix = "land 0.114 before the human-service tasks"
+
+[gotcha.1565]
+area = "task 10.5.37"
+symptom = "main has no platform/middleware/seller node_modules, so linking cannot supply tsc"
+fix = "install seller deps on main (package.json is in 10.5.37 touches)"
+
+[gotcha.1566]
+area = "task 8.5.38"
+symptom = "mix-in-builder.sh forwards a fixed environment and drops PAXEER_X_CAPABILITIES_TEST_RPC_URL"
+fix = "use the --seqnode mode the spec now names (needs 0.37)"
+
+[gotcha.1567]
+area = "task 6.5.52"
+symptom = "layerx-client account_binding test runs the TypeScript SDK through node and needs agent/sdk/typescript/node_modules/@noble/curves"
+fix = "link node_modules into the worktree"
+
+[gotcha.1568]
+area = "task 6.6.3"
+symptom = "agentd gates fail E0599: Operation::McpInvoke missing in layerx-sdk agent_envelope.rs:250,254"
+fix = "fixed on main by 0.22 (operation_generated.rs restores McpInvoke); rebase the worktree on main before relaunching"
+
+[gotcha.1569]
+area = "task 6.6.3"
+symptom = "task dispatched while its requires 7.5.6 was still pending; the worker stopped with no commits"
+fix = "check that every requires is done before dispatch"
+
+[gotcha.1570]
+area = "task 10.5.42"
+symptom = "python shared TS vector subprocess exits 1: @noble/hashes absent in agent/sdk/typescript/node_modules"
+fix = "installed in main node_modules; the worktree node_modules symlink resolves to it"
+
+[gotcha.1571]
+area = "task 10.5.19"
+symptom = "issueGrant calldata 420 bytes vs test 484: contract said 395-byte grant, codecs encode 346"
+fix = "spec do_3 now fixes the grant at 346 bytes (calldata 420); tests must assert 346/420"
+
+[gotcha.1572]
+area = "task 10.5.20"
+symptom = "worker stopped on 0x101B draw wording that contradicts the binding contracts"
+fix = "spec now says layerxledger 0x101A draw selector 0x2e89490f"
+
+[gotcha.1573]
+area = "task 10.6.3"
+symptom = "worker ran routes_test.py, which needs PAXEER_X_CANDIDATE_MANIFEST and PAXEER_X_ROUTE_CASES"
+fix = "the spec moved verify to static tools/paxeer-x/tests/lx_catalogue_test.py; routes_test runs at the release gate"
+
+[gotcha.1574]
+area = "task 6.2.5"
+symptom = "dependency cycle 6.2.5<->6.2.8 (scheduler keeper)"
+fix = "spec now has 6.2.8 require only 6.2.1; land 6.2.8 first"
+
+[gotcha.1575]
+area = "task 7.6.2"
+symptom = "connected migration tests panic: LAYERX_MIGRATION_V2_FIXTURE / LAYERX_MAPPING_V2_FIXTURE unset"
+fix = "the operator must supply absolute protected fixture paths; no engineering default"
+
+[gotcha.1576]
+area = "task 10.5.24"
+symptom = "worker treated platform/sdk/schema/paxai-v1.kvx as frozen; schema assertion fails on nonce/gas"
+fix = "do_4 authorizes adding nonce and gas to [terms]"
+
+[gotcha.1577]
+area = "task 10.6.1"
+symptom = "appending the merge activation record panics app construction: mergePrecompileGate gives an empty module list for 0x0901/0902/0904/0908 vs the keeper's non-empty check (keeper.go:217-227)"
+fix = "do_4: name the layerxagent module, which needs 6.2.8"
+
+[gotcha.1578]
+area = "task 11.6.1"
+symptom = "sdk.Int zero with an empty backing slice fails reflect.DeepEqual against a fresh zero"
+fix = "compare by decimal value or Int.Equal"
+
+[gotcha.1579]
+area = "task 6.6.13"
+symptom = "removing the reserve AccountKind leaves agent/crates/layerx-types/tests/ids.rs:50 referencing it (outside the gate)"
+fix = "fix it in the wave gate or a follow-up task that owns layerx-types tests"
+
+[gotcha.1580]
+area = "task 10.5.19"
+symptom = "the commit helper stages existing untracked dependency symlinks"
+fix = "stage the task files explicitly and run the helper with NOADD=1"
+
+[gotcha.1581]
+area = "task 11.5.63"
+symptom = "retired_callers_test.py settlement_domain symbol uses identifier boundaries and misses the plural settlement_domains JSON key"
+fix = "scan by hand for plural keys or add the plural symbol to the catalogue"
+
+[gotcha.1582]
+area = "task 11.5.67"
+symptom = "next build type-checks legacy page components (ui/pages/PaxeerX*.tsx) after their nav entries and API resources are retargeted"
+fix = "retire the pages and stubs in the same task as the resource retarget"
+
+[gotcha.1583]
+area = "task 11.5.68"
+symptom = "exhaustive Record<Route['pathname'],T> maps fail when entries are removed while pages/paxeer-x/* and the generated nextjs-routes still exist"
+fix = "retire pages and regenerate nextjs-routes.d.ts first"
+
+[gotcha.1584]
+area = "task 11.5.74"
+symptom = "worktree human/apps/web/node_modules is a symlink to main, so @layerx/ui resolves to main's packages/layerx-ui which has no dist and the build fails with Module not found"
+fix = "give the worktree its own node_modules or build layerx-ui dist on main; untracked dist artifacts appear under packages/layerx-ui"
+
+[gotcha.1585]
+area = "task 11.5.92"
+symptom = "human/tools/boundary-check and human/tools/schema-check are standalone workspaces ([workspace] in their Cargo.toml); -p selection through human/Cargo.toml fails"
+fix = "use --manifest-path human/tools/<tool>/Cargo.toml"
+
+[gotcha.1586]
+area = "task 11.5.118"
+symptom = "interop/Cargo.lock needed an update at base b2309b96c; refreshed on main by e30166ae8"
+fix = "rebase worktrees onto main before the locked build"
+
+[gotcha.1587]
+area = "task 11.5.155"
+symptom = "platform/Cargo.lock lacks the layerx-client ureq/serde_json entries until 0.114 lands, so every locked platform build refuses"
+fix = "land 0.114 (or the identical lock lines in 11.5.155) first"
+
+[gotcha.1588]
+area = "task 11.5.28"
+symptom = "the commit helper exits 128 when a concurrent git status in the worktree holds index.lock while scanning dependency symlinks"
+fix = "wait for the status refresh to finish before committing"
+
+[gotcha.1589]
+area = "task 11.5.168"
+symptom = "platform/integrations/agents build runs scripts/patch-dependencies.mjs, which fails with Cannot find module '@langchain/core' when workspace deps are not installed"
+fix = "npm ci at the repository root before the build"
+
+[gotcha.1590]
+area = "task 1.1.4"
+symptom = "cgo rejects a C struct referenced from two Go files of one package whose preambles include different header sets (inconsistent definitions for C.lxp_kernel)"
+fix = "pass an opaque void* handle"
+
+[gotcha.1591]
+area = "task 1.1.4"
+symptom = "registry_asset in src/modules/bridge/lxp_bridge_credit.c copies the symbol at offset 16 of \"layerx-asset:125:\" so it hashes \"layerx-asset:125PAX\", diverging from genesis and custodyproof asset ids"
+fix = "derive asset ids from the genesis table (lxp_genesis_custody_asset_id), never from lxp_bridge_credit"
+
+[gotcha.1592]
+area = "platform/integrations"
+symptom = "gradle -p platform/integrations/android compileJava exits 1 \"does not contain a Gradle build\" once gradle 8.7 is installed"
+fix = "the module is Maven (pom.xml, release 21); only sample-app/ is Gradle (wrapper 8.7); spec build_cmd must be mvn -f platform/integrations/android/pom.xml compile after mvn -f platform/sdk/jvm/pom.xml install -DskipTests (layerx-sdk dep), or gradle -p .../android/sample-app"
+
+[gotcha.1593]
+area = "platform/integrations"
+symptom = "platform/integrations/spring build_cmd also uses gradle compileJava"
+fix = "check for a settings.gradle before trusting a gradle build_cmd; apt maven 3.8.7 + JDK 21 now installed"
+
+[gotcha.1594]
+area = "npm workspaces"
+symptom = "worktree TS2307 on @sidiora/layerx-sdk / agent / seller middleware types"
+fix = "root node_modules link resolves workspace packages to main-checkout dirs, so their dist/*.d.ts must be built once in the main checkout (npm --prefix <pkg> run build, sdk first); dist/ is gitignored"
+
+[gotcha.1595]
+area = "npm workspaces"
+symptom = "agent/sdk/typescript/node_modules is empty after root npm ci (hoisted)"
+fix = "node resolution walks up to <worktree>/node_modules -> root node_modules, so the root link covers it; npm ci --workspaces=false inside a package provisions a package-local tsc when the hoisted link is absent"
+
+[gotcha.1596]
+area = "npm workspaces"
+symptom = "git worktree add takes ~5 min when other worktree removals run in parallel"
+fix = "budget for it; not a hang"
+
+[gotcha.1597]
+area = "qualification reports"
+symptom = "a report word for not-yet-shown work (un + proven) fails public-check"
+fix = "reword to \"not yet demonstrated\" before committing"
+
+[gotcha.1598]
+area = "task 2.4.9"
+symptom = "go build on a package pattern that matches only _test.go files exits 0 and compiles nothing"
+fix = "a build_cmd on a test-only package checks nothing; add go vet or go test -run XXX -count=1 to compile the tests"
+
+[gotcha.1599]
+area = "task 11.5.168"
+symptom = "platform/integrations builds fail TS2307 on agent/sdk/typescript/dist, platform/middleware/agent/dist and platform/middleware/seller/dist declarations"
+fix = "build those dists once in the main checkout (sdk first) before the integration builds"
+
+[gotcha.1600]
+area = "task 11.5.169"
+symptom = "build exit 127 in the Maven and npm integration packages came from a missing gradle and tsc, not from the code"
+fix = "check the toolchain (mvn, root npm ci and its node_modules link) before reading an exit 127 as a task failure"
