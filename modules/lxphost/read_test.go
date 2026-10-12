@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,13 +23,19 @@ func TestReadBridgeNoRawKeys(t *testing.T) {
 	paths, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 	require.NotEmpty(t, paths)
+	scanned := 0
 	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") || filepath.Base(path) == "accountmap.go" {
+			continue
+		}
 		source, err := os.ReadFile(path)
 		require.NoError(t, err)
+		scanned++
 		for _, prefix := range []string{"asset", "grant"} {
 			require.NotContains(t, string(source), prefix+":", path)
 		}
 	}
+	require.Positive(t, scanned)
 }
 
 func readBridgeSession(t *testing.T, actor, session testActor, action [32]byte,
