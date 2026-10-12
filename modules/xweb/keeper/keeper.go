@@ -45,6 +45,56 @@ func (k Keeper) get(ctx sdk.Context, key []byte, value interface{}) bool {
 	return true
 }
 
+// Program origin. The pending records are raw kernel-layout bytes under
+// ProgramPendingKey; the two counters are JSON like the nonce.
+
+var (
+	programPendingCountKey   = []byte("web/count/pending")
+	programCommittedCountKey = []byte("web/count/committed")
+)
+
+func (k Keeper) hasProgramPendingRecord(ctx sdk.Context, key []byte) bool {
+	return ctx.KVStore(k.storeKey).Has(key)
+}
+
+func (k Keeper) setProgramPendingRecord(ctx sdk.Context, key, record []byte) {
+	ctx.KVStore(k.storeKey).Set(key, record)
+}
+
+// GetProgramPendingRecord returns the pending record of programID's request
+// requestID, whether it is stored, and LXP_NON_CANONICAL for a corrupt one.
+func (k Keeper) GetProgramPendingRecord(ctx sdk.Context, programID types.Hash32, requestID uint64) (
+	ProgramPendingRecord, bool, error) {
+	raw := ctx.KVStore(k.storeKey).Get(ProgramPendingKey(programID, requestID))
+	if raw == nil {
+		return ProgramPendingRecord{}, false, nil
+	}
+	record, err := DecodeProgramPendingRecord(raw)
+	if err != nil {
+		return ProgramPendingRecord{}, true, err
+	}
+	return record, true, nil
+}
+
+// ProgramPendingCount is the number of program requests recorded and not yet
+// fulfilled.
+func (k Keeper) ProgramPendingCount(ctx sdk.Context) uint64 {
+	var count uint64
+	k.get(ctx, programPendingCountKey, &count)
+	return count
+}
+
+func (k Keeper) setProgramPendingCount(ctx sdk.Context, count uint64) {
+	k.set(ctx, programPendingCountKey, count)
+}
+
+// ProgramCommittedCount is the number of committed program answers.
+func (k Keeper) ProgramCommittedCount(ctx sdk.Context) uint64 {
+	var count uint64
+	k.get(ctx, programCommittedCountKey, &count)
+	return count
+}
+
 func (k Keeper) iterate(ctx sdk.Context, keyPrefix []byte, visit func(key, value []byte)) {
 	iterator := prefix.NewStore(ctx.KVStore(k.storeKey), keyPrefix).Iterator(nil, nil)
 	defer func() { _ = iterator.Close() }()
