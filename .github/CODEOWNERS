@@ -25,13 +25,10 @@ contracts/ @Sidiora-Labs/core
 /node/ @Sidiora-Labs/core
 /occ_tests/ @Sidiora-Labs/core
 /precompiles/ @Sidiora-Labs/core
-/ratelimiter/ @Sidiora-Labs/core
 /rpc/ @Sidiora-Labs/core
 /sdk/ @Sidiora-Labs/core
 /storage/ @Sidiora-Labs/core
-/sync/ @Sidiora-Labs/core
 /testutil/ @Sidiora-Labs/core
-/types/ @Sidiora-Labs/core
 /utils/ @Sidiora-Labs/core
 /wasm/ @Sidiora-Labs/core
 /wasm-runtime/ @Sidiora-Labs/core

@@ -36,11 +36,8 @@ node
 occ_tests
 precompiles
 !precompiles/layerxanchor/abi.json
-ratelimiter
 rpc
-sync
 testutil
-types
 utils
 wasm
 wasm-runtime

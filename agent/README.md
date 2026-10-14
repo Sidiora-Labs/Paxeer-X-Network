@@ -13,7 +13,7 @@ append-only logs, bind private C layouts, or link the C core.
 ## Crates
 
 This is a Rust 2021 Cargo workspace (`agent/Cargo.toml`, toolchain pinned in
-`agent/rust-toolchain.toml`).
+the root `rust-toolchain.toml`).
 
 | Crate | Role |
 | --- | --- |

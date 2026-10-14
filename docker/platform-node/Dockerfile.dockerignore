@@ -34,13 +34,10 @@ precompiles
 !precompiles/layerxanchor/abi.json
 !precompiles/layerxcustody/abi.json
 !precompiles/addr/abi.json
-ratelimiter
 rpc
 sdk
 storage
-sync
 testutil
-types
 utils
 wasm
 wasm-runtime
