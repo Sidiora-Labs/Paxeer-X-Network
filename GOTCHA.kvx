@@ -7872,3 +7872,18 @@ fix = "run make build/liblayerx.a programs/target/debug/liblayerx_programs_sandb
 area = "rust"
 symptom = "test engines written as executables fail exec with text file busy under parallel tests"
 fix = "create every engine file in one OnceLock fixture before any test thread spawns a process"
+
+[gotcha.1660]
+area = "fleet"
+symptom = "parallel lanes that each edit CI path lists (workflows, labeler, CODEOWNERS, 22 dockerignores) conflict on every file at rebase"
+fix = "resolve by keeping the main side verbatim and re-applying only the lane's own additions/removals; never resurrect a path main already renamed"
+
+[gotcha.1661]
+area = "codify"
+symptom = "cg spec lint -f layerx-merge runs past 30 minutes at 99% CPU and gets killed when several worktrees run it at once"
+fix = "run the lint once on main after the wave lands, in the background with a long timeout; lanes that do not touch spec/ skip it"
+
+[gotcha.1662]
+area = "fleet"
+symptom = "fleet-commit.sh with NOADD=1 still commits when a preceding git add pathspec fails, leaving a commit with only part of the change"
+fix = "check git status --short before the commit and amend or soft-reset if the staged set is incomplete"
