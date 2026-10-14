@@ -38,9 +38,9 @@ Environment:
   PAXD_RELEASE_URL       the base URL of the tagged release assets, required
   PAXD_RELEASE_DIR       where the fetched assets are kept
   PAXD_VERSION           the release version, default the version of
-                         version.json
+                         tools/release/version.json
   UPGRADE_NAME           the upgrade plan name, default the upgrade of
-                         version.json
+                         tools/release/version.json
   PAXD                   the default node binary, default /usr/local/bin/paxd
   UPGRADE_WATCH_TIMEOUT  seconds to watch for the halt, default 21600
   UPGRADE_POLL           seconds between journal reads, default 5
@@ -147,7 +147,7 @@ if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
 	exit 2
 fi
 height="$1"
-manifest="$here/../../version.json"
+manifest="$here/../../tools/release/version.json"
 version="${PAXD_VERSION:-$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$manifest")}"
 upgrade_name="${UPGRADE_NAME:-$(sed -n 's/^ *"upgrade": *"\([^"]*\)".*/\1/p' "$manifest")}"
 watch_timeout="${UPGRADE_WATCH_TIMEOUT:-21600}"

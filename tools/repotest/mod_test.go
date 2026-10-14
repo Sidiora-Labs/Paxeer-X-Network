@@ -1,4 +1,4 @@
-package pax_test
+package repotest_test
 
 import (
 	"bufio"
@@ -10,6 +10,15 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 )
+
+// TestMain runs the repo-wide checks from the repository root so go.mod,
+// go.sum and linkDirs resolve as root-relative paths.
+func TestMain(m *testing.M) {
+	if err := os.Chdir("../.."); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
 
 // bannedUpstream lists original upstream modules that pax has forked into local
 // subdirectories. Neither go.mod nor go.sum should reference these.

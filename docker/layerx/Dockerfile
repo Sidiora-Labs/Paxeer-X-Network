@@ -49,7 +49,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     BUILD_TAGS="netgo ledger ${GO_BUILD_TAGS}" && \
     VERSION_PKG="github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version" && \
-    PAX_CHAIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' version.json) && \
+    PAX_CHAIN_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' tools/release/version.json) && \
     LDFLAGS="\
       -X ${VERSION_PKG}.Name=pax \
       -X ${VERSION_PKG}.AppName=paxd \

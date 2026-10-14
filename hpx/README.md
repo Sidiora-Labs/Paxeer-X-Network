@@ -58,7 +58,7 @@ Defaults:
 - `paxd`: `build/paxd`
 - native libraries: the architecture outputs under `wasm-runtime`
   and `wasm/x/wasm/artifacts`
-- release identity: `version.json`
+- release identity: `tools/release/version.json`
 - live chain configuration: `/root/.paxeer/config`, overridable with `SRC_CFG`
   or `HPX_RUNTIME_CONFIG_DIR`
 - assembly root: `/srv/hpx/artifacts`, overridable with

@@ -1,6 +1,6 @@
 # bump_version
 
-Precompile version management tool for the Paxeer X chain. It runs as the second `go:generate` directive of [`gen.go`](../../gen.go) at the repository root (after `./scripts/protoc.sh`), and can be run on its own from the repository root with `go run ./scripts/bump_version`.
+Precompile version management tool for the Paxeer X chain. It runs as the second `go:generate` directive of [`tools/repotest/gen.go`](../../tools/repotest/gen.go) (after `./scripts/protoc.sh`), and can be run on its own from the repository root with `go run ./scripts/bump_version`.
 
 ## What it does
 

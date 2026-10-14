@@ -16,7 +16,7 @@ if [ "$have_go" != "$want_go" ]; then
   exit 1
 fi
 
-version=$(jq -er '.version' version.json)
+version=$(jq -er '.version' tools/release/version.json)
 tag="paxeer-network/$version"
 commit=${PAXD_COMMIT:-$(git rev-parse HEAD)}
 export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct "$commit")}

@@ -1,10 +1,10 @@
 # Releasing paxd
 
-A Paxeer Network release is one git tag, one `version.json`, and a set of binaries anyone can rebuild bit for bit.
+A Paxeer Network release is one git tag, one `tools/release/version.json`, and a set of binaries anyone can rebuild bit for bit.
 
 ## Version and tag scheme
 
-- `version.json` holds `version` (`vX.Y.Z`) and `upgrade`, the on-chain upgrade plan name the release carries (for example `v6.11`). The plan name must match the constant registered in the code (`modules/layerxcustody/types/governance_activation.go` for `v6.11`).
+- `tools/release/version.json` holds `version` (`vX.Y.Z`) and `upgrade`, the on-chain upgrade plan name the release carries (for example `v6.11`). The plan name must match the constant registered in the code (`modules/layerxcustody/types/governance_activation.go` for `v6.11`).
 - The release tag is `paxeer-network/vX.Y.Z` and must equal `paxeer-network/` + `version`.
 - Every tag must be newer than the latest existing `paxeer-network/v*` tag. The `Paxeer / Release Check` workflow enforces this on pull requests.
 
@@ -13,7 +13,7 @@ A Paxeer Network release is one git tag, one `version.json`, and a set of binari
 `tools/release/build-paxd.sh` builds the release from the current checkout:
 
 - Go toolchain must be exactly the version in `go.mod` (`GOTOOLCHAIN=local`, the script refuses any other).
-- `-trimpath -buildvcs=false`, linker flags `-buildid= -checklinkname=0` plus the version variables (`Name`, `AppName`, `Version` from `version.json`, `Commit` = the git commit, `BuildTags=netgo,ledger`).
+- `-trimpath -buildvcs=false`, linker flags `-buildid= -checklinkname=0` plus the version variables (`Name`, `AppName`, `Version` from `tools/release/version.json`, `Commit` = the git commit, `BuildTags=netgo,ledger`).
 - `CGO_ENABLED=1`, `CC=gcc`, fixed `CGO_*FLAGS`, `LC_ALL=C`, `TZ=UTC`, `SOURCE_DATE_EPOCH` = the commit date.
 - Output goes to `dist/paxeer-network/vX.Y.Z/`: `paxd-vX.Y.Z-<os>-<arch>`, the three `libwasmvm*.so` runtime libraries (checked against `wasm-runtime/libwasmvm-linux.sha256`), `layerxd-vX.Y.Z-<os>-<arch>` when `PAXD_RELEASE_LAYERXD=1`, and `SHA256SUMS`.
 
@@ -21,7 +21,7 @@ A Paxeer Network release is one git tag, one `version.json`, and a set of binari
 
 ## Procedure
 
-1. Open a pull request that sets `version.json` to the new `version` and `upgrade`. `Paxeer / Release Check` validates the identity and runs the reproducibility check.
+1. Open a pull request that sets `tools/release/version.json` to the new `version` and `upgrade`. `Paxeer / Release Check` validates the identity and runs the reproducibility check.
 2. Merge it to `main`.
 3. Tag the merge commit and push the tag:
 
@@ -30,11 +30,11 @@ A Paxeer Network release is one git tag, one `version.json`, and a set of binari
    git push origin paxeer-network/vX.Y.Z
    ```
 
-4. `Paxeer / Release Publish` runs on the tag: it checks the tag against `version.json`, runs `build-paxd.sh` with `layerxd`, generates release notes from `cliff.toml` with git-cliff, and creates the GitHub release with the binaries, the libwasmvm libraries and `SHA256SUMS` attached. The run summary lists the hashes.
+4. `Paxeer / Release Publish` runs on the tag: it checks the tag against `tools/release/version.json`, runs `build-paxd.sh` with `layerxd`, generates release notes from `.github/cliff.toml` with git-cliff, and creates the GitHub release with the binaries, the libwasmvm libraries and `SHA256SUMS` attached. The run summary lists the hashes.
 
 ## Sign-off checklist
 
-- [ ] `version.json` `version` and `upgrade` are correct and the upgrade handler for `upgrade` is registered in `node/upgrades.go`.
+- [ ] `tools/release/version.json` `version` and `upgrade` are correct and the upgrade handler for `upgrade` is registered in `node/upgrades.go`.
 - [ ] `Paxeer / Release Check` passed on the release commit.
 - [ ] Release Publish run is green and the release has `paxd`, `layerxd`, the libwasmvm libraries and `SHA256SUMS`.
 - [ ] At least one maintainer rebuilt the tag locally (below) and got the same `SHA256SUMS`.

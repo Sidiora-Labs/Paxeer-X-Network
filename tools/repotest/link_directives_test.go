@@ -1,4 +1,4 @@
-package pax_test
+package repotest_test
 
 import (
 	"fmt"
