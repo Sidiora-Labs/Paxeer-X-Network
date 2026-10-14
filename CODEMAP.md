@@ -153,14 +153,14 @@ Build and test:
 - cargo (`interop/crates/layerx-visa-tap/Cargo.toml`, run in `interop/crates/layerx-visa-tap/`): `cargo build`, `cargo test`
 - cargo (`interop/crates/layerx-x402/Cargo.toml`, run in `interop/crates/layerx-x402/`): `cargo build`, `cargo test`
 - cargo (`interop/crates/x-websearch/Cargo.toml`, run in `interop/crates/x-websearch/`): `cargo build`, `cargo test`
-- cargo (`loadtest/contracts/jupiter/Cargo.toml`, run in `loadtest/contracts/jupiter/`): `cargo build`, `cargo test`
-- cargo (`loadtest/contracts/mars/Cargo.toml`, run in `loadtest/contracts/mars/`): `cargo build`, `cargo test`
-- cargo (`loadtest/contracts/saturn/Cargo.toml`, run in `loadtest/contracts/saturn/`): `cargo build`, `cargo test`
-- cargo (`loadtest/contracts/venus/Cargo.toml`, run in `loadtest/contracts/venus/`): `cargo build`, `cargo test`
+- cargo (`tools/benchmark/loadtest/contracts/jupiter/Cargo.toml`, run in `tools/benchmark/loadtest/contracts/jupiter/`): `cargo build`, `cargo test`
+- cargo (`tools/benchmark/loadtest/contracts/mars/Cargo.toml`, run in `tools/benchmark/loadtest/contracts/mars/`): `cargo build`, `cargo test`
+- cargo (`tools/benchmark/loadtest/contracts/saturn/Cargo.toml`, run in `tools/benchmark/loadtest/contracts/saturn/`): `cargo build`, `cargo test`
+- cargo (`tools/benchmark/loadtest/contracts/venus/Cargo.toml`, run in `tools/benchmark/loadtest/contracts/venus/`): `cargo build`, `cargo test`
 - npm (`package.json`): `npm run build`
-- cargo (`parallelization/bank/Cargo.toml`, run in `parallelization/bank/`): `cargo build`, `cargo test`
-- cargo (`parallelization/staking/Cargo.toml`, run in `parallelization/staking/`): `cargo build`, `cargo test`
-- cargo (`parallelization/wasm/Cargo.toml`, run in `parallelization/wasm/`): `cargo build`, `cargo test`
+- cargo (`example/cosmwasm/parallelization/bank/Cargo.toml`, run in `example/cosmwasm/parallelization/bank/`): `cargo build`, `cargo test`
+- cargo (`example/cosmwasm/parallelization/staking/Cargo.toml`, run in `example/cosmwasm/parallelization/staking/`): `cargo build`, `cargo test`
+- cargo (`example/cosmwasm/parallelization/wasm/Cargo.toml`, run in `example/cosmwasm/parallelization/wasm/`): `cargo build`, `cargo test`
 - cargo (`platform/Cargo.toml`, run in `platform/`): `cargo build`, `cargo test`
 - cargo (`platform/cli/Cargo.toml`, run in `platform/cli/`): `cargo build`, `cargo test`
 - go (`platform/docs/samples/first-payment-go/go.mod`, run in `platform/docs/samples/first-payment-go/`): `go build ./...`, `go test ./...`
@@ -291,8 +291,8 @@ Build and test:
   - `agent/tools/` — 28 files, 3,032 lines, mostly rust
 - `api/` — 49 files. This directory holds the protobuf definitions for the Go modules of the Paxeer X chain (`paxd`): `epoch`, `eth`, `evm`, `launchpad`, `layerxanchor` …
   - 14 subdirectories: `epoch/`, `eth/`, `evm/`, `launchpad/`, `layerxanchor/`, `layerxbridge/`, `layerxcustody/`, `layerxexchange/`, `layerxgov/`, `mint/`, `oracle/`, `pax/`, `tokenfactory/`, `xweb/`
-- `benchmark/` — 8 files
-  - `benchmark/scenarios/` — 5 files. This folder contains the scenario configurations for [`benchmark/benchmark.sh`](../benchmark.sh), which builds and starts a local `paxd` that generates its own …
+- `tools/benchmark/` — 8 files
+  - `tools/benchmark/scenarios/` — 5 files. This folder contains the scenario configurations for [`tools/benchmark/benchmark.sh`](../benchmark.sh), which builds and starts a local `paxd` that generates its own …
 - `bridge/` — 119 files, 14,496 lines, mostly rust (tests). The Paxeer X Network bridge is lock and release in both directions: a foreign chain locks a deposit in the bridge's vault and Paxeer X Network releases the …
   - `bridge/deploy/` — 73 files, 4,465 lines, mostly go (test fixtures)
   - `bridge/evm/` — 26 files, 1,778 lines, mostly solidity
@@ -369,9 +369,9 @@ Build and test:
   - `layerxproof/testdata/` — 4 files, 497 lines, mostly c (test fixtures)
   - `layerxproof/testvectors/` — 2 files, 230 lines, mostly go
   - `layerxproof/verify/` — 9 files, 1,340 lines, mostly go
-- `loadtest/` — 404 files, 44,311 lines, mostly solidity
-  - `loadtest/contracts/` — 391 files, 41,884 lines, mostly solidity
-  - `loadtest/scripts/` — 5 files, 537 lines, mostly python
+- `tools/benchmark/loadtest/` — 404 files, 44,311 lines, mostly solidity
+  - `tools/benchmark/loadtest/contracts/` — 391 files, 41,884 lines, mostly solidity
+  - `tools/benchmark/loadtest/scripts/` — 5 files, 537 lines, mostly python
 - `migrations/` — 4 files. SQLite schema files for the LayerX kernel (`layerxd`, C17).
 - `modules/` — 654 files, 150,008 lines, mostly go. Chain-specific modules of the Paxeer X chain (`paxd`) live under this directory:
   - 13 subdirectories: `epoch/`, `evm/`, `launchpad/`, `layerxanchor/`, `layerxbridge/`, `layerxcustody/`, `layerxexchange/`, `layerxgov/`, `mint/`, `oracle/`, `store/`, `tokenfactory/`, `xweb/`
@@ -380,10 +380,10 @@ Build and test:
 - `occ_tests/` — 3 files, 898 lines, mostly go (tests)
   - `occ_tests/messages/` — 1 file, 203 lines, mostly go (tests)
   - `occ_tests/utils/` — 1 file, 398 lines, mostly go
-- `parallelization/` — 16 files, 194 lines, mostly rust
-  - `parallelization/bank/` — 6 files, 47 lines, mostly rust
-  - `parallelization/staking/` — 5 files, 84 lines, mostly rust
-  - `parallelization/wasm/` — 5 files, 63 lines, mostly rust
+- `example/cosmwasm/parallelization/` — 16 files, 194 lines, mostly rust
+  - `example/cosmwasm/parallelization/bank/` — 6 files, 47 lines, mostly rust
+  - `example/cosmwasm/parallelization/staking/` — 5 files, 84 lines, mostly rust
+  - `example/cosmwasm/parallelization/wasm/` — 5 files, 63 lines, mostly rust
 - `paxeer-network/` — 160 files, 1,432 lines, mostly typescript
   - `paxeer-network/contracts/` — 140 files
   - `paxeer-network/integration_test/` — 20 files, 1,432 lines, mostly typescript
@@ -426,8 +426,8 @@ Build and test:
   - `storage/state_db/` — 215 files, 60,912 lines, mostly go
   - `storage/tools/` — 30 files, 5,862 lines, mostly go. Operator and benchmarking tools for the PaxDB storage layer.
   - `storage/wal/` — 6 files, 1,775 lines, mostly go
-- `store/` — 7 files, 307 lines, mostly go
-  - `store/whitelist/` — 6 files, 288 lines, mostly go (tests)
+- `sdk/store/whitelist/` — 7 files, 307 lines, mostly go
+  - `sdk/store/whitelist/` — 6 files, 288 lines, mostly go (tests)
 - `sync/` — 1 file, 30 lines, mostly go
 - `tests/` — 493 files, 132,448 lines, mostly c (tests)
   - 32 subdirectories: `agent/`, `arith/`, `bridge/`, `chain/`, `ci/`, `codec/`, `crypto/`, `daemon/`, `explorer/`, `fixtures/`, `ledger/`, `modules/`, `network/`, `oracle/`, `paxeer/`, `platform/`, `programs/`, `protocol/`, `qualification/`, `relay-archive/`, `replay/`, `replica/`, `sdk/`, `sequencer/`, `solidity/`, `state/`, `storage/`, `support/`, `tools/`, `vectors/`, `wallet/`, `workspace/`
@@ -463,9 +463,9 @@ Build and test:
   - `wasm/scripts/` — 3 files. These scripts are copied from the [Cosmos SDK](https://github.com/cosmos/cosmos-sdk/tree/v0.42.1/scripts) repository with minor modifications.
   - `wasm/staticarchive/` — 2 files, 582 lines, mostly go (tests)
   - `wasm/x/` — 200 files, 61,096 lines, mostly go
-- `wasmbinding/` — 11 files, 1,016 lines, mostly go. This package connects CosmWasm contracts on the Paxeer X chain to the chain's own modules through custom queries and messages.
-  - `wasmbinding/bindings/` — 2 files, 58 lines, mostly go
-  - `wasmbinding/test/` — 2 files, 390 lines, mostly go (tests)
+- `node/wasmbinding/` — 11 files, 1,016 lines, mostly go. This package connects CosmWasm contracts on the Paxeer X chain to the chain's own modules through custom queries and messages.
+  - `node/wasmbinding/bindings/` — 2 files, 58 lines, mostly go
+  - `node/wasmbinding/test/` — 2 files, 390 lines, mostly go (tests)
 
 Root files: `.cgignore`, `.gitignore`, `AGENTS.md`, `CHANGELOG.md`, `CITATION.cff`, `CLAUDE.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `CONTRIBUTORS.md`, `GOTCHA.kvx`, `GOVERNANCE.md`, `LICENSE`, `Makefile`, `NOTICE`, `README.md`, `RELEASE.md`, `SECURITY.md`, `SUPPORT.md`, `buf.gen.yaml`, `buf.yaml`, `chain.mk`, `cliff.toml`, `codecov.yml`, `codify.kvx`, `codify.mcp.json`, `config.yml`, `foundry.paxeer.toml`, `foundry.toml`, `gen.go`, `go.mod`, `go.sum`, `link_directives_test.go`, `mod_test.go`, `package.json`, `run_blocktests.sh`, `rust-toolchain.toml`, `version.json`
 
@@ -573,10 +573,10 @@ Hidden directories: `.github/` (65)
 - `main` — `interop/crates/x-websearch/src/main.rs:1258` `fn main() -> ExitCode`
 - `main` — `interop/deploy/gateway/render.py:835` `def main(argv)`
 - `main` — `interop/deploy/mirror/render-config.py:141` `def main(argv)`
-- `main` — `loadtest/contracts/parser.py:34` `def main()`
-- `main` — `loadtest/main.go:694` `func main()`
-- `main` — `loadtest/scripts/populate_genesis_accounts.py:94` `def main()`
-- `main` — `loadtest/scripts/validator_failures.py:99` `def main()`
+- `main` — `tools/benchmark/loadtest/contracts/parser.py:34` `def main()`
+- `main` — `tools/benchmark/loadtest/main.go:694` `func main()`
+- `main` — `tools/benchmark/loadtest/scripts/populate_genesis_accounts.py:94` `def main()`
+- `main` — `tools/benchmark/loadtest/scripts/validator_failures.py:99` `def main()`
 - `main` — `platform/cli/examples/hosted-send.rs:148` `fn main()`
 - `main` — `platform/cli/src/main.rs:1563` `fn main() -> ExitCode`
 - `main` — `platform/docs/samples/first-payment-go/main.go:63` `func main()`
@@ -1324,10 +1324,10 @@ _Also 131 files, 2,372 symbols — `cg survey wasm/x/`_
 
 _Also 104 files, 1,560 symbols — `cg survey src/modules/`_
 
-### `loadtest/contracts/` — 333 files, 36,683 lines, solidity
+### `tools/benchmark/loadtest/contracts/` — 333 files, 36,683 lines, solidity
 
 
-_Also 333 files, 3,176 symbols — `cg survey loadtest/contracts/`_
+_Also 333 files, 3,176 symbols — `cg survey tools/benchmark/loadtest/contracts/`_
 
 ### `explorer/services/` — 403 files, 36,457 lines, rust
 
@@ -1499,7 +1499,7 @@ Test code calls 0 of the 92,539 functions in product source directly (tests that
   - _+1 more_
 - `layerxproof/verify/` — 3 test files
   - _+3 more_
-- `loadtest/contracts/` — 27 test files
+- `tools/benchmark/loadtest/contracts/` — 27 test files
   - _+27 more_
 - `modules/epoch/` — 13 test files
   - _+13 more_
@@ -1681,7 +1681,7 @@ Test code calls 0 of the 92,539 functions in product source directly (tests that
   - _+5 more_
 - `storage/wal/` — 2 test files
   - _+2 more_
-- `store/whitelist/` — 3 test files
+- `sdk/store/whitelist/` — 3 test files
   - _+3 more_
 - `tests/` — 65 test files
   - _+65 more_
@@ -1791,7 +1791,7 @@ Test code calls 0 of the 92,539 functions in product source directly (tests that
   - _+1 more_
 - `wasm/x/` — 54 test files
   - _+54 more_
-- `wasmbinding/test/` — 2 test files
+- `node/wasmbinding/test/` — 2 test files
   - _+2 more_
 - `agent/crates/layerx-crypto/tests/fixtures/` — 16 fixture files: `payments/`
 - `bridge/deploy/proposals/testdata/` — 35 fixture files: `refuse/`

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/node/wasmbinding/bindings"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/wasmbinding/bindings"
 )
 
 func EncodeTokenFactoryCreateDenom(rawMsg json.RawMessage, sender sdk.AccAddress) ([]sdk.Msg, error) {

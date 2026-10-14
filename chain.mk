@@ -159,7 +159,7 @@ install-rocksdb: go.sum
 	@echo "paxd installed with RocksDB backend support!"
 
 loadtest: go.sum
-		go build $(BUILD_FLAGS) -o ./build/loadtest ./loadtest/
+		go build $(BUILD_FLAGS) -o ./build/loadtest ./tools/benchmark/loadtest/
 
 go.sum: go.mod
 		@echo "--> Ensure dependencies have not been modified"
@@ -193,7 +193,7 @@ clean:
 	rm -rf ./build/paxd ./build/loadtest ./build/generated ./build/proto ./build/packages.txt ./build/packages.txt.*
 
 build-loadtest:
-	go build -o build/loadtest ./loadtest/
+	go build -o build/loadtest ./tools/benchmark/loadtest/
 
 
 ###############################################################################

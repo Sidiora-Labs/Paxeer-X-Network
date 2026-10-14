@@ -86,7 +86,7 @@ rm "$PAX_HOME/config/tmp_genesis.json" "$PAX_HOME/config/tmp_genesis_2.json"
 
 echo "Creating Accounts"
 # create 10 test accounts + fund them
-PAX_HOME="$PAX_HOME" PAXD_BIN="$PAXD_BIN" "$PYTHON_CMD" loadtest/scripts/populate_genesis_accounts.py 20 loc
+PAX_HOME="$PAX_HOME" PAXD_BIN="$PAXD_BIN" "$PYTHON_CMD" tools/benchmark/loadtest/scripts/populate_genesis_accounts.py 20 loc
 
 "$PAXD_BIN" collect-gentxs --home "$PAX_HOME"
 # update some params in genesis file for easier use of the chain localls (make gov props faster)

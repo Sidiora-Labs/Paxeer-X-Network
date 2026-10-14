@@ -17,7 +17,7 @@ node_modules
 admin
 api
 assets
-benchmark
+tools/benchmark
 consensus
 custodyproof
 daemon
@@ -27,11 +27,9 @@ example
 hpx
 integration_test
 interchain
-loadtest
 modules
 node
 occ_tests
-parallelization
 precompiles
 !precompiles/layerxanchor/abi.json
 !precompiles/layerxcustody/abi.json
@@ -40,13 +38,11 @@ ratelimiter
 rpc
 sdk
 storage
-store
 sync
 testutil
 types
 utils
 wasm
 wasm-runtime
-wasmbinding
 human/apps
 tools/qualification/output

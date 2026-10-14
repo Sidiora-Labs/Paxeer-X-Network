@@ -31,9 +31,9 @@ SOURCE_PATHS = ('Makefile', 'chain.mk', 'go.mod', 'go.sum', 'rust-toolchain.toml
                 'src', 'include', 'cmd', 'programs', 'agent', 'platform', 'contracts',
                 'admin', 'consensus', 'custodyproof', 'daemon', 'engine', 'interchain',
                 'layerxproof', 'modules', 'node', 'precompiles', 'ratelimiter', 'rpc',
-                'sdk', 'storage', 'store', 'sync', 'types', 'utils', 'wasm', 'wasm-runtime',
-                'wasmbinding', 'tools/chain', 'tests/bridge/sign_credit.c', 'tests/bridge/files.h',
-                'loadtest/contracts/evm/lib', 'foundry.toml', 'remappings.txt')
+                'sdk', 'storage', 'sync', 'types', 'utils', 'wasm', 'wasm-runtime',
+                'tools/chain', 'tests/bridge/sign_credit.c', 'tests/bridge/files.h',
+                'tools/benchmark/loadtest/contracts/evm/lib', 'foundry.toml', 'remappings.txt')
 EXECUTABLES = ('paxd', 'layerx-custody-proof', 'layerx-paxeer-boundary', 'sign-credit')
 
 

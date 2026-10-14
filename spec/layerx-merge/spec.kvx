@@ -97706,7 +97706,7 @@ qualification = "UNRUN"
 [req.13023]
 title = "Host determinism"
 ac_1 = "Kernel modules run through their execute functions (src/modules/programs/registration.c:164, src/modules/programs/deploy.c:485) inside the cgo host."
-ac_2 = "Guest imports stay layerx_v1 to layerx_v5 (programs/crates/layerx-programs-runtime/src/abi/manifest.rs:8-12) and the CosmWasm router (wasmbinding/message_plugin.go:19) is not used for programs."
+ac_2 = "Guest imports stay layerx_v1 to layerx_v5 (programs/crates/layerx-programs-runtime/src/abi/manifest.rs:8-12) and the CosmWasm router (node/wasmbinding/message_plugin.go:19) is not used for programs."
 ac_3 = "Kernel time comes only from the block-open timestamp (include/layerx/lxp_module.h:151)."
 
 [acceptance.13.23.1]
@@ -98064,7 +98064,7 @@ reqs = ["13008.1", "13008.2", "13008.3", "13023.1", "13023.2", "13023.3"]
 do_1 = "Add DeriveKernelAccount returning address.Module(\"layerx\", account id) (sdk/types/address/hash.go:63) over the DID kernel id and sub-account kind and parent (include/layerx/lxp_genesis.h:148-149)."
 do_2 = "Derive perps margin accounts with the same function the dispatch check expects (src/modules/perps/lx_perps_dispatch.c:132)."
 do_3 = "Add HostExecute entering the module execute functions (src/modules/programs/registration.c:164, src/modules/programs/deploy.c:485) through cgo."
-do_4 = "Accept guest imports layerx_v1 to layerx_v5 (programs/crates/layerx-programs-runtime/src/abi/manifest.rs:8-12); programs never route through the CosmWasm router (wasmbinding/message_plugin.go:19)."
+do_4 = "Accept guest imports layerx_v1 to layerx_v5 (programs/crates/layerx-programs-runtime/src/abi/manifest.rs:8-12); programs never route through the CosmWasm router (node/wasmbinding/message_plugin.go:19)."
 do_5 = "Serve kernel time only from the block-open timestamp (include/layerx/lxp_module.h:151)."
 do_6 = "Add modules/lxphost/resolution_test.go with TestResolutionAccountAddress, TestResolutionMarginNamespace, TestResolutionPerpsMarginAccount, TestResolutionExecuteEntry, TestResolutionGuestImports and TestResolutionBlockOpenTime, exercising the code at sdk/types/address/hash.go:63."
 do_7 = "Finish the entire scoped implementation first; then format touched files, run one build and verify_cmd once, at most two task-scoped repair cycles; record unrelated findings once in qualification.kvx without expanding scope."

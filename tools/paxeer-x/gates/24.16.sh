@@ -10,7 +10,7 @@ build)
     forge build contracts/GuarantorBond.sol contracts/CheckpointRegistry.sol \
         platform/hosted/paxeer/contracts/BetaUsdl.sol contracts/challenge/CheckpointChallengeManager.sol \
         contracts/governance/LayerXBetaTimelock.sol contracts/custody/AssetRegistry.sol \
-        contracts/custody/LayerXVault.sol loadtest/contracts/evm/lib/solmate/src/tokens/WETH.sol \
+        contracts/custody/LayerXVault.sol tools/benchmark/loadtest/contracts/evm/lib/solmate/src/tokens/WETH.sol \
         --threads 5 --out build/withdraw-contracts/artifacts --cache-path build/withdraw-contracts/cache
     python3 tests/daemon/custody-chain-contract.py --build-dir build --record-build
     ;;

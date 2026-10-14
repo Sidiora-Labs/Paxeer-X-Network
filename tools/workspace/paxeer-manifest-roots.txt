@@ -1,7 +1,7 @@
 # kind|path|classification
 foundry|foundry.paxeer.toml|build_test_lint
-foundry|loadtest/contracts/evm/foundry.toml|build_test_lint
-npm|loadtest/contracts/evm/lib/openzeppelin-contracts/contracts/package.json|vendored_source_checksum_bound
+foundry|tools/benchmark/loadtest/contracts/evm/foundry.toml|build_test_lint
+npm|tools/benchmark/loadtest/contracts/evm/lib/openzeppelin-contracts/contracts/package.json|vendored_source_checksum_bound
 go|go.mod|build_test_lint
 go|hpx/registry/go.mod|build_test_lint
 go|sdk/cosmovisor/go.mod|build_test_lint
@@ -14,11 +14,11 @@ rust|example/cosmwasm/cw20/Cargo.toml|build_test_lint
 rust|example/cosmwasm/cw721/Cargo.toml|build_test_lint
 rust|example/cosmwasm/echo/Cargo.toml|build_test_lint
 rust|example/cosmwasm/iter/Cargo.toml|build_test_lint
-rust|loadtest/contracts/jupiter/Cargo.toml|build_test_lint
-rust|loadtest/contracts/mars/Cargo.toml|build_test_lint
-rust|loadtest/contracts/saturn/Cargo.toml|build_test_lint
-rust|loadtest/contracts/venus/Cargo.toml|build_test_lint
-rust|parallelization/bank/Cargo.toml|build_test_lint
-rust|parallelization/staking/Cargo.toml|build_test_lint
-rust|parallelization/wasm/Cargo.toml|build_test_lint
+rust|tools/benchmark/loadtest/contracts/jupiter/Cargo.toml|build_test_lint
+rust|tools/benchmark/loadtest/contracts/mars/Cargo.toml|build_test_lint
+rust|tools/benchmark/loadtest/contracts/saturn/Cargo.toml|build_test_lint
+rust|tools/benchmark/loadtest/contracts/venus/Cargo.toml|build_test_lint
+rust|example/cosmwasm/parallelization/bank/Cargo.toml|build_test_lint
+rust|example/cosmwasm/parallelization/staking/Cargo.toml|build_test_lint
+rust|example/cosmwasm/parallelization/wasm/Cargo.toml|build_test_lint
 rust|wasm-runtime/libwasmvm/Cargo.toml|build_test_lint

@@ -32,7 +32,7 @@ Hosted kernel modules run inside that executor, so their store access must stay 
 CosmWasm stays what it is today:
 
 - native CosmWasm contracts in wasm/x/wasm;
-- the message bridge in wasmbinding (wasmbinding/message_plugin.go:19);
+- the message bridge in node/wasmbinding (node/wasmbinding/message_plugin.go:19);
 - the wasmd precompile at 0x1002.
 
 It is not the program host. Kernel programs import the `layerx_v1` to `layerx_v5` host modules (programs/crates/layerx-programs-runtime/src/abi/manifest.rs:8-12), not the CosmWasm environment. They run under layerxprograms at 0x101D.
@@ -54,7 +54,7 @@ The table lists every precompile address the chain serves after activation. "Exi
 | Address | Name | Role | Owning module path | Kind of change | Registration (path:line) |
 |---|---|---|---|---|---|
 | 0x1001 | bank | Native balances. Holds every former kernel balance, including derived sub-account addresses. Gains the `send(address,address,string,uint256,bytes32)` overload carrying a LayerX context hash and its `LayerXReceipt` log. Revert text with the `LXP_` prefix. | sdk/x/bank | extended | precompiles/setup.go:68; address precompiles/bank/bank.go:33 |
-| 0x1002 | wasmd | CosmWasm execute and query | wasm/x/wasm, wasmbinding | existing | precompiles/setup.go:69; address precompiles/wasmd/wasmd.go:30 |
+| 0x1002 | wasmd | CosmWasm execute and query | wasm/x/wasm, node/wasmbinding | existing | precompiles/setup.go:69; address precompiles/wasmd/wasmd.go:30 |
 | 0x1003 | json | JSON utility | precompiles/json | existing | precompiles/setup.go:70; address precompiles/json/json.go:28 |
 | 0x1004 | addr | Pax and EVM address association, and the DID binding used by every unified-account flow and by principal resolution on 0x101A-0x101D and 0x0901-0x0908. Revert text with the `LXP_` prefix. | modules/evm (keeper modules/evm/keeper/layerx_binding.go:18, :30) | extended | precompiles/setup.go:71; address precompiles/addr/addr.go:57 |
 | 0x1005 | staking | Validator staking | sdk/x/staking | existing | precompiles/setup.go:72; address precompiles/staking/staking.go:49 |

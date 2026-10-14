@@ -3098,13 +3098,13 @@ PAXEER_LOCKED_RUST_MANIFESTS := \
 	example/cosmwasm/cw721/Cargo.toml \
 	example/cosmwasm/echo/Cargo.toml \
 	example/cosmwasm/iter/Cargo.toml \
-	loadtest/contracts/jupiter/Cargo.toml \
-	loadtest/contracts/mars/Cargo.toml \
-	loadtest/contracts/saturn/Cargo.toml \
-	loadtest/contracts/venus/Cargo.toml \
-	parallelization/bank/Cargo.toml \
-	parallelization/staking/Cargo.toml \
-	parallelization/wasm/Cargo.toml \
+	tools/benchmark/loadtest/contracts/jupiter/Cargo.toml \
+	tools/benchmark/loadtest/contracts/mars/Cargo.toml \
+	tools/benchmark/loadtest/contracts/saturn/Cargo.toml \
+	tools/benchmark/loadtest/contracts/venus/Cargo.toml \
+	example/cosmwasm/parallelization/bank/Cargo.toml \
+	example/cosmwasm/parallelization/staking/Cargo.toml \
+	example/cosmwasm/parallelization/wasm/Cargo.toml \
 	wasm-runtime/libwasmvm/Cargo.toml
 
 PAXEER_NESTED_GO_DIRS := hpx/registry \
@@ -3204,22 +3204,22 @@ paxeer-manifest-install: workspace-inventory-check paxeer-npm-install paxeer-too
 
 paxeer-manifest-build: workspace-inventory-check paxeer-npm-build
 	FOUNDRY_CONFIG=foundry.paxeer.toml forge build --offline --root .
-	sh loadtest/contracts/evm/setup.sh
-	forge build --offline --root loadtest/contracts/evm
+	sh tools/benchmark/loadtest/contracts/evm/setup.sh
+	forge build --offline --root tools/benchmark/loadtest/contracts/evm
 	@set -eu; for manifest in $(PAXEER_LOCKED_RUST_MANIFESTS); do cargo build --manifest-path "$$manifest" --locked --offline; done
 	@set -eu; for directory in $(PAXEER_NESTED_GO_DIRS); do (cd "$$directory" && GOPROXY=off go build ./...); done
 
 paxeer-manifest-test: workspace-inventory-check paxeer-npm-static-test
 	FOUNDRY_CONFIG=foundry.paxeer.toml forge test --offline --root .
-	sh loadtest/contracts/evm/setup.sh
-	forge test --offline --root loadtest/contracts/evm
+	sh tools/benchmark/loadtest/contracts/evm/setup.sh
+	forge test --offline --root tools/benchmark/loadtest/contracts/evm
 	@set -eu; for manifest in $(PAXEER_LOCKED_RUST_MANIFESTS); do cargo test --manifest-path "$$manifest" --locked --offline; done
 	@set -eu; for directory in $(PAXEER_NESTED_GO_DIRS); do (cd "$$directory" && GOPROXY=off go test ./...); done
 
 paxeer-manifest-lint: workspace-inventory-check paxeer-npm-static-test
 	FOUNDRY_CONFIG=foundry.paxeer.toml forge fmt --check --root .
-	sh loadtest/contracts/evm/setup.sh
-	forge fmt --check --root loadtest/contracts/evm
+	sh tools/benchmark/loadtest/contracts/evm/setup.sh
+	forge fmt --check --root tools/benchmark/loadtest/contracts/evm
 	@set -eu; for manifest in $(PAXEER_LOCKED_RUST_MANIFESTS); do cargo clippy --manifest-path "$$manifest" --locked --offline --all-targets -- -D warnings; done
 	@test -z "$$(find . \( -path ./.git -o -path ./platform -o -path ./spec -o -name node_modules \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
 	$(PAXEER_MAKE) GOLANGCI_LINT=$(PAXEER_GOLANGCI_LINT) lint

@@ -9,7 +9,7 @@ trap 'rm -f "$actual" "$declared"' EXIT HUP INT TERM
 # The Paxeer chain sits at the repository root beside the LayerX trees, so the
 # scan names every chain-owned root explicitly instead of walking the whole
 # repository. A new chain top-level directory must be added here.
-chain_roots="admin api assets benchmark consensus custodyproof daemon docker engine example hpx integration_test interchain loadtest modules node occ_tests parallelization precompiles ratelimiter rpc sdk storage store sync testutil types utils wasm wasm-runtime wasmbinding contracts tests/chain tools/chain tools/tx-scanner tools/utils"
+chain_roots="admin api assets tools/benchmark consensus custodyproof daemon docker engine example hpx integration_test interchain modules node occ_tests precompiles ratelimiter rpc sdk storage sync testutil types utils wasm wasm-runtime contracts tests/chain tools/chain tools/tx-scanner tools/utils"
 for root in $chain_roots; do test -d "$root"; done
 {
     for manifest in go.mod foundry.paxeer.toml; do test -f "$manifest" && printf '%s\n' "$manifest"; done
@@ -27,9 +27,9 @@ while IFS='|' read -r kind path classification; do
     case "$classification" in
         build_test_lint|build_static_live_test_blocked|build_static) ;;
         vendored_source_checksum_bound)
-            test "$path" = loadtest/contracts/evm/lib/openzeppelin-contracts/contracts/package.json
-            test -s loadtest/contracts/evm/VENDORING.md
-            test -x loadtest/contracts/evm/setup.sh
+            test "$path" = tools/benchmark/loadtest/contracts/evm/lib/openzeppelin-contracts/contracts/package.json
+            test -s tools/benchmark/loadtest/contracts/evm/VENDORING.md
+            test -x tools/benchmark/loadtest/contracts/evm/setup.sh
             ;;
         *) echo "unknown Paxeer manifest classification: $classification" >&2; exit 1 ;;
     esac

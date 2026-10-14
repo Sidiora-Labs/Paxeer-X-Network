@@ -18,8 +18,8 @@ NAMES = ("paxd", "attestor", "layerxd", "layerx-genesis-build",
          "layerx-module-registry", "layerx-custody-proof")
 GO_PATHS = ("chain.mk", "go.mod", "go.sum", "admin", "consensus", "custodyproof",
             "daemon", "engine", "interchain", "layerxproof", "modules", "node",
-            "precompiles", "ratelimiter", "rpc", "sdk", "storage", "store", "sync",
-            "types", "utils", "wasm", "wasm-runtime", "wasmbinding", "tools/chain")
+            "precompiles", "ratelimiter", "rpc", "sdk", "storage", "sync",
+            "types", "utils", "wasm", "wasm-runtime", "tools/chain")
 NATIVE_PATHS = ("Makefile", "src", "include", "cmd", "programs", "agent",
                 "rust-toolchain.toml", "contracts/config/checkpoint-settlement.json")
 PATHS = {name: GO_PATHS if name in ("paxd", "layerx-custody-proof") else
