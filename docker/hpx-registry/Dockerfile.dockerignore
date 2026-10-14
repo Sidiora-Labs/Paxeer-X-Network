@@ -5,5 +5,5 @@
 !hpx/hosting/index.html
 !hpx/hosting/nginx-registry.conf.template
 !docker/search-front/real-ip.sh
-!assets/PaxeerLogo.png
+!hpx/hosting/PaxeerLogo.png
 !docker/hpx-registry/entrypoint.sh

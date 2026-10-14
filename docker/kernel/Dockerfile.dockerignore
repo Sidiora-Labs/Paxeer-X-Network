@@ -16,7 +16,6 @@ node_modules
 !programs/vendor/cc/src/target/**
 admin
 api
-assets
 tools/benchmark
 daemon
 !daemon/layerx-custody-proof

@@ -21,7 +21,6 @@ on:
       - 'tools/release/version.json'
       - 'admin/**'
       - 'api/**'
-      - 'assets/**'
       - 'tools/benchmark/**'
       - 'consensus/**'
       - 'custodyproof/**'

@@ -21,4 +21,3 @@ paths-ignore:
   - "explorer/backend/_build/**"
   - "explorer/frontend/public/**"
   - "docs/**"
-  - "assets/**"

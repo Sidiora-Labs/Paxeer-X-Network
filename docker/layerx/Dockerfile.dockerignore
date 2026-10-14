@@ -2,7 +2,7 @@ build/
 **/node_modules/
 **/target/
 .github
-assets
+hpx/hosting/PaxeerLogo.png
 docker
 **/*.md
 **/README*
@@ -30,7 +30,6 @@ docker
 .zed
 agent
 cmd
-contributors
 explorer
 fuzz
 human
@@ -41,7 +40,6 @@ layerx-network.png
 migrations
 platform
 programs
-signatures
 spec
 src
 test

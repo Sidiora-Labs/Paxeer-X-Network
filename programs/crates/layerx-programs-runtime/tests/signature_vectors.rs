@@ -148,7 +148,7 @@ fn secp256k1_verify_accepts_compressed_public_key() {
         Some(SignatureRefusal::MalformedSignature)
     );
 
-    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; signatures/sources.json.
+    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; tests/vectors/signatures/sources.json.
     let digest = hex::decode("bb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023")
         .unwrap_or_else(|error| panic!("{}: {error:?}", "required value"));
     let public_key =
@@ -169,7 +169,7 @@ fn secp256k1_verify_accepts_uncompressed_public_key() {
         Some(SignatureRefusal::MalformedSignature)
     );
 
-    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; signatures/sources.json.
+    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; tests/vectors/signatures/sources.json.
     let digest = hex::decode("bb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023")
         .unwrap_or_else(|error| panic!("{}: {error:?}", "required value"));
     let public_key = hex::decode("04782c8ed17e3b2a783b5464f33b09652a71c678e05ec51e84e2bcfc663a3de963af9acb4280b8c7f7c42f4ef9aba6245ec1ec1712fd38a0fa96418d8cd6aa6152").unwrap_or_else(|error| panic!("{}: {error:?}", "required value"));
@@ -270,7 +270,7 @@ fn ed25519_published_test_vector_2() {
 
 #[test]
 fn secp256k1_verify_published_test_vector_1() {
-    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; signatures/sources.json.
+    // Wycheproof ecdsa_secp256k1_sha256 tcId 3; tests/vectors/signatures/sources.json.
     let digest = hex::decode("bb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023")
         .unwrap_or_else(|error| panic!("{}: {error:?}", "required value"));
     let public_key = hex::decode("04782c8ed17e3b2a783b5464f33b09652a71c678e05ec51e84e2bcfc663a3de963af9acb4280b8c7f7c42f4ef9aba6245ec1ec1712fd38a0fa96418d8cd6aa6152").unwrap_or_else(|error| panic!("{}: {error:?}", "required value"));

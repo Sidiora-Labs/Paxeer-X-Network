@@ -10,7 +10,6 @@ human/ @Sidiora-Labs/core
 contracts/ @Sidiora-Labs/core
 /admin/ @Sidiora-Labs/core
 /api/ @Sidiora-Labs/core
-/assets/ @Sidiora-Labs/core
 /tools/benchmark/ @Sidiora-Labs/core
 /consensus/ @Sidiora-Labs/core
 /custodyproof/ @Sidiora-Labs/core

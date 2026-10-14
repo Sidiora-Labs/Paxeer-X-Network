@@ -30,7 +30,7 @@ RUN apk add --no-cache nginx su-exec \
 COPY --from=build /hpx-registry /usr/local/bin/hpx-registry
 COPY --from=fonts /fonts/ /var/www/hpx/fonts/
 COPY hpx/hosting/index.html /var/www/hpx/index.html
-COPY assets/PaxeerLogo.png /var/www/hpx/paxeer-logo.png
+COPY hpx/hosting/PaxeerLogo.png /var/www/hpx/paxeer-logo.png
 COPY hpx/hosting/nginx-registry.conf.template /etc/nginx/hpx-registry.conf.template
 COPY --chmod=0555 docker/search-front/real-ip.sh /usr/local/bin/real-ip
 COPY docker/hpx-registry/entrypoint.sh /usr/local/bin/hpx-entrypoint
