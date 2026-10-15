@@ -1,0 +1,20 @@
+syntax = "proto3";
+package paxprotocol.paxchain.spot;
+import "gogoproto/gogo.proto";
+option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types";
+service Msg {
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc SyncReserves(MsgSyncReserves) returns (MsgSyncReservesResponse);
+}
+message MsgUpdateParams {
+  option (gogoproto.goproto_stringer) = false;
+  string authority = 1;
+  bytes params = 2 [(gogoproto.customtype) = "Params", (gogoproto.nullable) = false];
+}
+message MsgUpdateParamsResponse {}
+message MsgSyncReserves {
+  option (gogoproto.goproto_stringer) = false;
+  string authority = 1;
+  repeated string tokens = 2;
+}
+message MsgSyncReservesResponse {}
