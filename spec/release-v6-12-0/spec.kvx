@@ -21109,7 +21109,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.5]
 title = "Convert the collateral modal amounts at six decimals"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.4"]
