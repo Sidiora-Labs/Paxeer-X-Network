@@ -6224,7 +6224,7 @@ req_1_ac_5 = "Programme req 1 ac 5 is met by req 2.30 to req 2.32."
 
 [task.2.0.1]
 title = "Copy the role ABIs of SidioraPool, SidioraFactory, SidioraERC20 and test their counts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
