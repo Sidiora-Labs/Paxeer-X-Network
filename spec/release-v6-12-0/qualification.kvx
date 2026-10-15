@@ -357,3 +357,10 @@ command = "cg spec lint"
 exit_code = 0
 log_path = "fleet/logs/fix-spec-verify-1.log"
 observed_and_assumption = "The spec correction lane landed its edits without a finished lint because an unscoped lint in a worktree ran CPU-bound for over an hour beside other lint and trace processes. Assumption: one lint runs on the merged revision and its result is recorded once."
+
+[fix.7.1.9]
+revision = "a184f3be02ec5927dbdf91ee30409f929f8ea67d"
+command = "go test -count=1 ./platform/perps-data/migrations/ -run 'TestSchemaFiles' -v && PERPS_DATA_TEST_DATABASE_URL=<throwaway cluster> go test -count=1 ./platform/perps-data/internal/markets/ -run 'TestMarkets' -v"
+exit_code = 1
+log_path = "fleet/logs/fix-7.1.9-verify-1.log"
+observed_and_assumption = "Migration 0006 drops NOT NULL from the market decimals and the schema test now models INSERT and ALTER COLUMN DROP NOT NULL statements exactly, so TestSchemaFiles passes and the seed and retry subtests pass; refresh_from_chain and fee_config still refuse because nothing in the tree serves totalMarkets, getMarket or getFees at 0x1015. Assumption: those two subtests run once the perps precompile and its wiring land, and 7.1.9 is marked done then."
