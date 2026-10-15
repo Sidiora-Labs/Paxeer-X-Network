@@ -26,10 +26,20 @@ type TokenFactory interface {
 	Mint(ctx context.Context, msg *tokenfactorytypes.MsgMint) (*tokenfactorytypes.MsgMintResponse, error)
 }
 
-// EVMKeeper registers ERC20 pointers and maps EVM addresses to bank accounts.
+// EVMKeeper registers ERC20 pointers, maps EVM addresses to bank accounts,
+// runs the nested ERC20 calls of the custody ledgers and reads and writes the
+// code, storage and nonces of the contract surfaces.
 type EVMKeeper interface {
 	GetPaxAddressOrDefault(ctx sdk.Context, evmAddress common.Address) sdk.AccAddress
 	GetEVMAddressOrDefault(ctx sdk.Context, paxAddress sdk.AccAddress) common.Address
 	UpsertERCNativePointer(ctx sdk.Context, evm *vm.EVM, token string, metadata utils.ERCMetadata) (common.Address, error)
 	RunWithOneOffEVMInstance(ctx sdk.Context, runner func(*vm.EVM) error, logger func(string, string)) error
+	CallEVM(ctx sdk.Context, from common.Address, to *common.Address, val *sdk.Int, data []byte) ([]byte, error)
+	StaticCallEVM(ctx sdk.Context, from sdk.AccAddress, to *common.Address, data []byte) ([]byte, error)
+	GetState(ctx sdk.Context, addr common.Address, hash common.Hash) common.Hash
+	GetCode(ctx sdk.Context, addr common.Address) []byte
+	SetCode(ctx sdk.Context, addr common.Address, code []byte)
+	GetCodeHash(ctx sdk.Context, addr common.Address) common.Hash
+	GetNonce(ctx sdk.Context, addr common.Address) uint64
+	SetNonce(ctx sdk.Context, addr common.Address, nonce uint64)
 }
