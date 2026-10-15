@@ -26739,7 +26739,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.3]
 title = "Stream PERPS_V1 configuration and the subject layout"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
