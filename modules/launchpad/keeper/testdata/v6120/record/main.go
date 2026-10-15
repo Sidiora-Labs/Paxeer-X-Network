@@ -50,6 +50,20 @@ const (
 	batchSize                = 100
 	maxAirdropEpochs         = 1024
 	revertErrorCode          = 3
+
+	familySwap     = "swap"
+	familyPermit   = "permit"
+	familyGuardian = "guardian"
+	familyNFT      = "nft"
+	familyFeeClaim = "fee-claim"
+
+	strategyClaim     uint8 = 0
+	strategyBurn      uint8 = 1
+	strategyAirdrop   uint8 = 2
+	strategyLpRewards uint8 = 3
+
+	traceMarketName   = "Golden Trace Market"
+	traceMarketSymbol = "GOLDEN"
 )
 
 var (
@@ -59,6 +73,7 @@ var (
 	goldenGeneration2Pool = common.HexToAddress("0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263")
 	usdlAddress           = common.HexToAddress("0x85FcD13735F4309833A503EE804ea32395851479")
 	launchpadPrecompile   = common.HexToAddress("0x0000000000000000000000000000000000001017")
+	deadAddress           = common.HexToAddress("0x000000000000000000000000000000000000dEaD")
 
 	roles = []string{
 		roleSidioraPool, roleSidioraERC20, roleSidioraFactory, roleSidioraNFT, roleRouter, roleQuoter,
@@ -224,6 +239,7 @@ type callRecord struct {
 }
 
 type traceRecord struct {
+	Family    string          `json:"family"`
 	Key       string          `json:"key"`
 	Signature string          `json:"signature"`
 	From      common.Address  `json:"from"`
@@ -231,6 +247,35 @@ type traceRecord struct {
 	Input     hexutil.Bytes   `json:"input"`
 	CallTrace json.RawMessage `json:"callTrace"`
 	StateDiff json.RawMessage `json:"stateDiff"`
+	PreState  stateOverride   `json:"preState,omitempty"`
+}
+
+// stateOverride is the debug_traceCall stateOverrides object: per account, the
+// storage words that replace the state at H for one traced call.
+type stateOverride map[common.Address]overrideAccount
+
+type overrideAccount struct {
+	StateDiff map[common.Hash]common.Hash `json:"stateDiff"`
+}
+
+// permitParams is the Router PermitParams tuple. The recorder holds no key, so
+// the permit is unsigned and its failure is ignored by the Router as
+// Launch-x:contracts/contracts/periphery/Router.sol:292-314 does; the pull then
+// runs against the allowance the trader holds at H.
+type permitParams struct {
+	Value    *big.Int
+	Deadline *big.Int
+	V        uint8
+	R        [32]byte
+	S        [32]byte
+}
+
+// layoutSlots are the storage positions of layout.json the pre-state
+// overrides write.
+type layoutSlots struct {
+	pausable        common.Hash
+	pendingGuardian uint64
+	feeStrategy     uint64
 }
 
 type tokenSupplyRecord struct {
@@ -260,6 +305,7 @@ type recorder struct {
 	client     *rpc.Client
 	block      hexutil.Uint64
 	abis       map[string]*abi.ABI
+	layout     layoutSlots
 	out        *golden
 	contracts  map[common.Address]*contractRecord
 	getters    map[common.Address]map[string]*callReq
@@ -290,6 +336,7 @@ func run(ctx context.Context, args []string) error {
 	height := fs.Uint64("height", 0, "height H every read is pinned to")
 	trader := fs.String("trader", "", "account that sends the swap traces")
 	abiDir := fs.String("abi", "precompiles/launchpad/abi", "directory of the role ABI files")
+	layoutPath := fs.String("layout", "modules/launchpad/keeper/testdata/v6120/layout.json", "storage layout of the role contracts")
 	holdersPath := fs.String("holders", "modules/launchpad/keeper/testdata/v6120/holders.json", "pool-token holder list")
 	outPath := fs.String("out", "modules/launchpad/keeper/testdata/v6120/golden.json", "golden file to write")
 	buy := fs.String("buy-usdl", "1000000", "USDL base units of the traced and quoted buys")
@@ -318,6 +365,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	layout, err := loadLayout(*layoutPath)
+	if err != nil {
+		return err
+	}
 	holders, err := loadHolders(*holdersPath)
 	if err != nil {
 		return err
@@ -332,6 +383,7 @@ func run(ctx context.Context, args []string) error {
 		client:     client,
 		block:      hexutil.Uint64(*height),
 		abis:       abis,
+		layout:     layout,
 		out:        &golden{Height: *height},
 		contracts:  map[common.Address]*contractRecord{},
 		getters:    map[common.Address]map[string]*callReq{},
@@ -385,6 +437,42 @@ func checkArgPlan(role string, parsed *abi.ABI) error {
 		}
 	}
 	return nil
+}
+
+func loadLayout(path string) (layoutSlots, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return layoutSlots{}, fmt.Errorf("layout: %w", err)
+	}
+	var doc struct {
+		PausableSlot *common.Hash `json:"pausableSlot"`
+		Storage      map[string][]struct {
+			Slot  *uint64 `json:"slot"`
+			Field string  `json:"field"`
+		} `json:"storage"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return layoutSlots{}, fmt.Errorf("layout: %w", err)
+	}
+	if doc.PausableSlot == nil || *doc.PausableSlot == (common.Hash{}) {
+		return layoutSlots{}, errors.New("layout: no pausableSlot")
+	}
+	slot := func(role, field string) (uint64, error) {
+		for _, e := range doc.Storage[role] {
+			if e.Field == field && e.Slot != nil {
+				return *e.Slot, nil
+			}
+		}
+		return 0, fmt.Errorf("layout: %s has no slot for %s", role, field)
+	}
+	out := layoutSlots{pausable: *doc.PausableSlot}
+	if out.pendingGuardian, err = slot(roleSidioraPool, "pendingGuardian"); err != nil {
+		return layoutSlots{}, err
+	}
+	if out.feeStrategy, err = slot(roleSidioraNFT, "_feeStrategy"); err != nil {
+		return layoutSlots{}, err
+	}
+	return out, nil
 }
 
 func loadHolders(path string) (map[common.Address][]common.Address, error) {
@@ -1398,57 +1486,398 @@ func (r *recorder) readRefusals(ctx context.Context) error {
 	return nil
 }
 
-func (r *recorder) traceCall(ctx context.Context, role string, to common.Address, name string, args ...interface{}) error {
-	parsed := r.abis[role]
-	m, ok := parsed.Methods[name]
-	if !ok {
-		return fmt.Errorf("abi %s has no method %s", role, name)
+// tracePlan is one traced call: the trace family, the contract role and
+// address it targets, the Solidity signature, the caller and the arguments,
+// and the pre-state overrides that put the contract in the state the
+// function requires when the chain does not hold it at H. The parity tests
+// replay each entry with the same caller, arguments and pre-state.
+type tracePlan struct {
+	Family   string
+	Role     string
+	To       common.Address
+	Sig      string
+	From     common.Address
+	Args     []interface{}
+	PreState stateOverride
+}
+
+// planInputs are the recorded reads at H the caller plan is built from.
+type planInputs struct {
+	trader          common.Address
+	buyAmount       *big.Int
+	sellAmount      *big.Int
+	deadline        *big.Int
+	gens            []*generation
+	poolToken       map[common.Address]common.Address
+	layout          layoutSlots
+	creationFee     *big.Int
+	guardian        common.Address
+	pendingGuardian common.Address
+	paused          bool
+	feeRight        *big.Int
+	feeRightOwner   common.Address
+	feeStrategy     uint8
+	optical         common.Address
+	opticalSurplus  *big.Int
+	airdropEpoch    *big.Int
+	tokenHolders    []common.Address
+}
+
+func storageOverride(addr common.Address, slot, value common.Hash) stateOverride {
+	return stateOverride{addr: {StateDiff: map[common.Hash]common.Hash{slot: value}}}
+}
+
+func mappingSlot(key common.Hash, slot uint64) common.Hash {
+	return crypto.Keccak256Hash(key.Bytes(), common.BigToHash(new(big.Int).SetUint64(slot)).Bytes())
+}
+
+func (in *planInputs) generation(n int) (*generation, error) {
+	for _, g := range in.gens {
+		if g.number == n {
+			return g, nil
+		}
 	}
-	input, err := parsed.Pack(name, args...)
+	return nil, fmt.Errorf("generation %d is not recorded", n)
+}
+
+func (in *planInputs) airdropHolder(pool common.Address) (common.Address, error) {
+	for _, h := range in.tokenHolders {
+		if h != pool && h != deadAddress && h != (common.Address{}) {
+			return h, nil
+		}
+	}
+	return common.Address{}, fmt.Errorf("token %s of pool %s has no holder that can claim an airdrop", in.poolToken[pool].Hex(), pool.Hex())
+}
+
+func (in *planInputs) strategyPreState(collection common.Address, want uint8) stateOverride {
+	if in.feeStrategy == want {
+		return nil
+	}
+	slot := mappingSlot(common.BigToHash(in.feeRight), in.layout.feeStrategy)
+	return storageOverride(collection, slot, common.BigToHash(big.NewInt(int64(want))))
+}
+
+func buildTracePlan(in *planInputs) ([]tracePlan, error) {
+	zero := new(big.Int)
+	plan := []tracePlan{}
+	for _, g := range in.gens {
+		if len(g.pools) < 2 {
+			return nil, fmt.Errorf("generation %d lists %d pools, a token-for-token trace needs two", g.number, len(g.pools))
+		}
+		p := g.goldenPool
+		other := g.pools[0]
+		if other == p {
+			other = g.pools[1]
+		}
+		plan = append(plan,
+			tracePlan{Family: familySwap, Role: roleRouter, To: g.router, Sig: "buy(address,uint256,uint256,uint256)", From: in.trader,
+				Args: []interface{}{p, in.buyAmount, zero, in.deadline}},
+			tracePlan{Family: familySwap, Role: roleRouter, To: g.router, Sig: "sell(address,uint256,uint256,uint256)", From: in.trader,
+				Args: []interface{}{p, in.sellAmount, zero, in.deadline}},
+			tracePlan{Family: familySwap, Role: roleRouter, To: g.router, Sig: "swapTokenForToken(address,address,uint256,uint256,uint256)", From: in.trader,
+				Args: []interface{}{in.poolToken[p], in.poolToken[other], in.sellAmount, zero, in.deadline}},
+			tracePlan{Family: familySwap, Role: roleSidioraPool, To: p, Sig: "swap(uint256,uint256,bool,address,uint256)", From: in.trader,
+				Args: []interface{}{in.buyAmount, zero, true, in.trader, in.deadline}},
+			tracePlan{Family: familySwap, Role: roleSidioraPool, To: p, Sig: "swap(uint256,uint256,bool,address,uint256)", From: in.trader,
+				Args: []interface{}{in.sellAmount, zero, false, in.trader, in.deadline}},
+		)
+	}
+
+	g, err := in.generation(2)
 	if err != nil {
-		return fmt.Errorf("pack %s.%s: %w", role, name, err)
+		return nil, err
 	}
-	from := r.trader
-	tx := callArgs{From: &from, To: to, Data: input}
-	t := &traceRecord{Key: role + "." + m.RawName, Signature: m.Sig, From: from, To: to, Input: input}
+	p := g.goldenPool
+	token := in.poolToken[p]
+	other := g.pools[0]
+	if other == p {
+		other = g.pools[1]
+	}
+	if in.guardian == (common.Address{}) {
+		return nil, fmt.Errorf("pool %s has no guardian", p.Hex())
+	}
+	if in.feeRight == nil || in.feeRight.Sign() == 0 {
+		return nil, fmt.Errorf("pool %s has no fee right in collection %s", p.Hex(), g.collection.Hex())
+	}
+	if in.feeRightOwner == (common.Address{}) {
+		return nil, fmt.Errorf("fee right %s of pool %s has no owner", in.feeRight, p.Hex())
+	}
+	holder, err := in.airdropHolder(p)
+	if err != nil {
+		return nil, err
+	}
+
+	permit := func(value *big.Int) permitParams {
+		return permitParams{Value: value, Deadline: in.deadline}
+	}
+	plan = append(plan,
+		tracePlan{Family: familyPermit, Role: roleRouter, To: g.router,
+			Sig: "buyWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))", From: in.trader,
+			Args: []interface{}{p, in.buyAmount, zero, in.deadline, permit(in.buyAmount)}},
+		tracePlan{Family: familyPermit, Role: roleRouter, To: g.router,
+			Sig: "sellWithPermit(address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))", From: in.trader,
+			Args: []interface{}{p, in.sellAmount, zero, in.deadline, permit(in.sellAmount)}},
+		tracePlan{Family: familyPermit, Role: roleRouter, To: g.router,
+			Sig: "swapTokenForTokenWithPermit(address,address,uint256,uint256,uint256,(uint256,uint256,uint8,bytes32,bytes32))", From: in.trader,
+			Args: []interface{}{token, in.poolToken[other], in.sellAmount, zero, in.deadline, permit(in.sellAmount)}},
+		tracePlan{Family: familyPermit, Role: roleRouter, To: g.router,
+			Sig: "createMarketWithPermit(string,string,uint8,address,(uint256,uint256,uint8,bytes32,bytes32))", From: in.trader,
+			Args: []interface{}{traceMarketName, traceMarketSymbol, uint8(0), common.Address{}, permit(in.creationFee)}},
+	)
+
+	acceptFrom, acceptPre := in.pendingGuardian, stateOverride(nil)
+	if acceptFrom == (common.Address{}) {
+		acceptFrom = in.trader
+		acceptPre = storageOverride(p, common.BigToHash(new(big.Int).SetUint64(in.layout.pendingGuardian)), common.BytesToHash(in.trader.Bytes()))
+	}
+	pausePre, unpausePre := stateOverride(nil), storageOverride(p, in.layout.pausable, common.BigToHash(big.NewInt(1)))
+	if in.paused {
+		pausePre, unpausePre = storageOverride(p, in.layout.pausable, common.Hash{}), nil
+	}
+	plan = append(plan,
+		tracePlan{Family: familyGuardian, Role: roleSidioraPool, To: p, Sig: "transferGuardian(address)", From: in.guardian,
+			Args: []interface{}{in.trader}},
+		tracePlan{Family: familyGuardian, Role: roleSidioraPool, To: p, Sig: "acceptGuardian()", From: acceptFrom, PreState: acceptPre},
+		tracePlan{Family: familyGuardian, Role: roleSidioraPool, To: p, Sig: "pause()", From: in.guardian, PreState: pausePre},
+		tracePlan{Family: familyGuardian, Role: roleSidioraPool, To: p, Sig: "unpause()", From: in.guardian, PreState: unpausePre},
+	)
+
+	owner, id := in.feeRightOwner, in.feeRight
+	newStrategy := uint8(0)
+	if in.feeStrategy == 0 {
+		newStrategy = 1
+	}
+	plan = append(plan,
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "approve(address,uint256)", From: owner,
+			Args: []interface{}{in.trader, id}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "setApprovalForAll(address,bool)", From: owner,
+			Args: []interface{}{in.trader, true}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "transferFrom(address,address,uint256)", From: owner,
+			Args: []interface{}{owner, in.trader, id}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "safeTransferFrom(address,address,uint256)", From: owner,
+			Args: []interface{}{owner, in.trader, id}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "safeTransferFrom(address,address,uint256,bytes)", From: owner,
+			Args: []interface{}{owner, in.trader, id, []byte{}}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "setFeeStrategy(uint256,uint8)", From: owner,
+			Args: []interface{}{id, newStrategy}},
+		tracePlan{Family: familyNFT, Role: roleSidioraNFT, To: g.collection, Sig: "mint(address,address,uint8)", From: g.factory,
+			Args: []interface{}{in.trader, p, uint8(0)}},
+	)
+
+	epoch := in.airdropEpoch
+	if epoch == nil || epoch.Sign() == 0 {
+		epoch = big.NewInt(1)
+	}
+	surplus := in.opticalSurplus
+	if surplus == nil || surplus.Sign() == 0 {
+		surplus = big.NewInt(1)
+	}
+	plan = append(plan,
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "setFeeStrategy(uint256,uint8)", From: owner,
+			Args: []interface{}{id, newStrategy}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "claimFees(uint256)", From: owner,
+			Args: []interface{}{id}, PreState: in.strategyPreState(g.collection, strategyClaim)},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "executeBurn(uint256)", From: owner,
+			Args: []interface{}{id}, PreState: in.strategyPreState(g.collection, strategyBurn)},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "executeAirdrop(uint256)", From: owner,
+			Args: []interface{}{id}, PreState: in.strategyPreState(g.collection, strategyAirdrop)},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "executeLpRewards(uint256)", From: owner,
+			Args: []interface{}{id}, PreState: in.strategyPreState(g.collection, strategyLpRewards)},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "claimAirdrop(uint256)", From: holder,
+			Args: []interface{}{id}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeesRouter, To: g.feesRouter, Sig: "claimAirdropEpoch(uint256,uint256)", From: holder,
+			Args: []interface{}{id, epoch}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeeAccumulator, To: g.feeAccumulator, Sig: "claim(address,address)", From: g.feesRouter,
+			Args: []interface{}{p, owner}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeeAccumulator, To: g.feeAccumulator, Sig: "claimAirdrop(address,address)", From: holder,
+			Args: []interface{}{p, holder}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeeAccumulator, To: g.feeAccumulator, Sig: "claimAirdropEpoch(address,address,uint256)", From: holder,
+			Args: []interface{}{p, holder, epoch}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeeAccumulator, To: g.feeAccumulator,
+			Sig: "claimLegacyAirdrop(address,uint256,address,uint256,bytes32[])", From: holder,
+			Args: []interface{}{p, epoch, holder, big.NewInt(1), [][32]byte{}}},
+		tracePlan{Family: familyFeeClaim, Role: roleFeeAccumulator, To: g.feeAccumulator, Sig: "claimOpticalSurplus(address,uint256,address)", From: in.optical,
+			Args: []interface{}{p, surplus, in.trader}},
+	)
+	return plan, nil
+}
+
+func methodBySig(parsed *abi.ABI, role, sig string) (abi.Method, error) {
+	for _, m := range parsed.Methods {
+		if m.Sig == sig {
+			return m, nil
+		}
+	}
+	return abi.Method{}, fmt.Errorf("abi %s has no method %s", role, sig)
+}
+
+func packPlan(abis map[string]*abi.ABI, p tracePlan) (abi.Method, []byte, error) {
+	parsed, ok := abis[p.Role]
+	if !ok {
+		return abi.Method{}, nil, fmt.Errorf("no abi for role %s", p.Role)
+	}
+	m, err := methodBySig(parsed, p.Role, p.Sig)
+	if err != nil {
+		return abi.Method{}, nil, err
+	}
+	input, err := parsed.Pack(m.Name, p.Args...)
+	if err != nil {
+		return abi.Method{}, nil, fmt.Errorf("pack %s.%s: %w", p.Role, p.Sig, err)
+	}
+	return m, input, nil
+}
+
+func (r *recorder) traceCall(ctx context.Context, p tracePlan) error {
+	m, input, err := packPlan(r.abis, p)
+	if err != nil {
+		return err
+	}
+	from := p.From
+	tx := callArgs{From: &from, To: p.To, Data: input}
+	t := &traceRecord{Family: p.Family, Key: p.Role + "." + m.RawName, Signature: m.Sig, From: from, To: p.To, Input: input, PreState: p.PreState}
 	callCfg := map[string]interface{}{"tracer": "callTracer", "tracerConfig": map[string]interface{}{"withLog": true}}
-	if err := r.client.CallContext(ctx, &t.CallTrace, "debug_traceCall", tx, r.block, callCfg); err != nil {
-		return fmt.Errorf("trace %s at %s: %w", t.Key, to.Hex(), err)
-	}
 	diffCfg := map[string]interface{}{"tracer": "prestateTracer", "tracerConfig": map[string]interface{}{"diffMode": true}}
+	if len(p.PreState) > 0 {
+		callCfg["stateOverrides"] = p.PreState
+		diffCfg["stateOverrides"] = p.PreState
+	}
+	if err := r.client.CallContext(ctx, &t.CallTrace, "debug_traceCall", tx, r.block, callCfg); err != nil {
+		return fmt.Errorf("trace %s at %s: %w", t.Key, p.To.Hex(), err)
+	}
 	if err := r.client.CallContext(ctx, &t.StateDiff, "debug_traceCall", tx, r.block, diffCfg); err != nil {
-		return fmt.Errorf("state diff %s at %s: %w", t.Key, to.Hex(), err)
+		return fmt.Errorf("state diff %s at %s: %w", t.Key, p.To.Hex(), err)
 	}
 	if len(t.CallTrace) == 0 || string(t.CallTrace) == "null" || len(t.StateDiff) == 0 || string(t.StateDiff) == "null" {
-		return fmt.Errorf("trace %s at %s: empty result", t.Key, to.Hex())
+		return fmt.Errorf("trace %s at %s: empty result", t.Key, p.To.Hex())
 	}
 	r.out.Traces = append(r.out.Traces, t)
 	return nil
 }
 
+func (q *callReq) uint8() (uint8, error) {
+	v, err := q.single()
+	if err != nil {
+		return 0, err
+	}
+	n, ok := v.(uint8)
+	if !ok {
+		return 0, fmt.Errorf("decode %s: %T is not a uint8", q.rec.Key, v)
+	}
+	return n, nil
+}
+
+func (q *callReq) boolean() (bool, error) {
+	v, err := q.single()
+	if err != nil {
+		return false, err
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, fmt.Errorf("decode %s: %T is not a bool", q.rec.Key, v)
+	}
+	return b, nil
+}
+
+func (r *recorder) planInputs(ctx context.Context) (*planInputs, error) {
+	g := r.generation(2)
+	p := g.goldenPool
+	feeRightQ, err := r.newCall(roleSidioraNFT, g.collection, "poolTokenId", nil, p)
+	if err != nil {
+		return nil, err
+	}
+	metaQ, err := r.newCall(rolePoolRegistry, g.poolRegistry, "getPoolMetadata", nil, p)
+	if err != nil {
+		return nil, err
+	}
+	epochQ, err := r.newCall(roleFeeAccumulator, g.feeAccumulator, "getAirdropEpoch", nil, p)
+	if err != nil {
+		return nil, err
+	}
+	surplusQ, err := r.newCall(roleFeeAccumulator, g.feeAccumulator, "getOpticalSurplus", nil, p)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.flush(ctx); err != nil {
+		return nil, err
+	}
+	in := &planInputs{
+		trader:       r.trader,
+		buyAmount:    r.buyAmount,
+		sellAmount:   r.sellAmount,
+		deadline:     new(big.Int).SetUint64(r.out.Timestamp + traceDeadlineSeconds),
+		gens:         r.gens,
+		poolToken:    r.poolToken,
+		layout:       r.layout,
+		tokenHolders: r.holders[r.poolToken[p]],
+	}
+	if in.feeRight, err = feeRightQ.uint(); err != nil {
+		return nil, err
+	}
+	meta, err := decodeMetadata(metaQ)
+	if err != nil {
+		return nil, err
+	}
+	in.optical = meta.optical
+	if in.airdropEpoch, err = epochQ.uint(); err != nil {
+		return nil, err
+	}
+	if in.opticalSurplus, err = surplusQ.uint(); err != nil {
+		return nil, err
+	}
+	ownerQ, err := r.newCall(roleSidioraNFT, g.collection, "ownerOf", nil, in.feeRight)
+	if err != nil {
+		return nil, err
+	}
+	strategyQ, err := r.newCall(roleSidioraNFT, g.collection, "getFeeStrategy", nil, in.feeRight)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.flush(ctx); err != nil {
+		return nil, err
+	}
+	if in.feeRightOwner, err = ownerQ.address(); err != nil {
+		return nil, err
+	}
+	if in.feeStrategy, err = strategyQ.uint8(); err != nil {
+		return nil, err
+	}
+	for name, dst := range map[string]*common.Address{"guardian": &in.guardian, "pendingGuardian": &in.pendingGuardian} {
+		q, err := r.getter(p, name)
+		if err != nil {
+			return nil, err
+		}
+		if *dst, err = q.address(); err != nil {
+			return nil, err
+		}
+	}
+	pausedQ, err := r.getter(p, "paused")
+	if err != nil {
+		return nil, err
+	}
+	if in.paused, err = pausedQ.boolean(); err != nil {
+		return nil, err
+	}
+	feeQ, err := r.getter(g.protocolConfig, "creationFee")
+	if err != nil {
+		return nil, err
+	}
+	if in.creationFee, err = feeQ.uint(); err != nil {
+		return nil, err
+	}
+	return in, nil
+}
+
 func (r *recorder) readTraces(ctx context.Context) error {
-	deadline := new(big.Int).SetUint64(r.out.Timestamp + traceDeadlineSeconds)
-	zero := new(big.Int)
-	for _, g := range r.gens {
-		p := g.goldenPool
-		token := r.poolToken[p]
-		other := g.pools[0]
-		if other == p {
-			other = g.pools[1]
-		}
-		if err := r.traceCall(ctx, roleRouter, g.router, "buy", p, r.buyAmount, zero, deadline); err != nil {
-			return err
-		}
-		if err := r.traceCall(ctx, roleRouter, g.router, "sell", p, r.sellAmount, zero, deadline); err != nil {
-			return err
-		}
-		if err := r.traceCall(ctx, roleRouter, g.router, "swapTokenForToken", token, r.poolToken[other], r.sellAmount, zero, deadline); err != nil {
-			return err
-		}
-		if err := r.traceCall(ctx, roleSidioraPool, p, "swap", r.buyAmount, zero, true, r.trader, deadline); err != nil {
-			return err
-		}
-		if err := r.traceCall(ctx, roleSidioraPool, p, "swap", r.sellAmount, zero, false, r.trader, deadline); err != nil {
+	in, err := r.planInputs(ctx)
+	if err != nil {
+		return err
+	}
+	plan, err := buildTracePlan(in)
+	if err != nil {
+		return err
+	}
+	for _, p := range plan {
+		if err := r.traceCall(ctx, p); err != nil {
 			return err
 		}
 	}
