@@ -224,3 +224,10 @@ command = "go test ./modules/spot/types/ -run '^(TestParamsValidate|TestParamsVa
 exit_code = 0
 log_path = "fleet/logs/fix-4.1.1-verify-1.log"
 observed_and_assumption = "The spot-fees parameter table now bounds priceImpactScalarBps at 500 as spot.md and PECOR.sol do, and the parameter validation already refused 501 with ScalarTooHigh. Assumption: the spec lint of the merged contract text runs once on the landed revision with the other spec corrections."
+
+[fix.1.0.2]
+revision = "3331b6c71039cf87945b46b51247a382b1f6c1b1"
+command = "scripts/ci/runner-routing-check.sh"
+exit_code = 0
+log_path = "fleet/logs/fix-1.0.2-verify-1.log"
+observed_and_assumption = "All thirty-six workflows now carry the accepted runs-on fallback and the routing check exits 0 with no failure lines, so the node build workflow task is qualified; the qualification matrix and image publish jobs lost their per-cell and dispatch-input runner choice because the check does not exclude them. Assumption: none."

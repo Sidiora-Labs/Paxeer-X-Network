@@ -1263,7 +1263,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.2]
 title = "Add the node build workflow with native-libs, paxd, lxphost and node-tests jobs behind one gate job"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["1.0.1"]
