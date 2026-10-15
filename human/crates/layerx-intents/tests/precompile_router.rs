@@ -1,13 +1,16 @@
 use std::fmt::Debug;
 
 use layerx_intents::precompile::{
-    keccak256, route, route_event, EventDecodeError, EvmLog, ExchangeOrder, MarginDeposited,
-    PrecompileEvent, PrecompileEventKind, RouteBinding, RouteError, BRIDGE_PRECOMPILE,
+    keccak256, route, route_event, ConfigUpdated, EventDecodeError, EvmLog, ExchangeOrder,
+    FeeDistributed, FeeFlow, FeeStrategyChanged, MarginDeposited, MarketCreated, NftMint,
+    NftTransfer, PoolRegistered, PoolStateUpdated, PrecompileEvent, PrecompileEventKind,
+    RouteBinding, RouteError, RouterTrade, Swap, TokenDeployed, BRIDGE_PRECOMPILE,
     EXCHANGE_PRECOMPILE, LAUNCHPAD_PRECOMPILE,
 };
 use layerx_intents::{
     compile, BridgeWithdrawRequest, CompileErrorReason, DisclosureCheck, DisclosureCheckError,
-    Intent, IntentErrorReason, IntentField, IntentKind, IntentVersion, NativeCustodyCredit,
+    Intent, IntentError, IntentErrorReason, IntentField, IntentKind, IntentVersion,
+    NativeCustodyCredit,
 };
 use layerx_types::account::AccountId;
 use layerx_types::amount::Amount;
@@ -84,8 +87,33 @@ fn string_after<'a>(text: &'a str, key: &str) -> &'a str {
     &rest[..rest.find('"').unwrap_or_else(|| panic!("{key} end"))]
 }
 
+fn compact(json: &str) -> String {
+    let mut out = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in json.chars() {
+        if in_string {
+            out.push(character);
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+        } else if character == '"' {
+            in_string = true;
+            out.push(character);
+        } else if !character.is_whitespace() {
+            out.push(character);
+        }
+    }
+    out
+}
+
 fn abi_events(abi: &str) -> Vec<(String, usize)> {
-    abi_objects(abi)
+    let abi = compact(abi);
+    abi_objects(&abi)
         .into_iter()
         .filter_map(|object| {
             let inputs_start = object.find("\"inputs\":[")? + 10;
@@ -249,48 +277,563 @@ fn every_abi_event_is_declared_with_its_computed_topic() {
             "3e990eb54009dcdca53d8fa87307210f07097f37dcf6185dee71a42f8e7d524e",
         ),
         (
-            PrecompileEventKind::AirdropClaimed,
-            "d399c6e7fad358fc300beda3f056717c94a04c7233ce92683de6500ba509022e",
+            PrecompileEventKind::ConfigUpdated,
+            "2903b3642d2105b7fbd127326de888ab50e8d975bf819398337fb58407c1b10e",
         ),
         (
-            PrecompileEventKind::AirdropExecuted,
-            "171b2f9dc7a4c7eaa8ca718bcac62fbec15d147f033f38e42971b7ccabe9a469",
+            PrecompileEventKind::FeeDistributed,
+            "f7ab826cedf9d005102eddf95e65f43597aef36a55ff09ee4f452204c83f4afc",
         ),
         (
-            PrecompileEventKind::FeeRecorded,
-            "b4d4d3bd2f97a7d6f1657ee69f7191d7aa7dbd5b6864a2d7a9d14efc1322552f",
+            PrecompileEventKind::FeeFlow,
+            "626e3fd5d9323ca4b7ffa3ca51c21c02766b638d15eb8896a36a4e0e97ae6de4",
         ),
         (
             PrecompileEventKind::FeeStrategyChanged,
-            "66c2a2c42cf36fad89e5da817a0b5de0fd78d7481cbfdc59f604148252da2261",
-        ),
-        (
-            PrecompileEventKind::FeesBurned,
-            "0d9575a73e2a7da16cfde907df749d23d901528ff2e7c832b731babdecca000b",
-        ),
-        (
-            PrecompileEventKind::FeesClaimed,
-            "fe3464cd748424446c37877c28ce5b700222c5bc9f90d908afcc4e5cb22707ff",
-        ),
-        (
-            PrecompileEventKind::LpRewardsExecuted,
-            "a9e7850d400945e0434ddd18a194aff01f31efaae577a63486c3dc865c5ab759",
+            "337fd9f9304e9da4c04886a5b8bf56e74032b459758212a860bc61d3544353dd",
         ),
         (
             PrecompileEventKind::MarketCreated,
-            "d8ad483b7300b5831650c4747b4d85390539f25f7d7d8c635eb3f8147daf198e",
+            "b0a9c7605389f1127c2299d4a3ed85f0b2fc19894ab5411d76b453bb29f9f47b",
         ),
         (
-            PrecompileEventKind::PauseToggled,
-            "79a5bc58b021076f821571d0fe8b0ae3d9e0a666563bb064fdbf0bf69281331c",
+            PrecompileEventKind::NftMint,
+            "d2917d37031c0dfe5016665c7a83360cbf2ff32063096b2caf61ba66c06832e5",
+        ),
+        (
+            PrecompileEventKind::NftTransfer,
+            "021f03e8a1315704c74c03e8c022c12bc80c4a2bd4fec8bd36b217322c340ad3",
+        ),
+        (
+            PrecompileEventKind::PoolRegistered,
+            "da5568642b67660133b1de538c867c58f3037a5722b0e231a959ee8ca11b2ed7",
+        ),
+        (
+            PrecompileEventKind::PoolStateUpdated,
+            "8155a4b38a877d212b271811786986f8f7d78074c82fce4526c58defcc6d7ebd",
+        ),
+        (
+            PrecompileEventKind::RouterTrade,
+            "17c1899a3fd431f2b2200b90e738d270bb856a4222040c5650bfa208acb3b650",
         ),
         (
             PrecompileEventKind::Swap,
-            "f3369c7e0aa652773c7246b5481ca4b1ee0b408d90467d2ce93b165b9938fde5",
+            "a234ab85728295548823d8a26077ecc77aa5815f9ed8f4c5e6fd390ac851d4cc",
+        ),
+        (
+            PrecompileEventKind::TokenDeployed,
+            "ad187874b793634c55d977f35d4828526eb48170a9531c71d88f8fd10cf9c237",
         ),
     ];
     for (kind, topic) in expected {
         assert_eq!(hex(&kind.topic0()), topic, "{}", kind.signature());
+    }
+    let launchpad = abi_events(LAUNCHPAD_ABI);
+    assert_eq!(launchpad.len(), 12);
+    for (signature, indexed) in &launchpad {
+        let kind = PrecompileEventKind::ALL
+            .into_iter()
+            .find(|kind| kind.signature() == signature)
+            .unwrap_or_else(|| panic!("{signature}"));
+        assert_eq!(kind.precompile(), LAUNCHPAD_PRECOMPILE, "{signature}");
+        assert_eq!(
+            PrecompileEventKind::identify(LAUNCHPAD_PRECOMPILE, keccak256(signature.as_bytes())),
+            Some(kind)
+        );
+        assert!((1..=3).contains(indexed), "{signature}");
+    }
+}
+
+const POOL_ID: [u8; 32] = [0x21; 32];
+const TOKEN: [u8; 20] = [0x0c; 20];
+const TRADER: [u8; 20] = [0x0d; 20];
+const POOL: [u8; 20] = [0x0e; 20];
+const OPTICAL: [u8; 20] = [0x0f; 20];
+
+fn fee_distributed_log(strategy: u8) -> (Vec<[u8; 32]>, Vec<u8>) {
+    (
+        vec![PrecompileEventKind::FeeDistributed.topic0(), POOL_ID],
+        data(&[
+            word_u64(7),
+            word_u64(u64::from(strategy)),
+            word_u128(900),
+            word_address(TRADER),
+            word_u64(1_000),
+            word_u64(2_000),
+        ]),
+    )
+}
+
+fn fee_distributed(strategy: u8) -> FeeDistributed {
+    FeeDistributed {
+        pool_id: POOL_ID,
+        nft_id: word_u64(7),
+        strategy,
+        amount: word_u128(900),
+        recipient: TRADER,
+        timestamp: word_u64(1_000),
+        block_number: word_u64(2_000),
+    }
+}
+
+fn launchpad_cases() -> Vec<(Vec<[u8; 32]>, Vec<u8>, PrecompileEvent)> {
+    let time = word_u64(1_000);
+    let height = word_u64(2_000);
+    let (fee_topics, fee_body) = fee_distributed_log(1);
+    let mut deployed = data(&[
+        [0x23; 32],
+        word_u64(224),
+        word_u64(288),
+        word_u64(18),
+        word_u128(1_000_000),
+        time,
+        height,
+    ]);
+    deployed.extend(string_tail("Pad Token"));
+    deployed.extend(string_tail("PAD"));
+    vec![
+        (
+            vec![PrecompileEventKind::ConfigUpdated.topic0(), [0x22; 32]],
+            data(&[word_u128(5), word_u128(6), time, height]),
+            PrecompileEvent::ConfigUpdated(ConfigUpdated {
+                key: [0x22; 32],
+                old_value: word_u128(5),
+                new_value: word_u128(6),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            fee_topics,
+            fee_body,
+            PrecompileEvent::FeeDistributed(fee_distributed(1)),
+        ),
+        (
+            vec![
+                PrecompileEventKind::FeeFlow.topic0(),
+                word_u64(2),
+                word_address(POOL),
+                word_address(TRADER),
+            ],
+            data(&[
+                word_u128(1_000),
+                word_u128(100),
+                word_u128(50),
+                word_u64(3),
+                time,
+                height,
+            ]),
+            PrecompileEvent::FeeFlow(FeeFlow {
+                kind: 2,
+                pool: POOL,
+                party: TRADER,
+                amount: word_u128(1_000),
+                protocol_cut: word_u128(100),
+                pool_cut: word_u128(50),
+                epoch: word_u64(3),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![PrecompileEventKind::FeeStrategyChanged.topic0(), POOL_ID],
+            data(&[word_u64(7), word_u64(0), word_u64(2), time, height]),
+            PrecompileEvent::FeeStrategyChanged(FeeStrategyChanged {
+                pool_id: POOL_ID,
+                nft_id: word_u64(7),
+                old_strategy: 0,
+                new_strategy: 2,
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::MarketCreated.topic0(),
+                POOL_ID,
+                word_address(TOKEN),
+                word_address(TRADER),
+            ],
+            data(&[word_address(POOL), word_address(OPTICAL), time, height]),
+            PrecompileEvent::MarketCreated(MarketCreated {
+                pool_id: POOL_ID,
+                token: TOKEN,
+                creator: TRADER,
+                pool: POOL,
+                optical: OPTICAL,
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::NftMint.topic0(),
+                word_u64(7),
+                word_address(TRADER),
+                word_address(POOL),
+            ],
+            data(&[word_u64(3), time, height]),
+            PrecompileEvent::NftMint(NftMint {
+                token_id: word_u64(7),
+                creator: TRADER,
+                pool: POOL,
+                strategy: 3,
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::NftTransfer.topic0(),
+                word_address([0x10; 20]),
+                word_address(TRADER),
+                word_address([0x11; 20]),
+            ],
+            data(&[word_u64(7), time, height]),
+            PrecompileEvent::NftTransfer(NftTransfer {
+                nft: [0x10; 20],
+                from: TRADER,
+                to: [0x11; 20],
+                token_id: word_u64(7),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::PoolRegistered.topic0(),
+                word_address(POOL),
+                word_address(TOKEN),
+                word_address(TRADER),
+            ],
+            data(&[word_address(OPTICAL), word_u64(7), time, height]),
+            PrecompileEvent::PoolRegistered(PoolRegistered {
+                pool: POOL,
+                token: TOKEN,
+                creator: TRADER,
+                optical: OPTICAL,
+                nft_id: word_u64(7),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![PrecompileEventKind::PoolStateUpdated.topic0(), POOL_ID],
+            data(&[
+                word_u128(30_000),
+                word_u128(1_200),
+                word_u128(800_000),
+                word_u128(44),
+                time,
+                height,
+            ]),
+            PrecompileEvent::PoolStateUpdated(PoolStateUpdated {
+                pool_id: POOL_ID,
+                virtual_reserve: word_u128(30_000),
+                real_reserve: word_u128(1_200),
+                token_reserve: word_u128(800_000),
+                price: word_u128(44),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::RouterTrade.topic0(),
+                word_u64(1),
+                word_address(POOL),
+                word_address(TRADER),
+            ],
+            data(&[
+                word_address([0x12; 20]),
+                word_address(TOKEN),
+                word_u128(10),
+                word_u128(20),
+                word_u128(0),
+                time,
+                height,
+            ]),
+            PrecompileEvent::RouterTrade(RouterTrade {
+                kind: 1,
+                pool: POOL,
+                sender: TRADER,
+                token_in: [0x12; 20],
+                token_out: TOKEN,
+                amount_in: word_u128(10),
+                amount_out: word_u128(20),
+                intermediate_usdl: word_u128(0),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::Swap.topic0(),
+                POOL_ID,
+                word_address(TRADER),
+            ],
+            data(&[
+                word_u64(1),
+                word_u128(10),
+                word_u128(20),
+                word_u128(1),
+                word_u128(2),
+                time,
+                height,
+            ]),
+            PrecompileEvent::Swap(Swap {
+                pool_id: POOL_ID,
+                trader: TRADER,
+                is_buy: true,
+                amount_in: word_u128(10),
+                amount_out: word_u128(20),
+                fee: word_u128(1),
+                price: word_u128(2),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+        (
+            vec![
+                PrecompileEventKind::TokenDeployed.topic0(),
+                word_address(TOKEN),
+                word_address(POOL),
+                word_address(TRADER),
+            ],
+            deployed,
+            PrecompileEvent::TokenDeployed(TokenDeployed {
+                token: TOKEN,
+                pool: POOL,
+                creator: TRADER,
+                salt: [0x23; 32],
+                name: "Pad Token".to_owned(),
+                symbol: "PAD".to_owned(),
+                decimals: 18,
+                total_supply: word_u128(1_000_000),
+                timestamp: time,
+                block_number: height,
+            }),
+        ),
+    ]
+}
+
+fn launchpad_decode(topics: &[[u8; 32]], body: &[u8]) -> Result<PrecompileEvent, EventDecodeError> {
+    PrecompileEvent::decode(&EvmLog {
+        address: LAUNCHPAD_PRECOMPILE,
+        topics,
+        data: body,
+    })
+}
+
+#[test]
+fn launchpad_v6120_events_decode() {
+    let cases = launchpad_cases();
+    let launchpad: Vec<_> = PrecompileEventKind::ALL
+        .into_iter()
+        .filter(|kind| kind.precompile() == LAUNCHPAD_PRECOMPILE)
+        .collect();
+    assert_eq!(launchpad.len(), 12);
+    assert_eq!(
+        cases
+            .iter()
+            .map(|(_, _, event)| event.kind())
+            .collect::<Vec<_>>(),
+        launchpad
+    );
+    for (topics, body, expected) in &cases {
+        let kind = expected.kind();
+        assert_eq!(topics[0], kind.topic0(), "{}", kind.signature());
+        assert_eq!(
+            checked(launchpad_decode(topics, body)),
+            *expected,
+            "{}",
+            kind.signature()
+        );
+        assert_eq!(
+            PrecompileEvent::decode(&EvmLog {
+                address: EXCHANGE_PRECOMPILE,
+                topics,
+                data: body,
+            }),
+            Err(EventDecodeError::UnknownEvent)
+        );
+        let fewer = topics.len() - 1;
+        assert_eq!(
+            launchpad_decode(&topics[..fewer], body),
+            Err(EventDecodeError::TopicCount(fewer))
+        );
+        let mut more = topics.clone();
+        more.push([0; 32]);
+        assert_eq!(
+            launchpad_decode(&more, body),
+            Err(EventDecodeError::TopicCount(topics.len() + 1))
+        );
+        if kind != PrecompileEventKind::TokenDeployed {
+            assert_eq!(
+                launchpad_decode(topics, &body[..body.len() - 32]),
+                Err(EventDecodeError::DataLength(body.len() - 32))
+            );
+            let mut longer = body.clone();
+            longer.extend_from_slice(&[0; 32]);
+            assert_eq!(
+                launchpad_decode(topics, &longer),
+                Err(EventDecodeError::DataLength(body.len() + 32))
+            );
+        }
+        assert_eq!(
+            launchpad_decode(topics, &body[..body.len() - 1]),
+            Err(EventDecodeError::DataLength(body.len() - 1))
+        );
+    }
+
+    let (topics, body, _) = &cases[10];
+    let mut sell = body.clone();
+    sell[31] = 0;
+    let PrecompileEvent::Swap(swap) = checked(launchpad_decode(topics, &sell)) else {
+        panic!("swap event");
+    };
+    assert!(!swap.is_buy);
+    let mut two = body.clone();
+    two[31] = 2;
+    assert_eq!(
+        launchpad_decode(topics, &two),
+        Err(EventDecodeError::NonCanonicalWord)
+    );
+    let mut dirty = topics.clone();
+    dirty[2][11] = 1;
+    assert_eq!(
+        launchpad_decode(&dirty, body),
+        Err(EventDecodeError::NonCanonicalWord)
+    );
+
+    let (topics, body, _) = &cases[1];
+    let mut wide = body.clone();
+    wide[62] = 1;
+    assert_eq!(
+        launchpad_decode(topics, &wide),
+        Err(EventDecodeError::NonCanonicalWord)
+    );
+
+    let (topics, body, _) = &cases[11];
+    let mut invalid = body.clone();
+    invalid[256] = 0xff;
+    assert_eq!(
+        launchpad_decode(topics, &invalid),
+        Err(EventDecodeError::InvalidString)
+    );
+    let mut beyond = body.clone();
+    beyond[56..64].copy_from_slice(&4_096_u64.to_be_bytes());
+    assert_eq!(
+        launchpad_decode(topics, &beyond),
+        Err(EventDecodeError::DataLength(body.len()))
+    );
+    let mut overlong = body.clone();
+    overlong[312..320].copy_from_slice(&64_u64.to_be_bytes());
+    assert_eq!(
+        launchpad_decode(topics, &overlong),
+        Err(EventDecodeError::InvalidString)
+    );
+
+    for removed in [
+        "d399c6e7fad358fc300beda3f056717c94a04c7233ce92683de6500ba509022e",
+        "171b2f9dc7a4c7eaa8ca718bcac62fbec15d147f033f38e42971b7ccabe9a469",
+        "b4d4d3bd2f97a7d6f1657ee69f7191d7aa7dbd5b6864a2d7a9d14efc1322552f",
+        "66c2a2c42cf36fad89e5da817a0b5de0fd78d7481cbfdc59f604148252da2261",
+        "0d9575a73e2a7da16cfde907df749d23d901528ff2e7c832b731babdecca000b",
+        "fe3464cd748424446c37877c28ce5b700222c5bc9f90d908afcc4e5cb22707ff",
+        "a9e7850d400945e0434ddd18a194aff01f31efaae577a63486c3dc865c5ab759",
+        "d8ad483b7300b5831650c4747b4d85390539f25f7d7d8c635eb3f8147daf198e",
+        "79a5bc58b021076f821571d0fe8b0ae3d9e0a666563bb064fdbf0bf69281331c",
+        "f3369c7e0aa652773c7246b5481ca4b1ee0b408d90467d2ce93b165b9938fde5",
+    ] {
+        let topics = [
+            checked(<[u8; 32]>::try_from(unhex(removed).as_slice())),
+            POOL_ID,
+        ];
+        assert_eq!(
+            launchpad_decode(&topics, &data(&[word_u64(1)])),
+            Err(EventDecodeError::UnknownEvent),
+            "{removed}"
+        );
+    }
+}
+
+#[test]
+fn launchpad_v6120_intent_map() {
+    let registry = perps_registry();
+    let mut mapped = 0;
+    for (topics, body, event) in launchpad_cases() {
+        let kind = event.kind();
+        let log = EvmLog {
+            address: LAUNCHPAD_PRECOMPILE,
+            topics: &topics,
+            data: &body,
+        };
+        let expected = match event {
+            PrecompileEvent::Swap(value) => IntentKind::LaunchpadSwap(value),
+            PrecompileEvent::MarketCreated(value) => IntentKind::LaunchpadCreate(value),
+            PrecompileEvent::FeeStrategyChanged(value) => IntentKind::LaunchpadFeeStrategy(value),
+            PrecompileEvent::FeeDistributed(value) => IntentKind::LaunchpadFeesBurn(value),
+            _ => {
+                assert_eq!(
+                    route(&log, RouteBinding::Unbound),
+                    Err(RouteError::Binding(kind)),
+                    "{}",
+                    kind.signature()
+                );
+                continue;
+            }
+        };
+        mapped += 1;
+        let intent = checked(route(&log, RouteBinding::Unbound));
+        assert_eq!(intent, Intent::v1(expected), "{}", kind.signature());
+        assert_eq!(intent.module(), ModuleId::Bridge);
+        assert!(intent.kind().settled_on_paxeer());
+        let Err(error) = compile(&intent, &registry) else {
+            panic!("settled launchpad event compiled");
+        };
+        assert_eq!(error.reason, CompileErrorReason::SettledOnPaxeer);
+        assert_eq!(
+            route(&log, market_binding()),
+            Err(RouteError::Binding(kind))
+        );
+    }
+    assert_eq!(mapped, 4);
+
+    let by_strategy: [(u8, fn(FeeDistributed) -> IntentKind); 4] = [
+        (0, IntentKind::LaunchpadFeesClaim),
+        (1, IntentKind::LaunchpadFeesBurn),
+        (2, IntentKind::LaunchpadAirdropExecute),
+        (3, IntentKind::LaunchpadLpRewards),
+    ];
+    for (strategy, variant) in by_strategy {
+        let (topics, body) = fee_distributed_log(strategy);
+        let intent = checked(route(
+            &EvmLog {
+                address: LAUNCHPAD_PRECOMPILE,
+                topics: &topics,
+                data: &body,
+            },
+            RouteBinding::Unbound,
+        ));
+        assert_eq!(intent, Intent::v1(variant(fee_distributed(strategy))));
+    }
+    for strategy in [4_u8, 255] {
+        let (topics, body) = fee_distributed_log(strategy);
+        assert_eq!(
+            route(
+                &EvmLog {
+                    address: LAUNCHPAD_PRECOMPILE,
+                    topics: &topics,
+                    data: &body,
+                },
+                RouteBinding::Unbound,
+            ),
+            Err(RouteError::Intent(IntentError {
+                field: IntentField::PrecompileEvent,
+                reason: IntentErrorReason::InvalidRange,
+            }))
+        );
     }
 }
 
@@ -333,8 +876,13 @@ fn exchange_order_routes_to_the_kernel_perps_order_bytes() {
 
 #[test]
 fn exchange_order_carries_every_time_in_force_distinctly() {
-    let declared: Vec<_> = (1..=12).map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal))).collect();
-    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(ModuleId::Perps, &declared))]));
+    let declared: Vec<_> = (1..=12)
+        .map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal)))
+        .collect();
+    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(
+        ModuleId::Perps,
+        &declared,
+    ))]));
     let gtc = vector_bytes("perps_order_place");
     let cases = [
         (1_u8, PerpsTimeInForce::ImmediateOrCancel),
@@ -350,9 +898,24 @@ fn exchange_order_carries_every_time_in_force_distinctly() {
         };
         assert!(route(&log, market_binding()).is_err());
         for perps_abi_version in [0, 1, 2, 4] {
-            assert!(route(&log, RouteBinding::MarketVersioned { market_id: [0x11; 32], owner_account_id: [0x32; 32], perps_abi_version }).is_err());
+            assert!(route(
+                &log,
+                RouteBinding::MarketVersioned {
+                    market_id: [0x11; 32],
+                    owner_account_id: [0x32; 32],
+                    perps_abi_version
+                }
+            )
+            .is_err());
         }
-        let intent = checked(route(&log, RouteBinding::MarketVersioned { market_id: [0x11; 32], owner_account_id: [0x32; 32], perps_abi_version: 3 }));
+        let intent = checked(route(
+            &log,
+            RouteBinding::MarketVersioned {
+                market_id: [0x11; 32],
+                owner_account_id: [0x32; 32],
+                perps_abi_version: 3,
+            },
+        ));
         assert!(compile(&intent, &perps_registry()).is_err());
         let compiled = checked(compile(&intent, &registry));
         let bytes = compiled.payload().as_bytes();
@@ -659,11 +1222,7 @@ fn settled_logs() -> Vec<([u8; 20], Vec<[u8; 32]>, Vec<u8>)> {
         word_u64(128),
     ]);
     bridge_in.extend(string_tail("ibc/ATOM"));
-    let mut created = data(&[word_u64(128), word_u64(192), word_u64(256), word_u64(2)]);
-    created.extend(string_tail("factory/pad"));
-    created.extend(string_tail("Pad Token"));
-    created.extend(string_tail("PAD"));
-    vec![
+    let mut logs = vec![
         (
             BRIDGE_PRECOMPILE,
             vec![
@@ -684,70 +1243,29 @@ fn settled_logs() -> Vec<([u8; 20], Vec<[u8; 32]>, Vec<u8>)> {
             ],
             data(&[word_u128(5), who]),
         ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::AirdropClaimed.topic0(), token, who],
-            data(&[word_u128(1), word_u128(2)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::AirdropExecuted.topic0(), token],
-            data(&[word_u128(1), word_u128(2)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::FeeRecorded.topic0(), token],
-            data(&[word_u128(3), word_u128(1), word_u128(2)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::FeeStrategyChanged.topic0(), token],
-            data(&[word_u64(1), word_u64(2)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::FeesBurned.topic0(), token],
-            data(&[word_u128(9)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::FeesClaimed.topic0(), token, who],
-            data(&[word_u128(9)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::LpRewardsExecuted.topic0(), token],
-            data(&[word_u128(9)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::MarketCreated.topic0(), token, who],
-            created,
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::PauseToggled.topic0(), token],
-            data(&[word_u64(1)]),
-        ),
-        (
-            LAUNCHPAD_PRECOMPILE,
-            vec![PrecompileEventKind::Swap.topic0(), token, who, who],
-            data(&[
-                word_u64(1),
-                word_u128(10),
-                word_u128(20),
-                word_u128(1),
-                word_u128(2),
-            ]),
-        ),
-    ]
+    ];
+    for strategy in 0..=3 {
+        let (topics, body) = fee_distributed_log(strategy);
+        logs.push((LAUNCHPAD_PRECOMPILE, topics, body));
+    }
+    for (topics, body, event) in launchpad_cases() {
+        if matches!(
+            event,
+            PrecompileEvent::FeeStrategyChanged(_)
+                | PrecompileEvent::MarketCreated(_)
+                | PrecompileEvent::Swap(_)
+        ) {
+            logs.push((LAUNCHPAD_PRECOMPILE, topics, body));
+        }
+    }
+    logs
 }
 
 #[test]
 fn paxeer_settled_events_route_but_carry_no_layerx_activity() {
     let registry = perps_registry();
     let logs = settled_logs();
-    assert_eq!(logs.len(), 12);
+    assert_eq!(logs.len(), 9);
     for (address, topics, body) in &logs {
         let log = EvmLog {
             address: *address,
@@ -781,54 +1299,60 @@ fn paxeer_settled_events_route_but_carry_no_layerx_activity() {
     };
     assert_eq!(event.denom, "ibc/ATOM");
     assert_eq!(event.log_index, 4);
-    let (address, topics, body) = &logs[9];
-    let PrecompileEvent::MarketCreated(event) = checked(PrecompileEvent::decode(&EvmLog {
-        address: *address,
-        topics,
-        data: body,
-    })) else {
-        panic!("market created");
-    };
-    assert_eq!(
-        (
-            event.denom.as_str(),
-            event.name.as_str(),
-            event.symbol.as_str()
-        ),
-        ("factory/pad", "Pad Token", "PAD")
-    );
-    assert_eq!(event.fee_strategy, 2);
 }
 
 #[test]
 fn exchange_order_consumes_persisted_keeper_events() {
-    let source = std::env::var("PAXEER_X_TIF_INGRESS_FILE").expect("private persisted keeper events required");
-    let target = std::env::var("PAXEER_X_TIF_PAYLOAD_FILE").expect("private native payload output required");
+    let source = std::env::var("PAXEER_X_TIF_INGRESS_FILE")
+        .expect("private persisted keeper events required");
+    let target =
+        std::env::var("PAXEER_X_TIF_PAYLOAD_FILE").expect("private native payload output required");
     let events = std::fs::read(format!("{source}.events")).expect("keeper ABI event artifact");
     assert_eq!(events.len(), 4 * 288);
-    let declared: Vec<_> = (1..=12).map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal))).collect();
-    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(ModuleId::Perps, &declared))]));
+    let declared: Vec<_> = (1..=12)
+        .map(|ordinal| checked(ActivityType::new(ModuleId::Perps, ordinal)))
+        .collect();
+    let registry = checked(ModuleRegistry::new(&[checked(ModuleRegistration::new(
+        ModuleId::Perps,
+        &declared,
+    ))]));
     let mut output = String::new();
     for (tif, bytes) in events.chunks_exact(288).enumerate() {
-        let topics: Vec<[u8; 32]> = bytes[..128].chunks_exact(32).map(|word| checked(word.try_into())).collect();
+        let topics: Vec<[u8; 32]> = bytes[..128]
+            .chunks_exact(32)
+            .map(|word| checked(word.try_into()))
+            .collect();
         assert_eq!(topics[0], PrecompileEventKind::OrderPlaced.topic0());
-        let log = EvmLog { address: EXCHANGE_PRECOMPILE, topics: &topics, data: &bytes[128..] };
+        let log = EvmLog {
+            address: EXCHANGE_PRECOMPILE,
+            topics: &topics,
+            data: &bytes[128..],
+        };
         let event = checked(PrecompileEvent::decode(&log));
-        let PrecompileEvent::OrderPlaced(ref placed) = event else { panic!("keeper order event"); };
+        let PrecompileEvent::OrderPlaced(ref placed) = event else {
+            panic!("keeper order event");
+        };
         assert_eq!(usize::from(placed.time_in_force), tif);
         assert_eq!(placed.side, 1);
         assert_eq!(placed.price, word_u128(17));
         assert_eq!(placed.quantity, word_u128(2));
-        let intent = checked(route_event(event, RouteBinding::MarketVersioned {
-            market_id: topics[2], owner_account_id: [0x32; 32], perps_abi_version: 3,
-        }));
+        let intent = checked(route_event(
+            event,
+            RouteBinding::MarketVersioned {
+                market_id: topics[2],
+                owner_account_id: [0x32; 32],
+                perps_abi_version: 3,
+            },
+        ));
         let compiled = checked(compile(&intent, &registry));
         checked(DisclosureCheck::verify(&intent, &compiled));
         let raw = compiled.payload().as_bytes();
         assert_eq!(&raw[..32], &topics[2]);
         assert_eq!(&raw[32..64], &topics[1]);
         assert_eq!(raw.len(), if tif == 0 { 129 } else { 130 });
-        if tif != 0 { assert_eq!(usize::from(raw[129]), tif); }
+        if tif != 0 {
+            assert_eq!(usize::from(raw[129]), tif);
+        }
         output.push_str(&format!("{tif} {}\n", hex(raw)));
     }
     std::fs::write(target, output).expect("canonical native payload artifact");
