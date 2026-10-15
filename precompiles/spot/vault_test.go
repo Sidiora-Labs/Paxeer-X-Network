@@ -1,4 +1,4 @@
-package spot
+package spot_test
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/spot"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
@@ -48,7 +49,7 @@ type vaultEnv struct {
 	app    *app.App
 	ctx    sdk.Context
 	k      *spotkeeper.Keeper
-	exec   *vaultExecutor
+	exec   *spot.VaultExecutor
 	vault  abi.ABI
 	share  abi.ABI
 	usdl   common.Address
@@ -84,7 +85,7 @@ func newVaultEnv(t *testing.T) *vaultEnv {
 	key := sdk.NewKVStoreKey(types.StoreKey)
 	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, key)
 	k := spotkeeper.NewKeeper(key, testApp.BankKeeper, &testApp.EvmKeeper, pricefeed)
-	e := &vaultEnv{t: t, app: testApp, ctx: ctx, k: k, exec: newVaultExecutor(k, &testApp.EvmKeeper),
+	e := &vaultEnv{t: t, app: testApp, ctx: ctx, k: k, exec: spot.NewVaultExecutor(k, &testApp.EvmKeeper),
 		vault: loadVaultTestABI(t, "abi/vault.json"), share: loadVaultTestABI(t, "abi/share.json"),
 		shares: map[common.Address]common.Address{}}
 
@@ -744,7 +745,7 @@ func TestVaultRegisteredStablecoins(t *testing.T) {
 	e := newVaultEnv(t)
 	require.Equal(t, e.usdl, e.view("registeredStablecoins", big.NewInt(0))[0])
 	_, _, err := e.call(vaultTestAddress("viewer"), nil, "registeredStablecoins", big.NewInt(1))
-	require.ErrorIs(t, err, errIndexOutOfRange)
+	require.ErrorIs(t, err, spot.ErrIndexOutOfRange)
 }
 
 func TestVaultRegisteredTokens(t *testing.T) {
@@ -753,7 +754,7 @@ func TestVaultRegisteredTokens(t *testing.T) {
 	require.Equal(t, e.pax, e.view("registeredTokens", big.NewInt(1))[0])
 	require.Equal(t, e.sid, e.view("registeredTokens", big.NewInt(2))[0])
 	_, _, err := e.call(vaultTestAddress("viewer"), nil, "registeredTokens", big.NewInt(3))
-	require.ErrorIs(t, err, errIndexOutOfRange)
+	require.ErrorIs(t, err, spot.ErrIndexOutOfRange)
 }
 
 func TestVaultRenounceOwnership(t *testing.T) {

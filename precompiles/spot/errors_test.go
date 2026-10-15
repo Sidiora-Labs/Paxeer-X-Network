@@ -1,4 +1,4 @@
-package spot
+package spot_test
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	pcommon "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/common"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/spot"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
@@ -63,7 +64,7 @@ func requireRevert(t *testing.T, err error, signature, selector string, carriers
 	for _, w := range words {
 		want = append(want, w...)
 	}
-	got := packError(err)
+	got := spot.PackError(err)
 	require.Equal(t, hexutil.Encode(want), hexutil.Encode(got), signature)
 
 	var abiErr *types.AbiError
@@ -258,7 +259,7 @@ func TestErrorNotFeeCollector(t *testing.T) {
 	requireNoArgs(t, types.ErrNotFeeCollector, "NotFeeCollector()", "0x73fcd3fe", servedOrders, servedStopOrders)
 	feeCollector := types.DefaultParams().FeeCollector
 	for _, rail := range []string{types.PECOROrdersAddress, types.PECORStopOrdersAddress} {
-		requireNoArgs(t, checkFeeCollector(common.HexToAddress(rail), errorAccount, feeCollector),
+		requireNoArgs(t, spot.CheckFeeCollector(common.HexToAddress(rail), errorAccount, feeCollector),
 			"NotFeeCollector()", "0x73fcd3fe", servedOrders, servedStopOrders)
 	}
 }
@@ -439,8 +440,8 @@ func TestServedAbiCarriesAddedErrors(t *testing.T) {
 	}
 
 	orders := servedABI(t, servedOrders).Errors
-	require.Equal(t, "0x9b2bea5b", hexutil.Encode(orders["OrderBelowMinimumNotional"].ID[:4]))
-	require.Equal(t, "0x28d7a641", hexutil.Encode(orders["TooManyActiveOrders"].ID[:4]))
+	require.Equal(t, "0x9b2bea5b", hexutil.Encode(orders["OrderBelowMinimumNotional"].ID.Bytes()[:4]))
+	require.Equal(t, "0x28d7a641", hexutil.Encode(orders["TooManyActiveOrders"].ID.Bytes()[:4]))
 
 	// Params.Validate and InitV6120 errors are module errors; no address
 	// carries them.
@@ -459,15 +460,15 @@ func TestCustomErrorRevertData(t *testing.T) {
 		sdkerrors.Wrap(types.ErrInsufficientOutput, "marketBuy"),
 		fmt.Errorf("marketBuy: %w", types.ErrInsufficientOutput),
 	} {
-		require.Equal(t, slippage, packError(err), err.Error())
+		require.Equal(t, slippage, spot.PackError(err), err.Error())
 	}
 
 	plain := errors.New("spot: corrupt params")
-	require.Equal(t, pcommon.RevertReason(plain), packError(plain))
-	require.Equal(t, hexutil.MustDecode("0x08c379a0"), packError(plain)[:4])
+	require.Equal(t, pcommon.RevertReason(plain), spot.PackError(plain))
+	require.Equal(t, hexutil.MustDecode("0x08c379a0"), spot.PackError(plain)[:4])
 	stringType, err := abi.NewType("string", "", nil)
 	require.NoError(t, err)
-	decoded, err := abi.Arguments{{Type: stringType}}.Unpack(packError(plain)[4:])
+	decoded, err := abi.Arguments{{Type: stringType}}.Unpack(spot.PackError(plain)[4:])
 	require.NoError(t, err)
 	require.Equal(t, []interface{}{"spot: corrupt params"}, decoded)
 }
@@ -477,19 +478,19 @@ func TestNotFeeCollector(t *testing.T) {
 	notFeeCollector := hexutil.MustDecode("0x73fcd3fe")
 	for _, rail := range []string{types.PECOROrdersAddress, types.PECORStopOrdersAddress} {
 		address := common.HexToAddress(rail)
-		require.Equal(t, notFeeCollector, packError(checkFeeCollector(address, errorAccount, feeCollector)), rail)
-		require.NoError(t, checkFeeCollector(address, feeCollector, feeCollector), rail)
+		require.Equal(t, notFeeCollector, spot.PackError(spot.CheckFeeCollector(address, errorAccount, feeCollector)), rail)
+		require.NoError(t, spot.CheckFeeCollector(address, feeCollector, feeCollector), rail)
 	}
 
 	pecor := common.HexToAddress(types.PECORAddress)
 	want := append(hexutil.MustDecode("0x118cdaa7"), word(errorAccount.Bytes())...)
-	require.Equal(t, want, packError(checkFeeCollector(pecor, errorAccount, feeCollector)))
-	require.NoError(t, checkFeeCollector(pecor, feeCollector, feeCollector))
+	require.Equal(t, want, spot.PackError(spot.CheckFeeCollector(pecor, errorAccount, feeCollector)))
+	require.NoError(t, spot.CheckFeeCollector(pecor, feeCollector, feeCollector))
 
 	for _, rail := range []string{types.PECORQuoterAddress, types.PECORVaultAddress} {
-		err := checkFeeCollector(common.HexToAddress(rail), feeCollector, feeCollector)
+		err := spot.CheckFeeCollector(common.HexToAddress(rail), feeCollector, feeCollector)
 		require.EqualError(t, err, "spot: collectFees is not served at "+common.HexToAddress(rail).Hex())
-		require.Equal(t, pcommon.RevertReason(err), packError(err))
+		require.Equal(t, pcommon.RevertReason(err), spot.PackError(err))
 	}
 }
 
@@ -585,7 +586,7 @@ func (e *spotEnv) place(kind types.OrderType, amount int64, target sdk.Int) uint
 func requireExact(t *testing.T, err error, selector string) {
 	t.Helper()
 	require.Error(t, err)
-	require.Equal(t, selector, hexutil.Encode(packError(err)))
+	require.Equal(t, selector, hexutil.Encode(spot.PackError(err)))
 }
 
 func TestEngineErrorMapping(t *testing.T) {
