@@ -10460,7 +10460,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.0.4]
 title = "Define store keys and default parameters"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["3.0.3"]
