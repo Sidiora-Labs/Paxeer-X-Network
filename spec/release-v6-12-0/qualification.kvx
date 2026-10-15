@@ -627,3 +627,27 @@ exit = 1
 log = "fleet/logs/4.1.13-verify-1.log"
 observed = "modules/spot/keeper did not exist on the base, so Keeper, Convert, VolumeUSD, Price, QuoteExactOut, Spendable and TWAP are all assumed."
 assumption = "Rerun after 4.1.4, 4.1.5, 4.1.6, 4.1.10 and 4.1.12 land and a spot keeper reconciliation pass settles the assumed signatures."
+
+[finding.fix-launchpad-keeper]
+revision = "1397fa69153deabb0e2386e482ebec0e8eb1a518"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit = 1
+log = "fleet/logs/fix-launchpad-keeper-build-1.log"
+observed = "modules/launchpad/keeper compiles again (isUint256 rename, Swap adapted to the 2.1.7 RecordFee); precompiles/launchpad still names the v6.10 CreateMarket and Swap shapes in its Keeper interface."
+assumption = "Task 2.2.1 owns the precompile rewrite with NestedCaller and TransientStore inside an EVM run; the launchpad keeper gates are rerun after it lands."
+
+[finding.4.1.4]
+revision = "5949ab96b5e241f9dad59b2f0da56fe98115380a"
+command = "go test ./modules/spot/keeper/ -run '^(TestCustodyAddressIsModuleAccount|TestERC20PullNeedsAllowanceToRail|TestPayoutIsExact|TestFailedTransferRevertsAtomically|TestPayoutOutsideTransactionUsesCallEVM|TestNativeValueIsUhpx|TestModuleAccountReceivesNative)$'"
+exit = 1
+log = "fleet/logs/4.1.4-verify-1.log"
+observed = "The spot keeper builds; the test binary imports the node app, blocked by the launchpad keeper compile failure of that revision."
+assumption = "Rerun once precompiles/launchpad compiles on main."
+
+[finding.5.1.13]
+revision = "b1012d6665c73adc1f0113c10421dd6af66a2366"
+command = "go test ./modules/pricefeed/ -run 'TestAppModule'"
+exit = 1
+log = "fleet/logs/5.1.13-verify-1.log"
+observed = "The module wiring assumes keeper.NewMsgServerImpl (5.1.10) and the keeper InitGenesis and ExportGenesis (5.1.11), both still in flight; the node app is also blocked by the launchpad keeper."
+assumption = "Rerun after 5.1.10 and 5.1.11 land."
