@@ -18945,7 +18945,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2.5]
 title = "Test the Chainflow feed source on recorded tickers"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["5.2.4"]
