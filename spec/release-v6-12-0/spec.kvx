@@ -18510,7 +18510,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.4]
 title = "Write the keeper, expected keepers and test store"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.1.1"]
