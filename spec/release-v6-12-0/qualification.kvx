@@ -1715,3 +1715,27 @@ exit = 1
 log = fleet/logs/fix-perps-data-graphql-verify-1.log
 observed = Publish and store pass; seven graphql subtests remain: the schema validator rejects every declared non-null variable, the TP/SL alias seed expects a position id the contract does not set, the user stats error text differs between test files, and one subscription test bypasses the transport feed.
 assumption = The schema validation tests and the user stats error text need a contract ruling; the position id and transport feed cases follow the contract as written.
+
+[finding.fix-perps-precompile-tests]
+revision = 5c9b52b606a4a88b7a3cb7419931d04a9a72bd88
+command = go test ./precompiles/perps/ -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-perps-precompile-tests-verify-1.log
+observed = The perps precompile test package compiles after the helper collisions were merged into one helpers file, but the binary panicked at init on the launchpad keeper wiring of the base it was built on.
+assumption = The package reruns on the head that carries the launchpad keeper wiring.
+
+[finding.fix-perps-keeper-tests]
+revision = c771f6fc78c739163ce658056c51fdb889a1b79f
+command = go test ./modules/perps/... -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-perps-keeper-tests-verify-1.log
+observed = The perps keeper test package compiles after three internal test files moved to the external test package; the binary panicked at init on the launchpad keeper wiring of its base, and the types package fails the overflow test on an out-of-bound integer construction.
+assumption = The keeper package reruns on the head that carries the launchpad keeper wiring; the overflow test is handled by its own fix.
+
+[finding.fix-spot-keeper-tests]
+revision = 7a5c39bca5d5315d02c402d6e03919e8e9c8ec12
+command = go test ./modules/spot/... -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-spot-keeper-tests-verify-1.log
+observed = The spot keeper test package compiles after the custody tests moved to the external test package; the binary panicked at init on the launchpad keeper wiring of its base.
+assumption = The package reruns on the head that carries the launchpad keeper wiring.
