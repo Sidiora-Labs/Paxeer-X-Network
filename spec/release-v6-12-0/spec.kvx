@@ -18809,7 +18809,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.15]
 title = "Write the cross-language transaction vector"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.1.14"]
