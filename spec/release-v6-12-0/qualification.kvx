@@ -1347,3 +1347,91 @@ exit = 1
 log = fleet/logs/6.3.3-verify-1.log
 observed = Six of seven pass; indexerGraphqlOnGateway fails because SUBGRAPH_URL is still exported for useSubgraph.ts, which no task owns, and thirteen hook test files now throw at load without NEXT_PUBLIC_PERPS_GATEWAY_URL set.
 assumption = A follow-up lane moves useSubgraph onto INDEXER_GRAPHQL and deletes SUBGRAPH_URL, and the wave run sets the gateway variable.
+
+[finding.fix-launchpad-tests]
+revision = 69ac0b5d46be8ebdf5b491c976c3f41e782cf9c9
+command = go test ./precompiles/launchpad/ -count=1 -p 2 -v
+exit = 1
+log = fleet/logs/fix-launchpad-tests-verify-2.full.log
+observed = 34 pass and 9 fail with the run aborted by a reflect panic in TestPoolSurfaceParity, and the exported fee-right cursor rule in types/genesis.go contradicts MintFeeRight, which advances the next id but not the cursor.
+assumption = A follow-up lane takes the nine remaining failures and the cursor rule is decided by the contract text.
+
+[finding.1.3.100]
+revision = ecd315e908ccb0fc9be9bda5320e380c21bdaada
+command = make paxd-build
+exit = 2
+log = fleet/logs/1.3.100-build-1.log
+observed = The node wiring compiles against symbols from 4.2.1, 1.3.101, 1.3.102 and 1.3.103 that were not yet on main, and RunMigrations runs the spot module's default InitGenesis before InitV6120, which then refuses with ErrAlreadyInitialised on a live chain.
+assumption = The sibling wiring tasks land next and a follow-up lane removes the double initialisation of the spot store at the upgrade height.
+
+[finding.fix-pricefeed]
+revision = 6cfdbe852607b3b86bb06ce5647fd81df270df46
+command = go build ./modules/pricefeed/... ./precompiles/pricefeed/... ./node/...
+exit = 1
+log = fleet/logs/fix-pricefeed-build-1.log
+observed = The pricefeed keeper, types and precompile packages build; the remaining errors are the spot keeper order key that another lane fixed in parallel.
+assumption = The pricefeed gates rerun once the spot keeper fix lands.
+
+[finding.fix-perps-precompile]
+revision = 28a417e6aa68738e6f4e3011f1dc0ca21eba93da
+command = go build ./precompiles/perps/... ./node/...
+exit = 1
+log = fleet/logs/fix-perps-precompile-build-1.log
+observed = The precompile views need exported keeper readers GetPosition, AccountPositions and AccountOpenOrders that the keeper only has unexported, and no rail declares them.
+assumption = A follow-up lane exports the three readers in the perps keeper and finishes the precompile compile and tests.
+
+[finding.7.2.15]
+revision = 1a9ffac7961ef33cdc1a30d9f2fe343f6d37627d
+command = go test -count=1 ./platform/perps-data/internal/rest/ -run TestSpotUsersREST
+exit = 1
+log = fleet/logs/7.2.15-verify-1.log
+observed = The rest package did not compile because of the rest and feeds import cycle; with the cycle blanked through an overlay 13 subtests pass and three stop on an unset PERPS_DATA_TEST_RPC.
+assumption = The cycle fix lands in the same batch and the three node-backed subtests wait for a v6.12 devnet endpoint.
+
+[finding.7.2.2]
+revision = a4b2bb27645db606bc1fa6cb66b6de5717bdc230
+command = go test -count=1 ./platform/perps-data/internal/ws/ -run TestHub
+exit = 1
+log = fleet/logs/7.2.2-verify-1.log
+observed = The hub tests could not compile because of the rest and feeds import cycle; the hub exports NewHub(provider, chain, snapshotID, logger), Run, Subscribe, Unsubscribe, Leave and Listen, which differ from the HubConfig shape the gateway assumed.
+assumption = A follow-up lane moves the gateway, the GraphQL feed and the venue stream onto the landed hub API.
+
+[finding.fix-perps-data-cycle]
+revision = 99e520e0401faf34b418da206649d1f0c1e6adb0
+command = go test ./platform/perps-data/internal/rest/ ./platform/perps-data/internal/feeds/ -count=1
+exit = 1
+log = fleet/logs/fix-perps-data-cycle-verify-2.log
+observed = The cycle is gone and 83 tests pass when the two packages run with -p 1; in parallel each drops the shared perps schema under the other, and portal, graphql and gateway still have unrelated compile errors.
+assumption = Multi-package perps-data gates run with -p 1 or a database per package, and a follow-up lane clears the graphql duplicates, the portal pages and the gateway wiring.
+
+[finding.8.4.2]
+revision = dba9459afe8f6ab75c76e6bc711c1e79205bfc05
+command = bash tools/release/tests/build.test.sh
+exit = 1
+log = fleet/logs/8.4.2-verify-1.log
+observed = Six of nine pass; the release directory and epoch checks stop at the missing upgrade_info.py from 8.4.5 and the built binary panics at start on the launchpad keeper wiring.
+assumption = The three checks pass once 8.4.5 and the launchpad wiring fix land.
+
+[finding.fix-spot-keeper-2]
+revision = 187cb38863b3ed82286e54bbb505369617757a25
+command = go test ./modules/spot/keeper/ -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-spot-keeper-2-verify-1.log
+observed = The spot module, precompile and node build; the test binary panics at init on the launchpad keeper wiring that the launchpad test lane fixes in the same batch.
+assumption = The spot keeper gate reruns after this batch lands.
+
+[finding.6.3.9]
+revision = 816da3c9552501dd6758c1f77581c08b144d1ce8
+command = node --test --import tsx tests/e2e-local-node.test.ts
+exit = 1
+log = fleet/logs/6.3.9-verify-1.log
+observed = All nine cases fail naming an unset LOCAL_NODE_RPC because no v6.12 node is available, and the placeOrder collateral leg contradicts the planners of 6.2.x.
+assumption = The suite runs once a v6.12 devnet with a funded key exists and the collateral-leg contradiction is settled by the perps precompile contract.
+
+[finding.fix-hyperpax-imports]
+revision = 9dc1b827c4aa9775b4097b2f0c081132326d3564
+command = node --test --import tsx tests/rest-bases.test.ts tests/spot-tokens.test.ts
+exit = 1
+log = fleet/logs/fix-hyperpax-imports-verify-1.log
+observed = Type check passes and 11 of 12 cases pass; the PAX spot entry is still the zero placeholder.
+assumption = The uhpx and SID pointer hex is recorded in the address table from the upgrade EVM instance.
