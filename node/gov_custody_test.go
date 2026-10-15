@@ -95,18 +95,20 @@ func newCustodyGovernance(t *testing.T) *custodyGovernance {
 	return &custodyGovernance{app: testApp, ctx: ctx, k: k, withdrawal: withdrawal, batch: batch, claimID: claim.ClaimId}
 }
 
-// activate schedules and applies the v6.11 plan at the context height through
-// the application's upgrade keeper and its registered handler.
+// activate schedules and applies the v6.12.0 plan at the context height through
+// the application's upgrade keeper and its registered handler, with every hook
+// of the plan bound to one that returns nil.
 func (g *custodyGovernance) activate(t *testing.T) {
 	t.Helper()
-	if !g.app.UpgradeKeeper.HasHandler(V611Upgrade) {
+	if !g.app.UpgradeKeeper.HasHandler(V6120Upgrade) {
 		g.app.RegisterUpgradeHandlers()
 	}
-	require.True(t, g.app.UpgradeKeeper.HasHandler(V611Upgrade))
-	plan := upgradetypes.Plan{Name: V611Upgrade, Height: g.ctx.BlockHeight()}
+	require.True(t, g.app.UpgradeKeeper.HasHandler(V6120Upgrade))
+	bindNilV6120Hooks(g.app)
+	plan := upgradetypes.Plan{Name: V6120Upgrade, Height: g.ctx.BlockHeight()}
 	require.NoError(t, g.app.UpgradeKeeper.ScheduleUpgrade(g.ctx, plan))
 	g.app.UpgradeKeeper.ApplyUpgrade(g.ctx, plan)
-	require.Equal(t, g.ctx.BlockHeight(), g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V611Upgrade))
+	require.Equal(t, g.ctx.BlockHeight(), g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V6120Upgrade))
 }
 
 func (g *custodyGovernance) route() govtypes.Handler {
@@ -253,7 +255,7 @@ func TestCustodyGovernanceRouterRefusalsAreAtomic(t *testing.T) {
 
 func TestCustodyGovernanceSubmissionDoesNotExecute(t *testing.T) {
 	g := newCustodyGovernance(t)
-	require.Zero(t, g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V611Upgrade))
+	require.Zero(t, g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V6120Upgrade))
 	state := g.k.ExportGenesis(g.ctx)
 
 	// A statically valid proposal is admitted before activation and changes

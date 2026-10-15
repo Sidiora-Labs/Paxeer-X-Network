@@ -53,7 +53,7 @@ func TestV610IsRegisteredBesideThePlansThatPrecedeIt(t *testing.T) {
 	require.Empty(t, activation.Deleted)
 	require.Empty(t, activation.Renamed)
 
-	require.Equal(t, []string{ActivationUpgrade, V610Upgrade, V611Upgrade, MergeUpgrade}, knownUpgradePlans())
+	require.Equal(t, []string{"v6.9", "v6.10", "v6.12.0", "v7.0"}, knownUpgradePlans())
 }
 
 func TestV610AttestorsAreTheSuppliedSetInAscendingOrder(t *testing.T) {

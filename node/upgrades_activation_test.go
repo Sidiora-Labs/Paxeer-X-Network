@@ -111,7 +111,7 @@ func TestActivationUpgradeIsRegisteredBesideTheTagList(t *testing.T) {
 
 func TestMergePlanIsRegisteredBesideTheTagList(t *testing.T) {
 	require.Equal(t, "v7.0", MergeUpgrade)
-	require.Equal(t, []string{ActivationUpgrade, V610Upgrade, V611Upgrade, MergeUpgrade}, knownUpgradePlans())
+	require.Equal(t, []string{"v6.9", "v6.10", "v6.12.0", "v7.0"}, knownUpgradePlans())
 
 	tags, err := f.ReadFile("tags")
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestMergePlanIsRegisteredBesideTheTagList(t *testing.T) {
 	require.NotContains(t, names, MergeUpgrade)
 	require.Equal(t, xwebUpgrade, LatestUpgrade)
 	require.Equal(t, LatestUpgrade, names[len(names)-1])
-	require.Equal(t, 1, semver.Compare(MergeUpgrade, V611Upgrade))
+	require.Equal(t, 1, semver.Compare(MergeUpgrade, V6120Upgrade))
 
 	gate := mergePrecompileGate()
 	require.Equal(t, MergeUpgrade, gate.Upgrade)

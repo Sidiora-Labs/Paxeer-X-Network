@@ -24,7 +24,7 @@ func emergencyProposal(t *testing.T) *layerxcustodytypes.CustodyProposal {
 }
 
 func TestCustodyGovernanceV611ActivationBoundaries(t *testing.T) {
-	require.Equal(t, layerxcustodytypes.GovernanceActivationUpgrade, V611Upgrade)
+	require.Equal(t, layerxcustodytypes.GovernanceActivationUpgrade, V6120Upgrade)
 	g := newCustodyGovernance(t)
 	h := g.ctx.BlockHeight()
 
@@ -33,7 +33,7 @@ func TestCustodyGovernanceV611ActivationBoundaries(t *testing.T) {
 	require.False(t, g.k.GetEmergency(before))
 
 	g.activate(t)
-	require.Equal(t, h, g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V611Upgrade))
+	require.Equal(t, h, g.app.UpgradeKeeper.GetDoneHeight(g.ctx, V6120Upgrade))
 
 	below, _ := g.ctx.WithBlockHeight(h - 1).CacheContext()
 	require.ErrorIs(t, g.route()(below, emergencyProposal(t)), layerxcustodytypes.ErrGovernanceNotActive)
@@ -62,53 +62,56 @@ func TestCustodyGovernanceHistoricalContextRefusal(t *testing.T) {
 	require.Equal(t, state, g.k.ExportGenesis(g.ctx))
 }
 
-type v611Chain struct {
+type v6120Chain struct {
 	app     *App
 	ctx     sdk.Context
 	holders []common.Address
 	listed  []sdk.Int
 }
 
-func newV611Chain(t *testing.T) *v611Chain {
+func newV6120Chain(t *testing.T) *v6120Chain {
 	t.Helper()
 	a := Setup(t, false, false, false)
 	ctx := a.GetContextForDeliverTx([]byte{}).WithBlockHeight(1_000).WithBlockTime(time.Unix(1_800_000_000, 0).UTC())
 	holders, listed, err := parseSIDHolders(sidHoldersJSON)
 	require.NoError(t, err)
 	require.Len(t, holders, 3)
-	return &v611Chain{app: a, ctx: ctx, holders: holders, listed: listed}
+	return &v6120Chain{app: a, ctx: ctx, holders: holders, listed: listed}
 }
 
-func (c *v611Chain) seed(slot common.Hash, amount int64) {
+func (c *v6120Chain) seed(slot common.Hash, amount int64) {
 	c.app.EvmKeeper.SetState(c.ctx, SidioraProxyAddress, slot, common.BigToHash(big.NewInt(amount)))
 }
 
-func (c *v611Chain) slot(slot common.Hash) *big.Int {
+func (c *v6120Chain) slot(slot common.Hash) *big.Int {
 	return c.app.EvmKeeper.GetState(c.ctx, SidioraProxyAddress, slot).Big()
 }
 
-func (c *v611Chain) usid(holder common.Address) sdk.Int {
+func (c *v6120Chain) usid(holder common.Address) sdk.Int {
 	return c.app.BankKeeper.GetBalance(c.ctx, c.app.EvmKeeper.GetPaxAddressOrDefault(c.ctx, holder), layerxbridgetypes.SidioraDenom()).Amount
 }
 
-func (c *v611Chain) apply(t *testing.T) {
+// apply schedules and applies the v6.12.0 plan at the context height with
+// every hook of the plan bound to one that returns nil.
+func (c *v6120Chain) apply(t *testing.T) {
 	t.Helper()
-	plan := upgradetypes.Plan{Name: V611Upgrade, Height: c.ctx.BlockHeight()}
+	bindNilV6120Hooks(c.app)
+	plan := upgradetypes.Plan{Name: V6120Upgrade, Height: c.ctx.BlockHeight()}
 	require.NoError(t, c.app.UpgradeKeeper.ScheduleUpgrade(c.ctx, plan))
 	c.app.UpgradeKeeper.ApplyUpgrade(c.ctx, plan)
-	require.Equal(t, c.ctx.BlockHeight(), c.app.UpgradeKeeper.GetDoneHeight(c.ctx, V611Upgrade))
+	require.Equal(t, c.ctx.BlockHeight(), c.app.UpgradeKeeper.GetDoneHeight(c.ctx, V6120Upgrade))
 }
 
-func TestV611IsAKnownPlanWithAHandler(t *testing.T) {
-	require.Contains(t, knownUpgradePlans(), V611Upgrade)
-	c := newV611Chain(t)
-	require.True(t, c.app.UpgradeKeeper.HasHandler(V611Upgrade))
-	_, ok := layerxStoreUpgrades(V611Upgrade)
+func TestV6120IsAKnownPlanThatAddsNoStore(t *testing.T) {
+	require.Contains(t, knownUpgradePlans(), V6120Upgrade)
+	c := newV6120Chain(t)
+	require.True(t, c.app.UpgradeKeeper.HasHandler(V6120Upgrade))
+	_, ok := layerxStoreUpgrades(V6120Upgrade)
 	require.False(t, ok, "the plan adds no store")
 }
 
-func TestV611MintsTheSlotBalancesZeroesThemAndMovesTheMintAuthority(t *testing.T) {
-	c := newV611Chain(t)
+func TestV6120MintsTheSlotBalancesZeroesThemAndMovesTheMintAuthority(t *testing.T) {
+	c := newV6120Chain(t)
 	denom := layerxbridgetypes.SidioraDenom()
 	bridge := layerxbridgetypes.ModuleAddress().String()
 	other := sdk.AccAddress(common.HexToAddress("0x1255000000000000000000000000000000001255").Bytes()).String()
@@ -145,7 +148,7 @@ func TestV611MintsTheSlotBalancesZeroesThemAndMovesTheMintAuthority(t *testing.T
 
 	// A second run is a no-op even with a legacy slot holding a value again.
 	c.seed(sidLegacyBalanceSlot(c.holders[0]), 7)
-	_, err = c.app.runV611Upgrade(c.ctx, upgradetypes.Plan{Name: V611Upgrade}, c.app.UpgradeKeeper.GetModuleVersionMap(c.ctx))
+	_, err = c.app.runV6120Upgrade(c.ctx, upgradetypes.Plan{Name: V6120Upgrade}, c.app.UpgradeKeeper.GetModuleVersionMap(c.ctx))
 	require.NoError(t, err)
 	for i, holder := range c.holders {
 		require.Equal(t, sdk.NewInt(onchain[i]), c.usid(holder), holder.Hex())
@@ -157,8 +160,8 @@ func TestV611MintsTheSlotBalancesZeroesThemAndMovesTheMintAuthority(t *testing.T
 	require.Equal(t, bridge, admin.Admin)
 }
 
-func TestV611RecordsTheUncoveredSupplyAsAClaimableShortfall(t *testing.T) {
-	c := newV611Chain(t)
+func TestV6120RecordsTheUncoveredSupplyAsAClaimableShortfall(t *testing.T) {
+	c := newV6120Chain(t)
 	denom := layerxbridgetypes.SidioraDenom()
 	sum := int64(0)
 	for i, holder := range c.holders {
@@ -185,8 +188,8 @@ func TestV611RecordsTheUncoveredSupplyAsAClaimableShortfall(t *testing.T) {
 	require.Equal(t, layerxbridgetypes.ModuleAddress().String(), admin.Admin)
 }
 
-func TestV611RefusesAMintAboveTheLegacySupply(t *testing.T) {
-	c := newV611Chain(t)
+func TestV6120RefusesAMintAboveTheLegacySupply(t *testing.T) {
+	c := newV6120Chain(t)
 	c.seed(sidLegacyBalanceSlot(c.holders[0]), 10)
 	c.seed(sidLegacyTotalSupplySlot(), 9)
 	err := c.app.migrateSIDHolders(c.ctx, sidHoldersJSON)
