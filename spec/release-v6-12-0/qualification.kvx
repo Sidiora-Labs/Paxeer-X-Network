@@ -196,3 +196,17 @@ command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-o
 exit_code = 1
 log_path = "fleet/logs/5.1.15-build-1.log"
 observed_and_assumption = "The feeder gate passes but clippy refuses the crate on the pre-existing struct_field_names lint for Observation.observation_sequence in the feeder library, so no feeder test target can be linted. Assumption: the field is renamed so the lint passes without an allow attribute, with every caller and test updated."
+
+[fix.5.0.1]
+revision = "a0ba35a54cb3d2019dd608ffcf24bf9fbb507feb"
+command = "go test ./precompiles/pricefeed/ -run 'TestPriceFeedABIGolden'"
+exit_code = 0
+log_path = "fleet/logs/fix-5.0.1-verify-1.log"
+observed_and_assumption = "The ABI now lives at precompiles/pricefeed/abi/abi.json and is embedded by the leaf package with go:embed; the golden test passes. Assumption: the spec step and the pricefeed contract are updated to name abi/abi.json by the spec correction."
+
+[finding.2.3.1]
+revision = "2ce2875f8fbb86d9d854c7517d6bcf6b1b1feda3"
+command = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-intents --test precompile_router"
+exit_code = 101
+log_path = "fleet/logs/2.3.1-verify-1.log"
+observed_and_assumption = "The intents crate builds, but its router test target still uses the removed v6.10 launchpad variants that the follow-up test task owns, and the layerx-agentd dev-dependency does not compile on the integration branch because WaitRequest has no requested_verification_level field. Assumption: the follow-up test task rewrites the router test and the agentd build break is fixed as its own correction, after which this gate is rerun unchanged."
