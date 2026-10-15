@@ -7639,7 +7639,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.5]
 title = "Accept surface and precompile kinds in the deployment manifest"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = []
