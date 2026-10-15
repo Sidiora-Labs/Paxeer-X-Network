@@ -526,8 +526,15 @@ func shouldIncludeSynthetic(namespace string) bool {
 }
 
 type typedTxHash struct {
-	hash  common.Hash
-	isEvm bool
+	hash    common.Hash
+	isEvm   bool
+	txIndex uint64
+}
+
+// syntheticTxIndex is the fixed TransactionIndex of a venue synthetic receipt of kind in block:
+// N + kind - 1, N the block's transaction count, whether or not an earlier kind is present.
+func syntheticTxIndex(block *coretypes.ResultBlock, kind keeper.SyntheticReceiptKind) uint64 {
+	return uint64(len(block.Block.Txs)) + uint64(kind) - 1
 }
 
 func getTxHashesFromBlock(
@@ -544,9 +551,9 @@ func getTxHashesFromBlock(
 		switch tx.msg.(type) {
 		case *types.MsgEVMTransaction:
 			ethtx, _ := tx.msg.(*types.MsgEVMTransaction).AsTransaction()
-			txHashes = append(txHashes, typedTxHash{hash: ethtx.Hash(), isEvm: true})
+			txHashes = append(txHashes, typedTxHash{hash: ethtx.Hash(), isEvm: true, txIndex: uint64(len(txHashes))})
 		case *wasmtypes.MsgExecuteContract:
-			txHashes = append(txHashes, typedTxHash{hash: common.Hash(sha256.Sum256(block.Block.Txs[tx.index])), isEvm: false})
+			txHashes = append(txHashes, typedTxHash{hash: common.Hash(sha256.Sum256(block.Block.Txs[tx.index])), isEvm: false, txIndex: uint64(len(txHashes))})
 		}
 	}
 	latestCtx := ctxProvider(LatestCtxHeight)
@@ -556,7 +563,7 @@ func getTxHashesFromBlock(
 		if !found || receipt == nil || receipt.BlockNumber != uint64(block.Block.Height) { //nolint:gosec
 			continue
 		}
-		txHashes = append(txHashes, typedTxHash{hash: hash, isEvm: true})
+		txHashes = append(txHashes, typedTxHash{hash: hash, isEvm: true, txIndex: syntheticTxIndex(block, kind)})
 	}
 	return txHashes
 }

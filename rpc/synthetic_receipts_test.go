@@ -50,6 +50,13 @@ type syntheticReceiptFixture struct {
 // newSyntheticReceiptFixture builds a block of three EVM transactions whose height also
 // carries one perps end-block receipt written through SyntheticReceiptContext and CallEVM.
 func newSyntheticReceiptFixture(t *testing.T) *syntheticReceiptFixture {
+	return buildSyntheticReceiptFixture(t, []sdk.Tx{MultiTxBlockTx1, MultiTxBlockTx2, MultiTxBlockTx3}, keeper.SyntheticReceiptPerps)
+}
+
+// buildSyntheticReceiptFixture builds a block of txs whose height also carries one synthetic
+// receipt per kind, each holding one log of syntheticPerpsEmitter written through
+// SyntheticReceiptContext and CallEVM.
+func buildSyntheticReceiptFixture(t *testing.T, txs []sdk.Tx, kinds ...keeper.SyntheticReceiptKind) *syntheticReceiptFixture {
 	application := app.Setup(t, false, true, false)
 	k := &application.EvmKeeper
 	ctx := application.GetContextForDeliverTx(nil).
@@ -57,16 +64,21 @@ func newSyntheticReceiptFixture(t *testing.T) *syntheticReceiptFixture {
 		WithBlockTime(time.Unix(1700000000, 0)).
 		WithClosestUpgradeName("v6.0.0")
 	k.BeginBlock(ctx)
-	k.SetTxResults([]*abci.ExecTxResult{{Code: 0}, {Code: 0}, {Code: 0}})
+	results := make([]*abci.ExecTxResult, len(txs))
+	for i := range results {
+		results[i] = &abci.ExecTxResult{Code: 0}
+	}
+	k.SetTxResults(results)
 
 	code := append([]byte{0x7f}, syntheticPerpsTopic.Bytes()...)
 	code = append(code, 0x60, 0x00, 0x60, 0x00, 0xa1, 0x00)
 	k.SetCode(ctx, syntheticPerpsEmitter, code)
-	_, err := k.CallEVM(keeper.SyntheticReceiptContext(ctx, keeper.SyntheticReceiptPerps),
-		common.HexToAddress("0x00000000000000000000000000000000000ca11e"), &syntheticPerpsEmitter, nil, nil)
-	require.NoError(t, err)
+	for _, kind := range kinds {
+		_, err := k.CallEVM(keeper.SyntheticReceiptContext(ctx, kind),
+			common.HexToAddress("0x00000000000000000000000000000000000ca11e"), &syntheticPerpsEmitter, nil, nil)
+		require.NoError(t, err)
+	}
 
-	txs := []sdk.Tx{MultiTxBlockTx1, MultiTxBlockTx2, MultiTxBlockTx3}
 	fixture := &syntheticReceiptFixture{k: k, perpsHash: keeper.SyntheticReceiptHash(keeper.SyntheticReceiptPerps, parityTestHeight)}
 	encoded := make([]tmtypes.Tx, 0, len(txs))
 	for i, tx := range txs {
@@ -92,10 +104,12 @@ func newSyntheticReceiptFixture(t *testing.T) *syntheticReceiptFixture {
 			LogsBloom:         bloom[:],
 		}))
 	}
-	require.Eventually(t, func() bool {
-		_, err := k.GetReceipt(ctx, fixture.perpsHash)
-		return err == nil
-	}, 5*time.Second, 10*time.Millisecond)
+	for _, kind := range kinds {
+		require.Eventually(t, func() bool {
+			_, err := k.GetReceipt(ctx, keeper.SyntheticReceiptHash(kind, parityTestHeight))
+			return err == nil
+		}, 5*time.Second, 10*time.Millisecond)
+	}
 	k.EndBlock(ctx, 0, 0)
 
 	fixture.block = &coretypes.ResultBlock{
@@ -218,5 +232,74 @@ func TestVenueSyntheticReceiptEndpoints(t *testing.T) {
 		logs := receipt["logs"].([]*ethtypes.Log)
 		require.Len(t, logs, 1)
 		f.requirePerpsLog(t, logs[0])
+	})
+}
+
+// TestVenueSyntheticReceiptSparseKindsKeepFixedIndex serves a spot and an activation receipt in a
+// block without transactions or perps receipt: every view keeps the fixed slots 1 and 2, while the
+// log index offsets stay cumulative (0 and 1).
+func TestVenueSyntheticReceiptSparseKindsKeepFixedIndex(t *testing.T) {
+	f := buildSyntheticReceiptFixture(t, nil, keeper.SyntheticReceiptSpot, keeper.SyntheticReceiptActivation)
+	want := []struct {
+		hash     common.Hash
+		txIndex  uint
+		logIndex uint
+	}{
+		{keeper.SyntheticReceiptHash(keeper.SyntheticReceiptSpot, parityTestHeight), 1, 0},
+		{keeper.SyntheticReceiptHash(keeper.SyntheticReceiptActivation, parityTestHeight), 2, 1},
+	}
+	requireLog := func(t *testing.T, i int, l *ethtypes.Log) {
+		require.Equal(t, want[i].hash, l.TxHash)
+		require.Equal(t, want[i].txIndex, l.TxIndex)
+		require.Equal(t, want[i].logIndex, l.Index)
+		require.Equal(t, syntheticPerpsEmitter, l.Address)
+		require.Equal(t, uint64(parityTestHeight), l.BlockNumber)
+	}
+	blockHash := common.BytesToHash(f.block.BlockID.Hash)
+	height := big.NewInt(parityTestHeight)
+
+	for _, namespace := range []string{"eth", "pax"} {
+		for name, crit := range map[string]filters.FilterCriteria{
+			"hash":  {BlockHash: &blockHash},
+			"range": {FromBlock: height, ToBlock: height, Addresses: []common.Address{syntheticPerpsEmitter}},
+		} {
+			t.Run(namespace+"_getLogs_"+name, func(t *testing.T) {
+				logs, err := f.filterAPI(t, namespace).GetLogs(context.Background(), crit)
+				require.NoError(t, err)
+				require.Len(t, logs, len(want))
+				for i, l := range logs {
+					requireLog(t, i, l.Log)
+				}
+			})
+		}
+	}
+
+	t.Run("eth_getBlockReceipts", func(t *testing.T) {
+		api := evmrpc.NewBlockAPI(f.tm, f.k, f.ctxProvider, f.txConfigProvider, evmrpc.ConnectionTypeHTTP, f.watermarks, f.cache, f.mu)
+		receipts, err := api.GetBlockReceipts(context.Background(), rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(parityTestHeight)))
+		require.NoError(t, err)
+		require.Len(t, receipts, len(want))
+		for i, receipt := range receipts {
+			require.Equal(t, want[i].hash, receipt["transactionHash"])
+			require.Equal(t, hexutil.Uint64(want[i].txIndex), receipt["transactionIndex"])
+			logs := receipt["logs"].([]*ethtypes.Log)
+			require.Len(t, logs, 1)
+			requireLog(t, i, logs[0])
+		}
+	})
+
+	t.Run("eth_getTransactionReceipt", func(t *testing.T) {
+		api := evmrpc.NewTransactionAPI(f.tm, f.k, f.ctxProvider, f.txConfigProvider, "", evmrpc.ConnectionTypeHTTP,
+			utils.None[time.Duration](), f.watermarks, f.cache, f.mu)
+		for i, w := range want {
+			receipt, err := api.GetTransactionReceipt(context.Background(), w.hash)
+			require.NoError(t, err)
+			require.NotNil(t, receipt)
+			require.Equal(t, w.hash, receipt["transactionHash"])
+			require.Equal(t, hexutil.Uint64(w.txIndex), receipt["transactionIndex"])
+			logs := receipt["logs"].([]*ethtypes.Log)
+			require.Len(t, logs, 1)
+			requireLog(t, i, logs[0])
+		}
 	})
 }

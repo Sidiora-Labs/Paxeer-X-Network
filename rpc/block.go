@@ -430,7 +430,7 @@ func (a *BlockAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.Block
 		if len(receipt) == 0 {
 			return nil, fmt.Errorf("receipt %d was not encoded", i)
 		}
-		receipt["transactionIndex"] = hexutil.Uint64(i) //nolint:gosec
+		receipt["transactionIndex"] = hexutil.Uint64(txHashes[i].txIndex)
 	}
 	return allReceipts, nil
 }

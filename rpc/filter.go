@@ -1549,7 +1549,7 @@ func (f *LogFetcher) normalizeRangeQueryLogs(ctx context.Context, candidateLogs 
 		blockHash := common.BytesToHash(block.BlockID.Hash)
 
 		var logIndex uint
-		for txIdx, txHashEntry := range txHashes {
+		for _, txHashEntry := range txHashes {
 			rcpt, found := getOrSetCachedReceipt(f.cacheCreationMutex, f.globalBlockCache, sdkCtx, f.k, block, txHashEntry.hash)
 			if !found {
 				continue
@@ -1567,7 +1567,7 @@ func (f *LogFetcher) normalizeRangeQueryLogs(ctx context.Context, candidateLogs 
 					Data:        log.Data,
 					BlockNumber: uint64(height),
 					TxHash:      txHashEntry.hash,
-					TxIndex:     uint(txIdx),
+					TxIndex:     uint(txHashEntry.txIndex),
 					BlockHash:   blockHash,
 					Index:       logIndex,
 					Removed:     false,
@@ -1615,7 +1615,7 @@ func (f *LogFetcher) collectLogs(block *coretypes.ResultBlock, crit filters.Filt
 
 	// Fetch receipts individually and filter logs locally
 	var logIndex uint
-	for txIdx, txHashEntry := range txHashes {
+	for _, txHashEntry := range txHashes {
 		rcpt, err := getOrSetCachedReceiptErr(f.cacheCreationMutex, f.globalBlockCache, ctx, f.k, block, txHashEntry.hash)
 		if err != nil {
 			logger.Error("collectLogs: unable to find receipt for hash", "hash", txHashEntry.hash, "err", err)
@@ -1636,7 +1636,7 @@ func (f *LogFetcher) collectLogs(block *coretypes.ResultBlock, crit filters.Filt
 				Data:        log.Data,
 				BlockNumber: uint64(blockHeight),
 				TxHash:      txHashEntry.hash,
-				TxIndex:     uint(txIdx),
+				TxIndex:     uint(txHashEntry.txIndex),
 				BlockHash:   blockHash,
 				Index:       logIndex,
 				Removed:     false,
