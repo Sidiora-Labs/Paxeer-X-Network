@@ -771,3 +771,19 @@ exit = 1
 log = "fleet/logs/4.1.9-verify-1.log"
 observed = "Stop orders assume the keeper, settlement and limit-order helpers of sibling tasks and return cached SDK events pending the EVM event encoder; the package did not compile."
 assumption = "Rerun in the spot keeper reconciliation pass."
+
+[finding.7.1.8]
+revision = "ec23daf090b74dbd27f354a769aa0d2c0f18b8e4"
+command = "go test -count=1 ./platform/perps-data/internal/indexer/ -run 'TestIndexer'"
+exit = 1
+log = "fleet/logs/7.1.8-verify-1.log"
+observed = "The indexer was written against assumed shapes of the source (7.1.1), store (7.1.4) and publish (7.1.6) packages, none on its base; the writer lease and the outbox policy for per-account subjects are open cross-task points."
+assumption = "A perps-data reconciliation pass settles the source, store and publish shapes on their owners; rerun against the release devnet after it."
+
+[finding.7.1.7]
+revision = "807aba7968bdff63aa641a55ee81f81cb8beafff"
+command = "go test -count=1 ./platform/perps-data/internal/replay/ -run 'TestReplay'"
+exit = 1
+log = "fleet/logs/7.1.7-verify-1.log"
+observed = "Replay assumes store.WriteBlock, store.Rebuild and the 7.1.1 follower Read shape; the contract names Rebuild but no task owns it, and deterministic outbox envelopes are required for event-id reuse."
+assumption = "The perps-data reconciliation pass assigns Rebuild and the envelope determinism; rerun against the release devnet after it."
