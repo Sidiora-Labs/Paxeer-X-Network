@@ -1,0 +1,90 @@
+{
+  "note": "Fill chain_id, validator, feed_account and chainflow.base_url in access-controlled storage and delete this note; the loader refuses it. The unit passes PRICE_SIDECAR_CONFIG, PRICE_SIDECAR_FEED_KEY_FILE, PRICE_FEED_REST_API_KEY_FILE and PRICE_SIDECAR_STATE_DIR; the operator's endpoints.env sets PRICE_SIDECAR_CONSENSUS_RPC_URL, PRICE_SIDECAR_EVM_RPC_URL and, optionally, PRICE_SIDECAR_HEALTH_ADDR.",
+  "chain_id": "",
+  "validator": "",
+  "feed_account": "",
+  "gas_limit": 200000,
+  "cadence_ms": 1000,
+  "retry_backoff_ms": 200,
+  "retry_max_attempts": 3,
+  "chainflow": {
+    "base_url": "",
+    "api_key_env": "PRICE_FEED_REST_API_KEY",
+    "timeout_ms": 800,
+    "max_quote_age_ms": 10000
+  },
+  "markets": [
+    {
+      "market_id": 0,
+      "symbol": "BTC"
+    },
+    {
+      "market_id": 1,
+      "symbol": "ETH"
+    },
+    {
+      "market_id": 2,
+      "symbol": "SOL"
+    },
+    {
+      "market_id": 3,
+      "symbol": "AVAX"
+    },
+    {
+      "market_id": 4,
+      "symbol": "LINK"
+    },
+    {
+      "market_id": 5,
+      "symbol": "TSLA"
+    },
+    {
+      "market_id": 6,
+      "symbol": "NVDA"
+    },
+    {
+      "market_id": 7,
+      "symbol": "NAS100"
+    },
+    {
+      "market_id": 8,
+      "symbol": "XAU"
+    },
+    {
+      "market_id": 9,
+      "symbol": "SPX500"
+    },
+    {
+      "market_id": 10,
+      "symbol": "GOOGL"
+    },
+    {
+      "market_id": 11,
+      "symbol": "PAX"
+    },
+    {
+      "market_id": 12,
+      "symbol": "SID"
+    },
+    {
+      "market_id": 13,
+      "symbol": "HYPE"
+    },
+    {
+      "market_id": 14,
+      "symbol": "XRP"
+    },
+    {
+      "market_id": 15,
+      "symbol": "ASTER"
+    },
+    {
+      "market_id": 16,
+      "symbol": "TRUMP"
+    },
+    {
+      "market_id": 17,
+      "symbol": "BNB"
+    }
+  ]
+}
