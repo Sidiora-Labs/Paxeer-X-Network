@@ -217,3 +217,10 @@ command = "go build ./protocol/... && go vet ./protocol/... && go test ./protoco
 exit_code = 0
 log_path = "fleet/logs/fix-2.3.9-verify-1.log"
 observed_and_assumption = "The coverage measure command exists again as a real package main, the protocol packages build and vet, the active address test passes with the generation 2 Treasury from the layout file, and the manifest task's build command passes on the merged branch (fleet/logs/2.3.6-build-2.log). Assumption: none."
+
+[fix.4.1.1]
+revision = "1c0fdfea1624c84f36ddf09edaeb03340b978b47"
+command = "go test ./modules/spot/types/ -run '^(TestParamsValidate|TestParamsValidateBounds)$'"
+exit_code = 0
+log_path = "fleet/logs/fix-4.1.1-verify-1.log"
+observed_and_assumption = "The spot-fees parameter table now bounds priceImpactScalarBps at 500 as spot.md and PECOR.sol do, and the parameter validation already refused 501 with ScalarTooHigh. Assumption: the spec lint of the merged contract text runs once on the landed revision with the other spec corrections."
