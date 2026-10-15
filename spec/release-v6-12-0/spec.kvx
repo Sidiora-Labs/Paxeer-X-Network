@@ -1408,7 +1408,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.1]
 title = "Add the v6.12.0 activation entry for 0x1020-0x1025 and the explicit live switch of 0x1015 and 0x1017"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.1", "1.0.3"]
