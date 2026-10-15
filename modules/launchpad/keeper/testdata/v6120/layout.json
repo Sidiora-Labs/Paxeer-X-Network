@@ -1,0 +1,543 @@
+{
+  "height": 34742400,
+  "treasury": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+  "beaconSlot": "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+  "pausableSlot": "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+  "generations": [
+    {
+      "generation": 1,
+      "sidioraFactory": "0x8a1A09CEe72c1D39dF33B8284E38baeF8371f465",
+      "poolRegistry": "0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b",
+      "treasury": "0x15405D535ce533BfFb98c83e42f4DD242AA5e079",
+      "poolBeacon": "0xf11f08afe33e020Cab22bCaffBbAfC471c75E9d4",
+      "poolProxyCodeHash": "0x79c2fc8ca91212fc04f4a958f3ca3ed6558765121a1cc2f7c795266e5476ab9c",
+      "poolImplementation": "0x04E36690793056363EfcB0A62D753a63D92de0C1",
+      "poolImplementationCodeHash": "0xc353fb7a79c3eae6e739f375db60839125c77caec6843e9a576e3d80e26078e9",
+      "poolCount": 45,
+      "poolSlotsAbsent": [
+        24,
+        25,
+        26,
+        27,
+        28
+      ]
+    },
+    {
+      "generation": 2,
+      "sidioraFactory": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "poolRegistry": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "treasury": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+      "poolBeacon": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+      "poolProxyCodeHash": "0xa9b304d6d0aa562f283b45978b84ced8840a9331f8ac946742670b1b02a2872d",
+      "poolImplementation": "0xd24b239df92CA233dF27676148FDe10aa51104Df",
+      "poolImplementationCodeHash": "0xeeadddb17507c0b32fb9c1c76f66b33b4757efd3531d86ac6a61c96d81d8bde4",
+      "poolCount": 4,
+      "poolSlotsAbsent": []
+    }
+  ],
+  "storage": {
+    "SidioraERC20": [
+      {
+        "slot": 0,
+        "field": "name"
+      },
+      {
+        "slot": 1,
+        "field": "symbol"
+      },
+      {
+        "slot": 2,
+        "field": "totalSupply"
+      },
+      {
+        "slot": 3,
+        "field": "balanceOf"
+      },
+      {
+        "slot": 4,
+        "field": "allowance"
+      },
+      {
+        "slot": 5,
+        "field": "nonces"
+      },
+      {
+        "slot": 6,
+        "field": "_balanceCheckpoints"
+      },
+      {
+        "slot": 7,
+        "field": "_supplyCheckpoints"
+      },
+      {
+        "slot": 8,
+        "field": "pool"
+      }
+    ],
+    "SidioraFactory": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "poolBeacon"
+      },
+      {
+        "slot": 2,
+        "field": "nftContract"
+      },
+      {
+        "slot": 3,
+        "field": "poolRegistry"
+      },
+      {
+        "slot": 4,
+        "field": "eventEmitter"
+      },
+      {
+        "slot": 5,
+        "field": "protocolConfig"
+      },
+      {
+        "slot": 6,
+        "field": "treasury"
+      },
+      {
+        "slot": 7,
+        "field": "feeAccumulator"
+      },
+      {
+        "slot": 8,
+        "field": "usdlAddress"
+      },
+      {
+        "slot": 9,
+        "field": "_nonces"
+      }
+    ],
+    "SidioraNFT": [
+      {
+        "slot": 0,
+        "field": "name"
+      },
+      {
+        "slot": 1,
+        "field": "symbol"
+      },
+      {
+        "slot": 2,
+        "field": "_owners"
+      },
+      {
+        "slot": 3,
+        "field": "_balances"
+      },
+      {
+        "slot": 4,
+        "field": "_tokenApprovals"
+      },
+      {
+        "slot": 5,
+        "field": "_operatorApprovals"
+      },
+      {
+        "slot": 6,
+        "field": "_allTokens"
+      },
+      {
+        "slot": 7,
+        "field": "_allTokensIndex"
+      },
+      {
+        "slot": 8,
+        "field": "_ownedTokens"
+      },
+      {
+        "slot": 9,
+        "field": "_ownedTokensIndex"
+      },
+      {
+        "slot": 10,
+        "field": "_roles"
+      },
+      {
+        "slot": 11,
+        "field": "nextTokenId"
+      },
+      {
+        "slot": 12,
+        "field": "_feeStrategy"
+      },
+      {
+        "slot": 13,
+        "field": "_poolAddress"
+      },
+      {
+        "slot": 14,
+        "field": "eventEmitter"
+      },
+      {
+        "slot": 15,
+        "field": "poolTokenId"
+      },
+      {
+        "slot": 16,
+        "field": "poolIndexMigrationCursor"
+      },
+      {
+        "slot": 17,
+        "field": "poolIndexReady"
+      }
+    ],
+    "SidioraPool": [
+      {
+        "slot": 0,
+        "field": "tokenAddress"
+      },
+      {
+        "slot": 1,
+        "field": "usdlAddress"
+      },
+      {
+        "slot": 2,
+        "field": "opticalAddress"
+      },
+      {
+        "slot": 3,
+        "field": "feeAccumulator"
+      },
+      {
+        "slot": 4,
+        "field": "eventEmitter"
+      },
+      {
+        "slot": 5,
+        "field": "protocolConfig"
+      },
+      {
+        "slot": 6,
+        "field": "guardian"
+      },
+      {
+        "slot": 7,
+        "field": "virtualUsdlReserve"
+      },
+      {
+        "slot": 8,
+        "field": "realUsdlBalance"
+      },
+      {
+        "slot": 9,
+        "field": "tokenReserve"
+      },
+      {
+        "slot": 10,
+        "field": "creationTimestamp"
+      },
+      {
+        "slot": 11,
+        "field": "cumulativeVolume"
+      },
+      {
+        "slot": 12,
+        "field": "priceSnapshots",
+        "words": 8
+      },
+      {
+        "slot": 20,
+        "field": "snapshotIndex"
+      },
+      {
+        "slot": 21,
+        "field": "snapshotCount"
+      },
+      {
+        "slot": 22,
+        "field": "accumulatedUsdlFees"
+      },
+      {
+        "slot": 23,
+        "field": "accumulatedTokenFees"
+      },
+      {
+        "slot": 24,
+        "field": "factory"
+      },
+      {
+        "slot": 25,
+        "field": "pendingGuardian"
+      },
+      {
+        "slot": 26,
+        "field": "lastSnapshotTimestamp"
+      },
+      {
+        "slot": 27,
+        "field": "cumulativeBuyUsdlVolume"
+      },
+      {
+        "slot": 28,
+        "field": "cumulativeSellUsdlVolume"
+      }
+    ],
+    "FeeAccumulator": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "protocolConfig"
+      },
+      {
+        "slot": 2,
+        "field": "treasury"
+      },
+      {
+        "slot": 3,
+        "field": "poolRegistry"
+      },
+      {
+        "slot": 4,
+        "field": "eventEmitter"
+      },
+      {
+        "slot": 5,
+        "field": "usdlAddress"
+      },
+      {
+        "slot": 6,
+        "field": "_accumulatedFees"
+      },
+      {
+        "slot": 7,
+        "field": "_protocolFeesPending"
+      },
+      {
+        "slot": 8,
+        "field": "_airdropBalance"
+      },
+      {
+        "slot": 9,
+        "field": "_airdropEpoch"
+      },
+      {
+        "slot": 10,
+        "field": "_airdropEpochAmount"
+      },
+      {
+        "slot": 11,
+        "field": "_airdropClaimed"
+      },
+      {
+        "slot": 12,
+        "field": "_lpRewardsBalance"
+      },
+      {
+        "slot": 13,
+        "field": "_opticalSurplus"
+      },
+      {
+        "slot": 14,
+        "field": "totalLiabilities"
+      },
+      {
+        "slot": 15,
+        "field": "airdropSnapshotBlock"
+      },
+      {
+        "slot": 16,
+        "field": "airdropEligibleSupply"
+      },
+      {
+        "slot": 17,
+        "field": "airdropEpochRemaining"
+      },
+      {
+        "slot": 18,
+        "field": "airdropClaimedSupply"
+      },
+      {
+        "slot": 19,
+        "field": "accountingInitialized"
+      },
+      {
+        "slot": 20,
+        "field": "accountingMigrationCursor"
+      },
+      {
+        "slot": 21,
+        "field": "_accountingMigratedPool"
+      },
+      {
+        "slot": 22,
+        "field": "legacyAirdropUnallocated"
+      },
+      {
+        "slot": 23,
+        "field": "legacyAirdropRoot"
+      },
+      {
+        "slot": 24,
+        "field": "legacyAirdropRemaining"
+      }
+    ],
+    "PoolRegistry": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "_tokenToPool"
+      },
+      {
+        "slot": 2,
+        "field": "_poolToNftId"
+      },
+      {
+        "slot": 3,
+        "field": "_creatorToPools"
+      },
+      {
+        "slot": 4,
+        "field": "_poolMetadata"
+      },
+      {
+        "slot": 5,
+        "field": "_registeredPools"
+      },
+      {
+        "slot": 6,
+        "field": "_allPools"
+      },
+      {
+        "slot": 7,
+        "field": "eventEmitter"
+      }
+    ],
+    "FeesRouter": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "nftContract"
+      },
+      {
+        "slot": 2,
+        "field": "feeAccumulator"
+      },
+      {
+        "slot": 3,
+        "field": "poolRegistry"
+      }
+    ],
+    "Quoter": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "poolRegistry"
+      },
+      {
+        "slot": 2,
+        "field": "protocolConfig"
+      }
+    ],
+    "Router": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "factory"
+      },
+      {
+        "slot": 2,
+        "field": "poolRegistry"
+      },
+      {
+        "slot": 3,
+        "field": "protocolConfig"
+      },
+      {
+        "slot": 4,
+        "field": "usdlAddress"
+      }
+    ],
+    "ProtocolConfig": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "usdlAddress"
+      },
+      {
+        "slot": 2,
+        "field": "virtualUsdlDefault"
+      },
+      {
+        "slot": 3,
+        "field": "virtualTokenDefault"
+      },
+      {
+        "slot": 4,
+        "field": "minFeeBps"
+      },
+      {
+        "slot": 5,
+        "field": "maxFeeBps"
+      },
+      {
+        "slot": 6,
+        "field": "baseFeeBps"
+      },
+      {
+        "slot": 7,
+        "field": "protocolFeeBps"
+      },
+      {
+        "slot": 8,
+        "field": "feeDecayRate"
+      },
+      {
+        "slot": 9,
+        "field": "volatilityWeight"
+      },
+      {
+        "slot": 10,
+        "field": "concentrationWeight"
+      },
+      {
+        "slot": 11,
+        "field": "creationFee"
+      },
+      {
+        "slot": 12,
+        "field": "eventEmitter"
+      }
+    ],
+    "Treasury": [
+      {
+        "slot": 0,
+        "field": "_roles"
+      },
+      {
+        "slot": 1,
+        "field": "_balances"
+      },
+      {
+        "slot": 2,
+        "field": "eventEmitter"
+      }
+    ]
+  }
+}

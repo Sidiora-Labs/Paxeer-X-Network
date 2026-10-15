@@ -1,0 +1,446 @@
+{
+  "height": 34742400,
+  "address": "0x85FcD13735F4309833A503EE804ea32395851479",
+  "codeHash": "0xa5d84d5e9db89e88646654510a9445271bdd67c3b0e84c64e923c6b82589aaaf",
+  "totalSupply": "30000000000000",
+  "balances": [
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xEeA16aC55AaE47c484EBef02eb1186aD606e1BF9",
+      "balance": "71193912272"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xDa0859F5563C3b366804c3b511D3959e3eBf2b93",
+      "balance": "70532015614"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x11Ee8A36dc8cCCebd589949f0cB7bFAba231CAa9",
+      "balance": "93463230997"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xdc924899258944C9587538193207192adC3cC6B8",
+      "balance": "82891488013"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x881047ac2cb54AdD0e4BEc5017E16EBB8D226e8B",
+      "balance": "74225780677"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xEfd10cc3A370BDc709A0c28DE609ceC52A403FB7",
+      "balance": "70395289739"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x066e7F059791D7Cc505270A92Bef4A689da661e2",
+      "balance": "71745818862"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xBcB17478B99277d838619Af77B6310C58ED19C32",
+      "balance": "73159346846"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xCB0bc48B12EfF105443440a1e3E9b9b8d553baa3",
+      "balance": "66185281034"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xDd256F250b549F0d651c979b88f9D7B792578994",
+      "balance": "77409417972"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x479C119Ad34519C19d9C30408f1877Ab82C9fa7c",
+      "balance": "846018390296"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x90665CF00C471060dfC8db4c3447e50e1092fC8B",
+      "balance": "285214896753"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x99FEbfA55C50e3192AfE06d95003B027C5f44216",
+      "balance": "69543838309"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xC108CEBf8c369C5016bAeE1c9DCe16279faAc5Be",
+      "balance": "130911350999"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x9420ede41CBA18cc287a0094aC6D86C43cF39cbd",
+      "balance": "74099409858"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xf5950B58486Df0550cdDD6f6A1671B769F489814",
+      "balance": "75006680594"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x211B84a741e61b32c6FB22f90Fc5e2F1a44CeB5e",
+      "balance": "79513444453"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x9805781B7156C98CA5137cB1C218c2E146275916",
+      "balance": "71729404998"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x67e1b3d89C1C660f06589A94D9E58d5f540c83F5",
+      "balance": "196505224485"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x9eF5Bb5bAcF38e0553b1694a117004151A3C6788",
+      "balance": "67219129395"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x4127d45fD018cb8fdcae8E4b46C35488b93A0048",
+      "balance": "68425696494"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x70B2AEFA657B99D1d10F433dc494B8895dc147C0",
+      "balance": "78320494533"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x9B9Ae37597286845397159552860A07E32a67956",
+      "balance": "66389852129"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x470472080b9aC9d404Dc470cdfd356A2babe6a30",
+      "balance": "74694677626"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x916E8B120f6082a7ab0AF2bbCC4f57374edc2fb5",
+      "balance": "81712874554"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x2E9931Af6F8f57cB30859c928A5E72938D0780c5",
+      "balance": "85910100457"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xbf35659445cb8117EA35112e00305dc628461d18",
+      "balance": "86629456689"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x7fbc631411b7DD3fEC210e8D19EeC0A253896E1b",
+      "balance": "68104357509"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x315E6DCaa904c3A3F3D35aC473C0048e88Af7477",
+      "balance": "63760561953"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x4AeCc664FC4abbDD1D45f7A904C9e932203cfdb9",
+      "balance": "63256933685"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x6dC10629EE10F057F93AeEf84f3340B24beD1Ff4",
+      "balance": "61303182167"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x26Fd86Ef00F40e204dF12f652d0C0527a17c49EA",
+      "balance": "107459616307"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x2F085Cdb51e2943E0B1cE8fbb9dC804d973a0444",
+      "balance": "48368785033"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xe0D59AA1b056c9060479f84F43954C59df351A2F",
+      "balance": "50787848471"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xd97b6802a0aF24C90BCfAa634750911f9cEDdB0A",
+      "balance": "41668272278"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x97A52975f5982053171D47dCA64785F3212a48A3",
+      "balance": "43754149636"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xFd0Da82c2c6510436F7cF203a7341dafa8871D57",
+      "balance": "53957178373"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x9EAC0065746C20E35731858D4019fea16C0EebAf",
+      "balance": "48249605792"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x7bF2f96443A6D7b122DD73Ce79205c85eEdae738",
+      "balance": "36679280854"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x015E0736fB20244211F5a64F764C68A808228E2E",
+      "balance": "48371613212"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x4993a70d95026A8aAA646C3c7416C8aB08b21232",
+      "balance": "38285043378"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xD8e84beF640Edd58095f8646Ef952E45642f3219",
+      "balance": "39192372649"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xa9014F967682ad0a16b713Da16E073F6575Ef400",
+      "balance": "34853186725"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0x0Ee921d0603dC286459D987b2712F850C960575e",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraPool",
+      "address": "0xA8A57C15F2c38ffFA3dB4e2F5501fd0F7Ef5e9f4",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraPool",
+      "address": "0xCE20Da50F92D21d8BeE497910c782E9Aa25b6263",
+      "balance": "49721088"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraPool",
+      "address": "0x135bF4c86bA26a5AE0Be8F708b66E488aE4Ec51B",
+      "balance": "49721088"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraPool",
+      "address": "0xBbB9d2A4779a479aa6eAa281B637e09D4fE4Df25",
+      "balance": "49721088"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraPool",
+      "address": "0xd6F7E85393bc06ab297e147486285Ed281e65F31",
+      "balance": "49721088"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraFactory",
+      "address": "0x8a1A09CEe72c1D39dF33B8284E38baeF8371f465",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "Router",
+      "address": "0xCC7298801112682e10ee14b8a520309caD80336d",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "Quoter",
+      "address": "0xB768e183b6EfDeDf8b2AA7af732039D1C3c452d0",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "FeesRouter",
+      "address": "0x02Df12a44F2658080E76fbcF7D6B34Baa97843b6",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "FeeAccumulator",
+      "address": "0x50C69dF6637b3DCE6a7407C5A4b4F99E68514A76",
+      "balance": "2414497551549"
+    },
+    {
+      "generation": 1,
+      "role": "PoolRegistry",
+      "address": "0x7684382c89f79104574D8EF9b31eFf2eD2C2BA0b",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "ProtocolConfig",
+      "address": "0xEeDF5409cFD30bd14D0399318c7d2150265575e5",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "SidioraNFT",
+      "address": "0xDF73b354ed9dcB473cc9D01541c46f507591e190",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "Treasury",
+      "address": "0x15405D535ce533BfFb98c83e42f4DD242AA5e079",
+      "balance": "375721131511"
+    },
+    {
+      "generation": 1,
+      "role": "OpticalRegistry",
+      "address": "0x4CdA6e48632d51Ee4Fa735D81BF09F7543f644a1",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "EventEmitter",
+      "address": "0x0E10286EE51F99c666CDcAb52451e58AbdA4048F",
+      "balance": "0"
+    },
+    {
+      "generation": 1,
+      "role": "PoolBeacon",
+      "address": "0xf11f08afe33e020Cab22bCaffBbAfC471c75E9d4",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraFactory",
+      "address": "0x3993D004166738d1069B5C4e0a923f7B9D5D8830",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "Router",
+      "address": "0x78FB06f525cD964388f2305A489035263E31C6e4",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "Quoter",
+      "address": "0x793006f4F321b8863F26DBD75b11bAa01DA181dc",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "FeesRouter",
+      "address": "0x05681dA6f611C2dfFD3E92611F6dE2d247647927",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "FeeAccumulator",
+      "address": "0x7b14808b72f61664cDb79D25E6d1587655571a66",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "PoolRegistry",
+      "address": "0x1dC357d2B7B850332a91F06A9E66634F46fC4Ba7",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "ProtocolConfig",
+      "address": "0xF3669eDc475Cb6E1F0d7635240ABD8e8FB7E20C6",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "SidioraNFT",
+      "address": "0xe8DcC844a8006dbf64f5Bb851bCad90292a6409B",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "Treasury",
+      "address": "0xBb82d74E071e03d8E68F1d78Fae9EFe8b6b7A723",
+      "balance": "5200000"
+    },
+    {
+      "generation": 2,
+      "role": "OpticalRegistry",
+      "address": "0x0FB5E510372Bd3EddFED16A5Dd766d4473CffcF0",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "EventEmitter",
+      "address": "0x622E1bb90E0E2B6E6e5e9e2DbE1555389E8A3EF6",
+      "balance": "0"
+    },
+    {
+      "generation": 2,
+      "role": "PoolBeacon",
+      "address": "0x0c60Ea33B1DD602A17E1EF1875eE912F3fad71BE",
+      "balance": "0"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "height": 34742400,
+  "tolerance": "0",
+  "deltas": [
+    {
+      "pool": "0x90665CF00C471060dfC8db4c3447e50e1092fC8B",
+      "asset": "usdl",
+      "assetAddress": "0x85FcD13735F4309833A503EE804ea32395851479",
+      "book": "285314896753",
+      "held": "285214896753",
+      "delta": "-100000000"
+    },
+    {
+      "pool": "0x67e1b3d89C1C660f06589A94D9E58d5f540c83F5",
+      "asset": "usdl",
+      "assetAddress": "0x85FcD13735F4309833A503EE804ea32395851479",
+      "book": "196555224485",
+      "held": "196505224485",
+      "delta": "-50000000"
+    },
+    {
+      "pool": "0x26Fd86Ef00F40e204dF12f652d0C0527a17c49EA",
+      "asset": "usdl",
+      "assetAddress": "0x85FcD13735F4309833A503EE804ea32395851479",
+      "book": "108968467255",
+      "held": "107459616307",
+      "delta": "-1508850948"
+    },
+    {
+      "pool": "0x67e1b3d89C1C660f06589A94D9E58d5f540c83F5",
+      "asset": "token",
+      "assetAddress": "0xEB5272560d247Df28646abB17E9A42737eEa0092",
+      "book": "70300236594606",
+      "held": "70169867846998",
+      "delta": "-130368747608"
+    },
+    {
+      "pool": "0x7bF2f96443A6D7b122DD73Ce79205c85eEdae738",
+      "asset": "token",
+      "assetAddress": "0xd16EF71b702E1f503BA21C5f52BcF97154Ab1388",
+      "book": "407669169637578",
+      "held": "402669169637578",
+      "delta": "-5000000000000"
+    }
+  ]
+}
