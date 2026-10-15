@@ -772,6 +772,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 func parameterCodec() *codec.ProtoCodec {
 	registry := cdctypes.NewInterfaceRegistry()
 	sdk.RegisterInterfaces(registry)
+	types.RegisterInterfaces(registry)
 	return codec.NewProtoCodec(registry)
 }
 func TestMsgUpdateParamsGovernanceRoute(t *testing.T) {
@@ -810,6 +811,14 @@ func TestMsgUpdateParamsCodecAndSigners(t *testing.T) {
 	var decoded types.MsgUpdateParams
 	require.NoError(t, proto.Unmarshal(raw, &decoded))
 	require.Equal(t, *msg, decoded)
+	typeURL := "/paxprotocol.paxchain.launchpad.v610.MsgUpdateParams"
+	require.Equal(t, typeURL, sdk.MsgTypeURL(msg))
+	resolved, err := cdc.InterfaceRegistry().Resolve(typeURL)
+	require.NoError(t, err)
+	require.IsType(t, &types.MsgUpdateParams{}, resolved)
+	var unpacked sdk.Msg
+	require.NoError(t, cdc.UnpackAny(&cdctypes.Any{TypeUrl: typeURL, Value: raw}, &unpacked))
+	require.Equal(t, msg, unpacked)
 	raw, err = cdc.MarshalAsJSON(msg)
 	require.NoError(t, err)
 	require.NoError(t, cdc.UnmarshalAsJSON(raw, &decoded))

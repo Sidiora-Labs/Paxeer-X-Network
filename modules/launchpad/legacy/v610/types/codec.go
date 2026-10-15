@@ -5,13 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
+	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/msgservice"
 	"github.com/gogo/protobuf/jsonpb"
 	"io"
 )
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgUpdateParams{}, "launchpad/MsgUpdateParams", nil)
+}
+func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	registry.RegisterImplementations((*sdk.Msg)(nil), &MsgUpdateParams{})
+	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
 
 var (

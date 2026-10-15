@@ -60,7 +60,7 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.reason, func(t *testing.T) {
 			require.Equal(t, tc.reason, tc.err.Error())
-			require.Equal(t, "launchpad", tc.err.Codespace())
+			require.Equal(t, types.Codespace, tc.err.Codespace())
 			require.Equal(t, tc.code, tc.err.ABCICode())
 			require.Contains(t, tc.reason, "LXP_LAUNCHPAD_")
 			previous, duplicate := seen[tc.err.Error()]
@@ -69,13 +69,13 @@ func TestLaunchpadErrorStrings(t *testing.T) {
 
 			wrapped := tc.err.Wrap("call")
 			space, code, log := sdkerrors.ABCIInfo(wrapped, false)
-			require.Equal(t, "launchpad", space)
+			require.Equal(t, types.Codespace, space)
 			require.Equal(t, tc.code, code)
 			require.Equal(t, "call: "+tc.reason, log)
 			require.True(t, tc.err.Is(wrapped))
 			require.ErrorIs(t, wrapped, tc.err)
-			remoteSpace, remoteCode, _ := sdkerrors.ABCIInfo(sdkerrors.ABCIError("launchpad", tc.code, "remote call"), false)
-			require.Equal(t, "launchpad", remoteSpace)
+			remoteSpace, remoteCode, _ := sdkerrors.ABCIInfo(sdkerrors.ABCIError(types.Codespace, tc.code, "remote call"), false)
+			require.Equal(t, types.Codespace, remoteSpace)
 			require.Equal(t, tc.code, remoteCode)
 
 			revert := pcommon.RevertReason(tc.err)

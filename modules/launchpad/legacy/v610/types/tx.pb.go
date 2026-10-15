@@ -147,6 +147,12 @@ func (m *MsgUpdateParamsResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
 
+func init() {
+	proto.RegisterType((*Params)(nil), "paxprotocol.paxchain.launchpad.v610.Params")
+	proto.RegisterType((*MsgUpdateParams)(nil), "paxprotocol.paxchain.launchpad.v610.MsgUpdateParams")
+	proto.RegisterType((*MsgUpdateParamsResponse)(nil), "paxprotocol.paxchain.launchpad.v610.MsgUpdateParamsResponse")
+}
+
 var fileDescriptor_f494aa6bbbad3607 = []byte{
 	// 617 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x94, 0x41, 0x6b, 0x13, 0x41,
