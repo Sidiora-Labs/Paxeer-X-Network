@@ -96,7 +96,7 @@ func TestMathOverflow(t *testing.T) {
 	_, err = types.MulDivDown(pow2(255), sdk.NewInt(4), sdk.NewInt(1))
 	require.ErrorIs(t, err, types.ErrOverflow)
 
-	maxUint := pow2(256).Sub(sdk.OneInt())
+	maxUint := sdk.NewIntFromBigInt(new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)))
 	out, err := types.MulDivDown(maxUint, maxUint, maxUint)
 	require.NoError(t, err)
 	require.Equal(t, maxUint.String(), out.String())
