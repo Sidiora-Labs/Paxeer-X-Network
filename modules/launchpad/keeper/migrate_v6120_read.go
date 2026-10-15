@@ -967,11 +967,10 @@ func (v protocolConfigValues) fields() []struct {
 }
 
 // ParamsFromProtocolConfig is the parameter set of the generation 2
-// ProtocolConfig storage (slots 1 to 11) with quoteDenom kept, refused when it
-// fails Validate, and the fields of the generation 1 ProtocolConfig that
-// differ from it.
-func ParamsFromProtocolConfig(ctx sdk.Context, evm slotReader, quoteDenom string) (types.Params,
-	[]ProtocolConfigDiff, error) {
+// ProtocolConfig storage (slots 1 to 11), its USDL address the quote token,
+// refused when it fails Validate, and the fields of the generation 1
+// ProtocolConfig that differ from it.
+func ParamsFromProtocolConfig(ctx sdk.Context, evm slotReader) (types.Params, []ProtocolConfigDiff, error) {
 	s := contractStorage{ctx: ctx, evm: evm}
 	g1 := readProtocolConfig(s, generation1Roles.ProtocolConfig)
 	g2 := readProtocolConfig(s, generation2Roles.ProtocolConfig)
@@ -989,7 +988,7 @@ func ParamsFromProtocolConfig(ctx sdk.Context, evm slotReader, quoteDenom string
 			return types.Params{}, nil, err
 		}
 	}
-	params := types.Params{QuoteDenom: quoteDenom, VirtualQuoteDefault: g2.virtualQuote,
+	params := types.Params{VirtualQuoteDefault: g2.virtualQuote,
 		VirtualTokenDefault: g2.virtualToken, MinFeeBps: small[0], MaxFeeBps: small[1], BaseFeeBps: small[2],
 		ProtocolFeeBps: small[3], FeeDecayRate: small[4], VolatilityWeight: small[5], ConcentrationWeight: small[6],
 		CreationFee: g2.creationFee, QuoteToken: g2.quoteToken.Hex()}

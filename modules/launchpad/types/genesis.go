@@ -23,12 +23,13 @@ type AirdropClaim struct {
 
 // AirdropEpochBasis is the entitlement basis fixed when an airdrop epoch
 // opened: holders share the epoch amount by their balance at the boundary
-// over Supply, paid in PayoutDenom; Paid is what has been claimed so far.
+// over Supply, paid in the PayoutToken ERC20; Paid is what has been claimed
+// so far.
 type AirdropEpochBasis struct {
 	Denom       string  `json:"denom"`
 	Epoch       uint64  `json:"epoch"`
 	Supply      sdk.Int `json:"supply"`
-	PayoutDenom string  `json:"payout_denom"`
+	PayoutToken string  `json:"payout_token"`
 	Height      int64   `json:"height"`
 	Paid        sdk.Int `json:"paid"`
 }
@@ -307,7 +308,7 @@ func (gs GenesisState) Validate() error {
 		amount, funded := amounts[id]
 		history, ok := histories[basis.Denom]
 		if !ok || !funded || bases[id] || basis.Epoch < history.FirstEpoch || basis.Epoch > history.CurrentEpoch ||
-			basis.Supply.IsNil() || !basis.Supply.IsPositive() || sdk.ValidateDenom(basis.PayoutDenom) != nil ||
+			basis.Supply.IsNil() || !basis.Supply.IsPositive() || !canonicalAddress(basis.PayoutToken) ||
 			basis.Height < 0 || basis.Paid.IsNil() || basis.Paid.IsNegative() || basis.Paid.GT(amount) {
 			return fmt.Errorf("%w: airdrop basis %s", ErrInvalidGenesis, id)
 		}
