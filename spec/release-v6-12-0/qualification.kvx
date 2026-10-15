@@ -1155,3 +1155,35 @@ exit = 1
 log = "fleet/logs/7.2.4-build-2.log"
 observed = "The markets routes build and their verify passes, but the module build fails in internal/replay and internal/indexer against the landed store package (store.Block, WriteBlock, Rebuild, Cursor and the follower Step shape)."
 assumption = "The perps-data store reconciliation lane owns the two packages; the markets build is clean."
+
+[finding.fix-launchpad-precompile]
+revision = "3ed2e2d5fd980489187b9b935039d039f6580c4c"
+command = "go vet ./precompiles/launchpad/ && go test ./precompiles/launchpad/ -count=1 -p 2"
+exit = 1
+log = "fleet/logs/fix-launchpad-precompile-verify-3.log"
+observed = "The init panic is fixed (node/precompiles.go now provides the v6.10 launchpad keeper) and the package builds, but 16 tests fail: eventData builds empty rather than nil data for data-less events, five tests compare big.Int zeros with require.Equal, the surface genesis fixture lacks fee-right collection counters, launchpad_test.go is still the v6.10 file, keeper.Swap has no optical hook points, and the Pool role test expects no token Transfer logs from a swap."
+assumption = "A second launchpad test reconciliation lane owns these; LAUNCHPAD_CONTRACTS_DIR must be set in the gate environment."
+
+[finding.7.2.8]
+revision = "0eed0d7dce560a58bb085d648774ac1e0bad2ba2"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.8-build-1.log"
+observed = "The spot GraphQL roots build and their verify passes, but the module build fails in internal/replay and internal/indexer against the landed store package, and NewSchema cannot accept the resolver until every query root has landed."
+assumption = "Rerun after the perps-data store reconciliation and 7.2.7, 7.2.9, 7.2.10 and 7.2.11 land."
+
+[finding.7.2.11]
+revision = "4774c07e2d6d2cf3398d48c9dac66f213dc1ca26"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/7.2.11-build-1.log"
+observed = "The explorer queries build and their verify passes, but the module build fails in internal/replay and internal/indexer against the landed store package; tx_actions.kind is assumed to hold the contract event name."
+assumption = "Rerun after the perps-data store reconciliation lands; the cursor and paging shapes are recorded in the task report."
+
+[finding.8.4.1]
+revision = "7157f0189a66242c38768d30fbdf1075a32a8b64"
+command = "bash tools/release/tests/identity.test.sh"
+exit = 1
+log = "fleet/logs/8.4.1-verify-2.log"
+observed = "Three of four checks pass; the derived-tag check needs build-paxd.sh --print-tag from 8.4.2, and build-paxd.sh ignores unknown flags and starts a full release build."
+assumption = "Rerun after 8.4.2 lands."
