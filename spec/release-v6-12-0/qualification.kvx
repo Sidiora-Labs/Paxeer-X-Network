@@ -651,3 +651,67 @@ exit = 1
 log = "fleet/logs/5.1.13-verify-1.log"
 observed = "The module wiring assumes keeper.NewMsgServerImpl (5.1.10) and the keeper InitGenesis and ExportGenesis (5.1.11), both still in flight; the node app is also blocked by the launchpad keeper."
 assumption = "Rerun after 5.1.10 and 5.1.11 land."
+
+[finding.4.1.10]
+revision = "3d14d6727"
+command = "go test ./modules/spot/keeper/ -run '^(TestNAV|TestShareMint|TestShareBurn|TestTradeUpdatesReserves|TestDepositRefusedAtZeroNAV|TestDonationDoesNotInflateShares|TestTokenParamsEmitLogs)$'"
+exit = 1
+log = "fleet/logs/4.1.10-verify-1.log"
+observed = "The spot vault code assumes the 4.1.4 keeper constructor, custody and rail helpers and the 4.1.11 share-token helpers; the build stopped at the launchpad keeper before type-checking it."
+assumption = "Rerun in the spot keeper reconciliation pass once 4.1.4 through 4.1.15 are on main."
+
+[finding.5.1.11]
+revision = "3df3bfb8a439ef53c29b58d067a8f4dbbc4a7962"
+command = "go test ./modules/pricefeed/keeper/ -run 'TestInitV6120'"
+exit = 1
+log = "fleet/logs/5.1.11-verify-1.log"
+observed = "The pricefeed genesis and InitV6120 compile as a library, but the test package imports the node app, which is blocked by the launchpad keeper of that revision."
+assumption = "Rerun once precompiles/launchpad compiles on main; the GetPrice read API comes from 5.1.9, already landed."
+
+[finding.5.1.12]
+revision = "f7d45b5549b064bb98da22c90ec973085f6a8cd5"
+command = "go test ./modules/pricefeed/ -run 'TestSubmission'"
+exit = 1
+log = "fleet/logs/5.1.12-verify-1.log"
+observed = "The ante handlers assume GetLastSubmissionHeight and SetLastSubmissionHeight from 5.1.10 and an exported bonded check that no keeper task writes; the node app is also blocked by the launchpad keeper."
+assumption = "The pricefeed reconciliation pass exports the bonded check from the keeper and reruns this gate after 5.1.10 lands."
+
+[finding.5.1.10]
+revision = "ce79d18fe4864fbab4996abe3e079461f3e9c34d"
+command = "go test ./modules/pricefeed/keeper/ -run 'TestSubmitPrices'"
+exit = 1
+log = "fleet/logs/5.1.10-verify-1.log"
+observed = "The message server compiles only with the 5.1.9 GetPrice on the base; the test binary imports the node app, blocked by the launchpad keeper and the launchpad precompile."
+assumption = "Rerun once precompiles/launchpad compiles on main; 5.1.9 is already landed there."
+
+[finding.4.1.12]
+revision = "3b4d626f62c1f185781286f15246f59b9eb2fc40"
+command = "go test ./modules/spot/keeper/ -run '^(TestSampleRing|TestTWAPWindow|TestTwapSanity)$'"
+exit = 1
+log = "fleet/logs/4.1.12-verify-1.log"
+observed = "The TWAP ring assumes the 4.1.4 Keeper and the 4.1.5 IndexPrice; a 1000-sample ring at sub-second blocks never covers the default 300 s sanity period, so enabling twapSanity at that block rate refuses every trade."
+assumption = "Rerun in the spot keeper reconciliation pass; the ring span against the default period is a spec conflict for the sanity period or the ring size to resolve, not changed here."
+
+[finding.4.1.14]
+revision = "d12a76f0d8eb6e26bd34c3b745124d934ccdc2e1"
+command = "go test ./modules/spot/keeper/ -run '^(TestInitV6120Order|TestInitV6120RegistersOpeningPairs|TestInitV6120Logs|TestInitV6120RefusesDenomWithoutPointer|TestInitV6120Once|TestInitV6120RefusesWrongDecimals)$'"
+exit = 1
+log = "fleet/logs/4.1.14-verify-1.log"
+observed = "The spot InitV6120 assumes the 4.1.4 Keeper, the 4.1.10 RegisterToken and the 4.1.11 CreateShareToken; the build stopped at the launchpad keeper, reached through precompiles/utils by every EVM-dependent package."
+assumption = "Rerun in the spot keeper reconciliation pass once 4.1.4 through 4.1.15 are on main."
+
+[finding.7.1.1]
+revision = "5579db69945a284a643a28fc8aaafbc8fc336700"
+command = "go test -count=1 ./platform/perps-data/internal/source/ -run 'TestFollower'"
+exit = 1
+log = "fleet/logs/7.1.1-verify-1.log"
+observed = "The follower builds and vets; all nine TestFollower subtests refuse because no PERPS_DATA_TEST_RPC and PERPS_DATA_TEST_COMET node serving the v6.12 precompiles exists yet."
+assumption = "Rerun against the release devnet once the node binary builds; the follower owns the perps.blocks and head cursor writes, so 7.1.4 WriteBlock must not repeat them."
+
+[finding.4.1.11]
+revision = "14c9e9eb0ddf8c6e80b150cf1ff010a1957eebfb"
+command = "go test ./modules/spot/keeper/ -run '^(TestShareDenomAndPointer|TestShareSupplyIsBankSupply|TestTransferredSharesWithdraw|TestShareMintScope)$'"
+exit = 1
+log = "fleet/logs/4.1.11-verify-1.log"
+observed = "MintShares and BurnShares take (ctx, evm, denom, addr, amount) here while 4.1.10 calls them as (ctx, token, to, amount); the spot module account is not yet in the node permissions; the build stopped at the launchpad keeper."
+assumption = "The spot keeper reconciliation pass settles the share helper shape on the 4.1.11 owner and adapts 4.1.10; rerun after it and after the node permissions land."
