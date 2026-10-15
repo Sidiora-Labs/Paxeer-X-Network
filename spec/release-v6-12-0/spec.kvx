@@ -21083,7 +21083,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.4]
 title = "Refuse unknown collateral decimals and reduce collateral to USDL"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.1"]
