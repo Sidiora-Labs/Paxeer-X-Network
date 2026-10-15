@@ -1187,3 +1187,11 @@ exit = 1
 log = "fleet/logs/8.4.1-verify-2.log"
 observed = "Three of four checks pass; the derived-tag check needs build-paxd.sh --print-tag from 8.4.2, and build-paxd.sh ignores unknown flags and starts a full release build."
 assumption = "Rerun after 8.4.2 lands."
+
+[finding.7.2.9]
+revision = "09ff4fbfbdcfd1cca1aa05124b6275dba13a241f"
+command = "go test -count=1 ./platform/perps-data/internal/graphql/ -run TestOperations"
+exit = 1
+log = "fleet/logs/7.2.9-verify-1.log"
+observed = "The operations suite seeds and mounts the relay handler, but NewSchema refuses the resolver while the leaderboard, positions, orders, markets, spot and account query roots are missing, and the module build fails in internal/replay and internal/indexer."
+assumption = "Rerun after 7.2.7, 7.2.8, 7.2.19 and the perps-data store reconciliation land; the gateway serves the same handler at POST /graphql."
