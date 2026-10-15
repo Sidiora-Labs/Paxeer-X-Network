@@ -5,6 +5,9 @@ import (
 	layerxbridgekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/keeper"
 	layerxcustodykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
 	layerxexchangekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/keeper"
+	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
@@ -32,12 +35,15 @@ type PrecompileKeepers struct {
 	putils.ConnectionKeeper
 	putils.ChannelKeeper
 	putils.AnchorKeeper
-	txConf         client.TxConfig
-	layerxCustody  *layerxcustodykeeper.Keeper
-	layerxExchange *layerxexchangekeeper.Keeper
-	layerxBridge   *layerxbridgekeeper.Keeper
-	launchpad      *launchpadkeeper.Keeper
-	xweb           *xwebkeeper.Keeper
+	txConf          client.TxConfig
+	layerxCustody   *layerxcustodykeeper.Keeper
+	layerxExchange  *layerxexchangekeeper.Keeper
+	layerxBridge    *layerxbridgekeeper.Keeper
+	launchpad       *launchpadkeeper.Keeper
+	xweb            *xwebkeeper.Keeper
+	PerpsKeeper     *perpskeeper.Keeper
+	SpotKeeper      *spotkeeper.Keeper
+	PricefeedKeeper *pricefeedkeeper.Keeper
 }
 
 func NewPrecompileKeepers(a *App) *PrecompileKeepers {
@@ -65,6 +71,9 @@ func NewPrecompileKeepers(a *App) *PrecompileKeepers {
 		layerxBridge:       &a.LayerXBridgeKeeper,
 		launchpad:          a.LaunchpadKeeper,
 		xweb:               &a.XWebKeeper,
+		PerpsKeeper:        a.PerpsKeeper,
+		SpotKeeper:         a.SpotKeeper,
+		PricefeedKeeper:    &a.PricefeedKeeper,
 	}
 }
 
@@ -104,4 +113,20 @@ func (pk *PrecompileKeepers) XWebK() *xwebkeeper.Keeper {
 	return pk.xweb
 }
 
+// PerpsK hands the perps precompile the application's perps keeper.
+func (pk *PrecompileKeepers) PerpsK() *perpskeeper.Keeper {
+	return pk.PerpsKeeper
+}
+
+// SpotK hands the spot precompiles the application's spot keeper.
+func (pk *PrecompileKeepers) SpotK() *spotkeeper.Keeper {
+	return pk.SpotKeeper
+}
+
+// PriceFeedK hands the pricefeed precompile the application's pricefeed keeper.
+func (pk *PrecompileKeepers) PriceFeedK() *pricefeedkeeper.Keeper {
+	return pk.PricefeedKeeper
+}
+
 var _ putils.XWebKeepers = (*PrecompileKeepers)(nil)
+var _ putils.PriceFeedKeepers = (*PrecompileKeepers)(nil)

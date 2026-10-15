@@ -17,6 +17,7 @@ import (
 	layerxcustodykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/keeper"
 	layerxexchangekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	xwebkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -67,6 +68,13 @@ type LaunchpadV610Keepers interface {
 // precompile refuses every call when the application's keepers do not.
 type XWebKeepers interface {
 	XWebK() *xwebkeeper.Keeper
+}
+
+// PriceFeedKeepers is implemented by keepers that carry the pricefeed keeper.
+// The pricefeed precompile refuses every call when the application's keepers
+// do not.
+type PriceFeedKeepers interface {
+	PriceFeedK() *pricefeedkeeper.Keeper
 }
 
 type EmptyKeepers struct{}
