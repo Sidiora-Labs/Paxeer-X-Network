@@ -16709,7 +16709,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.4.2.7]
 title = "Pack and emit every spot event at its rail address"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["4.2.1", "1.0.6"]
