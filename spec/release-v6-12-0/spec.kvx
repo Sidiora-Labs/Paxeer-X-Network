@@ -6355,7 +6355,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.6]
 title = "Add the QuoteToken parameter and align defaults and bounds with ProtocolConfig"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["2.0.7"]
