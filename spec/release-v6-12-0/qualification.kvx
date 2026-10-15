@@ -70,3 +70,17 @@ command = "go test ./modules/spot/types/ -run '^(TestParamsValidate|TestParamsVa
 exit_code = 0
 log_path = "fleet logs 4.1.1-verify-1"
 observed_and_assumption = "The native-pointer refusal of do_4 needs the msg server and EVM keeper owned by the spot msg-server task, and contracts/perps-parameters.md#spot-fees bounds priceImpactScalarBps at 10000 while contracts/spot.md and PECOR.sol bound it at 500. Assumption: the msg-server task implements the refusal, and 500 from PECOR.sol binds under ruling 9 (LP economics exactly PECOR.sol)."
+
+[finding.6.0.2]
+revision = "c9a0ed1e968ca68845e5c0d361a3bd97ee54a85f"
+command = "node --test --import tsx tests/perps-abi.test.ts"
+exit_code = 0
+log_path = "fleet logs 6.0.2-verify-2"
+observed_and_assumption = "Acceptance 6.2.5 and application.md ABI rule 5 say getMarkPrice returns markPrice, indexPrice, midPrice and fresh and getFundingState five named outputs, while contracts/perps.md and its abi.json give getMarkPrice one output and getFundingState four, with the extra fields on getMarkPriceDetails and getFundingDetails. Assumption: contracts/perps.md is the interface authority and the app ABI follows it; the application contract text should be aligned to the details views."
+
+[finding.2.1.3]
+revision = "c78019e61b14338833f0f536165694249ed8e9ab"
+command = "go test ./modules/launchpad/types/... -run 'TestLaunchpadErrorStrings'"
+exit_code = 0
+log_path = "fleet logs 2.1.3-verify-1"
+observed_and_assumption = "Keeper errors with no same-named Launch-x contract error were mapped to the nearest contract error (InvalidParams to FeeOutOfRange, InvalidMarket and InvalidGenesis to InvalidConfiguration, snapshot and airdrop basis errors to UnsupportedSnapshotToken, InvalidRange to IndexOutOfBounds, NotFeeRightsHolder to NotNftOwner, UnknownMarket to PoolNotFound), and the pool-token errors raised by the token contract itself get no keeper error. Assumption: the nearest-error mapping is accepted by the revert-data golden test of the launchpad precompile task."
