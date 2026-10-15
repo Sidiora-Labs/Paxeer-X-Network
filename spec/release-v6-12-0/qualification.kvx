@@ -795,3 +795,83 @@ exit = 1
 log = "fleet/logs/4.1.15-verify-1.log"
 observed = "The spot module, genesis and message server build on the landed 4.1.4 keeper, but quote.go from 4.1.13 calls GetParams single-valued and names QuoteExactOut, Price, Convert, VolumeUSD, Spendable and TWAP that its siblings define differently; MsgSyncReserves refuses custody below escrow where the contract names no refusal."
 assumption = "The spot keeper reconciliation pass settles these shapes and the SyncReserves owner between 4.1.10 and 4.1.15; rerun after it."
+
+[finding.2.2.1]
+revision = "a739834315"
+command = "go test ./precompiles/launchpad/... -run 'TestCallKindRefusals|TestDirectCallResolution'"
+exit = 1
+log = "fleet/logs/2.2.1-verify-2.log"
+observed = "The reconciled Run and dispatcher build (go build exit 0) and both tests pass with the external test files overlaid out, but launchpad_test.go and retired_test.go still name the pre-rewrite Market, method and newHarness symbols so the package test binary does not compile."
+assumption = "2.2.19 ports launchpad_test.go and the launchpad precompile reconciliation pass restores retired_test.go; rerun after both."
+
+[finding.2.2.8]
+revision = "eab82986d4d0ea4f1e5e42c0ba9a598d0df024e1"
+command = "go test -p 2 ./precompiles/launchpad/... -run 'TestLogsMatchContractEvents|TestEmitterFamilyAtThePrecompile'"
+exit = 1
+log = "fleet/logs/2.2.8-verify-1.log"
+observed = "events.go and its tests were written against the pre-2.2.1 precompile, whose Keeper interface rejected the reconciled CreateMarket, so no test ran."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 and the reconciliation pass."
+
+[finding.2.2.9]
+revision = "eab82986d4d0ea4f1e5e42c0ba9a598d0df024e1"
+command = "go test -p 2 ./precompiles/launchpad/... -run 'TestRevertDataMatchesContractErrors'"
+exit = 1
+log = "fleet/logs/2.2.9-verify-1.log"
+observed = "errors.go compiles alone but the package build stopped on the pre-2.2.1 Keeper interface, so the revert-data test did not execute."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 and the reconciliation pass."
+
+[finding.2.2.10]
+revision = "eab82986d4d0ea4f1e5e42c0ba9a598d0df024e1"
+command = "go test -p 2 ./precompiles/launchpad/... -run 'TestOpticalHooksSeeTheContractCallers'"
+exit = 1
+log = "fleet/logs/2.2.10-verify-1.log"
+observed = "hooks.go and optical_test.go were added on the pre-2.2.1 package, whose build stopped on the obsolete Keeper.CreateMarket signature before any test ran."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 and the reconciliation pass."
+
+[finding.2.2.13]
+revision = "eab82986d4d0ea4f1e5e42c0ba9a598d0df024e1"
+command = "go test -p 2 ./precompiles/launchpad/... -run 'TestVersionedLaunchpad'"
+exit = 1
+log = "fleet/logs/2.2.13-verify-1.log"
+observed = "The versioned setup registers v6.12.0 and the v6.10 legacy precompile, but the package build stopped on the pre-2.2.1 Keeper interface so the test did not execute."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1 and the reconciliation pass."
+
+[finding.2.2.16]
+revision = "f5bb82488271132187e3cf4f67833a0eb58c5c2b"
+command = "go test ./modules/launchpad/keeper/... -run 'TestUsdlBalancesMustMatchGolden|TestUsdlGoldenVector|TestTreasuryWithdrawnIntoCustody|TestUsdlStorageUntouched|TestUsdlStepRunsOnce'"
+exit = 1
+log = "fleet/logs/2.2.16-verify-1.log"
+observed = "The USDL migration step and its golden tests compile, but the keeper test binary imports precompiles/launchpad, which on this base still names the pre-2.2.1 CreateMarket signature."
+assumption = "Rerun once 2.2.1 is merged; the golden gives no Treasury admin or token list, so USDLGolden carries a Treasuries field that 2.2.17 must fill."
+
+[finding.fix-launchpad-writers]
+revision = "5796dfcdcc1c42b06c28aadfa98b7f60a24b35dc"
+command = "go vet ./modules/launchpad/keeper/ && go test ./modules/launchpad/keeper/ -run 'TestTransferGuardian|TestAcceptGuardian|TestSyncReserves' -count=1"
+exit = 1
+log = "fleet/logs/fix-launchpad-writers-verify-1.log"
+observed = "TransferGuardian, AcceptGuardian and SyncReserves are added and the build no longer reports them missing, but the keeper test binary imports precompiles/launchpad, which on this base predates 2.2.1."
+assumption = "Rerun once 2.2.1 is merged."
+
+[finding.3.2.10]
+revision = "cc7e0f2ca070e96b6e019317bbf05473c9149468"
+command = "go test ./modules/perps/keeper/ -run 'TestEvmlogs'"
+exit = 1
+log = "fleet/logs/3.2.10-verify-1.log"
+observed = "evmlogs.go writes the EndBlock receipt as a LegacyTxType receipt from 0x1015 so eth_getLogs serves it, but modules/perps/keeper does not compile until the perps keeper reconciliation lands."
+assumption = "Rerun after the perps keeper reconciliation; 3.2.9 EndBlock is expected to call WriteEndBlockReceipt."
+
+[finding.3.2.11]
+revision = "567fadfd85c033e252d5d1b99aa3c881b2ac3e98"
+command = "go test ./modules/perps/keeper/ -run 'TestSeed'"
+exit = 1
+log = "fleet/logs/3.2.11-verify-1.log"
+observed = "SeedV6120 writes params, the 18 markets and the two store accounts only when absent, but modules/perps/keeper does not compile until the perps keeper reconciliation lands."
+assumption = "Rerun after the perps keeper reconciliation; if it renames setParams, EnsureAccount, SetMarket or IterateMarkets the seed follows."
+
+[finding.3.2.12]
+revision = "0ce88627915b59be75db77cc3d379205bb791c31"
+command = "go test ./modules/perps/ -run 'TestModuleShape'"
+exit = 1
+log = "fleet/logs/3.2.12-verify-1.log"
+observed = "The perps AppModule registers genesis, nine invariants and no messages, but modules/perps/keeper does not compile until the perps keeper reconciliation lands."
+assumption = "Rerun after the perps keeper reconciliation; amino and interface registrations are no-ops because the module has no messages."

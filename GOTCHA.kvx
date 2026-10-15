@@ -7902,3 +7902,7 @@ fix = "read the lint summary line itself (N error(s), M warning(s)); treat a mis
 area = "codify"
 symptom = "cg spec lint on a 31k-line spec is single-threaded and runs 30 minutes or more even on a quiet box"
 fix = "run it once per spec revision in the background with no timeout and continue other work; never run it per lane"
+
+[gotcha.v612-batch-script-edit]
+observed = "Editing a queued bash batch script in place with sed -i while it waits in its until loop has no effect: bash keeps reading the old inode, so the additions never run although the files the script reads at run time (findings) are picked up."
+rule = "Never edit a running batch script; queue a new script that waits on the previous sentinel."
