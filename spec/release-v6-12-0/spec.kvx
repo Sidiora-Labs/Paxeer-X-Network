@@ -18618,7 +18618,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.8]
 title = "Write the per-block aggregation"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.1.4", "5.1.7", "5.1.2"]
