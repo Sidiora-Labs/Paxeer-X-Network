@@ -1195,3 +1195,19 @@ exit = 1
 log = "fleet/logs/7.2.9-verify-1.log"
 observed = "The operations suite seeds and mounts the relay handler, but NewSchema refuses the resolver while the leaderboard, positions, orders, markets, spot and account query roots are missing, and the module build fails in internal/replay and internal/indexer."
 assumption = "Rerun after 7.2.7, 7.2.8, 7.2.19 and the perps-data store reconciliation land; the gateway serves the same handler at POST /graphql."
+
+[finding.6.3.1]
+revision = "603cba13cd14f3abfad4bc63ff3ac727453fc9a4"
+command = "pnpm tsc --noEmit"
+exit = 2
+log = "fleet/logs/6.3.1-build-1.log"
+observed = "The margin hooks verify passes, but useAutoCollateral.ts and usePortfolioStats.ts still import the removed useVault hook, which 6.2.18 and 6.2.2 replace."
+assumption = "Rerun after 6.2.2 and 6.2.18 land on the integration branch."
+
+[finding.6.3.10]
+revision = "16a7472cbe2c8fd36892a195ba004ae69efd19cb"
+command = "node --test --import tsx tests/abi-barrel.test.ts"
+exit = 1
+log = "fleet/logs/6.3.10-verify-2.log"
+observed = "The ABI barrel and directory checks pass, but the source import scan finds thirteen hook lines still importing deleted facet ABIs, owned by 6.2.1, 6.2.2 and 6.3.1."
+assumption = "Rerun after 6.2.1, 6.2.2 and 6.3.1 land on the integration branch."
