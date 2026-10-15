@@ -227,7 +227,7 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, []interface{}{[32]byte{}}, r.ok(types.RoleRouter, r.router, r.trader, "getRoleAdmin", routerRole))
 	require.Equal(t, []interface{}{false},
 		r.ok(types.RoleRouter, r.router, r.trader, "hasRole", routerRole, r.routerHolder))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleRouter, r.router, r.trader, "registeredDefaultAdminCount"))
+	same(t, []interface{}{zero}, r.ok(types.RoleRouter, r.router, r.trader, "registeredDefaultAdminCount"))
 
 	require.Equal(t, []interface{}{[32]byte{}}, r.ok(types.RoleFactory, r.factory, r.trader, "DEFAULT_ADMIN_ROLE"))
 	require.Equal(t, []interface{}{routerRole}, r.ok(types.RoleFactory, r.factory, r.trader, "ROUTER_ROLE"))
@@ -246,8 +246,8 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, []interface{}{true},
 		r.ok(types.RoleFactory, r.factory, r.trader, "hasRole", routerRole, r.routerHolder))
 	require.Equal(t, []interface{}{false}, r.ok(types.RoleFactory, r.factory, r.trader, "hasRole", routerRole, r.trader))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "registeredDefaultAdminCount"))
-	require.Equal(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "getNonce", r.trader))
+	same(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "registeredDefaultAdminCount"))
+	same(t, []interface{}{zero}, r.ok(types.RoleFactory, r.factory, r.trader, "getNonce", r.trader))
 
 	// Administration is refused under ruling 7; the proxies are initialized
 	// and serve no UUPS entry point.
@@ -402,9 +402,16 @@ func TestRouterAndFactoryRolesServeEverySelector(t *testing.T) {
 		amountIn, intermediate, swapped)
 	r.requireLog(len(logs)-1, precompile, r.family("RouterTrade"), uint8(2), poolA, r.trader, tokenA, tokenB,
 		amountIn, swapped, intermediate, ts, bn)
-	out = r.ok(types.RoleRouter, r.router, r.trader, "swapTokenForTokenWithPermit", tokenB, tokenA, common.Big1, zero,
+	// The failed permit is ignored and the pull needs an allowance to 0x1017
+	// (Launch-x:contracts/contracts/periphery/Router.sol:129-139, 251, 292-314).
+	back := new(big.Int).Rsh(swapped, 1)
+	r.refused(customError(t, "TransferFromFailed()"), types.RoleRouter, r.router, r.trader,
+		"swapTokenForTokenWithPermit", tokenB, tokenA, back, zero, deadline, badPermit)
+	r.erc20(r.trader, tokenB, "approve(address,uint256)", addressWord(precompile), common.LeftPadBytes(back.Bytes(), 32))
+	out = r.ok(types.RoleRouter, r.router, r.trader, "swapTokenForTokenWithPermit", tokenB, tokenA, back, zero,
 		deadline, badPermit)
 	require.Len(t, out, 2)
+	require.Equal(t, new(big.Int).Sub(tokenBBefore, new(big.Int).Sub(back, swapped)), r.tokenBalance(tokenB, r.trader))
 
 	// multicall serves each entry as a Router call of the same caller and
 	// reverts MulticallFailed(index, revert data of the entry).

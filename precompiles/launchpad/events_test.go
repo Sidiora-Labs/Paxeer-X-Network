@@ -89,6 +89,9 @@ func eventWord(t *testing.T, value interface{}) []byte {
 
 func eventData(t *testing.T, values []interface{}) []byte {
 	t.Helper()
+	if len(values) == 0 {
+		return nil
+	}
 	head := make([]byte, 0, 32*len(values))
 	var tail []byte
 	for _, value := range values {

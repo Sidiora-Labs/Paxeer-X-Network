@@ -303,7 +303,7 @@ func TestTreasurySurfaceServesTheABI(t *testing.T) {
 	require.Equal(t, false, e.view("hasRole", [32]byte(depositorRole), e.outsider))
 	require.Equal(t, false, e.view("hasRole", [32]byte{}, e.depositor))
 	require.Equal(t, [32]byte{}, e.view("getRoleAdmin", [32]byte(depositorRole)))
-	require.Equal(t, big.NewInt(0), e.view("registeredDefaultAdminCount"))
+	same(t, big.NewInt(0), e.view("registeredDefaultAdminCount"))
 	require.Equal(t, int64(0), e.ledger())
 
 	// deposit(USDL, 500) by D with an allowance of 500 to 0x1017.
@@ -339,7 +339,7 @@ func TestTreasurySurfaceServesTheABI(t *testing.T) {
 	require.Len(t, deposited, 1)
 	e.requireTreasuryLog(deposited[0], "Deposited", e.usdl, e.depositor, 300)
 	require.Equal(t, int64(800), e.ledger())
-	require.Equal(t, big.NewInt(0), e.balance(e.usdl, e.surface))
+	same(t, big.NewInt(0), e.balance(e.usdl, e.surface))
 	e.refused(treasurySelector("InsufficientBalance()"), e.depositor, "recordDeposit", e.usdl, big.NewInt(1))
 
 	// Under the Treasury lock deposit and recordDeposit revert
@@ -398,7 +398,7 @@ func TestTreasuryAdminRefusals(t *testing.T) {
 			e.input("initialize", e.outsider, caller))
 		require.Equal(t, logs, e.logCount())
 	}
-	require.Equal(t, big.NewInt(0), e.balance(e.usdl, e.recipient))
+	same(t, big.NewInt(0), e.balance(e.usdl, e.recipient))
 	require.Equal(t, custodyBefore, e.balance(e.usdl, custody))
 	require.Equal(t, big.NewInt(50), e.balance(e.usdl, e.surface))
 	require.Equal(t, int64(1_000), e.ledger())

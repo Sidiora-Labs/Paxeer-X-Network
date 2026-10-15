@@ -138,7 +138,7 @@ func (k *Keeper) initFeeRights(ctx sdk.Context, c types.FeeRightCollection) erro
 		if err := k.setFeeRight(ctx, collection, right); err != nil {
 			return err
 		}
-		if right.ID < c.PoolIndexMigrationCursor {
+		if c.PoolIndexReady || right.ID < c.PoolIndexMigrationCursor {
 			k.setUint64(ctx, feeRightKey(feeRightPoolPrefix, collection, common.HexToAddress(right.Pool).Bytes()), right.ID)
 		}
 		k.setUint64(ctx, feeRightKey(feeRightAllTokensPrefix, collection, idBytes(uint64(index))), right.ID)

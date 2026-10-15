@@ -300,7 +300,10 @@ func TestSidioraPoolSurfaceParity(t *testing.T) {
 	require.Equal(t, factory, view32(t, h, pool, types.RolePool, "factory"))
 	require.Equal(t, feeAccumulator, view32(t, h, pool, types.RolePool, "feeAccumulator"))
 	require.Equal(t, protocolConfig, view32(t, h, pool, types.RolePool, "protocolConfig"))
-	require.Equal(t, precompile, view32(t, h, pool, types.RolePool, "eventEmitter"))
+	// A new pool is initialized with the factory's eventEmitter, the
+	// generation 2 EventEmitter (Launch-x:contracts/contracts/core/SidioraFactory.sol:127-139,
+	// contracts/launchpad.md req 2.24.5).
+	require.Equal(t, h.keeper.Generation2().EventEmitter, view32(t, h, pool, types.RolePool, "eventEmitter"))
 	require.Equal(t, errorData("Unauthorized()"), h.fails(h.account(), pool, types.RolePool, "acceptGuardian"))
 	replayGolden(t, types.RolePool)
 }
@@ -427,7 +430,7 @@ func TestAccessControlAndUpgradeSurface(t *testing.T) {
 		require.Equal(t, zero, view32(t, h, at, role, "getRoleAdmin", zero), role)
 		require.Equal(t, false, view32(t, h, at, role, "hasRole", zero, h.caller), role)
 		if _, ok := roleABI(t, role).Methods["registeredDefaultAdminCount"]; ok {
-			require.Equal(t, big.NewInt(0), view32(t, h, at, role, "registeredDefaultAdminCount"), role)
+			same(t, big.NewInt(0), view32(t, h, at, role, "registeredDefaultAdminCount"), role)
 		}
 		require.Equal(t, unauthorized(stranger), h.fails(stranger, at, role, "grantRole", zero, stranger), role)
 		require.Equal(t, unauthorized(stranger), h.fails(stranger, at, role, "revokeRole", zero, h.caller), role)

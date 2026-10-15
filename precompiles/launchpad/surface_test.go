@@ -109,7 +109,7 @@ func migratedMarket(index uint64, generation types.Generation, pool, token commo
 		Optical: common.Address{}.Hex(), Factory: roles.SidioraFactory.Hex(), FeeAccumulator: roles.FeeAccumulator.Hex(),
 		ProtocolConfig: roles.ProtocolConfig.Hex(), EventEmitter: roles.EventEmitter.Hex(),
 		CumulativeBuyQuoteVolume: sdk.ZeroInt(), CumulativeSellQuoteVolume: sdk.ZeroInt(),
-		FeeRightCollection: roles.SidioraNFT.Hex(),
+		FeeRightCollection: roles.SidioraNFT.Hex(), FeeRightID: index,
 	}
 }
 
@@ -142,6 +142,7 @@ func newSurfaceHarness(t *testing.T) *surfaceHarness {
 		migratedMarket(1, types.Generation1, s.pools[0], s.tokens[0], creator, k.Generation2()),
 		migratedMarket(2, types.Generation2, s.pools[1], s.tokens[1], creator, k.Generation2()),
 	}
+	gs.FeeRights = types.FeeRightCollection{NextTokenID: 3, PoolIndexMigrationCursor: 3, PoolIndexReady: true}
 	k.InitGenesis(ctx, *gs)
 	require.NoError(t, launchpad.InstallRoleSurfaces(ctx, evmKeeper, k))
 	for i, market := range gs.Markets {

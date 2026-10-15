@@ -333,7 +333,7 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	for _, role := range []string{fr, fa} {
 		require.Equal(t, admin, e.view(role, "DEFAULT_ADMIN_ROLE"))
 		require.Equal(t, admin, e.view(role, "getRoleAdmin", feeTestPoolRole))
-		require.Equal(t, n(0), e.view(role, "registeredDefaultAdminCount"))
+		same(t, n(0), e.view(role, "registeredDefaultAdminCount"))
 		require.Equal(t, false, e.view(role, "hasRole", admin, e.owner))
 		e.refused(types.ErrAlreadyInitialized, role, e.owner, "initialize", e.initializeArgs(role, e.owner)...)
 		e.refused(types.ErrUUPSNotThroughActiveProxy, role, e.owner, "proxiableUUID")
@@ -387,7 +387,7 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	e.roleRefused(types.ErrMissingRole, e.outsider, feeTestPoolRole, fa, e.outsider, "recordFee",
 		e.pool, n(feeTestFee))
 	e.refused(types.ErrReentrancyGuardReentrantCall, fa, e.pool, "recordFee", e.pool, n(feeTestFee))
-	require.Equal(t, n(0), e.view(fa, "getAccumulatedFees", e.pool))
+	same(t, n(0), e.view(fa, "getAccumulatedFees", e.pool))
 	release()
 
 	// recordFee: only the registered pool records its own fees.
@@ -445,7 +445,7 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	e.requireLog(logs[len(logs)-2], accumulator, fa, "FeesClaimed", e.pool, e.owner, n(feeTestPoolCut))
 	e.requireLog(logs[len(logs)-1], router, fr, "FeesClaimed", one, e.owner, n(feeTestPoolCut))
 	require.Equal(t, feeTestPoolCut, e.balance(e.usdl, e.owner))
-	require.Equal(t, n(0), e.view(fa, "getAccumulatedFees", e.pool))
+	same(t, n(0), e.view(fa, "getAccumulatedFees", e.pool))
 	require.Equal(t, n(feeTestSurplus), e.view(fa, "totalLiabilities"))
 	e.refused(types.ErrNoFeesAccumulated, fr, e.owner, "claimFees", one)
 
@@ -496,10 +496,10 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, n(feeTestRunHeight-1), e.view(fa, "airdropSnapshotBlock", e.pool, one))
 	require.Equal(t, n(eligible), e.view(fa, "airdropEligibleSupply", e.pool, one))
 	require.Equal(t, n(feeTestPoolCut), e.view(fa, "airdropEpochRemaining", e.pool, one))
-	require.Equal(t, n(0), e.view(fa, "airdropClaimedSupply", e.pool, one))
+	same(t, n(0), e.view(fa, "airdropClaimedSupply", e.pool, one))
 	require.Equal(t, [32]byte{}, e.view(fa, "legacyAirdropRoot", e.pool, one))
-	require.Equal(t, n(0), e.view(fa, "legacyAirdropRemaining", e.pool, one))
-	require.Equal(t, n(0), e.view(fa, "airdropEligibleSupply", e.pool, beyond))
+	same(t, n(0), e.view(fa, "legacyAirdropRemaining", e.pool, one))
+	same(t, n(0), e.view(fa, "airdropEligibleSupply", e.pool, beyond))
 	require.Equal(t, false, e.view(fa, "hasClaimedAirdrop", e.pool, e.holder, one))
 	e.refused(types.ErrNoFeesAccumulated, fr, e.owner, "executeAirdrop", one)
 	e.refused(types.ErrNoFeesAccumulated, fa, router, "triggerAirdrop", e.pool)
@@ -521,8 +521,8 @@ func TestFeeRolesServeEverySelector(t *testing.T) {
 	require.Equal(t, true, e.view(fa, "hasClaimedAirdrop", e.pool, e.holder, one))
 	require.Equal(t, false, e.view(fa, "hasClaimedAirdrop", e.pool, e.holder, beyond))
 	require.Equal(t, n(eligible), e.view(fa, "airdropClaimedSupply", e.pool, one))
-	require.Equal(t, n(0), e.view(fa, "airdropEpochRemaining", e.pool, one))
-	require.Equal(t, n(0), e.view(fa, "getAirdropBalance", e.pool))
+	same(t, n(0), e.view(fa, "airdropEpochRemaining", e.pool, one))
+	same(t, n(0), e.view(fa, "getAirdropBalance", e.pool))
 	e.refused(types.ErrAlreadyClaimed, fr, e.holder, "claimAirdropEpoch", one, one)
 	e.refused(types.ErrAlreadyClaimed, fa, e.outsider, "claimAirdrop", e.pool, e.holder)
 	e.refused(types.ErrAlreadyClaimed, fa, e.outsider, "claimAirdropEpoch", e.pool, e.holder, one)

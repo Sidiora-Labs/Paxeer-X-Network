@@ -48,7 +48,7 @@ func (k *Keeper) treasuryCall(ctx sdk.Context, caller NestedCaller, from, token 
 	failure error) (sdk.Context, error) {
 	next, ret, err := caller.Call(ctx, from, token, input)
 	if err != nil {
-		return ctx, fmt.Errorf("%w: %w", failure, err)
+		return ctx, fmt.Errorf("%w: %v", failure, err)
 	}
 	if len(k.evmKeeper.GetCode(next, token)) == 0 {
 		return ctx, fmt.Errorf("%w: %s has no code", failure, token.Hex())

@@ -249,6 +249,16 @@ func (e *poolEnv) newLogs(from int) []common.Address {
 	return out
 }
 
+// requireTransfer requires log index to be the ERC20 Transfer(from, to,
+// amount) of the token contract that emitted it.
+func (e *poolEnv) requireTransfer(index int, from, to common.Address, amount *big.Int) {
+	e.t.Helper()
+	log := e.stateDB.GetAllLogs()[index]
+	require.Equal(e.t, []common.Hash{e.erc20ABI.Events["Transfer"].ID, common.BytesToHash(from.Bytes()),
+		common.BytesToHash(to.Bytes())}, log.Topics)
+	require.Equal(e.t, common.BigToHash(amount).Bytes(), log.Data)
+}
+
 func n(value int64) *big.Int { return big.NewInt(value) }
 
 func mulDiv(a, b, c *big.Int) *big.Int { return new(big.Int).Div(new(big.Int).Mul(a, b), c) }
@@ -300,8 +310,27 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	release()
 	logs := e.logCount()
 	require.Equal(t, []interface{}{amountOut}, e.write(e.holder, "swap", n(paid), n(1), true, e.recipient, swapDeadline))
-	require.Equal(t, []common.Address{precompile}, e.newLogs(logs))
-	swapLog := e.stateDB.GetAllLogs()[logs]
+	// The fee runs FeeAccumulator.recordFee: Deposited at the Treasury from
+	// the accumulator, then FeeRecorded at the accumulator
+	// (Launch-x:contracts/contracts/data/FeeAccumulator.sol:112-165).
+	roles := e.k.Generation2()
+	require.Equal(t, []common.Address{e.usdl, e.token, roles.Treasury, roles.FeeAccumulator, precompile},
+		e.newLogs(logs))
+	custody := e.k.ModuleEVMAddress(e.ctx())
+	e.requireTransfer(logs, e.pool, custody, n(paid))
+	e.requireTransfer(logs+1, e.pool, e.recipient, amountOut)
+	protocolCut := new(big.Int).Div(new(big.Int).Mul(fee, new(big.Int).SetUint64(e.k.GetParams(e.ctx()).ProtocolFeeBps)),
+		n(10_000))
+	deposited := e.stateDB.GetAllLogs()[logs+2]
+	require.Equal(t, []common.Hash{crypto.Keccak256Hash([]byte("Deposited(address,address,uint256)")),
+		common.BytesToHash(e.usdl.Bytes()), common.BytesToHash(roles.FeeAccumulator.Bytes())}, deposited.Topics)
+	require.Equal(t, common.LeftPadBytes(protocolCut.Bytes(), 32), deposited.Data)
+	recorded := e.stateDB.GetAllLogs()[logs+3]
+	require.Equal(t, []common.Hash{crypto.Keccak256Hash([]byte("FeeRecorded(address,uint256,uint256,uint256)")),
+		common.BytesToHash(e.pool.Bytes())}, recorded.Topics)
+	require.Equal(t, append(append(common.LeftPadBytes(fee.Bytes(), 32), common.LeftPadBytes(protocolCut.Bytes(), 32)...),
+		common.LeftPadBytes(new(big.Int).Sub(fee, protocolCut).Bytes(), 32)...), recorded.Data)
+	swapLog := e.stateDB.GetAllLogs()[logs+4]
 	price := mulDiv(new(big.Int).Add(n(poolVirtualQuote), afterFee), wad,
 		new(big.Int).Sub(n(poolTokenReserve), amountOut))
 	swapEvent := e.emitter.Events["Swap"]
@@ -309,7 +338,7 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 		swapLog.Topics)
 	data, err := swapEvent.Inputs.NonIndexed().Unpack(swapLog.Data)
 	require.NoError(t, err)
-	require.Equal(t, []interface{}{true, n(paid), amountOut, fee, price, n(genesisTime.Unix()), height}, data)
+	same(t, []interface{}{true, n(paid), amountOut, fee, price, n(genesisTime.Unix()), height}, data)
 	require.Equal(t, amountOut, e.balance(e.token, e.recipient))
 	tokenReserve := new(big.Int).Sub(n(poolTokenReserve), amountOut)
 	realBalance := afterFee
@@ -324,17 +353,17 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	require.Equal(t, tokenReserve, e.view("tokenReserve"))
 	require.Equal(t, n(paid), e.view("cumulativeVolume"))
 	require.Equal(t, n(paid), e.view("cumulativeBuyUsdlVolume"))
-	require.Equal(t, n(0), e.view("cumulativeSellUsdlVolume"))
+	same(t, n(0), e.view("cumulativeSellUsdlVolume"))
 	require.Equal(t, fee, e.view("accumulatedUsdlFees"))
-	require.Equal(t, n(0), e.view("accumulatedTokenFees"))
+	same(t, n(0), e.view("accumulatedTokenFees"))
 	require.Equal(t, n(genesisTime.Unix()), e.view("lastSnapshotTimestamp"))
 	require.Equal(t, n(1), e.view("snapshotIndex"))
 	require.Equal(t, n(1), e.view("snapshotCount"))
 	require.Equal(t, price, e.view("priceSnapshots", n(0)))
-	require.Equal(t, n(0), e.view("priceSnapshots", n(7)))
+	same(t, n(0), e.view("priceSnapshots", n(7)))
 	e.refused("4e487b710000000000000000000000000000000000000000000000000000000000000032", e.holder,
 		"priceSnapshots", n(8))
-	require.Equal(t, [8]*big.Int{price, n(0), n(0), n(0), n(0), n(0), n(0), n(0)}, e.view("getPriceSnapshots"))
+	same(t, [8]*big.Int{price, n(0), n(0), n(0), n(0), n(0), n(0), n(0)}, e.view("getPriceSnapshots"))
 	info := *abi.ConvertType(e.view("getPoolInfo"), new(launchpad.PoolInfo)).(*launchpad.PoolInfo)
 	require.Equal(t, launchpad.PoolInfo{TokenAddress: e.token, OpticalAddress: common.Address{},
 		VirtualUsdlReserve: n(poolVirtualQuote), RealUsdlBalance: realBalance, TokenReserve: tokenReserve,
@@ -350,8 +379,11 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	logs = e.logCount()
 	require.Equal(t, []interface{}{quoted.AmountOut},
 		e.write(e.router, "swapFor", n(routed), n(1), true, e.holder, e.recipient, swapDeadline))
-	require.Equal(t, []common.Address{precompile}, e.newLogs(logs))
-	require.Equal(t, common.BytesToHash(e.holder.Bytes()), e.stateDB.GetAllLogs()[logs].Topics[2])
+	require.Equal(t, []common.Address{e.usdl, e.token, roles.Treasury, roles.FeeAccumulator, precompile},
+		e.newLogs(logs))
+	e.requireTransfer(logs, e.pool, custody, n(routed))
+	e.requireTransfer(logs+1, e.pool, e.recipient, quoted.AmountOut)
+	require.Equal(t, common.BytesToHash(e.holder.Bytes()), e.stateDB.GetAllLogs()[logs+4].Topics[2])
 	require.Equal(t, new(big.Int).Add(amountOut, quoted.AmountOut), e.balance(e.token, e.recipient))
 	require.Equal(t, n(paid+routed), e.view("cumulativeBuyUsdlVolume"))
 
@@ -363,13 +395,14 @@ func TestPoolRoleServesEverySelector(t *testing.T) {
 	synced := new(big.Int).Add(held.BigInt(), n(7_000_000))
 	poolTokens := e.balance(e.token, e.pool)
 	require.Equal(t, []interface{}{synced, poolTokens}, e.write(e.holder, "syncReserves"))
-	require.Equal(t, []common.Address{precompile}, e.newLogs(logs))
-	stateLog := e.stateDB.GetAllLogs()[logs]
+	require.Equal(t, []common.Address{e.usdl, precompile}, e.newLogs(logs))
+	e.requireTransfer(logs, e.pool, custody, n(7_000_000))
+	stateLog := e.stateDB.GetAllLogs()[logs+1]
 	stateEvent := e.emitter.Events["PoolStateUpdated"]
 	require.Equal(t, []common.Hash{stateEvent.ID, common.BytesToHash(e.pool.Bytes())}, stateLog.Topics)
 	data, err = stateEvent.Inputs.NonIndexed().Unpack(stateLog.Data)
 	require.NoError(t, err)
-	require.Equal(t, []interface{}{n(poolVirtualQuote), synced, poolTokens,
+	same(t, []interface{}{n(poolVirtualQuote), synced, poolTokens,
 		mulDiv(new(big.Int).Add(n(poolVirtualQuote), synced), wad, poolTokens), n(genesisTime.Unix()), height}, data)
 	require.Equal(t, synced, e.view("realUsdlBalance"))
 	require.Equal(t, poolTokens, e.view("tokenReserve"))

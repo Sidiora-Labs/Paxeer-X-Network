@@ -104,6 +104,15 @@ func TestGenesisValidate(t *testing.T) {
 	require.Equal(t, uint64(5), decoded.FeeRights.IDMap[0].Generation2ID)
 	require.Equal(t, "-100", decoded.BookHeldDeltas[0].Delta.String())
 
+	// SidioraNFT.initialize sets poolIndexReady with the cursor at 0 and mint
+	// advances nextTokenId without the cursor, so a ready collection keeps any
+	// cursor up to nextTokenId.
+	for _, cursor := range []uint64{0, 5} {
+		ready := contractGenesis()
+		ready.FeeRights.PoolIndexMigrationCursor = cursor
+		require.NoError(t, ready.Validate(), "ready collection with cursor %d", cursor)
+	}
+
 	cases := []struct {
 		name   string
 		reason string
@@ -150,9 +159,6 @@ func TestGenesisValidate(t *testing.T) {
 		}},
 		{"migration cursor past next token id", "fee-right collection", func(gs *types.GenesisState) {
 			gs.FeeRights.PoolIndexMigrationCursor = 7
-		}},
-		{"pool index ready before the cursor ends", "fee-right collection", func(gs *types.GenesisState) {
-			gs.FeeRights.PoolIndexMigrationCursor = 5
 		}},
 		{"fee right id zero", "fee right 0", func(gs *types.GenesisState) {
 			gs.FeeRights.Tokens[0].ID = 0

@@ -35,7 +35,7 @@ type swapEnv struct {
 	token       common.Address
 	accumulator common.Address
 	recipient   common.Address
-	locks       keeper.TransientStore
+	locks       keeper.SwapState
 }
 
 func newSwapEnv(t *testing.T, adjust func(*types.Market)) *swapEnv {

@@ -416,7 +416,7 @@ func (gs GenesisState) validateContracts() error {
 }
 
 func (c FeeRightCollection) validate(isPool func(string) bool) error {
-	if c.PoolIndexMigrationCursor > c.NextTokenID || (c.PoolIndexReady && c.PoolIndexMigrationCursor != c.NextTokenID) {
+	if c.PoolIndexMigrationCursor > c.NextTokenID {
 		return invalid("fee-right collection counters")
 	}
 	ids := map[uint64]bool{}

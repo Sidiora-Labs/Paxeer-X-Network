@@ -11,7 +11,6 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -163,8 +162,8 @@ func (p PrecompileExecutor) accessControl(c *call, contract common.Address) ([]b
 			return nil, true, err
 		}
 		if revoked {
-			if err := emitEvent(c.evm, contract, roleABIs[c.role].Events["RoleRevoked"], role, c.caller,
-				c.caller); err != nil {
+			if err := emitABIEvent(c.evm, contract, roleABIs[c.role].Events["RoleRevoked"],
+				[]interface{}{role, c.caller, c.caller}); err != nil {
 				return nil, true, err
 			}
 		}
@@ -223,13 +222,14 @@ func entryRevert(err error) []byte {
 // Router (Launch-x:contracts/contracts/periphery/Router.sol:155-175).
 func (p PrecompileExecutor) routerCreateMarket(c *call, nested launchpadkeeper.NestedCaller) ([]byte, error) {
 	market, err := p.createMarket(c, nested, c.caller, c.args[0].(string), c.args[1].(string), c.args[2].(uint8),
-		c.args[3].(common.Address))
+		c.args[3].(common.Address), true)
 	if err != nil {
 		return nil, err
 	}
 	token, pool, id := common.HexToAddress(market.TokenAddress), common.HexToAddress(market.PoolAddress),
 		new(big.Int).SetUint64(market.FeeRightID)
-	if err := emitEvent(c.evm, c.target, routerABI.Events["MarketCreated"], token, pool, c.caller, id); err != nil {
+	if err := emitABIEvent(c.evm, c.target, routerABI.Events["MarketCreated"],
+		[]interface{}{token, pool, c.caller, id}); err != nil {
 		return nil, err
 	}
 	return c.method.Outputs.Pack(token, pool, id)
@@ -251,8 +251,8 @@ func (p PrecompileExecutor) buy(c *call, nested launchpadkeeper.NestedCaller) ([
 	if err != nil {
 		return nil, err
 	}
-	if err := emitEvent(c.evm, c.target, routerABI.Events["Buy"], pool, c.caller, amountIn,
-		amountOut); err != nil {
+	if err := emitABIEvent(c.evm, c.target, routerABI.Events["Buy"],
+		[]interface{}{pool, c.caller, amountIn, amountOut}); err != nil {
 		return nil, err
 	}
 	if err := p.mirrorTrade(c, tradeKindBuy, pool, usdl, token, amountIn, amountOut, new(big.Int)); err != nil {
@@ -277,8 +277,8 @@ func (p PrecompileExecutor) sell(c *call, nested launchpadkeeper.NestedCaller) (
 	if err != nil {
 		return nil, err
 	}
-	if err := emitEvent(c.evm, c.target, routerABI.Events["Sell"], pool, c.caller, amountIn,
-		amountOut); err != nil {
+	if err := emitABIEvent(c.evm, c.target, routerABI.Events["Sell"],
+		[]interface{}{pool, c.caller, amountIn, amountOut}); err != nil {
 		return nil, err
 	}
 	if err := p.mirrorTrade(c, tradeKindSell, pool, token, usdl, amountIn, amountOut, new(big.Int)); err != nil {
@@ -332,8 +332,8 @@ func (p PrecompileExecutor) swapTokenForToken(c *call, nested launchpadkeeper.Ne
 	if err != nil {
 		return nil, err
 	}
-	if err := emitEvent(c.evm, c.target, routerABI.Events["MultihopSwap"], c.caller, tokenIn, tokenOut, amountIn,
-		intermediate, amountOut); err != nil {
+	if err := emitABIEvent(c.evm, c.target, routerABI.Events["MultihopSwap"],
+		[]interface{}{c.caller, tokenIn, tokenOut, amountIn, intermediate, amountOut}); err != nil {
 		return nil, err
 	}
 	if err := p.mirrorTrade(c, tradeKindMultihop, poolA, tokenIn, tokenOut, amountIn, amountOut,
@@ -473,9 +473,8 @@ func (p PrecompileExecutor) routerSwapFor(c *call, nested launchpadkeeper.Nested
 			return nil, err
 		}
 		pool := common.HexToAddress(market.PoolAddress)
-		if err := p.log(c.evm, "Swap", []common.Hash{poolID(pool), addressTopic(c.caller)}, isBuy, amountIn,
-			result.AmountOut, result.FeeAmount, price, big.NewInt(c.ctx.BlockTime().Unix()),
-			big.NewInt(c.ctx.BlockHeight())); err != nil {
+		if err := p.emitFamily(c.evm, "Swap", poolID(pool), c.caller, isBuy, amountIn, result.AmountOut,
+			result.FeeAmount, price); err != nil {
 			return nil, err
 		}
 	}
@@ -498,7 +497,7 @@ func (p PrecompileExecutor) mirrorTrade(c *call, kind uint8, pool, tokenIn, toke
 	if !p.familyEnabled() {
 		return nil
 	}
-	return p.emitFamilyEvent(c, "RouterTrade", kind, pool, c.caller, tokenIn, tokenOut, amountIn, amountOut,
+	return p.emitFamily(c.evm, "RouterTrade", kind, pool, c.caller, tokenIn, tokenOut, amountIn, amountOut,
 		intermediate)
 }
 
@@ -549,7 +548,7 @@ func (p PrecompileExecutor) factoryHandler(c *call) ([]byte, error) {
 			return nil, err
 		}
 		market, err := p.createMarket(c, nested, c.caller, c.args[0].(string), c.args[1].(string),
-			c.args[2].(uint8), c.args[3].(common.Address))
+			c.args[2].(uint8), c.args[3].(common.Address), true)
 		if err != nil {
 			return nil, err
 		}
@@ -567,7 +566,7 @@ func (p PrecompileExecutor) factoryHandler(c *call) ([]byte, error) {
 			return nil, err
 		}
 		market, err := p.createMarket(c, nested, creator, c.args[1].(string), c.args[2].(string),
-			c.args[3].(uint8), c.args[4].(common.Address))
+			c.args[3].(uint8), c.args[4].(common.Address), false)
 		if err != nil {
 			return nil, err
 		}
@@ -591,11 +590,14 @@ func packMarket(c *call, market types.Market) ([]byte, error) {
 // the EventEmitter family, TokenDeployed and MarketCreated of the family, and
 // MarketCreated at the factory (Launch-x:contracts/contracts/core/SidioraFactory.sol:72-163).
 func (p PrecompileExecutor) createMarket(c *call, nested launchpadkeeper.NestedCaller, creator common.Address, name,
-	symbol string, strategy uint8, optical common.Address) (types.Market, error) {
+	symbol string, strategy uint8, optical common.Address, charge bool) (types.Market, error) {
 	nonce := p.keeper.FactoryNonce(c.ctx, creator)
 	fee := p.keeper.GetParams(c.ctx).CreationFee
-	ctx, market, err := p.keeper.CreateMarket(c.ctx, nested, c.evm, creator, name, symbol, types.FeeStrategy(strategy),
-		optical)
+	create := p.keeper.CreateMarket
+	if !charge {
+		fee, create = sdk.ZeroInt(), p.keeper.CreateMarketFor
+	}
+	ctx, market, err := create(c.ctx, nested, c.evm, creator, name, symbol, types.FeeStrategy(strategy), optical)
 	if err != nil {
 		return types.Market{}, err
 	}
@@ -604,49 +606,52 @@ func (p PrecompileExecutor) createMarket(c *call, nested launchpadkeeper.NestedC
 	token, pool := common.HexToAddress(market.TokenAddress), common.HexToAddress(market.PoolAddress)
 	id := new(big.Int).SetUint64(market.FeeRightID)
 	if fee.IsPositive() {
-		if err := emitEvent(c.evm, roles.Treasury, roleABIs[types.RoleTreasury].Events["Deposited"], p.usdl(c.ctx),
-			c.target, fee.BigInt()); err != nil {
+		if err := emitABIEvent(c.evm, roles.Treasury, roleABIs[types.RoleTreasury].Events["Deposited"],
+			[]interface{}{p.usdl(c.ctx), c.target, fee.BigInt()}); err != nil {
 			return types.Market{}, err
 		}
 	}
-	if err := emitEvent(c.evm, pool, roleABIs[types.RolePool].Events["Initialized"], uint64(1)); err != nil {
+	if err := emitABIEvent(c.evm, pool, roleABIs[types.RolePool].Events["Initialized"],
+		[]interface{}{uint64(1)}); err != nil {
 		return types.Market{}, err
 	}
 	collection := common.HexToAddress(market.FeeRightCollection)
 	nft := roleABIs[types.RoleFeeRights]
-	if err := emitEvent(c.evm, collection, nft.Events["Transfer"], common.Address{}, creator, id); err != nil {
+	if err := emitABIEvent(c.evm, collection, nft.Events["Transfer"],
+		[]interface{}{common.Address{}, creator, id}); err != nil {
 		return types.Market{}, err
 	}
-	if err := emitEvent(c.evm, collection, nft.Events["PoolNFTMinted"], id, creator, pool); err != nil {
+	if err := emitABIEvent(c.evm, collection, nft.Events["PoolNFTMinted"],
+		[]interface{}{id, creator, pool}); err != nil {
 		return types.Market{}, err
 	}
 	family := p.familyEnabled()
 	if family {
-		if err := p.emitFamilyEvent(c, "NftMint", id, creator, pool, strategy); err != nil {
+		if err := p.emitFamily(c.evm, "NftMint", id, creator, pool, strategy); err != nil {
 			return types.Market{}, err
 		}
 	}
-	if err := emitEvent(c.evm, roles.PoolRegistry, roleABIs[types.RolePoolRegistry].Events["PoolRegistered"], pool,
-		token, creator, optical, id, big.NewInt(c.ctx.BlockTime().Unix())); err != nil {
+	if err := emitABIEvent(c.evm, roles.PoolRegistry, roleABIs[types.RolePoolRegistry].Events["PoolRegistered"],
+		[]interface{}{pool, token, creator, optical, id, big.NewInt(c.ctx.BlockTime().Unix())}); err != nil {
 		return types.Market{}, err
 	}
 	if family {
 		salt := crypto.Keccak256Hash(creator.Bytes(), []byte(name), []byte(symbol),
 			common.LeftPadBytes(new(big.Int).SetUint64(nonce).Bytes(), 32))
 		marketID := poolID(pool)
-		if err := p.emitFamilyEvent(c, "PoolRegistered", pool, token, creator, optical, id); err != nil {
+		if err := p.emitFamily(c.evm, "PoolRegistered", pool, token, creator, optical, id); err != nil {
 			return types.Market{}, err
 		}
-		if err := p.emitFamilyEvent(c, "TokenDeployed", token, pool, creator, salt, name, symbol, uint8(6),
+		if err := p.emitFamily(c.evm, "TokenDeployed", token, pool, creator, salt, name, symbol, uint8(6),
 			market.TotalSupply.BigInt()); err != nil {
 			return types.Market{}, err
 		}
-		if err := p.emitFamilyEvent(c, "MarketCreated", marketID, token, creator, pool, optical); err != nil {
+		if err := p.emitFamily(c.evm, "MarketCreated", marketID, token, creator, pool, optical); err != nil {
 			return types.Market{}, err
 		}
 	}
-	if err := emitEvent(c.evm, roles.SidioraFactory, roleABIs[types.RoleFactory].Events["MarketCreated"], token, pool,
-		creator, id, optical); err != nil {
+	if err := emitABIEvent(c.evm, roles.SidioraFactory, roleABIs[types.RoleFactory].Events["MarketCreated"],
+		[]interface{}{token, pool, creator, id, optical}); err != nil {
 		return types.Market{}, err
 	}
 	return market, nil
@@ -661,42 +666,4 @@ func (p PrecompileExecutor) usdl(ctx sdk.Context) common.Address {
 // condition under which the contract flow calls the EventEmitter.
 func (p PrecompileExecutor) familyEnabled() bool {
 	return p.keeper.Generation2().EventEmitter != (common.Address{})
-}
-
-// emitFamilyEvent emits an EventEmitter family event of abi.json at 0x1017
-// with block.timestamp and block.number appended, as the EventEmitter does.
-func (p PrecompileExecutor) emitFamilyEvent(c *call, name string, values ...interface{}) error {
-	event, ok := p.abi.Events[name]
-	if !ok {
-		return fmt.Errorf("launchpad: abi.json declares no event %s", name)
-	}
-	values = append(values, big.NewInt(c.ctx.BlockTime().Unix()), big.NewInt(c.ctx.BlockHeight()))
-	return emitEvent(c.evm, p.address, event, values...)
-}
-
-// emitEvent emits event at address with values in declaration order: the
-// indexed values become the topics after the event id and the rest the ABI
-// encoded data.
-func emitEvent(evm *vm.EVM, address common.Address, event abi.Event, values ...interface{}) error {
-	if len(values) != len(event.Inputs) {
-		return fmt.Errorf("launchpad: event %s takes %d values, got %d", event.Sig, len(event.Inputs), len(values))
-	}
-	topics := []common.Hash{event.ID}
-	data := make([]interface{}, 0, len(values))
-	for i, input := range event.Inputs {
-		if !input.Indexed {
-			data = append(data, values[i])
-			continue
-		}
-		topic, err := abi.MakeTopics([]interface{}{values[i]})
-		if err != nil {
-			return fmt.Errorf("launchpad: event %s topic %s: %w", event.Sig, input.Name, err)
-		}
-		topics = append(topics, topic[0][0])
-	}
-	packed, err := event.Inputs.NonIndexed().Pack(data...)
-	if err != nil {
-		return fmt.Errorf("launchpad: event %s data: %w", event.Sig, err)
-	}
-	return pcommon.EmitEVMLog(evm, address, topics, packed)
 }

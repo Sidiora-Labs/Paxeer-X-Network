@@ -349,9 +349,29 @@ func eventData(t *testing.T, role, name string, log *ethtypes.Log) []interface{}
 func zeroArgs(m abi.Method) []interface{} {
 	args := make([]interface{}, len(m.Inputs))
 	for i, input := range m.Inputs {
-		args[i] = reflect.New(input.Type.GetType()).Elem().Interface()
+		args[i] = zeroValue(input.Type.GetType()).Interface()
 	}
 	return args
+}
+
+// zeroValue is the packable zero of an ABI Go type: a *big.Int is a zero
+// integer rather than nil, inside tuples and arrays as well.
+func zeroValue(typ reflect.Type) reflect.Value {
+	if typ == reflect.TypeOf((*big.Int)(nil)) {
+		return reflect.ValueOf(new(big.Int))
+	}
+	value := reflect.New(typ).Elem()
+	switch typ.Kind() {
+	case reflect.Struct:
+		for i := 0; i < typ.NumField(); i++ {
+			value.Field(i).Set(zeroValue(typ.Field(i).Type))
+		}
+	case reflect.Array:
+		for i := 0; i < typ.Len(); i++ {
+			value.Index(i).Set(zeroValue(typ.Elem()))
+		}
+	}
+	return value
 }
 
 // direct runs input on the precompile as a direct call of from with the call
