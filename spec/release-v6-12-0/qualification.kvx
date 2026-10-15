@@ -252,3 +252,10 @@ command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-o
 exit_code = 0
 log_path = "fleet/logs/fix-feeder-verify-1.log"
 observed_and_assumption = "The feeder field is renamed with a serde rename that keeps the journal format, clippy passes with warnings denied across all targets and the thirty-two feeder tests pass. Assumption: none."
+
+[fix.2.1.3]
+revision = "edbaf698d0697c1d678eff21fc811961cf0db32d"
+command = "go test ./modules/launchpad/types/... -run 'TestLaunchpadErrorStrings'"
+exit_code = 0
+log_path = "fleet/logs/fix-2.1.3-verify-1.log"
+observed_and_assumption = "Every one of the sixty-two distinct artifact errors across the eleven role ABIs now has exactly one keeper error with the same signature and selector, the pool-token errors included; the keeper-only conditions are listed in a KeeperOnlyErrors table the golden test asserts, and the remaining condition mappings cite the contract line that raises that error. Assumption: none."
