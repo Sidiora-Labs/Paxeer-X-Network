@@ -7887,3 +7887,8 @@ fix = "run the lint once on main after the wave lands, in the background with a 
 area = "fleet"
 symptom = "fleet-commit.sh with NOADD=1 still commits when a preceding git add pathspec fails, leaving a commit with only part of the change"
 fix = "check git status --short before the commit and amend or soft-reset if the staged set is incomplete"
+
+[gotcha.1663]
+area = "codify"
+symptom = "cg spec lint on one lane part of a multi-part spec reports requires-unknown-task errors for every cross-part task id"
+fix = "lint all parts together through the assembler before judging a part; a part-only lint is for syntax only"
