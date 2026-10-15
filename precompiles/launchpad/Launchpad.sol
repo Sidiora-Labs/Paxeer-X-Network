@@ -1,109 +1,185 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-uint256 constant LAUNCHPAD_ABI_MAJOR = 2;
-
 address constant LAUNCHPAD_PRECOMPILE_ADDRESS = 0x0000000000000000000000000000000000001017;
 
 ILaunchpad constant LAUNCHPAD_CONTRACT = ILaunchpad(LAUNCHPAD_PRECOMPILE_ADDRESS);
 
-/// Native KindleLaunch launchpad. Every market is a fixed-supply, 6-decimal
-/// tokenfactory denom whose whole supply the launchpad module account holds
-/// against a virtual-reserve constant-product curve priced in the quote
-/// denom (USDL). token is the denom's ERC20 pointer.
-///
-/// Swaps follow SidioraPool.swap: the dynamic fee is charged in the input
-/// token; a buy's fee is split protocolFeeBps to the treasury and the rest to
-/// the market's fee-rights holder, a sell's fee stays in the token reserve,
-/// and a sell never pays out more than the real quote balance (the virtual
-/// floor). Accumulated buy fees follow the fee strategy the fee-rights holder
-/// chose: 0 claim, 1 burn to 0x…dEaD, 2 airdrop to token holders by epoch,
-/// 3 return to the curve's real quote balance.
-///
-/// Quote and tokens move from and to the bank accounts of msg.sender and
-/// recipient; amounts are bank base units. Params change only through
-/// governance.
-///
-/// Gas = 3000 + 16 * len(calldata after the selector) + 5000 * writes
-///     + 9000000 for createMarket's pointer deployment.
-/// writes: createMarket 12, buy 8, sell 6, claimFees, executeBurn 3,
-/// executeAirdrop, claimAirdrop 4, setFeeStrategy, executeLpRewards, pause,
-/// unpause 1, views 0.
+/// Direct calls to 0x1017: the functions of Router, SidioraFactory, Quoter,
+/// PoolRegistry, FeesRouter, FeeAccumulator and ProtocolConfig, the first
+/// role in that order serving a shared signature, and the twelve
+/// EventEmitter launchpad events emitted at 0x1017.
 interface ILaunchpad {
-    struct Market {
-        address token;
-        string denom;
-        uint64 index;
-        string name;
-        string symbol;
-        address creator;
-        address guardian;
-        address feeRightsHolder;
-        uint8 feeStrategy;
-        bool paused;
-        uint256 totalSupply;
-        uint256 virtualQuoteReserve;
-        uint256 realQuoteBalance;
+    struct PermitParams {
+        uint256 value;
+        uint256 deadline;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+
+    struct PoolStats {
+        uint256 virtualUsdl;
+        uint256 realUsdl;
         uint256 tokenReserve;
-        uint256 createdAt;
         uint256 cumulativeVolume;
-        uint256 accumulatedQuoteFees;
-        uint256 accumulatedTokenFees;
-        uint256 accumulatedFees;
-        uint256 airdropEpoch;
-        uint256 airdropBalance;
+        uint256 currentFeeBps;
+        uint256 poolAge;
+        uint256 marketCap;
         uint256 price;
     }
 
-    struct Config {
-        string quoteDenom;
-        uint256 virtualQuoteDefault;
-        uint256 virtualTokenDefault;
-        uint256 minFeeBps;
-        uint256 maxFeeBps;
-        uint256 baseFeeBps;
-        uint256 protocolFeeBps;
-        uint256 feeDecayRate;
-        uint256 volatilityWeight;
-        uint256 concentrationWeight;
-        uint256 creationFee;
+    struct QuoteResult {
+        uint256 amountOut;
+        uint256 feeAmount;
+        uint256 priceImpactBps;
     }
 
-    event MarketCreated(address indexed token, address indexed creator, string denom, string name, string symbol, uint8 feeStrategy);
-    event Swap(address indexed token, address indexed trader, address indexed recipient, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 feeAmount, uint256 price);
-    event FeeRecorded(address indexed token, uint256 feeAmount, uint256 protocolCut, uint256 poolCut);
-    event FeeStrategyChanged(address indexed token, uint8 oldStrategy, uint8 newStrategy);
-    event FeesClaimed(address indexed token, address indexed recipient, uint256 amount);
-    event FeesBurned(address indexed token, uint256 amount);
-    event AirdropExecuted(address indexed token, uint256 amount, uint256 epoch);
-    event AirdropClaimed(address indexed token, address indexed holder, uint256 amount, uint256 epoch);
-    event LpRewardsExecuted(address indexed token, uint256 amount);
-    event PauseToggled(address indexed token, bool paused);
+    struct MultihopQuoteResult {
+        uint256 amountOut;
+        uint256 intermediateUsdl;
+        uint256 sellFeeAmount;
+        uint256 buyFeeAmount;
+        uint256 sellPriceImpactBps;
+        uint256 buyPriceImpactBps;
+        uint256 combinedPriceImpactBps;
+        address poolA;
+        address poolB;
+    }
 
-    function createMarket(string calldata name, string calldata symbol, uint8 feeStrategy) external returns (address token, string memory denom);
-    function buy(address token, uint256 quoteIn, uint256 minOut, address recipient, uint256 deadline) external returns (uint256 amountOut);
-    function sell(address token, uint256 amountIn, uint256 minOut, address recipient, uint256 deadline) external returns (uint256 amountOut);
-    function setFeeStrategy(address token, uint8 feeStrategy) external returns (uint8 oldStrategy);
-    function claimFees(address token, address recipient) external returns (uint256 amount);
-    function executeBurn(address token) external returns (uint256 amount);
-    function executeAirdrop(address token) external returns (uint256 amount);
-    function claimAirdrop(address token) external returns (uint256 amount);
-    function claimAirdropForEpoch(address token, uint64 epoch) external returns (uint256 amount);
-    function executeLpRewards(address token) external returns (uint256 amount);
-    function pause(address token) external returns (bool);
-    function unpause(address token) external returns (bool);
+    struct PoolMetadata {
+        address creator;
+        address token;
+        address optical;
+        uint256 nftId;
+        uint256 createdAt;
+        uint256 createdBlock;
+    }
 
-    function quoteBuy(address token, uint256 quoteIn) external view returns (uint256 amountOut, uint256 feeBps, uint256 feeAmount);
-    function quoteSell(address token, uint256 amountIn) external view returns (uint256 amountOut, uint256 feeBps, uint256 feeAmount);
-    function getReserves(address token) external view returns (uint256 virtualQuote, uint256 realQuote, uint256 tokenReserve);
-    function getPrice(address token) external view returns (uint256);
-    function getPriceSnapshots(address token) external view returns (uint256[8] memory snapshots, uint256 index, uint256 count);
-    function getFeeBps(address token) external view returns (uint256);
-    function getMarket(address token) external view returns (Market memory);
-    function getMarkets(uint256 offset, uint256 limit) external view returns (Market[] memory);
-    function getMarketsByCreator(address creator) external view returns (Market[] memory);
-    function getMarketCount() external view returns (uint256);
-    function getAccumulatedFees(address token) external view returns (uint256);
-    function getProtocolFees(address token) external view returns (uint256);
-    function getConfig() external view returns (Config memory);
+    event ConfigUpdated(bytes32 indexed key, uint256 oldValue, uint256 newValue, uint256 timestamp, uint256 blockNumber);
+    event FeeDistributed(bytes32 indexed poolId, uint256 nftId, uint8 strategy, uint256 amount, address recipient, uint256 timestamp, uint256 blockNumber);
+    event FeeFlow(uint8 indexed kind, address indexed pool, address indexed party, uint256 amount, uint256 protocolCut, uint256 poolCut, uint256 epoch, uint256 timestamp, uint256 blockNumber);
+    event FeeStrategyChanged(bytes32 indexed poolId, uint256 nftId, uint8 oldStrategy, uint8 newStrategy, uint256 timestamp, uint256 blockNumber);
+    event MarketCreated(bytes32 indexed poolId, address indexed token, address indexed creator, address pool, address optical, uint256 timestamp, uint256 blockNumber);
+    event NftMint(uint256 indexed tokenId, address indexed creator, address indexed pool, uint8 strategy, uint256 timestamp, uint256 blockNumber);
+    event NftTransfer(address indexed nft, address indexed from, address indexed to, uint256 tokenId, uint256 timestamp, uint256 blockNumber);
+    event PoolRegistered(address indexed pool, address indexed token, address indexed creator, address optical, uint256 nftId, uint256 timestamp, uint256 blockNumber);
+    event PoolStateUpdated(bytes32 indexed poolId, uint256 virtualReserve, uint256 realReserve, uint256 tokenReserve, uint256 price, uint256 timestamp, uint256 blockNumber);
+    event RouterTrade(uint8 indexed kind, address indexed pool, address indexed sender, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, uint256 intermediateUsdl, uint256 timestamp, uint256 blockNumber);
+    event Swap(bytes32 indexed poolId, address indexed sender, bool isBuy, uint256 amountIn, uint256 amountOut, uint256 fee, uint256 price, uint256 timestamp, uint256 blockNumber);
+    event TokenDeployed(address indexed token, address indexed pool, address indexed creator, bytes32 salt, string name, string symbol, uint8 decimals, uint256 totalSupply, uint256 timestamp, uint256 blockNumber);
+
+    function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
+    function buy(address pool, uint256 usdlAmountIn, uint256 minTokensOut, uint256 deadline) external returns (uint256 amountOut);
+    function buyWithPermit(address pool, uint256 usdlAmountIn, uint256 minTokensOut, uint256 deadline, PermitParams calldata permit) external returns (uint256 amountOut);
+    function createMarket(string calldata name, string calldata symbol, uint8 feeStrategy, address optical) external returns (address tokenAddr, address poolAddr, uint256 nftId);
+    function createMarketWithPermit(string calldata name, string calldata symbol, uint8 feeStrategy, address optical, PermitParams calldata permit) external returns (address tokenAddr, address poolAddr, uint256 nftId);
+    function factory() external view returns (address);
+    function getRoleAdmin(bytes32 role) external view returns (bytes32);
+    function grantRole(bytes32 role, address account) external;
+    function hasRole(bytes32 role, address account) external view returns (bool);
+    function initialize(address _factory, address _poolRegistry, address _protocolConfig, address _usdlAddress, address _admin) external;
+    function multicall(bytes[] calldata data) external returns (bytes[] memory results);
+    function poolRegistry() external view returns (address);
+    function protocolConfig() external view returns (address);
+    function proxiableUUID() external view returns (bytes32);
+    function registeredDefaultAdminCount() external view returns (uint256);
+    function renounceRole(bytes32 role, address callerConfirmation) external;
+    function revokeRole(bytes32 role, address account) external;
+    function sell(address pool, uint256 tokenAmountIn, uint256 minUsdlOut, uint256 deadline) external returns (uint256 amountOut);
+    function sellWithPermit(address pool, uint256 tokenAmountIn, uint256 minUsdlOut, uint256 deadline, PermitParams calldata permit) external returns (uint256 amountOut);
+    function swapTokenForToken(address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline) external returns (uint256 amountOut, uint256 intermediateUsdl);
+    function swapTokenForTokenWithPermit(address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, uint256 deadline, PermitParams calldata permit) external returns (uint256 amountOut, uint256 intermediateUsdl);
+    function upgradeToAndCall(address newImplementation, bytes calldata data) external payable;
+    function usdlAddress() external view returns (address);
+    function ROUTER_ROLE() external view returns (bytes32);
+    function createMarketFor(address creator, string calldata name, string calldata symbol, uint8 feeStrategy, address optical) external returns (address tokenAddr, address poolAddr, uint256 nftId);
+    function eventEmitter() external view returns (address);
+    function feeAccumulator() external view returns (address);
+    function getNonce(address creator) external view returns (uint256);
+    function initialize(address _poolBeacon, address _nftContract, address _poolRegistry, address _eventEmitter, address _protocolConfig, address _treasury, address _feeAccumulator, address _usdlAddress, address _admin) external;
+    function nftContract() external view returns (address);
+    function poolBeacon() external view returns (address);
+    function predictPoolAddress(address token, address creator, address optical) external view returns (address);
+    function treasury() external view returns (address);
+    function getAllPools(uint256 offset, uint256 limit) external view returns (address[] memory);
+    function getMarketCap(address pool) external view returns (uint256);
+    function getPoolPrice(address pool) external view returns (uint256);
+    function getPoolStats(address pool) external view returns (PoolStats memory stats);
+    function getPoolsByCreator(address creator) external view returns (address[] memory);
+    function initialize(address _poolRegistry, address _protocolConfig, address _admin) external;
+    function quoteExactInput(address pool, uint256 amountIn, bool isBuy) external view returns (QuoteResult memory result);
+    function quoteMultihop(address tokenIn, address tokenOut, uint256 amountIn) external view returns (MultihopQuoteResult memory result);
+    function FACTORY_ROLE() external view returns (bytes32);
+    function getNftIdByPool(address pool) external view returns (uint256);
+    function getPoolByToken(address token) external view returns (address);
+    function getPoolCount() external view returns (uint256);
+    function getPoolCountByCreator(address creator) external view returns (uint256);
+    function getPoolMetadata(address pool) external view returns (PoolMetadata memory);
+    function getPoolsByCreatorPage(address creator, uint256 offset, uint256 limit) external view returns (address[] memory result);
+    function initialize(address _eventEmitter, address _admin) external;
+    function isRegisteredPool(address pool) external view returns (bool);
+    function register(address pool, address token, address creator, address optical, uint256 nftId) external;
+    function claimAirdrop(uint256 nftId) external returns (uint256 amount);
+    function claimAirdropEpoch(uint256 nftId, uint256 epoch) external returns (uint256 amount);
+    function claimFees(uint256 nftId) external returns (uint256 amount);
+    function executeAirdrop(uint256 nftId) external returns (uint256 amount);
+    function executeBurn(uint256 nftId) external returns (uint256 amount);
+    function executeLpRewards(uint256 nftId) external returns (uint256 amount);
+    function initialize(address _nftContract, address _feeAccumulator, address _poolRegistry, address _admin) external;
+    function setFeeStrategy(uint256 nftId, uint8 newStrategy) external;
+    function DEAD_ADDRESS() external view returns (address);
+    function FEES_ROUTER_ROLE() external view returns (bytes32);
+    function OPTICAL_CLAIM_ROLE() external view returns (bytes32);
+    function OPTICAL_GRANTER_ROLE() external view returns (bytes32);
+    function POOL_ROLE() external view returns (bytes32);
+    function accountingInitialized() external view returns (bool);
+    function accountingMigrationCursor() external view returns (uint256);
+    function airdropClaimedSupply(address, uint256) external view returns (uint256);
+    function airdropEligibleSupply(address, uint256) external view returns (uint256);
+    function airdropEpochRemaining(address, uint256) external view returns (uint256);
+    function airdropSnapshotBlock(address, uint256) external view returns (uint256);
+    function allocateLegacyAirdrop(address pool, uint256 epoch, bytes32 root, uint256 budget) external;
+    function authorizeOptical(address optical) external;
+    function authorizePool(address pool) external;
+    function burn(address pool) external returns (uint256 amount);
+    function claim(address pool, address recipient) external returns (uint256 amount);
+    function claimAirdrop(address pool, address holder) external returns (uint256 amount);
+    function claimAirdropEpoch(address pool, address holder, uint256 epoch) external returns (uint256 amount);
+    function claimLegacyAirdrop(address pool, uint256 epoch, address holder, uint256 amount, bytes32[] calldata proof) external;
+    function claimOpticalSurplus(address pool, uint256 amount, address recipient) external;
+    function getAccumulatedFees(address pool) external view returns (uint256);
+    function getAirdropBalance(address pool) external view returns (uint256);
+    function getAirdropEpoch(address pool) external view returns (uint256);
+    function getLpRewardsBalance(address pool) external view returns (uint256);
+    function getOpticalSurplus(address pool) external view returns (uint256);
+    function getProtocolFeesPending() external view returns (uint256);
+    function hasClaimedAirdrop(address pool, address holder, uint256 epoch) external view returns (bool);
+    function initialize(address _protocolConfig, address _treasury, address _poolRegistry, address _eventEmitter, address _usdlAddress, address _admin) external;
+    function legacyAirdropRemaining(address, uint256) external view returns (uint256);
+    function legacyAirdropRoot(address, uint256) external view returns (bytes32);
+    function legacyAirdropUnallocated(address) external view returns (uint256);
+    function migrateAccounting(uint256 maxPools) external;
+    function migrateAdditionalAccounting(address[] calldata pools) external;
+    function recordFee(address pool, uint256 feeAmount) external;
+    function recordOpticalSurplus(address pool, uint256 amount) external;
+    function sendLpRewards(address pool) external returns (uint256 amount);
+    function supportsAirdrop(address pool) external view returns (bool);
+    function totalLiabilities() external view returns (uint256);
+    function triggerAirdrop(address pool) external returns (uint256 totalAmount);
+    function baseFeeBps() external view returns (uint256);
+    function concentrationWeight() external view returns (uint256);
+    function creationFee() external view returns (uint256);
+    function feeDecayRate() external view returns (uint256);
+    function maxFeeBps() external view returns (uint256);
+    function minFeeBps() external view returns (uint256);
+    function protocolFeeBps() external view returns (uint256);
+    function setBaseFeeBps(uint256 newBaseFeeBps) external;
+    function setCreationFee(uint256 newCreationFee) external;
+    function setFeeWeights(uint256 newDecayRate, uint256 newVolWeight, uint256 newConcWeight) external;
+    function setProtocolFeeBps(uint256 newProtocolFeeBps) external;
+    function setVirtualDefaults(uint256 newVirtualUsdl, uint256 newVirtualToken) external;
+    function virtualTokenDefault() external view returns (uint256);
+    function virtualUsdlDefault() external view returns (uint256);
+    function volatilityWeight() external view returns (uint256);
 }
