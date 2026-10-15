@@ -1,0 +1,150 @@
+name: Node / Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'node/**'
+      - 'modules/**'
+      - 'precompiles/**'
+      - 'engine/**'
+      - 'sdk/**'
+      - 'daemon/**'
+      - 'src/**'
+      - 'include/**'
+      - 'programs/**'
+      - 'Makefile'
+      - 'chain.mk'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LC_ALL: C
+  TZ: UTC
+
+jobs:
+  native-libs:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          build-essential clang jq libssl-dev libsqlite3-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+      - name: Build native libraries
+        run: make paxd-native-libs
+
+  paxd:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          build-essential clang jq libssl-dev libsqlite3-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+      - name: Download Go modules
+        run: go mod download
+      - name: Build paxd
+        run: make paxd-build
+      - name: Check paxd version
+        run: make paxd-version-check
+
+  lxphost:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          build-essential clang jq libssl-dev libsqlite3-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+      - name: Test the kernel host
+        run: make test-lxphost
+
+  node-tests:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install native dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          build-essential clang jq libssl-dev libsqlite3-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal
+      - name: Build native libraries
+        run: make paxd-native-libs
+      - name: Test node and custody packages
+        env:
+          CGO_ENABLED: '1'
+        run: go test ./node/... ./modules/layerxcustody/...
+
+  node-build-gate:
+    if: always()
+    needs: [native-libs, paxd, lxphost, node-tests]
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - name: Require every node job to succeed
+        env:
+          NATIVE_LIBS: ${{ needs.native-libs.result }}
+          PAXD: ${{ needs.paxd.result }}
+          LXPHOST: ${{ needs.lxphost.result }}
+          NODE_TESTS: ${{ needs.node-tests.result }}
+        run: |
+          status=0
+          for entry in "native-libs=$NATIVE_LIBS" "paxd=$PAXD" "lxphost=$LXPHOST" "node-tests=$NODE_TESTS"; do
+            job=${entry%%=*}
+            result=${entry#*=}
+            echo "$job: $result"
+            if [ "$result" != success ]; then
+              status=1
+            fi
+          done
+          exit "$status"
