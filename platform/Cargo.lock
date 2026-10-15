@@ -1668,7 +1668,9 @@ dependencies = [
 name = "layerx-oracle-feeder"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "ed25519-dalek",
+ "k256",
  "layerx-crypto",
  "layerx-platform-internal",
  "layerx-types",
