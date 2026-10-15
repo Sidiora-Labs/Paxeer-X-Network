@@ -6,8 +6,11 @@ import (
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
 	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
+	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
+	spottypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	launchpadprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
@@ -22,6 +25,33 @@ import (
 // spot hooks in that order over the stores the plan adds, and then serves the
 // v6.12.0 precompile set. It carries no entry in the embedded tag list.
 const V6120Upgrade = "v6.12.0"
+
+// v6120NewModules are the modules whose stores the v6.12.0 plan adds. Their
+// v6.12.0 initial state is written by the pricefeed, perps and spot hooks,
+// never by InitGenesis.
+var v6120NewModules = []string{pricefeedtypes.ModuleName, perpstypes.ModuleName, spottypes.ModuleName}
+
+// v6120MigrationVersions returns a copy of fromVM in which every module of
+// v6120NewModules that fromVM lacks is recorded at its consensus version, so
+// RunMigrations runs no InitGenesis for it and its hook writes its initial
+// state exactly once.
+func (app *App) v6120MigrationVersions(fromVM module.VersionMap) (module.VersionMap, error) {
+	versions := make(module.VersionMap, len(fromVM)+len(v6120NewModules))
+	for name, version := range fromVM {
+		versions[name] = version
+	}
+	for _, name := range v6120NewModules {
+		if _, recorded := versions[name]; recorded {
+			continue
+		}
+		mod, wired := app.mm.Modules[name]
+		if !wired {
+			return nil, fmt.Errorf("upgrade %s: module %s is not wired", V6120Upgrade, name)
+		}
+		versions[name] = mod.ConsensusVersion()
+	}
+	return versions, nil
+}
 
 // v6120Hook is one named step of the v6.12.0 plan; a nil run is unbound.
 type v6120Hook struct {
@@ -73,7 +103,8 @@ func (e v6120LaunchpadEVM) InstallRetired(ctx sdk.Context, retired, replacement 
 }
 
 // runV6120Upgrade refuses the plan while any hook is unbound, before writing
-// any state; otherwise it runs the module migrations, moves the usid mint
+// any state; otherwise it records the modules the plan adds at their consensus
+// versions, runs the module migrations, moves the usid mint
 // authority to the bridge module account, migrates the legacy SID balances,
 // runs every hook in order and serves the v6.12.0 precompile set. A hook
 // failure returns no version map, so the upgrade keeper records no done height.
@@ -84,7 +115,11 @@ func (app *App) runV6120Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM mod
 			return nil, fmt.Errorf("upgrade %s: hook %s is not bound", V6120Upgrade, hook.name)
 		}
 	}
-	newVM, err := app.mm.RunMigrations(ctx, app.configurator, fromVM)
+	versions, err := app.v6120MigrationVersions(fromVM)
+	if err != nil {
+		return nil, err
+	}
+	newVM, err := app.mm.RunMigrations(ctx, app.configurator, versions)
 	if err != nil {
 		return newVM, err
 	}
