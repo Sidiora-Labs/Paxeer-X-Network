@@ -147,3 +147,10 @@ command = "node --test --import tsx tests/amounts.test.ts"
 exit_code = 0
 log_path = "fleet logs 6.2.4-verify-2"
 observed_and_assumption = "The exact amount parsing passes its gate, but the acceptance scenario for the deposit amount states that the float path yields 289999 for 0.29 at six decimals, and in JavaScript that product floors to 290000, so the drift is demonstrated with 8.2 instead. Assumption: the scenario text is corrected to an input that actually drifts, with no change to the code."
+
+[finding.1.0.5]
+revision = "135a16e62c98494d816d18f40ed97541f9b65fa8"
+command = "go test ./modules/layerxcustody/ -run 'TestCustodyProposalExecutesOnlyFromActivationHeight'"
+exit_code = 1
+log_path = "fleet logs 1.0.5-verify-2"
+observed_and_assumption = "The custody activation constant now names the v6.12.0 plan, but the test helper applies that plan through the real upgrade keeper, whose v6.12.0 handler refuses while the pointer, launchpad, pricefeed, perps and spot hooks are unbound, so the gate panics on the unbound pointer hook. Assumption: the gate passes once the hook binding tasks land, and the custody test helper is not changed to bypass the handler."
