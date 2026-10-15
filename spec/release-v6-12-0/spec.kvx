@@ -21406,7 +21406,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.16]
 title = "Send every write with the estimated gas margin"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
