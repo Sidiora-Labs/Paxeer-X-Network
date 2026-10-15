@@ -1563,3 +1563,75 @@ exit = 1
 log = fleet/logs/1.3.102-verify-1.log
 observed = The node test binary does not compile because the perps precompile views call unexported keeper readers and legacyabci end_block calls a Logger method the context lacks.
 assumption = The gate reruns after the perps keeper export lane lands.
+
+[finding.4.3.1]
+revision = 739f8388a18794e910882a69525c5d4e3e855200
+command = go test ./precompiles/spot/ -run '^(TestHyperpaxCallSequence|TestHyperpaxMarketPath|TestHyperpaxLimitPath|TestHyperpaxStopPath|TestHyperpaxPaxPath)$'
+exit = 1
+log = fleet/logs/4.3.1-verify-1.log
+observed = The spot precompile test package does not compile because an internal-package test imports node, which imports the precompile back.
+assumption = The gate reruns after that test moves to the external test package.
+
+[finding.8.4.15]
+revision = 45a5f774746911abb1fceab348b3c6fdd1fd77b6
+command = bash tools/release/tests/run-all.sh
+exit = 1
+log = fleet/logs/8.4.15-verify-2.log
+observed = The runner itself passes its self checks; thirteen named suites were absent on the lane base and two present suites fail on prerequisites already recorded for 8.4.2.
+assumption = The runner gate reruns once every release tooling suite is on main.
+
+[finding.8.4.12]
+revision = 72b9142620f6397ca7757213de4217f638569294
+command = bash tools/release/tests/rehearse.test.sh
+exit = 1
+log = fleet/logs/8.4.12-verify-2.log
+observed = Five cases need the rehearsal helpers that had not landed on the lane base and a filled rehearsal environment over a stopped node data copy; no local chain can be exported with the available binaries.
+assumption = The rehearsal gate runs on the rehearsal fleet once the release build and the halt export exist.
+
+[finding.8.4.10]
+revision = REV-8.4.10
+command = python3 tools/release/tests/test_fleet_check.py
+exit = 1
+log = fleet/logs/8.4.10-verify-2.log
+observed = 19 unit cases pass; one integration case fails at setup and two live cases need a rehearsal fleet.
+assumption = The integration and live cases run with the rehearsal of 8.4.12.
+
+[finding.fix-perps-keeper-exports]
+revision = fab3d7d1a57ef92555fa925f5997a32915336ce9
+command = go vet ./precompiles/perps/ && go test ./precompiles/perps/ -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-perps-keeper-exports-verify-1.log
+observed = The perps module and precompile build cleanly; the test package still depends on node, which did not compile on the lane base before the store wiring landed.
+assumption = The perps precompile gate reruns on main now that the wiring and the exports are both landed.
+
+[finding.fix-v6120-spot-init]
+revision = 7f69c9e8f31795772cb5e09d17f122adaccb3a29
+command = go test ./node/ -run 'TestV6120' -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-v6120-spot-init-verify-1.log
+observed = The build and test runs failed on a full filesystem on the lane box; no task-scoped failure was reached.
+assumption = The node v6.12.0 upgrade tests rerun on main once node compiles.
+
+[finding.fix-node-launchpad-tests]
+revision = 1e4ae8c056e0915a73e6a24721c252aff0033459
+command = go test ./node/ -run 'TestLaunchpadAirdrop|TestLaunchpadGovernance' -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-node-launchpad-tests-verify-1.log
+observed = The genesis digest test passes; the node package did not compile on the lane base because of the perps view readers and the legacy end block logger.
+assumption = The node launchpad tests rerun after the perps keeper export lane lands.
+
+[finding.fix-perps-data-gateway]
+revision = 50667ac0a83c48fa79fd485033635fa11a36cbec
+command = go vet ./platform/perps-data/... && go test ./platform/perps-data/... -count=1 -p 1
+exit = 1
+log = fleet/logs/fix-perps-data-gateway-verify-1.log
+observed = 65 tests pass and 18 fail: the graphql schema refuses because the trade subscription resolver is absent, two user stats tests pin contradictory error texts, and the server tests need a test node.
+assumption = A follow-up lane adds the trade subscription resolver and the socket feeds; the user stats error text and the test node are contract and environment inputs.
+
+[finding.fix-hyperpax-sockets]
+revision = 69f49f631842bec631777e1e5d61f797235297ab
+command = node --test --import tsx tests/v6120-invariants.test.ts
+exit = 1
+log = fleet/logs/fix-hyperpax-sockets-verify-1.log
+observed = Eleven invariants pass; the protocol stats hook still queries a root that no gateway operation in the data services contract provides.
+assumption = The contract names the gateway operation for protocol stats before that hook changes.
