@@ -6329,7 +6329,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.0.5]
 title = "Freeze selectors in a golden file with its loader and test"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["2.0.1", "2.0.2", "2.0.3", "2.0.4"]
