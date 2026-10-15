@@ -483,3 +483,43 @@ command = "go build ./modules/perps/types/"
 exit_code = 1
 log_path = "fleet/logs/3.1.20-build-1.log"
 observed_and_assumption = "expected_keepers.go references pricefeed keeper Price, which task 5.1.9 adds in modules/pricefeed/keeper/price.go and which has not landed. Assumption: both gates are rerun once after 5.1.9 lands."
+
+[finding.3.1.2]
+revision = "76c537ed13dad49c8ed5dadde4dbb8fca12f847d"
+command = "go test ./modules/perps/keeper/ -run 'TestGenesis'"
+exit = 1
+log = "fleet/logs/3.1.2-verify-1.log"
+observed = "The perps keeper package does not compile until expected_keepers.go (3.1.20) and book.go (3.1.5) land; genesis.go and its test report no errors of their own."
+assumption = "Rerun the gate once 3.1.5 and 3.1.20 are on main; the module ValidateGenesis must rebuild book and trigger entries before validating an exported state with open orders."
+
+[finding.3.1.5]
+revision = "8733575d04ca1072b035ea36b85e36dfbc7fcfc9"
+command = "go test ./modules/perps/keeper/ -run 'TestBook'"
+exit = 1
+log = "fleet/logs/3.1.5-verify-1.log"
+observed = "Package build fails on types.EVMKeeper and types.PricefeedKeeper, owned by 3.1.20."
+assumption = "book.go owns GetOrder and setOrder for prefix 0x05; rerun once 3.1.20 lands."
+
+[finding.3.1.7]
+revision = "d83d86ca122a6da5a8cc7e9c6178ba4be88db210"
+command = "go test ./modules/perps/keeper/ -run 'TestOrders'"
+exit = 1
+log = "fleet/logs/3.1.7-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.4, 3.1.5, 3.1.6, 3.1.10 and 3.1.20; CancelOrder returns (EventRecord, error) while the 3.1.14 caller expects error only."
+assumption = "The keeper reconciliation pass settles CancelOrder's signature and closeOrder's visibility to Match; rerun afterwards."
+
+[finding.3.1.8]
+revision = "c5f596bc767210d87ab86d1a97b609251b258b5c"
+command = "go test ./modules/perps/keeper/ -run 'TestTriggers'"
+exit = 1
+log = "fleet/logs/3.1.8-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.5, 3.1.6 and 3.1.20; the test file was never type-checked."
+assumption = "3.1.7 PlaceOrder and CancelOrder route untriggered orders through TriggerInsert, TriggerRemove and ValidateTriggerPrice; rerun after the reconciliation pass."
+
+[finding.issue-603]
+revision = "d81d4ecdc33ccb9d521aac89d2ef017c219cee30"
+command = "go test ./modules/launchpad/types/ -run 'TestMarketValidate|TestGenesis' -count=1 -v"
+exit = 1
+log = "fleet/logs/issue-603-verify-1.log"
+observed = "The types test binary pulled in the launchpad keeper from a base revision that lacked Keeper.TotalLiabilities; the fix itself was already on main."
+assumption = "Keeper.TotalLiabilities is on main now, so the regression test is rerun from a fresh worktree before the issue is closed."
