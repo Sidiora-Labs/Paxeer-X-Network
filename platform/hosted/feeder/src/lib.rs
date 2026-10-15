@@ -40,6 +40,8 @@ pub fn health_status(request: &[u8], ready: bool) -> &'static str {
     }
 }
 
+pub mod cosmos_tx;
+
 /// Perps oracle push ordinal (`0x00060003`).
 pub const ORACLE_PUSH_ORDINAL: u16 = 3;
 /// `LX_ORACLE_OBSERVATION_BYTES`.
