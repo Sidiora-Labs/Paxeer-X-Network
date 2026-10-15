@@ -1320,7 +1320,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.0.4]
 title = "Retarget the v6.11 and v6.10 plan tests to v6.12.0 and test the hook order, refusals and upgrade-info shape"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["1.0.1", "1.0.3", "1.0.5"]
