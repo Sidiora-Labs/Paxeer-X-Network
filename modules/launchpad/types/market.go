@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // FeeStrategy is the fee-rights holder's choice of what accumulated buy fees
@@ -51,6 +52,17 @@ func ValidateNameSymbol(name, symbol string) error {
 	return nil
 }
 
+// Generation is the Launch-x contract generation a market came from.
+// GenerationNative markets were created by the module and carry no pool
+// contract fields; generation 1 and 2 markets are SidioraPool records.
+type Generation uint8
+
+const (
+	GenerationNative Generation = iota
+	Generation1
+	Generation2
+)
+
 // Market is one launched token and its virtual-reserve curve: SidioraPool's
 // state plus the FeeAccumulator and SidioraNFT fields that belong to it.
 // Addresses are bech32 bank accounts; Pointer is the ERC20 pointer's hex
@@ -81,6 +93,21 @@ type Market struct {
 	AccumulatedFees      sdk.Int     `json:"accumulated_fees"`
 	AirdropEpoch         uint64      `json:"airdrop_epoch"`
 	AirdropBalance       sdk.Int     `json:"airdrop_balance"`
+
+	Generation                Generation `json:"generation"`
+	PoolAddress               string     `json:"pool_address"`
+	TokenAddress              string     `json:"token_address"`
+	Optical                   string     `json:"optical"`
+	Factory                   string     `json:"factory"`
+	FeeAccumulator            string     `json:"fee_accumulator"`
+	ProtocolConfig            string     `json:"protocol_config"`
+	EventEmitter              string     `json:"event_emitter"`
+	PendingGuardian           string     `json:"pending_guardian"`
+	LastSnapshotTimestamp     int64      `json:"last_snapshot_timestamp"`
+	CumulativeBuyQuoteVolume  sdk.Int    `json:"cumulative_buy_quote_volume"`
+	CumulativeSellQuoteVolume sdk.Int    `json:"cumulative_sell_quote_volume"`
+	FeeRightCollection        string     `json:"fee_right_collection"`
+	FeeRightID                uint64     `json:"fee_right_id"`
 }
 
 // Snapshots returns the ring as a fixed array.
@@ -153,6 +180,74 @@ func (m Market) Validate() error {
 	}
 	if m.TokenReserve.GT(m.TotalSupply) {
 		return fmt.Errorf("%w: token reserve above total supply", ErrInvalidMarket)
+	}
+	return m.validatePool()
+}
+
+// contractAddress requires an EIP-55 checksummed 20-byte hex address, nonzero
+// unless allowZero.
+func contractAddress(name, value string, allowZero bool) error {
+	if !strings.HasPrefix(value, "0x") || !common.IsHexAddress(value) || common.HexToAddress(value).Hex() != value {
+		return fmt.Errorf("%w: %s %q must be a checksummed hex address", ErrInvalidMarket, name, value)
+	}
+	if !allowZero && common.HexToAddress(value) == (common.Address{}) {
+		return fmt.Errorf("%w: %s is the zero address", ErrInvalidMarket, name)
+	}
+	return nil
+}
+
+// validatePool checks the SidioraPool and fee-right fields: unset on a native
+// market, complete on a generation 1 or 2 market.
+func (m Market) validatePool() error {
+	addresses := []struct {
+		name, value string
+		allowZero   bool
+	}{
+		{"pool address", m.PoolAddress, false},
+		{"token address", m.TokenAddress, false},
+		{"optical", m.Optical, true},
+		{"factory", m.Factory, false},
+		{"fee accumulator", m.FeeAccumulator, false},
+		{"protocol config", m.ProtocolConfig, false},
+		{"event emitter", m.EventEmitter, false},
+		{"fee right collection", m.FeeRightCollection, false},
+	}
+	switch m.Generation {
+	case GenerationNative:
+		for _, addr := range addresses {
+			if addr.value != "" {
+				return fmt.Errorf("%w: native market sets %s", ErrInvalidMarket, addr.name)
+			}
+		}
+		if m.PendingGuardian != "" || m.LastSnapshotTimestamp != 0 || !m.CumulativeBuyQuoteVolume.IsNil() ||
+			!m.CumulativeSellQuoteVolume.IsNil() || m.FeeRightID != 0 {
+			return fmt.Errorf("%w: native market sets pool fields", ErrInvalidMarket)
+		}
+		return nil
+	case Generation1, Generation2:
+	default:
+		return fmt.Errorf("%w: generation %d", ErrInvalidMarket, m.Generation)
+	}
+	for _, addr := range addresses {
+		if err := contractAddress(addr.name, addr.value, addr.allowZero); err != nil {
+			return err
+		}
+	}
+	if m.PendingGuardian != "" {
+		if _, err := sdk.AccAddressFromBech32(m.PendingGuardian); err != nil {
+			return fmt.Errorf("%w: pending guardian %q: %v", ErrInvalidMarket, m.PendingGuardian, err)
+		}
+	}
+	if m.LastSnapshotTimestamp < 0 {
+		return fmt.Errorf("%w: last snapshot timestamp is negative", ErrInvalidMarket)
+	}
+	for _, value := range []sdk.Int{m.CumulativeBuyQuoteVolume, m.CumulativeSellQuoteVolume} {
+		if err := nonNegative("directional volume", value); err != nil {
+			return err
+		}
+	}
+	if m.FeeRightID == 0 {
+		return fmt.Errorf("%w: fee right ids start at 1", ErrInvalidMarket)
 	}
 	return nil
 }
