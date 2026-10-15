@@ -10512,7 +10512,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.0.6]
 title = "Define venue state, genesis and event records"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["3.0.3", "3.0.4", "3.0.5"]
