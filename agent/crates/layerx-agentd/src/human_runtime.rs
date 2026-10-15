@@ -12910,7 +12910,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         request: layerx_agent_api::track::WaitRequest,
         settlement: Option<&NativeProgramSettlementContext<'_>>,
     ) -> Result<HumanResponse, HumanOperationError> {
-        let requested = production_verification_level(request.requested_verification_level);
+        let requested = production_rung_floor(request.requested_rung);
         let deadline_ms = request
             .deadline
             .get()
@@ -19233,6 +19233,15 @@ fn production_verification_level(level: layerx_agent_api::verify::Level) -> Veri
         layerx_agent_api::verify::Level::SettlementAnchored => {
             VerificationLevel::SETTLEMENT_ANCHORED
         }
+    }
+}
+
+/// Lowest production verification level that justifies each write rung.
+const fn production_rung_floor(rung: layerx_types::rung::Rung) -> VerificationLevel {
+    match rung {
+        layerx_types::rung::Rung::Submitted => VerificationLevel::UNVERIFIED,
+        layerx_types::rung::Rung::Receipted => VerificationLevel::SEQUENCER_SIGNED,
+        layerx_types::rung::Rung::Committed => VerificationLevel::CHECKPOINT_FINALISED,
     }
 }
 

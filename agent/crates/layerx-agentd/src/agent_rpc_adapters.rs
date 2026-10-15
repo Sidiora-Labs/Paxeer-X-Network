@@ -20,6 +20,7 @@ use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
 use layerx_agent_api::budget::{AuthorityResponse, BudgetRecord};
 use layerx_agent_api::read::Freshness;
+use layerx_types::rung::Rung;
 use sha2::{Digest, Sha256};
 
 pub(crate) fn sign<A: HumanAuthorityBoundary>(
@@ -909,17 +910,7 @@ pub(crate) fn wait<A: HumanAuthorityBoundary>(
     ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     let id = ctx.request_id;
-    let request: WaitWire = decode(request, id)?;
-    let _ = (request.tenant, request.agent);
-    let typed = layerx_agent_api::track::WaitRequest {
-        submission_ref: layerx_agent_api::track::SubmissionRef::new(request.submission_ref)
-            .map_err(|_| malformed(id))?,
-        requested_verification_level: requested_level(&request.requested_verification_level, id)?,
-        deadline: layerx_agent_api::generated::TimestampSeconds::parse_decimal(&request.deadline)
-            .ok()
-            .filter(|value| value.get().to_string() == request.deadline)
-            .ok_or_else(|| malformed(id))?,
-    };
+    let typed = wait_request(request, id)?;
     let mut guard = owner.lock().map_err(|error| owner_error(id, error))?;
     let response = guard.wait(context.peer(), typed);
     owner_payload(id, response, |reader| {
@@ -944,6 +935,23 @@ pub(crate) fn wait<A: HumanAuthorityBoundary>(
         );
         out.insert("deadline_elapsed".into(), Value::Bool(deadline_elapsed));
         Some((Value::Object(out), Some(actual)))
+    })
+}
+
+fn wait_request(
+    request: &Map<String, Value>,
+    id: RequestId,
+) -> Result<layerx_agent_api::track::WaitRequest, Rejection> {
+    let request: WaitWire = decode(request, id)?;
+    let _ = (request.tenant, request.agent);
+    Ok(layerx_agent_api::track::WaitRequest {
+        submission_ref: layerx_agent_api::track::SubmissionRef::new(request.submission_ref)
+            .map_err(|_| malformed(id))?,
+        requested_rung: Rung::from_name(&request.requested_rung).ok_or_else(|| malformed(id))?,
+        deadline: layerx_agent_api::generated::TimestampSeconds::parse_decimal(&request.deadline)
+            .ok()
+            .filter(|value| value.get().to_string() == request.deadline)
+            .ok_or_else(|| malformed(id))?,
     })
 }
 
@@ -2376,7 +2384,7 @@ struct WaitWire {
     #[serde(default)]
     agent: Option<String>,
     submission_ref: String,
-    requested_verification_level: String,
+    requested_rung: String,
     deadline: String,
 }
 
@@ -2687,4 +2695,51 @@ fn program_lifecycle<A: HumanAuthorityBoundary>(
             "terminal_payload": "", "call_graph": ""}),
         verification: Some(VerificationStatus::Achieved(Level::SequencerSigned)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wait_json(rung: &str) -> Map<String, Value> {
+        serde_json::json!({
+            "submission_ref": "sub-1",
+            "requested_rung": rung,
+            "deadline": "1700000000",
+        })
+        .as_object()
+        .cloned()
+        .unwrap()
+    }
+
+    #[test]
+    fn wait_request_reads_each_requested_rung_name() {
+        for rung in [Rung::Submitted, Rung::Receipted, Rung::Committed] {
+            let typed = wait_request(&wait_json(rung.name()), RequestId(7)).unwrap();
+            assert_eq!(typed.requested_rung, rung);
+            assert_eq!(typed.submission_ref.as_str(), "sub-1");
+            assert_eq!(typed.deadline.get(), 1_700_000_000);
+            let echoed = serde_json::json!({
+                "submission_ref": typed.submission_ref.as_str(),
+                "requested_rung": typed.requested_rung.name(),
+                "deadline": typed.deadline.get().to_string(),
+            });
+            assert_eq!(echoed, Value::Object(wait_json(rung.name())));
+        }
+    }
+
+    #[test]
+    fn wait_request_refuses_retired_level_names_and_field() {
+        let refusal = wait_request(&wait_json("batch-included"), RequestId(8)).unwrap_err();
+        assert_eq!(refusal.reason, "envelope.malformed");
+        assert_eq!(refusal.request_id, RequestId(8));
+        let mut retired = wait_json("committed");
+        retired.insert(
+            "requested_verification_level".into(),
+            Value::String("batch-included".into()),
+        );
+        let refusal = wait_request(&retired, RequestId(9)).unwrap_err();
+        assert_eq!(refusal.reason, "envelope.unknown_field");
+        assert_eq!(refusal.class, ErrorClass::ProtocolIncompatibility);
+    }
 }
