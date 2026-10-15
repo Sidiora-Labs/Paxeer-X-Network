@@ -56,3 +56,10 @@ command = "go test -count=1 ./platform/perps-data/internal/bigint/ -run 'TestBig
 exit_code = 0
 log_path = "fleet logs 7.0.9-verify-1"
 observed_and_assumption = "The origin ratelimit middleware wrote its 503 through a Launch-x shared http helper that has no counterpart under platform/perps-data, so the masked 5xx envelope is written inline; the origin BigintAdd did not refuse uint256 overflow, which acceptance 7.1.7 requires, so inputs are validated and results bounded at Uint256Max. Assumption: inline envelope and the bounded arithmetic are the intended port."
+
+[finding.5.1.2]
+revision = "21978f950f5dc3a117b530d5b659b6bbd78b5b15"
+command = "go test ./modules/pricefeed/types/ -run 'TestLXPName'"
+exit_code = 0
+log_path = "fleet logs 5.1.2-verify-1"
+observed_and_assumption = "No pricefeed task declares the module's ModuleName or StoreKey constants although the errors, keys and codec steps depend on them; ModuleName is now declared beside the errors. Assumption: StoreKey is declared by the first keeper or state task that needs it, with its line named in that task's report."
