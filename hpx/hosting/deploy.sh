@@ -39,7 +39,7 @@ die() { printf '\033[0;31m[deploy] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 [[ "$SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]] || die "invalid source revision: $SOURCE_REVISION"
 [ -f "$SCRIPT_DIR/index.html" ] || die "missing landing page: $SCRIPT_DIR/index.html"
 [ -f "$SCRIPT_DIR/fonts.sha256" ] || die "missing font manifest: $SCRIPT_DIR/fonts.sha256"
-[ -f "$PAXEER_ROOT/assets/PaxeerLogo.png" ] || die "missing Paxeer logo"
+[ -f "$SCRIPT_DIR/PaxeerLogo.png" ] || die "missing Paxeer logo"
 if [ -n "${HPX_REGISTER_TOKEN:-}" ] && [[ ! "$HPX_REGISTER_TOKEN" =~ ^[A-Za-z0-9._~-]+$ ]]; then
   die "HPX_REGISTER_TOKEN may contain only letters, digits, dot, underscore, tilde and hyphen"
 fi
@@ -81,7 +81,7 @@ fi
 install -d -m 0755 /usr/local/libexec "$ARTIFACTS_ROOT" /var/www/certbot
 install -d -m 0755 "$WEB_ROOT" "$WEB_ROOT/fonts"
 install -m 0644 "$SCRIPT_DIR/index.html" "$WEB_ROOT/index.html"
-install -m 0644 "$PAXEER_ROOT/assets/PaxeerLogo.png" "$WEB_ROOT/paxeer-logo.png"
+install -m 0644 "$SCRIPT_DIR/PaxeerLogo.png" "$WEB_ROOT/paxeer-logo.png"
 for font in "${FONT_FILES[@]}"; do
   install -m 0644 "$tmp/fonts/$font" "$WEB_ROOT/fonts/$font"
 done
