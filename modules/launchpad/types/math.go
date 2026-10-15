@@ -72,7 +72,7 @@ func Sqrt(x *big.Int) *big.Int {
 }
 
 // GetAmountOut is ReserveLib.getAmountOut:
-// floor(reserveOut*amountIn / (reserveIn+amountIn)).
+// mulDiv(reserveOut, amountIn, reserveIn+amountIn).
 func GetAmountOut(reserveIn, reserveOut, amountIn *big.Int) (*big.Int, error) {
 	if amountIn.Sign() == 0 {
 		return nil, ErrInsufficientInput
@@ -80,15 +80,11 @@ func GetAmountOut(reserveIn, reserveOut, amountIn *big.Int) (*big.Int, error) {
 	if reserveIn.Sign() == 0 || reserveOut.Sign() == 0 {
 		return nil, ErrInsufficientLiquidity
 	}
-	numerator, err := mul(reserveOut, amountIn)
-	if err != nil {
-		return nil, err
-	}
 	denominator, err := add(reserveIn, amountIn)
 	if err != nil {
 		return nil, err
 	}
-	return new(big.Int).Quo(numerator, denominator), nil
+	return MulDiv(reserveOut, amountIn, denominator)
 }
 
 // GetAmountIn is ReserveLib.getAmountIn:
@@ -154,11 +150,7 @@ func CalculateConcentrationFactor(concentrationWeight, topHolderBps *big.Int) (*
 	if topHolderBps.Sign() == 0 {
 		return new(big.Int), nil
 	}
-	product, err := mul(concentrationWeight, topHolderBps)
-	if err != nil {
-		return nil, err
-	}
-	return product.Quo(product, bps), nil
+	return MulDiv(concentrationWeight, topHolderBps, bps)
 }
 
 // FeeInputs are the arguments of FeeLib.calculateDynamicFee.
@@ -175,78 +167,87 @@ type FeeInputs struct {
 }
 
 // CalculateDynamicFee is FeeLib.calculateDynamicFee: base + age + volatility
-// + concentration, clamped to [minFee, maxFee].
+// + concentration, each component compared against the budget left below
+// maxFee before it is added so that a component above the budget saturates
+// at maxFee, and the sum raised to minFee.
 func CalculateDynamicFee(in FeeInputs) (*big.Int, error) {
+	if in.MinFee.Cmp(in.MaxFee) > 0 || in.MaxFee.Cmp(bps) >= 0 {
+		return nil, ErrInvalidParams
+	}
+	if in.BaseFee.Cmp(in.MaxFee) >= 0 {
+		return new(big.Int).Set(in.MaxFee), nil
+	}
+	fee := new(big.Int).Set(in.BaseFee)
 	age, err := CalculateAgeFactor(in.FeeDecayRate, in.PoolAgeSeconds)
 	if err != nil {
 		return nil, err
 	}
-	vol, err := CalculateVolatilityFactor(in.VolatilityWeight, in.Volatility)
-	if err != nil {
-		return nil, err
+	if age.Cmp(new(big.Int).Sub(in.MaxFee, fee)) >= 0 {
+		return new(big.Int).Set(in.MaxFee), nil
 	}
-	conc, err := CalculateConcentrationFactor(in.ConcentrationWeight, in.TopHolderBps)
-	if err != nil {
-		return nil, err
-	}
-	fee := new(big.Int).Set(in.BaseFee)
-	for _, part := range []*big.Int{age, vol, conc} {
-		if fee, err = add(fee, part); err != nil {
+	fee.Add(fee, age)
+	for _, term := range []struct{ weight, value, scale *big.Int }{
+		{in.VolatilityWeight, in.Volatility, micro},
+		{in.ConcentrationWeight, in.TopHolderBps, bps},
+	} {
+		if term.value.Sign() == 0 || term.weight.Sign() == 0 {
+			continue
+		}
+		threshold, err := MulDiv(new(big.Int).Sub(in.MaxFee, fee), term.scale, term.value)
+		if err != nil {
 			return nil, err
 		}
+		if term.weight.Cmp(threshold) > 0 {
+			return new(big.Int).Set(in.MaxFee), nil
+		}
+		factor, err := MulDiv(term.weight, term.value, term.scale)
+		if err != nil {
+			return nil, err
+		}
+		fee.Add(fee, factor)
 	}
 	if fee.Cmp(in.MinFee) < 0 {
 		fee.Set(in.MinFee)
-	} else if fee.Cmp(in.MaxFee) > 0 {
-		fee.Set(in.MaxFee)
 	}
 	return fee, nil
 }
 
-func absDiff(a, b *big.Int) *big.Int {
-	if a.Cmp(b) > 0 {
-		return new(big.Int).Sub(a, b)
+// relativeMovement is |current-previous|*1e6/previous capped at 1e6, with a
+// move away from a zero price counted as 1e6.
+func relativeMovement(previous, current *big.Int) (*big.Int, error) {
+	if previous.Sign() == 0 {
+		if current.Sign() == 0 {
+			return new(big.Int), nil
+		}
+		return new(big.Int).Set(micro), nil
 	}
-	return new(big.Int).Sub(b, a)
+	difference := new(big.Int).Sub(current, previous)
+	if difference.Abs(difference).Cmp(previous) >= 0 {
+		return new(big.Int).Set(micro), nil
+	}
+	return MulDiv(difference, micro, previous)
 }
 
 // CalculateVolatility is FeeLib.calculateVolatility over the first count
-// slots of the snapshot array in index order: the standard deviation of the
-// absolute consecutive price changes, scaled by 1e6.
+// slots of the snapshot array, which the caller passes in chronological
+// order: the root mean square of the relative consecutive price movements in
+// parts per million, each movement capped at 1e6.
 func CalculateVolatility(snapshots [SnapshotSlots]*big.Int, count uint64) (*big.Int, error) {
-	if count < 2 {
-		return new(big.Int), nil
-	}
 	if count > SnapshotSlots {
 		return nil, ErrOverflow
 	}
-	sumChanges := new(big.Int)
-	changes := int64(0)
-	var err error
-	for i := uint64(1); i < count; i++ {
-		if sumChanges, err = add(sumChanges, absDiff(snapshots[i], snapshots[i-1])); err != nil {
-			return nil, err
-		}
-		changes++
+	if count < 2 {
+		return new(big.Int), nil
 	}
-	meanChange := new(big.Int).Quo(sumChanges, big.NewInt(changes))
-	sumSquaredDev := new(big.Int)
+	sumSquares := new(big.Int)
 	for i := uint64(1); i < count; i++ {
-		dev := absDiff(absDiff(snapshots[i], snapshots[i-1]), meanChange)
-		squared, err := MulDiv(dev, dev, micro)
+		movement, err := relativeMovement(snapshots[i-1], snapshots[i])
 		if err != nil {
 			return nil, err
 		}
-		if sumSquaredDev, err = add(sumSquaredDev, squared); err != nil {
-			return nil, err
-		}
+		sumSquares.Add(sumSquares, movement.Mul(movement, movement))
 	}
-	variance := new(big.Int).Quo(sumSquaredDev, big.NewInt(changes))
-	scaled, err := mul(variance, micro)
-	if err != nil {
-		return nil, err
-	}
-	return Sqrt(scaled), nil
+	return Sqrt(sumSquares.Quo(sumSquares, new(big.Int).SetUint64(count-1))), nil
 }
 
 // FeeAmount is the input-token fee of a swap: amountIn*feeBps/10000.

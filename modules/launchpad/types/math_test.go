@@ -87,14 +87,72 @@ func TestFeeLibVolatility(t *testing.T) {
 	sameInt(t, n(0), must(t)(types.CalculateVolatility(single, 0)))
 	sameInt(t, n(0), must(t)(types.CalculateVolatility(ring(10, 10, 10, 10), 4)))
 	moving := must(t)(types.CalculateVolatility(ring(100_000, 120_000, 90_000, 150_000), 4))
-	sameInt(t, n(16970), moving)
+	sameInt(t, n(426983), moving)
 	small := must(t)(types.CalculateVolatility(ring(100_000, 101_000, 99_000, 102_000), 4))
 	big := must(t)(types.CalculateVolatility(ring(100_000, 200_000, 50_000, 300_000), 4))
-	sameInt(t, n(0), small)
-	sameInt(t, n(62353), big)
+	sameInt(t, n(21682), small)
+	sameInt(t, n(924211), big)
 	require.Equal(t, 1, big.Cmp(small))
 	_, err := types.CalculateVolatility(ring(), types.SnapshotSlots+1)
 	require.ErrorIs(t, err, types.ErrOverflow)
+}
+
+func decimal(t *testing.T, value string) *big.Int {
+	t.Helper()
+	out, ok := new(big.Int).SetString(value, 10)
+	require.True(t, ok, value)
+	return out
+}
+
+// TestDynamicFeeGolden holds values recorded by running FeeLib, ReserveLib
+// and SidioraMath of the contract tree under solc 0.8.30.
+func TestDynamicFeeGolden(t *testing.T) {
+	maxWord := types.MaxUint256()
+	for name, tc := range map[string]struct {
+		in   types.FeeInputs
+		want int64
+	}{
+		"fee_age_0":                  {feeInputs(30, 10, 300, 500, 100, 100, 0, 0, 0), 300},
+		"fee_age_3600":               {feeInputs(30, 10, 300, 500, 100, 100, 3600, 0, 0), 280},
+		"fee_vol_high":               {feeInputs(30, 10, 300, 500, 100, 100, 1000*3600, 1_000_000, 0), 130},
+		"mature":                     {feeInputs(30, 10, 300, 500, 100, 100, 1000*3600, 0, 0), 30},
+		"min clamp":                  {feeInputs(0, 10, 300, 0, 0, 0, 86400*365, 0, 0), 10},
+		"all components":             {feeInputs(30, 10, 300, 500, 100, 100, 86400, 100_000, 2000), 80},
+		"age and volatility":         {feeInputs(30, 10, 300, 500, 100, 100, 86400, 300_000, 0), 80},
+		"base at max":                {feeInputs(300, 10, 300, 500, 100, 100, 0, 0, 0), 300},
+		"volatility exactly fills":   {feeInputs(30, 10, 300, 0, 100, 100, 1000*3600, 2_700_000, 0), 300},
+		"volatility then min clamp":  {feeInputs(5, 10, 300, 0, 100, 0, 1000*3600, 30_000, 0), 10},
+		"volatility weight saturate": {types.FeeInputs{BaseFee: n(30), MinFee: n(10), MaxFee: n(300), FeeDecayRate: n(0), VolatilityWeight: maxWord, ConcentrationWeight: n(0), PoolAgeSeconds: n(1000 * 3600), Volatility: n(1), TopHolderBps: n(0)}, 300},
+		"concentration saturate":     {types.FeeInputs{BaseFee: n(30), MinFee: n(10), MaxFee: n(300), FeeDecayRate: n(0), VolatilityWeight: n(0), ConcentrationWeight: maxWord, PoolAgeSeconds: n(1000 * 3600), Volatility: n(0), TopHolderBps: n(1)}, 300},
+	} {
+		sameInt(t, n(tc.want), must(t)(types.CalculateDynamicFee(tc.in)), name)
+	}
+	for name, in := range map[string]types.FeeInputs{
+		"min above max": feeInputs(30, 301, 300, 0, 0, 0, 0, 0, 0),
+		"max at 10000":  feeInputs(30, 10, 10_000, 0, 0, 0, 0, 0, 0),
+		"max above bps": feeInputs(30, 10, 20_000, 0, 0, 0, 0, 0, 0),
+	} {
+		_, err := types.CalculateDynamicFee(in)
+		require.ErrorIs(t, err, types.ErrInvalidParams, name)
+	}
+
+	snapshots := ring(1000, 1100, 990, 1200, 0, 0, 600, 601)
+	for count, want := range []int64{0, 0, 100_000, 100_000, 147_190, 515_993, 461_518, 586_656, 543_138} {
+		sameInt(t, n(want), must(t)(types.CalculateVolatility(snapshots, uint64(count))), "count %d", count)
+	}
+	sameInt(t, n(755_928), must(t)(types.CalculateVolatility(ring(0, 0, 50, 0, 40, 40, 0, 0), 8)))
+	_, err := types.CalculateVolatility(snapshots, types.SnapshotSlots+1)
+	require.ErrorIs(t, err, types.ErrOverflow)
+
+	sameInt(t, n(96_990_591_912), must(t)(types.GetAmountOut(virtualQuote, virtualToken, n(970_000))))
+	half, quarter := new(big.Int).Rsh(maxWord, 1), new(big.Int).Rsh(maxWord, 2)
+	sameInt(t, decimal(t, "19298681539552699237261830834781317975544997444273427339909597334652188273322"),
+		must(t)(types.GetAmountOut(half, half, quarter)))
+	sameInt(t, maxWord, must(t)(types.MulDiv(maxWord, maxWord, maxWord)))
+	_, err = types.MulDiv(maxWord, maxWord, n(1))
+	require.ErrorIs(t, err, types.ErrOverflow)
+	_, err = types.MulDiv(n(1), n(1), n(0))
+	require.ErrorIs(t, err, types.ErrDivisionByZero)
 }
 
 func TestReserveLibAmountOut(t *testing.T) {
