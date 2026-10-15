@@ -21,7 +21,7 @@ import (
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 var subjectName = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
-var eventIdentity = regexp.MustCompile(`^(0|[1-9][0-9]{0,19}):(0|[1-9][0-9]{0,19}):0x[0-9a-f]{64}:(0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9})$`)
+var eventIdentity = regexp.MustCompile(`^(0|[1-9][0-9]{0,19}):(0|[1-9][0-9]{0,19}):0x[0-9a-f]{64}:(-1|0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9})$`)
 var ErrClosed = errors.New("natsdriver: consumer closed")
 var ErrEventID = errors.New("natsdriver: invalid event id")
 

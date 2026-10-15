@@ -189,6 +189,11 @@ func TestNATSDriver(t *testing.T) {
 		if got, err := MsgID(first); err != nil || got != hex.EncodeToString(sum[:]) {
 			t.Fatalf("MsgID(%q) = %q, %v", first, got, err)
 		}
+		blockEvent := "125:500:" + hashA + ":-1:0:0"
+		blockSum := sha256.Sum256([]byte(blockEvent))
+		if got, err := MsgID(blockEvent); err != nil || got != hex.EncodeToString(blockSum[:]) {
+			t.Fatalf("MsgID(%q) = %q, %v", blockEvent, got, err)
+		}
 		for _, bad := range []string{
 			"",
 			"125:500:" + strings.ToUpper(hashA) + ":2:0:0",
@@ -197,6 +202,11 @@ func TestNATSDriver(t *testing.T) {
 			"125:0500:" + hashA + ":2:0:0",
 			"125:500:" + hashA + ":2:0:0:1",
 			"125:-1:" + hashA + ":2:0:0",
+			"125:500:" + hashA + ":-2:0:0",
+			"125:500:" + hashA + ":-0:0:0",
+			"125:500:" + hashA + ":-01:0:0",
+			"125:500:" + hashA + ":2:-1:0",
+			"125:500:" + hashA + ":2:0:-1",
 		} {
 			if got, err := MsgID(bad); !errors.Is(err, ErrEventID) || got != "" {
 				t.Fatalf("MsgID(%q) = %q, %v", bad, got, err)
