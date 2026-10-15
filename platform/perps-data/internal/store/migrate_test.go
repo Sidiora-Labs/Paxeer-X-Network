@@ -502,6 +502,65 @@ func TestMigrate(t *testing.T) {
 		}
 	})
 
+	t.Run("delivery_sequence", func(t *testing.T) {
+		migrate(t, db)
+		var typ, nullable, identity, generation, start, increment string
+		if err := db.QueryRow(`SELECT data_type, is_nullable, is_identity, identity_generation, identity_start, identity_increment
+ FROM information_schema.columns WHERE table_schema='perps' AND table_name='delivery_outbox' AND column_name='perps_seq'`).Scan(&typ, &nullable, &identity, &generation, &start, &increment); err != nil {
+			t.Fatal(err)
+		}
+		if typ != "bigint" || nullable != "NO" || identity != "YES" || generation != "ALWAYS" || start != "1" || increment != "1" {
+			t.Fatalf("perps_seq definition: %s %s %s %s %s %s", typ, nullable, identity, generation, start, increment)
+		}
+		if got := uniqueKeys(t, db, "delivery_outbox"); !slices.Equal(got, []string{"perps_seq"}) {
+			t.Fatalf("delivery_outbox unique keys %v, want [perps_seq]", got)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := tx.Rollback(); err != nil {
+				t.Error(err)
+			}
+		}()
+		if _, err = tx.Exec(`TRUNCATE perps.delivery_outbox RESTART IDENTITY`); err != nil {
+			t.Fatal(err)
+		}
+		for i := 1; i <= 3; i++ {
+			var sequence int64
+			if err = tx.QueryRow(`INSERT INTO perps.delivery_outbox (event_id, schema_version, subject, payload_hash, envelope)
+ VALUES ($1, 1, 'perps.fills', 'h1', '\x0102') RETURNING perps_seq`, fmt.Sprintf("sequence-%d", i)).Scan(&sequence); err != nil || sequence != int64(i) {
+				t.Fatalf("insert %d: sequence %d, error %v", i, sequence, err)
+			}
+		}
+		for _, check := range []struct {
+			name, query, code, constraint, message string
+		}{
+			{"generated_always", `INSERT INTO perps.delivery_outbox (event_id, perps_seq, schema_version, subject, payload_hash, envelope) VALUES ('explicit-sequence', 4, 1, 'perps.fills', 'h1', '\x0102')`, "428C9", "", `cannot insert a non-DEFAULT value into column "perps_seq"`},
+			{"unique", `INSERT INTO perps.delivery_outbox (event_id, perps_seq, schema_version, subject, payload_hash, envelope) OVERRIDING SYSTEM VALUE VALUES ('duplicate-sequence', 1, 1, 'perps.fills', 'h1', '\x0102')`, "23505", "delivery_outbox_perps_seq_key", `duplicate key value violates unique constraint "delivery_outbox_perps_seq_key"`},
+			{"immutable", `UPDATE perps.delivery_outbox SET perps_seq=DEFAULT WHERE event_id='sequence-1'`, "P0001", "", "immutable delivery envelope"},
+		} {
+			t.Run(check.name, func(t *testing.T) {
+				if _, err := tx.Exec(`SAVEPOINT rejected_write`); err != nil {
+					t.Fatal(err)
+				}
+				_, err := tx.Exec(check.query)
+				if _, rollbackErr := tx.Exec(`ROLLBACK TO SAVEPOINT rejected_write`); rollbackErr != nil {
+					t.Fatal(rollbackErr)
+				}
+				var pqErr *pq.Error
+				if !errors.As(err, &pqErr) || pqErr.Code != pq.ErrorCode(check.code) || pqErr.Constraint != check.constraint || pqErr.Message != check.message {
+					t.Fatalf("%s: %v, want %s %q %q", check.name, err, check.code, check.constraint, check.message)
+				}
+			})
+		}
+		var sequence int64
+		if err := tx.QueryRow(`SELECT perps_seq FROM perps.delivery_outbox WHERE event_id='sequence-1'`).Scan(&sequence); err != nil || sequence != 1 {
+			t.Fatalf("original sequence %d, want 1: %v", sequence, err)
+		}
+	})
+
 	t.Run("receipt_kind_check", func(t *testing.T) {
 		migrate(t, db)
 		txFrom := []byte(strings.Repeat("\x77", 20))

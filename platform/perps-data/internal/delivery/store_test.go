@@ -3,14 +3,17 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -82,7 +85,7 @@ func enqueueCommitted(t *testing.T, ctx context.Context, db *sql.DB, s *Store, s
 		t.Fatal(err)
 	}
 	for _, e := range envelopes {
-		if err = s.Enqueue(ctx, tx, subject, e); err != nil {
+		if _, err = s.Enqueue(ctx, tx, subject, e); err != nil {
 			_ = tx.Rollback()
 			t.Fatalf("Enqueue %s: %v", e.EventID, err)
 		}
@@ -224,14 +227,14 @@ func TestDeliveryStore(t *testing.T) {
 
 	t.Run("enqueue_in_tx", func(t *testing.T) {
 		e := testEnvelope("enqueue-1", "fill", 100)
-		if err := s.Enqueue(ctx, nil, fillSubject, e); err == nil || err.Error() != "delivery: transaction required" {
+		if _, err := s.Enqueue(ctx, nil, fillSubject, e); err == nil || err.Error() != "delivery: transaction required" {
 			t.Fatalf("nil tx: %v", err)
 		}
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = s.Enqueue(ctx, tx, fillSubject, e); err != nil {
+		if _, err = s.Enqueue(ctx, tx, fillSubject, e); err != nil {
 			t.Fatal(err)
 		}
 		if err = tx.Rollback(); err != nil {
@@ -266,24 +269,24 @@ func TestDeliveryStore(t *testing.T) {
 			t.Fatal(err)
 		}
 		changed := testEnvelope("enqueue-1", "fill", 101)
-		if err = s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, ErrIntegrity) {
+		if _, err = s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, ErrIntegrity) {
 			t.Fatalf("changed envelope under same id: %v", err)
 		}
-		if err = s.Enqueue(ctx, tx, orderSubject, testEnvelope("enqueue-1", "fill", 100)); !errors.Is(err, ErrIntegrity) {
+		if _, err = s.Enqueue(ctx, tx, orderSubject, testEnvelope("enqueue-1", "fill", 100)); !errors.Is(err, ErrIntegrity) {
 			t.Fatalf("same id on another subject: %v", err)
 		}
-		if err = s.Enqueue(ctx, tx, "perps.125.8.fill", testEnvelope("enqueue-2", "fill", 100)); !errors.Is(err, ErrAuthorization) {
+		if _, err = s.Enqueue(ctx, tx, "perps.125.8.fill", testEnvelope("enqueue-2", "fill", 100)); !errors.Is(err, ErrAuthorization) {
 			t.Fatalf("unapproved subject: %v", err)
 		}
 		tampered := testEnvelope("enqueue-3", "fill", 100)
 		tampered.PayloadHash = Hash([]byte(`{}`))
-		if err = s.Enqueue(ctx, tx, fillSubject, tampered); !errors.Is(err, ErrIntegrity) {
+		if _, err = s.Enqueue(ctx, tx, fillSubject, tampered); !errors.Is(err, ErrIntegrity) {
 			t.Fatalf("payload hash mismatch: %v", err)
 		}
 		oversized := testEnvelope("enqueue-4", "fill", 100)
 		oversized.Payload = json.RawMessage(`{"pad":"` + string(bytes.Repeat([]byte("a"), MaxEnvelopeBytes)) + `"}`)
 		oversized.PayloadHash = Hash(oversized.Payload)
-		if err = s.Enqueue(ctx, tx, fillSubject, oversized); err == nil || err.Error() != "delivery: invalid or oversized payload" {
+		if _, err = s.Enqueue(ctx, tx, fillSubject, oversized); err == nil || err.Error() != "delivery: invalid or oversized payload" {
 			t.Fatalf("oversized envelope: %v", err)
 		}
 		if err = tx.Rollback(); err != nil {
@@ -363,7 +366,7 @@ func TestDeliveryStore(t *testing.T) {
 		wantNoClaim(t, ctx, s)
 		time.Sleep(time.Duration(r.availableInMS+100) * time.Millisecond)
 		second := claimOne(t, ctx, s)
-		if second.EventID != e.EventID || second.Fence != 2 || second.Attempts != 2 {
+		if second.EventID != e.EventID || second.PerpsSeq != lease.PerpsSeq || second.Fence != 2 || second.Attempts != 2 {
 			t.Fatalf("reclaim = %+v", second)
 		}
 		if err := s.Retry(ctx, second, Transient, 2, time.Second); err != nil {
@@ -542,6 +545,167 @@ func TestDeliveryStore(t *testing.T) {
 		ack, err := publisher.Publish(ctx, fillSubject, envelopes[0].EventID, []byte(`{}`))
 		if err != nil || ack.Sequence != base+1 {
 			t.Fatalf("duplicate publish ack = %+v, %v", ack, err)
+		}
+	})
+}
+
+func TestStore(t *testing.T) {
+	dsn := os.Getenv(testDatabaseEnv)
+	if dsn == "" {
+		t.Fatal("TestStore requires " + testDatabaseEnv)
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		var err error
+		dsn, err = pq.ParseURL(dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	admin, err := store.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := admin.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	name := "delivery_test_" + strings.ToLower(rand.Text())
+	if _, err = admin.Exec("CREATE DATABASE " + pq.QuoteIdentifier(name)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec("DROP DATABASE " + pq.QuoteIdentifier(name)); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Setenv(testDatabaseEnv, dsn+" dbname="+name)
+	t.Run("delivery", TestDeliveryStore)
+	t.Run("monotonic_seq", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		db, err := store.Open(os.Getenv(testDatabaseEnv))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Close(); err != nil {
+				t.Error(err)
+			}
+		})
+		if err = store.Migrate(ctx, db); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.ExecContext(ctx, `TRUNCATE perps.delivery_outbox RESTART IDENTITY;
+ ALTER TABLE perps.delivery_outbox ALTER COLUMN created_at SET DEFAULT transaction_timestamp()`); err != nil {
+			t.Fatal(err)
+		}
+		s, err := NewStore(db, "perps", testPolicy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelopes []Envelope
+		for block := 400; block < 410; block++ {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rollback(tx)
+			for log := 0; log < 5; log++ {
+				id := Hash([]byte(strconv.Itoa(block) + ":" + strconv.Itoa(log)))
+				e := testEnvelope(id, "fill", block)
+				e.SourceOrder.TransactionIndex = strconv.Itoa(log / 2)
+				e.SourceOrder.LogIndex = strconv.Itoa(log)
+				sequence, err := s.Enqueue(ctx, tx, fillSubject, e)
+				if err != nil || sequence != int64(len(envelopes)+1) {
+					t.Fatalf("enqueue %d: sequence %d, error %v", len(envelopes)+1, sequence, err)
+				}
+				var stored int64
+				if err = tx.QueryRowContext(ctx, `SELECT perps_seq FROM perps.delivery_outbox WHERE event_id=$1`, id).Scan(&stored); err != nil || stored != sequence {
+					t.Fatalf("stored sequence %d, want %d: %v", stored, sequence, err)
+				}
+				envelopes = append(envelopes, e)
+			}
+			if err = tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if n := count(t, db, `SELECT count(DISTINCT created_at) FROM perps.delivery_outbox WHERE perps_seq BETWEEN 1 AND 5`); n != 1 {
+			t.Fatalf("first block has %d creation timestamps, want 1", n)
+		}
+		var hashOrdered bool
+		if err = db.QueryRowContext(ctx, `SELECT array_agg(event_id ORDER BY event_id) = array_agg(event_id ORDER BY perps_seq) FROM perps.delivery_outbox WHERE perps_seq BETWEEN 1 AND 5`).Scan(&hashOrdered); err != nil || hashOrdered {
+			t.Fatalf("hash order matches enqueue order: %t, %v", hashOrdered, err)
+		}
+		publisher := jetStreamPublisher{js: startBroker(t, ctx), stream: stream.Name}
+		for offset := 0; offset < len(envelopes); {
+			leases, err := s.Claim(ctx, relayOwner, 7, 30*time.Second)
+			want := min(7, len(envelopes)-offset)
+			if err != nil || len(leases) != want {
+				t.Fatalf("claim at %d: %d leases, want %d: %v", offset, len(leases), want, err)
+			}
+			for i, lease := range leases {
+				e := envelopes[offset+i]
+				wire, err := e.Encode(s.policy, fillSubject)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if lease.PerpsSeq != int64(offset+i+1) || lease.EventID != e.EventID || lease.Subject != fillSubject || lease.Fence != 1 || lease.Attempts != 1 || !bytes.Equal(lease.Wire, wire) {
+					t.Fatalf("claim at %d: %+v", offset+i, lease)
+				}
+				ack, err := publisher.Publish(ctx, lease.Subject, lease.EventID, lease.Wire)
+				if err != nil || ack.Stream != stream.Name || ack.Sequence != uint64(offset+i+1) {
+					t.Fatalf("publish at %d: acknowledgement %+v, error %v", offset+i, ack, err)
+				}
+				if err = s.MarkPublished(ctx, lease, ack); err != nil {
+					t.Fatal(err)
+				}
+				if row := readOutbox(t, db, lease.EventID); row.state != "published" || row.brokerStream != ack.Stream || row.brokerSequence != int64(ack.Sequence) {
+					t.Fatalf("published row at %d: %+v", offset+i, row)
+				}
+			}
+			offset += len(leases)
+		}
+		wantNoClaim(t, ctx, s)
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rollback(tx)
+		if sequence, err := s.Enqueue(ctx, tx, fillSubject, envelopes[0]); err != nil || sequence != 1 {
+			t.Fatalf("duplicate sequence %d, want 1: %v", sequence, err)
+		}
+		changed := envelopes[0]
+		changed.SourceOrder.Height = "410"
+		if sequence, err := s.Enqueue(ctx, tx, fillSubject, changed); !errors.Is(err, ErrIntegrity) || sequence != 0 {
+			t.Fatalf("conflicting sequence %d, error %v, want 0 and ErrIntegrity", sequence, err)
+		}
+		if err = tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if n := count(t, db, `SELECT count(*) FROM perps.delivery_outbox`); n != 50 {
+			t.Fatalf("outbox contains %d rows, want 50", n)
+		}
+		rolledBack := testEnvelope("rolled-back", "fill", 410)
+		tx, err = db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rollback(tx)
+		sequence, err := s.Enqueue(ctx, tx, fillSubject, rolledBack)
+		if err != nil || sequence != 53 {
+			t.Fatalf("uncommitted sequence %d, want 53: %v", sequence, err)
+		}
+		if err = tx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		if n := count(t, db, `SELECT count(*) FROM perps.delivery_outbox WHERE event_id=$1`, rolledBack.EventID); n != 0 {
+			t.Fatalf("rolled back enqueue left %d rows", n)
+		}
+		enqueueCommitted(t, ctx, db, s, fillSubject, rolledBack)
+		lease := claimOne(t, ctx, s)
+		if lease.PerpsSeq != 54 || lease.EventID != rolledBack.EventID {
+			t.Fatalf("claim after rollback = %+v, want sequence 54", lease)
 		}
 	})
 }

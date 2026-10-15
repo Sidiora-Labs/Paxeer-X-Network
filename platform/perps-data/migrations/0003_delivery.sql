@@ -1,5 +1,6 @@
 CREATE TABLE perps.delivery_outbox (
     event_id text PRIMARY KEY,
+    perps_seq bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
     schema_version integer NOT NULL,
     subject text NOT NULL,
     payload_hash text NOT NULL,
@@ -25,7 +26,8 @@ CREATE INDEX delivery_pending ON perps.delivery_outbox (available_at, created_at
 
 CREATE FUNCTION perps.delivery_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.event_id IS DISTINCT FROM OLD.event_id OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
+    IF NEW.event_id IS DISTINCT FROM OLD.event_id OR NEW.perps_seq IS DISTINCT FROM OLD.perps_seq
+    OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
     OR NEW.subject IS DISTINCT FROM OLD.subject OR NEW.payload_hash IS DISTINCT FROM OLD.payload_hash
     OR NEW.envelope IS DISTINCT FROM OLD.envelope OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION 'immutable delivery envelope';

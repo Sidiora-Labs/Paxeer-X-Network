@@ -50,39 +50,37 @@ func (s *Store) table(name string) string { return s.schema + "." + name }
 func rollback(tx *sql.Tx) { _ = tx.Rollback() }
 
 // Enqueue participates in a service-owned transaction; it never commits alone.
-func (s *Store) Enqueue(ctx context.Context, tx *sql.Tx, subject string, e Envelope) error {
+func (s *Store) Enqueue(ctx context.Context, tx *sql.Tx, subject string, e Envelope) (int64, error) {
 	if tx == nil {
-		return errors.New("delivery: transaction required")
+		return 0, errors.New("delivery: transaction required")
 	}
 	wire, err := e.Encode(s.policy, subject)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	res, err := tx.ExecContext(ctx, "INSERT INTO "+s.table("delivery_outbox")+"(event_id,schema_version,subject,payload_hash,envelope) VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id) DO NOTHING", e.EventID, int64(e.SchemaVersion), subject, e.PayloadHash, wire)
-	if err != nil {
-		return err
+	var sequence int64
+	err = tx.QueryRowContext(ctx, "INSERT INTO "+s.table("delivery_outbox")+"(event_id,schema_version,subject,payload_hash,envelope) VALUES($1,$2,$3,$4,$5) ON CONFLICT(event_id) DO NOTHING RETURNING perps_seq", e.EventID, int64(e.SchemaVersion), subject, e.PayloadHash, wire).Scan(&sequence)
+	if err == nil {
+		return sequence, nil
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 1 {
-		return nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
 	}
 	var old []byte
 	var oldSubject string
-	if err = tx.QueryRowContext(ctx, "SELECT subject,envelope FROM "+s.table("delivery_outbox")+" WHERE event_id=$1", e.EventID).Scan(&oldSubject, &old); err != nil {
-		return err
+	if err = tx.QueryRowContext(ctx, "SELECT perps_seq,subject,envelope FROM "+s.table("delivery_outbox")+" WHERE event_id=$1", e.EventID).Scan(&sequence, &oldSubject, &old); err != nil {
+		return 0, err
 	}
 	if oldSubject != subject || !bytes.Equal(old, wire) {
-		return ErrIntegrity
+		return 0, ErrIntegrity
 	}
-	return nil
+	return sequence, nil
 }
 
 type Lease struct {
 	EventID, Subject, Owner string
 	Wire                    []byte
+	PerpsSeq                int64
 	Fence                   int64
 	Attempts                int
 }
@@ -93,15 +91,16 @@ func (s *Store) Claim(ctx context.Context, owner string, limit int, duration tim
 	}
 	out := []Lease{}
 	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `WITH picked AS (SELECT event_id FROM `+s.table("delivery_outbox")+` WHERE state='pending' AND available_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp()) ORDER BY created_at,event_id FOR UPDATE SKIP LOCKED LIMIT $1)
- UPDATE `+s.table("delivery_outbox")+` o SET lease_expiry_count=o.lease_expiry_count+CASE WHEN o.lease_until<=clock_timestamp() THEN 1 ELSE 0 END,claimed_at=clock_timestamp(),lease_owner=$2,lease_until=clock_timestamp()+($3::bigint*interval '1 millisecond'),fence=o.fence+1,attempts=o.attempts+1 FROM picked WHERE o.event_id=picked.event_id RETURNING o.event_id,o.subject,o.envelope,o.fence,o.attempts`, limit, owner, duration.Milliseconds())
+		rows, err := tx.QueryContext(ctx, `WITH picked AS (SELECT event_id FROM `+s.table("delivery_outbox")+` WHERE state='pending' AND available_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp()) ORDER BY perps_seq FOR UPDATE SKIP LOCKED LIMIT $1),
+ claimed AS (UPDATE `+s.table("delivery_outbox")+` o SET lease_expiry_count=o.lease_expiry_count+CASE WHEN o.lease_until<=clock_timestamp() THEN 1 ELSE 0 END,claimed_at=clock_timestamp(),lease_owner=$2,lease_until=clock_timestamp()+($3::bigint*interval '1 millisecond'),fence=o.fence+1,attempts=o.attempts+1 FROM picked WHERE o.event_id=picked.event_id RETURNING o.event_id,o.subject,o.envelope,o.perps_seq,o.fence,o.attempts)
+ SELECT event_id,subject,envelope,perps_seq,fence,attempts FROM claimed ORDER BY perps_seq`, limit, owner, duration.Milliseconds())
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			l := Lease{Owner: owner}
-			if err = rows.Scan(&l.EventID, &l.Subject, &l.Wire, &l.Fence, &l.Attempts); err != nil {
+			if err = rows.Scan(&l.EventID, &l.Subject, &l.Wire, &l.PerpsSeq, &l.Fence, &l.Attempts); err != nil {
 				return err
 			}
 			out = append(out, l)
