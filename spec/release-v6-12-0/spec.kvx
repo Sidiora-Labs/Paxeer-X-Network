@@ -18321,7 +18321,7 @@ check = "tools/price-sidecar/tests/packaging-check.sh runs offline, the pattern 
 
 [task.5.0.1]
 title = "Write the 0x1020 Solidity interface, ABI and golden test"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
