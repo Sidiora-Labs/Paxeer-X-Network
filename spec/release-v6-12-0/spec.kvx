@@ -21001,7 +21001,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.1]
 title = "Send perpetuals position and order writes through the builders and the order plan"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.4", "6.0.5", "6.0.7"]
