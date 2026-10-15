@@ -13,6 +13,10 @@ const (
 	EventTypePauseToggled       = "launchpad_pause_toggled"
 	EventTypeParamsUpdated      = "launchpad_params_updated"
 
+	EventTypeGuardianTransferStarted = "launchpad_guardian_transfer_started"
+	EventTypeGuardianTransferred     = "launchpad_guardian_transferred"
+	EventTypePoolStateUpdated        = "launchpad_pool_state_updated"
+
 	AttributeKeyDenom       = "denom"
 	AttributeKeyPointer     = "pointer"
 	AttributeKeyCreator     = "creator"
@@ -31,4 +35,11 @@ const (
 	AttributeKeyEpoch       = "epoch"
 	AttributeKeyStrategy    = "strategy"
 	AttributeKeyPaused      = "paused"
+
+	AttributeKeyGuardian            = "guardian"
+	AttributeKeyPreviousGuardian    = "previous_guardian"
+	AttributeKeyPendingGuardian     = "pending_guardian"
+	AttributeKeyVirtualQuoteReserve = "virtual_quote_reserve"
+	AttributeKeyRealQuoteBalance    = "real_quote_balance"
+	AttributeKeyTokenReserve        = "token_reserve"
 )
