@@ -715,3 +715,59 @@ exit = 1
 log = "fleet/logs/4.1.11-verify-1.log"
 observed = "MintShares and BurnShares take (ctx, evm, denom, addr, amount) here while 4.1.10 calls them as (ctx, token, to, amount); the spot module account is not yet in the node permissions; the build stopped at the launchpad keeper."
 assumption = "The spot keeper reconciliation pass settles the share helper shape on the 4.1.11 owner and adapts 4.1.10; rerun after it and after the node permissions land."
+
+[finding.2.2.2]
+revision = "1a8301324edcde506b32a0d5547effecf18a572f"
+command = "go test ./precompiles/launchpad/... -run 'TestSurfaceRuntimeForwards|TestSuffixTrustedOnlyFromSurfaces|TestRoleAndGenerationSelection|TestUnknownSelectorAndSurfaceGenesis|TestSurfaceCallKindRefusals'"
+exit = 1
+log = "fleet/logs/2.2.2-verify-1.log"
+observed = "The surface runtime calls 0x1017 with value zero, so value sent to a surface stays at the surface instead of being refused; the gate is blocked by the precompile Keeper interface of 2.2.1."
+assumption = "Rerun after 2.2.1 lands; the value-at-surface behaviour is a contract question for the launchpad precompile to settle, recorded without weakening the test."
+
+[finding.2.2.3]
+revision = "f23856d8015fc28213decf79ef2ba10387f9a526"
+command = "go test ./precompiles/launchpad/... -run 'TestPoolRoleServesEverySelector'"
+exit = 1
+log = "fleet/logs/2.2.3-verify-1.log"
+observed = "The pool role needs keeper writers TransferGuardian, AcceptGuardian and SyncReserves that no launchpad task adds, and the optical beforeSwap and afterSwap hooks are not run by Keeper.Swap; the gate is blocked by the precompile Keeper interface of 2.2.1."
+assumption = "A launchpad keeper follow-up adds the three writers and the swap hooks; rerun after it and 2.2.1 land."
+
+[finding.4.1.5]
+revision = "9038cbf68"
+command = "go test -p 2 ./modules/spot/keeper/ -run '^(TestIndexPriceFromPricefeed|TestStablecoinPricesAtOne|TestStalePriceRefusesTrades|TestGrossOutputConversion|TestTokenWithoutMarketIsRefused)$'"
+exit = 1
+log = "fleet/logs/4.1.5-verify-1.log"
+observed = "Pricing was written before the 4.1.4 Keeper and the 5.1.9 GetPrice existed on its base, so the package did not compile."
+assumption = "Rerun in the spot keeper reconciliation pass."
+
+[finding.4.1.6]
+revision = "54dfd909e"
+command = "go test -p 2 ./modules/spot/keeper/ -run '^(TestTieredFeeStack|TestPriceImpactDeduction|TestFeesAccrueReserved|TestMakerFeeOnRestingFills|TestExactOutTierInverse)$'"
+exit = 1
+log = "fleet/logs/4.1.6-verify-1.log"
+observed = "Fees assume Convert, VolumeUSD, IndexPrice and Spendable from sibling tasks absent on its base; the package did not compile."
+assumption = "Rerun in the spot keeper reconciliation pass."
+
+[finding.4.1.7]
+revision = "c47586359"
+command = "go test -p 2 ./modules/spot/keeper/ -run '^(TestSwapLiquidityCheckedOnGross)$'"
+exit = 1
+log = "fleet/logs/4.1.7-verify-1.log"
+observed = "Settlement assumes the custody, pricing, fee and vault helpers of its siblings; the 4005.13 net assertion of 1,994e6 is kept while the contract formula at a 2,000e6 book yields 1,974.06e6."
+assumption = "Rerun in the spot keeper reconciliation pass; the 4005.13 figure against the contract formula is a spec conflict to settle in the contract text, not in the test."
+
+[finding.4.1.8]
+revision = "f4d8c2029"
+command = "go test -p 2 ./modules/spot/keeper/ -run '^(TestPlaceLimitEscrows|TestLimitStatusTransitions|TestEscrowIsReserved|TestActiveListSwapAndPop|TestMinOrderNotional|TestMaxActiveOrdersPerUser|TestOrderMinOutput|TestLimitExpire)$'"
+exit = 1
+log = "fleet/logs/4.1.8-verify-1.log"
+observed = "Limit orders assume the keeper, custody, pricing, fee, vault and genesis helpers of sibling tasks; the package did not compile."
+assumption = "Rerun in the spot keeper reconciliation pass."
+
+[finding.4.1.9]
+revision = "1e3aefbda"
+command = "go test -p 2 -v ./modules/spot/keeper/ -run '^(TestStopLimitActivatesThenFills|TestActivatedWaitsForLimit|TestStopLimitPriceRange|TestStopLossRecord|TestStopLossFillsAtTrigger|TestStopLossExpiry)$'"
+exit = 1
+log = "fleet/logs/4.1.9-verify-1.log"
+observed = "Stop orders assume the keeper, settlement and limit-order helpers of sibling tasks and return cached SDK events pending the EVM event encoder; the package did not compile."
+assumption = "Rerun in the spot keeper reconciliation pass."
