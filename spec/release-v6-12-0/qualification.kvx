@@ -1211,3 +1211,19 @@ exit = 1
 log = "fleet/logs/6.3.10-verify-2.log"
 observed = "The ABI barrel and directory checks pass, but the source import scan finds thirteen hook lines still importing deleted facet ABIs, owned by 6.2.1, 6.2.2 and 6.3.1."
 assumption = "Rerun after 6.2.1, 6.2.2 and 6.3.1 land on the integration branch."
+
+[finding.7.2.10]
+revision = "30f565005c96c40ce642ca64f1e7dd3a01131c5e"
+command = "go test -count=1 ./platform/perps-data/internal/graphql/ -run TestSubscriptions"
+exit = 1
+log = "fleet/logs/7.2.10-verify-1.log"
+observed = "The subscription resolvers and the websocket transport build, but NewSchema refuses the resolver while the perps query roots and the tradeExecuted subscription are missing, and the ws hub of 7.2.2 is replaced by a local feed until it lands."
+assumption = "Rerun after 7.2.7, 7.2.19 and the perps-data indexing chain reconciliation land; the feed is replaced by the hub then."
+
+[finding.fix-perps-data]
+revision = "d5e4b413ab26bbc9de27ca2ba2574b9ca2183960"
+command = "go build ./platform/perps-data/..."
+exit = 1
+log = "fleet/logs/fix-perps-data-build-1.log"
+observed = "No code could be changed under the first brief: store.WriteBlock, store.Rebuild and store.Policy are owned by 7.1.4 and the contract with no landed writer, the follower lives in internal/source, the two commands fail against the landed source package, and pnl_test.go forms an import cycle with store."
+assumption = "A second lane with rulings for every gap owns the whole indexing chain."
