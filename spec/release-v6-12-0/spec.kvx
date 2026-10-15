@@ -29351,7 +29351,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.5]
 title = "Generate the release upgrade document and the node upgrade file"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.3.100"]
