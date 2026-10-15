@@ -11,6 +11,7 @@ import (
 
 	evmconfig "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/config"
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	launchpadv610keeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	layerxanchortypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
 	layerxauthtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxauth/types"
@@ -19,6 +20,7 @@ import (
 	layerxexchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
 	layerxledgertypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxledger/types"
 	seqtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/types"
+	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb"
 	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
@@ -337,9 +339,10 @@ func (app *App) runV610Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM modu
 		return newVM, fmt.Errorf("upgrade %s: custody parameters: %w", V610Upgrade, err)
 	}
 
-	launchpad := app.LaunchpadKeeper.GetParams(ctx)
+	legacyLaunchpad := app.LaunchpadV610Keeper()
+	launchpad := legacyLaunchpad.GetParams(ctx)
 	launchpad.QuoteDenom = appparams.BaseCoinUnit
-	if err := app.LaunchpadKeeper.UpdateParams(ctx, app.LaunchpadKeeper.Authority(), launchpad); err != nil {
+	if err := legacyLaunchpad.UpdateParams(ctx, legacyLaunchpad.Authority(), launchpad); err != nil {
 		return newVM, fmt.Errorf("upgrade %s: launchpad parameters: %w", V610Upgrade, err)
 	}
 
@@ -352,6 +355,14 @@ func (app *App) runV610Upgrade(ctx sdk.Context, _ upgradetypes.Plan, fromVM modu
 		return newVM, err
 	}
 	return newVM, nil
+}
+
+// LaunchpadV610Keeper is the v6.10 launchpad keeper on the launchpad store.
+// The v6.10 plan reads and writes the launchpad parameters through it, as
+// typesv610.Params, the parameter set that store held at that plan.
+func (app *App) LaunchpadV610Keeper() *launchpadv610keeper.Keeper {
+	return launchpadv610keeper.NewKeeper(app.GetKey(launchpadtypes.StoreKey), app.BankKeeper,
+		tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
 }
 
 // registerXWebAttestors registers the initial web-search attestor set and sets

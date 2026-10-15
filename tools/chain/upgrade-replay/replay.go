@@ -19,6 +19,7 @@ import (
 	upgradekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/keeper"
 	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
 
+	typesv610 "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/types"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	layerxanchortypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/types"
 	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
@@ -371,22 +372,23 @@ func assertPrecompilesServed(c *checks, a *app.App, ctx sdk.Context, height int6
 }
 
 type operatingState struct {
-	Anchor       layerxanchortypes.Params
-	Custody      layerxcustodytypes.Params
-	Launchpad    launchpadtypes.Params
-	Exchange     layerxexchangetypes.Params
-	Web          xwebtypes.Params
-	Attestors    xwebtypes.AttestorSet
-	WebPaused    bool
-	BridgePaused bool
-	Emergency    bool
-	Deposit      govtypes.DepositParams
-	Tally        govtypes.TallyParams
-	Voting       govtypes.VotingParams
+	Anchor        layerxanchortypes.Params
+	Custody       layerxcustodytypes.Params
+	Launchpad     launchpadtypes.Params
+	LaunchpadV610 typesv610.Params
+	Exchange      layerxexchangetypes.Params
+	Web           xwebtypes.Params
+	Attestors     xwebtypes.AttestorSet
+	WebPaused     bool
+	BridgePaused  bool
+	Emergency     bool
+	Deposit       govtypes.DepositParams
+	Tally         govtypes.TallyParams
+	Voting        govtypes.VotingParams
 }
 
 func readOperatingState(a *app.App, ctx sdk.Context) operatingState {
-	return operatingState{Anchor: a.LayerXAnchorKeeper.GetParams(ctx), Custody: a.LayerXCustodyKeeper.GetParams(ctx), Launchpad: a.LaunchpadKeeper.GetParams(ctx), Exchange: a.LayerXExchangeKeeper.GetParams(ctx), Web: a.XWebKeeper.GetParams(ctx), Attestors: a.XWebKeeper.GetAttestorSet(ctx), WebPaused: a.XWebKeeper.IsPaused(ctx), BridgePaused: a.LayerXBridgeKeeper.IsPaused(ctx), Emergency: a.LayerXCustodyKeeper.GetEmergency(ctx), Deposit: a.GovKeeper.GetDepositParams(ctx), Tally: a.GovKeeper.GetTallyParams(ctx), Voting: a.GovKeeper.GetVotingParams(ctx)}
+	return operatingState{Anchor: a.LayerXAnchorKeeper.GetParams(ctx), Custody: a.LayerXCustodyKeeper.GetParams(ctx), Launchpad: a.LaunchpadKeeper.GetParams(ctx), LaunchpadV610: a.LaunchpadV610Keeper().GetParams(ctx), Exchange: a.LayerXExchangeKeeper.GetParams(ctx), Web: a.XWebKeeper.GetParams(ctx), Attestors: a.XWebKeeper.GetAttestorSet(ctx), WebPaused: a.XWebKeeper.IsPaused(ctx), BridgePaused: a.LayerXBridgeKeeper.IsPaused(ctx), Emergency: a.LayerXCustodyKeeper.GetEmergency(ctx), Deposit: a.GovKeeper.GetDepositParams(ctx), Tally: a.GovKeeper.GetTallyParams(ctx), Voting: a.GovKeeper.GetVotingParams(ctx)}
 }
 func assertEmptyOwnerList(c *checks, a *app.App, ctx sdk.Context, height int64) {
 	before := readOperatingState(a, ctx)
@@ -418,9 +420,9 @@ func assertOperatingValues(c *checks, a *app.App, ctx sdk.Context, before operat
 	custody := before.Custody
 	custody.NetworkId = uint32(chain.Uint64())
 	c.assert(reflect.DeepEqual(custody, after.Custody), "v6.10 custody network ID matches EVM and other parameters remain unchanged")
-	launchpad := before.Launchpad
+	launchpad := before.LaunchpadV610
 	launchpad.QuoteDenom = appparams.BaseCoinUnit
-	c.assert(reflect.DeepEqual(launchpad, after.Launchpad), "v6.10 launchpad quote denom is the base coin and other parameters remain unchanged")
+	c.assert(reflect.DeepEqual(launchpad, after.LaunchpadV610), "v6.10 launchpad quote denom is the base coin and other parameters remain unchanged")
 	c.assert(len(app.XWebAttestors) == 4 && len(after.Attestors.Attestors) == 4, "v6.10 carries four supplied web-search signers")
 	c.assert(reflect.DeepEqual(app.XWebAttestors, after.Attestors.Attestors), "v6.10 web-search signers, payouts and compressed public keys match supplied entries")
 	ascending := true

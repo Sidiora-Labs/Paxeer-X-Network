@@ -10,7 +10,8 @@ message Params {
   option (gogoproto.typedecl) = false;
   option (gogoproto.goproto_getters) = false;
   option (gogoproto.goproto_stringer) = false;
-  string quote_denom = 1 [(gogoproto.customname) = "QuoteDenom"];
+  reserved 1;
+  reserved "quote_denom";
   string virtual_quote_default = 2 [(gogoproto.customname) = "VirtualQuoteDefault", (gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
   string virtual_token_default = 3 [(gogoproto.customname) = "VirtualTokenDefault", (gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
   uint64 min_fee_bps = 4 [(gogoproto.customname) = "MinFeeBps"];

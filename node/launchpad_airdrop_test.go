@@ -45,9 +45,7 @@ func TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen(t *testing.T) {
 	fund := func(a *App, ctx sdk.Context, amount int64) sdk.AccAddress {
 		acc := sdk.AccAddress(authtypes.NewModuleAddress("airdrop-holder-" + big.NewInt(amount).String() + "-" + big.NewInt(height).String()))
 		if amount > 0 {
-			coins := sdk.NewCoins(sdk.NewCoin(launchpadtypes.DefaultQuoteDenom, sdk.NewInt(amount)))
-			require.NoError(t, a.BankKeeper.MintCoins(ctx, "evm", coins))
-			require.NoError(t, a.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", acc, coins))
+			launchpadUSDLFund(t, a, ctx, acc, amount)
 		}
 		return acc
 	}
@@ -63,6 +61,7 @@ func TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen(t *testing.T) {
 	var denom string
 	block(a, start, func(ctx sdk.Context) {
 		params := launchpadtypes.DefaultParams()
+		params.QuoteToken = launchpadDeployUSDL(t, a, ctx).Hex()
 		params.VirtualQuoteDefault = sdk.NewInt(1_000_000_000)
 		params.VirtualTokenDefault = sdk.NewInt(1_000_000_000)
 		require.NoError(t, a.LaunchpadKeeper.UpdateParams(ctx, authtypes.NewModuleAddress(govtypes.ModuleName).String(), params))
@@ -121,11 +120,11 @@ func TestLaunchpadAirdropEntitlementsSurviveCommitAndReopen(t *testing.T) {
 		require.ErrorIs(t, err, launchpadtypes.ErrZeroAmount)
 		_, err = k.ClaimAirdrop(ctx, holderA, denom)
 		require.ErrorIs(t, err, launchpadtypes.ErrAlreadyClaimed)
-		before := reopened.BankKeeper.GetBalance(ctx, holderB, launchpadtypes.DefaultQuoteDenom).Amount
+		before := launchpadUSDLBalance(t, reopened, ctx, holderB)
 		bShare, err := k.ClaimAirdrop(ctx, holderB, denom)
 		require.NoError(t, err)
 		require.Equal(t, wantB, bShare)
-		require.Equal(t, before.Add(bShare), reopened.BankKeeper.GetBalance(ctx, holderB, launchpadtypes.DefaultQuoteDenom).Amount)
+		require.Equal(t, before.Add(bShare), launchpadUSDLBalance(t, reopened, ctx, holderB))
 		_, err = k.ClaimAirdrop(ctx, holderB, denom)
 		require.ErrorIs(t, err, launchpadtypes.ErrAlreadyClaimed)
 		traderShare, err := k.ClaimAirdropForEpoch(ctx, trader, denom, 1)

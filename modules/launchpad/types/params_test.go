@@ -1,7 +1,9 @@
 package types_test
 
 import (
+	"encoding/json"
 	"math/big"
+	"reflect"
 	"testing"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
@@ -23,7 +25,6 @@ func TestDefaultParamsMatchProtocolConfig(t *testing.T) {
 	require.Equal(t, uint64(100), params.VolatilityWeight)
 	require.Equal(t, uint64(0), params.ConcentrationWeight)
 	require.Equal(t, "1000000", params.CreationFee.String())
-	require.Equal(t, "uusdl", params.QuoteDenom)
 	require.NoError(t, params.Validate())
 
 	encoded, err := params.Marshal()
@@ -31,6 +32,34 @@ func TestDefaultParamsMatchProtocolConfig(t *testing.T) {
 	var decoded types.Params
 	require.NoError(t, decoded.Unmarshal(encoded))
 	require.Equal(t, params.QuoteToken, decoded.QuoteToken)
+	require.NoError(t, decoded.Validate())
+}
+
+func TestParamsHaveNoQuoteDenom(t *testing.T) {
+	_, found := reflect.TypeOf(types.Params{}).FieldByName("QuoteDenom")
+	require.False(t, found)
+
+	params := types.DefaultParams()
+	encodedJSON, err := json.Marshal(params)
+	require.NoError(t, err)
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encodedJSON, &fields))
+	require.NotContains(t, fields, "quote_denom")
+	require.Equal(t, `"0x85FcD13735F4309833A503EE804ea32395851479"`, string(fields["quote_token"]))
+
+	encoded, err := params.Marshal()
+	require.NoError(t, err)
+	// Field 1 is reserved: a record that still carries the retired
+	// quote_denom string "uusdl" decodes to the same Params and encodes back
+	// without it.
+	retired := append([]byte{0x0a, 0x05, 'u', 'u', 's', 'd', 'l'}, encoded...)
+	var decoded types.Params
+	require.NoError(t, decoded.Unmarshal(retired))
+	require.Equal(t, params, decoded)
+	reencoded, err := decoded.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, encoded, reencoded)
+	require.NotEqual(t, byte(0x0a), reencoded[0])
 	require.NoError(t, decoded.Validate())
 }
 
