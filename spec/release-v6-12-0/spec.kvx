@@ -27846,7 +27846,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2.18]
 title = "Account routes for daily profit, leaderboard, alerts, referrals and competitions"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["7.2.17"]
