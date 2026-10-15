@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -258,15 +259,39 @@ func (k *Keeper) CoverDeficit(ctx sdk.Context, address common.Address, marketID 
 		}
 	}
 	if remainder.Sign() > 0 {
-		var uncovered uint256.Int
-		uncovered.SetFromBig(remainder)
-		adl, err := k.ExecuteADL(ctx, insuranceAddress, uncovered)
+		deficitIDs, marks, err := k.insuranceAdlInputs(ctx, insuranceAddress)
+		if err != nil {
+			return nil, err
+		}
+		adl, err := k.ExecuteADL(ctx, deficitIDs, marks)
 		if err != nil {
 			return nil, err
 		}
 		events = append(events, adl...)
 	}
 	return events, nil
+}
+
+// insuranceAdlInputs lists the positions of the account carrying the uncovered
+// deficit in ascending id, the order ExecuteADL requires, with the stored mark
+// of each of their markets, the mark of the last completed price update.
+func (k *Keeper) insuranceAdlInputs(ctx sdk.Context, address common.Address) ([]uint256.Int, map[uint64]uint256.Int, error) {
+	positions, err := k.liquidationAccountPositions(ctx, address)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]uint256.Int, 0, len(positions))
+	marks := make(map[uint64]uint256.Int, len(positions))
+	for _, position := range positions {
+		state, err := k.GetMarketState(ctx, position.MarketID)
+		if err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, position.ID)
+		marks[position.MarketID] = state.MarkPrice
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].Lt(&ids[j]) })
+	return ids, marks, nil
 }
 
 // CloseBackstopPositions is EndBlock step 9: it closes the insurance fund's

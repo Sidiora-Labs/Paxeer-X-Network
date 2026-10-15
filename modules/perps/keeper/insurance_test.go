@@ -59,6 +59,11 @@ func insuranceUsd(whole uint64) uint256.Int {
 	return *new(uint256.Int).Mul(uint256.NewInt(whole), uint256.NewInt(1_000_000_000_000_000_000))
 }
 
+func insuranceUsdBig(whole uint64) *big.Int {
+	value := insuranceUsd(whole)
+	return value.ToBig()
+}
+
 // insuranceBase is lots of 1e-5 BTC in 18-decimal base units.
 func insuranceBase(lots uint64) uint256.Int {
 	return *new(uint256.Int).Mul(uint256.NewInt(lots), uint256.NewInt(10_000_000_000_000))
@@ -284,8 +289,8 @@ func TestInsuranceBackstopTakeover(t *testing.T) {
 	events, err = e.k.Backstop(e.ctx, short)
 	require.NoError(t, err)
 	require.Equal(t, []types.EventRecord{
-		{Name: types.EventOpenInterestChanged, Args: []any{new(big.Int), insuranceUsd(120_000).ToBig(),
-			insuranceUsd(120_000).ToBig(), insuranceUsd(24_000).ToBig(), false}},
+		{Name: types.EventOpenInterestChanged, Args: []any{new(big.Int), insuranceUsdBig(120_000),
+			insuranceUsdBig(120_000), insuranceUsdBig(24_000), false}},
 		backstopEvent(short, insuranceUsd(24_000), mark, insuranceWord("7200000000000000000")),
 		contributionEvent(e.usdl, 7_200_000, InsuranceSourceBackstopMargin),
 	}, events)
@@ -385,9 +390,9 @@ func TestInsuranceCoversDeficit(t *testing.T) {
 	events, err := e.k.CoverDeficit(e.ctx, closed, 0)
 	require.NoError(t, err)
 	require.Equal(t, []types.EventRecord{drawEvent(12_000_000, 988_000_000)}, events)
-	require.True(t, e.readAccount(closed).DeficitUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.readAccount(closed).DeficitUsd)
 	require.Equal(t, *uint256.NewInt(988_000_000), e.readAccount(fund).Collateral)
-	require.True(t, e.readAccount(fund).DeficitUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.readAccount(fund).DeficitUsd)
 	books := e.books()
 	require.True(t, books.DeficitSumUsd.IsZero())
 	require.True(t, books.ResidueUsd.IsZero())
@@ -399,7 +404,7 @@ func TestInsuranceCoversDeficit(t *testing.T) {
 	events, err = e.k.CoverDeficit(e.ctx, odd, 0)
 	require.NoError(t, err)
 	require.Equal(t, []types.EventRecord{drawEvent(12_000_001, 975_999_999)}, events)
-	require.True(t, e.readAccount(odd).DeficitUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.readAccount(odd).DeficitUsd)
 	books = e.books()
 	require.True(t, books.DeficitSumUsd.IsZero())
 	require.Equal(t, *uint256.NewInt(500_000_000_000), books.ResidueUsd)
@@ -443,9 +448,9 @@ func TestInsuranceDeficitStartsAdl(t *testing.T) {
 	}
 	require.True(t, executed, "ADL starts in the same pass")
 
-	require.True(t, e.readAccount(closed).DeficitUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.readAccount(closed).DeficitUsd)
 	insurance := e.readAccount(fund)
 	require.True(t, insurance.Collateral.IsZero())
 	require.True(t, insurance.DeficitUsd.IsZero(), "ADL covers the 1,500 USD the fund could not")
-	require.True(t, e.books().DeficitSumUsd.IsZero())
+	require.Equal(t, uint256.Int{}, e.books().DeficitSumUsd)
 }

@@ -191,9 +191,9 @@ func TestLiquidationAccountLevel(t *testing.T) {
 	equity, err := e.k.Equity(e.ctx, holder)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewIntWithDecimal(29, types.USDDecimals), equity)
-	maintenance, err := e.k.MaintenanceMargin(e.ctx, holder)
+	summary, err := e.k.AccountMargin(e.ctx, holder)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewIntWithDecimal(30, types.USDDecimals), maintenance)
+	require.Equal(t, sdk.NewIntWithDecimal(30, types.USDDecimals), summary.MaintenanceMargin)
 
 	caller := e.address(3)
 	events, err := e.k.Liquidate(e.ctx, caller, positionID)
@@ -357,9 +357,9 @@ func TestLiquidationPriceFormula(t *testing.T) {
 	require.NoError(t, err)
 	equity, err := g.k.Equity(g.ctx, g.address(9_000_007))
 	require.NoError(t, err)
-	maintenance, err := g.k.MaintenanceMargin(g.ctx, g.address(9_000_007))
+	summary, err := g.k.AccountMargin(g.ctx, g.address(9_000_007))
 	require.NoError(t, err)
-	available := new(big.Rat).SetInt(new(big.Int).Sub(equity.BigInt(), maintenance.BigInt()))
+	available := new(big.Rat).SetInt(new(big.Int).Sub(equity.BigInt(), summary.MaintenanceMargin.BigInt()))
 	short := new(big.Rat).Add(new(big.Rat).SetInt(mark.ToBig()),
 		new(big.Rat).Quo(available, big.NewRat(10_005, 10_000)))
 	require.Equal(t, new(big.Int).Quo(short.Num(), short.Denom()), got.ToBig())

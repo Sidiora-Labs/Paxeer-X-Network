@@ -51,7 +51,9 @@ func TestPauseExitSet(t *testing.T) {
 	}
 
 	params := types.DefaultParams()
-	require.False(t, k.GetParams(ctx).Paused)
+	current, err := k.GetParams(ctx)
+	require.NoError(t, err)
+	require.False(t, current.Paused)
 	for _, method := range append(append([]string(nil), exits...), blocked...) {
 		require.NoError(t, k.CheckPause(ctx, method), method)
 	}
@@ -68,7 +70,9 @@ func TestPauseExitSet(t *testing.T) {
 		t.Run(phase.name, func(t *testing.T) {
 			params.Paused = phase.paused
 			require.NoError(t, k.setParams(ctx, params))
-			require.Equal(t, phase.paused, k.GetParams(ctx).Paused)
+			current, err := k.GetParams(ctx)
+			require.NoError(t, err)
+			require.Equal(t, phase.paused, current.Paused)
 			stored := append([]byte(nil), ctx.KVStore(key).Get(types.ParamsKey)...)
 			events := append(sdk.Events(nil), ctx.EventManager().Events()...)
 

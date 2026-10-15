@@ -70,6 +70,11 @@ func newMatchEnv(t *testing.T, mark uint256.Int, accounts ...common.Address) *ma
 }
 
 // matchFixed reads a decimal string as 18-decimal fixed point.
+func matchFixedDec(t *testing.T, decimal string) string {
+	value := matchFixed(t, decimal)
+	return value.Dec()
+}
+
 func matchFixed(t *testing.T, decimal string) uint256.Int {
 	t.Helper()
 	whole, fraction, _ := strings.Cut(decimal, ".")
@@ -242,7 +247,7 @@ func requireReleased(t *testing.T, e *matchEnv, id uint256.Int, status types.Ord
 	t.Helper()
 	order := e.order(t, id)
 	require.Equal(t, status, order.Status)
-	require.Equal(t, matchFixed(t, filled).Dec(), order.FilledBase.Dec())
+	require.Equal(t, matchFixedDec(t, filled), order.FilledBase.Dec())
 	require.Nil(t, e.ctx.KVStore(e.k.storeKey).Get(types.AccountOrderKey(order.Account, id)))
 }
 
@@ -264,27 +269,27 @@ func TestMatchingPriceTimePriority(t *testing.T) {
 	result := e.mustPlace(t, buy)
 	takerID := result.Taker.ID.Dec()
 	require.Equal(t, types.OrderStatusFilled, result.Taker.Status)
-	require.Equal(t, matchFixed(t, "0.02").Dec(), result.Taker.FilledBase.Dec())
+	require.Equal(t, matchFixedDec(t, "0.02"), result.Taker.FilledBase.Dec())
 	require.False(t, result.Rested)
 	require.Empty(t, result.Cancelled)
 	require.Len(t, result.Fills, 2)
 	require.Equal(t, betterID, result.Fills[0].MakerOrderID)
 	require.Equal(t, earlyID, result.Fills[1].MakerOrderID)
 	require.Equal(t, [][]string{
-		fillArgs(betterID.Dec(), takerID, matchD, matchA, true, matchFixed(t, "59990").Dec(),
-			matchFixed(t, "599.9").Dec(), matchFixed(t, "0.089985").Dec(), matchFixed(t, "0.269955").Dec()),
-		fillArgs(earlyID.Dec(), takerID, matchC, matchA, true, matchFixed(t, "60000").Dec(),
-			matchFixed(t, "600").Dec(), matchFixed(t, "0.09").Dec(), matchFixed(t, "0.27").Dec()),
+		fillArgs(betterID.Dec(), takerID, matchD, matchA, true, matchFixedDec(t, "59990"),
+			matchFixedDec(t, "599.9"), matchFixedDec(t, "0.089985"), matchFixedDec(t, "0.269955")),
+		fillArgs(earlyID.Dec(), takerID, matchC, matchA, true, matchFixedDec(t, "60000"),
+			matchFixedDec(t, "600"), matchFixedDec(t, "0.09"), matchFixedDec(t, "0.27")),
 	}, matchEvents(t, result.Events, types.EventFill))
 
 	executed := matchEvents(t, result.Events, types.EventOrderExecuted)
 	require.Len(t, executed, 3)
 	require.Equal(t, betterID.Dec(), executed[0][1])
-	require.Equal(t, matchFixed(t, "59990").Dec(), executed[0][3])
+	require.Equal(t, matchFixedDec(t, "59990"), executed[0][3])
 	require.Equal(t, earlyID.Dec(), executed[1][1])
-	require.Equal(t, matchFixed(t, "60000").Dec(), executed[1][3])
+	require.Equal(t, matchFixedDec(t, "60000"), executed[1][3])
 	require.Equal(t, takerID, executed[2][1])
-	require.Equal(t, matchFixed(t, "59995").Dec(), executed[2][3])
+	require.Equal(t, matchFixedDec(t, "59995"), executed[2][3])
 
 	requireReleased(t, e, betterID, types.OrderStatusFilled, "0.01")
 	requireReleased(t, e, earlyID, types.OrderStatusFilled, "0.01")
@@ -298,7 +303,7 @@ func TestMatchingPriceTimePriority(t *testing.T) {
 
 	state, err := e.k.GetMarketState(e.ctx, 0)
 	require.NoError(t, err)
-	require.Equal(t, matchFixed(t, "60000").Dec(), state.LastTradePrice.Dec())
+	require.Equal(t, matchFixedDec(t, "60000"), state.LastTradePrice.Dec())
 }
 
 func TestMatchingPostOnlyAndFok(t *testing.T) {
@@ -337,7 +342,7 @@ func TestMatchingPostOnlyAndFok(t *testing.T) {
 	require.False(t, filled.Rested)
 	require.Len(t, filled.Fills, 1)
 	require.Equal(t, askID, filled.Fills[0].MakerOrderID)
-	require.Equal(t, matchFixed(t, "600").Dec(), filled.Fills[0].SizeUsd.Dec())
+	require.Equal(t, matchFixedDec(t, "600"), filled.Fills[0].SizeUsd.Dec())
 	require.Empty(t, e.bookIDs(t, types.SideSell))
 	requireReleased(t, e, askID, types.OrderStatusFilled, "0.01")
 	requireReleased(t, e, filled.Taker.ID, types.OrderStatusFilled, "0.01")
@@ -356,8 +361,8 @@ func TestMatchingSelfTradePrevention(t *testing.T) {
 	require.Equal(t, otherID, result.Fills[0].MakerOrderID)
 	require.Equal(t, [][]string{
 		{types.EventOrderCancelled, ownID.Dec(), matchA.Hex()},
-		fillArgs(otherID.Dec(), takerID, matchB, matchA, true, matchFixed(t, "60010").Dec(),
-			matchFixed(t, "600.1").Dec(), matchFixed(t, "0.090015").Dec(), matchFixed(t, "0.270045").Dec()),
+		fillArgs(otherID.Dec(), takerID, matchB, matchA, true, matchFixedDec(t, "60010"),
+			matchFixedDec(t, "600.1"), matchFixedDec(t, "0.090015"), matchFixedDec(t, "0.270045")),
 	}, matchEvents(t, result.Events, types.EventOrderCancelled, types.EventFill))
 	requireReleased(t, e, ownID, types.OrderStatusCancelled, "0")
 	requireReleased(t, e, otherID, types.OrderStatusFilled, "0.01")
@@ -403,8 +408,8 @@ func TestMatchingSlippageBound(t *testing.T) {
 	result := e.mustPlace(t, marketOrder(t, matchA, true, "0", "0.02"))
 	require.Len(t, result.Fills, 1)
 	require.Equal(t, nearID, result.Fills[0].MakerOrderID)
-	require.Equal(t, matchFixed(t, "60200").Dec(), result.Fills[0].Price.Dec())
-	require.Equal(t, matchFixed(t, "0.01").Dec(), result.Fills[0].SizeBase.Dec())
+	require.Equal(t, matchFixedDec(t, "60200"), result.Fills[0].Price.Dec())
+	require.Equal(t, matchFixedDec(t, "0.01"), result.Fills[0].SizeBase.Dec())
 	require.Equal(t, []uint256.Int{result.Taker.ID}, result.Cancelled)
 	require.Equal(t, [][]string{{types.EventOrderCancelled, result.Taker.ID.Dec(), matchA.Hex()}},
 		matchEvents(t, result.Events, types.EventOrderCancelled))
@@ -420,7 +425,7 @@ func TestMatchingSlippageBound(t *testing.T) {
 	accepted := a.mustPlace(t, marketOrder(t, matchA, true, "60100", "0.02"))
 	require.Len(t, accepted.Fills, 1)
 	require.Equal(t, cheapID, accepted.Fills[0].MakerOrderID)
-	require.Equal(t, matchFixed(t, "0.01").Dec(), accepted.Taker.FilledBase.Dec())
+	require.Equal(t, matchFixedDec(t, "0.01"), accepted.Taker.FilledBase.Dec())
 	require.Equal(t, types.OrderStatusCancelled, accepted.Taker.Status)
 
 	// The default bound is mark x (1 +- 5,000 ppm) rounded to the 0.1 tick
@@ -438,7 +443,7 @@ func TestMatchingSlippageBound(t *testing.T) {
 		order := odd.register(t, odd.ctx, tc.order)
 		bound, err := odd.k.slippageBound(odd.ctx, odd.market, order, types.DefaultParams().DefaultSlippagePpm)
 		require.NoError(t, err)
-		require.Equal(t, matchFixed(t, tc.bound).Dec(), bound.Dec())
+		require.Equal(t, matchFixedDec(t, tc.bound), bound.Dec())
 	}
 
 	stale := newMatchEnv(t, uint256.Int{})

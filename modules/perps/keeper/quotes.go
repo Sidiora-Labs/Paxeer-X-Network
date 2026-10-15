@@ -57,7 +57,10 @@ type MarketQuote struct {
 
 func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint64, token common.Address, collateral, leverage uint256.Int, isLong bool) (OpenPositionQuote, error) {
 	cache, _ := ctx.CacheContext()
-	params := k.GetParams(cache)
+	params, err := k.GetParams(cache)
+	if err != nil {
+		return OpenPositionQuote{}, err
+	}
 	if params.Paused {
 		return OpenPositionQuote{}, types.ErrPaused
 	}
@@ -67,14 +70,14 @@ func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint
 	if collateral.IsZero() {
 		return OpenPositionQuote{}, types.ErrZeroAmount
 	}
-	if err := k.Deposit(cache, account, collateral); err != nil {
+	if _, err := k.Deposit(cache, account, collateral); err != nil {
 		return OpenPositionQuote{}, err
 	}
 	order, err := k.CompatOpenOrder(cache, account, marketID, collateral, leverage, isLong)
 	if err != nil {
 		return OpenPositionQuote{}, err
 	}
-	events, err := k.PlaceOrder(cache, order)
+	events, err := k.quotePlace(cache, order)
 	if err != nil {
 		return OpenPositionQuote{}, err
 	}
@@ -82,9 +85,9 @@ func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint
 	if err != nil {
 		return OpenPositionQuote{}, err
 	}
-	market, ok := k.GetMarket(cache, marketID)
-	if !ok {
-		return OpenPositionQuote{}, types.ErrUnknownMarket
+	market, err := k.GetMarket(cache, marketID)
+	if err != nil {
+		return OpenPositionQuote{}, err
 	}
 	state, err := k.quoteState(cache, marketID)
 	if err != nil {
@@ -122,7 +125,7 @@ func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint
 	funding.Div(funding, new(big.Int).Mul(quoteScale(), quoteScale()))
 	collateralUsd := new(big.Int).Mul(collateral.ToBig(), big.NewInt(1_000_000_000_000))
 	quote := OpenPositionQuote{entry, totals.notional, collateralUsd, leverage.ToBig(), totals.feeTokens,
-		totals.feeUsd, impact, liquidationPrice, funding, bps}
+		totals.feeUsd, impact, liquidationPrice.ToBig(), funding, bps}
 	if err := quoteBounds(false, quote.EntryPrice, quote.SizeUsd, quote.CollateralUsd, quote.Leverage, quote.TradingFee,
 		quote.TradingFeeUsd, quote.PriceImpact, quote.LiquidationPrice, quote.MaintenanceMarginBps); err != nil {
 		return OpenPositionQuote{}, err
@@ -134,9 +137,9 @@ func (k Keeper) QuoteOpen(ctx sdk.Context, account common.Address, marketID uint
 }
 
 func (k Keeper) CompatOpenOrder(ctx sdk.Context, account common.Address, marketID uint64, collateral, leverage uint256.Int, isLong bool) (types.Order, error) {
-	market, ok := k.GetMarket(ctx, marketID)
-	if !ok {
-		return types.Order{}, types.ErrUnknownMarket
+	market, err := k.GetMarket(ctx, marketID)
+	if err != nil {
+		return types.Order{}, err
 	}
 	if !market.Enabled {
 		return types.Order{}, types.ErrMarketDisabled
@@ -155,7 +158,10 @@ func (k Keeper) CompatOpenOrder(ctx sdk.Context, account common.Address, marketI
 	if err != nil {
 		return types.Order{}, err
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return types.Order{}, err
+	}
 	if market.PxDecimals > types.USDDecimals || market.SzDecimals > types.USDDecimals || params.DefaultSlippagePpm > types.PpmDenominator {
 		return types.Order{}, types.ErrInvalidParams
 	}
@@ -222,7 +228,11 @@ func (k Keeper) QuoteClose(ctx sdk.Context, positionID uint256.Int) (ClosePositi
 	if err != nil {
 		return ClosePositionQuote{}, err
 	}
-	events, err := k.ClosePosition(cache, position.Account, positionID)
+	order, err := k.ClosePosition(cache, position.Account, positionID)
+	if err != nil {
+		return ClosePositionQuote{}, err
+	}
+	events, err := k.quotePlace(cache, order)
 	if err != nil {
 		return ClosePositionQuote{}, err
 	}
@@ -235,7 +245,11 @@ func (k Keeper) QuotePartialClose(ctx sdk.Context, positionID, closeSizeUsd uint
 	if err != nil {
 		return PartialCloseQuote{}, err
 	}
-	events, err := k.PartialClose(cache, position.Account, positionID, closeSizeUsd)
+	order, err := k.PartialClose(cache, position.Account, positionID, closeSizeUsd)
+	if err != nil {
+		return PartialCloseQuote{}, err
+	}
+	events, err := k.quotePlace(cache, order)
 	if err != nil {
 		return PartialCloseQuote{}, err
 	}
@@ -248,9 +262,9 @@ func (k Keeper) QuotePartialClose(ctx sdk.Context, positionID, closeSizeUsd uint
 
 func (k Keeper) QuoteMarket(ctx sdk.Context, marketID uint64) (MarketQuote, error) {
 	cache, _ := ctx.CacheContext()
-	market, ok := k.GetMarket(cache, marketID)
-	if !ok {
-		return MarketQuote{}, types.ErrUnknownMarket
+	market, err := k.GetMarket(cache, marketID)
+	if err != nil {
+		return MarketQuote{}, err
 	}
 	price, err := k.pricefeed.GetPrice(cache, marketID)
 	if err != nil {
@@ -281,6 +295,16 @@ func (k Keeper) QuoteMarket(ctx sdk.Context, marketID uint64) (MarketQuote, erro
 		return MarketQuote{}, err
 	}
 	return quote, nil
+}
+
+func (k Keeper) quotePlace(ctx sdk.Context, order types.Order) ([]types.EventRecord, error) {
+	placed, err := k.PlaceOrder(ctx, order.Account, OrderParams{MarketID: order.MarketID, IsLong: order.IsLong,
+		OrderType: uint8(order.Type), TimeInForce: uint8(order.TimeInForce), SizeUsd: order.SizeUsd,
+		Leverage: order.Leverage, ReduceOnly: order.ReduceOnly})
+	if err != nil {
+		return nil, err
+	}
+	return placed.Events, nil
 }
 
 func (k Keeper) quotePosition(ctx sdk.Context, id uint256.Int) (types.Position, error) {

@@ -32,15 +32,9 @@ func fundingMarket() types.Market {
 	}
 }
 
-func usd18(units int64) uint256.Int {
-	return *uint256.MustFromBig(new(big.Int).Mul(big.NewInt(units), fixedOne))
-}
-
-func word(t *testing.T, value *big.Int) uint256.Int {
-	t.Helper()
-	out, err := signedWord(value, 0)
-	require.NoError(t, err)
-	return out
+func usd18Big(units int64) *big.Int {
+	value := usd18(units)
+	return value.ToBig()
 }
 
 func restingOrder(id uint64, isLong bool, price, size uint256.Int) types.Order {
@@ -84,9 +78,9 @@ func TestFundingPremiumSample(t *testing.T) {
 	require.Equal(t, at+5, state.LastSampleTime)
 
 	require.Equal(t, big.NewInt(500_000_000_000_000),
-		premiumOf(usd18(60_000).ToBig(), usd18(60_030).ToBig(), usd18(60_060).ToBig()))
+		premiumOf(usd18Big(60_000), usd18Big(60_030), usd18Big(60_060)))
 	require.Equal(t, big.NewInt(-1_000_000_000_000_000),
-		premiumOf(usd18(60_000).ToBig(), usd18(59_900).ToBig(), usd18(59_940).ToBig()))
+		premiumOf(usd18Big(60_000), usd18Big(59_900), usd18Big(59_940)))
 }
 
 func TestFundingRateFormula(t *testing.T) {
@@ -177,7 +171,7 @@ func TestFundingSettlementIndex(t *testing.T) {
 
 func TestFundingRoundingTowardVenue(t *testing.T) {
 	k, ctx := fundingKeeper(t, fundingHour*secondsPerHour)
-	index := word(t, big.NewInt(333_333_333_333_333_333))
+	index := word("333333333333333333")
 	three := new(big.Int).Add(new(big.Int).Mul(big.NewInt(3), fixedOne), big.NewInt(1))
 	positions := []types.Position{
 		{ID: *uint256.NewInt(1), Account: common.HexToAddress("0x01"), IsLong: true, SizeBase: usd18(1)},
@@ -243,7 +237,7 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 	k.store(ctx).Set(types.MarginRatioIndexKey(145, trader), []byte{})
 	k.setFundingMarketState(ctx, types.MarketState{
 		MarketID: 0, IndexPrice: usd18(60_000), PricefeedMark: usd18(60_000), MarkPrice: usd18(60_000), Fresh: true,
-		LastIndexHour: fundingHour, PremiumCount: 1, PremiumSum: word(t, fixedOne),
+		LastIndexHour: fundingHour, PremiumCount: 1, PremiumSum: word("1000000000000000000"),
 		LongOpenInterest: usd18(1), ShortOpenInterest: usd18(1),
 	})
 
@@ -257,7 +251,7 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 	state, err := k.fundingMarketState(ctx, 0)
 	require.NoError(t, err)
 	require.Equal(t, big.NewInt(40_000_000_000_000_000), signedOf(state.HourlyRate), "capped at 4 percent")
-	require.Equal(t, usd18(2_400).ToBig(), signedOf(state.FundingIndex), "one capped step: 2,400 USD per BTC")
+	require.Equal(t, usd18Big(2_400), signedOf(state.FundingIndex), "one capped step: 2,400 USD per BTC")
 
 	after, err := k.IsLiquidatable(ctx, trader)
 	require.NoError(t, err)
@@ -266,13 +260,13 @@ func TestFundingBeforeLiquidation(t *testing.T) {
 	liquidations, err := k.LiquidationScan(ctx)
 	require.NoError(t, err)
 	funding, liquidation := -1, -1
-	for i, event := range liquidations {
+	for i, event := range liquidations.Events {
 		switch event.Name {
 		case types.EventPositionFundingApplied:
 			if funding < 0 {
 				funding = i
 			}
-			require.Equal(t, new(big.Int).Neg(usd18(2_400).ToBig()), event.Args[3])
+			require.Equal(t, new(big.Int).Neg(usd18Big(2_400)), event.Args[3])
 		case types.EventLiquidation:
 			if liquidation < 0 {
 				liquidation = i

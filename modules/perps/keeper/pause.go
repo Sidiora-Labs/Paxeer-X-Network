@@ -17,7 +17,11 @@ var exitPaths = map[string]bool{
 }
 
 func (k *Keeper) CheckPause(ctx sdk.Context, method string) error {
-	if !k.GetParams(ctx).Paused || exitPaths[method] {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
+	if !params.Paused || exitPaths[method] {
 		return nil
 	}
 	return types.ErrPaused

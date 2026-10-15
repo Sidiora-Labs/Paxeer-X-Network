@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -145,17 +146,15 @@ func (k *Keeper) ExecuteADL(ctx sdk.Context, deficitIDs []uint256.Int, previousM
 				return nil, err
 			}
 			for _, position := range []types.Position{counterparty, deficit} {
-				order := types.Order{
-					Account: position.Account, MarketID: position.MarketID,
-					IsLong: !position.IsLong, Type: types.OrderTypeMarket,
-					TimeInForce: types.TimeInForceIOC, ReduceOnly: true,
-					SizeBase: size, SizeUsd: notional,
-				}
-				fillEvents, err := k.ApplyFill(cached, order, size, price, uint8(5))
+				applied, err := k.ApplyFill(cached, PositionFill{
+					Account: position.Account, MarketID: position.MarketID, IsLong: !position.IsLong, SizeBase: size,
+					Price: price, Leverage: position.Leverage, Kind: FillKindADL,
+				})
 				if err != nil {
 					return nil, err
 				}
-				events = append(events, fillEvents...)
+				events = append(events, applied.Events...)
+				events = append(events, applied.TradeSettledEvents(new(big.Int), new(big.Int))...)
 			}
 			if _, overflow := total.AddOverflow(&total, &notional); overflow {
 				return nil, types.ErrOverflow

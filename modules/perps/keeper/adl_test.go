@@ -193,7 +193,7 @@ func TestAdlOnlyAfterInsurance(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, events)
 	require.Equal(t, before, ctx.KVStore(k.storeKey).Get(types.PositionKey(deficit.ID)))
-	events, err = k.CoverDeficit(ctx, deficit.Account)
+	events, err = k.CoverDeficit(ctx, deficit.Account, deficit.MarketID)
 	require.NoError(t, err)
 	require.Empty(t, adlEvents(events, types.EventADLExecuted))
 	account, err := adlAccount(ctx.KVStore(k.storeKey), deficit.Account)

@@ -98,20 +98,21 @@ func (f quotesFixture) rest(t *testing.T, price string, isLong bool) {
 	px := quotesNumber(t, price)
 	size := new(big.Int).Quo(px.ToBig(), big.NewInt(100))
 	sizeUsd := quotesNumber(t, size.String())
-	_, err := f.keeper.PlaceOrder(f.ctx, types.Order{Account: common.Address{19: 2}, MarketID: 0,
-		IsLong: isLong, Type: types.OrderTypeLimit, TimeInForce: types.TimeInForceGTC, LimitPrice: px,
-		SizeUsd: sizeUsd, SizeBase: quotesNumber(t, "10000000000000000"), Leverage: quotesNumber(t, "10000000000000000000")})
+	_, err := f.keeper.PlaceOrder(f.ctx, common.Address{19: 2}, OrderParams{MarketID: 0, IsLong: isLong,
+		OrderType: uint8(types.OrderTypeLimit), TimeInForce: uint8(types.TimeInForceGTC), LimitPrice: px,
+		SizeUsd: sizeUsd, Leverage: quotesNumber(t, "10000000000000000000")})
 	require.NoError(t, err)
 }
 
 func (f quotesFixture) open(t *testing.T, isLong bool) []types.EventRecord {
 	t.Helper()
-	require.NoError(t, f.keeper.Deposit(f.ctx, f.account, *uint256.NewInt(100000000)))
-	events, err := f.keeper.PlaceOrder(f.ctx, types.Order{Account: f.account, MarketID: 0, IsLong: isLong,
-		Type: types.OrderTypeMarket, TimeInForce: types.TimeInForceIOC, SizeUsd: quotesNumber(t, "990000000000000000000"),
-		SizeBase: quotesNumber(t, "16500000000000000"), Leverage: quotesNumber(t, "10000000000000000000")})
+	_, err := f.keeper.Deposit(f.ctx, f.account, *uint256.NewInt(100000000))
 	require.NoError(t, err)
-	return events
+	placed, err := f.keeper.PlaceOrder(f.ctx, f.account, OrderParams{MarketID: 0, IsLong: isLong,
+		OrderType: uint8(types.OrderTypeMarket), TimeInForce: uint8(types.TimeInForceIOC),
+		SizeUsd: quotesNumber(t, "990000000000000000000"), Leverage: quotesNumber(t, "10000000000000000000")})
+	require.NoError(t, err)
+	return placed.Events
 }
 
 func (f quotesFixture) positionID(t *testing.T) uint256.Int {
@@ -198,7 +199,9 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 				quote, err := f.keeper.QuotePartialClose(f.ctx, id, size)
 				require.NoError(t, err)
 				require.Equal(t, "61000000000000000000000", quote.ExitPrice.String())
-				events, err := f.keeper.PartialClose(f.ctx, f.account, id, size)
+				order, err := f.keeper.PartialClose(f.ctx, f.account, id, size)
+				require.NoError(t, err)
+				events, err := f.keeper.quotePlace(f.ctx, order)
 				require.NoError(t, err)
 				require.Equal(t, "499590000000000000000", quotesEventSum(t, events, types.EventTradeSettled, f.account, 4).String())
 				require.Equal(t, quote.ClosedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
@@ -212,7 +215,9 @@ func TestQuotesCloseEqualsExecution(t *testing.T) {
 				require.Equal(t, "452925000000000000", quote.TradingFeeUsd.String())
 				require.Equal(t, "452925", quote.TradingFee.String())
 				require.Equal(t, "-16500000000000000", quote.FundingOwed.String())
-				events, err := f.keeper.ClosePosition(f.ctx, f.account, id)
+				order, err := f.keeper.ClosePosition(f.ctx, f.account, id)
+				require.NoError(t, err)
+				events, err := f.keeper.quotePlace(f.ctx, order)
 				require.NoError(t, err)
 				require.Equal(t, quote.UnrealizedPnl, quotesEventSum(t, events, types.EventTradeSettled, f.account, 6))
 				require.Equal(t, quote.FundingOwed, quotesEventSum(t, events, types.EventTradeSettled, f.account, 8))
@@ -285,8 +290,8 @@ func TestQuotesNoWrites(t *testing.T) {
 func TestQuotesMarketStale(t *testing.T) {
 	f := newQuotesFixture(t)
 	for _, enabled := range []bool{true, false} {
-		market, ok := f.keeper.GetMarket(f.ctx, 5)
-		require.True(t, ok)
+		market, err := f.keeper.GetMarket(f.ctx, 5)
+		require.NoError(t, err)
 		market.Enabled = enabled
 		quotesJSON(t, f.ctx, f.perpsKey, types.MarketKey(5), market)
 		for _, age := range []uint64{pricefeedtypes.DefaultMaxPriceAgeMs, pricefeedtypes.DefaultMaxPriceAgeMs + 1} {
