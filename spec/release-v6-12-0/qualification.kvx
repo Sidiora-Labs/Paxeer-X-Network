@@ -1555,3 +1555,11 @@ exit = 1
 log = fleet/logs/4.3.2-verify-1.log
 observed = The lane produced no code because the spot keeper did not compile on its base and its checkout lost its git metadata.
 assumption = The task is relaunched on main once the spot keeper test binaries compile.
+
+[finding.1.3.102]
+revision = 333a1d79477b71e5a50136cde63bf97faa24bf83
+command = go test ./node/ -run 'TestV6120StoreUpgradesAddOnlyTheNewModules|TestV6120RefusesUnmountedStores'
+exit = 1
+log = fleet/logs/1.3.102-verify-1.log
+observed = The node test binary does not compile because the perps precompile views call unexported keeper readers and legacyabci end_block calls a Logger method the context lacks.
+assumption = The gate reruns after the perps keeper export lane lands.
