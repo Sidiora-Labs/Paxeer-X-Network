@@ -18782,7 +18782,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1.14]
 title = "Write the Cosmos transaction encoder and signer"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["5.0.4"]
