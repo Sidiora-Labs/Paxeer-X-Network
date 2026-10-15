@@ -283,9 +283,11 @@ func (k *Keeper) Swap(ctx sdk.Context, caller NestedCaller, locks TransientStore
 			if err := k.MoveQuote(ctx, HeldQuoteLedger(pool), FeeHeldLedger(accumulator), fee); err != nil {
 				return ctx, SwapResult{}, err
 			}
-			if ctx, err = k.RecordFee(ctx, caller, pool, fee); err != nil {
+			var protocolCut, poolCut sdk.Int
+			if ctx, protocolCut, poolCut, err = k.RecordFee(ctx, caller, denom, fee); err != nil {
 				return ctx, SwapResult{}, err
 			}
+			result.ProtocolCut, result.PoolCut = protocolCut.BigInt(), poolCut.BigInt()
 		}
 	} else {
 		ctx, err = k.PayQuote(ctx, caller, HeldQuoteLedger(pool), recipient, sdk.NewIntFromBigInt(result.AmountOut))

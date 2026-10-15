@@ -59,13 +59,13 @@ func canonicalAddress(value string) bool {
 		common.HexToAddress(value) != (common.Address{})
 }
 
-func uint256(value sdk.Int) bool {
+func isUint256(value sdk.Int) bool {
 	return !value.IsNil() && !value.IsNegative() && value.BigInt().Cmp(types.MaxUint256()) <= 0
 }
 
 func validBookHeldDelta(delta types.BookHeldDelta) error {
-	if !canonicalAddress(delta.Pool) || !canonicalAddress(delta.Asset) || !uint256(delta.Book) ||
-		!uint256(delta.Held) || delta.Delta.IsNil() || delta.Delta.IsZero() ||
+	if !canonicalAddress(delta.Pool) || !canonicalAddress(delta.Asset) || !isUint256(delta.Book) ||
+		!isUint256(delta.Held) || delta.Delta.IsNil() || delta.Delta.IsZero() ||
 		!delta.Delta.Equal(delta.Held.Sub(delta.Book)) {
 		return invalidRecord("book-held delta %s %s", delta.Pool, delta.Asset)
 	}
@@ -85,7 +85,7 @@ func (k *Keeper) CheckNoNativeMarkets(ctx sdk.Context) error {
 // not listed in known and its magnitude exceeds tolerance. MigrateV6120 runs
 // it over every pool before recording any delta.
 func CheckDeltaTolerance(deltas, known []types.BookHeldDelta, tolerance sdk.Int) error {
-	if !uint256(tolerance) {
+	if !isUint256(tolerance) {
 		return invalidRecord("book-held delta tolerance")
 	}
 	type poolAsset struct{ pool, asset string }
