@@ -3,13 +3,17 @@
 package launchpad
 
 import (
+	launchpadv610 "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad/legacy/v610"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 func GetVersioned(latestUpgrade string, keepers utils.Keepers) utils.VersionedPrecompiles {
+	current := check(NewPrecompile(keepers))
 	return utils.VersionedPrecompiles{
-		latestUpgrade: check(NewPrecompile(keepers)),
+		latestUpgrade: current,
+		"v6.12.0":     current,
+		"v6.10":       check(launchpadv610.NewPrecompile(keepers)),
 	}
 }
 
