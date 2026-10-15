@@ -2,11 +2,15 @@ package keeper_test
 
 import (
 	"bytes"
+	"errors"
+
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	moduleimpl "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/baseapp"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec"
 	cdctypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 
@@ -29,25 +33,29 @@ import (
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	dbm "github.com/tendermint/tm-db"
 )
-
-const quote = types.DefaultQuoteDenom
 
 var (
 	genesisTime = time.Unix(1_800_000_000, 0).UTC()
 	farDeadline = uint64(genesisTime.Add(10_000 * time.Hour).Unix())
 	mature      = 1000 * time.Hour
+	// reserve holds the USDL supply newEnv mints; account hands it out.
+	reserve = address("quote reserve")
 )
 
 // env is the launchpad keeper on the real bank, tokenfactory and EVM keepers
-// of the test application, on a branch of its state.
+// of the test application, on a branch of its state, with a USDL ERC20
+// deployed in its EVM and named by Params.QuoteToken.
 type env struct {
-	t   *testing.T
-	ctx sdk.Context
-	k   *keeper.Keeper
+	t    *testing.T
+	ctx  sdk.Context
+	k    *keeper.Keeper
+	usdl common.Address
 }
 
 func newEnv(t *testing.T) *env {
@@ -57,22 +65,131 @@ func newEnv(t *testing.T) *env {
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	k, ctx := launchpadtest.NewKeeper(app, ctx)
 	k.InitGenesis(ctx, *types.DefaultGenesis())
-	return &env{t: t, ctx: ctx, k: k}
+
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	uintType, err := abi.NewType("uint256", "", nil)
+	require.NoError(t, err)
+	addressType, err := abi.NewType("address", "", nil)
+	require.NoError(t, err)
+	args, err := abi.Arguments{{Type: stringType}, {Type: stringType}, {Type: uintType}, {Type: addressType}}.
+		Pack("USD Ledger", "USDL", big.NewInt(usdlSupply), reserve)
+	require.NoError(t, err)
+	deployer := address("quote deployer")
+	nonce := app.EvmKeeper.GetNonce(ctx, deployer)
+	_, err = app.EvmKeeper.CallEVM(ctx, deployer, nil, nil, append(common.FromHex(sidioraERC20Creation), args...))
+	require.NoError(t, err)
+	usdl := crypto.CreateAddress(deployer, nonce)
+	require.NotEmpty(t, app.EvmKeeper.GetCode(ctx, usdl))
+	params := k.GetParams(ctx)
+	params.QuoteToken = usdl.Hex()
+	require.NoError(t, k.UpdateParams(ctx, k.Authority(), params))
+	return &env{t: t, ctx: ctx, k: k, usdl: usdl}
 }
 
+func calldata(signature string, words ...[]byte) []byte {
+	input := crypto.Keccak256([]byte(signature))[:4]
+	for _, w := range words {
+		input = append(input, w...)
+	}
+	return input
+}
+
+func addressWord(a common.Address) []byte { return common.LeftPadBytes(a.Bytes(), 32) }
+
+// callToken calls a state-changing ERC20 method from from and requires it to
+// return true.
+func (e *env) callToken(token, from common.Address, signature string, words ...[]byte) {
+	e.t.Helper()
+	ret, err := testkeeper.EVMTestApp.EvmKeeper.CallEVM(e.ctx, from, &token, nil, calldata(signature, words...))
+	require.NoError(e.t, err)
+	require.Equal(e.t, word(big.NewInt(1)), ret)
+}
+
+func (e *env) view(token common.Address, signature string, words ...[]byte) []byte {
+	e.t.Helper()
+	ret, err := testkeeper.EVMTestApp.EvmKeeper.StaticCallEVM(e.ctx, e.k.ModuleAddress(), &token, calldata(signature, words...))
+	require.NoError(e.t, err)
+	return ret
+}
+
+func (e *env) viewInt(token common.Address, signature string, words ...[]byte) sdk.Int {
+	e.t.Helper()
+	ret := e.view(token, signature, words...)
+	require.Len(e.t, ret, 32)
+	return sdk.NewIntFromBigInt(new(big.Int).SetBytes(ret))
+}
+
+func (e *env) sendToken(token, from, to common.Address, amount *big.Int) {
+	e.t.Helper()
+	e.callToken(token, from, "transfer(address,uint256)", addressWord(to), word(amount))
+}
+
+func (e *env) tokenBalance(token, holder common.Address) sdk.Int {
+	return e.viewInt(token, "balanceOf(address)", addressWord(holder))
+}
+
+func (e *env) tokenSupply(token common.Address) sdk.Int { return e.viewInt(token, "totalSupply()") }
+
+func (e *env) allowanceOf(token, owner, spender common.Address) sdk.Int {
+	return e.viewInt(token, "allowance(address,address)", addressWord(owner), addressWord(spender))
+}
+
+func (e *env) evmAddress(acc sdk.AccAddress) common.Address {
+	return testkeeper.EVMTestApp.EvmKeeper.GetEVMAddressOrDefault(e.ctx, acc)
+}
+
+// approveQuote sets the USDL allowance of acc to the launchpad precompile,
+// the spender PullQuote's transferFrom spends.
+func (e *env) approveQuote(acc sdk.AccAddress, amount *big.Int) {
+	e.t.Helper()
+	e.callToken(e.usdl, e.evmAddress(acc), "approve(address,uint256)",
+		addressWord(common.HexToAddress(types.LaunchpadAddress)), word(amount))
+}
+
+// account is a fresh account holding quoteAmount USDL from the reserve and an
+// unlimited USDL allowance to the launchpad.
 func (e *env) account(quoteAmount int64) sdk.AccAddress {
 	e.t.Helper()
 	acc, _ := testkeeper.MockAddressPair()
 	if quoteAmount > 0 {
-		coins := sdk.NewCoins(sdk.NewCoin(quote, sdk.NewInt(quoteAmount)))
-		require.NoError(e.t, testkeeper.EVMTestApp.BankKeeper.MintCoins(e.ctx, "evm", coins))
-		require.NoError(e.t, testkeeper.EVMTestApp.BankKeeper.SendCoinsFromModuleToAccount(e.ctx, "evm", acc, coins))
+		e.sendToken(e.usdl, reserve, e.evmAddress(acc), big.NewInt(quoteAmount))
 	}
+	e.approveQuote(acc, types.MaxUint256())
 	return acc
 }
 
+func (e *env) usdlOf(acc sdk.AccAddress) sdk.Int { return e.tokenBalance(e.usdl, e.evmAddress(acc)) }
+
+// custodyUsdl is the USDL held at the launchpad module EVM address.
+func (e *env) custodyUsdl() sdk.Int { return e.tokenBalance(e.usdl, e.k.ModuleEVMAddress(e.ctx)) }
+
+func (e *env) quoteLedger(ledger keeper.QuoteLedger) sdk.Int {
+	e.t.Helper()
+	amount, err := e.k.GetQuoteLedger(e.ctx, ledger)
+	require.NoError(e.t, err)
+	return amount
+}
+
+func (e *env) treasury() sdk.Int { return e.quoteLedger(keeper.TreasuryHeldLedger()) }
+
+func (e *env) feeHeld() sdk.Int {
+	return e.quoteLedger(keeper.FeeHeldLedger(e.k.Generation2().FeeAccumulator))
+}
+
+func (e *env) pool(denom string) common.Address {
+	return common.HexToAddress(e.market(denom).PoolAddress)
+}
+
+func (e *env) token(denom string) common.Address {
+	return common.HexToAddress(e.market(denom).TokenAddress)
+}
+
+func (e *env) held(denom string) sdk.Int { return e.quoteLedger(keeper.HeldQuoteLedger(e.pool(denom))) }
+
+// balance is the market token of denom that acc holds in the EVM.
 func (e *env) balance(acc sdk.AccAddress, denom string) sdk.Int {
-	return testkeeper.EVMTestApp.BankKeeper.GetBalance(e.ctx, acc, denom).Amount
+	return e.tokenBalance(e.token(denom), e.evmAddress(acc))
 }
 
 func (e *env) at(d time.Duration) { e.ctx = e.ctx.WithBlockTime(genesisTime.Add(d)) }
@@ -91,11 +208,71 @@ func (e *env) market(denom string) types.Market {
 	return market
 }
 
+// trySwap is a Router swap on a branch that is written only when the swap
+// succeeds: a buy first pulls amountIn USDL from the trader into
+// HeldQuote(pool) by transferFrom, a sell first transfers amountIn tokens to
+// the pool, and the pool swap then counts that prepaid input.
+func (e *env) trySwap(trader sdk.AccAddress, denom string, isBuy bool, amountIn, minAmountOut *big.Int,
+	recipient sdk.AccAddress, deadline uint64) (keeper.SwapResult, error) {
+	e.t.Helper()
+	ctx, write := e.ctx.CacheContext()
+	run := &env{t: e.t, ctx: ctx, k: e.k, usdl: e.usdl}
+	from := run.evmAddress(trader)
+	if market, found := e.k.GetMarket(ctx, denom); found && amountIn.Sign() > 0 {
+		pool := common.HexToAddress(market.PoolAddress)
+		if isBuy {
+			var err error
+			ctx, _, err = e.k.PullQuote(ctx, e.k.ModuleCaller(), from, keeper.HeldQuoteLedger(pool), sdk.NewIntFromBigInt(amountIn))
+			if err != nil {
+				return keeper.SwapResult{}, err
+			}
+		} else {
+			run.sendToken(common.HexToAddress(market.TokenAddress), from, pool, amountIn)
+		}
+	}
+	to := common.Address{}
+	if !recipient.Empty() {
+		to = run.evmAddress(recipient)
+	}
+	_, result, err := e.k.Swap(ctx, e.k.ModuleCaller(), state.NewDBImpl(ctx, &testkeeper.EVMTestApp.EvmKeeper, false),
+		denom, isBuy, amountIn, minAmountOut, from, to, deadline)
+	if err != nil {
+		return keeper.SwapResult{}, err
+	}
+	write()
+	return result, nil
+}
+
 func (e *env) swap(trader sdk.AccAddress, denom string, isBuy bool, amountIn int64) keeper.SwapResult {
 	e.t.Helper()
-	result, err := e.k.Swap(e.ctx, trader, denom, isBuy, big.NewInt(amountIn), big.NewInt(0), trader, farDeadline)
+	result, err := e.trySwap(trader, denom, isBuy, big.NewInt(amountIn), big.NewInt(0), trader, farDeadline)
 	require.NoError(e.t, err)
 	return result
+}
+
+type tokenTransfer struct {
+	token, from, to common.Address
+	amount          string
+}
+
+// transfers is the ERC20 Transfer logs of the current transaction so far, the
+// newest first.
+func (e *env) transfers() []tokenTransfer {
+	e.t.Helper()
+	r, err := testkeeper.EVMTestApp.EvmKeeper.GetTransientReceipt(e.ctx, e.ctx.TxSum(), uint64(e.ctx.TxIndex()))
+	if errors.Is(err, receipt.ErrNotFound) {
+		return nil
+	}
+	require.NoError(e.t, err)
+	out := []tokenTransfer{}
+	for _, l := range r.Logs {
+		if len(l.Topics) != 3 || common.HexToHash(l.Topics[0]) != transferTopic {
+			continue
+		}
+		out = append(out, tokenTransfer{token: common.HexToAddress(l.Address), from: common.HexToAddress(l.Topics[1]),
+			to: common.HexToAddress(l.Topics[2]), amount: new(big.Int).SetBytes(l.Data).String()})
+	}
+	return out
 }
 
 func (e *env) solvent() {
@@ -126,23 +303,26 @@ func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 	creator := e.account(2_500_000)
 	market := e.create(creator, types.FeeStrategyClaim)
 
-	// One creation fee: 1_000_000 to the treasury, 2_500_000-1_000_000 left.
-	require.Equal(t, i(1_000_000), e.balance(e.k.TreasuryAddress(), quote))
-	require.Equal(t, i(1_500_000), e.balance(creator, quote))
+	// One creation fee: 1_000_000 into custody for the treasury, 2_500_000-1_000_000 left.
+	require.Equal(t, i(1_000_000), e.treasury())
+	require.Equal(t, i(1_000_000), e.custodyUsdl())
+	require.Equal(t, i(1_500_000), e.usdlOf(creator))
 	require.Equal(t, "factory/"+e.k.ModuleAddress().String()+"/lp1", market.Denom)
-	require.Equal(t, i(1_000_000_000_000_000), e.balance(e.k.ModuleAddress(), market.Denom))
-	require.Equal(t, i(1_000_000_000_000_000), testkeeper.EVMTestApp.BankKeeper.GetSupply(e.ctx, market.Denom).Amount)
+	pool, token := common.HexToAddress(market.PoolAddress), common.HexToAddress(market.TokenAddress)
+	require.Equal(t, i(1_000_000_000_000_000), e.tokenBalance(token, pool))
+	require.Equal(t, i(1_000_000_000_000_000), e.tokenSupply(token))
 
-	pointer, _, exists := testkeeper.EVMTestApp.EvmKeeper.GetERC20NativePointer(e.ctx, market.Denom)
-	require.True(t, exists)
-	require.Equal(t, pointer.Hex(), market.Pointer)
-	byPointer, found := e.k.GetMarketByPointer(e.ctx, pointer)
+	surface, found, err := e.k.GetSurface(e.ctx, pool)
+	require.NoError(t, err)
 	require.True(t, found)
-	sameJSON(t, market, byPointer)
-	metadata, found := testkeeper.EVMTestApp.BankKeeper.GetDenomMetaData(e.ctx, market.Denom)
-	require.True(t, found)
-	require.Equal(t, "KNDL", metadata.Symbol)
-	require.Equal(t, uint32(types.TokenDecimals), metadata.DenomUnits[1].Exponent)
+	require.Equal(t, types.RolePool, surface.Role)
+	require.Equal(t, market.Denom, surface.Market)
+	stringType, err := abi.NewType("string", "", nil)
+	require.NoError(t, err)
+	symbol, err := abi.Arguments{{Type: stringType}}.Unpack(e.view(token, "symbol()"))
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{"KNDL"}, symbol)
+	require.Equal(t, i(types.TokenDecimals), e.viewInt(token, "decimals()"))
 
 	require.Equal(t, creator.String(), market.Creator)
 	require.Equal(t, creator.String(), market.Guardian)
@@ -172,7 +352,8 @@ func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 }
 
 // TestSwapVectors replays SidioraPool.swap on the protocol defaults and
-// checks every output against the Solidity arithmetic.
+// checks every output against the Solidity arithmetic. Each sell follows its
+// buy by a minute, so the 60 s snapshot gate records every swap.
 func TestSwapVectors(t *testing.T) {
 	e := newEnv(t)
 	creator := e.account(100_000_000)
@@ -190,21 +371,23 @@ func TestSwapVectors(t *testing.T) {
 	require.Equal(t, b(2_700_000), buy.PoolCut)
 	m := e.market(denom)
 	require.Equal(t, i(97_000_000), m.RealQuoteBalance)
+	require.Equal(t, m.RealQuoteBalance, e.held(denom))
 	require.Equal(t, i(990_393_186_094_880), m.TokenReserve)
 	require.Equal(t, i(100_000_000), m.CumulativeVolume)
+	require.Equal(t, i(100_000_000), m.CumulativeBuyQuoteVolume)
 	require.Equal(t, i(3_000_000), m.AccumulatedQuoteFees)
 	require.Equal(t, i(2_700_000), m.AccumulatedFees)
+	require.Equal(t, i(2_700_000), e.feeHeld())
 	require.Equal(t, i(10_000_000_000), m.VirtualQuoteReserve)
 	require.Equal(t, i(10_194_940_899_999), m.PriceSnapshots[0])
 	require.Equal(t, uint64(1), m.SnapshotIndex)
 	require.Equal(t, uint64(1), m.SnapshotCount)
 	require.Equal(t, i(9_606_813_905_120), e.balance(alice, denom))
 	// CreationFee 1_000_000 plus the protocol cut 3_000_000*1_000/10_000 = 300_000.
-	require.Equal(t, i(1_300_000), e.balance(e.k.TreasuryAddress(), quote))
-	protocolFees, err := e.k.GetProtocolFees(e.ctx, denom)
-	require.NoError(t, err)
-	require.Equal(t, i(300_000), protocolFees)
+	require.Equal(t, i(1_300_000), e.treasury())
+	require.Equal(t, i(97_000_000+2_700_000+1_300_000), e.custodyUsdl())
 
+	e.at(time.Minute)
 	tokenReserveBefore := m.TokenReserve
 	sell := e.swap(alice, denom, false, 4_803_406_952_560)
 	require.Equal(t, b(300), sell.FeeBps)
@@ -214,7 +397,9 @@ func TestSwapVectors(t *testing.T) {
 	m = e.market(denom)
 	require.Equal(t, tokenReserveBefore.Add(i(4_803_406_952_560)), m.TokenReserve)
 	require.Equal(t, i(49_721_088), m.RealQuoteBalance)
+	require.Equal(t, m.RealQuoteBalance, e.held(denom))
 	require.Equal(t, i(2_700_000), m.AccumulatedFees, "a sell does not touch the quote fees")
+	require.Equal(t, i(2_700_000), e.feeHeld())
 	require.Equal(t, i(144_102_208_576), m.AccumulatedTokenFees)
 	require.Equal(t, i(10_098_226_981_692), m.PriceSnapshots[1])
 
@@ -228,8 +413,10 @@ func TestSwapVectors(t *testing.T) {
 	require.Equal(t, b(89_819_503_485_620), second.AmountOut)
 	m = e.market(denom)
 	require.Equal(t, i(1_046_721_088), m.RealQuoteBalance)
+	require.Equal(t, m.RealQuoteBalance, e.held(denom))
 	require.Equal(t, i(12_201_237_711_179), m.PriceSnapshots[2])
 
+	e.at(mature + time.Minute)
 	last := e.swap(alice, denom, false, 89_819_503_485_620)
 	// FeeLib.calculateVolatility over the three snapshots: movements
 	// 96_713_918_307*1e6/10_194_940_899_999 = 9_486 and
@@ -245,11 +432,81 @@ func TestSwapVectors(t *testing.T) {
 	m = e.market(denom)
 	// 1_046_721_088 - 993_007_536.
 	require.Equal(t, i(53_713_552), m.RealQuoteBalance)
+	require.Equal(t, m.RealQuoteBalance, e.held(denom))
 	require.Equal(t, i(995_196_593_047_440), m.TokenReserve)
 	// ReserveLib.getPrice: (10_000_000_000+53_713_552)*1e18/995_196_593_047_440.
 	require.Equal(t, i(10_102_238_715_683), m.PriceSnapshots[3])
 	require.Equal(t, uint64(4), m.SnapshotCount)
-	require.Equal(t, i(100_000_000+4_803_406_952_560+1_000_000_000+89_819_503_485_620), m.CumulativeVolume)
+	// USDL volume: paid input on a buy, USDL out on a sell.
+	require.Equal(t, i(100_000_000+47_278_912+1_000_000_000+993_007_536), m.CumulativeVolume)
+	require.Equal(t, i(100_000_000+1_000_000_000), m.CumulativeBuyQuoteVolume)
+	require.Equal(t, i(47_278_912+993_007_536), m.CumulativeSellQuoteVolume)
+	// The second buy's protocol cut 3_000_000*1_000/10_000 joins the treasury.
+	require.Equal(t, i(1_600_000), e.treasury())
+	require.Equal(t, i(5_400_000), e.feeHeld())
+	require.Equal(t, i(53_713_552+5_400_000+1_600_000), e.custodyUsdl())
+	e.solvent()
+}
+
+// TestBuyMovesUsdlIntoCustody checks that a buy moves the caller's USDL to
+// the launchpad module EVM address by transferFrom and books it on the
+// custody ledgers: the input less the fee to HeldQuote(pool), the pool cut to
+// FeeHeld and the protocol cut to the treasury.
+func TestBuyMovesUsdlIntoCustody(t *testing.T) {
+	e := newEnv(t)
+	creator := e.account(100_000_000)
+	trader := e.account(100_000_000)
+	market := e.create(creator, types.FeeStrategyClaim)
+	denom := market.Denom
+	pool, token := common.HexToAddress(market.PoolAddress), common.HexToAddress(market.TokenAddress)
+	from, custody := e.evmAddress(trader), e.k.ModuleEVMAddress(e.ctx)
+	launchpad := common.HexToAddress(types.LaunchpadAddress)
+	e.approveQuote(trader, b(100_000_000))
+	require.Equal(t, i(100_000_000), e.allowanceOf(e.usdl, from, launchpad))
+
+	held, feeHeld, treasury, inCustody := e.held(denom), e.feeHeld(), e.treasury(), e.custodyUsdl()
+	supply := e.tokenSupply(e.usdl)
+	bank := testkeeper.EVMTestApp.BankKeeper
+	banked := func() []sdk.Coins {
+		return []sdk.Coins{bank.GetAllBalances(e.ctx, trader), bank.GetAllBalances(e.ctx, e.k.ModuleAddress()),
+			bank.GetAllBalances(e.ctx, testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(e.ctx, pool))}
+	}
+	bankBefore := banked()
+	logsBefore := len(e.transfers())
+
+	result := e.swap(trader, denom, true, 100_000_000)
+	require.Equal(t, b(300), result.FeeBps)
+	require.Equal(t, b(3_000_000), result.FeeAmount)
+	require.Equal(t, b(300_000), result.ProtocolCut)
+	require.Equal(t, b(2_700_000), result.PoolCut)
+	require.Equal(t, b(9_606_813_905_120), result.AmountOut)
+
+	// 100_000_000 - fee 3_000_000 to the pool, 3_000_000 - 300_000 to the
+	// FeeAccumulator, 3_000_000*1_000/10_000 to the treasury.
+	require.Equal(t, held.AddRaw(97_000_000), e.held(denom))
+	require.Equal(t, feeHeld.AddRaw(2_700_000), e.feeHeld())
+	require.Equal(t, treasury.AddRaw(300_000), e.treasury())
+	require.Equal(t, inCustody.AddRaw(100_000_000), e.custodyUsdl())
+	require.True(t, e.usdlOf(trader).IsZero())
+	require.True(t, e.allowanceOf(e.usdl, from, launchpad).IsZero(), "transferFrom spent the allowance")
+	require.True(t, e.tokenBalance(e.usdl, pool).IsZero(), "no USDL rests at the pool address")
+	require.Equal(t, supply, e.tokenSupply(e.usdl))
+	require.Equal(t, i(9_606_813_905_120), e.balance(trader, denom))
+	require.Equal(t, i(990_393_186_094_880), e.tokenBalance(token, pool))
+
+	logs := e.transfers()
+	require.ElementsMatch(t, []tokenTransfer{
+		{token: e.usdl, from: from, to: custody, amount: "100000000"},
+		{token: token, from: pool, to: from, amount: "9606813905120"},
+	}, logs[:len(logs)-logsBefore])
+	sameJSON(t, bankBefore, banked())
+
+	m := e.market(denom)
+	require.Equal(t, i(97_000_000), m.RealQuoteBalance)
+	require.Equal(t, i(3_000_000), m.AccumulatedQuoteFees)
+	require.Equal(t, i(2_700_000), m.AccumulatedFees)
+	require.Equal(t, i(100_000_000), m.CumulativeBuyQuoteVolume)
+	require.True(t, m.CumulativeSellQuoteVolume.IsNil() || m.CumulativeSellQuoteVolume.IsZero())
 	e.solvent()
 }
 
@@ -270,11 +527,12 @@ func TestSnapshotRingWraps(t *testing.T) {
 	}
 	for n := 0; n < types.SnapshotSlots+2; n++ {
 		e.ctx = e.ctx.WithBlockHeight(int64(n + 1))
+		e.at(time.Duration(n) * time.Minute)
 		before := e.market(denom)
-		_, err := e.k.QuoteBuy(e.ctx, denom, b(1_000_000))
+		_, err := e.k.QuoteBuy(e.ctx, denom, b(2_000_000))
 		require.NoError(t, err)
 		sameJSON(t, before, e.market(denom))
-		e.swap(alice, denom, true, 1_000_000)
+		e.swap(alice, denom, true, 2_000_000)
 	}
 	m := e.market(denom)
 	require.Equal(t, uint64(types.SnapshotSlots), m.SnapshotCount)
@@ -287,16 +545,16 @@ func TestSnapshotRingWraps(t *testing.T) {
 }
 
 // TestQuoteConservation checks, after every swap of a buy/sell sequence by
-// two traders across fee regimes, that quote paid in equals quote paid out
-// plus fees plus the real balance left in the curve, and that bank balances
-// match the market's accounting.
+// two traders across fee regimes, that USDL paid in equals USDL paid out
+// plus fees plus the real balance left in the curve, and that the custody
+// ledgers and ERC20 balances match the market's accounting.
 func TestQuoteConservation(t *testing.T) {
 	e := newEnv(t)
 	creator := e.account(100_000_000)
 	alice := e.account(5_000_000_000)
 	bob := e.account(5_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
-	treasuryStart := e.balance(e.k.TreasuryAddress(), quote)
+	treasuryStart := e.treasury()
 
 	quoteIn, quoteOut, quoteFees, protocol := sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt()
 	steps := []struct {
@@ -320,24 +578,26 @@ func TestQuoteConservation(t *testing.T) {
 		if !step.isBuy {
 			amount = e.balance(step.trader, denom).QuoRaw(3).Int64()
 		}
-		quoteBefore := e.balance(step.trader, quote)
+		quoteBefore := e.usdlOf(step.trader)
 		result := e.swap(step.trader, denom, step.isBuy, amount)
 		if step.isBuy {
 			quoteIn = quoteIn.AddRaw(amount)
 			quoteFees = quoteFees.Add(sdk.NewIntFromBigInt(result.FeeAmount))
 			protocol = protocol.Add(sdk.NewIntFromBigInt(result.ProtocolCut))
-			require.Equal(t, quoteBefore.SubRaw(amount), e.balance(step.trader, quote), "step %d", n)
+			require.Equal(t, quoteBefore.SubRaw(amount), e.usdlOf(step.trader), "step %d", n)
 		} else {
 			quoteOut = quoteOut.Add(sdk.NewIntFromBigInt(result.AmountOut))
-			require.Equal(t, quoteBefore.Add(sdk.NewIntFromBigInt(result.AmountOut)), e.balance(step.trader, quote), "step %d", n)
+			require.Equal(t, quoteBefore.Add(sdk.NewIntFromBigInt(result.AmountOut)), e.usdlOf(step.trader), "step %d", n)
 		}
 		m := e.market(denom)
 		require.Equal(t, quoteIn, quoteOut.Add(quoteFees).Add(m.RealQuoteBalance), "step %d", n)
 		require.Equal(t, quoteFees, m.AccumulatedQuoteFees, "step %d", n)
 		require.Equal(t, quoteFees, m.AccumulatedFees.Add(protocol), "step %d", n)
-		require.Equal(t, m.RealQuoteBalance.Add(m.AccumulatedFees), e.balance(e.k.ModuleAddress(), quote), "step %d", n)
-		require.Equal(t, treasuryStart.Add(protocol), e.balance(e.k.TreasuryAddress(), quote), "step %d", n)
-		require.Equal(t, m.TokenReserve, e.balance(e.k.ModuleAddress(), denom), "step %d", n)
+		require.Equal(t, m.RealQuoteBalance, e.held(denom), "step %d", n)
+		require.Equal(t, m.AccumulatedFees, e.feeHeld(), "step %d", n)
+		require.Equal(t, treasuryStart.Add(protocol), e.treasury(), "step %d", n)
+		require.Equal(t, m.RealQuoteBalance.Add(m.AccumulatedFees).Add(e.treasury()), e.custodyUsdl(), "step %d", n)
+		require.Equal(t, m.TokenReserve, e.tokenBalance(e.token(denom), e.pool(denom)), "step %d", n)
 		require.Equal(t, m.TotalSupply, m.TokenReserve.Add(e.balance(alice, denom)).Add(e.balance(bob, denom)), "step %d", n)
 		require.Equal(t, i(10_000_000_000), m.VirtualQuoteReserve)
 		e.solvent()
@@ -351,7 +611,7 @@ func TestSwapRejections(t *testing.T) {
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
 	e.at(time.Hour)
 	swap := func(isBuy bool, amount, minOut int64, recipient sdk.AccAddress, deadline uint64) error {
-		_, err := e.k.Swap(e.ctx, trader, denom, isBuy, b(amount), b(minOut), recipient, deadline)
+		_, err := e.trySwap(trader, denom, isBuy, b(amount), b(minOut), recipient, deadline)
 		return err
 	}
 	now := uint64(genesisTime.Add(time.Hour).Unix())
@@ -360,12 +620,12 @@ func TestSwapRejections(t *testing.T) {
 	require.ErrorIs(t, swap(true, 0, 0, trader, now), types.ErrInsufficientInput)
 	require.ErrorIs(t, swap(true, 1_000_000, 0, nil, now), types.ErrZeroAddress)
 	before := e.k.ExportGenesis(e.ctx)
-	quoteBefore := e.balance(trader, quote)
+	quoteBefore := e.usdlOf(trader)
 	tokenBefore := e.balance(trader, denom)
 	require.ErrorIs(t, swap(true, 1_000_000, 1_000_000_000_000_000, trader, now), types.ErrSlippageExceeded)
 	require.ErrorIs(t, swap(false, 1, 1_000_000_000, trader, now), types.ErrSlippageExceeded)
 	sameJSON(t, before, e.k.ExportGenesis(e.ctx))
-	require.Equal(t, quoteBefore, e.balance(trader, quote))
+	require.Equal(t, quoteBefore, e.usdlOf(trader))
 	require.Equal(t, tokenBefore, e.balance(trader, denom))
 	require.NoError(t, e.k.Pause(e.ctx, creator, denom))
 	paused := e.k.ExportGenesis(e.ctx)
@@ -374,7 +634,7 @@ func TestSwapRejections(t *testing.T) {
 	sameJSON(t, paused, e.k.ExportGenesis(e.ctx))
 	require.NoError(t, e.k.Unpause(e.ctx, creator, denom))
 	require.Error(t, swap(true, 2_000_000_000, 0, trader, now), "more quote than trader holds")
-	_, err := e.k.Swap(e.ctx, trader, "factory/nobody/lp9", true, b(1), b(0), trader, now)
+	_, err := e.trySwap(trader, "factory/nobody/lp9", true, b(1), b(0), trader, now)
 	require.ErrorIs(t, err, types.ErrUnknownMarket)
 
 	// The virtual floor: a sell may never pay out virtual quote. Genesis
@@ -390,16 +650,15 @@ func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
 	creator := e.account(100_000_000)
 	alice := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
-	treasury := e.balance(e.k.TreasuryAddress(), quote)
+	treasury, feeHeld := e.treasury(), e.feeHeld()
 	result := e.swap(alice, denom, true, 333_333_334)
 	require.Equal(t, b(10_000_000), result.FeeAmount)
 	require.Equal(t, b(1_000_000), result.ProtocolCut)
 	require.Equal(t, b(9_000_000), result.PoolCut)
-	require.Equal(t, treasury.AddRaw(1_000_000), e.balance(e.k.TreasuryAddress(), quote))
+	require.Equal(t, treasury.AddRaw(1_000_000), e.treasury())
+	require.Equal(t, feeHeld.AddRaw(9_000_000), e.feeHeld())
 	require.Equal(t, i(9_000_000), e.market(denom).AccumulatedFees)
-	protocolFees, err := e.k.GetProtocolFees(e.ctx, denom)
-	require.NoError(t, err)
-	require.Equal(t, i(1_000_000), protocolFees)
+	require.Equal(t, e.held(denom).Add(e.feeHeld()).Add(e.treasury()), e.custodyUsdl())
 	t.Run("fee_split_and_solvency", func(t *testing.T) {
 		e := newEnv(t)
 		params := e.k.GetParams(e.ctx)
@@ -409,12 +668,13 @@ func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
 		trader := e.account(1_000_000_000)
 		markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
 			e.create(creator, types.FeeStrategyClaim).Denom}
-		treasury := e.balance(e.k.TreasuryAddress(), quote)
+		treasury := e.treasury()
 		result := e.swap(trader, markets[0], true, 3334)
 		require.Equal(t, b(100), result.FeeAmount)
 		require.Equal(t, b(20), result.ProtocolCut)
 		require.Equal(t, b(80), result.PoolCut)
-		require.Equal(t, treasury.AddRaw(20), e.balance(e.k.TreasuryAddress(), quote))
+		require.Equal(t, treasury.AddRaw(20), e.treasury())
+		require.Equal(t, i(80), e.feeHeld())
 		require.Equal(t, i(80), e.market(markets[0]).AccumulatedFees)
 		e.solvent()
 		protocol := []sdk.Int{i(20), sdk.ZeroInt()}
@@ -431,11 +691,10 @@ func TestFeeSplitMatchesFeeAccumulator(t *testing.T) {
 			result := e.swap(trader, denom, isBuy, amount)
 			protocol[index] = protocol[index].Add(sdk.NewIntFromBigInt(result.ProtocolCut))
 			pool[index] = pool[index].Add(sdk.NewIntFromBigInt(result.PoolCut))
-			fees, err := e.k.GetProtocolFees(e.ctx, denom)
-			require.NoError(t, err)
-			require.Equal(t, protocol[index], fees)
 			require.Equal(t, pool[index], e.market(denom).AccumulatedFees)
-			require.Equal(t, treasury.Add(protocol[0]).Add(protocol[1]), e.balance(e.k.TreasuryAddress(), quote))
+			require.Equal(t, pool[0].Add(pool[1]), e.feeHeld())
+			require.Equal(t, treasury.Add(protocol[0]).Add(protocol[1]), e.treasury())
+			require.Equal(t, e.held(markets[0]).Add(e.held(markets[1])).Add(e.feeHeld()).Add(e.treasury()), e.custodyUsdl())
 			e.solvent()
 		}
 	})
@@ -505,6 +764,7 @@ func testProtocolFeeMarketStateIsolation(t *testing.T) {
 	traders := []sdk.AccAddress{e.account(10_000), e.account(10_000)}
 	markets := []string{e.create(creator, types.FeeStrategyClaim).Denom,
 		e.create(creator, types.FeeStrategyClaim).Denom}
+	pools := []common.Address{e.pool(markets[0]), e.pool(markets[1])}
 	key := sdk.NewKVStoreKey(types.StoreKey)
 	versions := multiversion.NewMultiVersionStore(e.ctx.MultiStore().GetKVStore(key))
 	app := testkeeper.EVMTestApp
@@ -534,19 +794,27 @@ func testProtocolFeeMarketStateIsolation(t *testing.T) {
 			WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(e.ctx))
 	}
 	results := make([]keeper.SwapResult, len(markets))
-	errors := make([]error, len(markets))
+	failures := make([]error, len(markets))
 	var wait sync.WaitGroup
 	for index := range markets {
 		wait.Add(1)
 		go func(index int) {
 			defer wait.Done()
-			results[index], errors[index] = transactionKeeper.Swap(contexts[index], traders[index], markets[index], true,
-				b(3334), b(0), traders[index], farDeadline)
+			ctx := contexts[index]
+			trader := app.EvmKeeper.GetEVMAddressOrDefault(ctx, traders[index])
+			caller := transactionKeeper.ModuleCaller()
+			ctx, _, err := transactionKeeper.PullQuote(ctx, caller, trader, keeper.HeldQuoteLedger(pools[index]), i(3334))
+			if err != nil {
+				failures[index] = err
+				return
+			}
+			_, results[index], failures[index] = transactionKeeper.Swap(ctx, caller, state.NewDBImpl(ctx, &app.EvmKeeper, false),
+				markets[index], true, b(3334), b(0), trader, trader, farDeadline)
 		}(index)
 	}
 	wait.Wait()
 	for index := range markets {
-		require.NoError(t, errors[index])
+		require.NoError(t, failures[index])
 		require.Equal(t, b(20), results[index].ProtocolCut)
 		fees, err := transactionKeeper.GetProtocolFees(contexts[index], markets[index])
 		require.NoError(t, err)
@@ -588,7 +856,7 @@ func TestFeeStrategies(t *testing.T) {
 	claimed, err := e.k.ClaimFees(e.ctx, creator, denom, stranger)
 	require.NoError(t, err)
 	require.Equal(t, i(9_000_000), claimed)
-	require.Equal(t, i(9_000_000), e.balance(stranger, quote))
+	require.Equal(t, i(9_000_000), e.usdlOf(stranger))
 	require.True(t, e.market(denom).AccumulatedFees.IsZero())
 	_, err = e.k.ClaimFees(e.ctx, creator, denom, creator)
 	require.ErrorIs(t, err, types.ErrNoFeesAccumulated)
@@ -601,24 +869,24 @@ func TestFeeStrategies(t *testing.T) {
 	pool := e.market(denom).AccumulatedFees
 	dead := e.k.DeadAccount(e.ctx)
 	require.Equal(t, testkeeper.EVMTestApp.EvmKeeper.GetPaxAddressOrDefault(e.ctx, common.HexToAddress(types.DeadAddress)), dead)
-	deadBefore := e.balance(dead, quote)
+	deadBefore := e.tokenBalance(e.usdl, common.HexToAddress(types.DeadAddress))
 	burned, err := e.k.ExecuteBurn(e.ctx, creator, denom)
 	require.NoError(t, err)
 	require.Equal(t, pool, burned)
-	require.Equal(t, deadBefore.Add(pool), e.balance(dead, quote))
+	require.Equal(t, deadBefore.Add(pool), e.tokenBalance(e.usdl, common.HexToAddress(types.DeadAddress)))
 	e.solvent()
 
 	require.NoError(t, e.k.SetFeeStrategy(e.ctx, creator, denom, types.FeeStrategyLpRewards))
 	e.swap(alice, denom, true, 333_333_334)
 	before := e.market(denom)
-	escrowBefore := e.balance(e.k.ModuleAddress(), quote)
+	escrowBefore := e.custodyUsdl()
 	rewards, err := e.k.ExecuteLpRewards(e.ctx, creator, denom)
 	require.NoError(t, err)
 	require.Equal(t, before.AccumulatedFees, rewards)
 	after := e.market(denom)
 	require.Equal(t, before.RealQuoteBalance.Add(rewards), after.RealQuoteBalance)
 	require.True(t, after.AccumulatedFees.IsZero())
-	require.Equal(t, escrowBefore, e.balance(e.k.ModuleAddress(), quote), "LP rewards stay in escrow")
+	require.Equal(t, escrowBefore, e.custodyUsdl(), "LP rewards stay in custody")
 	_, err = e.k.ExecuteLpRewards(e.ctx, creator, denom)
 	require.ErrorIs(t, err, types.ErrNoFeesAccumulated)
 	e.solvent()
@@ -629,7 +897,7 @@ func TestFeeStrategies(t *testing.T) {
 func TestAirdropSharesByHolding(t *testing.T) {
 	e := newEnv(t)
 	gov := authtypes.NewModuleAddress(govtypes.ModuleName).String()
-	params := types.DefaultParams()
+	params := e.k.GetParams(e.ctx)
 	params.VirtualQuoteDefault = i(1_000_000_000)
 	params.VirtualTokenDefault = i(1_000_000_000)
 	require.NoError(t, e.k.UpdateParams(e.ctx, gov, params))
@@ -646,8 +914,7 @@ func TestAirdropSharesByHolding(t *testing.T) {
 	require.Equal(t, b(30), result.FeeBps)
 	require.Equal(t, b(10_000_000), result.FeeAmount)
 	require.Equal(t, b(768_696_993), result.AmountOut)
-	require.NoError(t, testkeeper.EVMTestApp.BankKeeper.SendCoins(e.ctx, alice, bob,
-		sdk.NewCoins(sdk.NewCoin(denom, i(168_696_993)))))
+	e.sendToken(e.token(denom), e.evmAddress(alice), e.evmAddress(bob), b(168_696_993))
 	require.Equal(t, i(600_000_000), e.balance(alice, denom))
 
 	_, err = e.k.ExecuteAirdrop(e.ctx, bob, denom)
@@ -662,11 +929,11 @@ func TestAirdropSharesByHolding(t *testing.T) {
 	_, err = e.k.ExecuteAirdrop(e.ctx, creator, denom)
 	require.ErrorIs(t, err, types.ErrNoFeesAccumulated)
 
-	aliceBefore := e.balance(alice, quote)
+	aliceBefore := e.usdlOf(alice)
 	share, err := e.k.ClaimAirdrop(e.ctx, alice, denom)
 	require.NoError(t, err)
 	require.Equal(t, i(5_400_000), share)
-	require.Equal(t, aliceBefore.AddRaw(5_400_000), e.balance(alice, quote))
+	require.Equal(t, aliceBefore.AddRaw(5_400_000), e.usdlOf(alice))
 	require.True(t, e.k.HasClaimedAirdrop(e.ctx, denom, alice, 1))
 	_, err = e.k.ClaimAirdrop(e.ctx, alice, denom)
 	require.ErrorIs(t, err, types.ErrAlreadyClaimed)
@@ -693,7 +960,7 @@ func TestGuardianPause(t *testing.T) {
 	require.ErrorIs(t, e.k.Unpause(e.ctx, creator, denom), types.ErrNotPaused)
 	require.NoError(t, e.k.Pause(e.ctx, creator, denom))
 	require.ErrorIs(t, e.k.Pause(e.ctx, creator, denom), types.ErrPaused)
-	_, err := e.k.Swap(e.ctx, alice, denom, true, b(1_000_000), b(0), alice, farDeadline)
+	_, err := e.trySwap(alice, denom, true, b(1_000_000), b(0), alice, farDeadline)
 	require.ErrorIs(t, err, types.ErrPaused)
 	require.ErrorIs(t, e.k.Unpause(e.ctx, alice, denom), types.ErrNotGuardian)
 	require.NoError(t, e.k.Unpause(e.ctx, creator, denom))
@@ -704,12 +971,13 @@ func TestParamsChangeOnlyThroughGovernance(t *testing.T) {
 	e := newEnv(t)
 	gov := authtypes.NewModuleAddress(govtypes.ModuleName).String()
 	require.Equal(t, gov, e.k.Authority())
-	params := types.DefaultParams()
+	current := e.k.GetParams(e.ctx)
+	params := current
 	params.ProtocolFeeBps = 2_000
 	params.CreationFee = i(5)
 	outsider, _ := testkeeper.MockAddressPair()
 	require.ErrorIs(t, e.k.UpdateParams(e.ctx, outsider.String(), params), types.ErrUnauthorized)
-	sameJSON(t, types.DefaultParams(), e.k.GetParams(e.ctx))
+	sameJSON(t, current, e.k.GetParams(e.ctx))
 	invalid := params
 	invalid.MaxFeeBps = 10_000
 	require.ErrorIs(t, e.k.UpdateParams(e.ctx, gov, invalid), types.ErrInvalidParams)
@@ -719,7 +987,7 @@ func TestParamsChangeOnlyThroughGovernance(t *testing.T) {
 	creator := e.account(5)
 	alice := e.account(1_000_000_000)
 	denom := e.create(creator, types.FeeStrategyClaim).Denom
-	require.Equal(t, i(5), e.balance(e.k.TreasuryAddress(), quote))
+	require.Equal(t, i(5), e.treasury())
 	result := e.swap(alice, denom, true, 333_333_334)
 	require.Equal(t, b(2_000_000), result.ProtocolCut)
 	require.Equal(t, b(8_000_000), result.PoolCut)
@@ -734,14 +1002,42 @@ func TestGenesisRoundTrip(t *testing.T) {
 	trader := e.account(1_000_000_000)
 	first := e.create(creator, types.FeeStrategyClaim).Denom
 	second := e.create(creator, types.FeeStrategyLpRewards).Denom
+	pools := []common.Address{e.pool(first), e.pool(second)}
+	// Fee 3334*300/10_000 = 100: 20 to the treasury and 80 to FeeHeld.
 	e.swap(trader, first, true, 3334)
+	// Fee 5834*300/10_000 = 175: 35 to the treasury and 140 to FeeHeld.
 	e.swap(trader, second, true, 5834)
+	e.at(time.Minute)
 	e.swap(trader, first, false, e.balance(trader, first).QuoRaw(2).Int64())
 	require.NoError(t, e.k.Pause(e.ctx, creator, first))
 	exported := e.k.ExportGenesis(e.ctx)
 	require.NoError(t, exported.Validate())
 	require.Len(t, exported.Markets, 2)
-	require.Equal(t, []types.ProtocolFeeEntry{{Token: first, Amount: i(20)}, {Token: second, Amount: i(35)}}, exported.ProtocolFees)
+
+	held := map[string]string{}
+	for _, entry := range exported.HeldQuote {
+		held[entry.Pool] = entry.Amount.String()
+	}
+	require.Equal(t, map[string]string{pools[0].Hex(): e.market(first).RealQuoteBalance.String(),
+		pools[1].Hex(): i(5834 - 175).String()}, held)
+	require.Equal(t, i(80+140).String(), exported.FeeHeld.String())
+	// Two creation fees and the protocol cuts 20 and 35.
+	sameJSON(t, []types.TreasuryBalance{{Token: e.usdl.Hex(), Ledger: i(2_000_055), Held: i(2_000_055)}}, exported.Treasury)
+	require.Equal(t, i(80+140).String(), exported.FeeAccounting.TotalLiabilities.String())
+	accumulated := map[string]string{}
+	for _, account := range exported.FeeAccounting.Pools {
+		accumulated[account.Pool] = account.AccumulatedFees.String()
+	}
+	require.Equal(t, map[string]string{pools[0].Hex(): "80", pools[1].Hex(): "140"}, accumulated)
+	surfaces := map[string]string{}
+	for _, surface := range exported.Surfaces {
+		surfaces[surface.Address] = surface.Role
+	}
+	for _, pool := range pools {
+		require.Equal(t, types.RolePool, surfaces[pool.Hex()])
+	}
+	require.Equal(t, e.held(first).Add(e.held(second)).AddRaw(220).AddRaw(2_000_055), e.custodyUsdl())
+
 	raw, err := json.Marshal(exported)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "protocol_fees_pending")
@@ -753,15 +1049,25 @@ func TestGenesisRoundTrip(t *testing.T) {
 	fresh.InitGenesis(ctx, decoded)
 	sameJSON(t, exported, fresh.ExportGenesis(ctx))
 	sameJSON(t, e.k.GetMarkets(e.ctx, 0, 10), fresh.GetMarkets(ctx, 0, 10))
-	pointer := common.HexToAddress(exported.Markets[0].Pointer)
-	market, found := fresh.GetMarketByPointer(ctx, pointer)
+	surface, found, err := fresh.GetSurface(ctx, pools[0])
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, types.RolePool, surface.Role)
+	require.Equal(t, first, surface.Market)
+	market, found := fresh.GetMarket(ctx, first)
 	require.True(t, found)
 	require.True(t, market.Paused)
 	for index, denom := range []string{first, second} {
-		fees, err := fresh.GetProtocolFees(ctx, denom)
+		amount, err := fresh.GetQuoteLedger(ctx, keeper.HeldQuoteLedger(pools[index]))
 		require.NoError(t, err)
-		require.Equal(t, exported.ProtocolFees[index].Amount, fees)
+		require.Equal(t, e.held(denom), amount)
 	}
+	fees, err := fresh.GetQuoteLedger(ctx, keeper.FeeHeldLedger(fresh.Generation2().FeeAccumulator))
+	require.NoError(t, err)
+	require.Equal(t, i(220), fees)
+	treasury, err := fresh.GetQuoteLedger(ctx, keeper.TreasuryHeldLedger())
+	require.NoError(t, err)
+	require.Equal(t, i(2_000_055), treasury)
 	require.False(t, ctx.KVStore(sdk.NewKVStoreKey(types.StoreKey)).Has(types.ProtocolFeesPrefix))
 	for _, entries := range [][]types.ProtocolFeeEntry{
 		{{Token: first, Amount: i(20)}, {Token: first, Amount: i(35)}},
@@ -883,7 +1189,6 @@ func TestMsgUpdateParamsRefusals(t *testing.T) {
 		name   string
 		mutate func(*types.Params)
 	}{
-		{"denom", func(p *types.Params) { p.QuoteDenom = "!" }},
 		{"quote-nil", func(p *types.Params) { p.VirtualQuoteDefault = sdk.Int{} }},
 		{"quote-zero", func(p *types.Params) { p.VirtualQuoteDefault = sdk.ZeroInt() }},
 		{"quote-negative", func(p *types.Params) { p.VirtualQuoteDefault = sdk.NewInt(-1) }},
@@ -943,7 +1248,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		require.Equal(t, supply, basis.Supply)
-		require.Equal(t, quote, basis.PayoutDenom)
+		require.Equal(t, h.k.GetParams(h.ctx).QuoteDenom, basis.PayoutDenom)
 		require.Equal(t, h.ctx.BlockHeight(), basis.Height)
 		require.True(t, basis.Paid.IsZero())
 		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
@@ -1035,24 +1340,24 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.NoError(t, err)
 
 		// The escrow cannot pay: the claim fails and consumes nothing.
-		escrow := h.k.ModuleAddress()
-		held := h.balance(escrow, quote)
-		sink := h.account(0)
-		require.NoError(t, bank.SendCoins(h.ctx, escrow, sink, sdk.NewCoins(sdk.NewCoin(quote, held))))
+		custody := h.k.ModuleEVMAddress(h.ctx)
+		held := h.tokenBalance(h.usdl, custody)
+		sink := address("airdrop sink")
+		h.sendToken(h.usdl, custody, sink, held.BigInt())
 		marketBefore := h.market(h.denom)
-		quoteBefore := h.balance(a, quote)
+		quoteBefore := h.usdlOf(a)
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
 		require.Error(t, err)
 		require.False(t, h.k.HasClaimedAirdrop(h.ctx, h.denom, a, epoch))
 		require.True(t, airdropPaid(t, h.env, h.denom, epoch).IsZero())
 		sameJSON(t, marketBefore, h.market(h.denom))
-		require.Equal(t, quoteBefore, h.balance(a, quote))
-		require.NoError(t, bank.SendCoins(h.ctx, sink, escrow, sdk.NewCoins(sdk.NewCoin(quote, held))))
+		require.Equal(t, quoteBefore, h.usdlOf(a))
+		h.sendToken(h.usdl, sink, custody, held.BigInt())
 
 		got, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
-		require.Equal(t, quoteBefore.Add(want), h.balance(a, quote))
+		require.Equal(t, quoteBefore.Add(want), h.usdlOf(a))
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch)
 		require.ErrorIs(t, err, types.ErrAlreadyClaimed)
 		require.Equal(t, want, airdropPaid(t, h.env, h.denom, epoch))
