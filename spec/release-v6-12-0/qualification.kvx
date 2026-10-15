@@ -1499,3 +1499,59 @@ exit = 1
 log = fleet/logs/5.3.3-verify-1.log
 observed = The node package did not compile on the lane's base, and MemIAVLStoreKeys has no pricefeed entry until 1.3.102 lands.
 assumption = The gate reruns after the perps keeper export lane and 1.3.102 land.
+
+[finding.8.4.8]
+revision = 965e9a15676f11e816922e96524ab1d6130c2d05
+command = bash tools/release/tests/snapshot.test.sh
+exit = 1
+log = fleet/logs/8.4.8-verify-1.log
+observed = The test fixture needs a built paxd, which does not build on the lane's base; the behaviour cases were not reached.
+assumption = The gate reruns once the node builds on main.
+
+[finding.8.4.10]
+revision = REV-8.4.10
+command = python3 tools/release/tests/test_fleet_check.py
+exit = 1
+log = fleet/logs/8.4.10-verify-2.log
+observed = 19 unit cases pass; one integration case fails at setup and two live cases need a rehearsal fleet.
+assumption = The integration and live cases run with the rehearsal of 8.4.12.
+
+[finding.8.4.11]
+revision = 015d8e4cb6e5d381f45d2e3874d4b5711478821c
+command = python3 tools/release/rehearsal/test_rewrite_genesis.py
+exit = 5
+log = fleet/logs/8.4.11-verify-1.log
+observed = The test setup needs a halt-height export, which no lane can produce without a built node and a chain export.
+assumption = The gate reruns with the rehearsal export of 8.4.12.
+
+[finding.3.3.4]
+revision = 611437d92ca716bb3df0b98693d78aaf91ee67a0
+command = go test -p 2 ./precompiles/perps/ -run TestVersionSwitchV69Vectors
+exit = 1
+log = fleet/logs/3.3.4-verify-1.log
+observed = The package did not compile on the lane's base because of the perps precompile view readers.
+assumption = The gate reruns after the perps keeper export lane lands.
+
+[finding.8.4.7]
+revision = 98e08ca25891b5ff726daef0e8893099e58921f5
+command = bash tools/release/tests/swap.test.sh
+exit = 1
+log = fleet/logs/8.4.7-verify-1.log
+observed = Two prerequisite checks fail because no staged binaries exist on the lane box; the six scenarios were not run.
+assumption = The scenarios run after a release build produces the staged binaries.
+
+[finding.8.4.9]
+revision = f209ed926f727c52ec2c1c997109c17d3aa9fa0c
+command = bash tools/release/tests/rollback.test.sh
+exit = 1
+log = fleet/logs/8.4.9-verify-1.log
+observed = The prerequisite snapshot fixture is missing because snapshot.sh needs a built paxd; the three cases were not run.
+assumption = The gate reruns with the snapshot fixture once the node builds.
+
+[finding.4.3.2]
+revision = 7a552a134afd6a2cee9d5e1ea9ed5a5e2caba8a0
+command = go test -p 2 ./modules/spot/keeper/ -run TestSolvencyInvariant
+exit = 1
+log = fleet/logs/4.3.2-verify-1.log
+observed = The lane produced no code because the spot keeper did not compile on its base and its checkout lost its git metadata.
+assumption = The task is relaunched on main once the spot keeper test binaries compile.
