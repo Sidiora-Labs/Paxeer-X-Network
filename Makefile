@@ -3141,6 +3141,25 @@ test-group-%:
 paxeer-build:
 	GOPROXY=off $(PAXEER_MAKE) build
 
+.PHONY: paxd-native-libs paxd-build test-lxphost paxd-version-check
+paxd-native-libs: $(LIBRARY) $(CHECKPOINT_SETTLEMENT_HEADER) programs-release-build
+
+paxd-build: paxd-native-libs
+	version=$$(jq -er .version tools/release/version.json) && \
+		GOPROXY=off $(PAXEER_MAKE) build LDFLAGS="-X github.com/Sidiora-Labs/Paxeer-X-Network/sdk/version.Version=$$version"
+
+test-lxphost: paxd-native-libs
+	CGO_ENABLED=1 go test ./modules/lxphost/...
+
+paxd-version-check:
+	@want=$$(jq -er .version tools/release/version.json) && \
+		got=$$(./build/paxd version) && \
+		if [ "$$got" != "$$want" ]; then \
+			echo "paxd-version-check: build/paxd reports $$got, tools/release/version.json has $$want" >&2; \
+			exit 1; \
+		fi && \
+		echo "paxd-version-check: $$got"
+
 paxeer-lint:
 	$(PAXEER_MAKE) GOLANGCI_LINT=$(PAXEER_GOLANGCI_LINT) lint
 

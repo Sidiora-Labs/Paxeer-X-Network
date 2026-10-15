@@ -4,7 +4,7 @@ package lxphost
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../include -I${SRCDIR}/../../build/generated
-#cgo LDFLAGS: -L${SRCDIR}/../../build -L${SRCDIR}/../../programs/target/debug -llayerx -llayerx_programs_sandbox -llayerx -lssl -lcrypto -pthread -ldl -lm
+#cgo LDFLAGS: -L${SRCDIR}/../../build -L${SRCDIR}/../../programs/target/release -L${SRCDIR}/../../programs/target/debug -llayerx -llayerx_programs_sandbox -llayerx -lssl -lcrypto -pthread -ldl -lm
 #include <stdlib.h>
 #include <string.h>
 #include "layerx/lx_asset.h"
