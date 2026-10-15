@@ -21270,7 +21270,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.11]
 title = "Send the spot order hooks through spot call builders without a wrap"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["6.0.3", "6.0.7", "6.2.7", "6.2.10"]
