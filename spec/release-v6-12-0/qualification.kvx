@@ -329,3 +329,31 @@ command = "go test ./precompiles/launchpad/ -run 'TestCoreRoleABIFiles|TestDirec
 exit_code = 0
 log_path = "fleet/logs/fix-2.0.1-verify-2.log"
 observed_and_assumption = "All twelve launchpad contract headings that merged event and error counts now carry the artifact counts, re-counted from the ABI JSON and checked against each section's tables; the ABI file tests pass. Assumption: the spec lint runs once on main after the spec correction lane lands."
+
+[finding.7.1.9]
+revision = "9c33d2da9b4c292fe1263493d4b3db3f766a3136"
+command = "PERPS_DATA_TEST_DATABASE_URL=<throwaway cluster> go test -count=1 ./platform/perps-data/internal/markets/ -run 'TestMarkets' -v"
+exit_code = 1
+log_path = "fleet/logs/7.1.9-verify-1.log"
+observed_and_assumption = "The seed and retry subtests pass while refresh_from_chain and fee_config refuse without a PERPS_DATA_TEST_RPC node serving the v6.12 perps precompile, 0001_facts.sql declares sz_decimals and px_decimals NOT NULL against req 7009.2's null decimals for an unseeded market, and the 0005 seed INSERT is outside the statement set TestSchemaFiles accepts. Assumption: the decimals columns become nullable by a later migration, the seed moves to a form TestSchemaFiles accepts, and the chain subtests run against a local node built from this tree."
+
+[finding.2.2.14]
+revision = "f2d6b42b531178d96a66ae15632193248ae760db"
+command = "go test ./modules/launchpad/keeper/... -run 'TestFixtureFilesParse'"
+exit_code = 0
+log_path = "fleet/logs/2.2.14-verify-2.log"
+observed_and_assumption = "holders.json sums to totalSupply for 6 of 49 pool tokens because the generation 1 pools were created below the pruned log range and no public holder source covers them. Assumption: the fixtures are recorded again at the halt height from the launchpad indexer database or an archive node, which is the same external need as the 2.2.15 golden capture."
+
+[finding.5.1.8]
+revision = "0436f3785ecd3627f3607f6c55aa3f7eb694c74c"
+command = "go test ./modules/pricefeed/keeper/ -run 'TestAggregate' -v"
+exit_code = 0
+log_path = "fleet/logs/5.1.8-verify-2.log"
+observed_and_assumption = "Acceptance 5.5.8 lists index 65000.5, mark 65010 and basis -2, which the mark formula cannot produce because a negative basis puts the mark at or below the index. Assumption: the acceptance values are corrected to the formula's output in the spec correction lane while the test keeps the attribute order."
+
+[finding.spec]
+revision = "381da4a6eb4c4a114c267f2317f6e9b80b7c183f"
+command = "cg spec lint"
+exit_code = 0
+log_path = "fleet/logs/fix-spec-verify-1.log"
+observed_and_assumption = "The spec correction lane landed its edits without a finished lint because an unscoped lint in a worktree ran CPU-bound for over an hour beside other lint and trace processes. Assumption: one lint runs on the merged revision and its result is recorded once."
