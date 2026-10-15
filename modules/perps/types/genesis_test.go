@@ -27,7 +27,7 @@ func e18(value uint64) uint256.Int {
 }
 
 // validGenesis holds a resting limit order with a cloid and an expiry, an
-// untriggered stop order, a long position with its indexes and the volume
+// untriggered reduce-only stop-loss attached to a long position with its indexes and the volume
 // buckets of its account.
 func validGenesis() types.GenesisState {
 	gs := *types.DefaultGenesis()
@@ -44,13 +44,13 @@ func validGenesis() types.GenesisState {
 			Cloid: cloidA, Sequence: 1,
 		},
 		{
-			ID: word(3), Account: holderA, MarketID: 0, IsLong: true, Type: types.OrderTypeStopMarket,
-			TimeInForce: types.TimeInForceIOC, Status: types.OrderStatusUntriggered, TriggerPrice: e18(61_000),
-			SizeBase: word(10_000_000_000_000_000), Leverage: e18(10), Sequence: 2,
+			ID: word(3), Account: holderA, MarketID: 0, IsLong: false, Type: types.OrderTypeStopLoss,
+			TimeInForce: types.TimeInForceIOC, Status: types.OrderStatusUntriggered, ReduceOnly: true, TriggerPrice: e18(57_000),
+			SizeBase: word(16_500_000_000_000_000), Leverage: e18(10), Sequence: 2,
 		},
 	}
 	gs.BookEntries = []types.BookEntry{{MarketID: 0, Side: types.SideBuy, Price: e18(59_000), Sequence: 1, OrderID: word(1)}}
-	gs.TriggerEntries = []types.TriggerEntry{{MarketID: 0, Direction: types.TriggerRising, TriggerPrice: e18(61_000), Sequence: 2, OrderID: word(3)}}
+	gs.TriggerEntries = []types.TriggerEntry{{MarketID: 0, Direction: types.TriggerFalling, TriggerPrice: e18(57_000), Sequence: 2, OrderID: word(3)}}
 	gs.CloidEntries = []types.CloidEntry{{Account: holderA, MarketID: 0, Cloid: cloidA, OrderID: word(1)}}
 	gs.AccountOrders = []types.AccountOrderEntry{{Account: holderA, OrderID: word(1)}, {Account: holderA, OrderID: word(3)}}
 	gs.ExpiryEntries = []types.ExpiryEntry{{Deadline: 1_800_000_100, OrderID: word(1)}}
@@ -205,6 +205,27 @@ func TestGenesisValidateRejects(t *testing.T) {
 			"duplicate attached TP/SL of position 7"},
 		{"attached TP/SL without its order", func(gs *types.GenesisState) { gs.AttachedTpSls[0].TakeProfitOrderID = word(2) },
 			"attached TP/SL entry without its order 2"},
+		{"opening limit order as attached stop-loss", func(gs *types.GenesisState) { gs.AttachedTpSls[0].StopLossOrderID = word(1) },
+			"attached TP/SL order 1 is not a reduce-only stop-loss trigger of position 7"},
+		{"stop-loss order as attached take-profit", func(gs *types.GenesisState) {
+			gs.AttachedTpSls[0].TakeProfitOrderID = word(3)
+		}, "attached TP/SL order 3 is not a reduce-only take-profit trigger of position 7"},
+		{"attached stop-loss not reduce-only", func(gs *types.GenesisState) { gs.Orders[1].ReduceOnly = false },
+			"attached TP/SL order 3 is not a reduce-only stop-loss trigger of position 7"},
+		{"attached stop-loss on the position's side", func(gs *types.GenesisState) { gs.Orders[1].IsLong = true },
+			"attached TP/SL order 3 is not a reduce-only stop-loss trigger of position 7"},
+		{"attached stop-loss of another account", func(gs *types.GenesisState) {
+			gs.Orders[1].Account = holderB
+			gs.AccountOrders[1].Account = holderB
+		}, "attached TP/SL order 3 is not a reduce-only stop-loss trigger of position 7"},
+		{"attached stop-loss in another market", func(gs *types.GenesisState) {
+			gs.Orders[1].MarketID = 11
+			gs.TriggerEntries[0].MarketID = 11
+		}, "attached TP/SL order 3 is not a reduce-only stop-loss trigger of position 7"},
+		{"attached stop-loss already cancelled", func(gs *types.GenesisState) {
+			gs.Orders[1].Status = types.OrderStatusCancelled
+			gs.TriggerEntries = nil
+		}, "attached TP/SL order 3 is not a reduce-only stop-loss trigger of position 7"},
 		{"margin ratio entry without its account", func(gs *types.GenesisState) {
 			gs.MarginRatioEntries[0].Account = holderC
 		}, "margin ratio entry without its account " + holderC.Hex()},

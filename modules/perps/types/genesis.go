@@ -158,7 +158,9 @@ type genesisIndex struct {
 // ValidateGenesis refuses with ErrInvalidGenesis invalid params or markets,
 // duplicate ids and index keys, resting orders without their book entry and
 // untriggered orders without their trigger entry, index entries without their
-// market, account, order or position or that disagree with it, a deficit sum
+// market, account, order or position or that disagree with it, attached TP/SL
+// legs that are not untriggered reduce-only TAKE_PROFIT and STOP_LOSS orders
+// closing their position, a deficit sum
 // other than the sum of account deficits, and counters not above every stored
 // id and sequence.
 func ValidateGenesis(gs GenesisState) error {
@@ -422,18 +424,30 @@ func (idx genesisIndex) validatePositionIndexes(gs GenesisState) error {
 	}
 	attached := map[uint256.Int]bool{}
 	for _, entry := range gs.AttachedTpSls {
-		if _, err := idx.position(entry.PositionID, "attached TP/SL"); err != nil {
+		position, err := idx.position(entry.PositionID, "attached TP/SL")
+		if err != nil {
 			return err
 		}
 		if attached[entry.PositionID] {
 			return invalidGenesis("duplicate attached TP/SL of position %s", entry.PositionID.Dec())
 		}
-		for _, orderID := range []uint256.Int{entry.TakeProfitOrderID, entry.StopLossOrderID} {
-			if orderID.IsZero() {
+		legs := []struct {
+			id   uint256.Int
+			typ  OrderType
+			role string
+		}{{entry.TakeProfitOrderID, OrderTypeTakeProfit, "take-profit"}, {entry.StopLossOrderID, OrderTypeStopLoss, "stop-loss"}}
+		for _, leg := range legs {
+			if leg.id.IsZero() {
 				continue
 			}
-			if _, err := idx.order(orderID, "attached TP/SL"); err != nil {
+			order, err := idx.order(leg.id, "attached TP/SL")
+			if err != nil {
 				return err
+			}
+			if order.Type != leg.typ || !order.ReduceOnly || order.Status != OrderStatusUntriggered ||
+				order.Account != position.Account || order.MarketID != position.MarketID || order.IsLong == position.IsLong {
+				return invalidGenesis("attached TP/SL order %s is not a reduce-only %s trigger of position %s",
+					leg.id.Dec(), leg.role, entry.PositionID.Dec())
 			}
 		}
 		attached[entry.PositionID] = true
