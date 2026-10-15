@@ -7,3 +7,17 @@ command = "go test ./precompiles/pricefeed/ -run 'TestPriceFeedABIGolden'"
 exit_code = 0
 log_path = "fleet logs 5.0.1-verify-1"
 observed_and_assumption = "do_3 asks precompiles/pricefeed/abi to go:embed ../abi.json, which go:embed cannot reference from a parent directory; the leaf package exports the ABI as an import-free constant pinned byte-equal to abi.json by the golden test. Assumption: the leaf constant satisfies the no-node-import rule for the indexer build; the spec step should name abi/abi.json as the embedded file."
+
+[finding.2.0.1]
+revision = "8d660f24e6ad6fc3dc26f8f96e006f3040073998"
+command = "go test ./precompiles/launchpad/ -run 'TestCoreRoleABIFiles'"
+exit_code = 0
+log_path = "fleet logs 2.0.1-verify-2"
+observed_and_assumption = "contracts/launchpad.md section 2 heads SidioraPool, SidioraFactory, SidioraERC20, SidioraNFT, Router, Quoter as N events, 0 errors with the event and error counts merged; the Launch-x artifacts hold 42/23/19/10/9/5 events and 19/16/7/22/21/18 distinct errors, each artifact listing one error twice. Assumption: the artifact counts bind and the contract headings are a presentation defect to be corrected in a later contract revision."
+
+[finding.1.0.1]
+revision = "4a6f083eb554f8c28fe1b04e5f54df1dd3b70faf"
+command = "make test-lxphost"
+exit_code = 0
+log_path = "fleet logs 1.0.1-verify-1"
+observed_and_assumption = "The paxd-build and paxd-version-check targets are implemented but the v6.12.0 version output depends on tools/release/version.json, which still reads v6.11.0 and belongs to the release lane. Assumption: the release-lane version bump task updates version.json and the version check passes once it lands."
