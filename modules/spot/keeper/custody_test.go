@@ -1,4 +1,4 @@
-package keeper
+package keeper_test
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/state"
 	pricefeedtestutil "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/testutil"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
@@ -45,7 +46,7 @@ var (
 type custodyEnv struct {
 	t      *testing.T
 	ctx    sdk.Context
-	k      *Keeper
+	k      *keeper.Keeper
 	usdl   common.Address
 	pax    common.Address
 	holder common.Address
@@ -55,7 +56,7 @@ func address(name string) common.Address {
 	return common.BytesToAddress(crypto.Keccak256([]byte(name))[12:])
 }
 
-func word(amount *big.Int) []byte { return common.LeftPadBytes(amount.Bytes(), 32) }
+func bigWord(amount *big.Int) []byte { return common.LeftPadBytes(amount.Bytes(), 32) }
 
 func calldata(signature string, words ...[]byte) []byte {
 	input := append([]byte(nil), crypto.Keccak256([]byte(signature))[:4]...)
@@ -73,7 +74,7 @@ func newCustodyEnv(t *testing.T) *custodyEnv {
 	pricefeed, ctx := pricefeedtestutil.NewKeeper(app, ctx)
 	key := sdk.NewKVStoreKey(types.StoreKey)
 	ctx = pricefeedtestutil.WithPriceFeedStore(ctx, key)
-	k := NewKeeper(key, app.BankKeeper, &app.EvmKeeper, pricefeed)
+	k := keeper.NewKeeper(key, app.BankKeeper, &app.EvmKeeper, pricefeed)
 
 	stringType, err := abi.NewType("string", "", nil)
 	require.NoError(t, err)
@@ -136,22 +137,22 @@ func (e *custodyEnv) callToken(from common.Address, input []byte) {
 	e.t.Helper()
 	ret, err := testkeeper.EVMTestApp.EvmKeeper.CallEVM(e.ctx, from, &e.usdl, nil, input)
 	require.NoError(e.t, err)
-	require.Equal(e.t, word(big.NewInt(1)), ret)
+	require.Equal(e.t, bigWord(big.NewInt(1)), ret)
 }
 
 func (e *custodyEnv) transferUSDL(from, to common.Address, amount int64) {
 	e.t.Helper()
-	e.callToken(from, calldata("transfer(address,uint256)", common.LeftPadBytes(to.Bytes(), 32), word(big.NewInt(amount))))
+	e.callToken(from, calldata("transfer(address,uint256)", common.LeftPadBytes(to.Bytes(), 32), bigWord(big.NewInt(amount))))
 }
 
 func (e *custodyEnv) approveUSDL(owner, spender common.Address, amount int64) {
 	e.t.Helper()
-	e.callToken(owner, calldata("approve(address,uint256)", common.LeftPadBytes(spender.Bytes(), 32), word(big.NewInt(amount))))
+	e.callToken(owner, calldata("approve(address,uint256)", common.LeftPadBytes(spender.Bytes(), 32), bigWord(big.NewInt(amount))))
 }
 
 func (e *custodyEnv) usdlView(input []byte) int64 {
 	e.t.Helper()
-	ret, err := testkeeper.EVMTestApp.EvmKeeper.StaticCallEVM(e.ctx, CustodyAddress(), &e.usdl, input)
+	ret, err := testkeeper.EVMTestApp.EvmKeeper.StaticCallEVM(e.ctx, keeper.CustodyAddress(), &e.usdl, input)
 	require.NoError(e.t, err)
 	amount := new(big.Int).SetBytes(ret)
 	require.True(e.t, amount.IsInt64())
@@ -203,7 +204,7 @@ func (e *custodyEnv) inTransaction(fn func(evm *vm.EVM, ctx sdk.Context) error) 
 	require.NoError(e.t, testkeeper.EVMTestApp.EvmKeeper.RunWithOneOffEVMInstance(e.ctx, func(evm *vm.EVM) error {
 		db := state.GetDBImpl(evm.StateDB)
 		require.NotNil(e.t, db)
-		return fn(evm, WithRun(db.Ctx(), &Run{EVM: evm, Gas: 30_000_000}))
+		return fn(evm, keeper.WithRun(db.Ctx(), &keeper.Run{EVM: evm, Gas: 30_000_000}))
 	}, func(string, string) {}))
 }
 
@@ -234,30 +235,23 @@ func (e *custodyEnv) transferLogs() []transferLog {
 	return out
 }
 
-func requireAbiError(t *testing.T, err error, want *types.AbiError) {
-	t.Helper()
-	var got *types.AbiError
-	require.True(t, errors.As(err, &got), "error %v is not an ABI error", err)
-	require.Equal(t, want.Data(), got.Data())
-}
-
 func TestCustodyAddressIsModuleAccount(t *testing.T) {
 	e := newCustodyEnv(t)
-	require.Equal(t, authtypes.NewModuleAddress("spot"), CustodyAddress())
+	require.Equal(t, authtypes.NewModuleAddress("spot"), keeper.CustodyAddress())
 	custody := e.k.CustodyEVMAddress(e.ctx)
-	require.Equal(t, common.BytesToAddress(CustodyAddress()), custody)
+	require.Equal(t, common.BytesToAddress(keeper.CustodyAddress()), custody)
 
-	usdl, err := e.k.tokenOf(e.ctx, e.usdl)
+	usdl, err := e.k.TokenOf(e.ctx, e.usdl)
 	require.NoError(t, err)
 	require.Equal(t, types.TokenKindERC20, usdl.Kind)
 	require.Equal(t, "", usdl.Denom)
-	pax, err := e.k.tokenOf(e.ctx, e.pax)
+	pax, err := e.k.TokenOf(e.ctx, e.pax)
 	require.NoError(t, err)
 	require.Equal(t, types.TokenKindNative, pax.Kind)
 	require.Equal(t, baseDenom, pax.Denom)
 	require.Equal(t, uint64(types.PAXMarketID), pax.MarketID)
 
-	_, err = e.k.tokenOf(e.ctx, address("unregistered token"))
+	_, err = e.k.TokenOf(e.ctx, address("unregistered token"))
 	requireAbiError(t, err, types.ErrUnsupportedTransfer)
 
 	// A CW20 pointer is refused even when registered.
@@ -265,13 +259,13 @@ func TestCustodyAddressIsModuleAccount(t *testing.T) {
 	require.NoError(t, testkeeper.EVMTestApp.EvmKeeper.SetERC20CW20Pointer(e.ctx,
 		sdk.AccAddress(address("cw20 contract").Bytes()).String(), cw20))
 	e.register(types.TokenParams{Address: cw20, Kind: types.TokenKindERC20, Decimals: 6, MaxUtilizationBps: 9_000})
-	_, err = e.k.tokenOf(e.ctx, cw20)
+	_, err = e.k.TokenOf(e.ctx, cw20)
 	requireAbiError(t, err, types.ErrUnsupportedTransfer)
 
 	// A NATIVE token must be the native pointer of its denom.
 	notPointer := address("not a pointer")
 	e.register(types.TokenParams{Address: notPointer, Kind: types.TokenKindNative, Decimals: 6, MaxUtilizationBps: 9_000})
-	_, err = e.k.tokenOf(e.ctx, notPointer)
+	_, err = e.k.TokenOf(e.ctx, notPointer)
 	requireAbiError(t, err, types.ErrUnsupportedTransfer)
 	_, _, err = e.k.CustodyBalance(e.ctx, notPointer)
 	requireAbiError(t, err, types.ErrUnsupportedTransfer)
@@ -281,7 +275,7 @@ func TestCustodyAddressIsModuleAccount(t *testing.T) {
 	require.Zero(t, e.custodyBalance(e.usdl))
 	require.Zero(t, e.custodyBalance(e.pax))
 	e.transferUSDL(e.holder, custody, 1_000_000_000)
-	e.fundUhpx(CustodyAddress(), 2_000_000_000)
+	e.fundUhpx(keeper.CustodyAddress(), 2_000_000_000)
 	require.Equal(t, int64(1_000_000_000), e.custodyBalance(e.usdl))
 	require.Equal(t, int64(2_000_000_000), e.custodyBalance(e.pax))
 	e.inTransaction(func(_ *vm.EVM, ctx sdk.Context) error {
@@ -300,7 +294,7 @@ func TestERC20PullNeedsAllowanceToRail(t *testing.T) {
 	amount := sdk.NewInt(1_000_000_000)
 
 	// Without an allowance the pull reverts and nothing moves.
-	_, _, err := e.k.pullTokens(e.ctx, rail, e.usdl, e.holder, amount)
+	_, _, err := e.k.PullTokens(e.ctx, rail, e.usdl, e.holder, amount)
 	requireAbiError(t, err, types.SafeERC20FailedOperation(e.usdl))
 	require.Zero(t, e.custodyBalance(e.usdl))
 	require.Equal(t, usdlSupply, e.usdlBalance(e.holder))
@@ -308,7 +302,7 @@ func TestERC20PullNeedsAllowanceToRail(t *testing.T) {
 	// An allowance to another spender does not let the rail pull.
 	e.approveUSDL(e.holder, common.HexToAddress(types.PECORVaultAddress), 1_000_000_000)
 	e.inTransaction(func(_ *vm.EVM, ctx sdk.Context) error {
-		_, _, err := e.k.pullTokens(ctx, rail, e.usdl, e.holder, amount)
+		_, _, err := e.k.PullTokens(ctx, rail, e.usdl, e.holder, amount)
 		requireAbiError(t, err, types.SafeERC20FailedOperation(e.usdl))
 		return nil
 	})
@@ -317,7 +311,7 @@ func TestERC20PullNeedsAllowanceToRail(t *testing.T) {
 	// After approve(0x1021, 1000e6) the nested pull credits 1000e6.
 	e.approveUSDL(e.holder, rail, 1_000_000_000)
 	e.inTransaction(func(_ *vm.EVM, ctx sdk.Context) error {
-		_, received, err := e.k.pullTokens(ctx, rail, e.usdl, e.holder, amount)
+		_, received, err := e.k.PullTokens(ctx, rail, e.usdl, e.holder, amount)
 		require.NoError(t, err)
 		require.Equal(t, amount, received)
 		return nil
@@ -327,7 +321,7 @@ func TestERC20PullNeedsAllowanceToRail(t *testing.T) {
 	require.Zero(t, e.allowance(e.holder, rail))
 
 	// A zero pull is refused with ZeroAmount().
-	_, _, err = e.k.pullTokens(e.ctx, rail, e.usdl, e.holder, sdk.ZeroInt())
+	_, _, err = e.k.PullTokens(e.ctx, rail, e.usdl, e.holder, sdk.ZeroInt())
 	requireAbiError(t, err, types.ErrZeroAmount)
 }
 
@@ -335,26 +329,26 @@ func TestPayoutIsExact(t *testing.T) {
 	e := newCustodyEnv(t)
 	custody := e.k.CustodyEVMAddress(e.ctx)
 	user := address("payout user")
-	e.fundUhpx(CustodyAddress(), 1_994_000_000)
+	e.fundUhpx(keeper.CustodyAddress(), 1_994_000_000)
 	e.transferUSDL(e.holder, custody, 498_500_000)
 
 	e.inTransaction(func(_ *vm.EVM, ctx sdk.Context) error {
 		// A payout to custody itself is refused for both kinds.
-		_, err := e.k.pushTokens(ctx, e.pax, custody, sdk.NewInt(1_994_000_000))
+		_, err := e.k.PushTokens(ctx, e.pax, custody, sdk.NewInt(1_994_000_000))
 		requireAbiError(t, err, types.ErrUnsupportedTransfer)
-		_, err = e.k.pushTokens(ctx, e.usdl, custody, sdk.NewInt(498_500_000))
+		_, err = e.k.PushTokens(ctx, e.usdl, custody, sdk.NewInt(498_500_000))
 		requireAbiError(t, err, types.ErrUnsupportedTransfer)
-		_, err = e.k.pushTokens(ctx, e.usdl, common.Address{}, sdk.NewInt(498_500_000))
+		_, err = e.k.PushTokens(ctx, e.usdl, common.Address{}, sdk.NewInt(498_500_000))
 		requireAbiError(t, err, types.ErrZeroAddress)
 
-		ctx, err = e.k.pushTokens(ctx, e.pax, user, sdk.NewInt(1_994_000_000))
+		ctx, err = e.k.PushTokens(ctx, e.pax, user, sdk.NewInt(1_994_000_000))
 		require.NoError(t, err)
-		_, err = e.k.pushTokens(ctx, e.usdl, user, sdk.NewInt(498_500_000))
+		_, err = e.k.PushTokens(ctx, e.usdl, user, sdk.NewInt(498_500_000))
 		require.NoError(t, err)
 		return nil
 	})
 	require.Equal(t, int64(1_994_000_000), e.uhpx(e.paxAccount(user)))
-	require.Zero(t, e.uhpx(CustodyAddress()))
+	require.Zero(t, e.uhpx(keeper.CustodyAddress()))
 	require.Equal(t, int64(498_500_000), e.usdlBalance(user))
 	require.Zero(t, e.custodyBalance(e.usdl))
 }
@@ -367,36 +361,36 @@ func TestFailedTransferRevertsAtomically(t *testing.T) {
 	want := append(common.FromHex("0x5274afe7"), paxWord...)
 
 	events := len(e.ctx.EventManager().Events())
-	_, _, err := e.k.pullTokens(e.ctx, rail, e.pax, caller, sdk.NewInt(1_000_000_000))
+	_, _, err := e.k.PullTokens(e.ctx, rail, e.pax, caller, sdk.NewInt(1_000_000_000))
 	requireAbiError(t, err, types.SafeERC20FailedOperation(e.pax))
 	var abiErr *types.AbiError
 	require.True(t, errors.As(err, &abiErr))
 	require.Equal(t, want, abiErr.Data())
 	require.Equal(t, int64(10_000_000), e.uhpx(e.paxAccount(caller)))
-	require.Zero(t, e.uhpx(CustodyAddress()))
+	require.Zero(t, e.uhpx(keeper.CustodyAddress()))
 	require.Len(t, e.ctx.EventManager().Events(), events)
 
 	e.inTransaction(func(_ *vm.EVM, ctx sdk.Context) error {
-		_, _, err := e.k.pullTokens(ctx, rail, e.pax, caller, sdk.NewInt(1_000_000_000))
+		_, _, err := e.k.PullTokens(ctx, rail, e.pax, caller, sdk.NewInt(1_000_000_000))
 		var abiErr *types.AbiError
 		require.True(t, errors.As(err, &abiErr))
 		require.Equal(t, want, abiErr.Data())
 		// A payout above custody reverts inside the token and moves nothing.
-		_, err = e.k.pushTokens(ctx, e.usdl, caller, sdk.NewInt(1))
+		_, err = e.k.PushTokens(ctx, e.usdl, caller, sdk.NewInt(1))
 		requireAbiError(t, err, types.SafeERC20FailedOperation(e.usdl))
 		return nil
 	})
 	require.Equal(t, int64(10_000_000), e.uhpx(e.paxAccount(caller)))
-	require.Zero(t, e.uhpx(CustodyAddress()))
+	require.Zero(t, e.uhpx(keeper.CustodyAddress()))
 	require.Zero(t, e.usdlBalance(caller))
 
 	// A token whose transfer returns false is a failed operation.
 	falseToken := e.deploy("false token deployer", common.FromHex(falseTokenCreation))
 	require.NotEmpty(t, testkeeper.EVMTestApp.EvmKeeper.GetCode(e.ctx, falseToken))
 	e.register(types.TokenParams{Address: falseToken, Kind: types.TokenKindERC20, Decimals: 6, MaxUtilizationBps: 9_000})
-	_, _, err = e.k.pullTokens(e.ctx, rail, falseToken, caller, sdk.NewInt(1))
+	_, _, err = e.k.PullTokens(e.ctx, rail, falseToken, caller, sdk.NewInt(1))
 	requireAbiError(t, err, types.SafeERC20FailedOperation(falseToken))
-	_, err = e.k.pushTokens(e.ctx, falseToken, caller, sdk.NewInt(1))
+	_, err = e.k.PushTokens(e.ctx, falseToken, caller, sdk.NewInt(1))
 	requireAbiError(t, err, types.SafeERC20FailedOperation(falseToken))
 }
 
@@ -408,11 +402,11 @@ func TestPayoutOutsideTransactionUsesCallEVM(t *testing.T) {
 	before := len(e.transferLogs())
 
 	// CallEVM refuses an EVM context without a run, and nothing moves.
-	_, err := e.k.pushTokens(e.ctx.WithIsEVM(true), e.usdl, user, sdk.NewInt(549_450_000))
+	_, err := e.k.PushTokens(e.ctx.WithIsEVM(true), e.usdl, user, sdk.NewInt(549_450_000))
 	require.Error(t, err)
 	require.Equal(t, int64(549_450_000), e.custodyBalance(e.usdl))
 
-	ctx, err := e.k.pushTokens(e.ctx, e.usdl, user, sdk.NewInt(549_450_000))
+	ctx, err := e.k.PushTokens(e.ctx, e.usdl, user, sdk.NewInt(549_450_000))
 	require.NoError(t, err)
 	require.Equal(t, e.ctx.MultiStore(), ctx.MultiStore())
 	require.Equal(t, int64(549_450_000), e.usdlBalance(user))
@@ -428,9 +422,9 @@ func TestNativeValueIsUhpx(t *testing.T) {
 	e.fundUhpx(e.paxAccount(user), 20_000_000)
 	tenPax := new(big.Int).Mul(big.NewInt(10), big.NewInt(1_000_000_000_000_000_000))
 
-	_, _, err := e.k.pullNative(e.ctx, rail, big.NewInt(0))
+	_, _, err := e.k.PullNative(e.ctx, rail, big.NewInt(0))
 	requireAbiError(t, err, types.ErrZeroAmount)
-	_, _, err = e.k.pullNative(e.ctx, rail, new(big.Int).Add(tenPax, big.NewInt(1)))
+	_, _, err = e.k.PullNative(e.ctx, rail, new(big.Int).Add(tenPax, big.NewInt(1)))
 	requireAbiError(t, err, types.ErrUnsupportedInputTransfer)
 
 	e.inTransaction(func(evm *vm.EVM, ctx sdk.Context) error {
@@ -438,14 +432,14 @@ func TestNativeValueIsUhpx(t *testing.T) {
 		require.False(t, overflow)
 		require.True(t, evm.Context.CanTransfer(evm.StateDB, user, value))
 		evm.Context.Transfer(evm.StateDB, user, rail, value)
-		ctx, err := runOf(ctx).resume(ctx)
+		ctx, err := keeper.RunOf(ctx).Resume(ctx)
 		require.NoError(t, err)
-		_, received, err := e.k.pullNative(ctx, rail, tenPax)
+		_, received, err := e.k.PullNative(ctx, rail, tenPax)
 		require.NoError(t, err)
 		require.Equal(t, sdk.NewInt(10_000_000), received)
 		return nil
 	})
-	require.Equal(t, int64(10_000_000), e.uhpx(CustodyAddress()))
+	require.Equal(t, int64(10_000_000), e.uhpx(keeper.CustodyAddress()))
 	require.Equal(t, int64(10_000_000), e.uhpx(e.paxAccount(user)))
 	require.Zero(t, e.uhpx(e.paxAccount(rail)))
 }
@@ -455,17 +449,17 @@ func TestModuleAccountReceivesNative(t *testing.T) {
 	sender, recipient := address("native sender"), address("native recipient")
 	e.fundUhpx(e.paxAccount(sender), 1_000_000_000)
 
-	_, received, err := e.k.pullTokens(e.ctx, rail, e.pax, sender, sdk.NewInt(1_000_000_000))
+	_, received, err := e.k.PullTokens(e.ctx, rail, e.pax, sender, sdk.NewInt(1_000_000_000))
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt(1_000_000_000), received)
-	require.Equal(t, int64(1_000_000_000), e.uhpx(CustodyAddress()))
+	require.Equal(t, int64(1_000_000_000), e.uhpx(keeper.CustodyAddress()))
 	require.Zero(t, e.uhpx(e.paxAccount(sender)))
 
 	ctx := e.ctx.WithEventManager(sdk.NewEventManager())
-	_, err = e.k.pushTokens(ctx, e.pax, recipient, sdk.NewInt(1_000_000_000))
+	_, err = e.k.PushTokens(ctx, e.pax, recipient, sdk.NewInt(1_000_000_000))
 	require.NoError(t, err)
 	require.Equal(t, int64(1_000_000_000), e.uhpx(e.paxAccount(recipient)))
-	require.Zero(t, e.uhpx(CustodyAddress()))
+	require.Zero(t, e.uhpx(keeper.CustodyAddress()))
 	var senders []string
 	for _, event := range ctx.EventManager().Events() {
 		if event.Type != banktypes.EventTypeTransfer {
@@ -477,7 +471,7 @@ func TestModuleAccountReceivesNative(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, []string{CustodyAddress().String()}, senders)
+	require.Equal(t, []string{keeper.CustodyAddress().String()}, senders)
 }
 
 func TestNestedSpotCallIsRefused(t *testing.T) {
