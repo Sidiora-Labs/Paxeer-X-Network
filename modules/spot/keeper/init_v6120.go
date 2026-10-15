@@ -13,6 +13,7 @@ import (
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	receipt "github.com/Sidiora-Labs/Paxeer-X-Network/storage/ledger_db/receipt"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -30,7 +31,10 @@ var (
 // ErrAlreadyInitialised refuses a second run of InitV6120.
 var ErrAlreadyInitialised = errors.New("spot: already initialised")
 
-var erc20DecimalsSelector = []byte{0x31, 0x3c, 0xe5, 0x67}
+var (
+	erc20DecimalsSelector = []byte{0x31, 0x3c, 0xe5, 0x67}
+	erc20SymbolSelector   = []byte{0x95, 0xd8, 0x9b, 0x41}
+)
 
 // v6120OwnedRails are the addresses that report OwnershipTransferred at
 // activation; the quoter has no owner and a share pointer has no Ownable.
@@ -117,7 +121,7 @@ func (k *Keeper) requireUSDLDecimals(ctx sdk.Context) error {
 	if len(k.evmKeeper.GetCode(ctx, usdl)) == 0 {
 		return fmt.Errorf("spot: USDL %s has no code", usdl.Hex())
 	}
-	ret, err := k.evmKeeper.StaticCallEVM(ctx, k.CustodyAddress(), &usdl, erc20DecimalsSelector)
+	ret, err := k.evmKeeper.StaticCallEVM(ctx, CustodyAddress(), &usdl, erc20DecimalsSelector)
 	if err != nil {
 		return fmt.Errorf("spot: USDL decimals(): %w", err)
 	}
@@ -159,16 +163,53 @@ func (k *Keeper) v6120NativePointer(ctx sdk.Context, denom string) (common.Addre
 // v6120ShareToken creates the share denom, metadata and pointer of token in
 // a one-off EVM instance and returns the pointer address.
 func (k *Keeper) v6120ShareToken(ctx sdk.Context, token types.TokenParams) (common.Address, error) {
+	symbol, err := k.v6120Symbol(ctx, token)
+	if err != nil {
+		return common.Address{}, err
+	}
+	if token.Decimals > math.MaxUint8 {
+		return common.Address{}, types.ErrUnsupportedToken
+	}
 	var share common.Address
-	err := k.evmKeeper.RunWithOneOffEVMInstance(ctx, func(evm *vm.EVM) error {
+	err = k.evmKeeper.RunWithOneOffEVMInstance(ctx, func(evm *vm.EVM) error {
 		var createErr error
-		share, createErr = k.CreateShareToken(ctx, evm, token)
+		share, createErr = k.CreateShareToken(ctx, evm, token.Address, symbol, uint8(token.Decimals))
 		return createErr
 	}, func(string, string) {})
 	if err != nil {
 		return common.Address{}, fmt.Errorf("spot: share token of %s: %w", token.Address.Hex(), err)
 	}
 	return share, nil
+}
+
+// v6120Symbol is the symbol of an opening token: symbol() of an ERC20
+// contract, the bank metadata symbol of the denom of a NATIVE pointer.
+func (k *Keeper) v6120Symbol(ctx sdk.Context, token types.TokenParams) (string, error) {
+	if token.Kind == types.TokenKindNative {
+		denom, _, ok := k.evmKeeper.GetNativePointee(ctx, token.Address.Hex())
+		if !ok {
+			return "", fmt.Errorf("spot: %s is not a native pointer", token.Address.Hex())
+		}
+		metadata, found := k.bankKeeper.GetDenomMetaData(ctx, denom)
+		if !found {
+			return "", fmt.Errorf("spot: %s metadata is absent", denom)
+		}
+		return metadata.Symbol, nil
+	}
+	ret, err := k.evmKeeper.StaticCallEVM(ctx, CustodyAddress(), &token.Address, erc20SymbolSelector)
+	if err != nil {
+		return "", fmt.Errorf("spot: %s symbol(): %w", token.Address.Hex(), err)
+	}
+	stringType, err := abi.NewType("string", "", nil)
+	if err != nil {
+		return "", err
+	}
+	values, err := abi.Arguments{{Type: stringType}}.Unpack(ret)
+	if err != nil || len(values) != 1 {
+		return "", fmt.Errorf("spot: %s symbol() is not a string", token.Address.Hex())
+	}
+	symbol, _ := values[0].(string)
+	return symbol, nil
 }
 
 // v6120Log is a log at address with topic, the indexed addresses as topics in

@@ -42,7 +42,7 @@ func newSwapFixture(t *testing.T, reserves int64, utilization uint64) swapFixtur
 	ctx = launchpadtest.WithStore(ctx, spotKey)
 	ctx = launchpadtest.WithStore(ctx, feedKey)
 	feed := pricefeedkeeper.NewKeeper(feedKey, app.StakingKeeper, app.AccountKeeper, &app.EvmKeeper)
-	k := spotkeeper.NewKeeper(spotKey, app.BankKeeper, &app.EvmKeeper, feed, pricefeedtypes.DefaultAuthority())
+	k := spotkeeper.NewKeeper(spotKey, app.BankKeeper, &app.EvmKeeper, feed)
 	user := common.BytesToAddress([]byte{0x31})
 	account := sdk.AccAddress(user.Bytes())
 	app.EvmKeeper.SetAddressMapping(ctx, account, user)
@@ -79,7 +79,7 @@ func newSwapFixture(t *testing.T, reserves int64, utilization uint64) swapFixtur
 		amount int64
 	}{
 		{account, "uquote", 1000_000000},
-		{k.CustodyAddress(), "uhpx", reserves},
+		{spotkeeper.CustodyAddress(), "uhpx", reserves},
 	} {
 		coins := sdk.NewCoins(sdk.NewInt64Coin(balance.denom, balance.amount))
 		require.NoError(t, app.BankKeeper.MintCoins(ctx, "evm", coins))
@@ -133,7 +133,7 @@ func TestSwapLiquidityCheckedOnGross(t *testing.T) {
 			before := swapStoreSnapshot(t, store)
 			bank := testkeeper.EVMTestApp.BankKeeper
 			userBefore := bank.GetAllBalances(f.ctx, f.account)
-			custodyBefore := bank.GetAllBalances(f.ctx, f.keeper.CustodyAddress())
+			custodyBefore := bank.GetAllBalances(f.ctx, spotkeeper.CustodyAddress())
 			result, err := f.keeper.MarketBuy(f.ctx, f.user, f.stable, f.pax, big.NewInt(1000_000000), new(big.Int), new(big.Int))
 			if !tc.accepted {
 				require.ErrorIs(t, err, types.ErrInsufficientLiquidity)
@@ -143,7 +143,7 @@ func TestSwapLiquidityCheckedOnGross(t *testing.T) {
 				require.Equal(t, spotkeeper.SwapResult{}, result)
 				require.Equal(t, before, swapStoreSnapshot(t, store))
 				require.Equal(t, userBefore, bank.GetAllBalances(f.ctx, f.account))
-				require.Equal(t, custodyBefore, bank.GetAllBalances(f.ctx, f.keeper.CustodyAddress()))
+				require.Equal(t, custodyBefore, bank.GetAllBalances(f.ctx, spotkeeper.CustodyAddress()))
 				return
 			}
 			require.NoError(t, err)
@@ -207,7 +207,7 @@ func TestSwapRefusalsAreAtomic(t *testing.T) {
 			before := swapStoreSnapshot(t, f.ctx.KVStore(f.key))
 			bank := testkeeper.EVMTestApp.BankKeeper
 			userBefore := bank.GetAllBalances(f.ctx, f.account)
-			custodyBefore := bank.GetAllBalances(f.ctx, f.keeper.CustodyAddress())
+			custodyBefore := bank.GetAllBalances(f.ctx, spotkeeper.CustodyAddress())
 			result, err := tc.invoke(f)
 			require.ErrorIs(t, err, tc.refusal)
 			var refusal *types.AbiError
@@ -216,7 +216,7 @@ func TestSwapRefusalsAreAtomic(t *testing.T) {
 			require.Empty(t, result.Logs)
 			require.Equal(t, before, swapStoreSnapshot(t, f.ctx.KVStore(f.key)))
 			require.Equal(t, userBefore, bank.GetAllBalances(f.ctx, f.account))
-			require.Equal(t, custodyBefore, bank.GetAllBalances(f.ctx, f.keeper.CustodyAddress()))
+			require.Equal(t, custodyBefore, bank.GetAllBalances(f.ctx, spotkeeper.CustodyAddress()))
 		})
 	}
 }

@@ -143,60 +143,6 @@ func (s msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	return &types.MsgUpdateParamsResponse{}, nil
 }
 
-// reconcileReserves runs the vault reconciliation of token over custody minus
-// escrow (Launch-x:contracts/contracts/meta-ag/vault/PECORVault.sol:464-482):
-// a surplus over the book is added to the book and to totalDeposited, a
-// deficit lowers the book with recovered 0, and parity changes nothing. A
-// change emits ReservesSync and ReservesUpdated at 0x1025. Custody below the
-// escrow refuses with InsufficientLiquidity(), as no book can back it.
-func (k *Keeper) reconcileReserves(ctx sdk.Context, token common.Address) ([]*ethtypes.Log, error) {
-	params, err := k.GetParams(ctx)
-	if err != nil {
-		return nil, err
-	}
-	registered := false
-	for _, entry := range params.Tokens {
-		registered = registered || entry.Address == token
-	}
-	book, found, err := k.tokenBook(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	if !registered || !found {
-		return nil, types.ErrTokenNotRegistered
-	}
-	escrow, err := k.tokenEscrow(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	ctx, custody, err := k.CustodyBalance(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	if custody.LT(escrow) {
-		return nil, types.ErrInsufficientLiquidity
-	}
-	balance, onBook := custody.Sub(escrow), book.Reserves
-	if balance.Equal(onBook) {
-		return nil, nil
-	}
-	recovered := sdk.ZeroInt()
-	if balance.GT(onBook) {
-		recovered = balance.Sub(onBook)
-		book.TotalDeposited = book.TotalDeposited.Add(recovered)
-	}
-	book.Reserves = balance
-	if err := setRecord(ctx.KVStore(k.storeKey), recordKey(types.BookPrefix, token.Bytes()), book); err != nil {
-		return nil, err
-	}
-	vault := common.HexToAddress(types.PECORVaultAddress)
-	return []*ethtypes.Log{
-		evmLog(ctx, vault, []common.Hash{ReservesSyncTopic, addressTopic(token)}, amountWord(onBook), amountWord(balance),
-			amountWord(recovered)),
-		evmLog(ctx, vault, []common.Hash{ReservesUpdatedTopic, addressTopic(token)}, amountWord(onBook), amountWord(balance)),
-	}, nil
-}
-
 // SyncReserves reconciles each listed token under the governance authority;
 // any other signer fails with ErrUnauthorized. Nothing is written or emitted
 // when any token fails.
@@ -214,7 +160,7 @@ func (s msgServer) SyncReserves(goCtx context.Context, msg *types.MsgSyncReserve
 	cacheCtx, write := ctx.CacheContext()
 	var logs []*ethtypes.Log
 	for _, token := range msg.Tokens {
-		tokenLogs, err := s.keeper.reconcileReserves(cacheCtx, common.HexToAddress(token))
+		tokenLogs, err := s.keeper.SyncReserves(cacheCtx, msg.Authority, common.HexToAddress(token))
 		if err != nil {
 			return nil, err
 		}

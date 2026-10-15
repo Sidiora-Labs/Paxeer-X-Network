@@ -54,13 +54,6 @@ func (e *limitEnv) put(key []byte, value interface{}) {
 	e.ctx.KVStore(e.key).Set(key, raw)
 }
 
-func (e *limitEnv) amount(key []byte, amount sdk.Int) {
-	e.t.Helper()
-	raw, err := amount.Marshal()
-	require.NoError(e.t, err)
-	e.ctx.KVStore(e.key).Set(key, raw)
-}
-
 func (e *limitEnv) price(price sdk.Int) {
 	e.t.Helper()
 	raw, err := json.Marshal(pricefeedtypes.Aggregate{IndexPrice: price, MarkPrice: price, Basis: sdk.ZeroInt(),
@@ -87,7 +80,7 @@ func (e *limitEnv) balance(token, user common.Address) sdk.Int {
 		return app.BankKeeper.GetBalance(e.ctx, app.EvmKeeper.GetPaxAddressOrDefault(e.ctx, user), "uhpx").Amount
 	}
 	input := append(crypto.Keccak256([]byte("balanceOf(address)"))[:4], common.LeftPadBytes(user.Bytes(), 32)...)
-	raw, err := app.EvmKeeper.StaticCallEVM(e.ctx, e.k.CustodyAddress(), &token, input)
+	raw, err := app.EvmKeeper.StaticCallEVM(e.ctx, keeper.CustodyAddress(), &token, input)
 	require.NoError(e.t, err)
 	require.Len(e.t, raw, 32)
 	return sdk.NewIntFromBigInt(new(big.Int).SetBytes(raw))
@@ -109,7 +102,7 @@ func newLimitEnv(t *testing.T) *limitEnv {
 	coin := sdk.NewCoins(sdk.NewInt64Coin("uhpx", 2_000_000_000_000))
 	require.NoError(t, app.BankKeeper.MintCoins(ctx, minttypes.ModuleName, coin))
 	require.NoError(t, app.BankKeeper.SendCoinsFromModuleToAccount(ctx, minttypes.ModuleName, app.EvmKeeper.GetPaxAddressOrDefault(ctx, e.user), coin))
-	require.NoError(t, app.BankKeeper.SendCoins(ctx, app.EvmKeeper.GetPaxAddressOrDefault(ctx, e.user), k.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000_000))))
+	require.NoError(t, app.BankKeeper.SendCoins(ctx, app.EvmKeeper.GetPaxAddressOrDefault(ctx, e.user), keeper.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000_000))))
 	stringType, err := abi.NewType("string", "", nil)
 	require.NoError(t, err)
 	intType, err := abi.NewType("uint256", "", nil)
@@ -278,7 +271,8 @@ func TestLimitStatusTransitions(t *testing.T) {
 	id = e.place(types.OrderTypeLimitSell, 1_000_000_000, 550, 0)
 	_, err = e.k.ExecuteLimit(e.ctx, id)
 	limitError(t, err, types.ErrPriceBelowTarget)
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.OrdersPaused = true
 	e.put(types.ParamsKey, params)
 	events, err = e.k.CancelLimit(e.ctx, e.user, id)
@@ -350,7 +344,7 @@ func limitFailedPayout(t *testing.T) {
 	store.Delete(limitKey(types.UserOrderPrefix, e.user.Bytes(), limitID(id)))
 	e.put(limitKey(types.UserOrderPrefix, order.User.Bytes(), limitID(id)), types.UserOrder{User: order.User, OrderID: id, OrderType: order.OrderType})
 	store.Delete(limitKey(types.ActiveCountPrefix, e.user.Bytes()))
-	store.Set(limitKey(types.ActiveCountPrefix, order.User.Bytes()), limitID(1))
+	e.put(limitKey(types.ActiveCountPrefix, order.User.Bytes()), types.ActiveOrderCount{User: order.User, Count: 1})
 	before := e.snapshot()
 	events, err := e.k.ExecuteLimit(e.ctx, id)
 	limitError(t, err, types.ErrUnsupportedTransfer)
@@ -375,7 +369,8 @@ func TestEscrowIsReserved(t *testing.T) {
 		require.Equal(t, tc.want, ok)
 	}
 	e.put(limitKey(types.BookPrefix, e.token.Bytes()), types.TokenBook{Token: e.token, Reserves: limitInt(199_900_000), TotalDeposited: limitInt(199_900_000), TotalWithdrawn: sdk.ZeroInt(), Decimals: 6, ShareDenom: "spot/share/" + common.Bytes2Hex(e.token.Bytes())})
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.Tokens[1].MaxUtilizationBps = 10000
 	params.OrderPriceImpactEnabled = false
 	e.put(types.ParamsKey, params)
@@ -412,7 +407,8 @@ func TestActiveListSwapAndPop(t *testing.T) {
 	count, err := e.k.GetActiveLimitOrderCount(e.ctx)
 	require.NoError(t, err)
 	require.Zero(t, count)
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.MaxActiveOrdersPerUser = 200
 	e.put(types.ParamsKey, params)
 	for i := 0; i < 150; i++ {
@@ -451,19 +447,20 @@ func TestMinOrderNotional(t *testing.T) {
 
 func TestMaxActiveOrdersPerUser(t *testing.T) {
 	e := newLimitEnv(t)
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.MaxActiveOrdersPerUser = 2
 	e.put(types.ParamsKey, params)
 	e.place(types.OrderTypeLimitBuy, 100_000_000, 500, 0)
 	stop := types.StopLossOrder{ID: 2, User: e.user, Stablecoin: e.stable, Token: e.token, Amount: limitInt(1_000_000_000), TriggerPrice: limitPrice(400), Status: types.OrderStatusPending, CreatedAt: 1000}
 	require.NoError(t, stop.Validate())
 	app := testkeeper.EVMTestApp
-	require.NoError(t, app.BankKeeper.SendCoins(e.ctx, app.EvmKeeper.GetPaxAddressOrDefault(e.ctx, e.user), e.k.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000))))
+	require.NoError(t, app.BankKeeper.SendCoins(e.ctx, app.EvmKeeper.GetPaxAddressOrDefault(e.ctx, e.user), keeper.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000))))
 	e.put(limitKey(types.StopLossOrderPrefix, limitID(2)), stop)
 	e.put(limitKey(types.UserOrderPrefix, e.user.Bytes(), limitID(2)), types.UserOrder{User: e.user, OrderID: 2, OrderType: types.OrderTypeStopLoss})
-	e.ctx.KVStore(e.key).Set(limitKey(types.ActiveStopLossPrefix, limitID(2)), limitID(1))
-	e.amount(limitKey(types.EscrowPrefix, e.token.Bytes()), stop.Amount)
-	e.ctx.KVStore(e.key).Set(limitKey(types.ActiveCountPrefix, e.user.Bytes()), limitID(2))
+	e.ctx.KVStore(e.key).Set(limitKey(types.ActiveStopLossPrefix, limitID(2)), []byte{})
+	e.put(limitKey(types.EscrowPrefix, e.token.Bytes()), types.TokenEscrow{Token: e.token, Amount: stop.Amount})
+	e.put(limitKey(types.ActiveCountPrefix, e.user.Bytes()), types.ActiveOrderCount{User: e.user, Count: 2})
 	e.ctx.KVStore(e.key).Set(types.NextOrderIDKey, limitID(3))
 	before := e.snapshot()
 	id, events, err := e.k.PlaceLimit(e.ctx, e.user, e.stable, e.token, limitInt(100_000_000), limitPrice(500), 0, types.OrderTypeLimitBuy)
@@ -490,7 +487,8 @@ func TestOrderMinOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "0", minimum.String())
 	gs := types.DefaultGenesis()
-	gs.Params = e.k.GetParams(e.ctx)
+	gs.Params, err = e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	gs.NextOrderID = 2
 	gs.LimitOrders = []types.LimitOrder{e.order(id)}
 	gs.UserOrders = []types.UserOrder{{User: e.user, OrderID: id, OrderType: types.OrderTypeLimitSell}}
@@ -504,14 +502,14 @@ func TestOrderMinOutput(t *testing.T) {
 		gs.Books = append(gs.Books, book)
 	}
 	require.NoError(t, gs.Validate())
-	require.NoError(t, e.k.InitGenesis(e.ctx, *gs))
+	e.k.InitGenesis(e.ctx, *gs)
 	before := e.snapshot()
 	events, err := e.k.ExecuteLimit(e.ctx, id)
 	limitError(t, err, types.ErrInsufficientOutput)
 	require.Empty(t, events)
 	require.Equal(t, before, e.snapshot())
 	require.Equal(t, types.OrderStatusPending, e.order(id).Status)
-	e.amount(limitKey(types.OrderMinOutputPrefix, limitID(id)), limitInt(549_450_000))
+	e.put(limitKey(types.OrderMinOutputPrefix, limitID(id)), types.OrderMinOutput{OrderID: id, MinOutput: limitInt(549_450_000)})
 	events, err = e.k.ExecuteLimit(e.ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, "LimitOrderExecuted", events[len(events)-1].Name)

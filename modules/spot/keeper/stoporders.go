@@ -87,7 +87,10 @@ func (k *Keeper) GetStopLossOrder(ctx sdk.Context, id uint64) (types.StopLossOrd
 }
 
 func (k *Keeper) stopPlacement(ctx sdk.Context, user, stablecoin, token common.Address, amount sdk.Int, expiry uint64) error {
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
 	if params.OrdersPaused {
 		return types.ErrEnforcedPause
 	}
@@ -141,7 +144,7 @@ func (k *Keeper) stopPlacement(ctx sdk.Context, user, stablecoin, token common.A
 	if !stopValidAmount(price) {
 		return types.ErrInvalidPrice
 	}
-	count, err := stopUint(ctx.KVStore(k.storeKey), append(append([]byte(nil), types.ActiveCountPrefix...), user.Bytes()...))
+	count, err := k.GetActiveOrderCount(ctx, user)
 	if err != nil {
 		return err
 	}
@@ -159,7 +162,10 @@ func (k *Keeper) stopNotional(ctx sdk.Context, token common.Address, amount sdk.
 	if !stopValidAmount(price) {
 		return types.ErrInvalidPrice
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
 	for _, registered := range params.Tokens {
 		if registered.Address != token {
 			continue
@@ -197,67 +203,6 @@ func stopEscrow(store sdk.KVStore, token common.Address, change sdk.Int) error {
 	return stopWrite(store, key, escrow)
 }
 
-func stopActiveSlot(prefix []byte, index uint64) []byte {
-	return stopKey(append(append([]byte(nil), prefix...), 0), index)
-}
-
-func stopAddActive(store sdk.KVStore, prefix []byte, id uint64) error {
-	length, err := stopUint(store, prefix)
-	if err != nil {
-		return err
-	}
-	if length == math.MaxUint64 || store.Has(stopKey(prefix, id)) {
-		return fmt.Errorf("spot: invalid active index insertion")
-	}
-	stopSetUint(store, stopActiveSlot(prefix, length), id)
-	stopSetUint(store, stopKey(prefix, id), length+1)
-	stopSetUint(store, prefix, length+1)
-	return nil
-}
-
-func stopRemoveActive(store sdk.KVStore, prefix []byte, id uint64) error {
-	length, err := stopUint(store, prefix)
-	if err != nil {
-		return err
-	}
-	position, err := stopUint(store, stopKey(prefix, id))
-	if err != nil {
-		return err
-	}
-	if length == 0 || position == 0 || position > length {
-		return fmt.Errorf("spot: missing active order %d", id)
-	}
-	current, err := stopUint(store, stopActiveSlot(prefix, position-1))
-	if err != nil {
-		return err
-	}
-	if current != id {
-		return fmt.Errorf("spot: corrupt active position")
-	}
-	last, err := stopUint(store, stopActiveSlot(prefix, length-1))
-	if err != nil {
-		return err
-	}
-	if last == 0 {
-		return fmt.Errorf("spot: missing active tail")
-	}
-	tailPosition, err := stopUint(store, stopKey(prefix, last))
-	if err != nil {
-		return err
-	}
-	if tailPosition != length {
-		return fmt.Errorf("spot: corrupt active tail")
-	}
-	if position != length {
-		stopSetUint(store, stopActiveSlot(prefix, position-1), last)
-		stopSetUint(store, stopKey(prefix, last), position)
-	}
-	store.Delete(stopActiveSlot(prefix, length-1))
-	store.Delete(stopKey(prefix, id))
-	stopSetUint(store, prefix, length-1)
-	return nil
-}
-
 func (k *Keeper) stopNextID(ctx sdk.Context) (uint64, error) {
 	id, err := stopUint(ctx.KVStore(k.storeKey), types.NextOrderIDKey)
 	if err != nil {
@@ -282,7 +227,7 @@ func (k *Keeper) stopPlaced(ctx sdk.Context, id uint64, user, input common.Addre
 	if err := stopEscrow(store, input, amount); err != nil {
 		return err
 	}
-	if err := stopAddActive(store, active, id); err != nil {
+	if err := activeAdd(store, active, id); err != nil {
 		return err
 	}
 	userKey := stopKey(append(append([]byte(nil), types.UserOrderPrefix...), user.Bytes()...), id)
@@ -293,19 +238,18 @@ func (k *Keeper) stopPlaced(ctx sdk.Context, id uint64, user, input common.Addre
 		return err
 	}
 	if expiry != 0 {
-		if err := stopWrite(store, stopKey(types.ExpiryIndexPrefix, expiry, id), types.OrderExpiry{ExpiresAt: expiry, OrderID: id}); err != nil {
-			return err
-		}
+		store.Set(stopKey(types.ExpiryIndexPrefix, expiry, id), []byte{})
 	}
-	key := append(append([]byte(nil), types.ActiveCountPrefix...), user.Bytes()...)
-	count, err := stopUint(store, key)
+	count, err := k.GetActiveOrderCount(ctx, user)
 	if err != nil {
 		return err
 	}
 	if count == math.MaxUint64 {
 		return types.ErrTooManyActiveOrders
 	}
-	stopSetUint(store, key, count+1)
+	if err := setActiveOrderCount(store, user, count+1); err != nil {
+		return err
+	}
 	stopSetUint(store, types.NextOrderIDKey, id+1)
 	return nil
 }
@@ -315,18 +259,19 @@ func (k *Keeper) stopFinished(ctx sdk.Context, id uint64, user, input common.Add
 	if err := stopEscrow(store, input, amount.Neg()); err != nil {
 		return err
 	}
-	if err := stopRemoveActive(store, active, id); err != nil {
+	if err := activeRemove(store, active, id); err != nil {
 		return err
 	}
-	key := append(append([]byte(nil), types.ActiveCountPrefix...), user.Bytes()...)
-	count, err := stopUint(store, key)
+	count, err := k.GetActiveOrderCount(ctx, user)
 	if err != nil {
 		return err
 	}
 	if count == 0 {
 		return fmt.Errorf("spot: missing active user count")
 	}
-	stopSetUint(store, key, count-1)
+	if err := setActiveOrderCount(store, user, count-1); err != nil {
+		return err
+	}
 	if expiry != 0 {
 		store.Delete(stopKey(types.ExpiryIndexPrefix, expiry, id))
 	}
@@ -367,7 +312,7 @@ func (k *Keeper) PlaceStopLimit(ctx sdk.Context, user, stablecoin, token common.
 		return 0, err
 	}
 	cache, write := ctx.CacheContext()
-	received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), input, user, amount)
+	cache, received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), input, user, amount)
 	if err != nil {
 		return 0, err
 	}
@@ -407,7 +352,7 @@ func (k *Keeper) PlaceStopLoss(ctx sdk.Context, user, token, stablecoin common.A
 		return 0, err
 	}
 	cache, write := ctx.CacheContext()
-	received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), token, user, amount)
+	cache, received, err := k.pullTokens(cache, common.HexToAddress(types.PECORStopOrdersAddress), token, user, amount)
 	if err != nil {
 		return 0, err
 	}
@@ -433,7 +378,11 @@ func (k *Keeper) PlaceStopLoss(ctx sdk.Context, user, token, stablecoin common.A
 }
 
 func (k *Keeper) ActivateStopLimit(ctx sdk.Context, id uint64) (bool, error) {
-	if k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return false, err
+	}
+	if params.OrdersPaused {
 		return false, types.ErrEnforcedPause
 	}
 	order, err := k.GetStopLimitOrder(ctx, id)
@@ -471,10 +420,11 @@ func (k *Keeper) ActivateStopLimit(ctx sdk.Context, id uint64) (bool, error) {
 }
 
 func (k *Keeper) stopFillQuote(ctx sdk.Context, id uint64, input, output common.Address, amount sdk.Int) (sdk.Int, sdk.Int, error) {
-	gross, net, _, _, _, _, err := k.Price(ctx, types.FeeRailOrder, input, output, amount)
+	quote, err := k.Price(ctx, common.HexToAddress(types.PECORStopOrdersAddress), input, output, amount)
 	if err != nil {
 		return sdk.Int{}, sdk.Int{}, err
 	}
+	gross, net := quote.Gross, quote.Net
 	minimum := types.OrderMinOutput{OrderID: id, MinOutput: sdk.ZeroInt()}
 	if err := stopRead(ctx.KVStore(k.storeKey), stopKey(types.OrderMinOutputPrefix, id), &minimum); err != nil {
 		return sdk.Int{}, sdk.Int{}, err
@@ -520,10 +470,11 @@ func (k *Keeper) stopSettle(ctx sdk.Context, id uint64, user, input, output comm
 	if err != nil {
 		return err
 	}
-	if err := k.pushTokens(ctx, output, user, net); err != nil {
+	ctx, err = k.pushTokens(ctx, output, user, net)
+	if err != nil {
 		return err
 	}
-	if err := k.AccrueFees(ctx, types.FeeRailOrder, output, gross.Sub(net)); err != nil {
+	if err := k.AccrueFees(ctx, common.HexToAddress(types.PECORStopOrdersAddress), output, gross.Sub(net)); err != nil {
 		return err
 	}
 	inBook, err := stopBook(ctx.KVStore(k.storeKey), input, amount)
@@ -545,7 +496,11 @@ func (k *Keeper) stopSettle(ctx sdk.Context, id uint64, user, input, output comm
 }
 
 func (k *Keeper) ExecuteStopLimit(ctx sdk.Context, id uint64) error {
-	if k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
+	if params.OrdersPaused {
 		return types.ErrEnforcedPause
 	}
 	order, err := k.GetStopLimitOrder(ctx, id)
@@ -591,7 +546,11 @@ func (k *Keeper) ExecuteStopLimit(ctx sdk.Context, id uint64) error {
 }
 
 func (k *Keeper) ExecuteStopLoss(ctx sdk.Context, id uint64) error {
-	if k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
+	if params.OrdersPaused {
 		return types.ErrEnforcedPause
 	}
 	order, err := k.GetStopLossOrder(ctx, id)
@@ -653,7 +612,7 @@ func (k *Keeper) refundStopLimit(ctx sdk.Context, caller common.Address, id uint
 		return types.ErrInvalidExpiry
 	}
 	cache, write := ctx.CacheContext()
-	if err := k.pushTokens(cache, order.EscrowToken(), order.User, order.Amount); err != nil {
+	if _, err := k.pushTokens(cache, order.EscrowToken(), order.User, order.Amount); err != nil {
 		return err
 	}
 	if err := k.stopFinished(cache, id, order.User, order.EscrowToken(), order.Amount, order.ExpiresAt, types.ActiveStopLimitPrefix); err != nil {
@@ -694,7 +653,7 @@ func (k *Keeper) refundStopLoss(ctx sdk.Context, caller common.Address, id uint6
 		return types.ErrInvalidExpiry
 	}
 	cache, write := ctx.CacheContext()
-	if err := k.pushTokens(cache, order.Token, order.User, order.Amount); err != nil {
+	if _, err := k.pushTokens(cache, order.Token, order.User, order.Amount); err != nil {
 		return err
 	}
 	if err := k.stopFinished(cache, id, order.User, order.Token, order.Amount, order.ExpiresAt, types.ActiveStopLossPrefix); err != nil {
@@ -713,7 +672,10 @@ func (k *Keeper) refundStopLoss(ctx sdk.Context, caller common.Address, id uint6
 }
 
 func (k *Keeper) stopAuthorized(ctx sdk.Context, caller common.Address) error {
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
 	if params.OrdersPaused {
 		return types.ErrEnforcedPause
 	}
@@ -768,27 +730,15 @@ func (k *Keeper) BatchExecuteStopLossOrders(ctx sdk.Context, caller common.Addre
 }
 
 func (k *Keeper) GetActiveStopLimitOrderCount(ctx sdk.Context) (uint64, error) {
-	return stopUint(ctx.KVStore(k.storeKey), types.ActiveStopLimitPrefix)
+	return activeCount(ctx.KVStore(k.storeKey), types.ActiveStopLimitPrefix)
 }
 
 func (k *Keeper) GetActiveStopLossOrderCount(ctx sdk.Context) (uint64, error) {
-	return stopUint(ctx.KVStore(k.storeKey), types.ActiveStopLossPrefix)
+	return activeCount(ctx.KVStore(k.storeKey), types.ActiveStopLossPrefix)
 }
 
 func (k *Keeper) stopActiveAt(ctx sdk.Context, prefix []byte, index uint64) (uint64, error) {
-	store := ctx.KVStore(k.storeKey)
-	length, err := stopUint(store, prefix)
-	if err != nil {
-		return 0, err
-	}
-	if index >= length {
-		return 0, fmt.Errorf("spot: active index out of bounds")
-	}
-	id, err := stopUint(store, stopActiveSlot(prefix, index))
-	if err == nil && id == 0 {
-		return 0, fmt.Errorf("spot: missing active index entry")
-	}
-	return id, err
+	return activeAt(ctx.KVStore(k.storeKey), prefix, index)
 }
 
 func (k *Keeper) ActiveStopLimitOrderIDs(ctx sdk.Context, index uint64) (uint64, error) {
@@ -840,7 +790,11 @@ func (k *Keeper) stopCandidates(ctx sdk.Context, maxCount uint64, activated bool
 		maxCount = 100
 	}
 	ids := []uint64{}
-	if maxCount == 0 || k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if maxCount == 0 || params.OrdersPaused {
 		return ids, nil
 	}
 	length, err := k.GetActiveStopLimitOrderCount(ctx)

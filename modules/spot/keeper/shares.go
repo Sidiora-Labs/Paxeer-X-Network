@@ -125,7 +125,7 @@ func (k *Keeper) MintShares(ctx sdk.Context, evm *vm.EVM, denom string, to commo
 	if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
 		return err
 	}
-	if recipient := k.evmKeeper.GetPaxAddressOrDefault(ctx, to); !recipient.Equals(k.CustodyAddress()) {
+	if recipient := k.evmKeeper.GetPaxAddressOrDefault(ctx, to); !recipient.Equals(CustodyAddress()) {
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, recipient, coins); err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func (k *Keeper) BurnShares(ctx sdk.Context, evm *vm.EVM, denom string, from com
 		needed, _ := uint256.FromBig(amount.BigInt())
 		return types.ERC20InsufficientBalance(from, held, needed)
 	}
-	if !holder.Equals(k.CustodyAddress()) {
+	if !holder.Equals(CustodyAddress()) {
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, holder, types.ModuleName, coins); err != nil {
 			return err
 		}

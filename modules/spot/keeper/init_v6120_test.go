@@ -181,7 +181,9 @@ func TestInitV6120Order(t *testing.T) {
 	// Once the pointers hook has created both pointers the spot hook runs.
 	sid := e.createPointer(layerxbridgetypes.SidioraDenom(), layerxbridgetypes.SidioraSymbol)
 	require.NoError(t, e.init())
-	require.Equal(t, types.OpeningTokens(pax, sid), e.k.GetParams(e.ctx).Tokens)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
+	require.Equal(t, types.OpeningTokens(pax, sid), params.Tokens)
 }
 
 func TestInitV6120RegistersOpeningPairs(t *testing.T) {
@@ -189,7 +191,8 @@ func TestInitV6120RegistersOpeningPairs(t *testing.T) {
 	pax, sid := e.ready()
 	require.NoError(t, e.init())
 
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	want := types.DefaultParams()
 	want.Tokens = []types.TokenParams{
 		{Address: initUSDL, Kind: types.TokenKindERC20, IsStablecoin: true, Decimals: 6, MaxUtilizationBps: 9000},

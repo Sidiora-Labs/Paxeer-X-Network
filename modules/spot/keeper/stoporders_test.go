@@ -118,7 +118,7 @@ func newStopFixture(t *testing.T) *stopFixture {
 	coins := sdk.NewCoins(sdk.NewInt64Coin("uhpx", 2_000_000_000_000))
 	require.NoError(t, app.BankKeeper.MintCoins(ctx, "evm", coins))
 	require.NoError(t, app.BankKeeper.SendCoinsFromModuleToAccount(ctx, "evm", app.EvmKeeper.GetPaxAddressOrDefault(ctx, f.user), coins))
-	require.NoError(t, app.BankKeeper.SendCoins(ctx, app.EvmKeeper.GetPaxAddressOrDefault(ctx, f.user), f.k.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000_000))))
+	require.NoError(t, app.BankKeeper.SendCoins(ctx, app.EvmKeeper.GetPaxAddressOrDefault(ctx, f.user), keeper.CustodyAddress(), sdk.NewCoins(sdk.NewInt64Coin("uhpx", 1_000_000_000_000))))
 	for _, entry := range []struct {
 		token    common.Address
 		reserves int64
@@ -153,7 +153,7 @@ func (f *stopFixture) tokenCall(signature string, address common.Address, amount
 func (f *stopFixture) quoteBalance() sdk.Int {
 	f.t.Helper()
 	data := append(crypto.Keccak256([]byte("balanceOf(address)"))[:4], common.LeftPadBytes(f.user.Bytes(), 32)...)
-	result, err := testkeeper.EVMTestApp.EvmKeeper.StaticCallEVM(f.ctx, f.k.CustodyAddress(), &f.stable, data)
+	result, err := testkeeper.EVMTestApp.EvmKeeper.StaticCallEVM(f.ctx, keeper.CustodyAddress(), &f.stable, data)
 	require.NoError(f.t, err)
 	require.Len(f.t, result, 32)
 	return sdk.NewIntFromBigInt(new(big.Int).SetBytes(result))

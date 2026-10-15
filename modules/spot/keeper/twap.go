@@ -160,7 +160,10 @@ func deviatesFromTWAP(index, twap sdk.Int, maxBps uint64) bool {
 // more than maxTwapDeviationBps; a TWAP that cannot be read refuses the trade
 // with its error.
 func (k *Keeper) CheckTwapSanity(ctx sdk.Context, token common.Address, index sdk.Int) error {
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
 	if !params.TwapSanityEnabled {
 		return nil
 	}
@@ -179,7 +182,10 @@ func (k *Keeper) CheckTwapSanity(ctx sdk.Context, token common.Address, index sd
 // within maxTwapDeviationBps of the TWAP over that period. A TWAP that cannot
 // be read holds the fill and returns its error.
 func (k *Keeper) FillQualityOK(ctx sdk.Context, token common.Address, index sdk.Int) (bool, error) {
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return false, err
+	}
 	if params.FillQualityTwapPeriod == 0 {
 		return true, nil
 	}

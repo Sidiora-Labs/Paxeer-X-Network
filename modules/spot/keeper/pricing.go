@@ -14,39 +14,33 @@ var (
 	ErrQuoteOverflow          = errors.New("QuoteOverflow()")
 )
 
+// IndexPrice is the fresh index price of a registered token, 1e18 for a
+// stablecoin. An unregistered token returns InvalidVault(), a token without
+// a market InvalidOracle(), and a price the feed does not hold fresh
+// StalePrice().
 func (k *Keeper) IndexPrice(ctx sdk.Context, token common.Address) (sdk.Int, error) {
-	price, _, stale, err := k.TokenPrice(ctx, token)
+	params, err := k.GetParams(ctx)
 	if err != nil {
 		return sdk.ZeroInt(), err
 	}
-	if stale {
+	registered, ok := registeredToken(params, token)
+	if !ok {
+		return sdk.ZeroInt(), types.ErrInvalidVault
+	}
+	if registered.IsStablecoin {
+		return sdk.NewIntWithDecimal(1, 18), nil
+	}
+	if registered.MarketID == 0 {
+		return sdk.ZeroInt(), types.ErrInvalidOracle
+	}
+	price, err := k.pricefeedKeeper.GetPrice(ctx, registered.MarketID)
+	if err != nil {
+		return sdk.ZeroInt(), err
+	}
+	if !price.Fresh || !price.Index.IsPositive() {
 		return sdk.ZeroInt(), types.ErrStalePrice
 	}
-	return price, nil
-}
-
-func (k *Keeper) TokenPrice(ctx sdk.Context, token common.Address) (sdk.Int, uint64, bool, error) {
-	for _, registered := range k.GetParams(ctx).Tokens {
-		if registered.Address != token {
-			continue
-		}
-		if registered.IsStablecoin {
-			now := ctx.BlockTime().Unix()
-			if now < 0 {
-				return sdk.ZeroInt(), 0, true, types.ErrStalePrice
-			}
-			return sdk.NewIntWithDecimal(1, 18), uint64(now), false, nil
-		}
-		if registered.MarketID == 0 {
-			return sdk.ZeroInt(), 0, true, types.ErrInvalidOracle
-		}
-		price, err := k.pricefeedKeeper.GetPrice(ctx, registered.MarketID)
-		if err != nil {
-			return sdk.ZeroInt(), 0, true, err
-		}
-		return price.Index, price.TimestampMs / 1000, !price.Fresh, nil
-	}
-	return sdk.ZeroInt(), 0, true, types.ErrInvalidVault
+	return price.Index, nil
 }
 
 func Convert(amount, priceIn, priceOut sdk.Int, decIn, decOut uint32, up bool) (sdk.Int, error) {

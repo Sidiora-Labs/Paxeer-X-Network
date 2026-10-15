@@ -35,7 +35,7 @@ func atSecond(ctx sdk.Context, second uint64) sdk.Context {
 
 func e18(milli int64) sdk.Int { return sdk.NewIntWithDecimal(milli, 15) }
 
-func requireAbiError(t *testing.T, err error, want *types.AbiError, selector string) {
+func requireAbiSelector(t *testing.T, err error, want *types.AbiError, selector string) {
 	t.Helper()
 	require.ErrorIs(t, err, want)
 	var abiErr *types.AbiError
@@ -64,7 +64,7 @@ func TestSampleRing(t *testing.T) {
 	// The first sample was overwritten: the ring covers the latest 1000 only.
 	now := atSecond(ctx, twapBase+types.TwapHistoryDepth+1)
 	_, err = k.TWAP(now, twapToken, types.TwapHistoryDepth)
-	requireAbiError(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
+	requireAbiSelector(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
 	twap, err := k.TWAP(now, twapToken, types.TwapHistoryDepth-1)
 	require.NoError(t, err)
 	// Samples 2..1000 each hold one second over the window of 999 seconds.
@@ -81,7 +81,7 @@ func TestTWAPWindow(t *testing.T) {
 	nowCtx := atSecond(ctx, now)
 
 	_, err := k.TWAP(nowCtx, twapToken, 300)
-	requireAbiError(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
+	requireAbiSelector(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
 
 	require.NoError(t, k.appendSample(atSecond(ctx, twapBase), twapToken, twapBase, e18(500)))
 	require.NoError(t, k.appendSample(atSecond(ctx, twapBase+200), twapToken, twapBase+200, e18(600)))
@@ -103,7 +103,7 @@ func TestTWAPWindow(t *testing.T) {
 
 	for _, period := range []uint64{0, 301, now + 1} {
 		_, err := k.TWAP(nowCtx, twapToken, period)
-		requireAbiError(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
+		requireAbiSelector(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
 	}
 }
 
@@ -133,7 +133,7 @@ func TestTwapSanity(t *testing.T) {
 		require.NoError(t, fillErr)
 		require.Equal(t, !tc.refused, ok, "index %s", tc.index)
 		if tc.refused {
-			requireAbiError(t, err, types.ErrStalePrice, "0x19abf40e")
+			requireAbiSelector(t, err, types.ErrStalePrice, "0x19abf40e")
 		} else {
 			require.NoError(t, err, "index %s", tc.index)
 		}
@@ -141,9 +141,9 @@ func TestTwapSanity(t *testing.T) {
 
 	// A window the ring does not cover refuses the trade and holds the fill.
 	early := atSecond(ctx, twapBase+299)
-	requireAbiError(t, k.CheckTwapSanity(early, twapToken, e18(1000)), types.ErrTwapWindowInvalid, "0xb307c2d2")
+	requireAbiSelector(t, k.CheckTwapSanity(early, twapToken, e18(1000)), types.ErrTwapWindowInvalid, "0xb307c2d2")
 	ok, err := k.FillQualityOK(early, twapToken, e18(1000))
-	requireAbiError(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
+	requireAbiSelector(t, err, types.ErrTwapWindowInvalid, "0xb307c2d2")
 	require.False(t, ok)
 
 	params.TwapSanityEnabled = false

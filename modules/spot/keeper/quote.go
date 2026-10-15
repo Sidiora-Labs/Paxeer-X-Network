@@ -89,7 +89,10 @@ func (k *Keeper) Quote(ctx sdk.Context, tokenIn, tokenOut common.Address, amount
 func (k *Keeper) quoteChecked(ctx sdk.Context, tokenIn, tokenOut common.Address, amount sdk.Int,
 	exactIn bool) (QuoteResult, error) {
 	result := newQuoteResult()
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return QuoteResult{}, err
+	}
 	paramsIn, registeredIn := registeredToken(params, tokenIn)
 	paramsOut, registeredOut := registeredToken(params, tokenOut)
 
@@ -97,7 +100,7 @@ func (k *Keeper) quoteChecked(ctx sdk.Context, tokenIn, tokenOut common.Address,
 	priceOut, timestampOut, staleOut := k.tokenPrice(ctx, paramsOut, registeredOut)
 	result.SpotPriceIn, result.PriceTimestampIn, result.PriceStaleIn = priceIn, timestampIn, staleIn
 	result.SpotPriceOut, result.PriceTimestampOut, result.PriceStaleOut = priceOut, timestampOut, staleOut
-	if priceIn.Sign() == 0 || priceOut.Sign() == 0 {
+	if staleIn || staleOut || priceIn.Sign() == 0 || priceOut.Sign() == 0 {
 		return result, nil
 	}
 
@@ -187,7 +190,11 @@ func (k *Keeper) quoteChecked(ctx sdk.Context, tokenIn, tokenOut common.Address,
 // an unregistered token has no reserves and a stale price.
 func (k *Keeper) LiquidityInfo(ctx sdk.Context, token common.Address) (available, price *big.Int, stale bool,
 	err error) {
-	params, registered := registeredToken(k.GetParams(ctx), token)
+	all, err := k.GetParams(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	params, registered := registeredToken(all, token)
 	price, _, stale = k.tokenPrice(ctx, params, registered)
 	if !registered {
 		return new(big.Int), price, stale, nil
@@ -204,7 +211,11 @@ func (k *Keeper) LiquidityInfo(ctx sdk.Context, token common.Address) (available
 // a stable token prices at 1e18 at the block time, and a token that cannot be
 // priced returns (0, 0, true).
 func (k *Keeper) TokenPrice(ctx sdk.Context, token common.Address) (price, timestamp *big.Int, stale bool) {
-	params, registered := registeredToken(k.GetParams(ctx), token)
+	all, err := k.GetParams(ctx)
+	if err != nil {
+		return new(big.Int), new(big.Int), true
+	}
+	params, registered := registeredToken(all, token)
 	return k.tokenPrice(ctx, params, registered)
 }
 
@@ -220,10 +231,10 @@ func (k *Keeper) tokenPrice(ctx sdk.Context, params types.TokenParams, registere
 		return new(big.Int), new(big.Int), true
 	}
 	feed, err := k.pricefeedKeeper.GetPrice(ctx, params.MarketID)
-	if err != nil || !feed.Fresh || !feed.Index.IsPositive() {
+	if err != nil || !feed.Index.IsPositive() {
 		return new(big.Int), new(big.Int), true
 	}
-	return feed.Index.BigInt(), new(big.Int).SetUint64(feed.TimestampMs / 1000), false
+	return feed.Index.BigInt(), new(big.Int).SetUint64(feed.TimestampMs / 1000), !feed.Fresh
 }
 
 func registeredToken(params types.Params, token common.Address) (types.TokenParams, bool) {

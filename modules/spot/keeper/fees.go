@@ -152,7 +152,10 @@ func (k *Keeper) feePricing(ctx sdk.Context, rail, input, output common.Address)
 	if input == output {
 		return feePricing{}, types.ErrSameToken
 	}
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return feePricing{}, err
+	}
 	schedule, err := pricingSchedule(params, rail)
 	if err != nil {
 		return feePricing{}, err

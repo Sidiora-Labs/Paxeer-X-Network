@@ -22,16 +22,6 @@ func limitEvent(name string, args ...interface{}) LimitOrderEvent {
 	return LimitOrderEvent{Address: common.HexToAddress(types.PECOROrdersAddress), Name: name, Args: args}
 }
 
-func orderKey(prefix []byte, parts ...[]byte) []byte {
-	key := append([]byte(nil), prefix...)
-	for _, part := range parts {
-		key = append(key, part...)
-	}
-	return key
-}
-
-func orderIDBytes(id uint64) []byte { return binary.BigEndian.AppendUint64(nil, id) }
-
 func orderUint(store sdk.KVStore, key []byte) (uint64, error) {
 	raw := store.Get(key)
 	if raw == nil {
@@ -41,33 +31,6 @@ func orderUint(store sdk.KVStore, key []byte) (uint64, error) {
 		return 0, fmt.Errorf("spot: invalid integer at %x", key)
 	}
 	return binary.BigEndian.Uint64(raw), nil
-}
-
-func orderAmount(store sdk.KVStore, key []byte) (sdk.Int, error) {
-	raw := store.Get(key)
-	if raw == nil {
-		return sdk.ZeroInt(), nil
-	}
-	var value sdk.Int
-	if err := value.Unmarshal(raw); err != nil {
-		return sdk.Int{}, err
-	}
-	if !orderUint256(value, false) {
-		return sdk.Int{}, fmt.Errorf("spot: invalid amount at %x", key)
-	}
-	return value, nil
-}
-
-func putOrderAmount(store sdk.KVStore, key []byte, value sdk.Int) error {
-	if !orderUint256(value, false) {
-		return fmt.Errorf("spot: amount out of range")
-	}
-	raw, err := value.Marshal()
-	if err != nil {
-		return err
-	}
-	store.Set(key, raw)
-	return nil
 }
 
 func putOrderRecord(store sdk.KVStore, key []byte, value interface{}) error {
@@ -119,7 +82,7 @@ func (k *Keeper) NextOrderID(ctx sdk.Context) (uint64, error) {
 
 func (k *Keeper) GetLimitOrder(ctx sdk.Context, id uint64) (types.LimitOrder, error) {
 	order := types.LimitOrder{Amount: sdk.ZeroInt(), TargetPrice: sdk.ZeroInt()}
-	raw := ctx.KVStore(k.storeKey).Get(orderKey(types.LimitOrderPrefix, orderIDBytes(id)))
+	raw := ctx.KVStore(k.storeKey).Get(recordKey(types.LimitOrderPrefix, orderIDBytes(id)))
 	if raw == nil {
 		return order, nil
 	}
@@ -136,19 +99,63 @@ func (k *Keeper) GetLimitOrder(ctx sdk.Context, id uint64) (types.LimitOrder, er
 }
 
 func (k *Keeper) GetOrderMinOutput(ctx sdk.Context, id uint64) (sdk.Int, error) {
-	return orderAmount(ctx.KVStore(k.storeKey), orderKey(types.OrderMinOutputPrefix, orderIDBytes(id)))
+	entry := types.OrderMinOutput{MinOutput: sdk.ZeroInt()}
+	if _, err := getRecord(ctx.KVStore(k.storeKey), recordKey(types.OrderMinOutputPrefix, orderIDBytes(id)), &entry); err != nil {
+		return sdk.Int{}, err
+	}
+	if entry.OrderID != 0 && entry.OrderID != id || !orderUint256(entry.MinOutput, false) {
+		return sdk.Int{}, fmt.Errorf("spot: invalid order min output %d", id)
+	}
+	return entry.MinOutput, nil
+}
+
+func setOrderMinOutput(store sdk.KVStore, id uint64, minimum sdk.Int) error {
+	if !orderUint256(minimum, false) {
+		return fmt.Errorf("spot: amount out of range")
+	}
+	return setRecord(store, recordKey(types.OrderMinOutputPrefix, orderIDBytes(id)),
+		types.OrderMinOutput{OrderID: id, MinOutput: minimum})
 }
 
 func (k *Keeper) GetEscrow(ctx sdk.Context, token common.Address) (sdk.Int, error) {
-	return orderAmount(ctx.KVStore(k.storeKey), orderKey(types.EscrowPrefix, token.Bytes()))
+	escrow, err := k.tokenEscrow(ctx, token)
+	if err != nil {
+		return sdk.Int{}, err
+	}
+	if !orderUint256(escrow, false) {
+		return sdk.Int{}, fmt.Errorf("spot: invalid escrow of %s", token.Hex())
+	}
+	return escrow, nil
+}
+
+func setEscrow(store sdk.KVStore, token common.Address, amount sdk.Int) error {
+	if !orderUint256(amount, false) {
+		return fmt.Errorf("spot: amount out of range")
+	}
+	return setRecord(store, recordKey(types.EscrowPrefix, token.Bytes()), types.TokenEscrow{Token: token, Amount: amount})
 }
 
 func (k *Keeper) GetActiveOrderCount(ctx sdk.Context, user common.Address) (uint64, error) {
-	return orderUint(ctx.KVStore(k.storeKey), orderKey(types.ActiveCountPrefix, user.Bytes()))
+	var entry types.ActiveOrderCount
+	if _, err := getRecord(ctx.KVStore(k.storeKey), recordKey(types.ActiveCountPrefix, user.Bytes()), &entry); err != nil {
+		return 0, err
+	}
+	return entry.Count, nil
+}
+
+// setActiveOrderCount writes the active order count of user, removing the
+// entry at zero.
+func setActiveOrderCount(store sdk.KVStore, user common.Address, count uint64) error {
+	key := recordKey(types.ActiveCountPrefix, user.Bytes())
+	if count == 0 {
+		store.Delete(key)
+		return nil
+	}
+	return setRecord(store, key, types.ActiveOrderCount{User: user, Count: count})
 }
 
 func (k *Keeper) GetUserLimitOrders(ctx sdk.Context, user common.Address) ([]uint64, error) {
-	prefix := orderKey(types.UserOrderPrefix, user.Bytes())
+	prefix := recordKey(types.UserOrderPrefix, user.Bytes())
 	it := sdk.KVStorePrefixIterator(ctx.KVStore(k.storeKey), prefix)
 	defer it.Close()
 	ids := []uint64{}
@@ -167,96 +174,69 @@ func (k *Keeper) GetUserLimitOrders(ctx sdk.Context, user common.Address) ([]uin
 	return ids, nil
 }
 
-func activeLimitSlot(position uint64) []byte {
-	return orderKey(types.ActiveLimitPrefix, orderIDBytes(0), orderIDBytes(position))
+// activeCount is the number of active order ids under prefix, each indexed
+// as prefix + order id.
+func activeCount(store sdk.KVStore, prefix []byte) (uint64, error) {
+	ids, err := exportIDs(store, prefix)
+	return uint64(len(ids)), err
+}
+
+// activeAt is the active order id at position of prefix, in order id order.
+// ponytail: linear scan of the index; keep a position index if lists grow large.
+func activeAt(store sdk.KVStore, prefix []byte, position uint64) (uint64, error) {
+	ids, err := exportIDs(store, prefix)
+	if err != nil {
+		return 0, err
+	}
+	if position >= uint64(len(ids)) {
+		return 0, fmt.Errorf("spot: active index out of bounds")
+	}
+	return ids[position], nil
+}
+
+func activeAdd(store sdk.KVStore, prefix []byte, id uint64) error {
+	key := recordKey(prefix, orderIDBytes(id))
+	if id == 0 || store.Has(key) {
+		return fmt.Errorf("spot: invalid active index insertion")
+	}
+	store.Set(key, []byte{})
+	return nil
+}
+
+func activeRemove(store sdk.KVStore, prefix []byte, id uint64) error {
+	key := recordKey(prefix, orderIDBytes(id))
+	if !store.Has(key) {
+		return fmt.Errorf("spot: missing active order %d", id)
+	}
+	store.Delete(key)
+	return nil
 }
 
 func (k *Keeper) GetActiveLimitOrderCount(ctx sdk.Context) (uint64, error) {
-	return orderUint(ctx.KVStore(k.storeKey), orderKey(types.ActiveLimitPrefix, orderIDBytes(0)))
+	return activeCount(ctx.KVStore(k.storeKey), types.ActiveLimitPrefix)
 }
 
 func (k *Keeper) ActiveLimitOrderID(ctx sdk.Context, position uint64) (uint64, error) {
-	count, err := k.GetActiveLimitOrderCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if position >= count {
-		return 0, fmt.Errorf("spot: active limit index out of bounds")
-	}
-	id, err := orderUint(ctx.KVStore(k.storeKey), activeLimitSlot(position))
-	if err != nil {
-		return 0, err
-	}
-	if id == 0 {
-		return 0, fmt.Errorf("spot: missing active limit slot")
-	}
-	return id, nil
+	return activeAt(ctx.KVStore(k.storeKey), types.ActiveLimitPrefix, position)
 }
 
 func (k *Keeper) appendActiveLimit(ctx sdk.Context, id uint64) error {
-	store := ctx.KVStore(k.storeKey)
-	count, err := k.GetActiveLimitOrderCount(ctx)
-	if err != nil {
-		return err
-	}
-	key := orderKey(types.ActiveLimitPrefix, orderIDBytes(id))
-	if id == 0 || count == math.MaxUint64 || store.Has(key) {
-		return fmt.Errorf("spot: invalid active limit insertion")
-	}
-	store.Set(key, orderIDBytes(count+1))
-	store.Set(activeLimitSlot(count), orderIDBytes(id))
-	store.Set(orderKey(types.ActiveLimitPrefix, orderIDBytes(0)), orderIDBytes(count+1))
-	return nil
+	return activeAdd(ctx.KVStore(k.storeKey), types.ActiveLimitPrefix, id)
 }
 
 func (k *Keeper) removeActiveLimit(ctx sdk.Context, id uint64) error {
-	store := ctx.KVStore(k.storeKey)
-	key := orderKey(types.ActiveLimitPrefix, orderIDBytes(id))
-	position, err := orderUint(store, key)
-	if err != nil {
-		return err
-	}
-	count, err := k.GetActiveLimitOrderCount(ctx)
-	if err != nil {
-		return err
-	}
-	if position == 0 || position > count {
-		return fmt.Errorf("spot: missing active limit index")
-	}
-	current, err := k.ActiveLimitOrderID(ctx, position-1)
-	if err != nil {
-		return err
-	}
-	if current != id {
-		return fmt.Errorf("spot: inconsistent active limit position")
-	}
-	last, err := k.ActiveLimitOrderID(ctx, count-1)
-	if err != nil {
-		return err
-	}
-	if position != count {
-		lastPosition, err := orderUint(store, orderKey(types.ActiveLimitPrefix, orderIDBytes(last)))
-		if err != nil {
-			return err
-		}
-		if lastPosition != count {
-			return fmt.Errorf("spot: inconsistent last active limit position")
-		}
-		store.Set(activeLimitSlot(position-1), orderIDBytes(last))
-		store.Set(orderKey(types.ActiveLimitPrefix, orderIDBytes(last)), orderIDBytes(position))
-	}
-	store.Delete(key)
-	store.Delete(activeLimitSlot(count - 1))
-	store.Set(orderKey(types.ActiveLimitPrefix, orderIDBytes(0)), orderIDBytes(count-1))
-	return nil
+	return activeRemove(ctx.KVStore(k.storeKey), types.ActiveLimitPrefix, id)
 }
 
 func limitExpiryKey(order types.LimitOrder) []byte {
-	return orderKey(types.ExpiryIndexPrefix, orderIDBytes(order.ExpiresAt), orderIDBytes(order.ID))
+	return recordKey(types.ExpiryIndexPrefix, orderIDBytes(order.ExpiresAt), orderIDBytes(order.ID))
 }
 
 func (k *Keeper) PlaceLimit(ctx sdk.Context, user, stablecoin, token common.Address, amount, target sdk.Int, expiry uint64, kind types.OrderType) (uint64, []LimitOrderEvent, error) {
-	params := k.GetParams(ctx)
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
 	if params.OrdersPaused {
 		return 0, nil, types.ErrEnforcedPause
 	}
@@ -326,12 +306,12 @@ func (k *Keeper) PlaceLimit(ctx sdk.Context, user, stablecoin, token common.Addr
 		return 0, nil, err
 	}
 	for _, prefix := range [][]byte{types.LimitOrderPrefix, types.StopLimitOrderPrefix, types.StopLossOrderPrefix} {
-		if ctx.KVStore(k.storeKey).Has(orderKey(prefix, orderIDBytes(id))) {
+		if ctx.KVStore(k.storeKey).Has(recordKey(prefix, orderIDBytes(id))) {
 			return 0, nil, fmt.Errorf("spot: order id already allocated")
 		}
 	}
 	branch, write := ctx.CacheContext()
-	received, err := k.pullTokens(branch, common.HexToAddress(types.PECOROrdersAddress), input.Address, user, amount)
+	branch, received, err := k.pullTokens(branch, common.HexToAddress(types.PECOROrdersAddress), input.Address, user, amount)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -359,25 +339,27 @@ func (k *Keeper) PlaceLimit(ctx sdk.Context, user, stablecoin, token common.Addr
 		return 0, nil, err
 	}
 	store := branch.KVStore(k.storeKey)
-	if err := putOrderRecord(store, orderKey(types.LimitOrderPrefix, orderIDBytes(id)), order); err != nil {
+	if err := putOrderRecord(store, recordKey(types.LimitOrderPrefix, orderIDBytes(id)), order); err != nil {
 		return 0, nil, err
 	}
-	if err := putOrderRecord(store, orderKey(types.UserOrderPrefix, user.Bytes(), orderIDBytes(id)), types.UserOrder{User: user, OrderID: id, OrderType: kind}); err != nil {
+	if err := putOrderRecord(store, recordKey(types.UserOrderPrefix, user.Bytes(), orderIDBytes(id)), types.UserOrder{User: user, OrderID: id, OrderType: kind}); err != nil {
 		return 0, nil, err
 	}
-	if err := putOrderAmount(store, orderKey(types.EscrowPrefix, input.Address.Bytes()), escrow); err != nil {
+	if err := setEscrow(store, input.Address, escrow); err != nil {
 		return 0, nil, err
 	}
-	if err := putOrderAmount(store, orderKey(types.OrderMinOutputPrefix, orderIDBytes(id)), sdk.ZeroInt()); err != nil {
+	if err := setOrderMinOutput(store, id, sdk.ZeroInt()); err != nil {
 		return 0, nil, err
 	}
 	if err := k.appendActiveLimit(branch, id); err != nil {
 		return 0, nil, err
 	}
 	if expiry != 0 {
-		store.Set(limitExpiryKey(order), []byte{1})
+		store.Set(limitExpiryKey(order), []byte{})
 	}
-	store.Set(orderKey(types.ActiveCountPrefix, user.Bytes()), orderIDBytes(count+1))
+	if err := setActiveOrderCount(store, user, count+1); err != nil {
+		return 0, nil, err
+	}
 	store.Set(types.NextOrderIDKey, orderIDBytes(id+1))
 	write()
 	ctx.EventManager().EmitEvents(branch.EventManager().Events())
@@ -414,11 +396,11 @@ func (k *Keeper) ModifyLimit(ctx sdk.Context, user common.Address, id uint64, ta
 	if err := order.Validate(); err != nil {
 		return nil, err
 	}
-	if err := putOrderRecord(store, orderKey(types.LimitOrderPrefix, orderIDBytes(id)), order); err != nil {
+	if err := putOrderRecord(store, recordKey(types.LimitOrderPrefix, orderIDBytes(id)), order); err != nil {
 		return nil, err
 	}
 	if expiry != 0 {
-		store.Set(limitExpiryKey(order), []byte{1})
+		store.Set(limitExpiryKey(order), []byte{})
 	}
 	write()
 	return []LimitOrderEvent{limitEvent("LimitOrderModified", new(big.Int).SetUint64(id), target.BigInt(), new(big.Int).SetUint64(expiry))}, nil
@@ -446,16 +428,18 @@ func (k *Keeper) finishLimit(ctx sdk.Context, order types.LimitOrder, status typ
 		return err
 	}
 	store := ctx.KVStore(k.storeKey)
-	if err := putOrderAmount(store, orderKey(types.EscrowPrefix, order.EscrowToken().Bytes()), escrow.Sub(order.Amount)); err != nil {
+	if err := setEscrow(store, order.EscrowToken(), escrow.Sub(order.Amount)); err != nil {
 		return err
 	}
-	store.Set(orderKey(types.ActiveCountPrefix, order.User.Bytes()), orderIDBytes(count-1))
+	if err := setActiveOrderCount(store, order.User, count-1); err != nil {
+		return err
+	}
 	if order.ExpiresAt != 0 {
 		store.Delete(limitExpiryKey(order))
 	}
-	store.Delete(orderKey(types.FillBackoffPrefix, orderIDBytes(order.ID)))
+	store.Delete(recordKey(types.FillBackoffPrefix, orderIDBytes(order.ID)))
 	order.Status = status
-	return putOrderRecord(store, orderKey(types.LimitOrderPrefix, orderIDBytes(order.ID)), order)
+	return putOrderRecord(store, recordKey(types.LimitOrderPrefix, orderIDBytes(order.ID)), order)
 }
 
 func (k *Keeper) refundLimit(ctx sdk.Context, order types.LimitOrder, status types.OrderStatus, event string) ([]LimitOrderEvent, error) {
@@ -466,7 +450,7 @@ func (k *Keeper) refundLimit(ctx sdk.Context, order types.LimitOrder, status typ
 	if err := k.finishLimit(branch, order, status); err != nil {
 		return nil, err
 	}
-	if err := k.pushTokens(branch, order.EscrowToken(), order.User, order.Amount); err != nil {
+	if _, err := k.pushTokens(branch, order.EscrowToken(), order.User, order.Amount); err != nil {
 		return nil, err
 	}
 	write()
@@ -531,7 +515,7 @@ func (k *Keeper) limitEscrowAvailable(ctx sdk.Context, order types.LimitOrder) e
 	if err != nil {
 		return err
 	}
-	custody, err := k.CustodyBalance(ctx, order.EscrowToken())
+	_, custody, err := k.CustodyBalance(ctx, order.EscrowToken())
 	if err != nil {
 		return err
 	}
@@ -542,10 +526,11 @@ func (k *Keeper) limitEscrowAvailable(ctx sdk.Context, order types.LimitOrder) e
 }
 
 func (k *Keeper) limitQuote(ctx sdk.Context, order types.LimitOrder) (sdk.Int, sdk.Int, error) {
-	gross, net, _, _, _, _, err := k.Price(ctx, common.HexToAddress(types.PECOROrdersAddress), order.EscrowToken(), limitOutput(order), order.Amount)
+	quote, err := k.Price(ctx, common.HexToAddress(types.PECOROrdersAddress), order.EscrowToken(), limitOutput(order), order.Amount)
 	if err != nil {
 		return sdk.Int{}, sdk.Int{}, err
 	}
+	gross, net := quote.Gross, quote.Net
 	if !orderUint256(gross, false) || !orderUint256(net, false) || net.GT(gross) {
 		return sdk.Int{}, sdk.Int{}, fmt.Errorf("spot: invalid order quote")
 	}
@@ -574,7 +559,11 @@ func (k *Keeper) CanExecuteLimitOrder(ctx sdk.Context, id uint64) (bool, string,
 	if !order.IsActive() {
 		return false, "Order not pending", nil
 	}
-	if k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	if params.OrdersPaused {
 		return false, "Paused", nil
 	}
 	now, err := orderNow(ctx)
@@ -644,7 +633,7 @@ func (k *Keeper) GetExecutableLimitOrders(ctx sdk.Context, maxCount uint64) ([]u
 
 func (k *Keeper) limitBook(ctx sdk.Context, token common.Address, amount sdk.Int, add bool) (LimitOrderEvent, error) {
 	store := ctx.KVStore(k.storeKey)
-	key := orderKey(types.BookPrefix, token.Bytes())
+	key := recordKey(types.BookPrefix, token.Bytes())
 	raw := store.Get(key)
 	if raw == nil {
 		return LimitOrderEvent{}, types.ErrInsufficientLiquidity
@@ -683,7 +672,11 @@ func (k *Keeper) ExecuteLimit(ctx sdk.Context, id uint64) ([]LimitOrderEvent, er
 	if order.ID == 0 || !order.IsActive() {
 		return nil, types.ErrOrderNotPending
 	}
-	if k.GetParams(ctx).OrdersPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if params.OrdersPaused {
 		return nil, types.ErrEnforcedPause
 	}
 	now, err := orderNow(ctx)
@@ -732,10 +725,10 @@ func (k *Keeper) ExecuteLimit(ctx sdk.Context, id uint64) ([]LimitOrderEvent, er
 	if err != nil {
 		return nil, err
 	}
-	if err := k.AccrueFees(branch, types.FeeRailOrder, limitOutput(order), gross.Sub(net)); err != nil {
+	if err := k.AccrueFees(branch, common.HexToAddress(types.PECOROrdersAddress), limitOutput(order), gross.Sub(net)); err != nil {
 		return nil, err
 	}
-	if err := k.pushTokens(branch, limitOutput(order), order.User, net); err != nil {
+	if _, err := k.pushTokens(branch, limitOutput(order), order.User, net); err != nil {
 		return nil, err
 	}
 	write()

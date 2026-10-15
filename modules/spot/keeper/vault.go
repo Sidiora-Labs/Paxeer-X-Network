@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +12,7 @@ import (
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -22,16 +22,12 @@ const MinimumShares = 1000
 
 // Topics of the PECORVault logs written at 0x1025.
 var (
-	DepositTopic               = crypto.Keccak256Hash([]byte("Deposit(address,address,uint256,uint256)"))
-	LPWithdrawalTopic          = crypto.Keccak256Hash([]byte("LPWithdrawal(address,address,uint256,uint256)"))
-	NativeDepositTopic         = crypto.Keccak256Hash([]byte("NativeDeposit(address,uint256,uint256)"))
-	NativeWithdrawalTopic      = crypto.Keccak256Hash([]byte("NativeWithdrawal(address,uint256,uint256)"))
-	ReservesSyncTopic          = crypto.Keccak256Hash([]byte("ReservesSync(address,uint256,uint256,uint256)"))
-	ReservesUpdatedTopic       = crypto.Keccak256Hash([]byte("ReservesUpdated(address,uint256,uint256)"))
-	WithdrawalTopic            = crypto.Keccak256Hash([]byte("Withdrawal(address,address,uint256,uint256)"))
-	TokenRegisteredTopic       = crypto.Keccak256Hash([]byte("TokenRegistered(address,uint8,bool)"))
-	TokenPauseUpdatedTopic     = crypto.Keccak256Hash([]byte("TokenPauseUpdated(address,bool)"))
-	UtilizationCapUpdatedTopic = crypto.Keccak256Hash([]byte("UtilizationCapUpdated(address,uint256)"))
+	DepositTopic          = crypto.Keccak256Hash([]byte("Deposit(address,address,uint256,uint256)"))
+	LPWithdrawalTopic     = crypto.Keccak256Hash([]byte("LPWithdrawal(address,address,uint256,uint256)"))
+	NativeDepositTopic    = crypto.Keccak256Hash([]byte("NativeDeposit(address,uint256,uint256)"))
+	NativeWithdrawalTopic = crypto.Keccak256Hash([]byte("NativeWithdrawal(address,uint256,uint256)"))
+	WithdrawalTopic       = crypto.Keccak256Hash([]byte("Withdrawal(address,address,uint256,uint256)"))
+	TokenRegisteredTopic  = crypto.Keccak256Hash([]byte("TokenRegistered(address,uint8,bool)"))
 )
 
 // decimalsSelector is ERC20 decimals().
@@ -55,13 +51,6 @@ func vaultLog(ctx sdk.Context, topic common.Hash, indexed []common.Address, word
 	return &ethtypes.Log{Address: vaultAddress, Topics: topics, Data: data, BlockNumber: uint64(ctx.BlockHeight())} //nolint:gosec
 }
 
-func boolWord(value bool) *big.Int {
-	if value {
-		return big.NewInt(1)
-	}
-	return new(big.Int)
-}
-
 func reservesUpdatedLog(ctx sdk.Context, token common.Address, before, after sdk.Int) *ethtypes.Log {
 	return vaultLog(ctx, ReservesUpdatedTopic, []common.Address{token}, before.BigInt(), after.BigInt())
 }
@@ -81,30 +70,16 @@ func amountOrZero(value sdk.Int) *big.Int {
 	return value.BigInt()
 }
 
-func tokenKey(prefix []byte, token common.Address) []byte {
-	key := make([]byte, 0, len(prefix)+common.AddressLength)
-	key = append(key, prefix...)
-	return append(key, token.Bytes()...)
-}
-
-func accrualKey(rail types.FeeRail, token common.Address) []byte {
-	key := make([]byte, 0, len(types.FeeAccrualPrefix)+1+common.AddressLength)
-	key = append(key, types.FeeAccrualPrefix...)
-	key = append(key, byte(rail))
-	return append(key, token.Bytes()...)
-}
-
 // GetBook reads the book of token (prefix 0x02); a token without a book has
 // an empty one.
 func (k *Keeper) GetBook(ctx sdk.Context, token common.Address) (types.TokenBook, error) {
-	bz := ctx.KVStore(k.storeKey).Get(tokenKey(types.BookPrefix, token))
-	if bz == nil {
+	book, found, err := k.tokenBook(ctx, token)
+	if err != nil {
+		return types.TokenBook{}, err
+	}
+	if !found {
 		return types.TokenBook{Token: token, Reserves: sdk.ZeroInt(), TotalDeposited: sdk.ZeroInt(),
 			TotalWithdrawn: sdk.ZeroInt()}, nil
-	}
-	var book types.TokenBook
-	if err := json.Unmarshal(bz, &book); err != nil {
-		return types.TokenBook{}, fmt.Errorf("spot: corrupt book of %s: %w", token.Hex(), err)
 	}
 	book.Reserves = sdk.NewIntFromBigInt(amountOrZero(book.Reserves))
 	book.TotalDeposited = sdk.NewIntFromBigInt(amountOrZero(book.TotalDeposited))
@@ -119,51 +94,31 @@ func (k *Keeper) SetBook(ctx sdk.Context, book types.TokenBook) error {
 			return err
 		}
 	}
-	bz, err := json.Marshal(book)
-	if err != nil {
-		return err
-	}
-	ctx.KVStore(k.storeKey).Set(tokenKey(types.BookPrefix, book.Token), bz)
-	return nil
-}
-
-func (k *Keeper) storedAmount(ctx sdk.Context, key []byte) (*big.Int, error) {
-	bz := ctx.KVStore(k.storeKey).Get(key)
-	if bz == nil {
-		return new(big.Int), nil
-	}
-	var amount sdk.Int
-	if err := amount.Unmarshal(bz); err != nil {
-		return nil, fmt.Errorf("spot: corrupt amount %x: %w", key, err)
-	}
-	if amount.IsNegative() {
-		return nil, fmt.Errorf("spot: negative amount %x", key)
-	}
-	return amount.BigInt(), nil
-}
-
-// escrowOf is the escrow of the active orders whose input is token (prefix 0x03).
-func (k *Keeper) escrowOf(ctx sdk.Context, token common.Address) (*big.Int, error) {
-	return k.storedAmount(ctx, tokenKey(types.EscrowPrefix, token))
+	return setRecord(ctx.KVStore(k.storeKey), recordKey(types.BookPrefix, book.Token.Bytes()), book)
 }
 
 // reservedOf is the swap-rail plus order-rail fee accrual of token (prefix 0x04).
 func (k *Keeper) reservedOf(ctx sdk.Context, token common.Address) (*big.Int, error) {
-	swap, err := k.storedAmount(ctx, accrualKey(types.FeeRailSwap, token))
+	store := ctx.KVStore(k.storeKey)
+	swap, err := readFeeAccrual(store, types.FeeRailSwap, token)
 	if err != nil {
 		return nil, err
 	}
-	order, err := k.storedAmount(ctx, accrualKey(types.FeeRailOrder, token))
+	order, err := readFeeAccrual(store, types.FeeRailOrder, token)
 	if err != nil {
 		return nil, err
 	}
-	return swap.Add(swap, order), nil
+	return new(big.Int).Add(swap.BigInt(), order.BigInt()), nil
 }
 
 // registered returns the TokenParams of token, TokenNotRegistered when the
 // tokens parameter does not list it.
 func (k *Keeper) registered(ctx sdk.Context, token common.Address) (types.TokenParams, error) {
-	for _, params := range k.GetParams(ctx).Tokens {
+	all, err := k.GetParams(ctx)
+	if err != nil {
+		return types.TokenParams{}, err
+	}
+	for _, params := range all.Tokens {
 		if params.Address == token {
 			return params, nil
 		}
@@ -173,15 +128,15 @@ func (k *Keeper) registered(ctx sdk.Context, token common.Address) (types.TokenP
 
 // custodyLessEscrow is custody - escrow of token, 0 when escrow exceeds custody.
 func (k *Keeper) custodyLessEscrow(ctx sdk.Context, token common.Address) (*big.Int, error) {
-	custody, err := k.CustodyBalance(ctx, token)
+	_, custody, err := k.CustodyBalance(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	escrow, err := k.escrowOf(ctx, token)
+	escrow, err := k.tokenEscrow(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	free := new(big.Int).Sub(amountOrZero(custody), escrow)
+	free := new(big.Int).Sub(amountOrZero(custody), amountOrZero(escrow))
 	if free.Sign() < 0 {
 		free.SetInt64(0)
 	}
@@ -273,6 +228,15 @@ func (k *Keeper) HasLiquidity(ctx sdk.Context, token common.Address, amount sdk.
 	return scaled.Cmp(limit) <= 0, nil
 }
 
+// withShareEVM runs fn on the EVM of the running transaction, or on a
+// one-off EVM outside one.
+func (k *Keeper) withShareEVM(ctx sdk.Context, fn func(*vm.EVM) error) error {
+	if run := runOf(ctx); run != nil {
+		return fn(run.EVM)
+	}
+	return k.evmKeeper.RunWithOneOffEVMInstance(ctx, fn, func(string, string) {})
+}
+
 func (k *Keeper) shareSupply(ctx sdk.Context, token common.Address) *big.Int {
 	return amountOrZero(k.bankKeeper.GetSupply(ctx, k.ShareDenom(token)).Amount)
 }
@@ -322,7 +286,9 @@ func (k *Keeper) creditDeposit(ctx sdk.Context, token, depositor common.Address,
 			return sdk.Int{}, types.TokenBook{}, sdk.Int{}, types.ErrZeroAmount
 		}
 		shares = new(big.Int).Sub(received.BigInt(), big.NewInt(MinimumShares))
-		if err := k.MintShares(ctx, token, k.CustodyEVMAddress(ctx), sdk.NewInt(MinimumShares)); err != nil {
+		if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+			return k.MintShares(ctx, evm, k.ShareDenom(token), k.CustodyEVMAddress(ctx), sdk.NewInt(MinimumShares))
+		}); err != nil {
 			return sdk.Int{}, types.TokenBook{}, sdk.Int{}, err
 		}
 		book.MinimumSharesLocked = true
@@ -344,7 +310,9 @@ func (k *Keeper) creditDeposit(ctx sdk.Context, token, depositor common.Address,
 	if err != nil {
 		return sdk.Int{}, types.TokenBook{}, sdk.Int{}, err
 	}
-	if err := k.MintShares(ctx, token, depositor, minted); err != nil {
+	if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+		return k.MintShares(ctx, evm, k.ShareDenom(token), depositor, minted)
+	}); err != nil {
 		return sdk.Int{}, types.TokenBook{}, sdk.Int{}, err
 	}
 	before := book.Reserves
@@ -378,7 +346,7 @@ func (k *Keeper) Deposit(ctx sdk.Context, depositor, token common.Address,
 	if err := k.checkDepositNAV(ctx, token); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	received, err := k.pullTokens(ctx, vaultAddress, token, depositor, amount)
+	ctx, received, err := k.pullTokens(ctx, vaultAddress, token, depositor, amount)
 	if err != nil {
 		return sdk.Int{}, nil, err
 	}
@@ -416,7 +384,11 @@ func (k *Keeper) DepositBatch(ctx sdk.Context, depositor common.Address, tokens 
 // PAXToken is the registered NATIVE token whose denom is uhpx, the token of
 // depositNative and withdrawNative.
 func (k *Keeper) PAXToken(ctx sdk.Context) (types.TokenParams, error) {
-	for _, params := range k.GetParams(ctx).Tokens {
+	all, err := k.GetParams(ctx)
+	if err != nil {
+		return types.TokenParams{}, err
+	}
+	for _, params := range all.Tokens {
 		if params.Kind != types.TokenKindNative {
 			continue
 		}
@@ -445,7 +417,7 @@ func (k *Keeper) DepositNative(ctx sdk.Context, depositor common.Address, value 
 	if err := k.checkDepositNAV(ctx, pax.Address); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	received, err := k.pullNative(ctx, vaultAddress, value)
+	ctx, received, err := k.pullNative(ctx, vaultAddress, value)
 	if err != nil {
 		return sdk.Int{}, nil, err
 	}
@@ -519,11 +491,13 @@ func (k *Keeper) Withdraw(ctx sdk.Context, provider, token common.Address, share
 	if err != nil {
 		return sdk.Int{}, nil, err
 	}
-	if err := k.BurnShares(ctx, token, provider, shares); err != nil {
+	if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+		return k.BurnShares(ctx, evm, k.ShareDenom(token), provider, shares)
+	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
 	amount := sdk.NewIntFromBigInt(payout)
-	if err := k.pushTokens(ctx, token, provider, amount); err != nil {
+	if _, err := k.pushTokens(ctx, token, provider, amount); err != nil {
 		return sdk.Int{}, nil, err
 	}
 	return amount, []*ethtypes.Log{
@@ -571,10 +545,12 @@ func (k *Keeper) WithdrawNative(ctx sdk.Context, provider common.Address, amount
 	if err != nil {
 		return sdk.Int{}, nil, err
 	}
-	if err := k.BurnShares(ctx, pax.Address, provider, shares); err != nil {
+	if err := k.withShareEVM(ctx, func(evm *vm.EVM) error {
+		return k.BurnShares(ctx, evm, k.ShareDenom(pax.Address), provider, shares)
+	}); err != nil {
 		return sdk.Int{}, nil, err
 	}
-	if err := k.pushTokens(ctx, pax.Address, recipient, amount); err != nil {
+	if _, err := k.pushTokens(ctx, pax.Address, recipient, amount); err != nil {
 		return sdk.Int{}, nil, err
 	}
 	return shares, []*ethtypes.Log{
@@ -627,8 +603,9 @@ func (k *Keeper) ApplyTrade(ctx sdk.Context, tokenIn common.Address, amountIn sd
 // governance authority, the reconciliation of
 // Launch-x:contracts/contracts/meta-ag/vault/PECORVault.sol:464-482: a
 // surplus raises the book and totalDeposited by the recovered amount, a
-// deficit lowers the book with 0 recovered, parity changes nothing. It
-// returns the ReservesSync and ReservesUpdated logs.
+// deficit lowers the book with 0 recovered, parity changes nothing. Custody
+// below the escrow refuses with InsufficientLiquidity(), as no book can back
+// it. It returns the ReservesSync and ReservesUpdated logs.
 func (k *Keeper) SyncReserves(ctx sdk.Context, authority string, token common.Address) ([]*ethtypes.Log, error) {
 	if authority != k.authority {
 		return nil, sdkerrors.ErrUnauthorized.Wrapf("spot: invalid authority %s, expected %s", authority, k.authority)
@@ -636,33 +613,39 @@ func (k *Keeper) SyncReserves(ctx sdk.Context, authority string, token common.Ad
 	if _, err := k.registered(ctx, token); err != nil {
 		return nil, err
 	}
-	balance, err := k.custodyLessEscrow(ctx, token)
+	book, found, err := k.tokenBook(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	book, err := k.GetBook(ctx, token)
+	if !found {
+		return nil, types.ErrTokenNotRegistered
+	}
+	escrow, err := k.tokenEscrow(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-	onBook := book.Reserves
-	recovered := new(big.Int)
-	switch balance.Cmp(onBook.BigInt()) {
-	case 0:
+	ctx, custody, err := k.CustodyBalance(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if custody.LT(escrow) {
+		return nil, types.ErrInsufficientLiquidity
+	}
+	balance, onBook := custody.Sub(escrow), sdk.NewIntFromBigInt(amountOrZero(book.Reserves))
+	if balance.Equal(onBook) {
 		return nil, nil
-	case 1:
-		recovered.Sub(balance, onBook.BigInt())
-		if book.TotalDeposited, err = toUint256(new(big.Int).Add(book.TotalDeposited.BigInt(), recovered)); err != nil {
-			return nil, err
-		}
 	}
-	if book.Reserves, err = toUint256(balance); err != nil {
-		return nil, err
+	recovered := sdk.ZeroInt()
+	if balance.GT(onBook) {
+		recovered = balance.Sub(onBook)
+		book.TotalDeposited = sdk.NewIntFromBigInt(amountOrZero(book.TotalDeposited)).Add(recovered)
 	}
+	book.Reserves = balance
 	if err := k.SetBook(ctx, book); err != nil {
 		return nil, err
 	}
 	return []*ethtypes.Log{
-		vaultLog(ctx, ReservesSyncTopic, []common.Address{token}, onBook.BigInt(), balance, recovered),
+		vaultLog(ctx, ReservesSyncTopic, []common.Address{token}, onBook.BigInt(), balance.BigInt(), recovered.BigInt()),
 		reservesUpdatedLog(ctx, token, onBook, book.Reserves),
 	}, nil
 }
@@ -677,7 +660,7 @@ func (k *Keeper) tokenDecimals(ctx sdk.Context, params types.TokenParams) (uint6
 		if len(k.evmKeeper.GetCode(ctx, params.Address)) == 0 {
 			return 0, types.ErrUnsupportedToken
 		}
-		ret, err := k.evmKeeper.StaticCallEVM(ctx, k.CustodyAddress(), &params.Address, decimalsSelector)
+		ret, err := k.evmKeeper.StaticCallEVM(ctx, CustodyAddress(), &params.Address, decimalsSelector)
 		if err != nil || len(ret) != 32 {
 			return 0, types.ErrUnsupportedToken
 		}
@@ -742,7 +725,7 @@ func (k *Keeper) RegisterToken(ctx sdk.Context, params types.TokenParams) (types
 	}
 	return params, []*ethtypes.Log{
 		vaultLog(ctx, TokenRegisteredTopic, []common.Address{params.Address}, new(big.Int).SetUint64(decimals),
-			boolWord(params.IsStablecoin)),
+			new(big.Int).SetBytes(boolWord(params.IsStablecoin))),
 		vaultLog(ctx, UtilizationCapUpdatedTopic, []common.Address{params.Address},
 			new(big.Int).SetUint64(params.MaxUtilizationBps)),
 	}, nil
@@ -765,7 +748,7 @@ func TokenParamLogs(ctx sdk.Context, before, after []types.TokenParams) []*ethty
 		}
 		if old.Paused != params.Paused {
 			logs = append(logs, vaultLog(ctx, TokenPauseUpdatedTopic, []common.Address{params.Address},
-				boolWord(params.Paused)))
+				new(big.Int).SetBytes(boolWord(params.Paused))))
 		}
 		if MaxUtilizationBps(old) != MaxUtilizationBps(params) {
 			logs = append(logs, vaultLog(ctx, UtilizationCapUpdatedTopic, []common.Address{params.Address},

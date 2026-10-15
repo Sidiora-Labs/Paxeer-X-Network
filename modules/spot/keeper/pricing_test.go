@@ -80,13 +80,13 @@ func TestIndexPriceFromPricefeed(t *testing.T) {
 		price, err := env.keeper.IndexPrice(env.ctx, env.tokens[tc.token].Address)
 		require.NoError(t, err)
 		require.Equal(t, tc.index.String(), price.String())
-		quoted, timestamp, stale, err := env.keeper.TokenPrice(env.ctx, env.tokens[tc.token].Address)
-		require.NoError(t, err)
+		quoted, timestamp, stale := env.keeper.TokenPrice(env.ctx, env.tokens[tc.token].Address)
 		require.Equal(t, tc.index.String(), quoted.String())
-		require.Equal(t, uint64(100), timestamp)
+		require.Equal(t, uint64(100), timestamp.Uint64())
 		require.False(t, stale)
 	}
-	params := env.keeper.GetParams(env.ctx)
+	params, err := env.keeper.GetParams(env.ctx)
+	require.NoError(t, err)
 	params.Tokens[1].MarketID = 12
 	writePricingValue(t, env.ctx, env.spotKey, types.ParamsKey, params)
 	price, err := env.keeper.IndexPrice(env.ctx, env.tokens[1].Address)
@@ -99,10 +99,9 @@ func TestStablecoinPricesAtOne(t *testing.T) {
 	price, err := env.keeper.IndexPrice(env.ctx, env.tokens[0].Address)
 	require.NoError(t, err)
 	require.Equal(t, "1000000000000000000", price.String())
-	price, timestamp, stale, err := env.keeper.TokenPrice(env.ctx, env.tokens[0].Address)
-	require.NoError(t, err)
-	require.Equal(t, "1000000000000000000", price.String())
-	require.Equal(t, uint64(100), timestamp)
+	quoted, timestamp, stale := env.keeper.TokenPrice(env.ctx, env.tokens[0].Address)
+	require.Equal(t, "1000000000000000000", quoted.String())
+	require.Equal(t, uint64(100), timestamp.Uint64())
 	require.False(t, stale)
 }
 
@@ -145,15 +144,14 @@ func TestStalePriceRefusesTrades(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, index.String(), price.String())
 			}
-			quoted, ts, stale, err := env.keeper.TokenPrice(env.ctx, env.tokens[1].Address)
-			require.NoError(t, err)
+			quoted, ts, stale := env.keeper.TokenPrice(env.ctx, env.tokens[1].Address)
 			require.Equal(t, tc.stale, stale)
 			if tc.missing {
 				require.Equal(t, "0", quoted.String())
-				require.Zero(t, ts)
+				require.Zero(t, ts.Uint64())
 			} else {
 				require.Equal(t, index.String(), quoted.String())
-				require.Equal(t, timestamp/1000, ts)
+				require.Equal(t, timestamp/1000, ts.Uint64())
 			}
 			require.Equal(t, before, env.ctx.KVStore(env.feedKey).Get(pricefeedtypes.AggregateKey(11)))
 			require.Empty(t, env.ctx.EventManager().Events())
@@ -163,7 +161,8 @@ func TestStalePriceRefusesTrades(t *testing.T) {
 
 func TestTokenWithoutMarketIsRefused(t *testing.T) {
 	env := newPricingEnv(t, false)
-	params := env.keeper.GetParams(env.ctx)
+	params, err := env.keeper.GetParams(env.ctx)
+	require.NoError(t, err)
 	params.Tokens[1].MarketID = 0
 	writePricingValue(t, env.ctx, env.spotKey, types.ParamsKey, params)
 	price, err := env.keeper.IndexPrice(env.ctx, env.tokens[1].Address)
@@ -177,7 +176,8 @@ func TestTokenWithoutMarketIsRefused(t *testing.T) {
 	require.Empty(t, env.ctx.EventManager().Events())
 
 	listed := newPricingEnv(t, true)
-	params = listed.keeper.GetParams(listed.ctx)
+	params, err = listed.keeper.GetParams(listed.ctx)
+	require.NoError(t, err)
 	params.Tokens[1].MarketID = uint64(len(pricefeedtypes.Markets))
 	writePricingValue(t, listed.ctx, listed.spotKey, types.ParamsKey, params)
 	_, err = listed.keeper.IndexPrice(listed.ctx, listed.tokens[1].Address)

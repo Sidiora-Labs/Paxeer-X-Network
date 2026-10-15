@@ -4,19 +4,30 @@ import (
 	"encoding/json"
 	"fmt"
 
+	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
 	authtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/auth/types"
+	banktypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/bank/types"
 	govtypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/gov/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 // BankKeeper moves and reads the native balances of the spot module account.
 type BankKeeper interface {
 	SendCoins(ctx sdk.Context, from, to sdk.AccAddress, amount sdk.Coins) error
 	GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin
+	GetSupply(ctx sdk.Context, denom string) sdk.Coin
+	GetDenomMetaData(ctx sdk.Context, denom string) (banktypes.Metadata, bool)
+	SetDenomMetaData(ctx sdk.Context, denomMetaData banktypes.Metadata)
+	MintCoins(ctx sdk.Context, moduleName string, amounts sdk.Coins) error
+	BurnCoins(ctx sdk.Context, moduleName string, amounts sdk.Coins) error
+	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
+	SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 }
 
 // EVMKeeper resolves addresses and pointers and runs EVM calls outside a
@@ -31,6 +42,10 @@ type EVMKeeper interface {
 	GetCode(ctx sdk.Context, addr common.Address) []byte
 	CallEVM(ctx sdk.Context, from common.Address, to *common.Address, val *sdk.Int, data []byte) ([]byte, error)
 	StaticCallEVM(ctx sdk.Context, from sdk.AccAddress, to *common.Address, data []byte) ([]byte, error)
+	RunWithOneOffEVMInstance(ctx sdk.Context, runner func(*vm.EVM) error, logger func(string, string)) error
+	UpsertERCNativePointer(ctx sdk.Context, evm *vm.EVM, token string, metadata utils.ERCMetadata) (common.Address, error)
+	GetTransientReceipt(ctx sdk.Context, txHash common.Hash, txIndex uint64) (*evmtypes.Receipt, error)
+	SetTransientReceipt(ctx sdk.Context, txHash common.Hash, receipt *evmtypes.Receipt) error
 }
 
 // Keeper owns the PECOR engine, order engine and vault: every registered

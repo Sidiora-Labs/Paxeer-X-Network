@@ -33,8 +33,12 @@ func (k *Keeper) marketSwap(ctx sdk.Context, user, stablecoin, token common.Addr
 	if err := k.swapDeadline(cache, deadline); err != nil {
 		return SwapResult{}, err
 	}
+	params, err := k.GetParams(cache)
+	if err != nil {
+		return SwapResult{}, err
+	}
 	registeredStable := false
-	for _, token := range k.GetParams(cache).Tokens {
+	for _, token := range params.Tokens {
 		if token.Address == stablecoin && token.IsStablecoin {
 			registeredStable = true
 			break
@@ -110,20 +114,22 @@ func (k *Keeper) SwapExactOut(ctx sdk.Context, user, tokenIn, tokenOut common.Ad
 		return SwapResult{}, err
 	}
 	rail := common.HexToAddress(types.PECORAddress)
-	amountIn, err := k.QuoteExactOut(cache, rail, tokenIn, tokenOut, amountOut)
+	required, err := k.QuoteExactOut(cache, rail, tokenIn, tokenOut, sdk.NewIntFromBigInt(amountOut))
 	if err != nil {
 		return SwapResult{}, err
 	}
+	amountIn := required.BigInt()
 	if err := swapAmount(amountIn, true); err != nil {
 		return SwapResult{}, err
 	}
 	if amountIn.Cmp(maximum) > 0 {
 		return SwapResult{}, types.ErrExcessiveInput
 	}
-	gross, net, _, _, _, _, err := k.Price(cache, rail, tokenIn, tokenOut, amountIn)
+	quote, err := k.Price(cache, rail, tokenIn, tokenOut, required)
 	if err != nil {
 		return SwapResult{}, err
 	}
+	gross, net := quote.Gross.BigInt(), quote.Net.BigInt()
 	if err := swapAmount(gross, false); err != nil {
 		return SwapResult{}, err
 	}
@@ -133,14 +139,14 @@ func (k *Keeper) SwapExactOut(ctx sdk.Context, user, tokenIn, tokenOut common.Ad
 	if net.Cmp(amountOut) < 0 || gross.Cmp(amountOut) < 0 {
 		return SwapResult{}, types.ErrInsufficientOutput
 	}
-	received, err := k.pullTokens(cache, rail, tokenIn, user, amountIn)
+	cache, received, err := k.pullTokens(cache, rail, tokenIn, user, required)
 	if err != nil {
 		return SwapResult{}, err
 	}
-	if received == nil || received.Cmp(amountIn) != 0 {
+	if received.IsNil() || !received.Equal(required) {
 		return SwapResult{}, types.ErrUnsupportedInputTransfer
 	}
-	liquid, err := k.HasLiquidity(cache, tokenOut, gross)
+	liquid, err := k.HasLiquidity(cache, tokenOut, quote.Gross)
 	if err != nil {
 		return SwapResult{}, err
 	}
@@ -151,7 +157,7 @@ func (k *Keeper) SwapExactOut(ctx sdk.Context, user, tokenIn, tokenOut common.Ad
 	if err != nil {
 		return SwapResult{}, err
 	}
-	result := SwapResult{AmountIn: new(big.Int).Set(amountIn), AmountOut: new(big.Int).Set(amountOut), GrossOutput: new(big.Int).Set(gross), ExecutionPrice: price}
+	result := SwapResult{AmountIn: new(big.Int).Set(amountIn), AmountOut: new(big.Int).Set(amountOut), GrossOutput: new(big.Int).Set(gross), ExecutionPrice: price.BigInt()}
 	if err := k.settleSwap(cache, user, tokenIn, tokenOut, &result, false); err != nil {
 		return SwapResult{}, err
 	}
@@ -208,7 +214,11 @@ func (k *Keeper) SwapNative(ctx sdk.Context, user, tokenOther common.Address, am
 }
 
 func (k *Keeper) swapDeadline(ctx sdk.Context, deadline *big.Int) error {
-	if k.GetParams(ctx).SwapPaused {
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return err
+	}
+	if params.SwapPaused {
 		return types.ErrEnforcedPause
 	}
 	if err := swapAmount(deadline, false); err != nil {
@@ -254,7 +264,7 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 		return SwapResult{}, err
 	}
 	rail := common.HexToAddress(types.PECORAddress)
-	var received *big.Int
+	var pulled sdk.Int
 	var err error
 	if nativeInput {
 		converted, remainder := new(big.Int), new(big.Int)
@@ -262,23 +272,29 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 		if remainder.Sign() != 0 {
 			return SwapResult{}, types.ErrUnsupportedInputTransfer
 		}
-		received, err = k.pullNative(ctx, rail, amount)
-		if err == nil && (received == nil || received.Cmp(converted) != 0) {
+		ctx, pulled, err = k.pullNative(ctx, rail, amount)
+		if err == nil && (pulled.IsNil() || pulled.BigInt().Cmp(converted) != 0) {
 			return SwapResult{}, types.ErrUnsupportedInputTransfer
 		}
 	} else {
-		received, err = k.pullTokens(ctx, rail, input, user, amount)
+		ctx, pulled, err = k.pullTokens(ctx, rail, input, user, sdk.NewIntFromBigInt(amount))
 	}
 	if err != nil {
 		return SwapResult{}, err
 	}
+	if pulled.IsNil() {
+		return SwapResult{}, types.ErrZeroAmount
+	}
+	received := pulled.BigInt()
 	if err := swapAmount(received, true); err != nil {
 		return SwapResult{}, err
 	}
-	gross, net, feeBps, fee, impactBps, deduction, err := k.Price(ctx, rail, input, output, received)
+	quote, err := k.Price(ctx, rail, input, output, pulled)
 	if err != nil {
 		return SwapResult{}, err
 	}
+	gross, net, feeBps, fee, impactBps, deduction := quote.Gross.BigInt(), quote.Net.BigInt(), quote.FeeBps,
+		quote.FeeAmount.BigInt(), quote.ImpactBps, quote.Deduction.BigInt()
 	if err := swapAmount(gross, false); err != nil {
 		return SwapResult{}, err
 	}
@@ -294,7 +310,7 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 	if net.Cmp(minimum) < 0 || net.Cmp(gross) > 0 {
 		return SwapResult{}, types.ErrInsufficientOutput
 	}
-	liquid, err := k.HasLiquidity(ctx, output, gross)
+	liquid, err := k.HasLiquidity(ctx, output, quote.Gross)
 	if err != nil {
 		return SwapResult{}, err
 	}
@@ -305,7 +321,7 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 	if err != nil {
 		return SwapResult{}, err
 	}
-	result := SwapResult{AmountIn: new(big.Int).Set(received), AmountOut: new(big.Int).Set(net), GrossOutput: new(big.Int).Set(gross), ExecutionPrice: priceOut}
+	result := SwapResult{AmountIn: new(big.Int).Set(received), AmountOut: new(big.Int).Set(net), GrossOutput: new(big.Int).Set(gross), ExecutionPrice: priceOut.BigInt()}
 	if fee.Sign() > 0 {
 		priceIn, err := k.IndexPrice(ctx, input)
 		if err != nil {
@@ -315,13 +331,13 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 		if err != nil {
 			return SwapResult{}, err
 		}
-		volume, err := VolumeUSD(received, priceIn, token.Decimals)
+		volume, err := VolumeUSD(pulled, priceIn, token.Decimals)
 		if err != nil {
 			return SwapResult{}, err
 		}
 		result.Logs = append(result.Logs, swapLog(types.PECORAddress,
 			"TieredFeeApplied(address,address,uint256,uint256,uint256)",
-			[]common.Address{user, output}, volume, new(big.Int).SetUint64(feeBps), fee))
+			[]common.Address{user, output}, volume.BigInt(), new(big.Int).SetUint64(feeBps), fee))
 	}
 	if impactBps > 0 {
 		result.Logs = append(result.Logs, swapLog(types.PECORAddress,
@@ -337,7 +353,7 @@ func (k *Keeper) swapExactInput(ctx sdk.Context, user, input, output common.Addr
 func (k *Keeper) settleSwap(ctx sdk.Context, user, input, output common.Address, result *SwapResult, nativeOutput bool) error {
 	retained := new(big.Int).Sub(result.GrossOutput, result.AmountOut)
 	if retained.Sign() > 0 {
-		if err := k.AccrueFees(ctx, types.FeeRailSwap, output, retained); err != nil {
+		if err := k.AccrueFees(ctx, common.HexToAddress(types.PECORAddress), output, sdk.NewIntFromBigInt(retained)); err != nil {
 			return err
 		}
 	}
@@ -349,7 +365,7 @@ func (k *Keeper) settleSwap(ctx sdk.Context, user, input, output common.Address,
 	if err != nil {
 		return err
 	}
-	if err := k.pushTokens(ctx, output, user, result.AmountOut); err != nil {
+	if _, err := k.pushTokens(ctx, output, user, sdk.NewIntFromBigInt(result.AmountOut)); err != nil {
 		if nativeOutput {
 			return types.ErrNativeTransferFailed
 		}

@@ -124,7 +124,7 @@ func (e *shareEnv) pointerView(method string, args ...interface{}) interface{} {
 	nativeABI := artifacts.GetParsedABI("native")
 	input, err := nativeABI.Pack(method, args...)
 	require.NoError(e.t, err)
-	ret, err := e.app.EvmKeeper.StaticCallEVM(e.ctx, e.k.CustodyAddress(), &e.pointer, input)
+	ret, err := e.app.EvmKeeper.StaticCallEVM(e.ctx, keeper.CustodyAddress(), &e.pointer, input)
 	require.NoError(e.t, err)
 	out, err := nativeABI.Unpack(method, ret)
 	require.NoError(e.t, err)
@@ -226,7 +226,7 @@ func TestShareSupplyIsBankSupply(t *testing.T) {
 
 	var minted sdk.Int
 	logs := e.inTx(func(ctx sdk.Context, evm *vm.EVM) error {
-		shares, _, err := e.k.Deposit(ctx, evm, depositor, e.token, sdk.NewInt(100_000_000_000))
+		shares, _, err := e.k.Deposit(keeper.WithRun(ctx, &keeper.Run{EVM: evm, Gas: 30_000_000}), depositor, e.token, sdk.NewInt(100_000_000_000))
 		minted = shares
 		return err
 	})
@@ -251,7 +251,7 @@ func TestTransferredSharesWithdraw(t *testing.T) {
 	alice, bob := shareAddress("share sender"), shareAddress("share receiver")
 	e.fund(alice, 100_000_000_000)
 	e.inTx(func(ctx sdk.Context, evm *vm.EVM) error {
-		_, _, err := e.k.Deposit(ctx, evm, alice, e.token, sdk.NewInt(100_000_000_000))
+		_, _, err := e.k.Deposit(keeper.WithRun(ctx, &keeper.Run{EVM: evm, Gas: 30_000_000}), alice, e.token, sdk.NewInt(100_000_000_000))
 		return err
 	})
 
@@ -265,7 +265,7 @@ func TestTransferredSharesWithdraw(t *testing.T) {
 
 	var paid sdk.Int
 	logs := e.inTx(func(ctx sdk.Context, evm *vm.EVM) error {
-		amount, _, err := e.k.Withdraw(ctx, evm, bob, e.token, sdk.NewInt(10_000_000_000))
+		amount, _, err := e.k.Withdraw(keeper.WithRun(ctx, &keeper.Run{EVM: evm, Gas: 30_000_000}), bob, e.token, sdk.NewInt(10_000_000_000))
 		paid = amount
 		return err
 	})
@@ -282,7 +282,7 @@ func TestTransferredSharesWithdraw(t *testing.T) {
 	requireShareTransfer(t, transfers[0], e.pointer, bob, common.Address{}, big.NewInt(10_000_000_000))
 
 	e.inTx(func(ctx sdk.Context, evm *vm.EVM) error {
-		_, _, err := e.k.Withdraw(ctx, evm, bob, e.token, sdk.NewInt(1))
+		_, _, err := e.k.Withdraw(keeper.WithRun(ctx, &keeper.Run{EVM: evm, Gas: 30_000_000}), bob, e.token, sdk.NewInt(1))
 		require.ErrorIs(t, err, types.ErrERC20InsufficientBalance)
 		return nil
 	})

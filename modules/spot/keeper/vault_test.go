@@ -1,12 +1,14 @@
 package keeper_test
 
 import (
+	"encoding/json"
 	"errors"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/launchpadtest"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -17,6 +19,7 @@ import (
 	testkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/testutil/keeper"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +55,7 @@ func newVaultEnv(t *testing.T) *vaultEnv {
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	ctx, _ = ctx.CacheContext()
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := keeper.NewKeeper(key, app.BankKeeper, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, app.BankKeeper, &app.EvmKeeper, pricefeedkeeper.Keeper{})
 	ctx = launchpadtest.WithStore(ctx, key)
 
 	app.BankKeeper.SetDenomMetaData(ctx, banktypes.Metadata{
@@ -74,9 +77,20 @@ func (e *vaultEnv) register(token types.TokenParams) []*ethtypes.Log {
 	e.t.Helper()
 	registered, logs, err := e.k.RegisterToken(e.ctx, token)
 	require.NoError(e.t, err)
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(e.t, err)
 	params.Tokens = append(params.Tokens, registered)
 	require.NoError(e.t, e.k.UpdateParams(e.ctx, authority, params))
+	// The registration caller creates the share token of the new pool.
+	app := testkeeper.EVMTestApp
+	denom, _, ok := app.EvmKeeper.GetNativePointee(e.ctx, registered.Address.Hex())
+	require.True(e.t, ok)
+	metadata, ok := app.BankKeeper.GetDenomMetaData(e.ctx, denom)
+	require.True(e.t, ok)
+	require.NoError(e.t, app.EvmKeeper.RunWithOneOffEVMInstance(e.ctx, func(evm *vm.EVM) error {
+		_, err := e.k.CreateShareToken(e.ctx, evm, registered.Address, metadata.Symbol, uint8(registered.Decimals))
+		return err
+	}, func(string, string) {}))
 	return logs
 }
 
@@ -98,24 +112,25 @@ func (e *vaultEnv) donate(amount sdk.Int) {
 	e.t.Helper()
 	donor := vaultAccount("donor")
 	e.fund(donor, amount)
-	require.NoError(e.t, testkeeper.EVMTestApp.BankKeeper.SendCoins(e.ctx, e.bankAddress(donor), e.k.CustodyAddress(),
+	require.NoError(e.t, testkeeper.EVMTestApp.BankKeeper.SendCoins(e.ctx, e.bankAddress(donor), keeper.CustodyAddress(),
 		sdk.NewCoins(sdk.NewCoin(paxDenom, amount))))
 }
 
-func (e *vaultEnv) setAmount(key []byte, amount sdk.Int) {
+func (e *vaultEnv) setRecord(key []byte, record any) {
 	e.t.Helper()
-	bz, err := amount.Marshal()
+	bz, err := json.Marshal(record)
 	require.NoError(e.t, err)
 	e.ctx.KVStore(e.key).Set(key, bz)
 }
 
 func (e *vaultEnv) setEscrow(token common.Address, amount sdk.Int) {
-	e.setAmount(append(append([]byte{}, types.EscrowPrefix...), token.Bytes()...), amount)
+	e.setRecord(append(append([]byte{}, types.EscrowPrefix...), token.Bytes()...),
+		types.TokenEscrow{Token: token, Amount: amount})
 }
 
 func (e *vaultEnv) setAccrual(rail types.FeeRail, token common.Address, amount sdk.Int) {
 	key := append(append([]byte{}, types.FeeAccrualPrefix...), byte(rail))
-	e.setAmount(append(key, token.Bytes()...), amount)
+	e.setRecord(append(key, token.Bytes()...), types.FeeAccrual{Rail: rail, Token: token, Amount: amount})
 }
 
 func (e *vaultEnv) shares(holder common.Address) sdk.Int {
@@ -160,13 +175,11 @@ func requireAbiError(t *testing.T, err error, want *types.AbiError) {
 	require.Equal(t, want.Data(), got.Data())
 }
 
-func word(value int64) []byte { return common.LeftPadBytes(big.NewInt(value).Bytes(), 32) }
-
 func intWord(value sdk.Int) []byte { return common.LeftPadBytes(value.BigInt().Bytes(), 32) }
 
 func addressTopic(address common.Address) common.Hash { return common.BytesToHash(address.Bytes()) }
 
-func requireLog(t *testing.T, log *ethtypes.Log, topic0 string, indexed []common.Address, data ...[]byte) {
+func requireVaultLog(t *testing.T, log *ethtypes.Log, topic0 string, indexed []common.Address, data ...[]byte) {
 	t.Helper()
 	require.Equal(t, vaultAddr, log.Address)
 	topics := []common.Hash{common.HexToHash(topic0)}
@@ -237,7 +250,8 @@ func TestNAV(t *testing.T) {
 
 	// A token without its own cap may use the whole spendable balance.
 	require.Equal(t, uint64(types.DefaultMaxUtilizationBps), keeper.MaxUtilizationBps(types.TokenParams{}))
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.Tokens[0].MaxUtilizationBps = types.DefaultMaxUtilizationBps
 	require.NoError(t, e.k.UpdateParams(e.ctx, authority, params))
 	ok, err = e.k.HasLiquidity(e.ctx, e.pax, e6(99_500))
@@ -283,8 +297,8 @@ func TestShareMint(t *testing.T) {
 	require.Equal(t, e6(100_000), book.TotalDeposited)
 	require.True(t, book.MinimumSharesLocked)
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, word(0), intWord(e6(100_000)))
-	requireLog(t, logs[1], depositTopic0, []common.Address{e.pax, first}, intWord(e6(100_000)), intWord(e6(100_000)))
+	requireVaultLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, word(0), intWord(e6(100_000)))
+	requireVaultLog(t, logs[1], depositTopic0, []common.Address{e.pax, first}, intWord(e6(100_000)), intWord(e6(100_000)))
 
 	// At supply 100,000e6 and NAV 110,000e6 a deposit of 11,000e6 mints 10,000e6.
 	e.donate(e6(10_000))
@@ -308,8 +322,8 @@ func TestShareMint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, e6(1_000), minted)
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(121_000)), intWord(e6(122_100)))
-	requireLog(t, logs[1], nativeDepositTopic0, []common.Address{second}, intWord(e6(1_100)), intWord(e6(122_100)))
+	requireVaultLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(121_000)), intWord(e6(122_100)))
+	requireVaultLog(t, logs[1], nativeDepositTopic0, []common.Address{second}, intWord(e6(1_100)), intWord(e6(122_100)))
 
 	_, _, err = e.k.DepositBatch(e.ctx, second, []common.Address{e.pax, e.pax}, []sdk.Int{sdk.OneInt()})
 	requireAbiError(t, err, types.ErrInvalidArrayLength)
@@ -320,9 +334,10 @@ func TestShareMint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []sdk.Int{e6(1_000), e6(1_000)}, batch)
 	require.Len(t, logs, 4)
-	requireLog(t, logs[3], depositTopic0, []common.Address{e.pax, second}, intWord(e6(1_100)), intWord(e6(124_300)))
+	requireVaultLog(t, logs[3], depositTopic0, []common.Address{e.pax, second}, intWord(e6(1_100)), intWord(e6(124_300)))
 
-	params := e.k.GetParams(e.ctx)
+	params, err := e.k.GetParams(e.ctx)
+	require.NoError(t, err)
 	params.Tokens[0].Paused = true
 	require.NoError(t, e.k.UpdateParams(e.ctx, authority, params))
 	e.fund(second, e6(1))
@@ -361,9 +376,9 @@ func TestShareBurn(t *testing.T) {
 	require.Equal(t, e6(110_000), book.Reserves)
 	require.Equal(t, e6(11_000), book.TotalWithdrawn)
 	require.Len(t, logs, 3)
-	requireLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(121_000)), intWord(e6(110_000)))
-	requireLog(t, logs[1], lpWithdrawalTopic0, []common.Address{e.pax, provider}, intWord(e6(10_000)), intWord(e6(11_000)))
-	requireLog(t, logs[2], withdrawalTopic0, []common.Address{e.pax, provider}, intWord(e6(11_000)), intWord(e6(110_000)))
+	requireVaultLog(t, logs[0], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(121_000)), intWord(e6(110_000)))
+	requireVaultLog(t, logs[1], lpWithdrawalTopic0, []common.Address{e.pax, provider}, intWord(e6(10_000)), intWord(e6(11_000)))
+	requireVaultLog(t, logs[2], withdrawalTopic0, []common.Address{e.pax, provider}, intWord(e6(11_000)), intWord(e6(110_000)))
 
 	// Withdraw rounds the payout down: 1 share at 1.1 pays 1.
 	paid, _, err = e.k.Withdraw(e.ctx, provider, e.pax, sdk.OneInt())
@@ -390,7 +405,7 @@ func TestShareBurn(t *testing.T) {
 		require.Equal(t, shares.SubRaw(c.burned), e2.shares(provider))
 		require.Len(t, logs, 2)
 		reserves := e2.reserves(e2.pax)
-		requireLog(t, logs[1], nativeWithdrawalTopic0, []common.Address{recipient}, word(c.amount), intWord(reserves))
+		requireVaultLog(t, logs[1], nativeWithdrawalTopic0, []common.Address{recipient}, word(c.amount), intWord(reserves))
 	}
 	require.Equal(t, sdk.NewInt(24), e2.uhpx(recipient))
 }
@@ -409,8 +424,8 @@ func TestTradeUpdatesReserves(t *testing.T) {
 	require.Equal(t, e6(51_000), e.reserves(usdl))
 	require.Equal(t, sdk.NewInt(98_006_000_000), e.reserves(e.pax))
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], reservesUpdatedTopic0, []common.Address{usdl}, intWord(e6(50_000)), intWord(e6(51_000)))
-	requireLog(t, logs[1], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(100_000)),
+	requireVaultLog(t, logs[0], reservesUpdatedTopic0, []common.Address{usdl}, intWord(e6(50_000)), intWord(e6(51_000)))
+	requireVaultLog(t, logs[1], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(100_000)),
 		intWord(sdk.NewInt(98_006_000_000)))
 
 	_, err = e.k.ApplyTrade(e.ctx, usdl, e6(1), e.pax, e6(98_007))
@@ -471,9 +486,9 @@ func TestDonationDoesNotInflateShares(t *testing.T) {
 	logs, err = e.k.SyncReserves(e.ctx, authority, e.pax)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], reservesSyncTopic0, []common.Address{e.pax}, intWord(e6(110_000)), intWord(e6(160_000)),
+	requireVaultLog(t, logs[0], reservesSyncTopic0, []common.Address{e.pax}, intWord(e6(110_000)), intWord(e6(160_000)),
 		intWord(e6(50_000)))
-	requireLog(t, logs[1], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(110_000)), intWord(e6(160_000)))
+	requireVaultLog(t, logs[1], reservesUpdatedTopic0, []common.Address{e.pax}, intWord(e6(110_000)), intWord(e6(160_000)))
 	require.Equal(t, e6(160_000), e.nav())
 	book, err := e.k.GetBook(e.ctx, e.pax)
 	require.NoError(t, err)
@@ -488,7 +503,7 @@ func TestDonationDoesNotInflateShares(t *testing.T) {
 	logs, err = e.k.SyncReserves(e.ctx, authority, e.pax)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], reservesSyncTopic0, []common.Address{e.pax}, intWord(e6(160_000)), intWord(e6(150_000)),
+	requireVaultLog(t, logs[0], reservesSyncTopic0, []common.Address{e.pax}, intWord(e6(160_000)), intWord(e6(150_000)),
 		word(0))
 	require.Equal(t, e6(150_000), e.reserves(e.pax))
 
@@ -517,7 +532,7 @@ func TestTokenParamsEmitLogs(t *testing.T) {
 	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx))
 	ctx, _ = ctx.CacheContext()
 	key := sdk.NewKVStoreKey(types.StoreKey)
-	k := keeper.NewKeeper(key, app.BankKeeper, &app.EvmKeeper, nil)
+	k := keeper.NewKeeper(key, app.BankKeeper, &app.EvmKeeper, pricefeedkeeper.Keeper{})
 	ctx = launchpadtest.WithStore(ctx, key)
 	e := &vaultEnv{t: t, ctx: ctx, key: key, k: k}
 
@@ -545,8 +560,8 @@ func TestTokenParamsEmitLogs(t *testing.T) {
 	logs := e.register(types.TokenParams{Address: sid, Kind: types.TokenKindNative, Decimals: 6,
 		MarketID: types.SIDMarketID, MaxUtilizationBps: types.OpeningTokenMaxUtilizationBps})
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], tokenRegisteredTopic0, []common.Address{sid}, word(6), word(0))
-	requireLog(t, logs[1], utilizationCapTopic0, []common.Address{sid}, word(types.OpeningTokenMaxUtilizationBps))
+	requireVaultLog(t, logs[0], tokenRegisteredTopic0, []common.Address{sid}, word(6), word(0))
+	requireVaultLog(t, logs[1], utilizationCapTopic0, []common.Address{sid}, word(types.OpeningTokenMaxUtilizationBps))
 	book, err := k.GetBook(ctx, sid)
 	require.NoError(t, err)
 	require.Equal(t, uint8(6), book.Decimals)
@@ -557,7 +572,9 @@ func TestTokenParamsEmitLogs(t *testing.T) {
 		MaxUtilizationBps: types.OpeningTokenMaxUtilizationBps})
 	requireAbiError(t, err, types.ErrTokenAlreadyRegistered)
 
-	before := k.GetParams(ctx).Tokens
+	params, err := k.GetParams(ctx)
+	require.NoError(t, err)
+	before := params.Tokens
 	after := append([]types.TokenParams{}, before...)
 	require.Empty(t, keeper.TokenParamLogs(ctx, before, after))
 
@@ -565,12 +582,12 @@ func TestTokenParamsEmitLogs(t *testing.T) {
 	after[0].MaxUtilizationBps = 7_500
 	logs = keeper.TokenParamLogs(ctx, before, after)
 	require.Len(t, logs, 2)
-	requireLog(t, logs[0], tokenPauseTopic0, []common.Address{sid}, word(1))
-	requireLog(t, logs[1], utilizationCapTopic0, []common.Address{sid}, word(7_500))
+	requireVaultLog(t, logs[0], tokenPauseTopic0, []common.Address{sid}, word(1))
+	requireVaultLog(t, logs[1], utilizationCapTopic0, []common.Address{sid}, word(7_500))
 
 	unpaused := append([]types.TokenParams{}, after...)
 	unpaused[0].Paused = false
 	logs = keeper.TokenParamLogs(ctx, after, unpaused)
 	require.Len(t, logs, 1)
-	requireLog(t, logs[0], tokenPauseTopic0, []common.Address{sid}, word(0))
+	requireVaultLog(t, logs[0], tokenPauseTopic0, []common.Address{sid}, word(0))
 }
