@@ -109,7 +109,7 @@ The spot venue (contracts/spot.md, heading "Fees") keeps the PECOR per-trade fee
 | orderFeeBps | 4 | maker, resting fills at 0x1022 and 0x1023 | at most MAX_ORDER_FEE_BPS |
 | tier1FeeBps | 0 | added from 10,000 USD of trade volume | base plus tiers at most 200 |
 | tier2FeeBps | 0 | added on top from 100,000 USD of trade volume | at least tier1FeeBps |
-| priceImpactScalarBps | 100 | impact deduction, capped at 500 bps | at most 10000 |
+| priceImpactScalarBps | 100 | swap-rail impact deduction, capped at MAX_IMPACT_BPS 500 | at most MAX_IMPACT_BPS 500 (`ScalarTooHigh()`) |
 
 - The fee and the impact deduction stay in the vault as an accrual of the output token (contracts/spot.md, heading "Fees") and are collected by feeCollector; there is no `spot_fees` module account and no maker rebate.
 - The opening pairs are PAX/USDL and SID/USDL (contracts/spot.md, heading "Opening pairs").
