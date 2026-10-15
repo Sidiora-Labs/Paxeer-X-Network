@@ -963,3 +963,11 @@ exit = 1
 log = "fleet/logs/3.2.14-verify-1.log"
 observed = "events_test.go covers every perps event through the precompile and EndBlock, but the test binary did not compile: modules/perps/keeper is mid-reconciliation and precompiles/launchpad on this base predates 2.2.1; the handlers of 3.2.3 through 3.2.5 and EndBlock of 3.2.9 are assumed."
 assumption = "Rerun after the perps keeper reconciliation and 3.2.3 through 3.2.9 land."
+
+[finding.2.2.6]
+revision = "6558bfcfa8453c3b5c34750c40cb138375c1d48f"
+command = "go test ./precompiles/launchpad/... -run 'TestFeeRolesServeEverySelector'"
+exit = 1
+log = "fleet/logs/2.2.6-verify-2.log"
+observed = "fees.go registers the FeesRouter and FeeAccumulator roles and builds with the 2.2.1 runner merged in, but the package test binary does not compile because launchpad_test.go still names the v6.10 API and the worktree lacks the native archives; Run never sets call.nested, and the FeeAccumulator accounting views and the FEES_ROUTER_ROLE entries have no keeper record."
+assumption = "The launchpad precompile reconciliation pass wires the nested caller and reruns this; the accounting views and keeper payAirdrop liabilities need a ruling."
