@@ -603,3 +603,27 @@ exit = 1
 log = "fleet/logs/3.1.19-verify-1.log"
 observed = "Package build fails on symbols owned by 3.1.5, 3.1.20 and 5.1.9; the perps keeper test binary also needs the native sandbox archive, absent in the fleet tree."
 assumption = "Rerun after the reconciliation pass with the archives built once in the worktree."
+
+[finding.3.1.4]
+revision = "6be2871e89298de63ae58e825ee1d98d1b051d23"
+command = "go test ./modules/perps/keeper/ -run 'TestMargin'"
+exit = 1
+log = "fleet/logs/3.1.4-verify-1.log"
+observed = "Package build fails on symbols owned by 3.1.5 and 3.1.20; margin.go and its test report no errors of their own; Equity carries a private unsettledFunding helper that 3.1.12 duplicates as FundingOwed."
+assumption = "The reconciliation pass keeps one funding helper; rerun afterwards."
+
+[finding.5.1.9]
+revision = "d2580b2b5065dae9a2b809f81eaf36767d7252dc"
+command = "go test ./modules/pricefeed/keeper/ -run 'TestGetPrice'"
+exit = 1
+log = "fleet/logs/5.1.9-verify-1.log"
+observed = "The non-test package builds; the test binary imports the node app, whose launchpad keeper did not compile on this revision."
+assumption = "Rerun once the launchpad keeper reconciliation lands; Price and GetPrice follow contracts/pricefeed.md exactly."
+
+[finding.4.1.13]
+revision = "4b2a3e0cb47746b5e3f71d130fded64c03e155eb"
+command = "go test ./modules/spot/keeper/ -run '^(TestQuoteUtilizationFields)$'"
+exit = 1
+log = "fleet/logs/4.1.13-verify-1.log"
+observed = "modules/spot/keeper did not exist on the base, so Keeper, Convert, VolumeUSD, Price, QuoteExactOut, Spendable and TWAP are all assumed."
+assumption = "Rerun after 4.1.4, 4.1.5, 4.1.6, 4.1.10 and 4.1.12 land and a spot keeper reconciliation pass settles the assumed signatures."
