@@ -166,6 +166,7 @@ func (p PrecompileExecutor) placeCompat(ctx sdk.Context, method *abi.Method, cal
 	if err != nil {
 		return nil, err
 	}
+	ctx = accountResume(ctx, evm)
 	tier, err := p.keeper.FeeTier(ctx, caller)
 	if err != nil {
 		return nil, err
