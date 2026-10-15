@@ -7424,7 +7424,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.2.21]
 title = "Add the retirement runtime"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["2.0.5"]
