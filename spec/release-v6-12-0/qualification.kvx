@@ -182,3 +182,10 @@ command = "go build ./shared/... ./core/indexer/... ./protocol/..."
 exit_code = 1
 log_path = "fleet/logs/2.3.6-build-1.log"
 observed_and_assumption = "The manifest gate passes but the build command fails at protocol/coverage/measure.go because the embed pattern cmd/measure/*.go matches no files in the Launch-x checkout, the same defect recorded for the active-address task, and the activation height stays at the v6.11 value because the v6.12.0 upgrade height is an operator input. Assumption: the measure command is restored by the fix of that finding and the build command is rerun unchanged; the activation height is set by the release task that receives the upgrade height."
+
+[finding.2.3.4]
+revision = "8809336948050d0933dfdd981b8f0869b171f9cc"
+command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --lib capabilities"
+exit_code = 0
+log_path = "fleet/logs/2.3.4-verify-1.log"
+observed_and_assumption = "The gate exits 0 while running zero tests, because the capabilities module belongs to the gateway binary and a --lib filter selects nothing, so the launchpad probe test only compiles under --all-targets and never runs. Assumption: the verify command is corrected to the binary target and the task is qualified on that run."
