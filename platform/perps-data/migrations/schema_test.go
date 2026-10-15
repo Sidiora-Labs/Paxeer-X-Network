@@ -11,6 +11,7 @@ import (
 
 const (
 	pow255        = "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+	pow256        = "115792089237316195423570985008687907853269984665640564039457584007913129639936"
 	receiptKinds  = "receipt_kind text NOT NULL CHECK (receipt_kind IN ('tx', 'perps_endblock', 'spot_endblock', 'activation', 'block_event'))"
 	txFromCheck   = "CHECK (receipt_kind = 'tx' OR tx_from IS NULL)"
 	factPK        = "PRIMARY KEY (block, tx_index, log_index, sub)"
@@ -157,6 +158,7 @@ type schema struct {
 	tables  map[string]*table
 	indexes []index
 	views   map[string]string
+	domains map[string]string
 }
 
 func (s *schema) indexSet(tableName string) []string {
@@ -175,11 +177,51 @@ func (s *schema) indexSet(tableName string) []string {
 }
 
 var (
-	createTable  = regexp.MustCompile(`(?s)^CREATE TABLE perps\.(\w+) \((.*)\)$`)
-	createIndex  = regexp.MustCompile(`^CREATE (UNIQUE )?INDEX (\w+) ON perps\.(\w+) (\(.*\))$`)
-	createView   = regexp.MustCompile(`(?s)^CREATE VIEW perps\.(\w+) AS\n(.*)$`)
-	createSchema = "CREATE SCHEMA IF NOT EXISTS perps"
+	createTable    = regexp.MustCompile(`(?s)^CREATE TABLE perps\.(\w+) \((.*)\)$`)
+	createIndex    = regexp.MustCompile(`^CREATE (UNIQUE )?INDEX (\w+) ON perps\.(\w+) (\(.*?\)(?: WHERE .+)?)$`)
+	createView     = regexp.MustCompile(`(?s)^CREATE VIEW perps\.(\w+) AS\n(.*)$`)
+	createDomain   = regexp.MustCompile(`^CREATE DOMAIN perps\.(\w+) AS (.*)$`)
+	createFunction = regexp.MustCompile(`(?s)^CREATE FUNCTION perps\.\w+\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$\n.*\$\$$`)
+	createTrigger  = regexp.MustCompile(`^CREATE TRIGGER \w+ (BEFORE|AFTER) [A-Z ]+ ON perps\.\w+ FOR EACH ROW EXECUTE FUNCTION perps\.\w+\(\)$`)
+	revoke         = regexp.MustCompile(`^REVOKE ALL ON perps\.\w+ FROM PUBLIC$`)
+	dollarTag      = regexp.MustCompile(`^\$(?:[A-Za-z_]\w*)?\$`)
+	createSchema   = "CREATE SCHEMA IF NOT EXISTS perps"
 )
+
+// splitStatements splits a migration file on the semicolons that end its
+// statements, skipping semicolons inside single-quoted strings and
+// dollar-quoted bodies such as plpgsql functions.
+func splitStatements(sql string) ([]string, error) {
+	var out []string
+	start, quote := 0, ""
+	for i := 0; i < len(sql); i++ {
+		switch {
+		case quote == "'":
+			if sql[i] == '\'' {
+				quote = ""
+			}
+		case quote != "":
+			if strings.HasPrefix(sql[i:], quote) {
+				i += len(quote) - 1
+				quote = ""
+			}
+		case sql[i] == '\'':
+			quote = "'"
+		case sql[i] == '$':
+			if tag := dollarTag.FindString(sql[i:]); tag != "" {
+				quote = tag
+				i += len(tag) - 1
+			}
+		case sql[i] == ';':
+			out = append(out, sql[start:i])
+			start = i + 1
+		}
+	}
+	if quote != "" {
+		return nil, fmt.Errorf("unterminated quote %s", quote)
+	}
+	return append(out, sql[start:]), nil
+}
 
 func splitTopLevel(body string) []string {
 	var parts []string
@@ -224,15 +266,26 @@ func loadSchema(t *testing.T) *schema {
 	if err != nil {
 		t.Fatalf("glob embedded migrations: %v", err)
 	}
-	s := &schema{files: files, tables: map[string]*table{}, views: map[string]string{}}
+	s := &schema{files: files, tables: map[string]*table{}, views: map[string]string{}, domains: map[string]string{}}
 	for _, file := range files {
 		raw, err := fs.ReadFile(FS, file)
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
-		for _, stmt := range strings.Split(string(raw), ";") {
+		stmts, err := splitStatements(string(raw))
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		for _, stmt := range stmts {
 			stmt = strings.TrimSpace(stmt)
-			if stmt == "" || stmt == createSchema {
+			if stmt == "" || stmt == createSchema || createFunction.MatchString(stmt) || createTrigger.MatchString(stmt) || revoke.MatchString(stmt) {
+				continue
+			}
+			if m := createDomain.FindStringSubmatch(stmt); m != nil {
+				if _, dup := s.domains[m[1]]; dup {
+					t.Fatalf("%s: domain perps.%s created twice", file, m[1])
+				}
+				s.domains[m[1]] = m[2]
 				continue
 			}
 			if m := createTable.FindStringSubmatch(stmt); m != nil {
@@ -263,9 +316,9 @@ func loadSchema(t *testing.T) *schema {
 func expectedArgDef(name, typ string) (prefix string, check string) {
 	switch typ {
 	case "u":
-		return "numeric(78,0)", fmt.Sprintf("CHECK (%[1]s = trunc(%[1]s) AND %[1]s >= 0)", name)
+		return "perps.uint256", ""
 	case "s":
-		return "numeric(78,0)", fmt.Sprintf("CHECK (%[1]s = trunc(%[1]s) AND %[1]s >= -%[2]s AND %[1]s < %[2]s)", name, pow255)
+		return "perps.int256", ""
 	case "u8":
 		return "smallint", fmt.Sprintf("CHECK (%[1]s >= 0 AND %[1]s <= 255)", name)
 	case "u64":
@@ -302,6 +355,25 @@ func TestSchemaFiles(t *testing.T) {
 	}
 
 	t.Run("fact_columns", func(t *testing.T) {
+		wantDomains := map[string]string{
+			"uint256": "numeric CHECK (VALUE = trunc(VALUE) AND VALUE >= 0 AND VALUE < " + pow256 + ")",
+			"int256":  "numeric CHECK (VALUE = trunc(VALUE) AND VALUE >= -" + pow255 + " AND VALUE < " + pow255 + ")",
+		}
+		if len(s.domains) != len(wantDomains) {
+			t.Errorf("domains %v, want %v", s.domains, wantDomains)
+		}
+		for name, want := range wantDomains {
+			if got := s.domains[name]; got != want {
+				t.Errorf("domain perps.%s = %q, want %q", name, got, want)
+			}
+		}
+		for _, tb := range s.tables {
+			for _, c := range tb.columns {
+				if strings.Contains(c.def, "numeric(78,0)") {
+					t.Errorf("perps.%s.%s = %q, amounts use perps.uint256 or perps.int256", tb.name, c.name, c.def)
+				}
+			}
+		}
 		for _, ft := range factTables {
 			tb, ok := s.tables[ft.name]
 			if !ok {
@@ -356,7 +428,7 @@ func TestSchemaFiles(t *testing.T) {
 			}
 		}
 		amount, _ := s.tables["trade_settlements"].column("size_usd")
-		if amount.def != "numeric(78,0) NOT NULL CHECK (size_usd = trunc(size_usd) AND size_usd >= 0)" {
+		if amount.def != "perps.uint256 NOT NULL" {
 			t.Errorf("perps.trade_settlements.size_usd = %q", amount.def)
 		}
 		nullable, _ := s.tables["index_prices"].column("index_price")
@@ -445,13 +517,13 @@ func TestSchemaFiles(t *testing.T) {
 			"cursors.hash":                   "bytea NOT NULL CHECK (octet_length(hash) = 32)",
 			"cursors.updated_at":             "timestamptz NOT NULL DEFAULT now()",
 			"writer_lease.name":              "text PRIMARY KEY",
-			"markets.market_id":              "numeric(78,0) PRIMARY KEY CHECK (market_id = trunc(market_id) AND market_id >= 0)",
+			"markets.market_id":              "perps.uint256 PRIMARY KEY",
 			"markets.symbol":                 "text NOT NULL UNIQUE",
 			"markets.source":                 "text NOT NULL CHECK (source IN ('seed', 'chain'))",
 			"markets.sz_decimals":            "smallint NOT NULL CHECK (sz_decimals >= 0)",
 			"fee_config.id":                  "smallint PRIMARY KEY CHECK (id = 1)",
-			"fee_config.taker_fee_ppm":       "numeric(78,0) NOT NULL CHECK (taker_fee_ppm = trunc(taker_fee_ppm) AND taker_fee_ppm >= 0)",
-			"fee_config.insurance_share_ppm": "numeric(78,0) NOT NULL CHECK (insurance_share_ppm = trunc(insurance_share_ppm) AND insurance_share_ppm >= 0)",
+			"fee_config.taker_fee_ppm":       "perps.uint256 NOT NULL",
+			"fee_config.insurance_share_ppm": "perps.uint256 NOT NULL",
 		}
 		for name, cols := range want {
 			tb, ok := s.tables[name]
@@ -541,8 +613,8 @@ func TestSchemaFiles(t *testing.T) {
 				t.Errorf("perps.%s indexes %v, want %v", w.name, got, w.indexes)
 			}
 			for _, c := range tb.columns {
-				if strings.HasPrefix(c.def, "numeric(78,0)") && !strings.Contains(c.def, fmt.Sprintf("CHECK (%[1]s = trunc(%[1]s)", c.name)) {
-					t.Errorf("perps.%s.%s amount column lacks the fraction check: %q", w.name, c.name, c.def)
+				if strings.HasPrefix(c.def, "numeric") && c.name != "win_rate" {
+					t.Errorf("perps.%s.%s amount column is not typed perps.uint256 or perps.int256: %q", w.name, c.name, c.def)
 				}
 				if c.name == "account" && c.def != "bytea NOT NULL CHECK (octet_length(account) = 20)" {
 					t.Errorf("perps.%s.account = %q", w.name, c.def)
@@ -586,7 +658,7 @@ func TestSchemaFiles(t *testing.T) {
 				t.Errorf("account_ledger branch %d lacks the common keys", i)
 			}
 		}
-		if !strings.Contains(branches[0], "amount, 0::numeric(78,0) AS position_id, kind IN ('withdrawn', 'transferred_out') AS is_debit") {
+		if !strings.Contains(branches[0], "amount, 0::perps.uint256 AS position_id, kind IN ('withdrawn', 'transferred_out') AS is_debit") {
 			t.Errorf("account_ledger collateral branch columns differ: %q", branches[0])
 		}
 	})

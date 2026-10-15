@@ -432,14 +432,13 @@ func TestMigrate(t *testing.T) {
 		if err := execRolledBack(t, db, settlementInsert, "1"); err != nil {
 			t.Fatalf("integral size_usd refused: %v", err)
 		}
-		wantCheckViolation(t, execRolledBack(t, db, settlementInsert, "1.5"), "trade_settlements_size_usd_check")
-		var typ string
-		var precision, scale int
-		if err := db.QueryRow(`SELECT data_type, numeric_precision, numeric_scale FROM information_schema.columns WHERE table_schema = 'perps' AND table_name = 'trade_settlements' AND column_name = 'size_usd'`).Scan(&typ, &precision, &scale); err != nil {
+		wantCheckViolation(t, execRolledBack(t, db, settlementInsert, "1.5"), "uint256_check")
+		var typ, domainSchema, domainName string
+		if err := db.QueryRow(`SELECT data_type, domain_schema, domain_name FROM information_schema.columns WHERE table_schema = 'perps' AND table_name = 'trade_settlements' AND column_name = 'size_usd'`).Scan(&typ, &domainSchema, &domainName); err != nil {
 			t.Fatalf("size_usd type: %v", err)
 		}
-		if typ != "numeric" || precision != 78 || scale != 0 {
-			t.Fatalf("size_usd is %s(%d,%d), want numeric(78,0)", typ, precision, scale)
+		if typ != "numeric" || domainSchema != "perps" || domainName != "uint256" {
+			t.Fatalf("size_usd is %s over domain %s.%s, want numeric over domain perps.uint256", typ, domainSchema, domainName)
 		}
 	})
 

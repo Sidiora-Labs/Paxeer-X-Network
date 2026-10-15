@@ -80,11 +80,11 @@ Every fact table has these columns in addition to its argument columns:
 | account | bytea (20 bytes) | the account of the row: the indexed account argument named in section 6, else the venue module address |
 | tx_from | bytea (20 bytes) null | transaction sender for receipt_kind tx; null for every other receipt kind |
 
-Primary key (block, tx_index, log_index, sub). Unique index (tx_hash, log_index, sub). Unique index (row_id). Indexes (block_time), (account, block). Amount columns are `numeric(78,0)` with `CHECK (x = trunc(x))`; unsigned columns add `CHECK (x >= 0)`; the signed columns named in section 6 carry `CHECK (x >= -2^255 AND x < 2^255)`. Address columns are 20-byte bytea with a length check. Rows are append-only; only a rewind or a replay deletes them.
+Primary key (block, tx_index, log_index, sub). Unique index (tx_hash, log_index, sub). Unique index (row_id). Indexes (block_time), (account, block). Amount columns are typed with a domain over unconstrained numeric, so a fraction reaches the check instead of being rounded to the column scale: unsigned columns are `perps.uint256` with `CHECK (VALUE = trunc(VALUE) AND VALUE >= 0 AND VALUE < 2^256)`; the signed columns named in section 6 are `perps.int256` with `CHECK (VALUE = trunc(VALUE) AND VALUE >= -2^255 AND VALUE < 2^255)`; both domains are created by the facts migration with the bounds written as exact integer literals. Address columns are 20-byte bytea with a length check. Rows are append-only; only a rewind or a replay deletes them.
 
 ### Fact tables
 
-Argument columns are the event arguments in snake_case in signature order, typed numeric(78,0) for integers, smallint for uint8, boolean for bool, bytea (20 bytes) for address, bytea (16 bytes) for bytes16, bytea for bytes, bigint for uint64.
+Argument columns are the event arguments in snake_case in signature order, typed perps.uint256 for unsigned integers and perps.int256 for signed integers, smallint for uint8, boolean for bool, bytea (20 bytes) for address, bytea (16 bytes) for bytes16, bytea for bytes, bigint for uint64.
 
 | table | event | kind | argument columns | indexes |
 | --- | --- | --- | --- | --- |
@@ -166,11 +166,11 @@ Every log of an address of section 1 that has no decoder, failed decoding or fai
 
 #### perps.protocol_events
 
-One row per decoded log: the common columns plus event_name text, market_id numeric(78,0) null, args jsonb holding the decimal strings of the arguments. Indexes (event_name, block), (account, block), (market_id, block).
+One row per decoded log: the common columns plus event_name text, market_id perps.uint256 null, args jsonb holding the decimal strings of the arguments. Indexes (event_name, block), (account, block), (market_id, block).
 
 #### perps.tx_actions
 
-One row per log or block event that maps to an explorer action (section 16): the common columns plus action text, symbol text, side text, price numeric(78,0), size numeric(78,0). Indexes (block desc, tx_index desc, log_index desc), (account, block desc), (symbol, block desc).
+One row per log or block event that maps to an explorer action (section 16): the common columns plus action text, symbol text, side text, price perps.uint256, size perps.uint256. Indexes (block desc, tx_index desc, log_index desc), (account, block desc), (symbol, block desc).
 
 ### Chain tables
 
@@ -179,8 +179,8 @@ One row per log or block event that maps to an explorer action (section 16): the
 | perps.blocks | number bigint, hash bytea, parent_hash bytea, time timestamptz, proposer text (upper-case hex of the CometBFT header ProposerAddress), tx_count integer | primary key number; unique hash |
 | perps.cursors | name text, height bigint, hash bytea, updated_at timestamptz | primary key name; the indexer uses name head |
 | perps.writer_lease | name text, holder text, expires_at timestamptz | primary key name; one writer at a time |
-| perps.markets | market_id numeric(78,0), symbol text, name text, oracle_symbol text, sz_decimals smallint, px_decimals smallint, max_leverage numeric(78,0), maintenance_margin_bps numeric(78,0), max_open_interest numeric(78,0), enabled boolean, source text (seed or chain), refreshed_block bigint null | primary key market_id; unique symbol |
-| perps.fee_config | id smallint (always 1), taker_fee_ppm, maker_fee_ppm, liquidation_fee_ppm, insurance_share_ppm numeric(78,0), refreshed_block bigint | primary key id |
+| perps.markets | market_id perps.uint256, symbol text, name text, oracle_symbol text, sz_decimals smallint, px_decimals smallint, max_leverage perps.uint256, maintenance_margin_bps perps.uint256, max_open_interest perps.uint256, enabled boolean, source text (seed or chain), refreshed_block bigint null | primary key market_id; unique symbol |
+| perps.fee_config | id smallint (always 1), taker_fee_ppm, maker_fee_ppm, liquidation_fee_ppm, insurance_share_ppm perps.uint256, refreshed_block bigint | primary key id |
 
 perps.markets and perps.fee_config are written by the seed migration and the startup refresh of section 11; a rewind never deletes them.
 
@@ -217,7 +217,7 @@ Projection rules:
 | --- | --- |
 | perps.account_ledger | the union of collateral_events (entry_type 0 deposited, 1 withdrawn, 2 transferred_in, 3 transferred_out; position_id 0), fees (entry_type 4), funding_payments (entry_type 5) and trade_settlements (entry_type 6), each with account, token (USDL), amount, position_id, is_debit and the common keys |
 
-All amount columns of projections are numeric(78,0) in the raw decimals of the source event; scaling happens only in the gateway responses. No candle table exists.
+All amount columns of projections are perps.uint256, or perps.int256 when signed, in the raw decimals of the source event; scaling happens only in the gateway responses. No candle table exists.
 
 ### Account tables
 
@@ -226,10 +226,10 @@ Added by migrations/0004_accounts.sql; these rows are written by the account rou
 | table | columns | keys and indexes |
 | --- | --- | --- |
 | perps.auth_challenges | nonce bytea (32 bytes), address bytea, message text, issued_at timestamptz, expires_at timestamptz, used_at timestamptz null | primary key nonce; (address, issued_at) |
-| perps.user_alerts | id bigserial, address bytea, alert_type text, market_id numeric(78,0) null, threshold numeric null, enabled boolean, triggered_at timestamptz null, created_at timestamptz | primary key id; (address) |
-| perps.referrals | address bytea, referral_code text null, referred_by bytea null, applied_at timestamptz null, total_earned numeric(78,0) | primary key address; unique referral_code; (referred_by) |
-| perps.referral_tiers | tier text, min_referrals integer, min_volume numeric(78,0), reward_bps integer, fee_discount_bps integer | primary key tier |
-| perps.competitions | id bigserial, name text, description text null, metric text (pnl, volume), start_at timestamptz, end_at timestamptz, prize_pool numeric(78,0), status text | primary key id; (status, start_at) |
+| perps.user_alerts | id bigserial, address bytea, alert_type text, market_id perps.uint256 null, threshold numeric null, enabled boolean, triggered_at timestamptz null, created_at timestamptz | primary key id; (address) |
+| perps.referrals | address bytea, referral_code text null, referred_by bytea null, applied_at timestamptz null, total_earned perps.uint256 | primary key address; unique referral_code; (referred_by) |
+| perps.referral_tiers | tier text, min_referrals integer, min_volume perps.uint256, reward_bps integer, fee_discount_bps integer | primary key tier |
+| perps.competitions | id bigserial, name text, description text null, metric text (pnl, volume), start_at timestamptz, end_at timestamptz, prize_pool perps.uint256, status text | primary key id; (status, start_at) |
 | perps.competition_entries | competition_id bigint, address bytea, joined_at timestamptz | primary key (competition_id, address) |
 
 ### Delivery tables
