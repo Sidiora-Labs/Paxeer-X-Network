@@ -38,7 +38,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraPool
 
-42 functions, 25 events, 0 errors.
+42 functions, 6 events, 19 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -118,7 +118,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraFactory
 
-23 functions, 22 events, 0 errors.
+23 functions, 6 events, 16 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -176,7 +176,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraERC20
 
-19 functions, 9 events, 0 errors. Not served by the precompile: these are the functions of the deployed pool-token contracts, which keep their code and storage and which the precompile reaches by nested calls (requirement 2.12).
+19 functions, 2 events, 7 errors. Not served by the precompile: these are the functions of the deployed pool-token contracts, which keep their code and storage and which the precompile reaches by nested calls (requirement 2.12).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -217,7 +217,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### SidioraNFT
 
-37 functions, 32 events, 0 errors.
+37 functions, 10 events, 22 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -299,7 +299,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### Router
 
-23 functions, 30 events, 0 errors.
+23 functions, 9 events, 21 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -365,7 +365,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### Quoter
 
-19 functions, 23 events, 0 errors.
+19 functions, 5 events, 18 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -420,7 +420,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### FeesRouter
 
-20 functions, 28 events, 0 errors.
+20 functions, 12 events, 16 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -481,7 +481,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### FeeAccumulator
 
-54 functions, 40 events, 0 errors.
+54 functions, 17 events, 23 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -588,7 +588,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### PoolRegistry
 
-22 functions, 23 events, 0 errors.
+22 functions, 7 events, 16 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -646,7 +646,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### ProtocolConfig
 
-27 functions, 19 events, 0 errors.
+27 functions, 6 events, 13 errors.
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -762,7 +762,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### EventEmitter
 
-63 functions, 51 events, 0 errors. The EventEmitter contracts stay deployed (section 22); the twelve launchpad events are emitted at 0x1017 (section 11).
+63 functions, 39 events, 12 errors. The EventEmitter contracts stay deployed (section 22); the twelve launchpad events are emitted at 0x1017 (section 11).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
@@ -889,7 +889,7 @@ Every function, event and custom error of each role, with its selector (function
 
 ### LaunchpadOptical
 
-30 functions, 15 events, 0 errors. Not served by the precompile: the optical contracts stay deployed and the precompile calls their hooks by nested calls (section 13).
+30 functions, 5 events, 10 errors. Not served by the precompile: the optical contracts stay deployed and the precompile calls their hooks by nested calls (section 13).
 
 | Function | Selector | Mutability | Returns | Declared |
 |---|---|---|---|---|
