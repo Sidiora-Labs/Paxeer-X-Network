@@ -20890,7 +20890,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.0.4]
 title = "Add the perpetuals call builders on placeOrder, closePositionWithParams and the account-argument views"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = ["6.0.1", "6.0.2", "6.0.7"]
