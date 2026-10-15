@@ -2,7 +2,10 @@ syntax = "proto3";
 package paxprotocol.paxchain.launchpad;
 import "gogoproto/gogo.proto";
 option go_package = "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types";
-service Msg { rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse); }
+service Msg {
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc TreasuryWithdraw(MsgTreasuryWithdraw) returns (MsgTreasuryWithdrawResponse);
+}
 message Params {
   option (gogoproto.typedecl) = false;
   option (gogoproto.goproto_getters) = false;
@@ -24,5 +27,21 @@ message MsgUpdateParams {
   option (gogoproto.goproto_stringer) = false;
   string authority = 1;
   Params params = 2 [(gogoproto.nullable) = false];
+  repeated RoleAssignment role_grants = 3 [(gogoproto.nullable) = false];
+  repeated RoleAssignment role_revokes = 4 [(gogoproto.nullable) = false];
+}
+message RoleAssignment {
+  string contract = 1;
+  string role = 2;
+  string account = 3;
 }
 message MsgUpdateParamsResponse {}
+message MsgTreasuryWithdraw {
+  option (gogoproto.goproto_stringer) = false;
+  string authority = 1;
+  string token = 2;
+  string to = 3;
+  string amount = 4 [(gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
+  bool surplus = 5;
+}
+message MsgTreasuryWithdrawResponse {}

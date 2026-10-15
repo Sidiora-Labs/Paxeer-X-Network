@@ -14,9 +14,10 @@ import (
 
 func RegisterCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgUpdateParams{}, "launchpad/MsgUpdateParams", nil)
+	cdc.RegisterConcrete(&MsgTreasuryWithdraw{}, "launchpad/MsgTreasuryWithdraw", nil)
 }
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	registry.RegisterImplementations((*sdk.Msg)(nil), &MsgUpdateParams{})
+	registry.RegisterImplementations((*sdk.Msg)(nil), &MsgUpdateParams{}, &MsgTreasuryWithdraw{})
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
 
