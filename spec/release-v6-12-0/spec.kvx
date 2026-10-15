@@ -18402,7 +18402,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.4]
 title = "Add the signing dependencies to the feeder crate"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
