@@ -184,6 +184,8 @@ var (
 	createFunction = regexp.MustCompile(`(?s)^CREATE FUNCTION perps\.\w+\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$\n.*\$\$$`)
 	createTrigger  = regexp.MustCompile(`^CREATE TRIGGER \w+ (BEFORE|AFTER) [A-Z ]+ ON perps\.\w+ FOR EACH ROW EXECUTE FUNCTION perps\.\w+\(\)$`)
 	revoke         = regexp.MustCompile(`^REVOKE ALL ON perps\.\w+ FROM PUBLIC$`)
+	insertValues   = regexp.MustCompile(`(?s)^INSERT INTO perps\.(\w+) \(([\w, ]+)\) VALUES\n(.*)$`)
+	dropNotNull    = regexp.MustCompile(`^ALTER TABLE perps\.(\w+) ALTER COLUMN (\w+) DROP NOT NULL$`)
 	dollarTag      = regexp.MustCompile(`^\$(?:[A-Za-z_]\w*)?\$`)
 	createSchema   = "CREATE SCHEMA IF NOT EXISTS perps"
 )
@@ -307,10 +309,71 @@ func loadSchema(t *testing.T) *schema {
 				s.views[m[1]] = m[2]
 				continue
 			}
+			if m := insertValues.FindStringSubmatch(stmt); m != nil {
+				if err := s.checkInsert(m[1], m[2], m[3]); err != nil {
+					t.Fatalf("%s: %v", file, err)
+				}
+				continue
+			}
+			if m := dropNotNull.FindStringSubmatch(stmt); m != nil {
+				if err := s.dropNotNull(m[1], m[2]); err != nil {
+					t.Fatalf("%s: %v", file, err)
+				}
+				continue
+			}
 			t.Fatalf("%s: unrecognised statement %q", file, stmt)
 		}
 	}
 	return s
+}
+
+// checkInsert accepts an INSERT ... VALUES statement into a table an earlier
+// statement created: every named column exists once in that table and every
+// row is one parenthesised tuple with one value per named column.
+func (s *schema) checkInsert(tableName, columnList, rows string) error {
+	tb, ok := s.tables[tableName]
+	if !ok {
+		return fmt.Errorf("insert into perps.%s, which no earlier statement creates", tableName)
+	}
+	cols := strings.Split(columnList, ", ")
+	for i, name := range cols {
+		if _, ok := tb.column(name); !ok {
+			return fmt.Errorf("insert into perps.%s names unknown column %q", tableName, name)
+		}
+		if slices.Contains(cols[:i], name) {
+			return fmt.Errorf("insert into perps.%s names column %q twice", tableName, name)
+		}
+	}
+	for i, tuple := range splitTopLevel(rows) {
+		body, ok := strings.CutPrefix(tuple, "(")
+		if body, ok = strings.CutSuffix(body, ")"); !ok {
+			return fmt.Errorf("insert into perps.%s row %d is not a parenthesised tuple: %q", tableName, i, tuple)
+		}
+		if n := len(splitTopLevel(body)); n != len(cols) {
+			return fmt.Errorf("insert into perps.%s row %d has %d values, want %d", tableName, i, n, len(cols))
+		}
+	}
+	return nil
+}
+
+// dropNotNull applies ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL to the
+// column definition an earlier statement created, which must carry NOT NULL.
+func (s *schema) dropNotNull(tableName, colName string) error {
+	tb, ok := s.tables[tableName]
+	if !ok {
+		return fmt.Errorf("alter perps.%s, which no earlier statement creates", tableName)
+	}
+	i := slices.IndexFunc(tb.columns, func(c column) bool { return c.name == colName })
+	if i < 0 {
+		return fmt.Errorf("alter perps.%s names unknown column %q", tableName, colName)
+	}
+	def := tb.columns[i].def
+	before, after, ok := strings.Cut(def, " NOT NULL")
+	if !ok {
+		return fmt.Errorf("perps.%s.%s = %q drops a NOT NULL it does not carry", tableName, colName, def)
+	}
+	tb.columns[i].def = before + after
+	return nil
 }
 
 func expectedArgDef(name, typ string) (prefix string, check string) {
@@ -520,7 +583,8 @@ func TestSchemaFiles(t *testing.T) {
 			"markets.market_id":              "perps.uint256 PRIMARY KEY",
 			"markets.symbol":                 "text NOT NULL UNIQUE",
 			"markets.source":                 "text NOT NULL CHECK (source IN ('seed', 'chain'))",
-			"markets.sz_decimals":            "smallint NOT NULL CHECK (sz_decimals >= 0)",
+			"markets.sz_decimals":            "smallint CHECK (sz_decimals >= 0)",
+			"markets.px_decimals":            "smallint CHECK (px_decimals >= 0)",
 			"fee_config.id":                  "smallint PRIMARY KEY CHECK (id = 1)",
 			"fee_config.taker_fee_ppm":       "perps.uint256 NOT NULL",
 			"fee_config.insurance_share_ppm": "perps.uint256 NOT NULL",
