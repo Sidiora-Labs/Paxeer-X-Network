@@ -6484,7 +6484,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.4]
 title = "Extend expected keepers and the genesis state"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.0.6"]
