@@ -411,6 +411,13 @@ func TestMigrate(t *testing.T) {
 		if got := uniqueKeys(t, db, "markets"); !slices.Equal(got, []string{"symbol"}) {
 			t.Fatalf("markets unique keys %v, want [symbol]", got)
 		}
+		market := `INSERT INTO perps.markets (market_id, symbol, name, oracle_symbol, sz_decimals, px_decimals, max_leverage, maintenance_margin_bps, max_open_interest, enabled, source, refreshed_block)
+VALUES (4096, 'UNSEEDED', 'UNSEEDED', 'UNSEEDED', $1, $2, 10, 50, 0, true, 'chain', 9)`
+		if err := execRolledBack(t, db, market, nil, nil); err != nil {
+			t.Fatalf("chain-discovered market with unknown decimals refused: %v", err)
+		}
+		wantCheckViolation(t, execRolledBack(t, db, market, -1, nil), "markets_sz_decimals_check")
+		wantCheckViolation(t, execRolledBack(t, db, market, nil, -1), "markets_px_decimals_check")
 		if got := columns(t, db, "fee_config"); !slices.Equal(got, []column{
 			{"id", "smallint"}, {"taker_fee_ppm", "numeric"}, {"maker_fee_ppm", "numeric"}, {"liquidation_fee_ppm", "numeric"},
 			{"insurance_share_ppm", "numeric"}, {"refreshed_block", "bigint"},
