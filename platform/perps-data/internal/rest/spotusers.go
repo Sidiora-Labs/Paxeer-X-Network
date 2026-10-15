@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/pnl"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/records"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 )
 
@@ -109,7 +110,12 @@ func spotWrite(w http.ResponseWriter, body any, err error) {
 
 func spotHex(a common.Address) string { return strings.ToLower(a.Hex()) }
 
-func spotISO(at time.Time) string { return at.UTC().Format(isoMillis) }
+// tradeID names a trade item block-logIndex, as the symbol trades do.
+func tradeID(block int64, logIndex int) string {
+	return strconv.FormatInt(block, 10) + "-" + strconv.Itoa(logIndex)
+}
+
+func spotISO(at time.Time) string { return at.UTC().Format(records.ISOMillis) }
 
 func spotOptISO(at sql.NullTime) *string {
 	if !at.Valid {
@@ -157,7 +163,7 @@ const spotRegistrySQL = `SELECT token, decimals, is_stablecoin FROM perps.spot_t
 WHERE kind = 'token_registered' ORDER BY block, tx_index, log_index, sub`
 
 // tokens reads the registered spot tokens: the non-stable tokens take their
-// symbol by registration rank (spotTokenRank), the stablecoin at the USDL
+// symbol by registration rank (records.SpotTokenRank), the stablecoin at the USDL
 // address is USDL.
 func (s *SpotUsers) tokens(ctx context.Context) (map[common.Address]spotToken, error) {
 	rows, err := s.db.QueryContext(ctx, spotRegistrySQL)
@@ -165,8 +171,8 @@ func (s *SpotUsers) tokens(ctx context.Context) (map[common.Address]spotToken, e
 		return nil, err
 	}
 	defer rows.Close()
-	symbols := make(map[int]string, len(spotTokenRank))
-	for sym, rank := range spotTokenRank {
+	symbols := make(map[int]string, len(records.SpotTokenRank))
+	for sym, rank := range records.SpotTokenRank {
 		symbols[rank] = sym
 	}
 	out := map[common.Address]spotToken{}
@@ -1009,7 +1015,7 @@ func (s *SpotUsers) mark(ctx context.Context, meta spotToken) (string, bool, err
 	if err != nil {
 		return "", false, err
 	}
-	stableScale, err := spotInt(spotScale)
+	stableScale, err := spotInt(records.SpotScale)
 	if err != nil {
 		return "", false, err
 	}

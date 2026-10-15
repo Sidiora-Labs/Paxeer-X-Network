@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/publish"
-	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/telemetry"
 )
@@ -110,13 +110,13 @@ func startCluster(t *testing.T) *nats.Conn {
 	return nc
 }
 
-func newGateway(t *testing.T, ctx context.Context, db *sql.DB, nc *nats.Conn, rpc *source.RPC) (*Server, *httptest.Server) {
+func newGateway(t *testing.T, ctx context.Context, db *sql.DB, nc *nats.Conn, node *ethclient.Client) (*Server, *httptest.Server) {
 	t.Helper()
 	metrics, err := telemetry.New(config.Gateway)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := NewServer(ctx, Options{DB: db, NATS: nc, Chain: testChain, AuthSecret: testSecret, RPC: rpc, Metrics: metrics})
+	srv, err := NewServer(ctx, Options{DB: db, NATS: nc, Chain: testChain, AuthSecret: testSecret, Node: node, Metrics: metrics})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,13 +293,13 @@ func TestGatewayServer(t *testing.T) {
 	if err := publish.EnsureStream(ctx, nc, testChain); err != nil {
 		t.Fatal(err)
 	}
-	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: []string{rpcURL}})
+	node, err := ethclient.DialContext(ctx, rpcURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(rpc.Close)
+	t.Cleanup(node.Close)
 
-	srv, ts := newGateway(t, ctx, db, nc, rpc)
+	srv, ts := newGateway(t, ctx, db, nc, node)
 	runErr := make(chan error, 1)
 	go func() { runErr <- srv.Run(ctx) }()
 	deadline := time.Now().Add(30 * time.Second)
@@ -318,7 +318,7 @@ func TestGatewayServer(t *testing.T) {
 	// idle is a second gateway that is never run, so it is never ready, over
 	// its own database handle so that readiness_gate can close it.
 	idleDB := openDB(t, url)
-	idle, idleTS := newGateway(t, ctx, idleDB, nc, rpc)
+	idle, idleTS := newGateway(t, ctx, idleDB, nc, node)
 
 	t.Run("rest_mounted", func(t *testing.T) {
 		resp, raw := request(t, ts, http.MethodGet, "/api/markets", "")
