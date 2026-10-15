@@ -1635,3 +1635,11 @@ exit = 1
 log = fleet/logs/fix-hyperpax-sockets-verify-1.log
 observed = Eleven invariants pass; the protocol stats hook still queries a root that no gateway operation in the data services contract provides.
 assumption = The contract names the gateway operation for protocol stats before that hook changes.
+
+[finding.fix-launchpad-quotedenom]
+revision = 3ba25ba0454d11c607e4030908070806927ff3ba
+command = go vet ./modules/launchpad/... && go test ./modules/launchpad/types/... ./modules/launchpad/keeper/ -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-launchpad-quotedenom-verify-1.log
+observed = Vet and the types package pass; the keeper test binary panics at init because the node precompile keepers do not provide the launchpad v6.10 keeper.
+assumption = The keeper gate reruns after the launchpad test lane that adds that keeper method lands.

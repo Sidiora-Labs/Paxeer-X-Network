@@ -7906,3 +7906,38 @@ fix = "run it once per spec revision in the background with no timeout and conti
 [gotcha.v612-batch-script-edit]
 observed = "Editing a queued bash batch script in place with sed -i while it waits in its until loop has no effect: bash keeps reading the old inode, so the additions never run although the files the script reads at run time (findings) are picked up."
 rule = "Never edit a running batch script; queue a new script that waits on the previous sentinel."
+
+[gotcha.1667]
+area = "fleet"
+symptom = "a Codex lane launcher that redirects a prompt file into stdin inside a backgrounded nohup exits 0 even when the prompt file name is wrong, so lanes uploaded under another extension silently never run"
+fix = "name prompt files exactly as the launcher reads them and check the lane log exists and grows before counting the lane as running"
+
+[gotcha.1668]
+area = "fleet"
+symptom = "the shared Go build cache grew to 150G and every lane worktree kept a 2G programs/target, which filled the root filesystem and turned every build into no space left on device"
+fix = "clear the Go cache and delete programs/target and build/ in finished worktrees before the disk passes 90 percent; workers use a private GOCACHE when the shared one is being trimmed"
+
+[gotcha.1669]
+area = "spec"
+symptom = "a verify_cmd of the shape go test ... | tail -60 reports the exit code of tail, so a node build failure shows as exit 0"
+fix = "read the test summary in the log, never the pipeline exit code, when the verify_cmd ends in a pipe"
+
+[gotcha.1670]
+area = "fleet"
+symptom = "a landed lane's commit message carries the spec task id, not the lane name, so polling main for a fix lane name never matches"
+fix = "poll for the files or symbols the lane adds, or for the task id in the commit subject"
+
+[gotcha.1671]
+area = "node"
+symptom = "RunMigrations runs InitGenesis(DefaultGenesis) for any module absent from the from-version map, so an upgrade hook that owns a module's initial state hits ErrAlreadyInitialised on a live chain"
+fix = "record new modules in the version map at their consensus version before RunMigrations and let the upgrade hook write the state"
+
+[gotcha.1672]
+area = "launchpad"
+symptom = "sdk.ValidateDenom refuses 0x addresses because a denom must start with a letter, so a field moved from a bank denom to an ERC20 address fails genesis validation"
+fix = "change the validator to the address canonicaliser together with the field"
+
+[gotcha.1673]
+area = "hyperpax"
+symptom = "tsx runs .tsx test renders with the classic JSX runtime, so a component rendered from a node test throws React is not defined although next build is fine"
+fix = "import React in any .tsx module a node test renders"
