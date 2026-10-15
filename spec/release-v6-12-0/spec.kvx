@@ -6753,7 +6753,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.14]
 title = "Add the USDL custody ledgers and the nested-call mover"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.1", "2.1.4"]
