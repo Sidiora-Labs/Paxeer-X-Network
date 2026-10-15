@@ -21189,7 +21189,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.2.8]
 title = "Use the PKCE flow and a callback-only code exchange in the embedded wallet"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = []
