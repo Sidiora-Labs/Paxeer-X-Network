@@ -1,0 +1,152 @@
+[
+  {
+    "kind": "function",
+    "name": "allowance",
+    "signature": "allowance(address,address)",
+    "id": "0xdd62ed3e"
+  },
+  {
+    "kind": "function",
+    "name": "approve",
+    "signature": "approve(address,uint256)",
+    "id": "0x095ea7b3"
+  },
+  {
+    "kind": "function",
+    "name": "balanceOf",
+    "signature": "balanceOf(address)",
+    "id": "0x70a08231"
+  },
+  {
+    "kind": "function",
+    "name": "burn",
+    "signature": "burn(address,uint256)",
+    "id": "0x9dc29fac"
+  },
+  {
+    "kind": "function",
+    "name": "decimals",
+    "signature": "decimals()",
+    "id": "0x313ce567"
+  },
+  {
+    "kind": "function",
+    "name": "mint",
+    "signature": "mint(address,uint256)",
+    "id": "0x40c10f19"
+  },
+  {
+    "kind": "function",
+    "name": "name",
+    "signature": "name()",
+    "id": "0x06fdde03"
+  },
+  {
+    "kind": "function",
+    "name": "owner",
+    "signature": "owner()",
+    "id": "0x8da5cb5b"
+  },
+  {
+    "kind": "function",
+    "name": "renounceOwnership",
+    "signature": "renounceOwnership()",
+    "id": "0x715018a6"
+  },
+  {
+    "kind": "function",
+    "name": "symbol",
+    "signature": "symbol()",
+    "id": "0x95d89b41"
+  },
+  {
+    "kind": "function",
+    "name": "totalSupply",
+    "signature": "totalSupply()",
+    "id": "0x18160ddd"
+  },
+  {
+    "kind": "function",
+    "name": "transfer",
+    "signature": "transfer(address,uint256)",
+    "id": "0xa9059cbb"
+  },
+  {
+    "kind": "function",
+    "name": "transferFrom",
+    "signature": "transferFrom(address,address,uint256)",
+    "id": "0x23b872dd"
+  },
+  {
+    "kind": "function",
+    "name": "transferOwnership",
+    "signature": "transferOwnership(address)",
+    "id": "0xf2fde38b"
+  },
+  {
+    "kind": "event",
+    "name": "Approval",
+    "signature": "Approval(address,address,uint256)",
+    "id": "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"
+  },
+  {
+    "kind": "event",
+    "name": "OwnershipTransferred",
+    "signature": "OwnershipTransferred(address,address)",
+    "id": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+  },
+  {
+    "kind": "event",
+    "name": "Transfer",
+    "signature": "Transfer(address,address,uint256)",
+    "id": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InsufficientAllowance",
+    "signature": "ERC20InsufficientAllowance(address,uint256,uint256)",
+    "id": "0xfb8f41b2"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InsufficientBalance",
+    "signature": "ERC20InsufficientBalance(address,uint256,uint256)",
+    "id": "0xe450d38c"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InvalidApprover",
+    "signature": "ERC20InvalidApprover(address)",
+    "id": "0xe602df05"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InvalidReceiver",
+    "signature": "ERC20InvalidReceiver(address)",
+    "id": "0xec442f05"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InvalidSender",
+    "signature": "ERC20InvalidSender(address)",
+    "id": "0x96c6fd1e"
+  },
+  {
+    "kind": "error",
+    "name": "ERC20InvalidSpender",
+    "signature": "ERC20InvalidSpender(address)",
+    "id": "0x94280d62"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableInvalidOwner",
+    "signature": "OwnableInvalidOwner(address)",
+    "id": "0x1e4fbdf7"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "signature": "OwnableUnauthorizedAccount(address)",
+    "id": "0x118cdaa7"
+  }
+]
