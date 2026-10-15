@@ -46,6 +46,9 @@ const (
 	// ReadyLag is how far the newest applied stream message may trail the
 	// stream head while the gateway is ready.
 	ReadyLag = 10 * time.Second
+	// spotQueue bounds the stream messages waiting for the spot user socket.
+	spotQueue = 1024
+
 	// readyInterval is how often the readiness of the socket gate is
 	// evaluated.
 	readyInterval = time.Second
@@ -94,6 +97,7 @@ type Options struct {
 type Server struct {
 	db        *sql.DB
 	nats      *nats.Conn
+	chain     uint64
 	js        jetstream.JetStream
 	providers *feeds.Providers
 	hub       *ws.Hub
@@ -101,6 +105,8 @@ type Server struct {
 	schema    *gqlgo.Schema
 	transport *graphql.TransportWS
 	spotUser  *ws.SpotUser
+	spotUsers *rest.SpotUsers
+	logger    *slog.Logger
 	// data serves the shared topic protocol through the hub.
 	data *ws.Server
 	// closer closes every socket it upgrades with 1013 and a retry-after
@@ -223,14 +229,20 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 	transport := &graphql.TransportWS{Schema: schema, Feed: feed}
 
 	s := &Server{
-		db: opts.DB, nats: opts.NATS, js: js, providers: providers, hub: hub, feed: feed,
-		schema: schema, transport: transport, spotUser: &ws.SpotUser{}, data: data, closer: closer,
+		db: opts.DB, nats: opts.NATS, chain: opts.Chain, js: js, providers: providers, hub: hub, feed: feed,
+		schema: schema, transport: transport, spotUser: &ws.SpotUser{}, spotUsers: spotUsers, logger: logger, data: data, closer: closer,
 		metrics: opts.Metrics, sockets: sockets, subscriptions: subscriptions, gqlTime: gqlTime,
 		limiter:      &windowLimiter{max: clientRequests, window: clientWindow, entries: map[string]windowEntry{}},
 		mux:          http.NewServeMux(),
 		socketRoutes: map[string]bool{"GET /graphql": true, "GET /graphql-ws": true, "GET /v1/ws": true},
 		ops:          map[string]bool{},
 		held:         map[*ws.Socket]int{},
+	}
+	// A socket path subscribes to its path topics on open; dataSocket has
+	// already refused the paths SocketTopics does not serve.
+	data.OnOpen = func(r *http.Request) []string {
+		topics, _ := providers.SocketTopics(r.URL.Path)
+		return topics
 	}
 	data.OnSubscribe = func(sock *ws.Socket, f ws.ClientFrame) {
 		hub.Subscribe(sock, f)
@@ -285,6 +297,7 @@ func (s *Server) Run(ctx context.Context) error {
 	defer stopFeed()
 	stopApplied := s.hub.Listen(func(string, delivery.Envelope) { s.applied.Store(time.Now().UnixNano()) })
 	defer stopApplied()
+	defer s.feedSpotUser(ctx)()
 	s.running.Store(time.Now().UnixNano())
 	defer s.running.Store(0)
 	hubErr := make(chan error, 1)
@@ -298,6 +311,60 @@ func (s *Server) Run(ctx context.Context) error {
 			return err
 		case <-tick.C:
 		}
+	}
+}
+
+// feedSpotUser feeds the spot user socket from the spot and user subjects the
+// hub applies until ctx ends; stop detaches it from the hub. The listener
+// runs under the hub lock, so it only queues the message, and a worker
+// translates it into the REST items (rest.SpotUsers.StreamItems).
+// ponytail: a full queue drops the message with an error log; the socket
+// client then misses that update until its next REST read.
+func (s *Server) feedSpotUser(ctx context.Context) (stop func()) {
+	type message struct {
+		subject string
+		env     delivery.Envelope
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	queue := make(chan message, spotQueue)
+	prefix := "perps." + strconv.FormatUint(s.chain, 10) + "."
+	stopListen := s.hub.Listen(func(subject string, env delivery.Envelope) {
+		if !stream.Matches(prefix+"spot.>", subject) && !stream.Matches(prefix+"user.>", subject) {
+			return
+		}
+		select {
+		case queue <- message{subject, env}:
+		default:
+			s.logger.Error("spot user socket queue full", slog.String("subject", subject), slog.String("event", env.EventID))
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case m := <-queue:
+				items, err := s.spotUsers.StreamItems(ctx, m.env)
+				if err != nil {
+					if ctx.Err() == nil {
+						s.logger.Error("spot user socket item", slog.String("subject", m.subject), slog.Any("err", err))
+					}
+					continue
+				}
+				for _, item := range items {
+					if err := s.spotUser.Deliver(item.Stream, item.Address, item.Data); err != nil {
+						s.logger.Error("spot user socket deliver", slog.String("stream", item.Stream), slog.Any("err", err))
+					}
+				}
+			}
+		}
+	}()
+	return func() {
+		stopListen()
+		cancel()
+		<-done
 	}
 }
 

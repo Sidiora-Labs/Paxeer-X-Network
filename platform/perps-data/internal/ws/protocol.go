@@ -149,9 +149,12 @@ const (
 )
 
 // Server upgrades requests to protocol sockets. The hooks run on the reading
-// goroutine of the socket: OnSubscribe after the subscribed frame is written,
-// OnUnsubscribe after the unsubscribed frame, OnClose once the socket ends.
+// goroutine of the socket: OnOpen after the welcome frame is written, and
+// every topic it returns is subscribed as a client subscribe would be;
+// OnSubscribe after the subscribed frame is written, OnUnsubscribe after the
+// unsubscribed frame, OnClose once the socket ends.
 type Server struct {
+	OnOpen        func(*http.Request) []string
 	OnSubscribe   func(*Socket, ClientFrame)
 	OnUnsubscribe func(*Socket, string)
 	OnClose       func(*Socket)
@@ -216,6 +219,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := sock.write(Welcome(s.Now().UnixMilli(), s.snapshotID)); err != nil {
 		_ = conn.Close()
 		return
+	}
+	if s.OnOpen != nil {
+		for _, topic := range s.OnOpen(r) {
+			now := s.Now()
+			if err := sock.subscribe(ClientFrame{Event: EventSubscribe, Topic: topic}, now, now.UnixMilli()); err != nil {
+				_ = conn.Close()
+				if s.OnClose != nil {
+					s.OnClose(sock)
+				}
+				return
+			}
+		}
 	}
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -335,27 +350,33 @@ func (s *Socket) handle(raw []byte) error {
 		}
 		return nil
 	default:
-		if !s.allowSubscribe(now) {
-			return s.write(Error(ErrSubscribeRateLimit, f.Topic, ts))
-		}
-		s.subsMu.Lock()
-		_, held := s.subs[f.Topic]
-		full := !held && len(s.subs) >= s.server.limits.MaxSubscriptions
-		if !full {
-			s.subs[f.Topic] = struct{}{}
-		}
-		s.subsMu.Unlock()
-		if full {
-			return s.write(Error(ErrTooManySubscriptions, f.Topic, ts))
-		}
-		if err := s.write(Subscribed(f.Topic, ts, s.server.snapshotID)); err != nil {
-			return err
-		}
-		if s.server.OnSubscribe != nil {
-			s.server.OnSubscribe(s, f)
-		}
-		return nil
+		return s.subscribe(f, now, ts)
 	}
+}
+
+// subscribe admits the subscribe f under the rate and subscription limits and
+// acknowledges it.
+func (s *Socket) subscribe(f ClientFrame, now time.Time, ts int64) error {
+	if !s.allowSubscribe(now) {
+		return s.write(Error(ErrSubscribeRateLimit, f.Topic, ts))
+	}
+	s.subsMu.Lock()
+	_, held := s.subs[f.Topic]
+	full := !held && len(s.subs) >= s.server.limits.MaxSubscriptions
+	if !full {
+		s.subs[f.Topic] = struct{}{}
+	}
+	s.subsMu.Unlock()
+	if full {
+		return s.write(Error(ErrTooManySubscriptions, f.Topic, ts))
+	}
+	if err := s.write(Subscribed(f.Topic, ts, s.server.snapshotID)); err != nil {
+		return err
+	}
+	if s.server.OnSubscribe != nil {
+		s.server.OnSubscribe(s, f)
+	}
+	return nil
 }
 
 // allowSubscribe admits a subscribe operation when fewer than

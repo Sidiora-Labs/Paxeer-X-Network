@@ -17,11 +17,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/nats-io/nats.go"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/gateway"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/telemetry"
 )
@@ -64,11 +64,9 @@ func run(logger *slog.Logger) error {
 	}
 	defer nc.Close()
 
-	// ponytail: the spot routes read the first PERPS_RPC_URLS entry, without
-	// the failover of the source pool; source.RPC has no balance read.
-	node, err := ethclient.DialContext(ctx, cfg.RPCURLs[0])
+	node, err := source.NewRPC(ctx, source.RPCOptions{URLs: cfg.RPCURLs, Logger: logger})
 	if err != nil {
-		return fmt.Errorf("dial node: %w", err)
+		return fmt.Errorf("rpc: %w", err)
 	}
 	defer node.Close()
 

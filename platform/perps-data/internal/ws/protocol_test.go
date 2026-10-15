@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"slices"
@@ -304,6 +305,32 @@ func TestWSProtocol(t *testing.T) {
 			t.Fatalf("OnSubscribe limit %v, want 500", call.frame.Limit)
 		}
 		h.wantError(t, c, `{"event":"subscribe","topic":"BTC@kline_1m","limit":-1}`, ErrInvalidJSON, "")
+	})
+
+	t.Run("on_open_subscribes", func(t *testing.T) {
+		h := newHarness(t, false)
+		var path atomic.Value
+		h.server.OnOpen = func(r *http.Request) []string {
+			path.Store(r.URL.Path)
+			return []string{"BTC@trade", "BTC@orderbook"}
+		}
+		c := h.open(t)
+		for _, topic := range []string{"BTC@trade", "BTC@orderbook"} {
+			wantControl(t, c.control(t), Subscribed(topic, h.clock.ms(), testSnapshotID))
+			call := h.subscribed(t)
+			if call.frame != (ClientFrame{Event: EventSubscribe, Topic: topic}) {
+				t.Fatalf("OnSubscribe frame %+v, want subscribe %s", call.frame, topic)
+			}
+		}
+		if got := path.Load(); got != "/ws" {
+			t.Fatalf("OnOpen request path %v, want /ws", got)
+		}
+		c.send(t, `{"event":"unsubscribe","topic":"BTC@trade"}`)
+		wantControl(t, c.control(t), Unsubscribed("BTC@trade", h.clock.ms()))
+		if topic := <-h.unsubs; topic != "BTC@trade" {
+			t.Fatalf("OnUnsubscribe topic %q", topic)
+		}
+		h.stillOpen(t, c)
 	})
 
 	t.Run("event_unsubscribe", func(t *testing.T) {
