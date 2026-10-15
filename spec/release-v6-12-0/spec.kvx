@@ -7584,7 +7584,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.3.3]
 title = "Read the new launchpad ABI in the hosted indexer"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["2.0.4"]
