@@ -1435,3 +1435,43 @@ exit = 1
 log = fleet/logs/fix-hyperpax-imports-verify-1.log
 observed = Type check passes and 11 of 12 cases pass; the PAX spot entry is still the zero placeholder.
 assumption = The uhpx and SID pointer hex is recorded in the address table from the upgrade EVM instance.
+
+[finding.3.3.1]
+revision = d2162908fec52bd3ab612523dfa7da792694d923
+command = go test ./precompiles/perps/ -run TestIntegration
+exit = 1
+log = fleet/logs/3.3.1-verify-1.log
+observed = The integration test did not compile because precompiles/perps still lacks the exported keeper readers and the node wiring it assumes was not on main at the time.
+assumption = The gate reruns after the perps keeper export lane and the node wiring land.
+
+[finding.4.2.1]
+revision = 629c557c0afd89b4d849438be04e11e0e1ec2a22
+command = go test ./precompiles/spot/ -run TestNewPrecompileSetAddresses
+exit = 1
+log = fleet/logs/4.2.1-verify-1.log
+observed = precompiles/spot builds, but vault_test.go is an internal test that imports node while node now imports precompiles/spot, so the package test binary refuses the import cycle; the shared gas formula is enforced by the rail executor because WithGasTable rows cannot express it.
+assumption = vault_test.go moves to the external test package in a follow-up lane and the gate reruns.
+
+[finding.5.3.1]
+revision = 5a2bf43e03597f6f5d9e061bbab04e162e26be6b
+command = go test ./modules/pricefeed/keeper/ -run TestPriceFeed
+exit = 1
+log = fleet/logs/5.3.1-verify-2.log
+observed = The keeper test package imports node, which did not compile because of the perps keeper readers and the end-block logger call.
+assumption = The gate reruns after the perps keeper export lane lands.
+
+[finding.8.4.3]
+revision = 30c98306056e5c10dfdb7213ed4acd7d63fddd36
+command = bash tools/release/tests/reproducible.test.sh
+exit = 1
+log = fleet/logs/8.4.3-verify-1.log
+observed = One of five pass; the reproducibility check needs the release builder artifacts and path remapping from 8.4.2, which was not on the lane's base.
+assumption = The gate reruns on main now that 8.4.2 is landed.
+
+[finding.8.4.4]
+revision = 30c98306056e5c10dfdb7213ed4acd7d63fddd36
+command = bash tools/release/tests/workflows.test.sh
+exit = 1
+log = fleet/logs/8.4.4-verify-1.log
+observed = Six of seven pass; the strict toolchain check needs tools/release/toolchain.env from 8.4.2, which was not on the lane's base.
+assumption = The gate reruns on main now that 8.4.2 is landed.
