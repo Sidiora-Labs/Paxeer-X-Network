@@ -971,3 +971,131 @@ exit = 1
 log = "fleet/logs/2.2.6-verify-2.log"
 observed = "fees.go registers the FeesRouter and FeeAccumulator roles and builds with the 2.2.1 runner merged in, but the package test binary does not compile because launchpad_test.go still names the v6.10 API and the worktree lacks the native archives; Run never sets call.nested, and the FeeAccumulator accounting views and the FEES_ROUTER_ROLE entries have no keeper record."
 assumption = "The launchpad precompile reconciliation pass wires the nested caller and reruns this; the accounting views and keeper payAirdrop liabilities need a ruling."
+
+[finding.4.2.2]
+revision = "52ffde26070639be83c814f9d94f10b08ced2908"
+command = "go build ./precompiles/spot/..."
+exit = 1
+log = "fleet/logs/4.2.2-build-2.log"
+observed = "pecor.go serves the PECOR market and swap handlers against the landed keeper signatures, but the spot keeper does not compile (duplicate orderIDBytes, event topics, boolWord and TokenPrice; single-value GetParams; missing CustodyAddress and GetDenomMetaData) and Keeper.CollectFees is absent."
+assumption = "The spot keeper reconciliation lane lands CollectFees(ctx, rail, caller, token) and the duplicates, then the 4.2.2 gate is rerun."
+
+[finding.4.2.3]
+revision = "52ffde26070639be83c814f9d94f10b08ced2908"
+command = "go build ./precompiles/spot/..."
+exit = 1
+log = "fleet/logs/4.2.3-build-1.log"
+observed = "orders.go serves the limit-order handlers through NewOrdersExecutor, but the spot keeper does not compile and the shared Run of 4.2.1 is absent, so no test ran."
+assumption = "4.2.1 wires NewOrdersExecutor with keeper.WithRun and the reconciliation lane fixes the keeper; rerun afterwards."
+
+[finding.4.2.4]
+revision = "52ffde26070639be83c814f9d94f10b08ced2908"
+command = "go build ./precompiles/spot/..."
+exit = 1
+log = "fleet/logs/4.2.4-build-1.log"
+observed = "stoporders.go serves the stop-order handlers, but the spot keeper does not compile, the stop keeper uses the old GetParams, pullTokens, pushTokens, Price and AccrueFees shapes, and the order, fee and vault code disagree on the escrow and fee codecs."
+assumption = "The reconciliation lane settles one codec and the keeper shapes; rerun afterwards."
+
+[finding.4.2.5]
+revision = "52ffde26070639be83c814f9d94f10b08ced2908"
+command = "go build ./precompiles/spot/..."
+exit = 1
+log = "fleet/logs/4.2.5-build-1.log"
+observed = "quoter.go serves the read-only quoter against the assumed 4.1.13 shapes (Quote, LiquidityInfo, TokenPrice, TWAP), but the spot keeper does not compile and TokenPrice has two incompatible declarations."
+assumption = "The reconciliation lane keeps one TokenPrice; rerun afterwards."
+
+[finding.4.2.9]
+revision = "52ffde26070639be83c814f9d94f10b08ced2908"
+command = "go build ./modules/spot/..."
+exit = 1
+log = "fleet/logs/4.2.9-build-1.log"
+observed = "abci.go and execute.go add the bounded spot EndBlocker and synthetic receipt, but the spot keeper does not compile and InitGenesis does not build the active-index counters the stop settlement reads."
+assumption = "The reconciliation lane aligns genesis with the active-index encoding; rerun afterwards."
+
+[finding.5.2.1]
+revision = "f970362ae36765bb1f65f85265e58197017182a1"
+command = "go vet ./precompiles/pricefeed/"
+exit = 1
+log = "fleet/logs/5.2.1-build-1.log"
+observed = "pricefeed.go, views.go and register.go serve the dispatcher, but views.go needs a keeper observation reader GetObservation(ctx, marketID, operator) that modules/pricefeed/keeper does not export."
+assumption = "The pricefeed reconciliation lane exports the observation reader; rerun afterwards."
+
+[finding.5.2.2]
+revision = "f970362ae36765bb1f65f85265e58197017182a1"
+command = "go test -p 2 ./precompiles/pricefeed/ -run 'TestConvention|TestRegisterFeedKey|TestRevokeFeedKey|TestFeedKeyLogs'"
+exit = 1
+log = "fleet/logs/5.2.2-verify-1.log"
+observed = "The registration and convention tests are written against NewPrecompile(utils.Keepers) and PriceFeedK(), but the package does not compile until 5.2.1 and the observation reader land."
+assumption = "Rerun with 5.2.1 once the pricefeed reconciliation lands."
+
+[finding.5.2.3]
+revision = "4ba6b68ac"
+command = "go test ./precompiles/pricefeed/ -run 'TestSubmit'"
+exit = 1
+log = "fleet/logs/5.2.3-verify-1.log"
+observed = "The submission handlers are written but the package does not compile until 5.2.1 and the observation reader land."
+assumption = "Rerun with 5.2.1 and 5.2.2 once the pricefeed reconciliation lands."
+
+[finding.3.2.2]
+revision = "82c04443436a165fecd98ed0ee784a2e938aedd9"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.2-build-1.log"
+observed = "errors_test.go maps the section 19 cases, but modules/perps/keeper does not compile on the base (duplicate declarations, old ApplyFill call, single-value GetParams)."
+assumption = "The perps keeper reconciliation lane lands first; rerun afterwards."
+
+[finding.3.2.3]
+revision = "d741a9dd2"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.3-build-1.log"
+observed = "account.go serves the collateral handlers and the four overloaded views, dispatching the overloads on argument count because go-ethereum names them in abi order; the perps keeper does not compile and the keeper exports no position getter."
+assumption = "The reconciliation lane fixes the keeper; the views stay in account.go although the acceptance names views.go."
+
+[finding.3.2.4]
+revision = "682a3ac4c2a68e3e651d688a9718777df202697d"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.4-build-1.log"
+observed = "orders.go serves the order handlers; placeTakeProfitOrder and placeStopLossOrder go through SetPositionTpSl because no single-leg keeper method exists, and the perps keeper does not compile."
+assumption = "The reconciliation lane fixes the keeper; a single-leg trigger method is a spec gap to rule on."
+
+[finding.3.2.5]
+revision = "21d722d9d97ab87c596c03f714e87e3a6c9398a5"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.5-build-1.log"
+observed = "positions.go serves the position handlers; the perps keeper does not compile and Liquidate and PlaceOrder drop the Match event records."
+assumption = "The reconciliation lane returns the Match records; rerun afterwards."
+
+[finding.3.2.7]
+revision = "ecb74184bed25c6878c58203a03804c404aea79a"
+command = "go build ./precompiles/perps/..."
+exit = 1
+log = "fleet/logs/3.2.7-build-1.log"
+observed = "quotes.go serves the four quote handlers including quoteMarket, which 3.2.6 views.go may also register; the perps keeper does not compile."
+assumption = "The precompile reconciliation keeps one quoteMarket registration; rerun afterwards."
+
+[finding.3.2.9]
+revision = "4f633b0b3ee708065a5ecac4faf8184398bb2be4"
+command = "go build ./modules/perps/..."
+exit = 1
+log = "fleet/logs/3.2.9-build-1.log"
+observed = "endblock.go runs the nine steps, but the perps keeper does not compile and Keeper.WriteEndBlockReceipt of 3.2.10 is the only error left in the touched files."
+assumption = "The reconciliation lane wires WriteEndBlockReceipt; rerun afterwards."
+
+[finding.4.2.6]
+revision = "28bd6e1f3"
+command = "go build ./precompiles/spot/..."
+exit = 1
+log = "fleet/logs/4.2.6-build-1.log"
+observed = "vault.go serves the vault handlers through newVaultExecutor against the landed keeper calls; the spot keeper does not compile and registeredTokens past the end returns Error(string) where Solidity panics 0x32."
+assumption = "4.2.1 wraps the executor with WithRun and the gas rows; rerun afterwards."
+
+[finding.4.2.8]
+revision = "44f99f0183d4c56dd7c7ff9d03a59fe2cbce784f"
+command = "go test ./precompiles/spot/ -run '^(TestErrorSafeERC20FailedOperation|...|TestCustomErrorRevertData)$'"
+exit = 1
+log = "fleet/logs/4.2.8-verify-1.log"
+observed = "errors.go packs every spot custom error and adds checkFeeCollector, but the test binary cannot build while the spot keeper does not compile."
+assumption = "The collectFees handlers of 4.2.2 through 4.2.4 call checkFeeCollector; rerun afterwards."
