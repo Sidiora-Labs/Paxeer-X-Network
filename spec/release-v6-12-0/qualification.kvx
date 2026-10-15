@@ -1683,3 +1683,11 @@ exit = 1
 log = fleet/logs/fix-spot-vault-test-verify-2.log
 observed = The spot precompile test package compiles again after the import cycle removal, but the binary panics at init because the node precompile keepers do not provide the launchpad keeper.
 assumption = The vault tests rerun once the launchpad keeper wiring lands.
+
+[finding.fix-launchpad-tests-2]
+revision = 64756e7a4139d611ca5e1f56a31f686f98915ed2
+command = go test ./precompiles/launchpad/ ./modules/launchpad/... -count=1 -p 2
+exit = 1
+log = fleet/logs/fix-launchpad-tests-2-verify-1.log
+observed = The official gate stops on compile errors in the perps precompile views; on the previous fix head eleven surface parity tests fail on the missing recorded golden file and eight keeper tests fail on the custody address and the fee accumulator import.
+assumption = The golden file is recorded from a node at the halt height and the perps precompile compile errors are fixed by their own lane before the gate reruns.
