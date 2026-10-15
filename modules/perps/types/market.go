@@ -38,8 +38,8 @@ func (m Market) Validate() error {
 	if m.Symbol == "" || m.Name == "" || m.OracleSymbol == "" {
 		return invalid("market %d needs a symbol, a name and an oracle symbol", m.ID)
 	}
-	if uint(m.SzDecimals)+uint(m.PxDecimals) > CollateralDecimals {
-		return invalid("market %d szDecimals + pxDecimals above %d", m.ID, CollateralDecimals)
+	if err := m.validateNotionalStep(); err != nil {
+		return err
 	}
 	if m.MaxLeverage == 0 || m.MaxLeverage > VenueMaxLeverage {
 		return invalid("market %d max leverage must be in [1, %d]", m.ID, VenueMaxLeverage)
@@ -66,6 +66,29 @@ func (m Market) Validate() error {
 	}
 	if tiers[0].MaxLeverage != m.MaxLeverage {
 		return invalid("market %d max leverage %d differs from its tier 0 leverage %d", m.ID, m.MaxLeverage, tiers[0].MaxLeverage)
+	}
+	return nil
+}
+
+// validateNotionalStep checks that one lot at one tick, 10^-(szDecimals +
+// pxDecimals) USD, converts to a whole number of USDL units, so every tick and
+// lot notional settles without rounding.
+func (m Market) validateNotionalStep() error {
+	decimals := uint(m.SzDecimals) + uint(m.PxDecimals)
+	if decimals > USDDecimals {
+		return invalid("market %d szDecimals + pxDecimals above %d", m.ID, CollateralDecimals)
+	}
+	step := sdk.NewIntWithDecimal(1, int(USDDecimals-decimals))
+	down, _, err := UsdToUsdlDown(step)
+	if err != nil {
+		return err
+	}
+	up, _, err := UsdToUsdlUp(step)
+	if err != nil {
+		return err
+	}
+	if !down.Equal(up) {
+		return invalid("market %d szDecimals + pxDecimals above %d", m.ID, CollateralDecimals)
 	}
 	return nil
 }
