@@ -20863,7 +20863,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.0.3]
 title = "Pin the spot ABI selectors and errors and delete the spot ABIs without a precompile"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
