@@ -72,14 +72,14 @@ type paramsView struct {
 	MaxPriceAgeMs                uint64
 }
 
-// view runs a view through a static call from stranger and checks it is
+// meteredView runs a view through a static call and checks it is
 // charged exactly the view base gas plus the per-byte gas of its arguments.
-func (h *harness) view(name string, args ...interface{}) []interface{} {
+func (h *harness) meteredView(name string, args ...interface{}) []interface{} {
 	h.t.Helper()
 	input := h.input(name, args...)
-	ret, left, err := h.evm.StaticCall(stranger, precompile, input, supplied)
+	ret, left, err := h.evm.StaticCall(h.caller, pricefeedAddress, input, suppliedGas)
 	require.NoError(h.t, err, name)
-	require.Equal(h.t, supplied-(3000+16*uint64(len(input)-4)), left, name)
+	require.Equal(h.t, suppliedGas-(3000+16*uint64(len(input)-4)), left, name)
 	out, err := h.method(name).Outputs.Unpack(ret)
 	require.NoError(h.t, err)
 	return out
@@ -88,7 +88,7 @@ func (h *harness) view(name string, args ...interface{}) []interface{} {
 // viewReverts runs a view through a static call and returns its revert reason.
 func (h *harness) viewReverts(name string, args ...interface{}) string {
 	h.t.Helper()
-	ret, _, err := h.evm.StaticCall(stranger, precompile, h.input(name, args...), supplied)
+	ret, _, err := h.evm.StaticCall(h.caller, pricefeedAddress, h.input(name, args...), suppliedGas)
 	require.ErrorIs(h.t, err, vm.ErrExecutionReverted)
 	reason, err := abi.UnpackRevert(ret)
 	require.NoError(h.t, err)
@@ -138,8 +138,8 @@ func TestViewGetPrice(t *testing.T) {
 
 	want := priceView{IndexPrice: e18(65000).BigInt(), MarkPrice: e18(65010).BigInt(), TimestampMs: aggregateMs,
 		Height: aggregateHeight, Sources: 4, Fresh: true}
-	require.Equal(t, want, priceOf(h.view("getPrice", big.NewInt(0))))
-	require.Equal(t, want, priceOf(h.view("getPriceBySymbol", "BTC")))
+	require.Equal(t, want, priceOf(h.meteredView("getPrice", big.NewInt(0))))
+	require.Equal(t, want, priceOf(h.meteredView("getPriceBySymbol", "BTC")))
 
 	stored, err := h.keeper.GetPrice(h.ctx(), 0)
 	require.NoError(t, err)
@@ -148,14 +148,14 @@ func TestViewGetPrice(t *testing.T) {
 
 	// A listed market without an aggregate reads zero prices, not fresh.
 	none := priceView{IndexPrice: big.NewInt(0), MarkPrice: big.NewInt(0)}
-	require.Equal(t, none, priceOf(h.view("getPrice", big.NewInt(6))))
-	require.Equal(t, none, priceOf(h.view("getPriceBySymbol", "NVDA")))
+	require.Equal(t, none, priceOf(h.meteredView("getPrice", big.NewInt(6))))
+	require.Equal(t, none, priceOf(h.meteredView("getPriceBySymbol", "NVDA")))
 
 	// Past max_price_age_ms the same aggregate reads not fresh.
 	h.atBlockMs(int64(aggregateMs + types.DefaultMaxPriceAgeMs + 1))
 	stale := want
 	stale.Fresh = false
-	require.Equal(t, stale, priceOf(h.view("getPrice", big.NewInt(0))))
+	require.Equal(t, stale, priceOf(h.meteredView("getPrice", big.NewInt(0))))
 }
 
 func TestViewGetPrices(t *testing.T) {
@@ -170,14 +170,14 @@ func TestViewGetPrices(t *testing.T) {
 	decode := func(out []interface{}) []priceView {
 		return *abi.ConvertType(out[0], new([]priceView)).(*[]priceView)
 	}
-	require.Equal(t, []priceView{eth, btc}, decode(h.view("getPrices", []*big.Int{big.NewInt(1), big.NewInt(0)})))
-	require.Empty(t, decode(h.view("getPrices", []*big.Int{})))
+	require.Equal(t, []priceView{eth, btc}, decode(h.meteredView("getPrices", []*big.Int{big.NewInt(1), big.NewInt(0)})))
+	require.Empty(t, decode(h.meteredView("getPrices", []*big.Int{})))
 
 	full := make([]*big.Int, 64)
 	for i := range full {
 		full[i] = big.NewInt(int64(i % 2))
 	}
-	prices := decode(h.view("getPrices", full))
+	prices := decode(h.meteredView("getPrices", full))
 	require.Len(t, prices, 64)
 	for i, price := range prices {
 		if i%2 == 0 {
@@ -212,9 +212,9 @@ func TestViewMarketIdOf(t *testing.T) {
 	h := newHarness(t)
 	h.seedState(nil, nil, nil)
 
-	require.Equal(t, big.NewInt(8), h.view("marketIdOf", "XAU")[0])
+	require.Equal(t, big.NewInt(8), h.meteredView("marketIdOf", "XAU")[0])
 	for _, market := range types.Markets {
-		require.Equal(t, new(big.Int).SetUint64(market.ID), h.view("marketIdOf", market.Symbol)[0], market.Symbol)
+		require.Equal(t, new(big.Int).SetUint64(market.ID), h.meteredView("marketIdOf", market.Symbol)[0], market.Symbol)
 	}
 	h.requireReverts(unknownMarket, "marketIdOf", "xau")
 	h.requireReverts(unknownMarket, "marketIdOf", "PERP_XAU_USDC")
@@ -225,7 +225,7 @@ func TestViewGetMarket(t *testing.T) {
 	h.seedState(nil, nil, nil)
 
 	market := func(id int64) marketView {
-		return *abi.ConvertType(h.view("getMarket", big.NewInt(id))[0], new(marketView)).(*marketView)
+		return *abi.ConvertType(h.meteredView("getMarket", big.NewInt(id))[0], new(marketView)).(*marketView)
 	}
 	require.Equal(t, marketView{MarketId: 13, Symbol: "HYPE", ChainflowSymbol: "HYPE", MinPrice: big.NewInt(1),
 		MaxPrice: new(big.Int).Exp(big.NewInt(10), big.NewInt(30), nil), Enabled: true}, market(13))
@@ -234,7 +234,7 @@ func TestViewGetMarket(t *testing.T) {
 		require.Equal(t, marketView{MarketId: listed.ID, Symbol: listed.Symbol, ChainflowSymbol: listed.ChainflowSymbol,
 			MinPrice: listed.MinPrice.BigInt(), MaxPrice: listed.MaxPrice.BigInt(), Enabled: listed.Enabled}, got)
 	}
-	require.Equal(t, big.NewInt(18), h.view("getMarketCount")[0])
+	require.Equal(t, big.NewInt(18), h.meteredView("getMarketCount")[0])
 }
 
 func TestViewGetObservation(t *testing.T) {
@@ -245,7 +245,7 @@ func TestViewGetObservation(t *testing.T) {
 		Observation: record}}, nil)
 
 	observation := func(id int64, validator common.Address) observationView {
-		out := h.view("getObservation", big.NewInt(id), validator)
+		out := h.meteredView("getObservation", big.NewInt(id), validator)
 		return *abi.ConvertType(out[0], new(observationView)).(*observationView)
 	}
 	require.Equal(t, observationView{Sequence: 7, IndexPrice: record.IndexPrice.BigInt(),
@@ -262,22 +262,22 @@ func TestViewFeedKeys(t *testing.T) {
 	h.seedState([]types.GenesisFeedKey{{Operator: sdk.ValAddress(validatorV.Bytes()), FeedKey: types.FeedKey{
 		PubKey: common.Bytes2Hex(pubKey.Bytes()), FeedAccount: feedAccount.String()}}}, nil, nil)
 
-	out := h.view("getFeedKey", validatorV)
+	out := h.meteredView("getFeedKey", validatorV)
 	require.Equal(t, pubKey.Bytes(), out[0])
 	require.Equal(t, common.BytesToAddress(feedAccount), out[1])
-	require.Equal(t, validatorV, h.view("getValidatorByFeedAccount", common.BytesToAddress(feedAccount))[0])
+	require.Equal(t, validatorV, h.meteredView("getValidatorByFeedAccount", common.BytesToAddress(feedAccount))[0])
 
-	out = h.view("getFeedKey", validatorW)
+	out = h.meteredView("getFeedKey", validatorW)
 	require.Equal(t, []byte{}, out[0])
 	require.Equal(t, common.Address{}, out[1])
-	require.Equal(t, common.Address{}, h.view("getValidatorByFeedAccount", unknownAcc)[0])
+	require.Equal(t, common.Address{}, h.meteredView("getValidatorByFeedAccount", unknownAcc)[0])
 }
 
 func TestViewGetParams(t *testing.T) {
 	h := newHarness(t)
 	h.seedState(nil, nil, nil)
 
-	got := *abi.ConvertType(h.view("getParams")[0], new(paramsView)).(*paramsView)
+	got := *abi.ConvertType(h.meteredView("getParams")[0], new(paramsView)).(*paramsView)
 	require.Equal(t, paramsView{StalenessWindowMs: 10000, MaxClockSkewMs: 2000, MinSources: 1, MaxDivergenceBps: 50,
 		MaxDeviationBps: 1000, MaxObservationsPerSubmission: 32, MaxSubmissionBytes: 8192, MarkEmaTauMs: 150000,
 		MaxMarkBasisBps: 500, MaxPriceAgeMs: 15000}, got)
