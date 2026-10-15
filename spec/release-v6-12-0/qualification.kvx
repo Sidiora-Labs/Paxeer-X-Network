@@ -35,3 +35,10 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-ora
 exit_code = 0
 log_path = "fleet logs 5.0.4-verify-1"
 observed_and_assumption = "do_1 registers a price-sidecar [[bin]] whose main.rs is written by the wave-2 sidecar binary task, and cargo rejects a manifest naming a bin path that does not exist, so the [[bin]] block was not added here. Assumption: the sidecar binary task adds the [[bin]] block together with its main.rs; its dispatch note carries this."
+
+[finding.7.0.1]
+revision = "0d69291465ea5992ffb22a9b26bb02bb0feae5bb"
+command = "go build ./platform/perps-data/..."
+exit_code = 1
+log_path = "fleet logs 7.0.1-build-1"
+observed_and_assumption = "The NATS driver of 7.0.1 imports the delivery package that 7.0.2 creates, while 7.0.2 requires 7.0.1, and 7.0.3, 7.0.4, 7.0.6 and 7.0.7 import nats.go with no requires on 7.0.1; platform/perps-data does not exist before 7.0.2 and 7.0.5 land, so the build and verify of 7.0.1 cannot run first. Assumption: the module pins of 7.0.1 land first on their own, 7.0.2 and 7.0.5 build the package, and 7.0.1 completes its driver afterwards with the same gates."
