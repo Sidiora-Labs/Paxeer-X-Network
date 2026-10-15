@@ -1,0 +1,488 @@
+[
+  {
+    "kind": "function",
+    "name": "BPS_DENOMINATOR",
+    "signature": "BPS_DENOMINATOR()",
+    "id": "0xe1a45218"
+  },
+  {
+    "kind": "function",
+    "name": "MAX_ORDER_FEE_BPS",
+    "signature": "MAX_ORDER_FEE_BPS()",
+    "id": "0xbb588fc0"
+  },
+  {
+    "kind": "function",
+    "name": "accumulatedFees",
+    "signature": "accumulatedFees(address)",
+    "id": "0xfcf66664"
+  },
+  {
+    "kind": "function",
+    "name": "activeLimitOrderIds",
+    "signature": "activeLimitOrderIds(uint256)",
+    "id": "0xb234ff4c"
+  },
+  {
+    "kind": "function",
+    "name": "batchExecuteLimitOrders",
+    "signature": "batchExecuteLimitOrders(uint256[])",
+    "id": "0xa188c99c"
+  },
+  {
+    "kind": "function",
+    "name": "batchExpireOrders",
+    "signature": "batchExpireOrders(uint256[])",
+    "id": "0xfe749155"
+  },
+  {
+    "kind": "function",
+    "name": "canExecuteLimitOrder",
+    "signature": "canExecuteLimitOrder(uint256)",
+    "id": "0xf16c867f"
+  },
+  {
+    "kind": "function",
+    "name": "cancelLimitOrder",
+    "signature": "cancelLimitOrder(uint256)",
+    "id": "0xa5cdc8fc"
+  },
+  {
+    "kind": "function",
+    "name": "collectFees",
+    "signature": "collectFees(address)",
+    "id": "0xa480ca79"
+  },
+  {
+    "kind": "function",
+    "name": "executeLimitOrder",
+    "signature": "executeLimitOrder(uint256)",
+    "id": "0xc7219460"
+  },
+  {
+    "kind": "function",
+    "name": "feeCollector",
+    "signature": "feeCollector()",
+    "id": "0xc415b95c"
+  },
+  {
+    "kind": "function",
+    "name": "fillQualityTwapPeriod",
+    "signature": "fillQualityTwapPeriod()",
+    "id": "0xb29d6d36"
+  },
+  {
+    "kind": "function",
+    "name": "getAccumulatedFees",
+    "signature": "getAccumulatedFees(address)",
+    "id": "0x564201f9"
+  },
+  {
+    "kind": "function",
+    "name": "getActiveLimitOrderCount",
+    "signature": "getActiveLimitOrderCount()",
+    "id": "0xbf2badf0"
+  },
+  {
+    "kind": "function",
+    "name": "getExecutableLimitOrders",
+    "signature": "getExecutableLimitOrders(uint256)",
+    "id": "0x4ef735de"
+  },
+  {
+    "kind": "function",
+    "name": "getLimitOrder",
+    "signature": "getLimitOrder(uint256)",
+    "id": "0x53061026"
+  },
+  {
+    "kind": "function",
+    "name": "getUserLimitOrders",
+    "signature": "getUserLimitOrders(address)",
+    "id": "0xdd5d02e6"
+  },
+  {
+    "kind": "function",
+    "name": "keepers",
+    "signature": "keepers(address)",
+    "id": "0x3bbd64bc"
+  },
+  {
+    "kind": "function",
+    "name": "limitOrders",
+    "signature": "limitOrders(uint256)",
+    "id": "0xa3e2b495"
+  },
+  {
+    "kind": "function",
+    "name": "modifyLimitOrder",
+    "signature": "modifyLimitOrder(uint256,uint256,uint256)",
+    "id": "0x3f08abf2"
+  },
+  {
+    "kind": "function",
+    "name": "nextOrderId",
+    "signature": "nextOrderId()",
+    "id": "0x2a58b330"
+  },
+  {
+    "kind": "function",
+    "name": "orderFeeBps",
+    "signature": "orderFeeBps()",
+    "id": "0xf2ef677d"
+  },
+  {
+    "kind": "function",
+    "name": "owner",
+    "signature": "owner()",
+    "id": "0x8da5cb5b"
+  },
+  {
+    "kind": "function",
+    "name": "pause",
+    "signature": "pause()",
+    "id": "0x8456cb59"
+  },
+  {
+    "kind": "function",
+    "name": "paused",
+    "signature": "paused()",
+    "id": "0x5c975abb"
+  },
+  {
+    "kind": "function",
+    "name": "placeLimitBuy",
+    "signature": "placeLimitBuy(address,address,uint256,uint256,uint256)",
+    "id": "0x947de5b1"
+  },
+  {
+    "kind": "function",
+    "name": "placeLimitSell",
+    "signature": "placeLimitSell(address,address,uint256,uint256,uint256)",
+    "id": "0x31880832"
+  },
+  {
+    "kind": "function",
+    "name": "priceOracle",
+    "signature": "priceOracle()",
+    "id": "0x2630c12f"
+  },
+  {
+    "kind": "function",
+    "name": "renounceOwnership",
+    "signature": "renounceOwnership()",
+    "id": "0x715018a6"
+  },
+  {
+    "kind": "function",
+    "name": "setFeeCollector",
+    "signature": "setFeeCollector(address)",
+    "id": "0xa42dce80"
+  },
+  {
+    "kind": "function",
+    "name": "setFillQualityTwapPeriod",
+    "signature": "setFillQualityTwapPeriod(uint256)",
+    "id": "0x17e1cde2"
+  },
+  {
+    "kind": "function",
+    "name": "setKeeper",
+    "signature": "setKeeper(address,bool)",
+    "id": "0xd1b9e853"
+  },
+  {
+    "kind": "function",
+    "name": "setOrderFee",
+    "signature": "setOrderFee(uint256)",
+    "id": "0xc014930f"
+  },
+  {
+    "kind": "function",
+    "name": "setPriceOracle",
+    "signature": "setPriceOracle(address)",
+    "id": "0x530e784f"
+  },
+  {
+    "kind": "function",
+    "name": "setTransactionTracker",
+    "signature": "setTransactionTracker(address)",
+    "id": "0xd25a18e5"
+  },
+  {
+    "kind": "function",
+    "name": "transactionTracker",
+    "signature": "transactionTracker()",
+    "id": "0xa4cf2f1c"
+  },
+  {
+    "kind": "function",
+    "name": "transferOwnership",
+    "signature": "transferOwnership(address)",
+    "id": "0xf2fde38b"
+  },
+  {
+    "kind": "function",
+    "name": "unpause",
+    "signature": "unpause()",
+    "id": "0x3f4ba83a"
+  },
+  {
+    "kind": "function",
+    "name": "userLimitOrders",
+    "signature": "userLimitOrders(address,uint256)",
+    "id": "0xa5bb2be6"
+  },
+  {
+    "kind": "function",
+    "name": "vault",
+    "signature": "vault()",
+    "id": "0xfbfa77cf"
+  },
+  {
+    "kind": "event",
+    "name": "LimitOrderCancelled",
+    "signature": "LimitOrderCancelled(uint256)",
+    "id": "0xa79034042a790ce528ef3275727fa99fa364bebccd18f9d6094e524e8c075f86"
+  },
+  {
+    "kind": "event",
+    "name": "LimitOrderCreated",
+    "signature": "LimitOrderCreated(uint256,address,uint8,uint256,uint256)",
+    "id": "0x7df754202cad14218ee77bcea0466d971b8145466b889f56634e2e8e66d17404"
+  },
+  {
+    "kind": "event",
+    "name": "LimitOrderExecuted",
+    "signature": "LimitOrderExecuted(uint256,uint256)",
+    "id": "0x8473464af225412ba591d2bcb9cbddb9456a28347037e7fd76b14ef834e7caff"
+  },
+  {
+    "kind": "event",
+    "name": "LimitOrderExpired",
+    "signature": "LimitOrderExpired(uint256)",
+    "id": "0xdf3c7dca4ba1afef3742d2720d6e060c9abc5bfcfcaa653ee459d8b22ae17217"
+  },
+  {
+    "kind": "event",
+    "name": "LimitOrderModified",
+    "signature": "LimitOrderModified(uint256,uint256,uint256)",
+    "id": "0x4faf905c59d1d8f751a461274695b2985d465bc0ab5818e8c53e12c6973085c1"
+  },
+  {
+    "kind": "event",
+    "name": "OwnershipTransferred",
+    "signature": "OwnershipTransferred(address,address)",
+    "id": "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0"
+  },
+  {
+    "kind": "event",
+    "name": "Paused",
+    "signature": "Paused(address)",
+    "id": "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258"
+  },
+  {
+    "kind": "event",
+    "name": "Unpaused",
+    "signature": "Unpaused(address)",
+    "id": "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa"
+  },
+  {
+    "kind": "error",
+    "name": "CannotCancel",
+    "signature": "CannotCancel()",
+    "id": "0xfbc03578"
+  },
+  {
+    "kind": "error",
+    "name": "EnforcedPause",
+    "signature": "EnforcedPause()",
+    "id": "0xd93c0665"
+  },
+  {
+    "kind": "error",
+    "name": "ExpectedPause",
+    "signature": "ExpectedPause()",
+    "id": "0x8dfc202b"
+  },
+  {
+    "kind": "error",
+    "name": "FeeExceedsMax",
+    "signature": "FeeExceedsMax()",
+    "id": "0x5ff85e3f"
+  },
+  {
+    "kind": "error",
+    "name": "InsufficientLiquidity",
+    "signature": "InsufficientLiquidity()",
+    "id": "0xbb55fd27"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidExpiry",
+    "signature": "InvalidExpiry()",
+    "id": "0xd36c8500"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidOracle",
+    "signature": "InvalidOracle()",
+    "id": "0x9589a27d"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidPrice",
+    "signature": "InvalidPrice()",
+    "id": "0x00bfc921"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidTWAPPeriod",
+    "signature": "InvalidTWAPPeriod()",
+    "id": "0x8bd931d1"
+  },
+  {
+    "kind": "error",
+    "name": "InvalidVault",
+    "signature": "InvalidVault()",
+    "id": "0xd03a6320"
+  },
+  {
+    "kind": "error",
+    "name": "NoFeesToCollect",
+    "signature": "NoFeesToCollect()",
+    "id": "0x6a4ea9e4"
+  },
+  {
+    "kind": "error",
+    "name": "NotAStablecoin",
+    "signature": "NotAStablecoin()",
+    "id": "0x777a9be8"
+  },
+  {
+    "kind": "error",
+    "name": "NotAuthorized",
+    "signature": "NotAuthorized()",
+    "id": "0xea8e4eb5"
+  },
+  {
+    "kind": "error",
+    "name": "NotFeeCollector",
+    "signature": "NotFeeCollector()",
+    "id": "0x73fcd3fe"
+  },
+  {
+    "kind": "error",
+    "name": "NotOrderOwner",
+    "signature": "NotOrderOwner()",
+    "id": "0xf6412b5a"
+  },
+  {
+    "kind": "error",
+    "name": "OrderExpired",
+    "signature": "OrderExpired()",
+    "id": "0xc56873ba"
+  },
+  {
+    "kind": "error",
+    "name": "OrderNotPending",
+    "signature": "OrderNotPending()",
+    "id": "0xba254946"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableInvalidOwner",
+    "signature": "OwnableInvalidOwner(address)",
+    "id": "0x1e4fbdf7"
+  },
+  {
+    "kind": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "signature": "OwnableUnauthorizedAccount(address)",
+    "id": "0x118cdaa7"
+  },
+  {
+    "kind": "error",
+    "name": "PriceAboveTarget",
+    "signature": "PriceAboveTarget()",
+    "id": "0xbcfcc626"
+  },
+  {
+    "kind": "error",
+    "name": "PriceBelowTarget",
+    "signature": "PriceBelowTarget()",
+    "id": "0xb8673d0c"
+  },
+  {
+    "kind": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "signature": "ReentrancyGuardReentrantCall()",
+    "id": "0x3ee5aeb5"
+  },
+  {
+    "kind": "error",
+    "name": "SameToken",
+    "signature": "SameToken()",
+    "id": "0x201b580a"
+  },
+  {
+    "kind": "error",
+    "name": "TokenIsStablecoin",
+    "signature": "TokenIsStablecoin()",
+    "id": "0xc1343a37"
+  },
+  {
+    "kind": "error",
+    "name": "TokenPaused",
+    "signature": "TokenPaused()",
+    "id": "0xe7792495"
+  },
+  {
+    "kind": "error",
+    "name": "ZeroAmount",
+    "signature": "ZeroAmount()",
+    "id": "0x1f2a2005"
+  },
+  {
+    "kind": "error",
+    "name": "InsufficientOutput",
+    "signature": "InsufficientOutput()",
+    "id": "0xbb2875c3"
+  },
+  {
+    "kind": "error",
+    "name": "StalePrice",
+    "signature": "StalePrice()",
+    "id": "0x19abf40e"
+  },
+  {
+    "kind": "error",
+    "name": "UnsupportedTransfer",
+    "signature": "UnsupportedTransfer()",
+    "id": "0xce2d28e1"
+  },
+  {
+    "kind": "error",
+    "name": "UnsupportedInputTransfer",
+    "signature": "UnsupportedInputTransfer()",
+    "id": "0x1c42e5ce"
+  },
+  {
+    "kind": "error",
+    "name": "SafeERC20FailedOperation",
+    "signature": "SafeERC20FailedOperation(address)",
+    "id": "0x5274afe7"
+  },
+  {
+    "kind": "error",
+    "name": "OrderBelowMinimumNotional",
+    "signature": "OrderBelowMinimumNotional()",
+    "id": "0x9b2bea5b"
+  },
+  {
+    "kind": "error",
+    "name": "TooManyActiveOrders",
+    "signature": "TooManyActiveOrders()",
+    "id": "0x28d7a641"
+  }
+]
