@@ -189,3 +189,10 @@ command = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-pla
 exit_code = 0
 log_path = "fleet/logs/2.3.4-verify-1.log"
 observed_and_assumption = "The gate exits 0 while running zero tests, because the capabilities module belongs to the gateway binary and a --lib filter selects nothing, so the launchpad probe test only compiles under --all-targets and never runs. Assumption: the verify command is corrected to the binary target and the task is qualified on that run."
+
+[finding.5.1.15]
+revision = "3529f63d3aea6d52cedaa84b3efd09c54e0778ea"
+command = "cargo clippy --locked --manifest-path platform/Cargo.toml -p layerx-oracle-feeder --all-targets"
+exit_code = 1
+log_path = "fleet/logs/5.1.15-build-1.log"
+observed_and_assumption = "The feeder gate passes but clippy refuses the crate on the pre-existing struct_field_names lint for Observation.observation_sequence in the feeder library, so no feeder test target can be linted. Assumption: the field is renamed so the lint passes without an allow attribute, with every caller and test updated."
