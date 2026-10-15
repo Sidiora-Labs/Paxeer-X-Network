@@ -364,3 +364,59 @@ command = "go test -count=1 ./platform/perps-data/migrations/ -run 'TestSchemaFi
 exit_code = 1
 log_path = "fleet/logs/fix-7.1.9-verify-1.log"
 observed_and_assumption = "Migration 0006 drops NOT NULL from the market decimals and the schema test now models INSERT and ALTER COLUMN DROP NOT NULL statements exactly, so TestSchemaFiles passes and the seed and retry subtests pass; refresh_from_chain and fee_config still refuse because nothing in the tree serves totalMarkets, getMarket or getFees at 0x1015. Assumption: those two subtests run once the perps precompile and its wiring land, and 7.1.9 is marked done then."
+
+[finding.2.1.11]
+revision = "e38d6df1d3bc032fcbdbade8702af150260d956b"
+command = "go build ./modules/launchpad/... ./precompiles/launchpad/..."
+exit_code = 1
+log_path = "fleet/logs/2.1.11-build-1.log"
+observed_and_assumption = "invariants.go calls Keeper.TotalLiabilities, which no task has landed yet because fees.go belongs to task 2.1.7, and TestLiabilitiesBacked also needs the genesis import from task 2.1.12. Assumption: both gates are rerun once on this branch after 2.1.7 and 2.1.12 land, and the reader name is aligned to whatever 2.1.7 exports."
+
+[finding.2.1.13]
+revision = "7ea3f6ee9"
+command = "go test ./modules/launchpad/keeper/... -run 'TestBuyMovesUsdlIntoCustody'"
+exit_code = 1
+log_path = "fleet/logs/2.1.13-verify-1.log"
+observed_and_assumption = "The keeper test package does not compile because Keeper.Swap still has the bank signature; the custody Swap, CreateMarket and RecordFee shapes belong to tasks 2.1.5, 2.1.6 and 2.1.7. Assumption: the gate is rerun once after those three land, and the older history, fee-isolation and creation-fee tests that assert the retired paths are corrected by the fix lanes of those tasks."
+
+[finding.3.1.1]
+revision = "d6e928186398a3ded58873d16bac8e3ad2a97326"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.1-build-1.log"
+observed_and_assumption = "The perps keeper references types.EVMKeeper and types.PricefeedKeeper, which task 3.1.20 adds in modules/perps/types/expected_keepers.go and which has not landed. Assumption: both gates are rerun once after 3.1.20 lands."
+
+[finding.3.1.11]
+revision = "44a9bc3311e07d81cc72e1067e40f70e0af9757d"
+command = "go build ./modules/perps/..."
+exit_code = 1
+log_path = "fleet/logs/3.1.11-build-1.log"
+observed_and_assumption = "mark.go depends on the perps Keeper (3.1.1), the book BestBid, BestAsk and MidPrice (3.1.5), the PricefeedKeeper interface (3.1.20) and pricefeed GetPrice (5.1.9), none of which had landed; MarketState also has no block-time field, so the EMA step uses the stored price timestamp. Assumption: both gates are rerun once after those four land, and the order-book half of acceptance 3.10.3 is covered by the order tasks."
+
+[finding.7.2.18]
+revision = "47a6b5e0b"
+command = "go test ./platform/perps-data/internal/rest/ -run TestAccountV2"
+exit_code = 1
+log_path = "fleet/logs/7.2.18-verify-1.log"
+observed_and_assumption = "TestAccountV2 needs a PostgreSQL database and the worker sandbox could not start one; userAlerts, userReferrals and competition ranking readbacks have no GraphQL source yet. Assumption: the gate is rerun once against a throwaway local cluster, and the missing readbacks come from the GraphQL resolver tasks."
+
+[finding.7.2.6]
+revision = "3fdd78bf5"
+command = "go test ./platform/perps-data/internal/graphql/ -run TestSchema"
+exit_code = 1
+log_path = "fleet/logs/7.2.6-verify-1.log"
+observed_and_assumption = "The schema SDL is complete but NewSchema fails because the dashboard, leaderboard, subscription and PerfDB resolvers belong to tasks 7.2.7, 7.2.8, 7.2.10 and 7.2.19, which have not landed. Assumption: the gate is rerun once after those resolver tasks land."
+
+[finding.8.4.16]
+revision = "0de219eba"
+command = "bash tools/paxeer-x/gov/test.sh"
+exit_code = 1
+log_path = "fleet/logs/8.4.16-verify-1.log"
+observed_and_assumption = "Four of five template renders pass; 03-xweb-fee.json lacks messages[0].kernel_network_id, which is outside this task's touches, and the fourth step waits on the kernel network id from layerx-merge task 11.5.225. Assumption: the xweb fee template is corrected by its own fix lane and the gate is rerun once afterwards."
+
+[fix.7.0.2]
+revision = "41b74b8d2"
+command = "go test ./platform/perps-data/internal/delivery/ ./platform/perps-data/internal/store/ -run 'TestStore|TestMigrate'"
+exit_code = 1
+log_path = "fleet/logs/fix-7.0.2-verify-1.log"
+observed_and_assumption = "The outbox identity is now the Perps-Seq bigint across enqueue, lease and claim, with the migration and tests updated, but TestMigrate and TestStore need a PostgreSQL database the worker sandbox could not start. Assumption: the gate is rerun once against a throwaway local cluster before 7.1.6 is unheld."
