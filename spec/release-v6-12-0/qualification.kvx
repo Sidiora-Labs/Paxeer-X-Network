@@ -1131,3 +1131,11 @@ exit = 1
 log = "fleet/logs/fix-launchpad-keeper-tests-verify-1.log"
 observed = "The keeper test package type-checks clean, but the binary panics at init with launchpad: keepers do not provide the launchpad keeper."
 assumption = "Rerun after the launchpad keeper provider fix."
+
+[finding.fix-perps-keeper]
+revision = "13fe014f15f3db3434c3f813a798bec89b769b81"
+command = "go vet ./modules/perps/keeper/ && go test ./modules/perps/keeper/ -count=1 -p 2"
+exit = 1
+log = "fleet/logs/fix-perps-keeper-verify-5.log"
+observed = "The perps keeper builds after the reconciliation, with OracleTWAP defined as the mean of the index prices at the current hour's premium samples (new MarketState.OracleSum field, which changes the state encoding), but the test binary panics at init in precompiles/launchpad setup.go:22 before any test runs."
+assumption = "The OracleTWAP definition stands unless overruled; rerun after the launchpad keeper provider fix."
