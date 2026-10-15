@@ -121,11 +121,14 @@ func b(value int64) *big.Int { return big.NewInt(value) }
 
 func TestCreateMarketChargesFeeAndEscrowsSupply(t *testing.T) {
 	e := newEnv(t)
-	creator := e.account(250_000_000)
+	// Funds two creations at DefaultParams' CreationFee 1_000_000 (the
+	// ProtocolConfig value) and leaves 500_000, short of a third.
+	creator := e.account(2_500_000)
 	market := e.create(creator, types.FeeStrategyClaim)
 
-	require.Equal(t, i(100_000_000), e.balance(e.k.TreasuryAddress(), quote))
-	require.Equal(t, i(150_000_000), e.balance(creator, quote))
+	// One creation fee: 1_000_000 to the treasury, 2_500_000-1_000_000 left.
+	require.Equal(t, i(1_000_000), e.balance(e.k.TreasuryAddress(), quote))
+	require.Equal(t, i(1_500_000), e.balance(creator, quote))
 	require.Equal(t, "factory/"+e.k.ModuleAddress().String()+"/lp1", market.Denom)
 	require.Equal(t, i(1_000_000_000_000_000), e.balance(e.k.ModuleAddress(), market.Denom))
 	require.Equal(t, i(1_000_000_000_000_000), testkeeper.EVMTestApp.BankKeeper.GetSupply(e.ctx, market.Denom).Amount)
@@ -196,7 +199,8 @@ func TestSwapVectors(t *testing.T) {
 	require.Equal(t, uint64(1), m.SnapshotIndex)
 	require.Equal(t, uint64(1), m.SnapshotCount)
 	require.Equal(t, i(9_606_813_905_120), e.balance(alice, denom))
-	require.Equal(t, i(100_300_000), e.balance(e.k.TreasuryAddress(), quote))
+	// CreationFee 1_000_000 plus the protocol cut 3_000_000*1_000/10_000 = 300_000.
+	require.Equal(t, i(1_300_000), e.balance(e.k.TreasuryAddress(), quote))
 	protocolFees, err := e.k.GetProtocolFees(e.ctx, denom)
 	require.NoError(t, err)
 	require.Equal(t, i(300_000), protocolFees)

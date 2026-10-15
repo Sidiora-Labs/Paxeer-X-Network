@@ -219,8 +219,10 @@ func (m Market) validatePool() error {
 				return fmt.Errorf("%w: native market sets %s", ErrInvalidMarket, addr.name)
 			}
 		}
-		if m.PendingGuardian != "" || m.LastSnapshotTimestamp != 0 || !m.CumulativeBuyQuoteVolume.IsNil() ||
-			!m.CumulativeSellQuoteVolume.IsNil() || m.FeeRightID != 0 {
+		// The store's JSON round trip turns a nil volume into a zero one.
+		if m.PendingGuardian != "" || m.LastSnapshotTimestamp != 0 ||
+			!(m.CumulativeBuyQuoteVolume.IsNil() || m.CumulativeBuyQuoteVolume.IsZero()) ||
+			!(m.CumulativeSellQuoteVolume.IsNil() || m.CumulativeSellQuoteVolume.IsZero()) || m.FeeRightID != 0 {
 			return fmt.Errorf("%w: native market sets pool fields", ErrInvalidMarket)
 		}
 		return nil
