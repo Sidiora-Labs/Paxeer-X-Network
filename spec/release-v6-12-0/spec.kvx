@@ -26905,7 +26905,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.0.9]
 title = "Exact integer arithmetic and the client rate limiter"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
