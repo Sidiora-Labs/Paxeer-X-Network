@@ -161,3 +161,10 @@ command = "go test ./protocol/... -run 'TestActiveAddresses'"
 exit_code = 1
 log_path = "fleet logs 2.3.9-verify-1"
 observed_and_assumption = "In the Launch-x checkout the protocol coverage package embeds cmd/measure/*.go, which is absent at the pinned revision, so every build or test pattern over ./protocol/... fails at setup; the active address test itself passes, and the same embed fails the build command of the manifest and decode registry tasks whose own gates pass. Assumption: the missing measure command directory is restored in Launch-x by its owner, after which the ./protocol/... gate is rerun unchanged; the generation 2 Treasury role also waits on the factory layout file that this checkout lacks."
+
+[finding.2.0.4]
+revision = "c4c1d87547a9c1eb66724919d72fdae696ace16e"
+command = "go test ./precompiles/launchpad/ -run 'TestDirectABIFile'"
+exit_code = 0
+log_path = "fleet logs 2.0.4-verify-2"
+observed_and_assumption = "The direct ABI files pass their gate, but the new launchpad abi.json no longer carries the v6.10 event names that the precompile still emits by name, so the existing launchpad flow tests fail until the precompile rewrite task lands, and the launchpad contract text states nineteen events and no errors for ProtocolConfig where its own tables and the artifact give six events and thirteen errors. Assumption: the precompile rewrite task restores the flow tests and the contract summary line is corrected to match its tables."
