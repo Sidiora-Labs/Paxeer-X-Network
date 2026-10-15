@@ -41,9 +41,18 @@ func newCustomRevert(err *sdkerrors.Error, values ...interface{}) (*customRevert
 	return &customRevert{err: err, data: data}, nil
 }
 
+// revertData is the single mapper from a failed call to its EVM revert data:
+// the revert data of a nested call found anywhere in err, then the revert
+// data err carries or the Launch-x custom error of its launchpad keeper
+// error, outermost first, then the reason of a keeper-only error, and
+// Error(string) of err otherwise.
 func revertData(err error) ([]byte, error) {
 	if err == nil {
 		return nil, nil
+	}
+	var nested *NestedRevertError
+	if errors.As(err, &nested) {
+		return nested.Revert()
 	}
 	data, packErr, found := contractRevertData(err, err)
 	if packErr != nil {

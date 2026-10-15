@@ -59,11 +59,8 @@ var (
 	retainedTime     = time.Unix(1_800_000_000, 0).UTC()
 	retainedDeadline = big.NewInt(retainedTime.Unix() + 3600)
 	launchpadAddress = common.HexToAddress(launchpad.LaunchpadAddress)
-	// surfaceRuntime is the 41-byte surface runtime of contracts/launchpad.md
-	// section 1 that every surface address holds after the upgrade.
-	surfaceRuntime  = common.FromHex("0x363d3d373360601b36523d3d601436013d3d6110175af13d600060003e6024573d6000fd5b3d6000f3")
-	erc1967ImplSlot = common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
-	maxUint256      = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	erc1967ImplSlot  = common.HexToHash("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
+	maxUint256       = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
 	factorySurface        = launchpadkeeper.Generation2Surfaces[types.RoleFactory]
 	routerSurface         = launchpadkeeper.Generation2Surfaces[types.RoleRouter]
@@ -88,8 +85,6 @@ const (
 	pauseStatusPaused     uint64 = 0
 	pauseStatusCallFailed uint64 = 4
 )
-
-func selector(signature string) []byte { return crypto.Keccak256([]byte(signature))[:4] }
 
 // packArgs ABI-encodes args under the comma-separated type list kinds.
 func packArgs(t *testing.T, kinds string, args ...interface{}) []byte {
@@ -144,8 +139,6 @@ func revertData(sig string, words ...[]byte) []byte {
 	}
 	return out
 }
-
-func addressWord(address common.Address) []byte { return common.LeftPadBytes(address.Bytes(), 32) }
 
 // retainedLayout is the generation table of
 // modules/launchpad/keeper/testdata/v6120/layout.json.
