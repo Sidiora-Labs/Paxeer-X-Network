@@ -10434,7 +10434,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.0.3]
 title = "Register the LXP_PERPS error codes 2 to 45"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
