@@ -36,6 +36,9 @@ const (
 	LayerXExchangeStoreKey = "layerxexchange" // modules/layerxexchange/types.StoreKey
 	LayerXBridgeStoreKey   = "layerxbridge"   // modules/layerxbridge/types.StoreKey
 	LaunchpadStoreKey      = "launchpad"      // modules/launchpad/types.StoreKey
+	PerpsStoreKey          = "perps"          // modules/perps/types.StoreKey
+	SpotStoreKey           = "spot"           // modules/spot/types.StoreKey
+	PriceFeedStoreKey      = "pricefeed"      // modules/pricefeed/types.StoreKey
 	XWebStoreKey           = "xweb"           // modules/xweb/types.StoreKey
 	LayerXLedgerStoreKey   = "layerxledger"   // modules/layerxledger/types.StoreKey
 	LayerXAuthStoreKey     = "layerxauth"     // modules/layerxauth/types.StoreKey
@@ -74,6 +77,9 @@ var MemIAVLStoreKeys = []string{
 	LayerXExchangeStoreKey,
 	LayerXBridgeStoreKey,
 	LaunchpadStoreKey,
+	PerpsStoreKey,
+	SpotStoreKey,
+	PriceFeedStoreKey,
 	XWebStoreKey,
 	SequencerStoreKey,
 }

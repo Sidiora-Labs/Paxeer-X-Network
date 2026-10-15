@@ -17,6 +17,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/telemetry"
@@ -79,7 +80,7 @@ func moduleAddress(name string) common.Address {
 	return common.BytesToAddress(sum[:20])
 }
 
-func testSource(t *testing.T, db *sql.DB) (*source.Follower, *source.RPC) {
+func testSource(t *testing.T, db *sql.DB) (NodeSource, *source.RPC) {
 	t.Helper()
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -87,32 +88,45 @@ func testSource(t *testing.T, db *sql.DB) (*source.Follower, *source.RPC) {
 	if err != nil {
 		t.Fatalf("telemetry.New: %v", err)
 	}
-	registry, err := decode.NewRegistry(metrics, moduleAddress("perps"))
-	if err != nil {
-		t.Fatalf("NewRegistry: %v", err)
-	}
 	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: []string{requireEnv(t, testRPCEnv)}, Logger: logger})
 	if err != nil {
 		t.Fatalf("NewRPC: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := rpc.Close(); err != nil {
-			t.Errorf("close rpc: %v", err)
-		}
-	})
-	comet, err := source.NewComet([]string{requireEnv(t, testCometEnv)})
+	t.Cleanup(rpc.Close)
+	registry, err := decode.NewRegistry(metrics, decode.Options{PerpsModule: moduleAddress("perps"), SpotModule: moduleAddress("spot"),
+		PricefeedModule: moduleAddress("pricefeed"), State: rpc})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	comet, err := source.NewComet([]string{requireEnv(t, testCometEnv)}, 2*time.Second)
 	if err != nil {
 		t.Fatalf("NewComet: %v", err)
 	}
-	follower, err := source.NewFollower(source.FollowerOptions{RPC: rpc, Comet: comet, Registry: registry, DB: db, ChainID: 1, Logger: logger})
+	outbox, err := delivery.NewStore(db, "perps", store.Policy(125))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	follower, err := source.NewFollower(ctx, source.FollowerOptions{
+		DB: db, RPC: rpc, Comet: comet, Outbox: outbox, ChainID: 125, Logger: logger,
+		Write: func(ctx context.Context, tx *sql.Tx, b *source.Block) error {
+			rows, err := registry.DecodeBlock(ctx, tx, decode.BlockInput{Number: b.Number, Hash: b.Hash, Time: b.Time, Logs: b.Logs, Events: b.FinalizeBlockEvents})
+			if err != nil {
+				return err
+			}
+			return store.WriteBlock(ctx, tx, store.Block{Number: b.Number, Hash: b.Hash, ParentHash: b.ParentHash, Time: b.Time, Proposer: b.Proposer, TxCount: b.TxCount}, rows)
+		},
+		Rebuild: func(ctx context.Context, tx *sql.Tx, a source.Affected) error {
+			return store.Rebuild(ctx, tx, int64(a.From), int64(a.From))
+		},
+	})
 	if err != nil {
 		t.Fatalf("NewFollower: %v", err)
 	}
-	return follower, rpc
+	return NodeSource{Follower: follower, Registry: registry}, rpc
 }
 
-// index is the indexer's write path: one transaction per height through
-// store.WriteBlock under the writer lease of indexerHolder.
+// index is the indexer's write path: one transaction per height with the
+// block row, store.WriteBlock and the cursor, under the writer lease of indexerHolder.
 func index(t *testing.T, db *sql.DB, src Source, from, to int64) {
 	t.Helper()
 	ctx := context.Background()
@@ -138,7 +152,15 @@ func writeHeight(ctx context.Context, db *sql.DB, src Source, h int64) error {
 	if err != nil {
 		return errors.Join(err, tx.Rollback())
 	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO perps.blocks (number, hash, parent_hash, time, proposer, tx_count) VALUES ($1, $2, $3, $4, $5, $6)`,
+		h, block.Hash.Bytes(), block.ParentHash.Bytes(), block.Time, block.Proposer, block.TxCount); err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
 	if err := store.WriteBlock(ctx, tx, block, rows); err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO perps.cursors (name, height, hash) VALUES ($1, $2, $3)
+ON CONFLICT (name) DO UPDATE SET height = EXCLUDED.height, hash = EXCLUDED.hash, updated_at = now()`, cursorName, h, block.Hash.Bytes()); err != nil {
 		return errors.Join(err, tx.Rollback())
 	}
 	return tx.Commit()
@@ -257,7 +279,7 @@ func TestReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
-	to := head - 1
+	to := int64(head) - 1
 	from := to - testSpan
 	if from < 1 {
 		t.Fatalf("node head %d is below %d", head, testSpan+2)

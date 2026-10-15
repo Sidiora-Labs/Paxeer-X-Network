@@ -266,31 +266,59 @@ func (f *Follower) Step(ctx context.Context) (int, error) {
 		if err != nil || rewound {
 			return stored, err
 		}
-		header, err := f.opts.Comet.Header(ctx, int64(h))
+		b, err := f.assemble(ctx, evm, byBlock[h])
 		if err != nil {
-			return stored, err
-		}
-		results, err := f.opts.Comet.BlockResults(ctx, int64(h))
-		if err != nil {
-			return stored, err
-		}
-		for _, l := range byBlock[h] {
-			if l.BlockHash != evm.Hash {
-				return stored, fmt.Errorf("source: height %d: log %d of block hash %s, block is %s", h, l.Index, l.BlockHash.Hex(), evm.Hash.Hex())
+			var mismatch *SyntheticMismatchError
+			if errors.As(err, &mismatch) {
+				f.stopped = err
 			}
-		}
-		classified, err := f.checkSynthetic(h, results.TxCount, evm.Transactions, byBlock[h], header.Time)
-		if err != nil {
-			f.stopped = err
 			return stored, err
 		}
-		b := &Block{Number: h, Hash: evm.Hash, ParentHash: evm.ParentHash, Time: header.Time, Proposer: header.Proposer, TxCount: results.TxCount, Logs: classified, FinalizeBlockEvents: results.FinalizeBlockEvents}
 		if err := f.commit(ctx, b); err != nil {
 			return stored, err
 		}
 		stored++
 	}
 	return stored, nil
+}
+
+// Fetch reads height h from the node exactly as Step does, without the
+// continuity check and without storing it; a replay rewrites a stored height
+// from it.
+func (f *Follower) Fetch(ctx context.Context, h uint64) (*Block, error) {
+	logs, err := f.fetchLogs(ctx, h, h)
+	if err != nil {
+		return nil, err
+	}
+	evm, err := f.opts.RPC.Block(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return f.assemble(ctx, evm, logs)
+}
+
+// assemble joins the EVM block, its logs and the consensus header and block
+// results of its height into a Block.
+func (f *Follower) assemble(ctx context.Context, evm *EVMBlock, logs []ethtypes.Log) (*Block, error) {
+	h := evm.Number
+	header, err := f.opts.Comet.Header(ctx, int64(h))
+	if err != nil {
+		return nil, err
+	}
+	results, err := f.opts.Comet.BlockResults(ctx, int64(h))
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range logs {
+		if l.BlockHash != evm.Hash {
+			return nil, fmt.Errorf("source: height %d: log %d of block hash %s, block is %s", h, l.Index, l.BlockHash.Hex(), evm.Hash.Hex())
+		}
+	}
+	classified, err := f.checkSynthetic(h, results.TxCount, evm.Transactions, logs, header.Time)
+	if err != nil {
+		return nil, err
+	}
+	return &Block{Number: h, Hash: evm.Hash, ParentHash: evm.ParentHash, Time: header.Time, Proposer: header.Proposer, TxCount: results.TxCount, Logs: classified, FinalizeBlockEvents: results.FinalizeBlockEvents}, nil
 }
 
 func (f *Follower) next(ctx context.Context) (uint64, error) {

@@ -36,21 +36,27 @@ type eventDecoder struct {
 	build func(*batch, Fact, *reader) []Row
 }
 
-func registerPerps(r *Registry, module common.Address) error {
+func registerPerps(r *Registry) error {
 	a, err := perpsabi.ABI()
 	if err != nil {
 		return fmt.Errorf("decode: perps ABI: %w", err)
 	}
-	return r.register(PerpsAddress, module, a, perpsEvents)
+	return r.register(PerpsAddress, r.opts.PerpsModule, a, perpsEvents)
 }
 
 // batch carries the account sources of one Decode call: the placed and opened
-// rows decoded so far, then the stored rows read through q.
+// rows decoded so far, then the stored rows read through q; the spot orders
+// and share pointers resolved so far; and the token of the share pointer
+// whose log is being decoded.
 type batch struct {
 	ctx         context.Context
 	q           Querier
+	reg         *Registry
 	orders      map[string]common.Address
 	positions   map[string]common.Address
+	spotOrders  map[spotOrderKey]spotOrder
+	created     map[common.Address]common.Address
+	shareToken  common.Address
 	unknownLogs int
 	enumUnknown int
 }

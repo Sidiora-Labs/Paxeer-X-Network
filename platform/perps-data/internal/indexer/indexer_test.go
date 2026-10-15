@@ -134,27 +134,27 @@ func (e *env) newIndexer(t *testing.T, holder string, start uint64) *Indexer {
 	if err != nil {
 		t.Fatalf("telemetry: %v", err)
 	}
-	module := sha256.Sum256([]byte("perps"))
-	registry, err := decode.NewRegistry(metrics, common.BytesToAddress(module[:common.AddressLength]))
-	if err != nil {
-		t.Fatalf("NewRegistry: %v", err)
+	module := func(name string) common.Address {
+		sum := sha256.Sum256([]byte(name))
+		return common.BytesToAddress(sum[:common.AddressLength])
 	}
 	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: []string{requireEnv(t, testRPCEnv)}})
 	if err != nil {
 		t.Fatalf("NewRPC: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := rpc.Close(); err != nil {
-			t.Errorf("close rpc: %v", err)
-		}
-	})
-	comet, err := source.NewComet([]string{requireEnv(t, testCometEnv)})
+	t.Cleanup(rpc.Close)
+	registry, err := decode.NewRegistry(metrics, decode.Options{PerpsModule: module("perps"), SpotModule: module("spot"),
+		PricefeedModule: module("pricefeed"), State: rpc})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	comet, err := source.NewComet([]string{requireEnv(t, testCometEnv)}, 2*time.Second)
 	if err != nil {
 		t.Fatalf("NewComet: %v", err)
 	}
-	follower, err := source.NewFollower(source.FollowerConfig{DB: e.db, RPC: rpc, Comet: comet, Chain: e.chain})
+	outbox, err := delivery.NewStore(e.db, "perps", store.Policy(e.chain))
 	if err != nil {
-		t.Fatalf("NewFollower: %v", err)
+		t.Fatalf("NewStore: %v", err)
 	}
 	publisher, err := publish.New(e.db, e.nc, store.Policy(e.chain), publish.Config{
 		Owner: holder, Batch: 100, MaxAttempts: 20, LeaseDuration: 30 * time.Second,
@@ -163,7 +163,8 @@ func (e *env) newIndexer(t *testing.T, holder string, start uint64) *Indexer {
 	if err != nil {
 		t.Fatalf("publish.New: %v", err)
 	}
-	ix, err := New(Deps{DB: e.db, Follower: follower, Registry: registry, Publisher: publisher, Metrics: metrics, Holder: holder, StartHeight: int64(start)})
+	ix, err := New(ctx, Deps{DB: e.db, RPC: rpc, Comet: comet, Outbox: outbox, ChainID: e.chain, Registry: registry, Publisher: publisher,
+		Metrics: metrics, Holder: holder, StartHeight: int64(start)})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

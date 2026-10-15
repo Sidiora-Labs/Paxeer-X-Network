@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/config"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/delivery"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/replay"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
@@ -28,9 +30,10 @@ import (
 )
 
 const (
-	batchSize  = 500
-	leaseTTL   = 30 * time.Second
-	leaseRetry = time.Second
+	batchSize    = 500
+	leaseTTL     = 30 * time.Second
+	leaseRetry   = time.Second
+	cometTimeout = 2 * time.Second
 )
 
 func main() {
@@ -99,32 +102,56 @@ func replayRange(ctx context.Context, req replay.Request) (replay.Report, error)
 	if err != nil {
 		return replay.Report{}, errors.Join(err, db.Close())
 	}
-	registry, err := decode.NewRegistry(metrics, moduleAddress("perps"))
-	if err != nil {
-		return replay.Report{}, errors.Join(err, db.Close())
-	}
 	rpc, err := source.NewRPC(ctx, source.RPCOptions{URLs: cfg.RPCURLs, Logger: logger})
 	if err != nil {
 		return replay.Report{}, errors.Join(err, db.Close())
 	}
-	comet, err := source.NewComet(cfg.CometURLs)
+	defer rpc.Close()
+	registry, err := decode.NewRegistry(metrics, decode.Options{
+		PerpsModule:     moduleAddress("perps"),
+		SpotModule:      moduleAddress("spot"),
+		PricefeedModule: moduleAddress("pricefeed"),
+		State:           rpc,
+	})
 	if err != nil {
-		return replay.Report{}, errors.Join(err, rpc.Close(), db.Close())
+		return replay.Report{}, errors.Join(err, db.Close())
 	}
-	follower, err := source.NewFollower(source.FollowerOptions{RPC: rpc, Comet: comet, Registry: registry, DB: db, ChainID: cfg.ChainID, Logger: logger})
+	comet, err := source.NewComet(cfg.CometURLs, cometTimeout)
 	if err != nil {
-		return replay.Report{}, errors.Join(err, rpc.Close(), db.Close())
+		return replay.Report{}, errors.Join(err, db.Close())
+	}
+	outbox, err := delivery.NewStore(db, "perps", store.Policy(cfg.ChainID))
+	if err != nil {
+		return replay.Report{}, errors.Join(err, db.Close())
+	}
+	// The replay only fetches through the follower; its block write and
+	// rewind rebuild are the indexer's, should a step ever run.
+	follower, err := source.NewFollower(ctx, source.FollowerOptions{
+		DB: db, RPC: rpc, Comet: comet, Outbox: outbox, ChainID: cfg.ChainID, Logger: logger,
+		Write: func(ctx context.Context, tx *sql.Tx, b *source.Block) error {
+			rows, err := registry.DecodeBlock(ctx, tx, decode.BlockInput{Number: b.Number, Hash: b.Hash, Time: b.Time, Logs: b.Logs, Events: b.FinalizeBlockEvents})
+			if err != nil {
+				return err
+			}
+			return store.WriteBlock(ctx, tx, store.Block{Number: b.Number, Hash: b.Hash, ParentHash: b.ParentHash, Time: b.Time, Proposer: b.Proposer, TxCount: b.TxCount}, rows)
+		},
+		Rebuild: func(ctx context.Context, tx *sql.Tx, a source.Affected) error {
+			return store.Rebuild(ctx, tx, int64(a.From), int64(a.From))
+		},
+	})
+	if err != nil {
+		return replay.Report{}, errors.Join(err, db.Close())
 	}
 	runner := &replay.Runner{
 		DB:         db,
-		Source:     follower,
+		Source:     replay.NodeSource{Follower: follower, Registry: registry},
 		Holder:     fmt.Sprintf("perps-replay-%d", os.Getpid()),
 		LeaseTTL:   leaseTTL,
 		LeaseRetry: leaseRetry,
 		BatchSize:  batchSize,
 	}
 	rep, err := runner.Run(ctx, req)
-	return rep, errors.Join(err, rpc.Close(), db.Close())
+	return rep, errors.Join(err, db.Close())
 }
 
 // moduleAddress is authtypes.NewModuleAddress: the first 20 bytes of the

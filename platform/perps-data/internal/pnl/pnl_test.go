@@ -1,4 +1,4 @@
-package pnl
+package pnl_test
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/bigint"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/pnl"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 )
 
@@ -159,7 +160,7 @@ type leaderboardRow struct {
 	openPositions int
 }
 
-func leaderboard(t *testing.T, tx *sql.Tx, window Window) []leaderboardRow {
+func leaderboard(t *testing.T, tx *sql.Tx, window pnl.Window) []leaderboardRow {
 	t.Helper()
 	rows, err := tx.Query(`SELECT rank, account, trunc(realized_pnl)::text, trunc(volume_usd)::text, trades_count,
         win_rate::text, avg_hold_time_seconds, open_positions FROM perps.leaderboard WHERE "window" = $1 ORDER BY rank`, string(window))
@@ -185,7 +186,7 @@ func leaderboard(t *testing.T, tx *sql.Tx, window Window) []leaderboardRow {
 
 func rebuild(t *testing.T, tx *sql.Tx, asOf time.Time) {
 	t.Helper()
-	if err := (Leaderboard{}).Rebuild(context.Background(), tx, asOf); err != nil {
+	if err := (pnl.Leaderboard{}).Rebuild(context.Background(), tx, asOf); err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
 }
@@ -200,7 +201,7 @@ func TestPnl(t *testing.T) {
 		opened(t, tx, factKey{1, 0, 0, 0}, baseTime, accountA1, 7, true, e18(200), e18(100))
 		closed(t, tx, factKey{2, 0, 0, 0}, baseTime.Add(90*time.Second), accountA1, 7, e18(220), e18(110), e18(20), true)
 
-		realized, err := RealizedOnClose(true, e18(100), e18(110), e18(220))
+		realized, err := pnl.RealizedOnClose(true, e18(100), e18(110), e18(220))
 		if err != nil || realized != e18(20) {
 			t.Fatalf("RealizedOnClose long = %q, %v; want %s", realized, err, e18(20))
 		}
@@ -211,24 +212,24 @@ func TestPnl(t *testing.T) {
 		if stored != realized {
 			t.Fatalf("PositionClosed realizedPnl %s, computed %s", stored, realized)
 		}
-		short, err := RealizedOnClose(false, e18(100), e18(110), e18(220))
+		short, err := pnl.RealizedOnClose(false, e18(100), e18(110), e18(220))
 		if err != nil || short != "-"+e18(20) {
 			t.Fatalf("RealizedOnClose short = %q, %v; want -%s", short, err, e18(20))
 		}
 		// The contract example: 1006.5 USD closed at 61,000 from 60,000 realises 16.5 USD.
-		example, err := RealizedOnClose(true, e18(60000), e18(61000), "1006500000000000000000")
+		example, err := pnl.RealizedOnClose(true, e18(60000), e18(61000), "1006500000000000000000")
 		if err != nil || example != "16500000000000000000" {
 			t.Fatalf("RealizedOnClose example = %q, %v; want 16500000000000000000", example, err)
 		}
-		if _, err := RealizedOnClose(true, e18(100), "0", e18(220)); !errors.Is(err, ErrZeroExitPrice) {
+		if _, err := pnl.RealizedOnClose(true, e18(100), "0", e18(220)); !errors.Is(err, pnl.ErrZeroExitPrice) {
 			t.Fatalf("zero exit price error %v, want ErrZeroExitPrice", err)
 		}
-		if _, err := RealizedOnClose(true, "-1", e18(110), e18(220)); !errors.Is(err, bigint.ErrInvalidRaw) {
+		if _, err := pnl.RealizedOnClose(true, "-1", e18(110), e18(220)); !errors.Is(err, bigint.ErrInvalidRaw) {
 			t.Fatalf("signed entry price error %v, want bigint.ErrInvalidRaw", err)
 		}
 
 		rebuild(t, tx, baseTime.Add(time.Hour))
-		got := leaderboard(t, tx, WindowAll)
+		got := leaderboard(t, tx, pnl.WindowAll)
 		want := []leaderboardRow{{1, accountA1, e18(20), "0", 0, "100.0000", 90, 0}}
 		if !slices.Equal(got, want) {
 			t.Fatalf("leaderboard all = %+v, want %+v", got, want)
@@ -243,15 +244,15 @@ func TestPnl(t *testing.T) {
 		settled(t, tx, factKey{12, 0, 0, 0}, day.Add(25*time.Hour), accountA1, 7, 1, "700", "9", "1", "1")
 		settled(t, tx, factKey{12, 1, 0, 0}, day.Add(25*time.Hour), accountA2, 8, 0, "900", "0", "1", "0")
 
-		d, err := RebuildDaily(ctx, tx, accountA1, day.Add(3*time.Hour))
+		d, err := pnl.RebuildDaily(ctx, tx, accountA1, day.Add(3*time.Hour))
 		if err != nil {
 			t.Fatalf("RebuildDaily: %v", err)
 		}
-		want := Daily{TradingPnl: "6", Fees: "3", Funding: "-1", RealizedPnl: "2", Volume: "1500", Trades: 2}
+		want := pnl.Daily{TradingPnl: "6", Fees: "3", Funding: "-1", RealizedPnl: "2", Volume: "1500", Trades: 2}
 		if d != want {
 			t.Fatalf("RebuildDaily = %+v, want %+v", d, want)
 		}
-		var got Daily
+		var got pnl.Daily
 		var date string
 		if err := tx.QueryRow(`SELECT to_char(day, 'YYYY-MM-DD'), trunc(trading_pnl)::text, trunc(fees)::text, trunc(funding)::text,
             trunc(realized_pnl)::text, trunc(volume)::text, trades FROM perps.user_pnl_daily WHERE account = $1`, accountA1.Bytes()).
@@ -265,7 +266,7 @@ func TestPnl(t *testing.T) {
 		if _, err := tx.Exec(`DELETE FROM perps.trade_settlements WHERE account = $1 AND block IN (10, 11)`, accountA1.Bytes()); err != nil {
 			t.Fatalf("delete settlements: %v", err)
 		}
-		if d, err := RebuildDaily(ctx, tx, accountA1, day); err != nil || d.Trades != 0 {
+		if d, err := pnl.RebuildDaily(ctx, tx, accountA1, day); err != nil || d.Trades != 0 {
 			t.Fatalf("RebuildDaily after rewind = %+v, %v; want no trades", d, err)
 		}
 		var rows int
@@ -273,16 +274,16 @@ func TestPnl(t *testing.T) {
 			t.Fatalf("user_pnl_daily rows after rewind = %d, %v; want 0", rows, err)
 		}
 
-		if _, err := FoldSettlement(Daily{}, Settlement{SizeUsd: bigint.Uint256Max, GrossPnl: "0", TotalFeesUsd: "0", FundingPaidUsd: "0"}); err != nil {
+		if _, err := pnl.FoldSettlement(pnl.Daily{}, pnl.Settlement{SizeUsd: bigint.Uint256Max, GrossPnl: "0", TotalFeesUsd: "0", FundingPaidUsd: "0"}); err != nil {
 			t.Fatalf("FoldSettlement at the ceiling: %v", err)
 		}
-		if _, err := FoldSettlement(Daily{Volume: bigint.Uint256Max}, Settlement{SizeUsd: "1", GrossPnl: "0", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrOverflow) {
+		if _, err := pnl.FoldSettlement(pnl.Daily{Volume: bigint.Uint256Max}, pnl.Settlement{SizeUsd: "1", GrossPnl: "0", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrOverflow) {
 			t.Fatalf("volume overflow error %v, want bigint.ErrOverflow", err)
 		}
-		if _, err := FoldSettlement(Daily{TradingPnl: bigint.Int256Max}, Settlement{SizeUsd: "1", GrossPnl: "1", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrOverflow) {
+		if _, err := pnl.FoldSettlement(pnl.Daily{TradingPnl: bigint.Int256Max}, pnl.Settlement{SizeUsd: "1", GrossPnl: "1", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrOverflow) {
 			t.Fatalf("trading overflow error %v, want bigint.ErrOverflow", err)
 		}
-		if _, err := FoldSettlement(Daily{}, Settlement{SizeUsd: "1", GrossPnl: "1.5", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrInvalidRaw) {
+		if _, err := pnl.FoldSettlement(pnl.Daily{}, pnl.Settlement{SizeUsd: "1", GrossPnl: "1.5", TotalFeesUsd: "0", FundingPaidUsd: "0"}); !errors.Is(err, bigint.ErrInvalidRaw) {
 			t.Fatalf("fractional gross error %v, want bigint.ErrInvalidRaw", err)
 		}
 	})
@@ -308,12 +309,12 @@ func TestPnl(t *testing.T) {
 			"stablecoin_amount": "5000000", "token_amount": e18(1), "is_buy": true,
 		})
 
-		pos, err := SpotPosition(ctx, tx, accountA1, tokenAddress, usdlAddress)
+		pos, err := pnl.SpotPosition(ctx, tx, accountA1, tokenAddress, usdlAddress)
 		if err != nil {
 			t.Fatalf("SpotPosition: %v", err)
 		}
 		first := baseTime.Add(20 * time.Second).Unix()
-		want := Position{
+		want := pnl.Position{
 			TotalUsdlSpent: "30000000", TotalTokensBought: e18(2), TotalUsdlReceived: "30000000", TotalTokensSold: e18(1),
 			AvgCostBasis: "15000000", CurrentHoldings: e18(1), RealizedPnlUsdl: "15000000",
 			FirstBuyTs: &first, LastTradeTs: baseTime.Add(22 * time.Second).Unix(), TradeCount: 3,
@@ -325,14 +326,14 @@ func TestPnl(t *testing.T) {
 		if pos != want {
 			t.Fatalf("SpotPosition = %+v, want %+v", pos, want)
 		}
-		total, err := TotalPnl(pos.RealizedPnlUsdl, pos.AvgCostBasis, pos.CurrentHoldings, "40000000")
+		total, err := pnl.TotalPnl(pos.RealizedPnlUsdl, pos.AvgCostBasis, pos.CurrentHoldings, "40000000")
 		if err != nil || total != "40000000" {
 			t.Fatalf("TotalPnl = %q, %v; want 40000000", total, err)
 		}
-		if _, err := TotalPnl(pos.RealizedPnlUsdl, pos.AvgCostBasis, pos.CurrentHoldings, ""); err == nil {
+		if _, err := pnl.TotalPnl(pos.RealizedPnlUsdl, pos.AvgCostBasis, pos.CurrentHoldings, ""); err == nil {
 			t.Fatal("TotalPnl without a mark succeeded for a non-empty inventory")
 		}
-		if _, err := Fold(pos, Trade{IsBuy: false, UsdlAmount: "1", TokenAmount: e18(2)}); err == nil || !strings.Contains(err.Error(), "oversell") {
+		if _, err := pnl.Fold(pos, pnl.Trade{IsBuy: false, UsdlAmount: "1", TokenAmount: e18(2)}); err == nil || !strings.Contains(err.Error(), "oversell") {
 			t.Fatalf("oversell error %v, want the oversell refusal", err)
 		}
 	})
@@ -348,7 +349,7 @@ func TestPnl(t *testing.T) {
 		settled(t, tx, factKey{30, 0, 1, 0}, baseTime, accountA1, 1, 0, e18(100), "0", "1", "0")
 
 		rebuild(t, tx, baseTime.Add(time.Hour))
-		got := leaderboard(t, tx, WindowAll)
+		got := leaderboard(t, tx, pnl.WindowAll)
 		want := []leaderboardRow{{1, accountA1, e18(12), e18(100), 1, "66.6667", 40, 0}}
 		if !slices.Equal(got, want) {
 			t.Fatalf("leaderboard all = %+v, want %+v", got, want)
@@ -380,7 +381,7 @@ func TestPnl(t *testing.T) {
 			{2, accountA1, e18(5), e18(10), 1, "100.0000", 0, 1},
 			{3, accountA2, e18(5), "0", 0, "100.0000", 0, 0},
 		}
-		if got := leaderboard(t, tx, WindowAll); !slices.Equal(got, all) {
+		if got := leaderboard(t, tx, pnl.WindowAll); !slices.Equal(got, all) {
 			t.Fatalf("leaderboard all = %+v, want %+v", got, all)
 		}
 		month := []leaderboardRow{
@@ -388,14 +389,14 @@ func TestPnl(t *testing.T) {
 			{2, accountA1, e18(5), e18(10), 1, "100.0000", 0, 1},
 			{3, accountA2, e18(5), "0", 0, "100.0000", 0, 0},
 		}
-		if got := leaderboard(t, tx, Window30d); !slices.Equal(got, month) {
+		if got := leaderboard(t, tx, pnl.Window30d); !slices.Equal(got, month) {
 			t.Fatalf("leaderboard 30d = %+v, want %+v", got, month)
 		}
 		week := []leaderboardRow{
 			{1, accountA1, e18(5), e18(10), 1, "100.0000", 0, 1},
 			{2, accountA2, e18(5), "0", 0, "100.0000", 0, 0},
 		}
-		if got := leaderboard(t, tx, Window7d); !slices.Equal(got, week) {
+		if got := leaderboard(t, tx, pnl.Window7d); !slices.Equal(got, week) {
 			t.Fatalf("leaderboard 7d = %+v, want %+v", got, week)
 		}
 
@@ -422,12 +423,12 @@ func TestPnl(t *testing.T) {
 		opened(t, tx, factKey{5, 2, 0, 0}, at(5), accountA3, 8, false, e18(200), e18(100))
 		settled(t, tx, factKey{5, 0, 1, 0}, at(5), accountA1, 7, 0, e18(200), "0", "0", "0")
 
-		entries, err := History(ctx, tx, accountA1, 0, 10, nil)
+		entries, err := pnl.History(ctx, tx, accountA1, 0, 10, nil)
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
 		type got struct {
-			kind  Kind
+			kind  pnl.Kind
 			event string
 			key   factKey
 			hash  common.Hash
@@ -437,9 +438,9 @@ func TestPnl(t *testing.T) {
 			order = append(order, got{e.Kind, e.Event, factKey{e.Block, e.TxIndex, e.LogIndex, e.Sub}, e.TxHash})
 		}
 		want := []got{
-			{KindFill, "fill", factKey{5, 1, 0, 0}, common.BytesToHash(factKey{5, 1, 0, 0}.txHash())},
-			{KindPosition, "opened", factKey{5, 0, 0, 0}, common.BytesToHash(factKey{5, 0, 0, 0}.txHash())},
-			{KindMargin, "deposited", factKey{4, 9, 9, 0}, common.BytesToHash(factKey{4, 9, 9, 0}.txHash())},
+			{pnl.KindFill, "fill", factKey{5, 1, 0, 0}, common.BytesToHash(factKey{5, 1, 0, 0}.txHash())},
+			{pnl.KindPosition, "opened", factKey{5, 0, 0, 0}, common.BytesToHash(factKey{5, 0, 0, 0}.txHash())},
+			{pnl.KindMargin, "deposited", factKey{4, 9, 9, 0}, common.BytesToHash(factKey{4, 9, 9, 0}.txHash())},
 		}
 		if !slices.Equal(order, want) {
 			t.Fatalf("History order = %+v, want %+v", order, want)
@@ -457,18 +458,18 @@ func TestPnl(t *testing.T) {
 			t.Fatalf("margin entry receipt %q time %v, want tx %v", entries[2].ReceiptKind, entries[2].BlockTime, at(4))
 		}
 
-		margin, err := History(ctx, tx, accountA1, 0, 10, []Kind{KindMargin})
-		if err != nil || len(margin) != 1 || margin[0].Kind != KindMargin {
+		margin, err := pnl.History(ctx, tx, accountA1, 0, 10, []pnl.Kind{pnl.KindMargin})
+		if err != nil || len(margin) != 1 || margin[0].Kind != pnl.KindMargin {
 			t.Fatalf("History margin = %+v, %v; want the deposit only", margin, err)
 		}
-		recent, err := History(ctx, tx, accountA1, 5, 5, nil)
-		if err != nil || len(recent) != 2 || recent[0].Kind != KindFill || recent[1].Kind != KindPosition {
+		recent, err := pnl.History(ctx, tx, accountA1, 5, 5, nil)
+		if err != nil || len(recent) != 2 || recent[0].Kind != pnl.KindFill || recent[1].Kind != pnl.KindPosition {
 			t.Fatalf("History block 5 = %+v, %v; want the fill then the open", recent, err)
 		}
-		if _, err := History(ctx, tx, accountA1, 0, 10, []Kind{"settlement"}); !errors.Is(err, ErrUnknownKind) {
+		if _, err := pnl.History(ctx, tx, accountA1, 0, 10, []pnl.Kind{"settlement"}); !errors.Is(err, pnl.ErrUnknownKind) {
 			t.Fatalf("unknown kind error %v, want ErrUnknownKind", err)
 		}
-		if _, err := History(ctx, tx, accountA1, 6, 5, nil); !errors.Is(err, ErrRange) {
+		if _, err := pnl.History(ctx, tx, accountA1, 6, 5, nil); !errors.Is(err, pnl.ErrRange) {
 			t.Fatalf("reversed range error %v, want ErrRange", err)
 		}
 	})

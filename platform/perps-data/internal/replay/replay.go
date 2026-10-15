@@ -1,7 +1,7 @@
 // Package replay rewrites a height range of the perps data schema from the
 // node: under the writer lease it deletes the facts and block-keyed
 // projections of the range, re-reads every height through the indexer's read
-// path, rewrites it through store.WriteBlock with the row ids and event ids of
+// path, rewrites it through store.WriteFacts with the row ids and event ids of
 // the first index, rebuilds the projections and restores the cursor.
 //
 // Origin: Launch-x core/indexer/internal/store (ReplayRequest,
@@ -24,6 +24,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/decode"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/source"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/platform/perps-data/internal/store"
 )
 
@@ -42,7 +43,7 @@ const (
 // perps.writer_lease (contracts/data-services.md section 2).
 const (
 	cursorName = "head"
-	leaseName  = "head"
+	leaseName  = "indexer"
 )
 
 var holderToken = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
@@ -144,6 +145,29 @@ func Exit(err error) int {
 // account lookups of id-only events see the heights already rewritten.
 type Source interface {
 	Read(ctx context.Context, q decode.Querier, height uint64) (store.Block, *decode.Result, error)
+}
+
+// NodeSource reads a height through the follower and decodes it with the
+// registry, the read path of the indexer.
+type NodeSource struct {
+	Follower *source.Follower
+	Registry *decode.Registry
+}
+
+// Read fetches height from the node and decodes it through q.
+func (n NodeSource) Read(ctx context.Context, q decode.Querier, height uint64) (store.Block, *decode.Result, error) {
+	if n.Follower == nil || n.Registry == nil {
+		return store.Block{}, nil, errors.New("replay: node source needs a follower and a registry")
+	}
+	b, err := n.Follower.Fetch(ctx, height)
+	if err != nil {
+		return store.Block{}, nil, err
+	}
+	rows, err := n.Registry.DecodeBlock(ctx, q, decode.BlockInput{Number: b.Number, Hash: b.Hash, Time: b.Time, Logs: b.Logs, Events: b.FinalizeBlockEvents})
+	if err != nil {
+		return store.Block{}, nil, err
+	}
+	return store.Block{Number: b.Number, Hash: b.Hash, ParentHash: b.ParentHash, Time: b.Time, Proposer: b.Proposer, TxCount: b.TxCount}, rows, nil
 }
 
 // Runner replays ranges under the writer lease, one transaction per batch.
@@ -281,9 +305,6 @@ func (r *Runner) batch(ctx context.Context, tables []table, from, to int64, dryR
 			return nil, fmt.Errorf("delete perps.%s: %w", t.name, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM perps.blocks WHERE number BETWEEN $1 AND $2`, from, to); err != nil {
-		return nil, fmt.Errorf("delete perps.blocks: %w", err)
-	}
 	for h := from; h <= to; h++ {
 		block, rows, err := r.Source.Read(ctx, tx, uint64(h))
 		if err != nil {
@@ -292,7 +313,7 @@ func (r *Runner) batch(ctx context.Context, tables []table, from, to int64, dryR
 		if !bytes.Equal(block.Hash.Bytes(), stored[h]) {
 			return nil, fmt.Errorf("%w: height %d node %x stored %x", ErrHashMismatch, h, block.Hash.Bytes(), stored[h])
 		}
-		if err := store.WriteBlock(ctx, tx, block, rows); err != nil {
+		if _, err := store.WriteFacts(ctx, tx, block, rows); err != nil {
 			return nil, fmt.Errorf("write height %d: %w", h, err)
 		}
 	}

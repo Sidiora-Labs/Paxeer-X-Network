@@ -21485,7 +21485,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.1]
 title = "Retarget the margin hooks to the perpetuals account and remove the vault hook"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.2.2", "6.2.5", "6.2.6", "6.2.14", "6.2.18"]
@@ -21726,7 +21726,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.6.3.10]
 title = "Delete the Diamond facet ABIs"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["6.0.2", "6.2.1", "6.2.2", "6.2.3", "6.2.6", "6.3.1"]
@@ -29351,7 +29351,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.5]
 title = "Generate the release upgrade document and the node upgrade file"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["1.3.100"]
@@ -29378,7 +29378,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.6]
 title = "Stage the release binary, keep the previous one and report automation and the old feeder"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["8.4.5", "8.4.17"]
@@ -29705,7 +29705,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.18]
 title = "Open the Hyperpax spot route behind the release gate"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["6.3.99"]
@@ -29731,7 +29731,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.4.19]
 title = "Generate feed keys and the registerFeedKey payload"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["5.3.99"]

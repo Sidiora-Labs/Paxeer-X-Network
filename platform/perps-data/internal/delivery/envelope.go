@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -47,15 +48,42 @@ type Envelope struct {
 
 // Policy is server-owned and must never be constructed from a public request.
 // Exact subjects prevent a producer from choosing arbitrary broker destinations.
+// Patterns admit the subjects of a server-owned shape whose entity token is
+// data, such as an account; '*' matches exactly one token.
 type Policy struct {
 	Subjects   map[string]bool
+	Patterns   []string
 	EventTypes map[string]bool
+}
+
+func (p Policy) admits(subject string) bool {
+	if p.Subjects[subject] {
+		return true
+	}
+	tokens := strings.Split(subject, ".")
+	for _, pattern := range p.Patterns {
+		f := strings.Split(pattern, ".")
+		if len(f) != len(tokens) {
+			continue
+		}
+		match := true
+		for i, t := range f {
+			if t != "*" && t != tokens[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func Hash(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 
 func (e Envelope) Validate(p Policy, subject string) error {
-	if len(subject) > 256 || !subjectToken.MatchString(subject) || !p.Subjects[subject] {
+	if len(subject) > 256 || !subjectToken.MatchString(subject) || !p.admits(subject) {
 		return ErrAuthorization
 	}
 	if !token.MatchString(e.EventID) || !token.MatchString(e.TraceID) || !p.EventTypes[e.EventType] {
@@ -121,7 +149,7 @@ func (e Envelope) encodeBytes() ([]byte, error) {
 
 func Decode(b []byte, p Policy, subject string) (Envelope, error) {
 	var e Envelope
-	if len(subject) > 256 || !subjectToken.MatchString(subject) || !p.Subjects[subject] {
+	if len(subject) > 256 || !subjectToken.MatchString(subject) || !p.admits(subject) {
 		return e, ErrAuthorization
 	}
 	if len(b) > MaxEnvelopeBytes {

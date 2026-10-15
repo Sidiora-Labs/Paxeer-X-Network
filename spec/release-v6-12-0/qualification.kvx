@@ -1435,3 +1435,131 @@ exit = 1
 log = fleet/logs/fix-hyperpax-imports-verify-1.log
 observed = Type check passes and 11 of 12 cases pass; the PAX spot entry is still the zero placeholder.
 assumption = The uhpx and SID pointer hex is recorded in the address table from the upgrade EVM instance.
+
+[finding.3.3.1]
+revision = d2162908fec52bd3ab612523dfa7da792694d923
+command = go test ./precompiles/perps/ -run TestIntegration
+exit = 1
+log = fleet/logs/3.3.1-verify-1.log
+observed = The integration test did not compile because precompiles/perps still lacks the exported keeper readers and the node wiring it assumes was not on main at the time.
+assumption = The gate reruns after the perps keeper export lane and the node wiring land.
+
+[finding.4.2.1]
+revision = 629c557c0afd89b4d849438be04e11e0e1ec2a22
+command = go test ./precompiles/spot/ -run TestNewPrecompileSetAddresses
+exit = 1
+log = fleet/logs/4.2.1-verify-1.log
+observed = precompiles/spot builds, but vault_test.go is an internal test that imports node while node now imports precompiles/spot, so the package test binary refuses the import cycle; the shared gas formula is enforced by the rail executor because WithGasTable rows cannot express it.
+assumption = vault_test.go moves to the external test package in a follow-up lane and the gate reruns.
+
+[finding.5.3.1]
+revision = 5a2bf43e03597f6f5d9e061bbab04e162e26be6b
+command = go test ./modules/pricefeed/keeper/ -run TestPriceFeed
+exit = 1
+log = fleet/logs/5.3.1-verify-2.log
+observed = The keeper test package imports node, which did not compile because of the perps keeper readers and the end-block logger call.
+assumption = The gate reruns after the perps keeper export lane lands.
+
+[finding.8.4.3]
+revision = 30c98306056e5c10dfdb7213ed4acd7d63fddd36
+command = bash tools/release/tests/reproducible.test.sh
+exit = 1
+log = fleet/logs/8.4.3-verify-1.log
+observed = One of five pass; the reproducibility check needs the release builder artifacts and path remapping from 8.4.2, which was not on the lane's base.
+assumption = The gate reruns on main now that 8.4.2 is landed.
+
+[finding.8.4.4]
+revision = 30c98306056e5c10dfdb7213ed4acd7d63fddd36
+command = bash tools/release/tests/workflows.test.sh
+exit = 1
+log = fleet/logs/8.4.4-verify-1.log
+observed = Six of seven pass; the strict toolchain check needs tools/release/toolchain.env from 8.4.2, which was not on the lane's base.
+assumption = The gate reruns on main now that 8.4.2 is landed.
+
+[finding.fix-perps-data-chain]
+revision = 0c237755212cebd0ad96b4f79584401ead886381
+command = go vet ./platform/perps-data/... 
+exit = 1
+log = fleet/logs/fix-perps-data-chain-verify-3.log
+observed = Every chain package and both commands compile and vet; the node-backed decode, replay and indexer tests need PERPS_DATA_TEST_RPC and PERPS_DATA_TEST_COMET, and portal and graphql still fail on their own duplicates.
+assumption = The gateway fix lane clears portal and graphql, and the node-backed tests run once a v6.12 devnet endpoint exists.
+
+[finding.8.4.14]
+revision = d102d091bbf1fda93be118ca0adbbc16e2ff8122
+command = bash tools/release/verify-release.sh --tag paxeer-network/v6.12.0 --dist dist/paxeer-network/v6.12.0
+exit = 1
+log = fleet/logs/8.4.14-verify-1.log
+observed = The verifier's own five fixture tests pass; the live run has no release directory and no published release yet, and the tag push and workflow enablement are release-time operations.
+assumption = The verifier runs again at release once the build produces the directory and the release is published.
+
+[finding.5.3.3]
+revision = 087ce93dda842e53ee1b3499c48260695ddc044d
+command = go test ./node/ -run TestPriceFeedLivePath
+exit = 1
+log = fleet/logs/5.3.3-verify-1.log
+observed = The node package did not compile on the lane's base, and MemIAVLStoreKeys has no pricefeed entry until 1.3.102 lands.
+assumption = The gate reruns after the perps keeper export lane and 1.3.102 land.
+
+[finding.8.4.8]
+revision = 965e9a15676f11e816922e96524ab1d6130c2d05
+command = bash tools/release/tests/snapshot.test.sh
+exit = 1
+log = fleet/logs/8.4.8-verify-1.log
+observed = The test fixture needs a built paxd, which does not build on the lane's base; the behaviour cases were not reached.
+assumption = The gate reruns once the node builds on main.
+
+[finding.8.4.10]
+revision = REV-8.4.10
+command = python3 tools/release/tests/test_fleet_check.py
+exit = 1
+log = fleet/logs/8.4.10-verify-2.log
+observed = 19 unit cases pass; one integration case fails at setup and two live cases need a rehearsal fleet.
+assumption = The integration and live cases run with the rehearsal of 8.4.12.
+
+[finding.8.4.11]
+revision = 015d8e4cb6e5d381f45d2e3874d4b5711478821c
+command = python3 tools/release/rehearsal/test_rewrite_genesis.py
+exit = 5
+log = fleet/logs/8.4.11-verify-1.log
+observed = The test setup needs a halt-height export, which no lane can produce without a built node and a chain export.
+assumption = The gate reruns with the rehearsal export of 8.4.12.
+
+[finding.3.3.4]
+revision = 611437d92ca716bb3df0b98693d78aaf91ee67a0
+command = go test -p 2 ./precompiles/perps/ -run TestVersionSwitchV69Vectors
+exit = 1
+log = fleet/logs/3.3.4-verify-1.log
+observed = The package did not compile on the lane's base because of the perps precompile view readers.
+assumption = The gate reruns after the perps keeper export lane lands.
+
+[finding.8.4.7]
+revision = 98e08ca25891b5ff726daef0e8893099e58921f5
+command = bash tools/release/tests/swap.test.sh
+exit = 1
+log = fleet/logs/8.4.7-verify-1.log
+observed = Two prerequisite checks fail because no staged binaries exist on the lane box; the six scenarios were not run.
+assumption = The scenarios run after a release build produces the staged binaries.
+
+[finding.8.4.9]
+revision = f209ed926f727c52ec2c1c997109c17d3aa9fa0c
+command = bash tools/release/tests/rollback.test.sh
+exit = 1
+log = fleet/logs/8.4.9-verify-1.log
+observed = The prerequisite snapshot fixture is missing because snapshot.sh needs a built paxd; the three cases were not run.
+assumption = The gate reruns with the snapshot fixture once the node builds.
+
+[finding.4.3.2]
+revision = 7a552a134afd6a2cee9d5e1ea9ed5a5e2caba8a0
+command = go test -p 2 ./modules/spot/keeper/ -run TestSolvencyInvariant
+exit = 1
+log = fleet/logs/4.3.2-verify-1.log
+observed = The lane produced no code because the spot keeper did not compile on its base and its checkout lost its git metadata.
+assumption = The task is relaunched on main once the spot keeper test binaries compile.
+
+[finding.1.3.102]
+revision = 333a1d79477b71e5a50136cde63bf97faa24bf83
+command = go test ./node/ -run 'TestV6120StoreUpgradesAddOnlyTheNewModules|TestV6120RefusesUnmountedStores'
+exit = 1
+log = fleet/logs/1.3.102-verify-1.log
+observed = The node test binary does not compile because the perps precompile views call unexported keeper readers and legacyabci end_block calls a Logger method the context lacks.
+assumption = The gate reruns after the perps keeper export lane lands.

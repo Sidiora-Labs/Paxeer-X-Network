@@ -11,6 +11,7 @@ package decode
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -19,7 +20,9 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -56,6 +59,8 @@ const (
 	rawKind             = "raw"
 	FailureUnknownTopic = "unknown_topic"
 	FailureABIDecode    = "abi_decode"
+	FailureOrderLookup  = "order_lookup"
+	FailureShareLookup  = "share_lookup"
 )
 
 var (
@@ -66,7 +71,47 @@ var (
 	ErrForeignEmitter = errors.New("decode: emitter outside the address set")
 	// ErrInvalidLog reports a log whose identity or receipt context is invalid.
 	ErrInvalidLog = errors.New("decode: invalid log")
+	// ErrStatePruned reports an eth_call at a height every node has pruned.
+	ErrStatePruned = errors.New("decode: state pruned on every node")
+	// ErrNoState reports a lookup without a StateReader.
+	ErrNoState = errors.New("decode: no state reader")
+	// ErrInvalidBlockEvent reports a pricefeed block event whose attributes
+	// are missing, repeated or not decimal.
+	ErrInvalidBlockEvent = errors.New("decode: invalid block event")
 )
+
+// StateReader runs eth_call: CallAt at a height, Call at the latest height.
+// CallAt returns an error wrapping ErrStatePruned when every node has pruned
+// the height.
+type StateReader interface {
+	CallAt(ctx context.Context, to common.Address, data []byte, height uint64) ([]byte, error)
+	Call(ctx context.Context, to common.Address, data []byte) ([]byte, error)
+}
+
+// Options configures a Registry. The module addresses are the module EVM
+// addresses of contracts/address-table.md, module accounts; State resolves
+// the spot order tokens and the share pointers.
+type Options struct {
+	PerpsModule     common.Address
+	SpotModule      common.Address
+	PricefeedModule common.Address
+	State           StateReader
+}
+
+// ModuleAddress is authtypes.NewModuleAddress(name) as an EVM address: the
+// first 20 bytes of the SHA-256 of the module name.
+func ModuleAddress(name string) common.Address {
+	sum := sha256.Sum256([]byte(name))
+	return common.BytesToAddress(sum[:common.AddressLength])
+}
+
+// lookupFailure turns a log into a raw row of class instead of an error.
+type lookupFailure struct {
+	class string
+	cause string
+}
+
+func (e *lookupFailure) Error() string { return e.class + ": " + e.cause }
 
 // Log is one fetched EVM log with the receipt context the follower supplies.
 // TxFrom is the transaction sender and is set only for ReceiptTx.
@@ -150,26 +195,33 @@ type entry struct {
 	build func(*batch, Fact, *reader) []Row
 }
 
-// Registry is immutable after construction and safe for concurrent Decode
-// calls.
+// Registry is immutable after construction, apart from the cache of share
+// pointers resolved through State, and safe for concurrent Decode calls.
 type Registry struct {
 	entries     map[key]entry
 	modules     map[common.Address]common.Address
+	share       map[common.Hash]entry
+	opts        Options
 	unknownLogs prometheus.Counter
 	enumUnknown prometheus.Counter
+
+	mu       sync.Mutex
+	pointers map[common.Address]common.Address
 }
 
 // NewRegistry builds the decoders of every venue from the leaf ABI packages
-// and registers the decoder counters on metrics. perpsModule is the EVM
-// address of the perps module account, the account of perps events without
-// an account argument.
-func NewRegistry(metrics *telemetry.Metrics, perpsModule common.Address) (*Registry, error) {
-	if perpsModule == (common.Address{}) {
-		return nil, errors.New("decode: perps module address is required")
+// and registers the decoder counters on metrics. The module addresses are the
+// accounts of the events without an account argument.
+func NewRegistry(metrics *telemetry.Metrics, opts Options) (*Registry, error) {
+	if opts.PerpsModule == (common.Address{}) || opts.SpotModule == (common.Address{}) || opts.PricefeedModule == (common.Address{}) {
+		return nil, errors.New("decode: perps, spot and pricefeed module addresses are required")
 	}
 	r := &Registry{
-		entries: make(map[key]entry),
-		modules: make(map[common.Address]common.Address),
+		entries:  make(map[key]entry),
+		modules:  make(map[common.Address]common.Address),
+		share:    make(map[common.Hash]entry),
+		opts:     opts,
+		pointers: make(map[common.Address]common.Address),
 		unknownLogs: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "perps_indexer_unknown_logs_total",
 			Help: "Logs of a venue address whose topic0 has no decoder.",
@@ -179,8 +231,10 @@ func NewRegistry(metrics *telemetry.Metrics, perpsModule common.Address) (*Regis
 			Help: "Decoded enumeration values outside their enumeration.",
 		}),
 	}
-	if err := registerPerps(r, perpsModule); err != nil {
-		return nil, err
+	for _, register := range []func(*Registry) error{registerPerps, registerPricefeed, registerSpot, registerUSDL} {
+		if err := register(r); err != nil {
+			return nil, err
+		}
 	}
 	if err := metrics.Register(r.unknownLogs); err != nil {
 		return nil, err
@@ -213,29 +267,71 @@ func (r *Registry) register(address, module common.Address, a abi.ABI, decoders 
 	return nil
 }
 
-// Decode deduplicates one fetch and decodes it in order. Fact rows of id-only
-// events take the account of the earlier placed or opened row of the batch,
-// else the stored row read through q. A log of a venue address without a
-// decoder or with non-canonical data becomes a raw row; an invalid batch, a
-// foreign emitter, an unresolved account or a read failure is an error.
+// Decode deduplicates one fetch and decodes it in order. Fact rows of id-only events take the account of the earlier placed
+// or opened row of the batch, else the stored row read through q. A log of a
+// venue address without a decoder, with non-canonical data, of an unknown
+// spot order or of an unresolved share pointer becomes a raw row; an invalid
+// batch, a foreign emitter, an unresolved account or a read failure is an
+// error.
 func (r *Registry) Decode(ctx context.Context, q Querier, logs []Log) (*Result, error) {
-	unique, err := Dedup(logs)
-	if err != nil {
+	res := &Result{}
+	b := r.newBatch(ctx, q)
+	if err := r.decodeLogs(b, res, logs); err != nil {
 		return nil, err
 	}
-	b := &batch{ctx: ctx, q: q, orders: map[string]common.Address{}, positions: map[string]common.Address{}}
-	res := &Result{}
+	r.unknownLogs.Add(float64(b.unknownLogs))
+	r.enumUnknown.Add(float64(b.enumUnknown))
+	return res, nil
+}
+
+func (r *Registry) newBatch(ctx context.Context, q Querier) *batch {
+	return &batch{
+		ctx: ctx, q: q, reg: r,
+		orders: map[string]common.Address{}, positions: map[string]common.Address{},
+		spotOrders: map[spotOrderKey]spotOrder{}, created: map[common.Address]common.Address{},
+	}
+}
+
+func (r *Registry) decodeLogs(b *batch, res *Result, logs []Log) error {
+	unique, err := Dedup(logs)
+	if err != nil {
+		return err
+	}
 	for _, l := range unique {
-		f, err := r.fact(l)
-		if err != nil {
-			return nil, err
-		}
+		module, known := r.modules[l.Address]
 		var e entry
-		ok := len(l.Topics) > 0
-		if ok {
-			e, ok = r.entries[key{l.Address, l.Topics[0]}]
+		found := false
+		if known {
+			if len(l.Topics) > 0 {
+				e, found = r.entries[key{l.Address, l.Topics[0]}]
+			}
+		} else {
+			var shareTopic bool
+			if len(l.Topics) > 0 {
+				e, shareTopic = r.share[l.Topics[0]]
+			}
+			token, resolved, err := b.pointerToken(l.Address)
+			if err != nil {
+				return fmt.Errorf("decode: share pointer %s: %w", l.Address, err)
+			}
+			if !resolved {
+				if !shareTopic {
+					return fmt.Errorf("%w: %s", ErrForeignEmitter, l.Address)
+				}
+				f, err := r.fact(l, r.opts.SpotModule)
+				if err != nil {
+					return err
+				}
+				res.Raw = append(res.Raw, rawRow(f, l, FailureShareLookup))
+				continue
+			}
+			module, found, b.shareToken = r.opts.SpotModule, shareTopic, token
 		}
-		if !ok {
+		f, err := r.fact(l, module)
+		if err != nil {
+			return err
+		}
+		if !found {
 			b.unknownLogs++
 			res.Raw = append(res.Raw, rawRow(f, l, FailureUnknownTopic))
 			continue
@@ -248,23 +344,25 @@ func (r *Registry) Decode(ctx context.Context, q Querier, logs []Log) (*Result, 
 		rd := &reader{args: args}
 		rows := e.build(b, f, rd)
 		if rd.err != nil {
-			return nil, fmt.Errorf("decode %s at block %d log %d: %w", e.event.Name, l.BlockNumber, l.Index, rd.err)
+			var lf *lookupFailure
+			if errors.As(rd.err, &lf) {
+				res.Raw = append(res.Raw, rawRow(f, l, lf.class))
+				continue
+			}
+			return fmt.Errorf("decode %s at block %d log %d: %w", e.event.Name, l.BlockNumber, l.Index, rd.err)
+		}
+		if len(rows) == 0 {
+			continue
 		}
 		res.Decoded = append(res.Decoded, Decoded{
 			Event: Event{e.event.Name, e.event.Sig, args, l.BlockNumber, strings.ToLower(l.TxHash.Hex()), l.Index},
 			Rows:  rows,
 		})
 	}
-	r.unknownLogs.Add(float64(b.unknownLogs))
-	r.enumUnknown.Add(float64(b.enumUnknown))
-	return res, nil
+	return nil
 }
 
-func (r *Registry) fact(l Log) (Fact, error) {
-	module, ok := r.modules[l.Address]
-	if !ok {
-		return Fact{}, fmt.Errorf("%w: %s", ErrForeignEmitter, l.Address)
-	}
+func (r *Registry) fact(l Log, module common.Address) (Fact, error) {
 	switch l.ReceiptKind {
 	case ReceiptTx:
 		if l.TxFrom == nil {
@@ -595,4 +693,36 @@ func (r *reader) b16(name string) [16]byte {
 	}
 	copy(out[:], raw)
 	return out
+}
+
+func (r *reader) bytes(name string) []byte {
+	s := r.str(name)
+	if r.err != nil {
+		return nil
+	}
+	raw, err := hex.DecodeString(strings.TrimPrefix(s, "0x"))
+	if err != nil || !strings.HasPrefix(s, "0x") {
+		r.fail(fmt.Errorf("argument %s: not bytes", name))
+		return nil
+	}
+	return raw
+}
+
+// ColumnName is the column of a row field: the snake case of the Go name,
+// split at a lower-to-upper change and before the last capital of an
+// acronym, digits staying with the letters before them (LongOI long_oi,
+// SizeUSD size_usd, FundingRate24h funding_rate24h).
+func ColumnName(field string) string {
+	runes := []rune(field)
+	var out []rune
+	for i, c := range runes {
+		if unicode.IsUpper(c) {
+			if i > 0 && (unicode.IsLower(runes[i-1]) || unicode.IsDigit(runes[i-1]) || (unicode.IsUpper(runes[i-1]) && i+1 < len(runes) && unicode.IsLower(runes[i+1]))) {
+				out = append(out, '_')
+			}
+			c = unicode.ToLower(c)
+		}
+		out = append(out, c)
+	}
+	return string(out)
 }

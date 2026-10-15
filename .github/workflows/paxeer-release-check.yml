@@ -13,8 +13,18 @@ on:
       - 'node/**'
       - 'sdk/**'
       - 'wasm-runtime/**'
+      - 'src/**'
+      - 'include/**'
+      - 'Makefile'
+      - 'rust-toolchain.toml'
+      - 'programs/**'
+      - 'platform/Cargo.toml'
+      - 'platform/Cargo.lock'
+      - 'platform/hosted/feeder/**'
+      - 'tools/price-sidecar/**'
       - 'tools/release/**'
       - '.github/workflows/paxeer-release-check.yml'
+      - '.github/workflows/paxeer-release-publish.yml'
   workflow_dispatch:
 
 permissions:
@@ -43,8 +53,8 @@ jobs:
             exit 1
           fi
           upgrade=$(jq -er '.upgrade' tools/release/version.json)
-          if ! grep -rqF "= \"$upgrade\"" node modules; then
-            echo "Upgrade name $upgrade is not declared under node/ or modules/"
+          if ! grep -qxF "const V6120Upgrade = \"$upgrade\"" node/upgrades_v6120.go; then
+            echo "Upgrade name $upgrade is not declared as V6120Upgrade in node/upgrades_v6120.go"
             exit 1
           fi
 
@@ -71,8 +81,37 @@ jobs:
           cache: false
       - name: Install native build dependencies
         run: |
+          set -euo pipefail
+          . tools/release/toolchain.env
+          : "${CC_VERSION:?tools/release/toolchain.env must pin CC_VERSION}"
+          cc_package="gcc-${CC_VERSION%%.*}"
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential libssl-dev libsqlite3-dev
+          cc_package_version=$(apt-cache madison "$cc_package" | awk -v version="$CC_VERSION" '
+            { candidate = $3; sub(/^[0-9]+:/, "", candidate) }
+            index(candidate, version "-") == 1 { print $3; exit }
+          ')
+          if [[ -z "$cc_package_version" ]]; then
+            echo "No package for $cc_package at CC_VERSION $CC_VERSION" >&2
+            exit 1
+          fi
+          sudo apt-get install -y --no-install-recommends build-essential libssl-dev libsqlite3-dev \
+            "$cc_package=$cc_package_version" "g++-${CC_VERSION%%.*}=$cc_package_version"
+          compiler_bin="$RUNNER_TEMP/release-toolchain/bin"
+          mkdir -p "$compiler_bin"
+          ln -sf "/usr/bin/$cc_package" "$compiler_bin/cc"
+          ln -sf "/usr/bin/$cc_package" "$compiler_bin/gcc"
+          ln -sf "/usr/bin/g++-${CC_VERSION%%.*}" "$compiler_bin/c++"
+          ln -sf "/usr/bin/g++-${CC_VERSION%%.*}" "$compiler_bin/g++"
+          export PATH="$compiler_bin:$PATH"
+          echo "$compiler_bin" >> "$GITHUB_PATH"
+          have_cc=$(cc -dumpfullversion)
+          printf '%s\n' "$have_cc"
+          if [[ "$have_cc" != "$CC_VERSION" ]]; then
+            echo "build-paxd: toolchain.env pins cc $CC_VERSION, found $have_cc" >&2
+            exit 1
+          fi
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal --no-self-update
       - name: Check reproducible release build
         env:
           PAXD_RELEASE_LAYERXD: '1'

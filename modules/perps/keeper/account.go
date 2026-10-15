@@ -424,6 +424,24 @@ func (k *Keeper) accountPositions(ctx sdk.Context, address common.Address) ([]ty
 	return positions, nil
 }
 
+// GetPosition reads position id, ErrUnknownPosition when it names no open
+// position.
+func (k *Keeper) GetPosition(ctx sdk.Context, id uint256.Int) (types.Position, error) {
+	return k.liquidationPosition(ctx, id)
+}
+
+// AccountPositions lists the account's open positions in ascending market id,
+// empty for an account with none.
+func (k *Keeper) AccountPositions(ctx sdk.Context, address common.Address) ([]types.Position, error) {
+	return k.accountPositions(ctx, address)
+}
+
+// AccountOpenOrders lists the ids of the account's open orders, empty for an
+// account with none.
+func (k *Keeper) AccountOpenOrders(ctx sdk.Context, address common.Address) ([]uint256.Int, error) {
+	return k.accountOpenOrders(ctx, address)
+}
+
 // accountOpenOrders lists the ids of the account's open orders from its
 // AccountOrder index.
 func (k *Keeper) accountOpenOrders(ctx sdk.Context, address common.Address) ([]uint256.Int, error) {
