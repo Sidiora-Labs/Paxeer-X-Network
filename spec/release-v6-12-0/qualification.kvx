@@ -119,3 +119,10 @@ command = "go test ./modules/perps/types/ -run 'TestTiers'"
 exit_code = 0
 log_path = "fleet logs 3.0.5-verify-1"
 observed_and_assumption = "The margin tier and market validation code passes its gate, but the capability text for the perps math task names UsdToUsdlDown and UsdToUsdlUp helpers that do not exist in the tree, so Market.Validate enforces the decimals bound directly against the collateral decimals constant. Assumption: the perps math task either adds those helpers under that name or its acceptance is read against the direct bound, with no change here."
+
+[finding.7.0.5]
+revision = "4f54cd7b570cb492aa732c7f77cf0a736e142616"
+command = "PERPS_DATA_TEST_DATABASE_URL=<throwaway local cluster> go test -count=1 ./platform/perps-data/internal/store/ -run 'TestMigrate'"
+exit_code = 1
+log_path = "fleet logs 7.0.5-verify-2"
+observed_and_assumption = "Eleven migrate subtests pass; the amount_columns_exact subtest fails because the facts migration types amounts as numeric(78,0), which rounds a fraction before any CHECK runs, so the fraction refusal in acceptance 7.2.3 can never fire against that column type, the same conflict already recorded for the facts migration; the schema test loader in the migrations package also stops on CREATE FUNCTION, CREATE TRIGGER and REVOKE statements that the delivery migration now carries. Assumption: the amount column type or the acceptance is ruled on once for the whole perps data schema, and the schema test loader is widened by the task that owns it, after which this verify command is rerun unchanged."
