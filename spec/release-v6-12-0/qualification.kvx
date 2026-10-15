@@ -875,3 +875,43 @@ exit = 1
 log = "fleet/logs/3.2.12-verify-1.log"
 observed = "The perps AppModule registers genesis, nine invariants and no messages, but modules/perps/keeper does not compile until the perps keeper reconciliation lands."
 assumption = "Rerun after the perps keeper reconciliation; amino and interface registrations are no-ops because the module has no messages."
+
+[finding.2.2.5]
+revision = "bdc921c9a"
+command = "go test ./precompiles/launchpad/... -run 'TestViewRolesServeEverySelector'"
+exit = 1
+log = "fleet/logs/2.2.5-verify-1.log"
+observed = "views.go serves the Quoter, PoolRegistry and ProtocolConfig roles through the 2.2.1 role table, but the package build on this base stopped on the pre-2.2.1 Keeper interface before the test ran; PoolRegistry.register refuses because the keeper has no pool registration entry point and getPoolMetadata reverts for pools not created through CreateMarket."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1; the register entry point and the metadata record for migrated pools need a ruling."
+
+[finding.2.2.17]
+revision = "6cdae97a3"
+command = "go test ./modules/launchpad/keeper/... -run 'TestMigrateV6120Signature|TestParamsFromProtocolConfig'"
+exit = 1
+log = "fleet/logs/2.2.17-verify-1.log"
+observed = "MigrateV6120 and the EVM reader typecheck with the 2.2.16 USDL step overlaid, but the keeper test binary imports precompiles/launchpad, which on this base predates 2.2.1; the EVMReader adds InstallRetired that the node upgrade handler must adapt, and the role probes cover only the candidate address set."
+assumption = "Rerun once 2.2.1 and 2.2.16 are merged; golden.json from 2.2.15 is still absent so no full-run oracle test exists."
+
+[finding.2.2.20]
+revision = "2993af0c73a394c7d56bbb1e9f071778ddfbb5a2"
+command = "go test ./precompiles/launchpad/... -run 'TestTreasurySurfaceServesTheABI|TestTreasuryAdminRefusals|TestTreasuryEvents'"
+exit = 1
+log = "fleet/logs/2.2.20-verify-1.log"
+observed = "treasury.go registers the Treasury role handler and vets clean against the 2.2.1 package, but the build on this base stopped on the pre-2.2.1 Keeper interface; deposit relies on call.nested from 2.2.22 and the Deposited-from-recordFee event needs 2.2.3 and 2.2.8."
+assumption = "Rerun on the merged launchpad precompile after 2.2.1, 2.2.3, 2.2.8 and 2.2.22."
+
+[finding.2.2.22]
+revision = "ead34565c6e701bd0a6f58d711aec59160c1df17"
+command = "go test ./precompiles/launchpad/... -run 'TestNestedCallsSeeCommittedState|TestNestedRevertPropagation'"
+exit = 1
+log = "fleet/logs/2.2.22-verify-1.log"
+observed = "nested.go and the reentrancy tests vet clean, but the build on this base stopped on the pre-2.2.1 Keeper interface; RunCaller takes the run's gas budget through NewRunCaller(evm, *gas), which the 2.2.1 runner must pass, and the revert mapper must prefer a NestedRevertError over an outer ContractError."
+assumption = "The launchpad precompile reconciliation pass wires NewRunCaller into Run and the revert mapper; rerun after it."
+
+[finding.3.2.1]
+revision = "a605001cf16a65547d0727f0db429d7e4adfd523"
+command = "go test ./precompiles/perps/ -run 'TestPerps'"
+exit = 1
+log = "fleet/logs/3.2.1-verify-1.log"
+observed = "The 0x1015 precompile shell, dispatch map and gas table are written, but modules/perps/keeper does not compile until the perps keeper reconciliation lands; acceptance 3.17.1 counts the selector in its gas figures while the contract charges argument bytes only."
+assumption = "Rerun after the perps keeper reconciliation; the 3.17.1 gas figures need a ruling and CheckPause from 3.1.18 is assumed."
