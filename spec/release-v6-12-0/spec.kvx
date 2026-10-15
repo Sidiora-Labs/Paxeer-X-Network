@@ -11281,7 +11281,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.3.2.8]
 title = "Pack the venue events in the leaf ABI package and emit them from 0x1015"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["3.0.1", "3.0.6", "1.0.6"]
