@@ -3,16 +3,27 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // MaxProtocolFeeBps is ProtocolConfig.setProtocolFeeBps's bound (50%).
 const MaxProtocolFeeBps = 5_000
 
-// Params are KindleLaunch's ProtocolConfig fields. QuoteDenom is the bank
-// denom that plays USDL. Params change only through UpdateParams, which
-// accepts the governance module account alone.
+// MaxFeeWeight is ProtocolConfig.setFeeWeights's bound on the decay rate and
+// the volatility weight.
+const MaxFeeWeight = 10_000
+
+// maxUint112 is ProtocolConfig.setVirtualDefaults's bound on each virtual
+// reserve default.
+var maxUint112 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 112), big.NewInt(1))
+
+// Params are KindleLaunch's ProtocolConfig fields. QuoteToken is the USDL
+// ERC20 contract address; QuoteDenom is the bank denom that played USDL.
+// Params change only through UpdateParams, which accepts the governance module
+// account alone.
 type Params struct {
 	QuoteDenom          string  `json:"quote_denom"`
 	VirtualQuoteDefault sdk.Int `json:"virtual_quote_default"`
@@ -25,10 +36,14 @@ type Params struct {
 	VolatilityWeight    uint64  `json:"volatility_weight"`
 	ConcentrationWeight uint64  `json:"concentration_weight"`
 	CreationFee         sdk.Int `json:"creation_fee"`
+	QuoteToken          string  `json:"quote_token"`
 }
 
 // DefaultQuoteDenom is the bank base denom of USDL on Paxeer.
 const DefaultQuoteDenom = "uusdl"
+
+// DefaultQuoteToken is the USDL ERC20 contract address.
+const DefaultQuoteToken = "0x85FcD13735F4309833A503EE804ea32395851479"
 
 // DefaultParams are ProtocolConfig.initialize's values.
 func DefaultParams() Params {
@@ -42,14 +57,21 @@ func DefaultParams() Params {
 		ProtocolFeeBps:      1_000,
 		FeeDecayRate:        500,
 		VolatilityWeight:    100,
-		ConcentrationWeight: 100,
-		CreationFee:         sdk.NewInt(100_000_000),
+		ConcentrationWeight: 0,
+		CreationFee:         sdk.NewInt(1_000_000),
+		QuoteToken:          DefaultQuoteToken,
 	}
 }
 
 func (p Params) Validate() error {
 	if err := sdk.ValidateDenom(p.QuoteDenom); err != nil {
 		return fmt.Errorf("%w: quote denom: %v", ErrInvalidParams, err)
+	}
+	if len(p.QuoteToken) != 42 || !strings.HasPrefix(p.QuoteToken, "0x") || !common.IsHexAddress(p.QuoteToken) {
+		return fmt.Errorf("%w: quote token %q is not a 0x-prefixed 20-byte hex address", ErrInvalidParams, p.QuoteToken)
+	}
+	if common.HexToAddress(p.QuoteToken) == (common.Address{}) {
+		return fmt.Errorf("%w: quote token is the zero address", ErrInvalidParams)
 	}
 	for _, value := range []sdk.Int{p.VirtualQuoteDefault, p.VirtualTokenDefault, p.CreationFee} {
 		if value.IsNil() || value.IsNegative() || fits(value.BigInt()) != nil {
@@ -59,14 +81,23 @@ func (p Params) Validate() error {
 	if !p.VirtualQuoteDefault.IsPositive() || !p.VirtualTokenDefault.IsPositive() {
 		return fmt.Errorf("%w: virtual reserves must be positive", ErrInvalidParams)
 	}
+	if p.VirtualQuoteDefault.BigInt().Cmp(maxUint112) > 0 || p.VirtualTokenDefault.BigInt().Cmp(maxUint112) > 0 {
+		return fmt.Errorf("%w: virtual reserves must fit uint112", ErrInvalidParams)
+	}
 	if p.MinFeeBps > p.MaxFeeBps || p.MaxFeeBps >= BpsDenominator {
 		return fmt.Errorf("%w: fee bounds must satisfy min <= max < 10000", ErrInvalidParams)
 	}
-	if p.BaseFeeBps > p.MaxFeeBps {
-		return fmt.Errorf("%w: base fee above max fee", ErrInvalidParams)
+	if p.BaseFeeBps < p.MinFeeBps || p.BaseFeeBps > p.MaxFeeBps {
+		return fmt.Errorf("%w: base fee must satisfy min <= base <= max", ErrInvalidParams)
 	}
 	if p.ProtocolFeeBps > MaxProtocolFeeBps {
 		return fmt.Errorf("%w: protocol fee above 5000 bps", ErrInvalidParams)
+	}
+	if p.FeeDecayRate > MaxFeeWeight || p.VolatilityWeight > MaxFeeWeight {
+		return fmt.Errorf("%w: fee decay rate and volatility weight must be at most 10000", ErrInvalidParams)
+	}
+	if p.ConcentrationWeight != 0 {
+		return fmt.Errorf("%w: concentration weight must be 0", ErrInvalidParams)
 	}
 	return nil
 }

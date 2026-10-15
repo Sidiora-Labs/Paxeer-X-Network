@@ -18,6 +18,7 @@ message Params {
   uint64 volatility_weight = 9 [(gogoproto.customname) = "VolatilityWeight"];
   uint64 concentration_weight = 10 [(gogoproto.customname) = "ConcentrationWeight"];
   string creation_fee = 11 [(gogoproto.customname) = "CreationFee", (gogoproto.customtype) = "Int", (gogoproto.nullable) = false];
+  string quote_token = 12 [(gogoproto.customname) = "QuoteToken"];
 }
 message MsgUpdateParams {
   option (gogoproto.goproto_stringer) = false;
