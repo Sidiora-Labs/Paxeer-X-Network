@@ -6830,7 +6830,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.2.1.17]
 title = "Add the migration record: deltas, fee-right id map, retired list and the native-market guard"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 1
 requires = ["2.1.1"]
