@@ -1489,7 +1489,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.1.2.4]
 title = "Create the uhpx and SID bank metadata and native ERC20 pointers as the first v6.12.0 hook"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["1.0.1", "1.0.3"]
