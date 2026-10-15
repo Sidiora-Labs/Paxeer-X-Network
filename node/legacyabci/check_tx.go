@@ -12,6 +12,7 @@ import (
 
 	ibckeeper "github.com/Sidiora-Labs/Paxeer-X-Network/interchain/modules/core/keeper"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/ante"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
@@ -30,14 +31,15 @@ import (
 var defaultRecoveryMiddleware = newDefaultRecoveryMiddleware()
 
 type CheckTxKeepers struct {
-	AccountKeeper  authkeeper.AccountKeeper
-	BankKeeper     bankkeeper.Keeper
-	FeeGrantKeeper *feegrantkeeper.Keeper
-	IBCKeeper      *ibckeeper.Keeper
-	OracleKeeper   oraclekeeper.Keeper
-	EvmKeeper      *evmkeeper.Keeper
-	ParamsKeeper   paramskeeper.Keeper
-	UpgradeKeeper  *upgradekeeper.Keeper
+	AccountKeeper   authkeeper.AccountKeeper
+	BankKeeper      bankkeeper.Keeper
+	FeeGrantKeeper  *feegrantkeeper.Keeper
+	IBCKeeper       *ibckeeper.Keeper
+	OracleKeeper    oraclekeeper.Keeper
+	EvmKeeper       *evmkeeper.Keeper
+	ParamsKeeper    paramskeeper.Keeper
+	UpgradeKeeper   *upgradekeeper.Keeper
+	PricefeedKeeper pricefeedkeeper.Keeper
 }
 
 func CheckTx(
@@ -106,7 +108,7 @@ func CheckTx(
 	} else if isEVM {
 		newCtx, err = ante.EvmCheckTxAnte(anteCtx, tx, keepers.UpgradeKeeper, keepers.EvmKeeper)
 	} else {
-		newCtx, err = ante.CosmosCheckTxAnte(anteCtx, txConfig, tx, keepers.ParamsKeeper, keepers.OracleKeeper, keepers.EvmKeeper, keepers.AccountKeeper, keepers.BankKeeper, keepers.FeeGrantKeeper, keepers.IBCKeeper)
+		newCtx, err = ante.CosmosCheckTxAnte(anteCtx, txConfig, tx, keepers.ParamsKeeper, keepers.OracleKeeper, keepers.EvmKeeper, keepers.AccountKeeper, keepers.BankKeeper, keepers.FeeGrantKeeper, keepers.IBCKeeper, keepers.PricefeedKeeper)
 	}
 	if !newCtx.IsZero() {
 		ctx = newCtx

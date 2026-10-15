@@ -258,7 +258,10 @@ func (app *App) refreshXWebPrecompile(ctx sdk.Context) {
 }
 
 // RefreshPrecompiles reselects the custom precompile set from the state of ctx.
-func (app *App) RefreshPrecompiles(ctx sdk.Context) { app.refreshXWebPrecompile(ctx) }
+func (app *App) RefreshPrecompiles(ctx sdk.Context) {
+	app.v6120Live = app.v6120LiveInState(ctx)
+	app.refreshXWebPrecompile(ctx)
+}
 
 // setXWebPrecompile hands the EVM keeper the custom precompile set with or
 // without the xweb entry. An application built without custom precompiles
@@ -267,7 +270,7 @@ func (app *App) setXWebPrecompile(live bool) {
 	if app.customPrecompiles == nil {
 		return
 	}
-	app.EvmKeeper.SetCustomPrecompiles(xwebPrecompileSet(app.customPrecompiles, live), LatestUpgrade)
+	app.EvmKeeper.SetCustomPrecompiles(v6120PrecompileSet(app.customPrecompiles, app.v6120Next, live, app.v6120Live), LatestUpgrade)
 }
 
 // xwebPrecompileSet copies the custom precompile set, leaving out the xweb

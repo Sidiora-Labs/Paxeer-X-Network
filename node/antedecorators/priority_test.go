@@ -101,7 +101,7 @@ func TestPriorityWithExactAnteChain_BankSend(t *testing.T) {
 
 	decorators := []sdk.AnteDecorator{
 		authante.NewSetUpContextDecorator(antedecorators.GetGasMeterSetter(testApp.ParamsKeeper)),
-		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{authante.NewDeductFeeDecorator(testApp.AccountKeeper, testApp.BankKeeper, testApp.FeeGrantKeeper, testApp.ParamsKeeper, nil)}, testApp.OracleKeeper, &testApp.EvmKeeper),
+		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{authante.NewDeductFeeDecorator(testApp.AccountKeeper, testApp.BankKeeper, testApp.FeeGrantKeeper, testApp.ParamsKeeper, nil)}, testApp.OracleKeeper, &testApp.EvmKeeper, testApp.PricefeedKeeper),
 		func() sdk.AnteDecorator {
 			var simLimit sdk.Gas = 1_000_000
 			return wasmkeeper.NewLimitSimulationGasDecorator(&simLimit, antedecorators.GetGasMeterSetter(testApp.ParamsKeeper))
@@ -170,7 +170,7 @@ func TestPrioritySetterWithAnteHandlers(t *testing.T) {
 
 	decorators := []sdk.AnteDecorator{
 		authante.NewSetUpContextDecorator(antedecorators.GetGasMeterSetter(testApp.ParamsKeeper)),
-		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{PrioritySetterDecorator{priority: expectedPriority}}, testApp.OracleKeeper, &testApp.EvmKeeper),
+		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{PrioritySetterDecorator{priority: expectedPriority}}, testApp.OracleKeeper, &testApp.EvmKeeper, testApp.PricefeedKeeper),
 		PriorityCaptureDecorator{captured: &seenAfterSetter},
 		func() sdk.AnteDecorator {
 			var simLimit sdk.Gas = 1_000_000

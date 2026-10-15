@@ -9,6 +9,7 @@ import (
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletestutils "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper/testutils"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/staking"
@@ -76,7 +77,7 @@ func (t FakeTx) FeeGranter() sdk.AccAddress {
 
 func CallGaslessDecoratorWithMsg(ctx sdk.Context, msg sdk.Msg, oracleKeeper oraclekeeper.Keeper, evmKeeper *evmkeeper.Keeper) error {
 	anteDecorators := []sdk.AnteDecorator{
-		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{FakeAnteDecoratorGasReqd{}}, oracleKeeper, evmKeeper),
+		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{FakeAnteDecoratorGasReqd{}}, oracleKeeper, evmKeeper, pricefeedkeeper.Keeper{}),
 	}
 	chainedHandler := sdk.ChainAnteDecorators(anteDecorators...)
 	fakeTx := FakeTx{

@@ -3,9 +3,16 @@ package app
 import (
 	"fmt"
 
+	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
+	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
+	launchpadprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/module"
 	upgradetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/x/upgrade/types"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // V6120Upgrade is the plan from whose height the chain executes the custody
@@ -35,6 +42,34 @@ func (app *App) v6120Hooks() []v6120Hook {
 		{name: "perps"},
 		{name: "spot"},
 	}
+}
+
+// bindV6120Hooks binds the five hooks of the v6.12.0 plan to the pointer step
+// and the launchpad, pricefeed, perps and spot keepers of the application.
+func (app *App) bindV6120Hooks() {
+	app.v6120HookTable = []v6120Hook{
+		{name: "pointers", run: app.createV6120Pointers},
+		{name: "launchpad", run: func(ctx sdk.Context) error {
+			return launchpadkeeper.MigrateV6120(ctx, *app.LaunchpadKeeper, v6120LaunchpadEVM{&app.EvmKeeper})
+		}},
+		{name: "pricefeed", run: func(ctx sdk.Context) error {
+			return pricefeedkeeper.InitV6120(ctx, app.PricefeedKeeper)
+		}},
+		{name: "perps", run: func(ctx sdk.Context) error {
+			return perpskeeper.SeedV6120(ctx, *app.PerpsKeeper)
+		}},
+		{name: "spot", run: func(ctx sdk.Context) error {
+			return spotkeeper.InitV6120(ctx, *app.SpotKeeper)
+		}},
+	}
+}
+
+// v6120LaunchpadEVM is the EVM keeper as the launchpad migration reads it,
+// installing the retirement runtime at a retired launchpad address.
+type v6120LaunchpadEVM struct{ *evmkeeper.Keeper }
+
+func (e v6120LaunchpadEVM) InstallRetired(ctx sdk.Context, retired, replacement common.Address) error {
+	return launchpadprecompile.InstallRetired(ctx, e.Keeper, retired, replacement)
 }
 
 // runV6120Upgrade refuses the plan while any hook is unbound, before writing

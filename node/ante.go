@@ -7,6 +7,7 @@ import (
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
@@ -28,6 +29,7 @@ type HandlerOptions struct {
 	WasmConfig        *wasmtypes.WasmConfig
 	WasmKeeper        *wasm.Keeper
 	OracleKeeper      *oraclekeeper.Keeper
+	PricefeedKeeper   pricefeedkeeper.Keeper
 	EVMKeeper         *evmkeeper.Keeper
 	UpgradeKeeper     *upgradekeeper.Keeper
 	TXCounterStoreKey sdk.StoreKey
@@ -77,7 +79,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, sdk.AnteHandler, e
 
 	anteDecorators := []sdk.AnteDecorator{
 		ante.NewSetUpContextDecorator(antedecorators.GetGasMeterSetter(options.ParamsKeeper.(paramskeeper.Keeper))), // outermost AnteDecorator. SetUpContext must be called first
-		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.ParamsKeeper.(paramskeeper.Keeper), antedecorators.NewFeeDenomTxFeeChecker(options.EVMKeeper, options.TxFeeChecker))}, *options.OracleKeeper, options.EVMKeeper),
+		antedecorators.NewGaslessDecorator([]sdk.AnteDecorator{ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.ParamsKeeper.(paramskeeper.Keeper), antedecorators.NewFeeDenomTxFeeChecker(options.EVMKeeper, options.TxFeeChecker))}, *options.OracleKeeper, options.EVMKeeper, options.PricefeedKeeper),
 		wasmkeeper.NewLimitSimulationGasDecorator(options.WasmConfig.SimulationGasLimit, wasmkeeper.DefaultGasMeterSetter()), // after setup context to enforce limits early
 		ante.NewRejectExtensionOptionsDecorator(),
 		oracle.NewSpammingPreventionDecorator(*options.OracleKeeper),

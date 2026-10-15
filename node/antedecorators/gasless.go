@@ -7,6 +7,9 @@ import (
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
@@ -16,13 +19,14 @@ import (
 var logger = paxlog.NewLogger("app", "antedecorators")
 
 type GaslessDecorator struct {
-	wrapped      []sdk.AnteDecorator
-	oracleKeeper oraclekeeper.Keeper
-	evmKeeper    *evmkeeper.Keeper
+	wrapped         []sdk.AnteDecorator
+	oracleKeeper    oraclekeeper.Keeper
+	evmKeeper       *evmkeeper.Keeper
+	pricefeedKeeper pricefeedkeeper.Keeper
 }
 
-func NewGaslessDecorator(wrapped []sdk.AnteDecorator, oracleKeeper oraclekeeper.Keeper, evmKeeper *evmkeeper.Keeper) GaslessDecorator {
-	return GaslessDecorator{wrapped: wrapped, oracleKeeper: oracleKeeper, evmKeeper: evmKeeper}
+func NewGaslessDecorator(wrapped []sdk.AnteDecorator, oracleKeeper oraclekeeper.Keeper, evmKeeper *evmkeeper.Keeper, pricefeedKeeper pricefeedkeeper.Keeper) GaslessDecorator {
+	return GaslessDecorator{wrapped: wrapped, oracleKeeper: oracleKeeper, evmKeeper: evmKeeper, pricefeedKeeper: pricefeedKeeper}
 }
 
 func (gd GaslessDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
@@ -30,7 +34,7 @@ func (gd GaslessDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool,
 	// eagerly set infinite gas meter so that queries performed by IsTxGasless will not incur gas cost
 	ctx = ctx.WithGasMeter(storetypes.NewNoConsumptionInfiniteGasMeter())
 
-	isGasless, err := IsTxGasless(tx, ctx, gd.oracleKeeper, gd.evmKeeper)
+	isGasless, err := IsTxGasless(tx, ctx, gd.oracleKeeper, gd.evmKeeper, gd.pricefeedKeeper)
 	if err != nil {
 		return ctx, err
 	}
@@ -70,7 +74,7 @@ func (gd GaslessDecorator) handleWrapped(ctx sdk.Context, tx sdk.Tx, simulate bo
 	return next(ctx, tx, simulate)
 }
 
-func IsTxGasless(tx sdk.Tx, ctx sdk.Context, oracleKeeper oraclekeeper.Keeper, evmKeeper *evmkeeper.Keeper) (isGasless bool, err error) {
+func IsTxGasless(tx sdk.Tx, ctx sdk.Context, oracleKeeper oraclekeeper.Keeper, evmKeeper *evmkeeper.Keeper, pricefeedKeeper pricefeedkeeper.Keeper) (isGasless bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error("panic recovered in IsTxGasless", "err", r)
@@ -96,6 +100,11 @@ func IsTxGasless(tx sdk.Tx, ctx sdk.Context, oracleKeeper oraclekeeper.Keeper, e
 			}
 			// ddos prevention
 			return len(tx.GetMsgs()) == 1, nil
+		case *pricefeedtypes.MsgSubmitPrices:
+			if len(tx.GetMsgs()) != 1 {
+				return false, nil
+			}
+			return pricefeed.SubmissionIsGasless(ctx, m, pricefeedKeeper)
 		default:
 			return false, nil
 		}

@@ -7,6 +7,7 @@ import (
 
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -24,6 +25,7 @@ type FeeFloor struct {
 	minGasPrices sdk.DecCoins
 	params       paramskeeper.Keeper
 	oracle       oraclekeeper.Keeper
+	pricefeed    pricefeedkeeper.Keeper
 	evm          *evmkeeper.Keeper
 	feeChecker   ante.TxFeeChecker
 
@@ -33,7 +35,7 @@ type FeeFloor struct {
 
 // NewFeeFloor wraps exec with the node floor minGasPrices, given in the
 // minimum-gas-prices config form (for example "0.01uhpx").
-func NewFeeFloor(exec Executor, host Host, minGasPrices string, params paramskeeper.Keeper, oracle oraclekeeper.Keeper, evm *evmkeeper.Keeper) (*FeeFloor, error) {
+func NewFeeFloor(exec Executor, host Host, minGasPrices string, params paramskeeper.Keeper, oracle oraclekeeper.Keeper, pricefeed pricefeedkeeper.Keeper, evm *evmkeeper.Keeper) (*FeeFloor, error) {
 	if exec == nil {
 		return nil, errors.New("sequencer: nil executor")
 	}
@@ -53,6 +55,7 @@ func NewFeeFloor(exec Executor, host Host, minGasPrices string, params paramskee
 		minGasPrices: floor,
 		params:       params,
 		oracle:       oracle,
+		pricefeed:    pricefeed,
 		evm:          evm,
 		feeChecker:   antedecorators.NewFeeDenomTxFeeChecker(evm, nil),
 	}, nil
@@ -68,7 +71,7 @@ func (f *FeeFloor) CheckNodeFloor(ctx sdk.Context, tx sdk.Tx) error {
 		return nil
 	}
 	ctx = ctx.WithGasMeter(storetypes.NewNoConsumptionInfiniteGasMeter())
-	gasless, err := antedecorators.IsTxGasless(tx, ctx, f.oracle, f.evm)
+	gasless, err := antedecorators.IsTxGasless(tx, ctx, f.oracle, f.evm, f.pricefeed)
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	evmante "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/ante"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/telemetry"
@@ -26,13 +27,14 @@ import (
 )
 
 type DeliverTxKeepers struct {
-	AccountKeeper  authkeeper.AccountKeeper
-	BankKeeper     bankkeeper.Keeper
-	FeeGrantKeeper *feegrantkeeper.Keeper
-	OracleKeeper   oraclekeeper.Keeper
-	EvmKeeper      *evmkeeper.Keeper
-	ParamsKeeper   paramskeeper.Keeper
-	UpgradeKeeper  *upgradekeeper.Keeper
+	AccountKeeper   authkeeper.AccountKeeper
+	BankKeeper      bankkeeper.Keeper
+	FeeGrantKeeper  *feegrantkeeper.Keeper
+	OracleKeeper    oraclekeeper.Keeper
+	EvmKeeper       *evmkeeper.Keeper
+	ParamsKeeper    paramskeeper.Keeper
+	UpgradeKeeper   *upgradekeeper.Keeper
+	PricefeedKeeper pricefeedkeeper.Keeper
 }
 
 func DeliverTx(
@@ -108,7 +110,7 @@ func DeliverTx(
 			}
 		}()
 	} else {
-		newCtx, err = ante.CosmosDeliverTxAnte(anteCtx, txConfig, tx, keepers.ParamsKeeper, keepers.OracleKeeper, keepers.EvmKeeper, keepers.AccountKeeper, keepers.BankKeeper, keepers.FeeGrantKeeper)
+		newCtx, err = ante.CosmosDeliverTxAnte(anteCtx, txConfig, tx, keepers.ParamsKeeper, keepers.OracleKeeper, keepers.EvmKeeper, keepers.AccountKeeper, keepers.BankKeeper, keepers.FeeGrantKeeper, keepers.PricefeedKeeper)
 	}
 	if !newCtx.IsZero() {
 		ctx = newCtx.WithMultiStore(ms)

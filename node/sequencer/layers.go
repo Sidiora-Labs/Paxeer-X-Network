@@ -14,6 +14,7 @@ import (
 	evmante "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/ante"
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	app "github.com/Sidiora-Labs/Paxeer-X-Network/node"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
@@ -288,7 +289,7 @@ func deliver(a *app.App, ctx sdk.Context, txBytes []byte, typed sdk.Tx) (result 
 func blockGas(a *app.App, checkCtx sdk.Context, tx sdk.Tx) (wanted uint64, estimated uint64, err error) {
 	isEVM, evmErr := evmante.IsEVMMessage(tx)
 	if !(evmErr == nil && isEVM) && couldBeGasless(tx) {
-		gasless, gaslessErr := antedecorators.IsTxGasless(tx, checkCtx, a.OracleKeeper, &a.EvmKeeper)
+		gasless, gaslessErr := antedecorators.IsTxGasless(tx, checkCtx, a.OracleKeeper, &a.EvmKeeper, a.PricefeedKeeper)
 		if gaslessErr != nil && strings.Contains(gaslessErr.Error(), "panic in IsTxGasless") {
 			return 0, 0, fmt.Errorf("%w: %v", ErrMaliciousGasless, gaslessErr)
 		}
@@ -329,7 +330,7 @@ func blockGas(a *app.App, checkCtx sdk.Context, tx sdk.Tx) (wanted uint64, estim
 func couldBeGasless(tx sdk.Tx) bool {
 	for _, msg := range tx.GetMsgs() {
 		switch msg.(type) {
-		case *evmtypes.MsgAssociate, *oracletypes.MsgAggregateExchangeRateVote:
+		case *evmtypes.MsgAssociate, *oracletypes.MsgAggregateExchangeRateVote, *pricefeedtypes.MsgSubmitPrices:
 			return true
 		}
 	}

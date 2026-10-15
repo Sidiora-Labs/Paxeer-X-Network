@@ -80,7 +80,7 @@ type sponsorQuote struct {
 
 func newFloor(t *testing.T, h *harness, minGasPrices string) *sequencer.FeeFloor {
 	t.Helper()
-	floor, err := sequencer.NewFeeFloor(h.exec, h.app, minGasPrices, h.app.ParamsKeeper, h.app.OracleKeeper, &h.app.EvmKeeper)
+	floor, err := sequencer.NewFeeFloor(h.exec, h.app, minGasPrices, h.app.ParamsKeeper, h.app.OracleKeeper, h.app.PricefeedKeeper, &h.app.EvmKeeper)
 	require.NoError(t, err)
 	return floor
 }

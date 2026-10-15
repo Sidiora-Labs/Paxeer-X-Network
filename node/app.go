@@ -133,6 +133,12 @@ import (
 	appparams "github.com/Sidiora-Labs/Paxeer-X-Network/node/params"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/upgrades"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/precompiles"
+	launchpadprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad"
+	launchpadv610precompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/launchpad/legacy/v610"
+	layerxexchangeprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxexchange"
+	perpsprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/perps"
+	pricefeedprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/pricefeed"
+	spotprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/spot"
 	putils "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/utils"
 	evmrpc "github.com/Sidiora-Labs/Paxeer-X-Network/rpc"
 	evmrpcconfig "github.com/Sidiora-Labs/Paxeer-X-Network/rpc/config"
@@ -155,6 +161,7 @@ import (
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	launchpadmodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad"
 	launchpadkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/keeper"
+	launchpadv610keeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/legacy/v610/keeper"
 	launchpadtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/launchpad/types"
 	layerxanchormodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor"
 	layerxanchorkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxanchor/keeper"
@@ -179,9 +186,18 @@ import (
 	oraclemodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	perpsmodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps"
+	perpskeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/keeper"
+	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedmodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	sequencermodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer"
 	seqkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/keeper"
 	seqtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/sequencer/types"
+	spotmodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot"
+	spotkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/keeper"
+	spottypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	tokenfactorymodule "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory"
 	tokenfactorykeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/keeper"
 	tokenfactorytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/tokenfactory/types"
@@ -273,6 +289,9 @@ var (
 		layerxexchangemodule.AppModuleBasic{},
 		layerxbridgemodule.AppModuleBasic{},
 		launchpadmodule.AppModuleBasic{},
+		perpsmodule.AppModuleBasic{},
+		spotmodule.AppModuleBasic{},
+		pricefeedmodule.AppModuleBasic{},
 		xwebmodule.AppModuleBasic{},
 		sequencermodule.AppModuleBasic{},
 		// this line is used by starport scaffolding # stargate/app/moduleBasic
@@ -294,6 +313,7 @@ var (
 		tokenfactorytypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
 		layerxcustodytypes.ModuleName:   nil,
 		layerxanchortypes.ModuleName:    {authtypes.Burner},
+		spottypes.ModuleName:            {authtypes.Minter, authtypes.Burner},
 		// launchpad, launchpad_treasury and layerxbridge are deliberately absent:
 		// the bank keeper blocks every maccPerms address as a receiver, and each
 		// of them receives tokenfactory mints or fees by plain sends while
@@ -303,6 +323,7 @@ var (
 
 	allowedReceivingModAcc = map[string]bool{
 		oracletypes.ModuleName: true,
+		spottypes.ModuleName:   true,
 	}
 
 	// kvStoreKeyNames is the canonical, in-order list of module KV store
@@ -324,6 +345,9 @@ var (
 		layerxexchangetypes.StoreKey,
 		layerxbridgetypes.StoreKey,
 		launchpadtypes.StoreKey,
+		perpstypes.StoreKey,
+		spottypes.StoreKey,
+		pricefeedtypes.StoreKey,
 		xwebtypes.StoreKey,
 		seqtypes.StoreKey,
 		// this line is used by starport scaffolding # stargate/app/storeKey
@@ -478,6 +502,9 @@ type App struct {
 	LayerXExchangeKeeper *layerxexchangekeeper.Keeper
 	LayerXBridgeKeeper   layerxbridgekeeper.Keeper
 	LaunchpadKeeper      *launchpadkeeper.Keeper
+	PricefeedKeeper      pricefeedkeeper.Keeper
+	PerpsKeeper          *perpskeeper.Keeper
+	SpotKeeper           *spotkeeper.Keeper
 	XWebKeeper           xwebkeeper.Keeper
 	SequencerKeeper      seqkeeper.Keeper
 
@@ -815,6 +842,9 @@ func New(
 		tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
 	app.BankKeeper.(bankkeeper.BaseKeeper).RegisterBalanceChangeHook(launchpadtypes.ModuleName, app.LaunchpadKeeper.BeforeBalanceChange)
 	app.GigaBankKeeper.RegisterBalanceChangeHook(launchpadtypes.ModuleName, app.LaunchpadKeeper.BeforeBalanceChange)
+	app.PricefeedKeeper = pricefeedkeeper.NewKeeper(keys[pricefeedtypes.StoreKey], &app.StakingKeeper, app.AccountKeeper, &app.EvmKeeper)
+	app.PerpsKeeper = perpskeeper.NewKeeper(keys[perpstypes.StoreKey], &app.EvmKeeper, app.PricefeedKeeper)
+	app.SpotKeeper = spotkeeper.NewKeeper(keys[spottypes.StoreKey], app.BankKeeper, &app.EvmKeeper, app.PricefeedKeeper)
 	app.XWebKeeper = xwebkeeper.NewKeeper(keys[xwebtypes.StoreKey], app.BankKeeper, &app.EvmKeeper)
 	app.SequencerKeeper = seqkeeper.NewKeeper(keys[seqtypes.StoreKey])
 
@@ -968,9 +998,15 @@ func New(
 
 	if enableCustomEVMPrecompiles {
 		app.customPrecompiles = precompiles.GetCustomPrecompiles(LatestUpgrade, app.GetPrecompileKeepers())
-		app.EvmKeeper.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{activationPrecompileGate()})
-		app.setXWebPrecompile(false)
+		next, err := app.v6120Contracts()
+		if err != nil {
+			panic(fmt.Sprintf("error building the v6.12.0 precompiles due to %s", err))
+		}
+		app.v6120Next = next
+		app.EvmKeeper.SetCustomPrecompileActivation([]evmkeeper.CustomPrecompileActivation{activationPrecompileGate(), v6120PrecompileGate()})
+		app.setV6120Live(false)
 	}
+	app.bindV6120Hooks()
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -1006,6 +1042,9 @@ func New(
 		layerxexchangemodule.NewAppModule(app.LayerXExchangeKeeper),
 		layerxbridgemodule.NewAppModule(app.LayerXBridgeKeeper),
 		launchpadmodule.NewAppModule(app.LaunchpadKeeper),
+		perpsmodule.NewAppModule(app.PerpsKeeper),
+		spotmodule.NewAppModule(app.SpotKeeper),
+		pricefeedmodule.NewAppModule(app.PricefeedKeeper),
 		xwebmodule.NewAppModule(app.XWebKeeper),
 		sequencermodule.NewAppModule(app.SequencerKeeper, app.GetSubspace(seqtypes.ModuleName)),
 		// this line is used by starport scaffolding # stargate/app/appModule
@@ -1027,29 +1066,35 @@ func New(
 		StakingKeeper: &app.StakingKeeper,
 		OracleKeeper:  &app.OracleKeeper,
 		EvmKeeper:     &app.EvmKeeper,
+		PerpsKeeper:   app.PerpsKeeper,
+		SpotKeeper:    app.SpotKeeper,
+		V6120Live:     func() bool { return app.v6120Live },
 	}
 	app.CheckTxKeepers = legacyabci.CheckTxKeepers{
-		AccountKeeper:  app.AccountKeeper,
-		BankKeeper:     app.BankKeeper,
-		FeeGrantKeeper: &app.FeeGrantKeeper,
-		IBCKeeper:      app.IBCKeeper,
-		OracleKeeper:   app.OracleKeeper,
-		EvmKeeper:      &app.EvmKeeper,
-		ParamsKeeper:   app.ParamsKeeper,
-		UpgradeKeeper:  &app.UpgradeKeeper,
+		AccountKeeper:   app.AccountKeeper,
+		BankKeeper:      app.BankKeeper,
+		FeeGrantKeeper:  &app.FeeGrantKeeper,
+		IBCKeeper:       app.IBCKeeper,
+		OracleKeeper:    app.OracleKeeper,
+		EvmKeeper:       &app.EvmKeeper,
+		ParamsKeeper:    app.ParamsKeeper,
+		UpgradeKeeper:   &app.UpgradeKeeper,
+		PricefeedKeeper: app.PricefeedKeeper,
 	}
 	app.DeliverTxKeepers = legacyabci.DeliverTxKeepers{
-		AccountKeeper:  app.AccountKeeper,
-		BankKeeper:     app.BankKeeper,
-		FeeGrantKeeper: &app.FeeGrantKeeper,
-		OracleKeeper:   app.OracleKeeper,
-		EvmKeeper:      &app.EvmKeeper,
-		ParamsKeeper:   app.ParamsKeeper,
-		UpgradeKeeper:  &app.UpgradeKeeper,
+		AccountKeeper:   app.AccountKeeper,
+		BankKeeper:      app.BankKeeper,
+		FeeGrantKeeper:  &app.FeeGrantKeeper,
+		OracleKeeper:    app.OracleKeeper,
+		EvmKeeper:       &app.EvmKeeper,
+		ParamsKeeper:    app.ParamsKeeper,
+		UpgradeKeeper:   &app.UpgradeKeeper,
+		PricefeedKeeper: app.PricefeedKeeper,
 	}
 
 	app.mm.SetOrderMidBlockers(
 		oracletypes.ModuleName,
+		pricefeedtypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -1085,6 +1130,9 @@ func New(
 		layerxexchangetypes.ModuleName,
 		layerxbridgetypes.ModuleName,
 		launchpadtypes.ModuleName,
+		perpstypes.ModuleName,
+		spottypes.ModuleName,
+		pricefeedtypes.ModuleName,
 		xwebtypes.ModuleName,
 		seqtypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
@@ -1149,6 +1197,7 @@ func New(
 			WasmConfig:        &wasmConfig,
 			WasmKeeper:        &app.WasmKeeper,
 			OracleKeeper:      &app.OracleKeeper,
+			PricefeedKeeper:   app.PricefeedKeeper,
 			EVMKeeper:         &app.EvmKeeper,
 			UpgradeKeeper:     &app.UpgradeKeeper,
 			TracingInfo:       app.GetBaseApp().TracingInfo,
@@ -1193,6 +1242,7 @@ func New(
 		if err := app.WasmKeeper.InitializePinnedCodes(ctx); err != nil {
 			tmos.Exit(fmt.Sprintf("failed initialize pinned codes %s", err))
 		}
+		app.v6120Live = app.v6120LiveInState(ctx)
 		app.refreshXWebPrecompile(ctx)
 		return nil
 	}
@@ -1424,6 +1474,8 @@ func layerxStoreUpgrades(name string) (storetypes.StoreUpgrades, bool) {
 		return activationStoreUpgrades(), true
 	case MergeUpgrade:
 		return mergeStoreUpgrades(), true
+	case V6120Upgrade:
+		return v6120StoreUpgrades(), true
 	}
 	return storetypes.StoreUpgrades{}, false
 }
@@ -1471,6 +1523,7 @@ func (app *App) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.Res
 	}
 	app.UpgradeKeeper.SetModuleVersionMap(ctx, app.mm.GetVersionMap())
 	res := app.mm.InitGenesis(ctx, app.appCodec, genesisState, app.genesisImportConfig)
+	app.v6120Live = app.v6120LiveInState(ctx)
 	app.refreshXWebPrecompile(ctx)
 	return res
 }
@@ -1709,7 +1762,7 @@ func (app *App) DeliverTxWithResult(ctx sdk.Context, tx []byte, typedTx sdk.Tx) 
 	var skipMetrics bool
 	if shouldCheckGasless {
 		// Only do expensive validation for potentially gasless transactions
-		isGasless, err := antedecorators.IsTxGasless(typedTx, ctx, app.OracleKeeper, &app.EvmKeeper)
+		isGasless, err := antedecorators.IsTxGasless(typedTx, ctx, app.OracleKeeper, &app.EvmKeeper, app.PricefeedKeeper)
 		if err != nil {
 			if isExpectedGaslessMetricsError(err) {
 				// ErrAggregateVoteExist is expected when checking gasless status after tx processing
@@ -1983,7 +2036,7 @@ func (app *App) ProcessTXsWithOCCV2(ctx sdk.Context, txs [][]byte, typedTxs []sd
 			shouldCheckGasless := app.couldBeGaslessTransaction(typedTxs[i])
 			if shouldCheckGasless {
 				// Only do expensive validation for potentially gasless transactions
-				isGasless, err := antedecorators.IsTxGasless(typedTxs[i], ctx, app.OracleKeeper, &app.EvmKeeper)
+				isGasless, err := antedecorators.IsTxGasless(typedTxs[i], ctx, app.OracleKeeper, &app.EvmKeeper, app.PricefeedKeeper)
 				if err != nil {
 					if isExpectedGaslessMetricsError(err) {
 						// ErrAggregateVoteExist is expected when checking gasless status after tx processing
@@ -2571,7 +2624,7 @@ const gigaLatePrecompileHeight int64 = 26300000
 // address in the set aborts its giga execution and runs on the ordinary path.
 func gigaCustomPrecompiles(height int64) map[common.Address]vm.PrecompiledContract {
 	if height >= gigaLatePrecompileHeight {
-		return gigaprecompiles.AllCustomPrecompilesFailFastLate
+		return gigaV6120FailFast
 	}
 	return gigaprecompiles.AllCustomPrecompilesFailFast
 }
@@ -3317,7 +3370,7 @@ func (app *App) checkTotalBlockGas(ctx sdk.Context, typedTxs []sdk.Tx) (_result 
 		// is not EVM or EVM classification failed (e.g. multi-msg with an EVM message).
 		skipGaslessCheck := evmErr == nil && isEVM
 		if !skipGaslessCheck && app.couldBeGaslessTransaction(decodedTx) {
-			isGasless, err := antedecorators.IsTxGasless(decodedTx, ctx, app.OracleKeeper, &app.EvmKeeper)
+			isGasless, err := antedecorators.IsTxGasless(decodedTx, ctx, app.OracleKeeper, &app.EvmKeeper, app.PricefeedKeeper)
 			if err != nil {
 				if strings.Contains(err.Error(), "panic in IsTxGasless") {
 					// Unexpected panic: reject the entire proposal.
@@ -3396,10 +3449,14 @@ func isExpectedGaslessMetricsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, oracletypes.ErrAggregateVoteExist) {
+	if errors.Is(err, oracletypes.ErrAggregateVoteExist) || errors.Is(err, pricefeedtypes.ErrRateLimited) {
 		return true
 	}
-	return strings.Contains(err.Error(), oracletypes.ErrAggregateVoteExist.Error())
+	if name, ok := pricefeedtypes.LXPName(err); ok && name == "LXP_PRICEFEED_RATE_LIMITED" {
+		return true
+	}
+	return strings.Contains(err.Error(), oracletypes.ErrAggregateVoteExist.Error()) ||
+		strings.Contains(err.Error(), pricefeedtypes.ErrRateLimited.Error())
 }
 
 // couldBeGaslessTransaction is a fast heuristic that returns true when tx
@@ -3414,7 +3471,7 @@ func (app *App) couldBeGaslessTransaction(tx sdk.Tx) bool {
 	}
 	for _, msg := range tx.GetMsgs() {
 		switch msg.(type) {
-		case *evmtypes.MsgAssociate, *oracletypes.MsgAggregateExchangeRateVote:
+		case *evmtypes.MsgAssociate, *oracletypes.MsgAggregateExchangeRateVote, *pricefeedtypes.MsgSubmitPrices:
 			return true
 		}
 	}
@@ -3478,6 +3535,49 @@ func (app *App) BlacklistedAccAddrs() map[string]bool {
 
 func (app *App) GetPrecompileKeepers() putils.Keepers {
 	return NewPrecompileKeepers(app)
+}
+
+// v6120Contracts builds the contracts the v6.12.0 set adds or switches: the
+// perpetuals contract and the v6.9 exchange at 0x1015, the second-generation
+// and the v6.10 launchpad at 0x1017, the price feed at 0x1020 and the spot
+// set at 0x1021-0x1025, the new contract first.
+func (app *App) v6120Contracts() (map[common.Address][2]vm.PrecompiledContract, error) {
+	keepers := app.GetPrecompileKeepers()
+	perps, err := perpsprecompile.NewPrecompile(keepers)
+	if err != nil {
+		return nil, err
+	}
+	exchange, err := layerxexchangeprecompile.NewPrecompile(keepers)
+	if err != nil {
+		return nil, err
+	}
+	g2, err := launchpadprecompile.NewPrecompile(keepers)
+	if err != nil {
+		return nil, err
+	}
+	legacyLaunchpad := launchpadv610keeper.NewKeeper(app.keys[launchpadtypes.StoreKey], app.BankKeeper,
+		tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper), &app.EvmKeeper)
+	g1, err := launchpadv610precompile.NewPrecompileWithKeeper(legacyLaunchpad, keepers.EVMK())
+	if err != nil {
+		return nil, err
+	}
+	priceFeed, err := pricefeedprecompile.NewPrecompile(keepers)
+	if err != nil {
+		return nil, err
+	}
+	spot, err := spotprecompile.NewPrecompileSet(keepers)
+	if err != nil {
+		return nil, err
+	}
+	next := map[common.Address][2]vm.PrecompiledContract{
+		common.HexToAddress(layerxexchangetypes.ExchangeAddress): {perps, exchange},
+		common.HexToAddress(launchpadtypes.LaunchpadAddress):     {g2, g1},
+		common.HexToAddress(gigaV6120PricefeedAddress):           {priceFeed},
+	}
+	for addr, contract := range spot {
+		next[addr] = [2]vm.PrecompiledContract{contract}
+	}
+	return next, nil
 }
 
 // test-only

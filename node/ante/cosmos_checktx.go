@@ -14,6 +14,9 @@ import (
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	codectypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/codec/types"
@@ -70,6 +73,7 @@ func CosmosCheckTxAnte(
 	bankKeeper bankkeeper.Keeper,
 	feegrantKeeper *feegrantkeeper.Keeper,
 	ibcKeeper *ibckeeper.Keeper,
+	pricefeedk pricefeedkeeper.Keeper,
 ) (returnCtx sdk.Context, returnErr error) {
 	oracleVote, err := CosmosStatelessChecks(tx, ctx.BlockHeight(), ctx.ConsensusParams())
 	if err != nil {
@@ -82,8 +86,11 @@ func CosmosCheckTxAnte(
 		}
 	}()
 	ctx = ctx.WithGasMeter(storetypes.NewNoConsumptionInfiniteGasMeter())
-	isGasless, err := antedecorators.IsTxGasless(tx, ctx, oraclek, ek)
+	isGasless, err := antedecorators.IsTxGasless(tx, ctx, oraclek, ek, pricefeedk)
 	if err != nil {
+		return ctx, err
+	}
+	if err := pricefeed.CheckSubmission(ctx, tx, pricefeedk); err != nil {
 		return ctx, err
 	}
 	if !isGasless {
@@ -115,9 +122,9 @@ func CosmosCheckTxAnte(
 	if err != nil {
 		return ctx, err
 	}
-	ctx = DecoratePriority(ctx, priority, oracleVote)
+	ctx = DecoratePriority(ctx, priority, oracleVote || pricefeedtypes.IsSubmissionTx(tx))
 
-	return ctx, CheckMessage(ctx, tx, ibcKeeper, oraclek)
+	return ctx, CheckMessage(ctx, tx, ibcKeeper, oraclek, pricefeedk)
 }
 
 func HandleOutofGas(recoveredErr any, gasLimit uint64, gasConsumed uint64) error {
@@ -172,6 +179,9 @@ func CosmosStatelessChecks(tx sdk.Tx, height int64, consensusParams *tmproto.Con
 
 	if oracleVote && otherMsg {
 		return oracleVote, sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "oracle votes cannot be in the same tx as other messages")
+	}
+	if _, err := pricefeedtypes.CheckSubmissionAlone(tx.GetMsgs()); err != nil {
+		return oracleVote, err
 	}
 	if err := tx.ValidateBasic(); err != nil {
 		return oracleVote, err
@@ -534,7 +544,7 @@ func UpdateSigners(ctx sdk.Context, tx sdk.Tx, accountKeeper authkeeper.AccountK
 	return events, nil
 }
 
-func CheckMessage(ctx sdk.Context, tx sdk.Tx, ibcKeeper *ibckeeper.Keeper, oracleKeeper oraclekeeper.Keeper) error {
+func CheckMessage(ctx sdk.Context, tx sdk.Tx, ibcKeeper *ibckeeper.Keeper, oracleKeeper oraclekeeper.Keeper, pricefeedKeeper pricefeedkeeper.Keeper) error {
 	// keep track of total packet messages and number of redundancies across `RecvPacket`, `AcknowledgePacket`, and `TimeoutPacket/OnClose`
 	redundancies := 0
 	packetMsgs := 0
@@ -606,6 +616,14 @@ func CheckMessage(ctx sdk.Context, tx sdk.Tx, ibcKeeper *ibckeeper.Keeper, oracl
 			}
 
 			if err := oracleKeeper.CheckAndSetSpamPreventionCounter(ctx, valAddr); err != nil {
+				return err
+			}
+
+		case *pricefeedtypes.MsgSubmitPrices:
+			if ctx.IsReCheckTx() {
+				continue
+			}
+			if err := pricefeed.MarkSubmission(ctx, tx, pricefeedKeeper); err != nil {
 				return err
 			}
 		}

@@ -3,6 +3,8 @@ package ante
 import (
 	evmkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/keeper"
 	oraclekeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/keeper"
+	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed"
+	pricefeedkeeper "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/keeper"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/sdk/client"
 	storetypes "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/store/types"
@@ -23,6 +25,7 @@ func CosmosDeliverTxAnte(
 	accountKeeper authkeeper.AccountKeeper,
 	bankKeeper bankkeeper.Keeper,
 	feegrantKeeper *feegrantkeeper.Keeper,
+	pricefeedk pricefeedkeeper.Keeper,
 ) (returnCtx sdk.Context, returnErr error) {
 	if _, err := CosmosStatelessChecks(tx, ctx.BlockHeight(), ctx.ConsensusParams()); err != nil {
 		return SetGasMeter(ctx, 0, pk), err
@@ -34,8 +37,11 @@ func CosmosDeliverTxAnte(
 		}
 	}()
 	ctx = ctx.WithGasMeter(storetypes.NewNoConsumptionInfiniteGasMeter())
-	isGasless, err := antedecorators.IsTxGasless(tx, ctx, oraclek, ek)
+	isGasless, err := antedecorators.IsTxGasless(tx, ctx, oraclek, ek, pricefeedk)
 	if err != nil {
+		return ctx, err
+	}
+	if err := pricefeed.CheckSubmission(ctx, tx, pricefeedk); err != nil {
 		return ctx, err
 	}
 	if !isGasless {

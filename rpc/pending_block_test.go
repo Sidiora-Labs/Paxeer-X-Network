@@ -73,7 +73,7 @@ func pendingBlockFeeSequencer(t *testing.T, committed int64, baseFeeWei int64) (
 		ProposerAddress: valPub.Address().Bytes(),
 	})
 	require.NoError(t, err)
-	floor, err := sequencer.NewFeeFloor(exec, a, "", a.ParamsKeeper, a.OracleKeeper, &a.EvmKeeper)
+	floor, err := sequencer.NewFeeFloor(exec, a, "", a.ParamsKeeper, a.OracleKeeper, a.PricefeedKeeper, &a.EvmKeeper)
 	require.NoError(t, err)
 	require.NoError(t, floor.Open(committed+1, genesis.Add(time.Second).UnixMilli()))
 

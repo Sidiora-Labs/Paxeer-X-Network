@@ -4,6 +4,7 @@ import (
 	"math"
 
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 )
 
@@ -43,6 +44,9 @@ func (pd PriorityDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool
 }
 
 func isOracleTx(tx sdk.Tx) bool {
+	if pricefeedtypes.IsSubmissionTx(tx) {
+		return true
+	}
 	if len(tx.GetMsgs()) == 0 {
 		// empty TX isn't oracle
 		return false

@@ -10,6 +10,7 @@ import (
 	evmtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/modules/evm/types/ethtx"
 	oracletypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/oracle/types"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
 	"github.com/Sidiora-Labs/Paxeer-X-Network/node/antedecorators"
 	sdk "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types"
 	sdkerrors "github.com/Sidiora-Labs/Paxeer-X-Network/sdk/types/errors"
@@ -183,6 +184,9 @@ func (s *PaxTxPrioritizer) getCosmosTxPriority(ctx sdk.Context, feeTx sdk.FeeTx)
 }
 
 func isOracleTx(tx sdk.FeeTx) bool {
+	if pricefeedtypes.IsSubmissionTx(tx) {
+		return true
+	}
 	if len(tx.GetMsgs()) == 0 {
 		return false
 	}
