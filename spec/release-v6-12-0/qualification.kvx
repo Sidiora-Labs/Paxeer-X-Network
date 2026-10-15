@@ -231,3 +231,10 @@ command = "scripts/ci/runner-routing-check.sh"
 exit_code = 0
 log_path = "fleet/logs/fix-1.0.2-verify-1.log"
 observed_and_assumption = "All thirty-six workflows now carry the accepted runs-on fallback and the routing check exits 0 with no failure lines, so the node build workflow task is qualified; the qualification matrix and image publish jobs lost their per-cell and dispatch-input runner choice because the check does not exclude them. Assumption: none."
+
+[fix.3.0.5]
+revision = "d3d661f675a210918292ecc83cff12d387f7f40e"
+command = "go test ./modules/perps/types/ -run 'TestTiers|TestUsdToUsdl'"
+exit_code = 0
+log_path = "fleet/logs/fix-3.0.5-verify-1.log"
+observed_and_assumption = "UsdToUsdlDown and UsdToUsdlUp exist in the perps types with exact integer rounding and overflow refusal, and Market.Validate uses them for the decimals bound. Assumption: none."
