@@ -13,6 +13,9 @@ import (
 	layerxbridgetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxbridge/types"
 	layerxcustodytypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxcustody/types"
 	layerxexchangetypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/layerxexchange/types"
+	perpstypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/perps/types"
+	pricefeedtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/pricefeed/types"
+	spottypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/spot/types"
 	xwebtypes "github.com/Sidiora-Labs/Paxeer-X-Network/modules/xweb/types"
 	anchorprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxanchor"
 	verifyprecompile "github.com/Sidiora-Labs/Paxeer-X-Network/precompiles/layerxverify"
@@ -174,7 +177,11 @@ func TestActivationStoreUpgradesMountEveryForkStore(t *testing.T) {
 	require.Equal(t, []string{keys.SequencerStoreKey}, merge.Added)
 	require.Empty(t, merge.Deleted)
 	require.Empty(t, merge.Renamed)
-	require.Len(t, kvStoreKeyNames, preForkStoreCount+len(forkModules)+len(mergeStoreUpgrades().Added))
+	v6120Stores := []string{perpstypes.StoreKey, spottypes.StoreKey, pricefeedtypes.StoreKey}
+	v6120, ok := layerxStoreUpgrades(V6120Upgrade)
+	require.True(t, ok)
+	require.Equal(t, v6120Stores, v6120.Added)
+	require.Len(t, kvStoreKeyNames, preForkStoreCount+len(forkModules)+len(v6120Stores)+len(mergeStoreUpgrades().Added))
 
 	a := NewTestWrapper(t, time.Now().UTC(), secp256k1.GenPrivKey().PubKey(), false).App
 	for i, fork := range forkModules {
@@ -185,6 +192,13 @@ func TestActivationStoreUpgradesMountEveryForkStore(t *testing.T) {
 		require.NotNil(t, a.GetKey(fork.store))
 		require.Contains(t, a.mm.Modules, fork.module)
 		require.NotZero(t, a.mm.Modules[fork.module].ConsensusVersion())
+	}
+	for _, store := range v6120Stores {
+		require.NotContains(t, upgrades.Added, store)
+		require.NotContains(t, merge.Added, store)
+		require.Contains(t, kvStoreKeyNames, store)
+		require.Contains(t, keys.MemIAVLStoreKeys, store)
+		require.NotNil(t, a.GetKey(store))
 	}
 	for _, store := range merge.Added {
 		require.NotContains(t, upgrades.Added, store)

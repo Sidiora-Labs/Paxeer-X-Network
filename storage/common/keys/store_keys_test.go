@@ -84,11 +84,22 @@ func TestAllModulesExcept_DoesNotMutateMemIAVLStoreKeys(t *testing.T) {
 	require.Equal(t, before, MemIAVLStoreKeys)
 }
 
-func TestXWebStoreKeyIsTheLastMemIAVLStoreKey(t *testing.T) {
+func TestXWebStoreKeyFollowsTheV6120StoreKeys(t *testing.T) {
 	require.Equal(t, "xweb", XWebStoreKey)
 	require.True(t, IsMemIAVLStoreKey(XWebStoreKey))
-	require.Equal(t, XWebStoreKey, MemIAVLStoreKeys[len(MemIAVLStoreKeys)-1])
-	require.Equal(t, LaunchpadStoreKey, MemIAVLStoreKeys[len(MemIAVLStoreKeys)-2])
+	require.Equal(t, []string{
+		"acc", "authz", "bank", "staking", "mint", "distribution", "slashing",
+		"gov", "params", "ibc", "upgrade", "feegrant", "evidence", "transfer",
+		"capability", "oracle", "evm", "wasm", "epoch", "tokenfactory",
+		"layerxcustody", "layerxanchor", "layerxexchange", "layerxbridge", "launchpad",
+		"perps", "spot", "pricefeed",
+		"xweb",
+		"sequencer",
+	}, MemIAVLStoreKeys)
+	n := len(MemIAVLStoreKeys)
+	require.Equal(t, SequencerStoreKey, MemIAVLStoreKeys[n-1])
+	require.Equal(t, XWebStoreKey, MemIAVLStoreKeys[n-2])
+	require.Equal(t, []string{LaunchpadStoreKey, PerpsStoreKey, SpotStoreKey, PriceFeedStoreKey}, MemIAVLStoreKeys[n-6:n-2])
 
 	got, err := AllModulesExcept(XWebStoreKey)
 	require.NoError(t, err)
