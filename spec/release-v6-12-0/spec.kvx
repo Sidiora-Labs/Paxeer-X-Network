@@ -18348,7 +18348,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.0.2]
 title = "Write the market table with the Chainflow symbol forms"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 0
 requires = []
